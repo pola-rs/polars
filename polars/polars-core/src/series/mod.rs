@@ -44,7 +44,7 @@ pub(crate) mod private {
         ) -> bool {
             unimplemented!()
         }
-        fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
+        fn vec_hash(&self, _build_hasher: RandomState) -> UInt64Chunked {
             unimplemented!()
         }
         fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {

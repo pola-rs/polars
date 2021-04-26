@@ -12,7 +12,7 @@ use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::fmt::Debug;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
 
 pub mod aggregations;
 #[cfg(feature = "pivot")]
@@ -21,78 +21,6 @@ pub(crate) mod pivot;
 pub mod resample;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
-
-pub trait VecHash {
-    /// Compute the hase for all values in the array.
-    ///
-    /// This currently only works with the ahash RandomState hasher builder.
-    fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
-        unimplemented!()
-    }
-}
-
-impl<T> VecHash for ChunkedArray<T>
-where
-    T: PolarsIntegerType,
-    T::Native: Hash,
-{
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        // Note that we don't use the no null branch! This can break in unexpected ways.
-        // for instance with threading we split an array in n_threads, this may lead to
-        // splits that have no nulls and splits that have nulls. Then one array is hashed with
-        // Option<T> and the other array with T.
-        // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
-        // the only deterministic seed.
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
-    }
-}
-
-impl VecHash for Utf8Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
-    }
-}
-
-impl VecHash for BooleanChunked {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
-    }
-}
-
-impl VecHash for Float32Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let opt_v = opt_v.map(|v| v.to_bits());
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
-    }
-}
-impl VecHash for Float64Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let opt_v = opt_v.map(|v| v.to_bits());
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
-    }
-}
-
-impl VecHash for ListChunked {}
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
