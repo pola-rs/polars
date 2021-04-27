@@ -15,22 +15,21 @@ To learn more about the inner workings of Polars read the [User Guide (wip)](htt
 
 # Rust users read this!
 Polars cannot deploy a new version to `crates.io` until a new arrow release is issued. Arrow's release cycle takes 3/4
-months which is a lot slower than I'd like to release. Until that time it is recommended to use the current `master` 
-branch instead of the published version on `crates.io`. The current master is a lot stabler than the published version
-and has way faster compile times.
+months which is a lot slower than I'd like to release. If it has been a while since a release is issued, it is recommended 
+to use the current `master` branch instead of the published version on `crates.io`. 
 
 You can add the master like this:
 
 ```toml
-polars = {version="0.12.0", git = "https://github.com/ritchie46/polars" }
+polars = {version="0.13.0", git = "https://github.com/ritchie46/polars" }
 ```
 
 Or by fixing to a specific version:
 
 ```toml
-polars = {version="0.12.0", git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
+polars = {version="0.13.0", git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
 ```
-
+## Rust version
 Required Rust version `>=1.51`
 
 # Python users read this!
@@ -118,8 +117,6 @@ Additional cargo features:
 * `object`
     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`). 
       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
-* `parallel`
-    - ChunkedArrays can be used by rayon::par_iter()
 * `[plain_fmt | pretty_fmt]` (mutually exclusive)
   - one of them should be chosen to fmt DataFrames. 
     `pretty_fmt` can deal with overflowing cells and looks nicer but has more dependencies.
