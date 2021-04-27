@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.7.8"
+version = "0.7.9"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 readme = "README.md"
@@ -48,9 +48,9 @@ crate-type = ["cdylib"]
 
 [package.metadata.maturin]
 name = "polars"
-# the Arrow memory format is stable between 3.0 and 4.0-SNAPSHOTS
+# the Arrow memory format is stable between 4.0 and 5.0-SNAPSHOTS
 # (which the Rust libraries use to take advantage of Rust API changes).
-requires-dist = ["numpy", "pyarrow==3.0"]
+requires-dist = ["numpy", "pyarrow==4.0"]
 
 [profile.release]
 codegen-units = 1
