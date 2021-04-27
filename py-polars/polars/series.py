@@ -39,6 +39,7 @@ from . import datatypes
 from numbers import Number
 import polars
 import pyarrow as pa
+from .utils import coerce_arrow
 
 from typing import TYPE_CHECKING
 
@@ -271,6 +272,7 @@ class Series:
         array
             Arrow array.
         """
+        array = coerce_arrow(array)
         return Series._from_pyseries(PySeries.from_arrow(name, array))
 
     def inner(self) -> "PySeries":

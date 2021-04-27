@@ -27,8 +27,8 @@ from .series import Series, wrap_s
 from . import datatypes
 from .datatypes import DataType, pytype_to_polars_type
 from ._html import NotebookFormatter
+from .utils import coerce_arrow
 import pyarrow as pa
-import pyarrow.compute
 import pyarrow.parquet
 import numpy as np
 import os
@@ -184,7 +184,9 @@ class DataFrame:
 
     @staticmethod
     def read_parquet(
-        file: Union[str, BinaryIO], stop_after_n_rows: "Optional[int]" = None
+        file: Union[str, BinaryIO],
+        stop_after_n_rows: "Optional[int]" = None,
+        use_pyarrow=False,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -195,11 +197,16 @@ class DataFrame:
             Path to a file or a file like object. Any valid filepath can be used.
         stop_after_n_rows
             Only read specified number of rows of the dataset. After `n` stops reading.
-
-        Returns
-        ---
-        DataFrame
+        use_pyarrow
+            Use pyarrow instead of the rust native parquet reader. The pyarrow reader is more stable.
         """
+        if use_pyarrow:
+            if stop_after_n_rows:
+                raise ValueError(
+                    "stop_after_n_rows can not be used with 'use_pyarrow==True'"
+                )
+            tbl = pa.parquet.read_table(file)
+            return DataFrame.from_arrow(tbl)
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_parquet(file, stop_after_n_rows)
         return self
@@ -244,32 +251,7 @@ class DataFrame:
             else:
                 name = column._name
 
-            if column.type == pa.timestamp("s"):
-                column = pa.compute.cast(
-                    pa.compute.multiply(pa.compute.cast(column, pa.int64()), 1000),
-                    pa.date64(),
-                )
-            elif column.type == pa.timestamp("ms"):
-                column = pa.compute.cast(
-                    pa.compute.cast(column, pa.int64()), pa.date64()
-                )
-            elif column.type == pa.timestamp("us"):
-                column = pa.compute.cast(
-                    pa.compute.divide(pa.compute.cast(column, pa.int64()), 1000),
-                    pa.date64(),
-                )
-            elif column.type == pa.timestamp("ns"):
-                column = pa.compute.cast(
-                    pa.compute.divide(pa.compute.cast(column, pa.int64()), 1000000),
-                    pa.date64(),
-                )
-            # note: Decimal256 could not be cast to float
-            elif isinstance(column.type, pa.Decimal128Type):
-                column = pa.compute.cast(column, pa.float64())
-
-            if column.num_chunks > 1:
-                column = column.combine_chunks()
-
+            column = coerce_arrow(column)
             data[name] = column
 
         table = pa.table(data)

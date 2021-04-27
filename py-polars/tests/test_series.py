@@ -153,6 +153,10 @@ def test_arrow():
     out = a.to_arrow()
     assert out == pa.array([1, 2, 3, None])
 
+    a = pa.array(["foo", "bar"], pa.dictionary(pa.int32(), pa.utf8()))
+    s = pl.Series("a", a)
+    assert s.dtype == pl.Utf8
+
 
 def test_view():
     a = Series("a", [1.0, 2.0, 3.0])
