@@ -1,15 +1,16 @@
 [package]
 name = "polars"
-version = "0.12.0"
+version = "0.13.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
-description = "DataFrame library"
+description = "DataFrame Library based on Apache Arrow"
 repository = "https://github.com/ritchie46/polars"
 readme = "../README.md"
 
 [features]
 simd = ["polars-core/simd"]
+avx512 = ["polars-core/avx512"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal"]
 random = ["polars-core/random"]
@@ -41,7 +42,7 @@ ipc = ["polars-io", "polars-io/ipc"]
 # support for arrows csv file parsing
 csv-file = ["polars-io", "polars-io/csv-file"]
 
-# ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
+# ~40% faster chunkedarray creation, but may larrowead to unexpected panic if iterator incorrectly sets a size_hint
 # that fits a TrustedLen iterator.
 performant = ["polars-core/performant"]
 
@@ -91,9 +92,9 @@ dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
 dtype-u64 = ["polars-core/dtype-u64", "polars-lazy/dtype-u64", "polars-io/dtype-u64"]
 
 [dependencies]
-polars-core = {version = "0.12.0", path = "./polars-core", features= ["docs"], default-features = false}
-polars-io = {version = "0.12.0", path = "./polars-io", default-features = false, optional=true}
-polars-lazy = {version = "0.12.0", path = "./polars-lazy", default-features = false, optional=true}
+polars-core = {version = "0.13.2", path = "./polars-core", features= ["docs"], default-features = false}
+polars-io = {version = "0.13.0", path = "./polars-io", default-features = false, optional=true}
+polars-lazy = {version = "0.13.0", path = "./polars-lazy", default-features = false, optional=true}
 
 [dev-dependencies]
 criterion = "0.3"

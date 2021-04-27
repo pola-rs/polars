@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.12.0"
+version = "0.13.2"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -11,6 +11,7 @@ repository = "https://github.com/ritchie46/polars"
 
 [features]
 simd = ["arrow/simd"]
+avx512 = ["arrow/avx512"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
@@ -72,7 +73,7 @@ ahash = "0.7"
 num_cpus = "1.13"
 lazy_static = "1.4"
 hashbrown = {version = "0.11", features = ["rayon"] }
-polars-arrow = {version = "0.12.0", path = "../polars-arrow"}
+polars-arrow = {version = "0.13.0", path = "../polars-arrow"}
 
 [package.metadata.docs.rs]
 all-features = true
