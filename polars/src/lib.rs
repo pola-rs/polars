@@ -108,7 +108,26 @@
 //! Large string data can really slow down your queries.
 //! Read more in the [performance section](crate::docs::performance)
 //!
-//! ## 6. Examples
+//! ## 6. Custom allocator
+//! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
+//! allocator. [Mimalloc](https://docs.rs/mimalloc/0.1.25/mimalloc/) for instance, shows a significant
+//! performance gain in runtime as well as memory usage.
+//!
+//! ### Usage
+//! ```ignore
+//! use mimalloc::MiMalloc;
+//!
+//! #[global_allocator]
+//! static GLOBAL: MiMalloc = MiMalloc;
+//! ```
+//!
+//! ### Cargo.toml
+//! ```ignore
+//! [dependencies]
+//! mimalloc = { version = "*", default-features = false }
+//! ```
+//!
+//! ## 7. Examples
 //! Below we show some minimal examples, most can be found in the provided `traits` and `structs`
 //! documentation.
 //!
@@ -288,6 +307,9 @@
 //!     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
 //!       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //!
+//! ## User Guide
+//!
+//! If you want to read more, [check the User Guide](https://ritchie46.github.io/polars-book/).
 pub mod docs;
 pub mod prelude;
 
