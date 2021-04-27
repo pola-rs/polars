@@ -28,25 +28,43 @@ lazy_static! {
         .expect("could not spawn threads");
 }
 
+struct SCacheInner {
+    map: AHashMap<String, u32>,
+    uuid: u128,
+}
+
+impl Default for SCacheInner {
+    fn default() -> Self {
+        Self {
+            map: Default::default(),
+            uuid: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        }
+    }
+}
+
 /// Used by categorical data that need to share global categories.
 /// In *eager* you need to specifically toggle global string cache to have a global effect.
 /// In *lazy* it is toggled on at the start of a computation run and turned of (deleted) when a
 /// result is produced.
-pub(crate) struct StringCache(pub(crate) Mutex<AHashMap<String, u32>>);
+pub(crate) struct StringCache(pub(crate) Mutex<SCacheInner>);
 
 impl StringCache {
-    pub(crate) fn lock_map(&self) -> MutexGuard<AHashMap<String, u32>> {
+    pub(crate) fn lock_map(&self) -> MutexGuard<SCacheInner> {
         self.0.lock().unwrap()
     }
 
     pub(crate) fn clear(&self) {
-        *self.lock_map() = AHashMap::new();
+        let mut lock = self.lock_map();
+        *lock = Default::default();
     }
 }
 
 impl Default for StringCache {
     fn default() -> Self {
-        StringCache(Mutex::new(AHashMap::new()))
+        StringCache(Mutex::new(Default::default()))
     }
 }
 
@@ -55,6 +73,7 @@ lazy_static! {
     static ref L_STRING_CACHE: StringCache = Default::default();
 }
 
+use std::time::{SystemTime, UNIX_EPOCH};
 pub(crate) use L_STRING_CACHE as STRING_CACHE;
 
 pub fn toggle_string_cache(toggle: bool) {

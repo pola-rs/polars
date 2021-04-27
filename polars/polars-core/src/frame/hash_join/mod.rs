@@ -21,6 +21,19 @@ use std::hash::Hash;
 use std::ops::Deref;
 use unsafe_unwrap::UnsafeUnwrap;
 
+/// If Categorical types are created without a global string cache or under
+/// a different global string cache the mapping will be incorrect.
+pub(crate) fn check_categorical_src(l: &Series, r: &Series) -> Result<()> {
+    if let (Ok(l), Ok(r)) = (l.categorical(), r.categorical()) {
+        let l = l.categorical_map.as_ref().unwrap();
+        let r = r.categorical_map.as_ref().unwrap();
+        if !l.same_src(&*r) {
+            return Err(PolarsError::ValueError("joins on categorical dtypes can only happen if they are created under the same global string cache".into()));
+        }
+    }
+    Ok(())
+}
+
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
@@ -863,6 +876,10 @@ impl DataFrame {
         let selected_right = other.select_series(right_on)?;
         assert_eq!(selected_right.len(), selected_left.len());
 
+        for (l, r) in selected_left.iter().zip(&selected_right) {
+            check_categorical_src(l, r)?
+        }
+
         if selected_left.len() == 1 {
             return match how {
                 JoinType::Inner => {
@@ -993,6 +1010,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
+        check_categorical_src(s_left, s_right)?;
         let join_tuples = s_left.hash_join_inner(s_right);
 
         let (df_left, df_right) = POOL.join(
@@ -1028,6 +1046,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
+        check_categorical_src(s_left, s_right)?;
         let opt_join_tuples = s_left.hash_join_left(s_right);
 
         let (df_left, df_right) = POOL.join(
@@ -1068,6 +1087,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
+        check_categorical_src(s_left, s_right)?;
         // Get the indexes of the joined relations
         let opt_join_tuples = s_left.hash_join_outer(s_right);
 
@@ -1323,6 +1343,19 @@ mod test {
         let ca = ham_col.utf8().unwrap();
 
         assert_eq!(Vec::from(ca), correct_ham);
+
+        // Test an error when joining on different string cache
+        let (mut df_a, mut df_b) = get_dfs();
+        df_a.may_apply("b", |s| s.cast_with_datatype(&DataType::Categorical))
+            .unwrap();
+        // create a new cache
+        toggle_string_cache(false);
+        toggle_string_cache(true);
+
+        df_b.may_apply("bar", |s| s.cast_with_datatype(&DataType::Categorical))
+            .unwrap();
+        let out = df_a.join(&df_b, "b", "bar", JoinType::Left);
+        assert!(out.is_err())
     }
 
     #[test]

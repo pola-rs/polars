@@ -9,7 +9,7 @@ use polars_arrow::builder::PrimitiveArrayBuilder;
 use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
-    Global(HashMap<u32, u32, IdBuildHasher>, LargeStringBuilder),
+    Global(HashMap<u32, u32, IdBuildHasher>, LargeStringBuilder, u128),
     Local(LargeStringBuilder),
 }
 
@@ -18,7 +18,7 @@ impl RevMappingBuilder {
         use RevMappingBuilder::*;
         match self {
             Local(builder) => builder.append_value(value).unwrap(),
-            Global(map, builder) => {
+            Global(map, builder, _) => {
                 builder.append_value(value).unwrap();
                 let new_idx = builder.len() as u32 - 1;
                 map.insert(idx, new_idx);
@@ -30,13 +30,13 @@ impl RevMappingBuilder {
         use RevMappingBuilder::*;
         match self {
             Local(mut b) => RevMapping::Local(b.finish()),
-            Global(map, mut b) => RevMapping::Global(map, b.finish()),
+            Global(map, mut b, uuid) => RevMapping::Global(map, b.finish(), uuid),
         }
     }
 }
 
 pub enum RevMapping {
-    Global(HashMap<u32, u32, IdBuildHasher>, LargeStringArray),
+    Global(HashMap<u32, u32, IdBuildHasher>, LargeStringArray, u128),
     Local(LargeStringArray),
 }
 
@@ -44,18 +44,25 @@ pub enum RevMapping {
 impl RevMapping {
     pub fn len(&self) -> usize {
         match self {
-            Self::Global(_, a) => a.len(),
+            Self::Global(_, a, _) => a.len(),
             Self::Local(a) => a.len(),
         }
     }
 
     pub fn get(&self, idx: u32) -> &str {
         match self {
-            Self::Global(map, a) => {
+            Self::Global(map, a, _) => {
                 let idx = *map.get(&idx).unwrap();
                 a.value(idx as usize)
             }
             Self::Local(a) => a.value(idx as usize),
+        }
+    }
+    /// Check if the categoricals are created under the same global string cache.
+    pub fn same_src(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
+            _ => false,
         }
     }
 }
@@ -70,7 +77,12 @@ impl CategoricalChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
         let builder = LargeStringBuilder::new(capacity / 10);
         let reverse_mapping = if use_string_cache() {
-            RevMappingBuilder::Global(HashMap::with_hasher(IdBuildHasher::default()), builder)
+            let uuid = crate::STRING_CACHE.lock_map().uuid;
+            RevMappingBuilder::Global(
+                HashMap::with_hasher(IdBuildHasher::default()),
+                builder,
+                uuid,
+            )
         } else {
             RevMappingBuilder::Local(builder)
         };
@@ -89,16 +101,16 @@ impl CategoricalChunkedBuilder {
         I: IntoIterator<Item = Option<&'a str>>,
     {
         if use_string_cache() {
-            let mut mapping = crate::STRING_CACHE.lock_map();
+            let mut cache = crate::STRING_CACHE.lock_map();
 
             for opt_s in i {
                 match opt_s {
                     Some(s) => {
-                        let idx = match mapping.get(s) {
+                        let idx = match cache.map.get(s) {
                             Some(idx) => *idx,
                             None => {
-                                let idx = mapping.len() as u32;
-                                mapping.insert(s.to_string(), idx);
+                                let idx = cache.map.len() as u32;
+                                cache.map.insert(s.to_string(), idx);
                                 idx
                             }
                         };
