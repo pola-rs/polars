@@ -1,4 +1,5 @@
 from typing import Union, TextIO, Optional, List, BinaryIO
+from io import StringIO, BytesIO
 import numpy as np
 from pathlib import Path
 from .frame import DataFrame
@@ -14,11 +15,40 @@ import io
 
 from typing import Dict
 from .datatypes import DataType
+from urllib.parse import (  # noqa
+    urlencode,
+    urljoin,
+    urlparse as parse_url,
+    uses_netloc,
+    uses_params,
+    uses_relative,
+)
+
+_VALID_URLS = set(uses_relative + uses_netloc + uses_params)
+_VALID_URLS.discard("")
 
 
 def _process_http_file(path: str) -> io.BytesIO:
     with urllib.request.urlopen(path) as f:
         return io.BytesIO(f.read())
+
+
+def _is_url(url):
+    """Check to see if a URL has a valid protocol.
+
+    Parameters
+    ----------
+    url : str or unicode
+
+    Returns
+    -------
+    isurl : bool
+        If `url` has a valid protocol return True otherwise False.
+    """
+    try:
+        return parse_url(url).scheme in _VALID_URLS
+    except Exception:
+        return False
 
 
 def _prepare_file_arg(
@@ -31,12 +61,17 @@ def _prepare_file_arg(
         - A path.Path object is converted to a string
         - a raw file on the web is downloaded into a buffer.
     """
-    if isinstance(file, Path):
-        file = str(file)
+    if _is_url(file):
+        if isinstance(file, Path):
+            file = str(file)
 
-    if isinstance(file, str) and file.startswith("http"):
-        file = _process_http_file(file)
-
+        if isinstance(file, str) and file.startswith("http"):
+            file = _process_http_file(file)
+    else:
+        if isinstance(file, StringIO):
+            return io.BytesIO(file.read().encode('utf8'))
+        elif isinstance(file, BytesIO):
+            return file
     return file
 
 
@@ -69,6 +104,9 @@ def read_csv(
     ----------
     file
         Path to a file or a file like object.
+        By file-like object, we refer to objects with a ``read()`` method,
+        such as a file handler (e.g. via builtin ``open`` function)
+        or ``StringIO`` or ``BytesIO``.
     infer_schema_length
         Maximum number of lines to read to infer schema.
     batch_size
