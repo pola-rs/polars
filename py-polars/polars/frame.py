@@ -34,7 +34,6 @@ import numpy as np
 import os
 from pathlib import Path
 
-
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -455,6 +454,8 @@ class DataFrame:
         return self._df.find_idx_by_name(name)
 
     def __getitem__(self, item):
+        if hasattr(item, "_pyexpr"):
+            return self.select(item)
         if isinstance(item, np.ndarray):
             item = Series("", item)
         # select rows and columns at once
@@ -530,8 +531,11 @@ class DataFrame:
 
         # select multiple columns
         # df["foo", "bar"]
-        if isinstance(item, Sequence) and isinstance(item[0], str):
-            return wrap_df(self._df.select(item))
+        if isinstance(item, Sequence):
+            if isinstance(item[0], str):
+                return wrap_df(self._df.select(item))
+            if hasattr(item[0], "_pyexpr"):
+                return self.select(item)
 
         # select rows by mask or index
         # df[[1, 2, 3]]
@@ -1133,7 +1137,7 @@ class DataFrame:
         """
         return wrap_s(self._df.apply(f, output_type))
 
-    def with_column(self, column: "Series") -> "DataFrame":
+    def with_column(self, column: "Union[Series, Expr]") -> "DataFrame":
         """
         Return a new DataFrame with the column added or replaced
 
@@ -1142,6 +1146,9 @@ class DataFrame:
         column
             Series, where the name of the Series refers to the column in the DataFrame.
         """
+        # is Expr
+        if hasattr(column, "_pyexpr"):
+            return self.with_columns([column])
         return wrap_df(self._df.with_column(column._s))
 
     def hstack(
@@ -1381,6 +1388,28 @@ class DataFrame:
         from polars.lazy import wrap_ldf
 
         return wrap_ldf(self._df.lazy())
+
+    def select(self, exprs: "Union[str, Expr, List[str], List[Expr]]") -> "DataFrame":
+        """
+        Select columns from this DataFrame
+
+        Parameters
+        ----------
+        exprs
+            Column or columns to select
+        """
+        return self.lazy().select(exprs).collect(no_optimization=True)
+
+    def with_columns(self, exprs: "List[Expr]") -> "DataFrame":
+        """
+        Add or overwrite multiple columns in a DataFrame
+
+        Parameters
+        ----------
+        exprs
+            List of Expressions that evaluate to columns
+        """
+        return self.lazy().with_columns(exprs).collect(no_optimization=True)
 
     def n_chunks(self) -> int:
         """
