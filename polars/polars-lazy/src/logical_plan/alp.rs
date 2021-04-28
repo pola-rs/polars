@@ -585,9 +585,6 @@ impl<'a> ALogicalPlanBuilder<'a> {
             self
         }
     }
-    pub fn into_node(self) -> Node {
-        self.root
-    }
 
     pub fn build(self) -> ALogicalPlan {
         if self.root.0 == self.lp_arena.len() {

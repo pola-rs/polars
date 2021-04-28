@@ -51,6 +51,10 @@ pub enum AExpr {
         expr: Node,
         reverse: bool,
     },
+    Take {
+        expr: Node,
+        idx: Node,
+    },
     SortBy {
         expr: Node,
         by: Node,
@@ -175,6 +179,7 @@ impl AExpr {
             IsNull(_) => Ok(Field::new("is_null", DataType::Boolean)),
             IsNotNull(_) => Ok(Field::new("is_not_null", DataType::Boolean)),
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
+            Take { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {

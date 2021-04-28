@@ -445,6 +445,11 @@ impl DefaultPlanner {
                     node_to_exp(expression, expr_arena),
                 )))
             }
+            Take { expr, idx } => {
+                let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
+                let phys_idx = self.create_physical_expr(idx, ctxt, expr_arena)?;
+                Ok(Arc::new(TakeExpr::new(phys_expr, phys_idx)))
+            }
             SortBy { expr, by, reverse } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 let phys_by = self.create_physical_expr(by, ctxt, expr_arena)?;
