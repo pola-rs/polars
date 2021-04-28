@@ -182,8 +182,8 @@ impl<T> ChunkedArray<T> {
             Some(0)
         } else {
             let mut offset = 0;
-            for (idx, (null_count, null_bit_buffer)) in self.null_bits().iter().enumerate() {
-                if *null_count == 0 {
+            for (idx, (null_count, null_bit_buffer)) in self.null_bits().enumerate() {
+                if null_count == 0 {
                     return Some(offset);
                 } else {
                     let arr = &self.chunks[idx];
@@ -206,11 +206,8 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Get the null count and the buffer of bits representing null values
-    pub fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
-        self.chunks
-            .iter()
-            .map(|arr| get_bitmap(arr.as_ref()))
-            .collect()
+    pub fn null_bits(&self) -> impl Iterator<Item = (usize, Option<Buffer>)> + '_ {
+        self.chunks.iter().map(|arr| get_bitmap(arr.as_ref()))
     }
 
     /// Unpack a Series to the same physical type.
