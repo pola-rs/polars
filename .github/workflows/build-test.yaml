@@ -35,6 +35,12 @@ jobs:
       - name: Run tests
         run: |
           cd polars && make test
+      - name: Run db-benchmark test
+        run: |
+          wget https://github.com/ritchie46/static/raw/master/polars/db-benchmark/G1_1e3_1e2_5_0.csv.tar.gz -O gb.csv.tar.gz
+          tar -xf gb.csv.tar.gz -O > gb.csv
+          CSV_SRC=$(pwd)/gb.csv cargo test --features lazy --benches groupby
+
   test-python:
     name: Build and test Python
     runs-on: ubuntu-latest
