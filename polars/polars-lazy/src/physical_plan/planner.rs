@@ -396,20 +396,17 @@ impl DefaultPlanner {
                 order_by: _,
             } => {
                 // TODO! Order by
-                let group_column = aexpr_to_root_names(partition_by, expr_arena)
-                    .pop()
-                    .expect("need a partition_by column for a window function");
-                let out_name;
+                let group_column =
+                    self.create_physical_expr(partition_by, Context::Default, expr_arena)?;
+                let mut out_name = None;
                 let apply_column = aexpr_to_root_names(function, expr_arena)
                     .pop()
                     .expect("need a root column for a window function");
 
                 if let Alias(expr, name) = expr_arena.get(function) {
                     function = *expr;
-                    out_name = name.clone();
-                } else {
-                    out_name = group_column.clone();
-                }
+                    out_name = Some(name.clone());
+                };
                 let function = node_to_exp(function, expr_arena);
 
                 Ok(Arc::new(WindowExpr {

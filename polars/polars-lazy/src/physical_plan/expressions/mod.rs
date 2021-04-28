@@ -1,6 +1,7 @@
 pub mod default;
 mod final_agg;
 pub(crate) mod take;
+pub(crate) mod window;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;

@@ -16,5 +16,5 @@ pub use crate::{
 };
 pub(crate) use crate::{
     logical_plan::{aexpr::*, alp::*, conversion::*},
-    physical_plan::expressions::take::TakeExpr,
+    physical_plan::expressions::{take::TakeExpr, window::WindowExpr},
 };
