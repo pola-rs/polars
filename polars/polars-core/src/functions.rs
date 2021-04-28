@@ -2,7 +2,6 @@ use crate::prelude::*;
 use num::{Float, NumCast};
 use std::ops::Div;
 
-// todo! make numerical stable from catastrophic cancellation
 pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
@@ -11,7 +10,9 @@ where
     if a.len() != b.len() {
         None
     } else {
-        Some((&(a - a.mean()?) * &(b - b.mean()?)).sum()? / NumCast::from(a.len() - 1).unwrap())
+        let tmp = (a - a.mean()?) * (b - b.mean()?);
+        let n = tmp.len() - tmp.null_count();
+        Some(tmp.sum()? / NumCast::from(n - 1).unwrap())
     }
 }
 pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
