@@ -316,7 +316,7 @@ class DataFrame:
 
     def to_csv(
         self,
-        file: Union[TextIO, str, Path],
+        file: Union[TextIO, str, Path]=None,
         batch_size: int = 100000,
         has_headers: bool = True,
         delimiter: str = ",",
@@ -346,6 +346,9 @@ class DataFrame:
         >>> dataframe.to_csv('new_file.csv', sep=',')
         ```
         """
+        if file is None:
+            return to_csv(self)
+
         if isinstance(file, Path):
             file = str(file)
 

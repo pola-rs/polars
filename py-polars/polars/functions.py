@@ -52,7 +52,7 @@ def _is_url(url):
 
 
 def _prepare_file_arg(
-    file: Union[str, TextIO, Path, BinaryIO]
+        file: Union[str, TextIO, Path, BinaryIO]
 ) -> Union[str, TextIO, Path, BinaryIO]:
     """
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
@@ -80,22 +80,22 @@ def get_dummies(df: DataFrame) -> DataFrame:
 
 
 def read_csv(
-    file: Union[str, TextIO, Path],
-    infer_schema_length: int = 100,
-    batch_size: int = 64,
-    has_headers: bool = True,
-    ignore_errors: bool = False,
-    stop_after_n_rows: Optional[int] = None,
-    skip_rows: int = 0,
-    projection: Optional[List[int]] = None,
-    sep: str = ",",
-    columns: Optional[List[str]] = None,
-    rechunk: bool = True,
-    encoding: str = "utf8",
-    n_threads: Optional[int] = None,
-    dtype: "Optional[Dict[str, DataType]]" = None,
-    new_columns: "Optional[List[str]]" = None,
-    use_pyarrow: bool = True,
+        file: Union[str, TextIO, Path],
+        infer_schema_length: int = 100,
+        batch_size: int = 64,
+        has_headers: bool = True,
+        ignore_errors: bool = False,
+        stop_after_n_rows: Optional[int] = None,
+        skip_rows: int = 0,
+        projection: Optional[List[int]] = None,
+        sep: str = ",",
+        columns: Optional[List[str]] = None,
+        rechunk: bool = True,
+        encoding: str = "utf8",
+        n_threads: Optional[int] = None,
+        dtype: "Optional[Dict[str, DataType]]" = None,
+        new_columns: "Optional[List[str]]" = None,
+        use_pyarrow: bool = True,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a csv file.
@@ -145,16 +145,16 @@ def read_csv(
     file = _prepare_file_arg(file)
 
     if (
-        use_pyarrow
-        and dtype is None
-        and has_headers
-        and projection is None
-        and sep == ","
-        and columns is None
-        and stop_after_n_rows is None
-        and not ignore_errors
-        and n_threads is None
-        and encoding == "utf8"
+            use_pyarrow
+            and dtype is None
+            and has_headers
+            and projection is None
+            and sep == ","
+            and columns is None
+            and stop_after_n_rows is None
+            and not ignore_errors
+            and n_threads is None
+            and encoding == "utf8"
     ):
         tbl = pa.csv.read_csv(file, pa.csv.ReadOptions(skip_rows=skip_rows))
         return from_arrow(tbl, rechunk)
@@ -181,14 +181,14 @@ def read_csv(
 
 
 def scan_csv(
-    file: Union[str, Path],
-    has_headers: bool = True,
-    ignore_errors: bool = False,
-    sep: str = ",",
-    skip_rows: int = 0,
-    stop_after_n_rows: "Optional[int]" = None,
-    cache: bool = True,
-    dtype: "Optional[Dict[str, DataType]]" = None,
+        file: Union[str, Path],
+        has_headers: bool = True,
+        ignore_errors: bool = False,
+        sep: str = ",",
+        skip_rows: int = 0,
+        stop_after_n_rows: "Optional[int]" = None,
+        cache: bool = True,
+        dtype: "Optional[Dict[str, DataType]]" = None,
 ) -> "LazyFrame":
     """
     Lazily read from a csv file.
@@ -232,9 +232,9 @@ def scan_csv(
 
 
 def scan_parquet(
-    file: Union[str, Path],
-    stop_after_n_rows: "Optional[int]" = None,
-    cache: bool = True,
+        file: Union[str, Path],
+        stop_after_n_rows: "Optional[int]" = None,
+        cache: bool = True,
 ) -> "LazyFrame":
     """
     Lazily read from a parquet file.
@@ -276,11 +276,11 @@ def read_ipc(file: Union[str, BinaryIO, Path]) -> "DataFrame":
 
 
 def read_parquet(
-    source: "Union[str, BinaryIO, Path, List[str]]",
-    stop_after_n_rows: "Optional[int]" = None,
-    memory_map=True,
-    columns: Optional[List[str]] = None,
-    **kwargs,
+        source: "Union[str, BinaryIO, Path, List[str]]",
+        stop_after_n_rows: "Optional[int]" = None,
+        memory_map=True,
+        columns: Optional[List[str]] = None,
+        **kwargs,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a parquet file.
@@ -366,7 +366,7 @@ def from_arrow(a: "Union[pa.Table, pa.Array]", rechunk: bool = True) -> "DataFra
 
 
 def from_pandas(
-    df: "pandas.DataFrame", rechunk: bool = True  # noqa: F821
+        df: "pandas.DataFrame", rechunk: bool = True  # noqa: F821
 ) -> "DataFrame":
     """
     Convert from a pandas DataFrame to a polars DataFrame
@@ -432,7 +432,7 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
 
 
 def arange(
-    lower: int, upper: int, step: Optional[int] = None, name: Optional[str] = None
+        lower: int, upper: int, step: Optional[int] = None, name: Optional[str] = None
 ) -> Series:
     """
     Create a Series that ranges from lower bound to upper bound.
@@ -453,7 +453,7 @@ def arange(
 
 
 def repeat(
-    val: "Union[int, float, str]", n: int, name: Optional[str] = None
+        val: "Union[int, float, str]", n: int, name: Optional[str] = None
 ) -> "Series":
     """
     Repeat a single value n times and collect into a Series.
