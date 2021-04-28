@@ -190,7 +190,7 @@ where
     }
 
     fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
-        ObjectChunked::null_bits(&self.0)
+        ObjectChunked::null_bits(&self.0).collect()
     }
 
     fn reverse(&self) -> Series {

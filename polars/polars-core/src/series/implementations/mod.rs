@@ -725,7 +725,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
-                self.0.null_bits()
+                self.0.null_bits().collect()
             }
 
             fn reverse(&self) -> Series {
