@@ -125,7 +125,6 @@ fn no_pushdown_preds<F>(
     if has_aexpr(node, &arena, matches) {
         // columns that are projected. We check if we can push down the predicates past this projection
         let columns = aexpr_to_root_names(node, &arena);
-        debug_assert_eq!(columns.len(), 1);
 
         let condition = |name: Arc<String>| columns.contains(&name);
         local_predicates.extend(transfer_to_local(arena, acc_predicates, condition));
@@ -270,7 +269,11 @@ impl PredicatePushDown {
                     no_pushdown_preds(
                         *node,
                         &expr_arena,
-                        |e| matches!(e, AExpr::Explode(_)) || matches!(e, AExpr::Shift { .. }),
+                        |e| {
+                            matches!(e, AExpr::Explode(_))
+                                || matches!(e, AExpr::Shift { .. })
+                                || matches!(e, AExpr::Sort { .. })
+                        },
                         &mut local_predicates,
                         &mut acc_predicates,
                     );

@@ -549,6 +549,25 @@ impl Expr {
         self.slice(-(len as i64), len)
     }
 
+    /// Get unique values of this expression.
+    pub fn unique(self) -> Self {
+        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
+            panic!("wildcard not supperted in unique expr");
+        }
+        self.map(|s: Series| s.unique(), None)
+    }
+
+    /// Get the first index of unique values of this expression.
+    pub fn arg_unique(self) -> Self {
+        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
+            panic!("wildcard not supported in unique expr");
+        }
+        self.map(
+            |s: Series| s.arg_unique().map(|ca| ca.into_series()),
+            Some(DataType::UInt32),
+        )
+    }
+
     /// Cast expression to another data type.
     pub fn cast(self, data_type: DataType) -> Self {
         Expr::Cast {
