@@ -111,6 +111,12 @@ impl PyExpr {
     pub fn n_unique(&self) -> PyExpr {
         self.clone().inner.n_unique().into()
     }
+    pub fn arg_unique(&self) -> PyExpr {
+        self.clone().inner.arg_unique().into()
+    }
+    pub fn unique(&self) -> PyExpr {
+        self.clone().inner.unique().into()
+    }
     pub fn first(&self) -> PyExpr {
         self.clone().inner.first().into()
     }
