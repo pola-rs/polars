@@ -177,6 +177,10 @@ pub enum Expr {
         expr: Box<Expr>,
         reverse: bool,
     },
+    Take {
+        expr: Box<Expr>,
+        idx: Box<Expr>,
+    },
     SortBy {
         expr: Box<Expr>,
         by: Box<Expr>,
@@ -276,6 +280,9 @@ impl fmt::Debug for Expr {
             },
             Filter { input, by } => {
                 write!(f, "FILTER {:?} BY {:?}", input, by)
+            }
+            Take { expr, idx } => {
+                write!(f, "TAKE {:?} AT {:?}", expr, idx)
             }
             Agg(agg) => {
                 use AggExpr::*;
@@ -573,6 +580,14 @@ impl Expr {
         Expr::Cast {
             expr: Box::new(self),
             data_type,
+        }
+    }
+
+    /// Take the values by idx.
+    pub fn take(self, idx: Expr) -> Self {
+        Expr::Take {
+            expr: Box::new(self),
+            idx: Box::new(idx),
         }
     }
 

@@ -873,6 +873,21 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by._pyexpr, reverse))
 
+    def take(self, index: "Expr") -> "Expr":
+        """
+        Take values by index.
+
+        Parameters
+        ----------
+        index
+            An expression that leads to a UInt32 dtyped Series.
+
+        Returns
+        -------
+        Values taken by index
+        """
+        return wrap_expr(self._pyexpr.take(index._pyexpr))
+
     def shift(self, periods: int) -> "Expr":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
