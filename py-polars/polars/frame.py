@@ -1,3 +1,5 @@
+from io import StringIO, BytesIO
+
 try:
     from .polars import (  # noqa: F401
         PyDataFrame,
@@ -39,6 +41,15 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .lazy import LazyFrame, Expr
+
+
+def to_csv(df, path_or_buf=None):
+    if path_or_buf is None:
+        buffer = BytesIO()
+        df.to_csv(buffer)
+        return str(buffer.getvalue(), encoding="utf-8")
+    else:
+        df.to_csv(path_or_buf)
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
