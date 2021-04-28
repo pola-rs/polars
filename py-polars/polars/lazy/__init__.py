@@ -312,6 +312,14 @@ class LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(self, exprs: "Union[str, Expr, List[str], List[Expr]]") -> "LazyFrame":
+        """
+        Select columns from this DataFrame
+
+        Parameters
+        ----------
+        exprs
+            Column or columns to select
+        """
         exprs = _selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 
