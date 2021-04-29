@@ -17,7 +17,7 @@ pub use crate::{
 pub(crate) use crate::{
     logical_plan::{aexpr::*, alp::*, conversion::*},
     physical_plan::expressions::{
-        column::ColumnExpr, literal::LiteralExpr, sort::SortExpr, take::TakeExpr,
-        window::WindowExpr,
+        column::ColumnExpr, literal::LiteralExpr, sort::SortExpr, sortby::SortByExpr,
+        take::TakeExpr, window::WindowExpr,
     },
 };

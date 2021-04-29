@@ -27,45 +27,6 @@ impl PhysicalAggregation for AliasExpr {
     }
 }
 
-impl PhysicalAggregation for SortByExpr {
-    // As a final aggregation a Sort returns a list array.
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupTuples,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let s = self.input.evaluate(df, state)?;
-        let s_sort_by = self.by.evaluate(df, state)?;
-
-        let s_sort_by = s_sort_by.agg_list(groups).ok_or_else(|| {
-            PolarsError::Other(format!("cannot aggregate {:?} as list array", self.expr).into())
-        })?;
-
-        let agg_s = s.agg_list(groups);
-        let out = agg_s.map(|s| {
-            s.list()
-                .unwrap()
-                .into_iter()
-                .zip(s_sort_by.list().unwrap())
-                .map(|(opt_s, opt_sort_by)| {
-                    match (opt_s, opt_sort_by) {
-                        (Some(s), Some(sort_by)) => {
-                            let sorted_idx = sort_by.argsort(self.reverse);
-                            // Safety:
-                            // sorted index are within bounds
-                            unsafe { s.take_unchecked(&sorted_idx) }.ok()
-                        }
-                        _ => None,
-                    }
-                })
-                .collect::<ListChunked>()
-                .into_series()
-        });
-        Ok(out)
-    }
-}
-
 fn rename_option_series(opt: Option<Series>, name: &str) -> Option<Series> {
     opt.map(|mut s| {
         s.rename(name);
