@@ -187,6 +187,87 @@ impl Utf8Chunked {
     }
 }
 
+impl<'a> IntoIterator for &'a ListChunked {
+    type Item = Option<Series>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(
+            self.downcast_iter()
+                .map(|arr| arr.iter())
+                .flatten()
+                .trust_my_length(self.len())
+                .map(|arr| arr.map(|arr| Series::try_from(("", arr)).unwrap())),
+        )
+    }
+}
+
+pub struct ListIterNoNull<'a> {
+    array: &'a LargeListArray,
+    current: usize,
+    current_end: usize,
+}
+
+impl<'a> ListIterNoNull<'a> {
+    /// create a new iterator
+    pub fn new(array: &'a LargeListArray) -> Self {
+        ListIterNoNull {
+            array,
+            current: 0,
+            current_end: array.len(),
+        }
+    }
+}
+
+impl<'a> Iterator for ListIterNoNull<'a> {
+    type Item = Series;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == self.current_end {
+            None
+        } else {
+            let old = self.current;
+            self.current += 1;
+            unsafe { Some(Series::try_from(("", self.array.value_unchecked(old))).unwrap()) }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.array.len() - self.current,
+            Some(self.array.len() - self.current),
+        )
+    }
+}
+
+impl<'a> DoubleEndedIterator for ListIterNoNull<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.current_end == self.current {
+            None
+        } else {
+            self.current_end -= 1;
+            unsafe {
+                Some(Series::try_from(("", self.array.value_unchecked(self.current_end))).unwrap())
+            }
+        }
+    }
+}
+
+/// all arrays have known size.
+impl<'a> ExactSizeIterator for ListIterNoNull<'a> {}
+
+impl ListChunked {
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_no_null_iter<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = Series> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
+    {
+        self.downcast_iter()
+            .map(|arr| ListIterNoNull::new(arr))
+            .flatten()
+            .trust_my_length(self.len())
+    }
+}
+
 /// Trait for ChunkedArrays that don't have null values.
 /// The result is the most efficient implementation `Iterator`, according to the number of chunks.
 pub trait IntoNoNullIterator {
@@ -1065,16 +1146,16 @@ fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
     s.unwrap()
 }
 
-impl_all_iterators!(
-    ListChunked,
-    LargeListArray,
-    ListIterSingleChunk,
-    ListIterSingleChunkNullCheck,
-    ListIterManyChunk,
-    ListIterManyChunkNullCheck,
-    Series,
-    return_from_list_iter
-);
+// impl_all_iterators!(
+//     ListChunked,
+//     LargeListArray,
+//     ListIterSingleChunk,
+//     ListIterSingleChunkNullCheck,
+//     ListIterManyChunk,
+//     ListIterManyChunkNullCheck,
+//     Series,
+//     return_from_list_iter
+// );
 
 #[cfg(test)]
 mod test {
