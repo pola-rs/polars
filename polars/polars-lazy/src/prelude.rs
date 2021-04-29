@@ -23,6 +23,7 @@ pub(crate) use crate::{
         binary_function::BinaryFunctionExpr,
         cast::CastExpr,
         column::ColumnExpr,
+        filter::FilterExpr,
         is_not_null::IsNotNullExpr,
         is_null::IsNullExpr,
         literal::LiteralExpr,
