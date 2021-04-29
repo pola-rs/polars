@@ -1,3 +1,4 @@
+pub(crate) mod alias;
 pub(crate) mod binary;
 pub(crate) mod column;
 pub mod default;
