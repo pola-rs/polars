@@ -2,6 +2,7 @@ pub(crate) mod aggregation;
 pub(crate) mod alias;
 pub(crate) mod apply;
 pub(crate) mod binary;
+pub(crate) mod binary_function;
 pub(crate) mod cast;
 pub(crate) mod column;
 pub mod default;
