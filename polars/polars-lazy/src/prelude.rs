@@ -24,6 +24,7 @@ pub(crate) use crate::{
         is_null::IsNullExpr,
         literal::LiteralExpr,
         not::NotExpr,
+        slice::SliceExpr,
         sort::SortExpr,
         sortby::SortByExpr,
         take::TakeExpr,
