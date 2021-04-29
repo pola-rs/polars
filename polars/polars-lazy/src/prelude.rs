@@ -16,5 +16,23 @@ pub use crate::{
 };
 pub(crate) use crate::{
     logical_plan::{aexpr::*, alp::*, conversion::*},
-    physical_plan::expressions::{take::TakeExpr, window::WindowExpr},
+    physical_plan::expressions::{
+        aggregation::{AggQuantileExpr, AggregationExpr},
+        alias::AliasExpr,
+        apply::ApplyExpr,
+        binary_function::BinaryFunctionExpr,
+        cast::CastExpr,
+        column::ColumnExpr,
+        filter::FilterExpr,
+        is_not_null::IsNotNullExpr,
+        is_null::IsNullExpr,
+        literal::LiteralExpr,
+        not::NotExpr,
+        slice::SliceExpr,
+        sort::SortExpr,
+        sortby::SortByExpr,
+        take::TakeExpr,
+        ternary::TernaryExpr,
+        window::WindowExpr,
+    },
 };

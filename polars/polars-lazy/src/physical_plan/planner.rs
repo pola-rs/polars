@@ -423,7 +423,7 @@ impl DefaultPlanner {
             BinaryExpr { left, op, right } => {
                 let lhs = self.create_physical_expr(left, ctxt, expr_arena)?;
                 let rhs = self.create_physical_expr(right, ctxt, expr_arena)?;
-                Ok(Arc::new(phys_expr::BinaryExpr::new(
+                Ok(Arc::new(phys_expr::binary::BinaryExpr::new(
                     lhs,
                     op,
                     rhs,

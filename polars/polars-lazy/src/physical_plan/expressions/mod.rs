@@ -1,11 +1,24 @@
-pub mod default;
-mod final_agg;
+pub(crate) mod aggregation;
+pub(crate) mod alias;
+pub(crate) mod apply;
+pub(crate) mod binary;
+pub(crate) mod binary_function;
+pub(crate) mod cast;
+pub(crate) mod column;
+pub(crate) mod filter;
+pub(crate) mod is_not_null;
+pub(crate) mod is_null;
+pub(crate) mod literal;
+pub(crate) mod not;
+pub(crate) mod slice;
+pub(crate) mod sort;
+pub(crate) mod sortby;
 pub(crate) mod take;
+pub(crate) mod ternary;
 pub(crate) mod window;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-pub use default::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use polars_io::PhysicalIoExpr;
