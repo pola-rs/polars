@@ -1,3 +1,4 @@
+pub(crate) mod binary;
 pub mod default;
 mod final_agg;
 pub(crate) mod literal;
