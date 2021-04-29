@@ -19,6 +19,7 @@ pub(crate) use crate::{
     physical_plan::expressions::{
         aggregation::{AggQuantileExpr, AggregationExpr},
         alias::AliasExpr,
+        cast::CastExpr,
         column::ColumnExpr,
         is_not_null::IsNotNullExpr,
         is_null::IsNullExpr,
