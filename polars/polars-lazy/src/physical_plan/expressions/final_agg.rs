@@ -27,28 +27,6 @@ impl PhysicalAggregation for AliasExpr {
     }
 }
 
-impl PhysicalAggregation for SortExpr {
-    // As a final aggregation a Sort returns a list array.
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupTuples,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let s = self.physical_expr.evaluate(df, state)?;
-        let agg_s = s.agg_list(groups);
-        let out = agg_s.map(|s| {
-            s.list()
-                .unwrap()
-                .into_iter()
-                .map(|opt_s| opt_s.map(|s| s.sort(self.reverse)))
-                .collect::<ListChunked>()
-                .into_series()
-        });
-        Ok(out)
-    }
-}
-
 impl PhysicalAggregation for SortByExpr {
     // As a final aggregation a Sort returns a list array.
     fn aggregate(
