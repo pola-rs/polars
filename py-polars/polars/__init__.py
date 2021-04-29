@@ -4,7 +4,7 @@
 """
 
 from .series import Series, wrap_s
-from .frame import DataFrame, wrap_df, to_csv, StringCache
+from .frame import DataFrame, wrap_df, StringCache
 from .functions import *
 from .lazy import *
 from .datatypes import *

@@ -1,4 +1,4 @@
-from io import StringIO, BytesIO
+from io import BytesIO
 
 try:
     from .polars import (  # noqa: F401
@@ -41,15 +41,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .lazy import LazyFrame, Expr
-
-
-def to_csv(df, path_or_buf=None):
-    if path_or_buf is None:
-        buffer = BytesIO()
-        df.to_csv(buffer)
-        return str(buffer.getvalue(), encoding="utf-8")
-    else:
-        df.to_csv(path_or_buf)
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
@@ -316,7 +307,7 @@ class DataFrame:
 
     def to_csv(
         self,
-        file: Union[TextIO, str, Path]=None,
+        file: Union[TextIO, str, Path] = None,
         batch_size: int = 100000,
         has_headers: bool = True,
         delimiter: str = ",",
@@ -347,7 +338,9 @@ class DataFrame:
         ```
         """
         if file is None:
-            return to_csv(self)
+            buffer = BytesIO()
+            self._df.to_csv(buffer, batch_size, has_headers, ord(delimiter))
+            return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, Path):
             file = str(file)
