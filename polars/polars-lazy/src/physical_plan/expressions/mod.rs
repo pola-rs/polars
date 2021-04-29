@@ -3,6 +3,7 @@ pub(crate) mod column;
 pub mod default;
 mod final_agg;
 pub(crate) mod literal;
+pub(crate) mod not;
 pub(crate) mod sort;
 pub(crate) mod sortby;
 pub(crate) mod take;
