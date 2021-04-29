@@ -30,5 +30,6 @@ pub(crate) use crate::{
         sortby::SortByExpr,
         take::TakeExpr,
         window::WindowExpr,
+        ternary::TernaryExpr
     },
 };
