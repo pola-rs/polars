@@ -34,6 +34,7 @@ from .datatypes import (
     Int16,
     Int8,
     UInt16,
+    Categorical,
 )
 from . import datatypes
 from numbers import Number
@@ -512,17 +513,27 @@ class Series:
 
     def describe(self):
         """
-        Quick summary statistics of a series. Does not support String types.
+        Quick summary statistics of a series. Series with mixed datatypes will return summary statistics for the datatype of the first value.
 
         Returns
         ---
         Dictionary with summary statistics of a series.
+
+        Example
+        ---
+        ```python
+        >>> series_num = pl.Series([1, 2, 3, 4, 5])
+        >>> series_num.describe()
+        {'min': 1, 'max': 5, 'sum': 15, 'mean': 3.0, 'std': 1.4142135623730951, 'count': 5}
+
+        >>> series_str = pl.Series(["a", "a", "b", "c"]
+        >>> series_str.describe()
+        {'unique': 3, 'count': 4}
+        ```
         """
         if len(self) == 0:
             raise ValueError("Series must contain at least one value")
-        elif not self.is_numeric():
-            raise TypeError("This type is not supported")
-        else:
+        elif self.is_numeric():
             return {
                 "min": self.min(),
                 "max": self.max(),
@@ -531,6 +542,12 @@ class Series:
                 "std": self.std(),
                 "count": len(self),
             }
+        elif self.is_boolean():
+            return {"sum": self.sum(), "count": len(self)}
+        elif self.is_utf8():
+            return {"unique": len(self.unique()), "count": len(self)}
+        else:
+            raise TypeError("This type is not supported")
 
     def sum(self):
         """
@@ -1004,13 +1021,36 @@ class Series:
         """
         Check if this Series datatype is numeric.
         """
-        return self.dtype not in (Utf8, Boolean, List)
+        return self.dtype in (
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            Float32,
+            Float64,
+        )
 
     def is_float(self) -> bool:
         """
         Check if this Series has floating point numbers
         """
         return self.dtype in (Float32, Float64)
+
+    def is_boolean(self) -> bool:
+        """
+        Check if this Series is a Boolean.
+        """
+        return self.dtype is Boolean
+
+    def is_utf8(self) -> bool:
+        """
+        Checks if this Series datatype is a Utf8.
+        """
+        return self.dtype is Utf8
 
     def view(self, ignore_nulls: bool = False) -> np.ndarray:
         """

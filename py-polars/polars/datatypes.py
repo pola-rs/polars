@@ -235,9 +235,3 @@ def pytype_to_polars_type(data_type):
     else:
         pass
     return data_type
-
-
-def is_numeric(dtype: "DataType") -> bool:
-    if isinstance(dtype, (Boolean, Utf8, Object, List, Categorical, Date32, Date64)):
-        return False
-    return True

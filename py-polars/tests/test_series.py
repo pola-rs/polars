@@ -289,6 +289,8 @@ def test_describe():
     num_s = pl.Series([1, 2, 3])
     float_s = pl.Series([1.3, 4.6, 8.9])
     str_s = pl.Series(["abc", "pqr", "xyz"])
+    bool_s = pl.Series([True, False, True, True])
+    list_s = pl.Series([[5.0, 6.0], [1.0, 2.0]])
     empty_s = pl.Series(np.empty(0))
 
     assert num_s.describe() == {
@@ -307,9 +309,11 @@ def test_describe():
         "std": 3.1116269413639905,
         "count": 3,
     }
+    assert str_s.describe() == {"unique": 3, "count": 3}
+    assert bool_s.describe() == {"sum": 3, "count": 4}
 
     with pytest.raises(ValueError):
         assert empty_s.describe()
 
     with pytest.raises(TypeError):
-        assert str_s.describe()
+        assert list_s.describe()
