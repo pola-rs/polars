@@ -19,6 +19,7 @@ pub(crate) use crate::{
     physical_plan::expressions::{
         aggregation::{AggQuantileExpr, AggregationExpr},
         alias::AliasExpr,
+        apply::ApplyExpr,
         cast::CastExpr,
         column::ColumnExpr,
         is_not_null::IsNotNullExpr,
@@ -29,7 +30,7 @@ pub(crate) use crate::{
         sort::SortExpr,
         sortby::SortByExpr,
         take::TakeExpr,
+        ternary::TernaryExpr,
         window::WindowExpr,
-        ternary::TernaryExpr
     },
 };

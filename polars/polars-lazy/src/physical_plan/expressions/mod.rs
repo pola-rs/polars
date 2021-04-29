@@ -1,5 +1,6 @@
 pub(crate) mod aggregation;
 pub(crate) mod alias;
+pub(crate) mod apply;
 pub(crate) mod binary;
 pub(crate) mod cast;
 pub(crate) mod column;
@@ -12,8 +13,8 @@ pub(crate) mod slice;
 pub(crate) mod sort;
 pub(crate) mod sortby;
 pub(crate) mod take;
-pub(crate) mod window;
 pub(crate) mod ternary;
+pub(crate) mod window;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
