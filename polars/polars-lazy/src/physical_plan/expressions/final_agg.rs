@@ -427,14 +427,3 @@ impl PhysicalAggregation for BinaryExpr {
         }
     }
 }
-
-impl PhysicalAggregation for LiteralExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        _groups: &GroupTuples,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        PhysicalExpr::evaluate(self, df, state).map(Some)
-    }
-}

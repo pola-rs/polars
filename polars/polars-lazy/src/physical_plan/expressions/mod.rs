@@ -1,5 +1,6 @@
 pub mod default;
 mod final_agg;
+pub(crate) mod literal;
 pub(crate) mod take;
 pub(crate) mod window;
 
