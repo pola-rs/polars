@@ -47,7 +47,6 @@
 //! let df = CsvReader::new(file)
 //! .infer_schema(Some(100))
 //! .has_header(true)
-//! .with_batch_size(100)
 //! .finish()
 //! .unwrap();
 //!
@@ -178,7 +177,6 @@ where
     projection: Option<Vec<usize>>,
     /// Optional column names to project/ select.
     columns: Option<Vec<String>>,
-    batch_size: usize,
     delimiter: Option<u8>,
     has_header: bool,
     ignore_parser_errors: bool,
@@ -267,12 +265,6 @@ where
         self
     }
 
-    /// Set the batch size (number of records to load at one time)
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
-        self.batch_size = batch_size;
-        self
-    }
-
     /// Set the reader's column projection
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
         self.projection = projection;
@@ -316,7 +308,6 @@ where
             self.stop_after_n_rows,
             self.skip_rows,
             self.projection,
-            self.batch_size,
             self.max_records,
             self.delimiter,
             self.has_header,
@@ -355,7 +346,6 @@ where
             max_records: Some(128),
             skip_rows: 0,
             projection: None,
-            batch_size: 32,
             delimiter: None,
             has_header: true,
             ignore_parser_errors: false,
@@ -366,7 +356,7 @@ where
             path: None,
             schema_overwrite: None,
             sample_size: 1024,
-            chunk_size: 2048,
+            chunk_size: 8192,
         }
     }
 
@@ -408,7 +398,6 @@ where
                 self.stop_after_n_rows,
                 self.skip_rows,
                 self.projection,
-                self.batch_size,
                 self.max_records,
                 self.delimiter,
                 self.has_header,
@@ -495,7 +484,6 @@ mod test {
             .infer_schema(Some(100))
             .has_header(true)
             .with_ignore_parser_errors(true)
-            .with_batch_size(100)
             .finish()
             .unwrap();
         dbg!(df.select_at_idx(0).unwrap().n_chunks());
@@ -512,7 +500,6 @@ mod test {
             // we also check if infer schema ignores errors
             .infer_schema(Some(10))
             .has_header(true)
-            .with_batch_size(2)
             .with_ignore_parser_errors(true)
             .finish()
             .unwrap();
@@ -530,7 +517,6 @@ mod test {
         let df = CsvReader::new(file)
             .infer_schema(Some(100))
             .has_header(true)
-            .with_batch_size(100)
             .finish()
             .unwrap();
 
@@ -550,7 +536,6 @@ mod test {
         let df = CsvReader::new(file)
             .infer_schema(Some(100))
             .has_header(true)
-            .with_batch_size(100)
             .finish()
             .unwrap();
 
@@ -575,7 +560,6 @@ mod test {
             .with_delimiter(b'\t')
             .has_header(false)
             .with_ignore_parser_errors(true)
-            .with_batch_size(100)
             .finish()
             .unwrap();
 

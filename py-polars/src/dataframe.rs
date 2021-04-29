@@ -61,7 +61,7 @@ impl PyDataFrame {
     pub fn read_csv(
         py_f: PyObject,
         infer_schema_length: usize,
-        batch_size: usize,
+        chunk_size: usize,
         has_header: bool,
         ignore_errors: bool,
         stop_after_n_rows: Option<usize>,
@@ -116,7 +116,7 @@ impl PyDataFrame {
             .with_ignore_parser_errors(ignore_errors)
             .with_projection(projection)
             .with_rechunk(rechunk)
-            .with_batch_size(batch_size)
+            .with_chunk_size(chunk_size)
             .with_encoding(encoding)
             .with_columns(columns)
             .with_n_threads(n_threads)

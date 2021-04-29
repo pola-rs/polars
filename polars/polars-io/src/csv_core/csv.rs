@@ -23,8 +23,6 @@ pub struct SequentialReader<R: Read> {
     projection: Option<Vec<usize>>,
     /// File reader
     record_iter: Option<ByteRecordsIntoIter<R>>,
-    /// Batch size (number of records to load each time)
-    batch_size: usize,
     /// Current line number, used in error reporting
     line_number: usize,
     ignore_parser_errors: bool,
@@ -47,7 +45,6 @@ where
         f.debug_struct("Reader")
             .field("schema", &self.schema)
             .field("projection", &self.projection)
-            .field("batch_size", &self.batch_size)
             .field("line_number", &self.line_number)
             .finish()
     }
@@ -79,7 +76,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         schema: SchemaRef,
         has_header: bool,
         delimiter: u8,
-        batch_size: usize,
         projection: Option<Vec<usize>>,
         ignore_parser_errors: bool,
         n_rows: Option<usize>,
@@ -97,7 +93,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             schema,
             projection,
             record_iter,
-            batch_size,
             line_number: if has_header { 1 } else { 0 },
             ignore_parser_errors,
             skip_rows,
@@ -276,7 +271,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                     let projection = &projection;
 
                     let mut read = bytes_offset_thread;
-                    let mut dfs = Vec::with_capacity(2048);
+                    let mut df: Option<DataFrame> = None;
 
                     loop {
                         if read >= stop_at_nbytes {
@@ -304,18 +299,18 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             chunk_size,
                         )?;
 
-                        let mut df = DataFrame::new_no_checks(
+                        let mut local_df = DataFrame::new_no_checks(
                             buffers.into_iter().map(|buf| buf.into_series()).collect(),
                         );
                         if let Some(predicate) = predicate {
-                            let s = predicate.evaluate(&df)?;
+                            let s = predicate.evaluate(&local_df)?;
                             let mask = s.bool().expect("filter predicates was not of type boolean");
-                            df = df.filter(mask)?;
+                            local_df = local_df.filter(mask)?;
                         }
 
                         // update the running str bytes statistics
                         for (str_index, name) in str_columns.iter().enumerate() {
-                            let ca = df.column(name)?.utf8()?;
+                            let ca = local_df.column(name)?.utf8()?;
                             let str_bytes_len = ca.get_values_size();
 
                             let prev_value = str_capacities[str_index]
@@ -330,10 +325,15 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                 );
                             }
                         }
-                        dfs.push(df);
+                        match &mut df {
+                            None => df = Some(local_df),
+                            Some(df) => {
+                                df.vstack_mut(&local_df).unwrap();
+                            }
+                        }
                     }
 
-                    Ok(dfs)
+                    Ok(df)
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
@@ -395,7 +395,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     n_rows: Option<usize>,
     skip_rows: usize,
     mut projection: Option<Vec<usize>>,
-    batch_size: usize,
     max_records: Option<usize>,
     delimiter: Option<u8>,
     has_header: bool,
@@ -439,7 +438,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         schema,
         has_header,
         delimiter,
-        batch_size,
         projection,
         ignore_parser_errors,
         n_rows,
