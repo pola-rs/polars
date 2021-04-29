@@ -114,6 +114,79 @@ impl BooleanChunked {
     }
 }
 
+impl<'a> IntoIterator for &'a Utf8Chunked {
+    type Item = Option<&'a str>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+    }
+}
+
+pub struct Utf8IterNoNull<'a> {
+    array: &'a LargeStringArray,
+    current: usize,
+    current_end: usize,
+}
+
+impl<'a> Utf8IterNoNull<'a> {
+    /// create a new iterator
+    pub fn new(array: &'a LargeStringArray) -> Self {
+        Utf8IterNoNull {
+            array,
+            current: 0,
+            current_end: array.len(),
+        }
+    }
+}
+
+impl<'a> Iterator for Utf8IterNoNull<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == self.current_end {
+            None
+        } else {
+            let old = self.current;
+            self.current += 1;
+            unsafe { Some(self.array.value_unchecked(old)) }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.array.len() - self.current,
+            Some(self.array.len() - self.current),
+        )
+    }
+}
+
+impl<'a> DoubleEndedIterator for Utf8IterNoNull<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.current_end == self.current {
+            None
+        } else {
+            self.current_end -= 1;
+            unsafe { Some(self.array.value_unchecked(self.current_end)) }
+        }
+    }
+}
+
+/// all arrays have known size.
+impl<'a> ExactSizeIterator for Utf8IterNoNull<'a> {}
+
+impl Utf8Chunked {
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_no_null_iter<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = &'a str> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
+    {
+        self.downcast_iter()
+            .map(|arr| Utf8IterNoNull::new(arr))
+            .flatten()
+            .trust_my_length(self.len())
+    }
+}
+
 /// Trait for ChunkedArrays that don't have null values.
 /// The result is the most efficient implementation `Iterator`, according to the number of chunks.
 pub trait IntoNoNullIterator {
@@ -985,16 +1058,6 @@ macro_rules! impl_all_iterators {
         );
     }
 }
-
-impl_all_iterators!(
-    Utf8Chunked,
-    LargeStringArray,
-    Utf8IterSingleChunk,
-    Utf8IterSingleChunkNullCheck,
-    Utf8IterManyChunk,
-    Utf8IterManyChunkNullCheck,
-    &'a str
-);
 
 // used for macro
 fn return_from_list_iter(method_name: &str, v: ArrayRef) -> Series {
