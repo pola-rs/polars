@@ -307,7 +307,7 @@ class DataFrame:
 
     def to_csv(
         self,
-        file: Union[TextIO, str, Path] = None,
+        file: "Optional[Union[TextIO, str, Path]]" = None,
         batch_size: int = 100000,
         has_headers: bool = True,
         delimiter: str = ",",
