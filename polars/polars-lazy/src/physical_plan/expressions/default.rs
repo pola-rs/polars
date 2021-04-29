@@ -2,66 +2,12 @@ use crate::logical_plan::Context;
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
+use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use polars_core::utils::slice_offsets;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
-
-pub(crate) struct AggregationExpr {
-    pub(crate) expr: Arc<dyn PhysicalExpr>,
-    pub(crate) agg_type: GroupByMethod,
-}
-
-impl AggregationExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod) -> Self {
-        Self { expr, agg_type }
-    }
-}
-
-impl PhysicalExpr for AggregationExpr {
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), self.agg_type);
-        Ok(Field::new(&new_name, field.data_type().clone()))
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-
-pub struct AggQuantileExpr {
-    pub(crate) expr: Arc<dyn PhysicalExpr>,
-    pub(crate) quantile: f64,
-}
-
-impl AggQuantileExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, quantile: f64) -> Self {
-        Self { expr, quantile }
-    }
-}
-
-impl PhysicalExpr for AggQuantileExpr {
-    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Quantile(self.quantile));
-        Ok(Field::new(&new_name, field.data_type().clone()))
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
 
 pub struct CastExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
