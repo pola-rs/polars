@@ -34,7 +34,6 @@ from .datatypes import (
     Int16,
     Int8,
     UInt16,
-    Categorical,
 )
 from . import datatypes
 from numbers import Number
