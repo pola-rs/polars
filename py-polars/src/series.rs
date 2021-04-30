@@ -288,7 +288,7 @@ impl PySeries {
     }
 
     pub fn chunk_lengths(&self) -> Vec<usize> {
-        self.series.chunk_lengths().clone()
+        self.series.chunk_lengths().collect()
     }
 
     pub fn name(&self) -> &str {

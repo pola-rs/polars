@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ahash::RandomState;
-use itertools::Itertools;
 
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
@@ -497,14 +496,18 @@ impl LazyFrame {
         {
             // only check by names because we may supercast types.
             assert_eq!(
-                prev_schema.fields().iter().map(|f| f.name()).collect_vec(),
+                prev_schema
+                    .fields()
+                    .iter()
+                    .map(|f| f.name())
+                    .collect::<Vec<_>>(),
                 lp_arena
                     .get(lp_top)
                     .schema(lp_arena)
                     .fields()
                     .iter()
                     .map(|f| f.name())
-                    .collect_vec()
+                    .collect::<Vec<_>>()
             );
         };
 
