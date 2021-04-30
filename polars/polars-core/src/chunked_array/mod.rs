@@ -55,14 +55,7 @@ use polars_arrow::array::ValueSize;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
-/// Get a 'hash' of the chunks in order to compare chunk sizes quickly.
-fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
-    let mut chunk_id = Vec::with_capacity(chunks.len());
-    for a in chunks {
-        chunk_id.push(a.len())
-    }
-    chunk_id
-}
+pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
 
 /// # ChunkedArray
 ///
@@ -156,8 +149,6 @@ fn create_chunk_id(chunks: &[ArrayRef]) -> Vec<usize> {
 pub struct ChunkedArray<T> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
-    // chunk lengths
-    chunk_id: Vec<usize>,
     phantom: PhantomData<T>,
     /// maps categorical u32 indexes to String values
     pub(crate) categorical_map: Option<Arc<RevMapping>>,
@@ -272,8 +263,8 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Unique id representing the number of chunks
-    pub fn chunk_id(&self) -> &Vec<usize> {
-        &self.chunk_id
+    pub fn chunk_id(&self) -> ChunkIdIter {
+        self.chunks.iter().map(|chunk| chunk.len())
     }
 
     /// A reference to the chunks
@@ -313,7 +304,6 @@ impl<T> ChunkedArray<T> {
             ));
         }
         if self.field.data_type() == other.data_type() {
-            self.chunk_id.push(other.len());
             self.chunks.push(other);
             Ok(())
         } else {
@@ -330,11 +320,9 @@ impl<T> ChunkedArray<T> {
 
     /// Create a new ChunkedArray from self, where the chunks are replaced.
     fn copy_with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
-        let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
             field: self.field.clone(),
             chunks,
-            chunk_id,
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
         }
@@ -459,10 +447,8 @@ impl<T> ChunkedArray<T> {
         // replace an empty array
         if self.chunks.len() == 1 && self.is_empty() {
             self.chunks = other.chunks.clone();
-            self.chunk_id = create_chunk_id(&self.chunks);
         } else {
             self.chunks.extend_from_slice(&other.chunks);
-            self.chunk_id.extend_from_slice(&other.chunk_id);
         }
     }
 
@@ -490,18 +476,23 @@ where
     /// Should be used to match the chunk_id of another ChunkedArray.
     /// # Panics
     /// It is the callers responsibility to ensure that this ChunkedArray has a single chunk.
-    pub(crate) fn match_chunks(&self, chunk_id: &[usize]) -> Self {
+    pub(crate) fn match_chunks<I>(&self, chunk_id: I) -> Self
+    where
+        I: Iterator<Item = usize>,
+    {
         debug_assert!(self.chunks.len() == 1);
         // Takes a ChunkedArray containing a single chunk
         let slice = |ca: &Self| {
             let array = &ca.chunks[0];
 
-            let mut chunks = Vec::with_capacity(chunk_id.len());
             let mut offset = 0;
-            for len in chunk_id {
-                chunks.push(array.slice(offset, *len));
-                offset += *len;
-            }
+            let chunks = chunk_id
+                .map(|len| {
+                    offset += len;
+                    array.slice(offset, len)
+                })
+                .collect();
+
             Self::new_from_chunks(self.name(), chunks)
         };
 
@@ -531,11 +522,9 @@ where
             T::get_dtype()
         };
         let field = Arc::new(Field::new(name, datatype));
-        let chunk_id = create_chunk_id(&chunks);
         ChunkedArray {
             field,
             chunks,
-            chunk_id,
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -642,12 +631,10 @@ where
         values: AlignedVec<T::Native>,
         buffer: Option<Buffer>,
     ) -> Self {
-        let len = values.len();
         let arr = Arc::new(values.into_primitive_array::<T>(buffer));
         ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
-            chunk_id: vec![len],
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -816,7 +803,6 @@ impl<T> Clone for ChunkedArray<T> {
         ChunkedArray {
             field: self.field.clone(),
             chunks: self.chunks.clone(),
-            chunk_id: self.chunk_id.clone(),
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
         }

@@ -152,11 +152,9 @@ impl CategoricalChunkedBuilder {
 
     pub fn finish(mut self) -> ChunkedArray<CategoricalType> {
         let arr = Arc::new(self.array_builder.finish());
-        let len = arr.len();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
-            chunk_id: vec![len],
             phantom: PhantomData,
             categorical_map: Some(Arc::new(self.reverse_mapping.finish())),
         }

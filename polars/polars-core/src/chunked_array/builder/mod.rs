@@ -47,11 +47,9 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
     fn finish(mut self) -> BooleanChunked {
         let arr = Arc::new(self.array_builder.finish());
 
-        let len = arr.len();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
-            chunk_id: vec![len],
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -96,11 +94,9 @@ where
     fn finish(mut self) -> ChunkedArray<T> {
         let arr = Arc::new(self.array_builder.finish());
 
-        let len = arr.len();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
-            chunk_id: vec![len],
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -162,11 +158,9 @@ impl Utf8ChunkedBuilder {
 
     pub fn finish(mut self) -> Utf8Chunked {
         let arr = Arc::new(self.builder.finish());
-        let len = arr.len();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
-            chunk_id: vec![len],
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -313,7 +307,6 @@ where
         ChunkedArray {
             field,
             chunks: vec![Arc::new(builder.finish())],
-            chunk_id: vec![v.len()],
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -367,11 +360,9 @@ where
 macro_rules! finish_list_builder {
     ($self:ident) => {{
         let arr = Arc::new($self.builder.finish());
-        let len = arr.len();
         ListChunked {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
-            chunk_id: vec![len],
             phantom: PhantomData,
             categorical_map: None,
         }

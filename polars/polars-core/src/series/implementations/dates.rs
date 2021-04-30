@@ -10,8 +10,7 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
-use crate::chunked_array::comparison::*;
-use crate::chunked_array::AsSinglePtr;
+use crate::chunked_array::{comparison::*, AsSinglePtr, ChunkIdIter};
 use crate::fmt::FmtList;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
@@ -256,7 +255,7 @@ macro_rules! impl_dyn_series {
                 self.0.array_data()
             }
 
-            fn chunk_lengths(&self) -> &Vec<usize> {
+            fn chunk_lengths(&self) -> ChunkIdIter {
                 self.0.chunk_id()
             }
             fn name(&self) -> &str {

@@ -76,7 +76,6 @@ where
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
-            chunk_id: vec![len],
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -142,7 +141,6 @@ where
         ObjectChunked {
             field,
             chunks: vec![arr],
-            chunk_id: vec![len],
             phantom: PhantomData,
             categorical_map: None,
         }

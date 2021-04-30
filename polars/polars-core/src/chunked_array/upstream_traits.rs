@@ -18,7 +18,6 @@ impl<T> Default for ChunkedArray<T> {
         ChunkedArray {
             field: Arc::new(Field::new("default", DataType::Null)),
             chunks: Default::default(),
-            chunk_id: Default::default(),
             phantom: PhantomData,
             categorical_map: None,
         }
