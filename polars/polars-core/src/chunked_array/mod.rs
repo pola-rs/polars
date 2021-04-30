@@ -488,8 +488,9 @@ where
             let mut offset = 0;
             let chunks = chunk_id
                 .map(|len| {
+                    let out = array.slice(offset, len);
                     offset += len;
-                    array.slice(offset, len)
+                    out
                 })
                 .collect();
 
