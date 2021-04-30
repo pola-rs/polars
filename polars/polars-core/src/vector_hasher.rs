@@ -385,14 +385,7 @@ pub(crate) fn df_rows_to_hashes(
         .columns
         .iter()
         .map(|s| {
-            let h = match s.dtype() {
-                DataType::UInt64 => s.vec_hash_id(),
-                DataType::UInt32 => s.vec_hash_id(),
-                DataType::Int64 => s.vec_hash_id(),
-                DataType::Int32 => s.vec_hash_id(),
-                _ => s.vec_hash(build_hasher.clone()),
-            };
-
+            let h = s.vec_hash(build_hasher.clone());
             // if this fails we have unexpected groupby results.
             debug_assert_eq!(h.null_count(), 0);
             h
