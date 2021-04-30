@@ -1,3 +1,5 @@
+from io import BytesIO
+
 try:
     from .polars import (  # noqa: F401
         PyDataFrame,
@@ -304,7 +306,7 @@ class DataFrame:
 
     def to_csv(
         self,
-        file: Union[TextIO, str, Path],
+        file: "Optional[Union[TextIO, str, Path]]" = None,
         batch_size: int = 100000,
         has_headers: bool = True,
         delimiter: str = ",",
@@ -334,6 +336,11 @@ class DataFrame:
         >>> dataframe.to_csv('new_file.csv', sep=',')
         ```
         """
+        if file is None:
+            buffer = BytesIO()
+            self._df.to_csv(buffer, batch_size, has_headers, ord(delimiter))
+            return str(buffer.getvalue(), encoding="utf-8")
+
         if isinstance(file, Path):
             file = str(file)
 
