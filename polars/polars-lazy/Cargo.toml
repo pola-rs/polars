@@ -32,7 +32,7 @@ itertools = "0.10"
 polars-io = {version = "0.13.0", path = "../polars-io", features = ["lazy", "csv-file"], default-features=false}
 polars-core = {version = "0.13.0", path = "../polars-core", features = ["lazy"], default-features=false}
 polars-arrow = {version = "0.13.0", path = "../polars-arrow"}
-datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-datafusion", rev = "245f0b8", default-features=false, optional=true}
+datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-datafusion", rev = "88222b7", default-features=false, optional=true}
 tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "sync"] , optional=true}
 
 [package.metadata.docs.rs]
