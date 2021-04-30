@@ -1,3 +1,4 @@
+use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -37,7 +38,7 @@ where
         ObjectChunked::array_data(&self.0)
     }
 
-    fn chunk_lengths(&self) -> &Vec<usize> {
+    fn chunk_lengths(&self) -> ChunkIdIter {
         ObjectChunked::chunk_id(&self.0)
     }
 

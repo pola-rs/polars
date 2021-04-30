@@ -7,8 +7,7 @@ mod comparison;
 pub mod implementations;
 pub(crate) mod iterator;
 
-use crate::chunked_array::builder::get_list_builder;
-use crate::chunked_array::float::IsNan;
+use crate::chunked_array::{builder::get_list_builder, float::IsNan, ChunkIdIter};
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::get_supertype;
 use arrow::array::ArrayData;
@@ -173,7 +172,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     }
 
     /// Get the lengths of the underlying chunks
-    fn chunk_lengths(&self) -> &Vec<usize> {
+    fn chunk_lengths(&self) -> ChunkIdIter {
         unimplemented!()
     }
     /// Name of series.

@@ -73,7 +73,7 @@ where
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             // should not fail if arrays are equal
             self.comparison(rhs, comparison::eq)
                 .expect("should not fail.")
@@ -92,7 +92,7 @@ where
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, comparison::neq)
                 .expect("should not fail.")
         } else {
@@ -110,7 +110,7 @@ where
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, comparison::gt)
                 .expect("should not fail.")
         } else {
@@ -128,7 +128,7 @@ where
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, comparison::gt_eq)
                 .expect("should not fail.")
         } else {
@@ -146,7 +146,7 @@ where
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, comparison::lt)
                 .expect("should not fail.")
         } else {
@@ -164,7 +164,7 @@ where
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, comparison::lt_eq)
                 .expect("should not fail.")
         } else {
@@ -322,7 +322,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, eq_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
@@ -339,7 +339,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, neq_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
@@ -356,7 +356,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, gt_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
@@ -373,7 +373,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, gt_eq_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
@@ -390,7 +390,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, lt_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
@@ -407,7 +407,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             }
         }
         // same length
-        else if self.chunk_id == rhs.chunk_id {
+        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, lt_eq_utf8).expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
@@ -588,7 +588,7 @@ impl BooleanChunked {
 
 macro_rules! impl_bitwise_op  {
     ($self:ident, $rhs:ident, $arrow_method:ident, $op:tt) => {{
-        if $self.chunk_id == $rhs.chunk_id {
+        if $self.chunk_id().zip($rhs.chunk_id()).all(|(l, r)| l == r) {
             let result = $self.bit_operation($rhs, compute::$arrow_method);
             result.unwrap()
         } else {

@@ -128,7 +128,13 @@ impl DataFrame {
 
     /// Ensure all the chunks in the DataFrame are aligned.
     pub fn rechunk(&mut self) -> &mut Self {
-        if self.columns.iter().map(|s| s.chunk_lengths()).all_equal() {
+        // TODO: remove vec allocation
+        if self
+            .columns
+            .iter()
+            .map(|s| s.chunk_lengths().collect_vec())
+            .all_equal()
+        {
             self
         } else {
             self.as_single_chunk()
