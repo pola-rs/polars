@@ -321,22 +321,23 @@ impl DataFrame {
             ));
         }
 
-        if self.dtypes() != df.dtypes() {
-            return Err(PolarsError::DataTypeMisMatch(
-                format!(
-                    "cannot vstack: data types don't match of {:?} {:?}",
-                    self.head(Some(2)),
-                    df.head(Some(2))
-                )
-                .into(),
-            ));
-        }
         self.columns
             .iter_mut()
             .zip(df.columns.iter())
-            .for_each(|(left, right)| {
+            .try_for_each(|(left, right)| {
+                if left.dtype() != right.dtype() {
+                    return Err(PolarsError::DataTypeMisMatch(
+                        format!(
+                            "cannot vstack: data types don't match of {:?} {:?}",
+                            left, right
+                        )
+                        .into(),
+                    ));
+                }
+
                 left.append(right).expect("should not fail");
-            });
+                Ok(())
+            })?;
         // don't rechunk here. Chunks in columns always match.
         Ok(self)
     }

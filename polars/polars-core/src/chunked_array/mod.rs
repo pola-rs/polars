@@ -313,8 +313,8 @@ impl<T> ChunkedArray<T> {
             ));
         }
         if self.field.data_type() == other.data_type() {
+            self.chunk_id.push(other.len());
             self.chunks.push(other);
-            self.chunk_id = create_chunk_id(&self.chunks);
             Ok(())
         } else {
             Err(PolarsError::DataTypeMisMatch(
@@ -459,10 +459,11 @@ impl<T> ChunkedArray<T> {
         // replace an empty array
         if self.chunks.len() == 1 && self.is_empty() {
             self.chunks = other.chunks.clone();
+            self.chunk_id = create_chunk_id(&self.chunks);
         } else {
-            self.chunks.extend_from_slice(&other.chunks)
+            self.chunks.extend_from_slice(&other.chunks);
+            self.chunk_id.extend_from_slice(&other.chunk_id);
         }
-        self.chunk_id = create_chunk_id(&self.chunks);
     }
 
     /// Name of the ChunkedArray.
