@@ -115,14 +115,18 @@ impl DataFrame {
 
     /// Aggregate all chunks to contiguous memory.
     pub fn agg_chunks(&self) -> Self {
+        // Don't parallelize this. Memory overhead
         let f = |s: &Series| s.rechunk();
-        let cols = self.columns.par_iter().map(f).collect();
+        let cols = self.columns.iter().map(f).collect();
         DataFrame::new_no_checks(cols)
     }
 
     /// Aggregate all the chunks in the DataFrame to a single chunk.
     pub fn as_single_chunk(&mut self) -> &mut Self {
-        self.columns = self.columns.iter().map(|s| s.rechunk()).collect();
+        // Don't parallelize this. Memory overhead
+        for s in &mut self.columns {
+            *s = s.rechunk();
+        }
         self
     }
 

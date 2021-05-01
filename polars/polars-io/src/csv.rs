@@ -364,7 +364,7 @@ where
     fn finish(self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
 
-        let df = if let Some(schema) = self.schema_overwrite {
+        let mut df = if let Some(schema) = self.schema_overwrite {
             // This branch we check if there are dtypes we cannot parse.
             // We only support a few dtypes in the parser and later cast to the required dtype
             let mut to_cast = Vec::with_capacity(schema.len());
@@ -423,16 +423,12 @@ where
             csv_reader.as_df(None, None)?
         };
 
-        match rechunk {
-            true => {
-                if df.n_chunks()? > 1 {
-                    Ok(df.agg_chunks())
-                } else {
-                    Ok(df)
-                }
-            }
-            false => Ok(df),
+        // Important that this rechunk is never done in parallel.
+        // As that leads to great memory overhead.
+        if rechunk && df.n_chunks()? > 1 {
+            df.as_single_chunk();
         }
+        Ok(df)
     }
 }
 
