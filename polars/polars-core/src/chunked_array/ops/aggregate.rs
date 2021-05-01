@@ -155,12 +155,14 @@ where
 
 macro_rules! impl_var {
     ($self:expr, $ty: ty) => {{
-        let mean = $self.mean()?;
-        let ca = $self - mean;
+        let ca = $self - $self.mean()?;
         let squared = &ca * &ca;
-        let opt_v = squared.sum();
-        let div = ($self.len() - 1) as $ty;
-        opt_v.map(|v| v / div)
+        // Note, this is similar behavior to numpy if DDOF=1.
+        // in statistics DDOF often = 1.
+        // this last step is similar to mean, only now instead of 1/n it is 1/(n-1)
+        squared
+            .sum()
+            .map(|sum| sum / (ca.len() - ca.null_count() - 1) as $ty)
     }};
 }
 
@@ -180,7 +182,7 @@ where
 
 impl ChunkVar<f32> for Float32Chunked {
     fn var(&self) -> Option<f32> {
-        impl_var!(self, f32)
+        impl_var!(self, f32).map(|v| v as f32)
     }
     fn std(&self) -> Option<f32> {
         self.var().map(|var| var.sqrt())
@@ -512,6 +514,33 @@ impl<T> ArgAgg for ObjectChunked<T> {}
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+
+    #[test]
+    fn test_var() {
+        // validated with numpy
+        // Note that numpy as an argument ddof wich influences results. The default is ddof=0
+        // we chose ddof=1, which is standard in statistics
+        let ca1 = Int32Chunked::new_from_slice("", &[5, 8, 9, 5, 0]);
+        let ca2 = Int32Chunked::new_from_opt_slice(
+            "",
+            &[
+                Some(5),
+                None,
+                Some(8),
+                Some(9),
+                None,
+                Some(5),
+                Some(0),
+                None,
+            ],
+        );
+        for ca in &[ca1, ca2] {
+            let out = ca.var();
+            assert_eq!(out, Some(12.3));
+            let out = ca.std().unwrap();
+            assert!((3.5071355833500366 - out).abs() < 0.000000001);
+        }
+    }
 
     #[test]
     fn test_agg_float() {
