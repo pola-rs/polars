@@ -4,10 +4,9 @@ The Rust crate `polars` has its own changelog.
 
 ### polars 0.7.12
 * bug fix
-
-* feature
-
-* performance
+  - null handling in mean, std, var, and cov aggregations. #595
+  - rev-mapping of categorical stored duplicates. #595
+  - fix memory surge after csv-parsing #593
 
 ### polars 0.7.11 
 * bug fix
