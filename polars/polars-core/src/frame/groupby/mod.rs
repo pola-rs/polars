@@ -1525,4 +1525,19 @@ mod test {
             assert_eq!(a, b);
         }
     }
+
+    #[test]
+    fn test_groupby_null_handling() -> Result<()> {
+        let df = df!(
+            "a" => ["a", "a", "a", "b", "b"],
+            "b" => [Some(1), Some(2), None, None, Some(1)]
+        )?;
+        let out = df.groupby_stable("a")?.mean()?;
+
+        assert_eq!(
+            Vec::from(out.column("b_mean")?.f64()?),
+            &[Some(1.5), Some(1.0)]
+        );
+        Ok(())
+    }
 }

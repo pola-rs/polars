@@ -8,6 +8,7 @@ use std::hash::Hash;
 
 use crate::chunked_array::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
+    take_agg_primitive_iter_unchecked_count_nulls,
 };
 use crate::prelude::*;
 use crate::utils::NoNull;
@@ -83,14 +84,18 @@ where
                     .to_f64()
                     .map(|sum| sum / idx.len() as f64),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked(
+                        take_agg_primitive_iter_unchecked_count_nulls(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| a + b,
                             T::Native::zero(),
                         )
                     }
-                    .map(|sum| sum.to_f64().map(|sum| sum / idx.len() as f64).unwrap()),
+                    .map(|(sum, null_count)| {
+                        sum.to_f64()
+                            .map(|sum| sum / (idx.len() as f64 - null_count as f64))
+                            .unwrap()
+                    }),
                     _ => {
                         let take =
                             unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };

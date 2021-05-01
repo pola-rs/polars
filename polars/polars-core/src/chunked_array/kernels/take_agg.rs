@@ -57,3 +57,40 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
         Some(out)
     }
 }
+
+/// Take kernel for single chunk and an iterator as index.
+pub(crate) unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
+    T: PolarsNumericType,
+    I: IntoIterator<Item = usize>,
+    F: Fn(T::Native, T::Native) -> T::Native,
+>(
+    arr: &PrimitiveArray<T>,
+    indices: I,
+    f: F,
+    init: T::Native,
+) -> Option<(T::Native, u32)> {
+    if arr.null_count() == arr.len() {
+        return None;
+    }
+
+    let array_values = arr.values();
+    let buf = arr
+        .data_ref()
+        .null_buffer()
+        .expect("null buffer should be there");
+
+    let mut null_count = 0;
+    let out = indices.into_iter().fold(init, |acc, idx| {
+        if buf.is_valid_unchecked(idx) {
+            f(acc, *array_values.get_unchecked(idx))
+        } else {
+            null_count += 1;
+            acc
+        }
+    });
+    if out == init {
+        None
+    } else {
+        Some((out, null_count))
+    }
+}
