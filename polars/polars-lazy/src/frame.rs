@@ -1849,7 +1849,7 @@ mod test {
 
         assert_eq!(
             out.column("a_mean").unwrap().f64().unwrap().get(0),
-            Some(0.5)
+            Some(1.0)
         );
     }
 
