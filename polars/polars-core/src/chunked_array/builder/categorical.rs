@@ -19,9 +19,11 @@ impl RevMappingBuilder {
         match self {
             Local(builder) => builder.append_value(value).unwrap(),
             Global(map, builder, _) => {
-                builder.append_value(value).unwrap();
-                let new_idx = builder.len() as u32 - 1;
-                map.insert(idx, new_idx);
+                if !map.contains_key(&idx) {
+                    builder.append_value(value).unwrap();
+                    let new_idx = builder.len() as u32 - 1;
+                    map.insert(idx, new_idx);
+                }
             }
         };
     }
@@ -30,7 +32,10 @@ impl RevMappingBuilder {
         use RevMappingBuilder::*;
         match self {
             Local(mut b) => RevMapping::Local(b.finish()),
-            Global(map, mut b, uuid) => RevMapping::Global(map, b.finish(), uuid),
+            Global(mut map, mut b, uuid) => {
+                map.shrink_to_fit();
+                RevMapping::Global(map, b.finish(), uuid)
+            }
         }
     }
 }
@@ -114,6 +119,7 @@ impl CategoricalChunkedBuilder {
                                 idx
                             }
                         };
+                        // we still need to check if the idx is already stored in our map
                         self.reverse_mapping.insert(idx, s);
                         self.array_builder.append_value(idx);
                     }
@@ -131,11 +137,11 @@ impl CategoricalChunkedBuilder {
                             Some(idx) => *idx,
                             None => {
                                 let idx = mapping.len() as u32;
+                                self.reverse_mapping.insert(idx, s);
                                 mapping.insert(s, idx);
                                 idx
                             }
                         };
-                        self.reverse_mapping.insert(idx, s);
                         self.array_builder.append_value(idx);
                     }
                     None => {
@@ -158,5 +164,38 @@ impl CategoricalChunkedBuilder {
             phantom: PhantomData,
             categorical_map: Some(Arc::new(self.reverse_mapping.finish())),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+    use crate::toggle_string_cache;
+
+    #[test]
+    fn test_categorical_rev() -> Result<()> {
+        let ca = Utf8Chunked::new_from_opt_slice(
+            "a",
+            &[
+                Some("foo"),
+                None,
+                Some("bar"),
+                Some("foo"),
+                Some("foo"),
+                Some("bar"),
+            ],
+        );
+        let out = ca.cast::<CategoricalType>()?;
+        assert_eq!(out.categorical_map.unwrap().len(), 2);
+
+        // test the global branch
+        toggle_string_cache(true);
+        // empty global cache
+        let out = ca.cast::<CategoricalType>()?;
+        assert_eq!(out.categorical_map.unwrap().len(), 2);
+        // full global cache
+        let out = ca.cast::<CategoricalType>()?;
+        assert_eq!(out.categorical_map.unwrap().len(), 2);
+        Ok(())
     }
 }
