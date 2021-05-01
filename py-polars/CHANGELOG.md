@@ -2,10 +2,34 @@
 
 The Rust crate `polars` has its own changelog.
 
-### polars 0.7.8
+### polars 0.7.12
+* bug fix
+
+* feature
+
+* performance
+
+### polars 0.7.11 
+* bug fix
+  - Throw error on join from different string cache #584
+  - fix covariance of array with null values #585
+
+* feature
+  - Series describe method #569
+  - dsl: take, arg_unique, unique
+  - allow lazy expressions in Eager API # 588
+  - describe Series
+
+* performance
+  - fix accidental expensive appends #592
+  - remove chunk_id from ChunkedArray #593
+
+
+### polars 0.7.8 -> 0.7.9 (patched)
 * bug fix
   - ensure column name persist after pyarrow cast #563
   - make sure that `agg_list` maintains dtype #567
+  - fix panic in physical dispatch of Date dtypes
 
 * feature
   - Implicitly Cast dtypes to temporal types in csv parser #560
