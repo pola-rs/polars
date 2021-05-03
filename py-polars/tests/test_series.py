@@ -298,7 +298,7 @@ def test_describe():
         "max": 3,
         "sum": 6,
         "mean": 2.0,
-        "std": 0.816496580927726,
+        "std": 1.0,
         "count": 3,
     }
     assert float_s.describe() == {
@@ -306,7 +306,7 @@ def test_describe():
         "max": 8.9,
         "sum": 14.8,
         "mean": 4.933333333333334,
-        "std": 3.1116269413639905,
+        "std": 3.8109491381194442,
         "count": 3,
     }
     assert str_s.describe() == {"unique": 3, "count": 3}

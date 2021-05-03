@@ -197,7 +197,7 @@ class Series:
                 self._s = PySeries.new_f64(name, values, nullable)
             elif isinstance(values[0], str):
                 self._s = PySeries.new_str(name, values)
-            elif dtype == np.bool:
+            elif dtype == bool:
                 self._s = PySeries.new_bool(name, values)
             elif dtype == np.uint8:
                 self._s = PySeries.new_u8(name, values)
@@ -589,17 +589,31 @@ class Series:
             return NotImplemented
         return f()
 
-    def std(self) -> float:
+    def std(self, ddof: int = 1) -> float:
         """
         Get standard deviation of this Series
-        """
-        return np.std(self.drop_nulls().view())
 
-    def var(self) -> float:
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
+        """
+        return np.std(self.drop_nulls().view(), ddof=ddof)
+
+    def var(self, ddof: int = 1) -> float:
         """
         Get variance of this Series
+
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
         """
-        return np.var(self.drop_nulls().view())
+        return np.var(self.drop_nulls().view(), ddof=ddof)
 
     def median(self) -> float:
         """
@@ -1673,17 +1687,23 @@ class Series:
             return wrap_s(self._s.sample_n(n, with_replacement))
         return wrap_s(self._s.sample_frac(frac, with_replacement))
 
-    def peak_max(self):
+    def peak_max(self) -> "Series":
         """
         Get a boolean mask of the local maximum peaks.
         """
         return wrap_s(self._s.peak_max())
 
-    def peak_min(self):
+    def peak_min(self) -> "Series":
         """
         Get a boolean mask of the local minimum peaks.
         """
         return wrap_s(self._s.peak_min())
+
+    def n_unique(self) -> int:
+        """
+        Count the number of unique values in this Series
+        """
+        return self._s.n_unique()
 
 
 class SeriesIter:

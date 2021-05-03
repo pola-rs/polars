@@ -468,3 +468,57 @@ def test_column_names():
     )
     df = pl.from_arrow(tbl)
     assert df.columns == ["a", "b"]
+
+
+def test_lazy_functions():
+    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+    out = df[[pl.count("a")]]
+    assert out[0] == 3
+    assert pl.count(df["a"]) == 3
+    out = df[
+        [
+            pl.var("b"),
+            pl.std("b"),
+            pl.max("b"),
+            pl.min("b"),
+            pl.sum("b"),
+            pl.mean("b"),
+            pl.median("b"),
+            pl.n_unique("b"),
+            pl.first("b"),
+            pl.last("b"),
+        ]
+    ]
+    expected = 1.0
+    assert np.isclose(out[0], expected)
+    assert np.isclose(pl.var(df["b"]), expected)
+    expected = 1.0
+    assert np.isclose(out[1], expected)
+    assert np.isclose(pl.std(df["b"]), expected)
+    expected = 3
+    assert np.isclose(out[2], expected)
+    assert np.isclose(pl.max(df["b"]), expected)
+    expected = 1
+    assert np.isclose(out[3], expected)
+    assert np.isclose(pl.min(df["b"]), expected)
+    expected = 6
+    assert np.isclose(out[4], expected)
+    assert np.isclose(pl.sum(df["b"]), expected)
+    expected = 2
+    assert np.isclose(out[5], expected)
+    assert np.isclose(pl.mean(df["b"]), expected)
+    expected = 2
+    assert np.isclose(out[6], expected)
+    assert np.isclose(pl.median(df["b"]), expected)
+    expected = 3
+    assert np.isclose(out[7], expected)
+    assert np.isclose(pl.n_unique(df["b"]), expected)
+    expected = 1
+    assert np.isclose(out[8], expected)
+    assert np.isclose(pl.first(df["b"]), expected)
+    expected = 3
+    assert np.isclose(out[9], expected)
+    assert np.isclose(pl.last(df["b"]), expected)
+    expected = 3
+    assert np.isclose(out[9], expected)
+    assert np.isclose(pl.last(df["b"]), expected)
