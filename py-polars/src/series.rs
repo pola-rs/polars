@@ -1032,12 +1032,17 @@ impl PySeries {
         Ok(s.into_series().into())
     }
 
-    fn peak_max(&self) -> Self {
+    pub fn peak_max(&self) -> Self {
         self.series.peak_max().into_series().into()
     }
 
-    fn peak_min(&self) -> Self {
+    pub fn peak_min(&self) -> Self {
         self.series.peak_min().into_series().into()
+    }
+
+    pub fn n_unique(&self) -> PyResult<usize> {
+        let n = self.series.n_unique().map_err(PyPolarsEr::from)?;
+        Ok(n)
     }
 }
 
@@ -1161,8 +1166,13 @@ macro_rules! impl_get {
     ($name:ident, $series_variant:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, index: usize) -> Option<$type> {
+            pub fn $name(&self, index: i64) -> Option<$type> {
                 if let Ok(ca) = self.series.$series_variant() {
+                    let index = if index < 0 {
+                        (ca.len() as i64 + index) as usize
+                    } else {
+                        index as usize
+                    };
                     ca.get(index)
                 } else {
                     None
