@@ -666,7 +666,7 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cum_sum(self, reverse: bool):
+    def cum_sum(self, reverse: bool = False):
         """
         Get an array with the cumulative sum computed at every element
 
@@ -677,7 +677,7 @@ class Series:
         """
         return self._s.cum_sum(reverse)
 
-    def cum_min(self, reverse: bool):
+    def cum_min(self, reverse: bool = False):
         """
         Get an array with the cumulative min computed at every element
 
@@ -688,7 +688,7 @@ class Series:
         """
         return self._s.cum_min(reverse)
 
-    def cum_max(self, reverse: bool):
+    def cum_max(self, reverse: bool = False):
         """
         Get an array with the cumulative max computed at every element
 
@@ -699,7 +699,7 @@ class Series:
         """
         return self._s.cum_max(reverse)
 
-    def limit(self, num_elements: int) -> "Series":
+    def limit(self, num_elements: int = 10) -> "Series":
         """
         Take n elements from this Series.
 

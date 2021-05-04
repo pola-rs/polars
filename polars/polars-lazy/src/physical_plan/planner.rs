@@ -399,9 +399,13 @@ impl DefaultPlanner {
                 let group_column =
                     self.create_physical_expr(partition_by, Context::Default, expr_arena)?;
                 let mut out_name = None;
-                let apply_column = aexpr_to_root_names(function, expr_arena)
-                    .pop()
-                    .expect("need a root column for a window function");
+                let mut apply_columns = aexpr_to_root_names(function, expr_arena);
+                if apply_columns.len() > 1 {
+                    return Err(PolarsError::ValueError(
+                        "Binary/Ternary function not yet supported in window expressions".into(),
+                    ));
+                }
+                let apply_column = apply_columns.pop().unwrap();
 
                 if let Alias(expr, name) = expr_arena.get(function) {
                     function = *expr;
