@@ -79,7 +79,12 @@ impl PhysicalExpr for WindowExpr {
                 AggExpr::Var(_) => gb.var(),
             },
             _ => Err(PolarsError::Other(
-                format!("{:?} function not supported", self.function).into(),
+                format!(
+                    "{:?} function not supported in window operation.\
+                Note that you should use an aggregation",
+                    self.function
+                )
+                .into(),
             )),
         }?;
         // store the group tuples and drop the lock so other threads may use them

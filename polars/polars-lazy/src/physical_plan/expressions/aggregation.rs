@@ -122,6 +122,7 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Quantile(_) => {
+                // implemented explicitly in AggQuantile struct
                 unimplemented!()
             }
         }
