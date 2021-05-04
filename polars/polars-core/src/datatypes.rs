@@ -3,7 +3,7 @@
 //! At the moment Polars doesn't include all data types available by Arrow. The goal is to
 //! incrementally support more data types and prioritize these by usability.
 //!
-//! [See the AnyType variants](enum.AnyType.html#variants) for the data types that
+//! [See the AnyValue variants](enum.AnyValue.html#variants) for the data types that
 //! are currently supported.
 //!
 use crate::prelude::*;

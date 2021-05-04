@@ -15,7 +15,7 @@
 //! A `DataFrame` is a 2 dimensional data structure that is backed by a `Series`, and it could be
 //! seen as an abstraction on `Vec<Series>`. Operations that can be executed on `DataFrame`s are very
 //! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc. The closes
-//! arrow equivalent to a `DataFrame` is a [RecordBatch](arrow/record_batch/struct.RecordBatch.html),
+//! arrow equivalent to a `DataFrame` is a [RecordBatch](https://docs.rs/arrow/4.0.0/arrow/record_batch/struct.RecordBatch.html),
 //! and Polars provides zero copy coercion.
 //!
 //! ### 1.2 Series
