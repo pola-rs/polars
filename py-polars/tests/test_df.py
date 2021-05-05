@@ -522,3 +522,16 @@ def test_lazy_functions():
     expected = 3
     assert np.isclose(out[9], expected)
     assert np.isclose(pl.last(df["b"]), expected)
+
+
+def test_describe():
+    df = pl.DataFrame(
+        {
+            "a": [1.0, 2.8, 3.0],
+            "b": [4, 5, 6],
+            "c": [True, False, True],
+            "d": ["a", "b", "c"],
+        }
+    )
+    assert df.describe().shape != df.shape
+    assert set(df.describe()[2]) == set([1.0, 4.0, 5.0, 6.0])
