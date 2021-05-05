@@ -583,10 +583,7 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 }
 
 fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
-    nodes
-        .into_iter()
-        .map(|n| node_to_exp(*n, expr_arena))
-        .collect()
+    nodes.iter().map(|n| node_to_exp(*n, expr_arena)).collect()
 }
 
 pub(crate) fn node_to_lp(

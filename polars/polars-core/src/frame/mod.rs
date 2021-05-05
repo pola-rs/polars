@@ -14,8 +14,7 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{
-    accumulate_dataframes_horizontal, accumulate_dataframes_vertical, get_supertype,
-    CustomIterTools, NoNull,
+    accumulate_dataframes_horizontal, accumulate_dataframes_vertical, get_supertype, NoNull,
 };
 
 mod arithmetic;
@@ -764,7 +763,9 @@ impl DataFrame {
                 #[cfg(feature = "sort_multiple")]
                 {
                     let mut columns = self.select_series(by_column)?;
+
                     // we only allow this implementation of the same types
+                    // se we determine the supertypes and coerce all series.
                     let first = columns.remove(0);
                     let first_dtype = Cow::Borrowed(first.dtype());
                     let dtype = columns
@@ -776,6 +777,7 @@ impl DataFrame {
                         .iter()
                         .map(|s| s.cast_with_datatype(&*dtype))
                         .collect::<Result<Vec<_>>>()?;
+                    let first = first.cast_with_datatype(&*dtype)?;
                     first.argsort_multiple(&columns, reverse)?
                 }
                 #[cfg(not(feature = "sort_multiple"))]
