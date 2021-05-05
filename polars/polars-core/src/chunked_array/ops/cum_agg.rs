@@ -3,6 +3,53 @@ use itertools::__std_iter::FromIterator;
 use num::Bounded;
 use std::ops::{Add, AddAssign};
 
+fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
+where
+    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+{
+    match v {
+        Some(v) => {
+            if v > *state {
+                *state = v
+            }
+            Some(Some(*state))
+        }
+        None => Some(None),
+    }
+}
+
+fn det_min<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
+where
+    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+{
+    match v {
+        Some(v) => {
+            if v < *state {
+                *state = v
+            }
+            Some(Some(*state))
+        }
+        None => Some(None),
+    }
+}
+
+fn det_sum<T>(state: &mut Option<T>, v: Option<T>) -> Option<Option<T>>
+where
+    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+{
+    match (*state, v) {
+        (Some(state_inner), Some(v)) => {
+            *state = Some(state_inner + v);
+            Some(*state)
+        }
+        (None, Some(v)) => {
+            *state = Some(v);
+            Some(*state)
+        }
+        (_, None) => Some(None),
+    }
+}
+
 impl<T> ChunkCumAgg<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -10,21 +57,12 @@ where
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     fn cum_max(&self, reverse: bool) -> ChunkedArray<T> {
-        let iter: Box<dyn Iterator<Item = Option<T::Native>>> = match reverse {
-            false => Box::new(self.into_iter()),
-            true => Box::new(self.into_iter().rev()),
+        let init = Bounded::min_value();
+        let mut ca: Self = match reverse {
+            false => self.into_iter().scan(init, det_max).collect(),
+            true => self.into_iter().rev().scan(init, det_max).collect(),
         };
-        let mut ca: Self = iter
-            .scan(Bounded::min_value(), |state, v| match v {
-                Some(v) => {
-                    if v > *state {
-                        *state = v
-                    }
-                    Some(Some(*state))
-                }
-                None => Some(None),
-            })
-            .collect();
+
         ca.rename(self.name());
         if reverse {
             ca.reverse()
@@ -34,21 +72,12 @@ where
     }
 
     fn cum_min(&self, reverse: bool) -> ChunkedArray<T> {
-        let iter: Box<dyn Iterator<Item = Option<T::Native>>> = match reverse {
-            false => Box::new(self.into_iter()),
-            true => Box::new(self.into_iter().rev()),
+        let init = Bounded::max_value();
+        let mut ca: Self = match reverse {
+            false => self.into_iter().scan(init, det_min).collect(),
+            true => self.into_iter().rev().scan(init, det_min).collect(),
         };
-        let mut ca: Self = iter
-            .scan(Bounded::max_value(), |state, v| match v {
-                Some(v) => {
-                    if v < *state {
-                        *state = v
-                    }
-                    Some(Some(*state))
-                }
-                None => Some(None),
-            })
-            .collect();
+
         ca.rename(self.name());
         if reverse {
             ca.reverse()
@@ -58,23 +87,12 @@ where
     }
 
     fn cum_sum(&self, reverse: bool) -> ChunkedArray<T> {
-        let iter: Box<dyn Iterator<Item = Option<T::Native>>> = match reverse {
-            false => Box::new(self.into_iter()),
-            true => Box::new(self.into_iter().rev()),
+        let init = None;
+        let mut ca: Self = match reverse {
+            false => self.into_iter().scan(init, det_sum).collect(),
+            true => self.into_iter().rev().scan(init, det_sum).collect(),
         };
-        let mut ca: Self = iter
-            .scan(None, |state: &mut Option<T::Native>, v| match (*state, v) {
-                (Some(state_inner), Some(v)) => {
-                    *state = Some(state_inner + v);
-                    Some(*state)
-                }
-                (None, Some(v)) => {
-                    *state = Some(v);
-                    Some(*state)
-                }
-                (_, None) => Some(None),
-            })
-            .collect();
+
         ca.rename(self.name());
         if reverse {
             ca.reverse()
