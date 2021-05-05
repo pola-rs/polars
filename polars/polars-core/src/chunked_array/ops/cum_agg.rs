@@ -1,12 +1,12 @@
 use crate::prelude::*;
 use itertools::__std_iter::FromIterator;
 use num::Bounded;
-use std::ops::AddAssign;
+use std::ops::{Add, AddAssign};
 
 impl<T> ChunkCumAgg<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Bounded + PartialOrd + AddAssign,
+    T::Native: Bounded + PartialOrd + AddAssign + Add<Output = T::Native>,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     fn cum_max(&self, reverse: bool) -> ChunkedArray<T> {
@@ -63,12 +63,16 @@ where
             true => Box::new(self.into_iter().rev()),
         };
         let mut ca: Self = iter
-            .scan(Bounded::min_value(), |state, v| match v {
-                Some(v) => {
-                    *state += v;
-                    Some(Some(*state))
+            .scan(None, |state: &mut Option<T::Native>, v| match (*state, v) {
+                (Some(state_inner), Some(v)) => {
+                    *state = Some(state_inner + v);
+                    Some(*state)
                 }
-                None => Some(None),
+                (None, Some(v)) => {
+                    *state = Some(v);
+                    Some(*state)
+                }
+                (_, None) => Some(None),
             })
             .collect();
         ca.rename(self.name());
@@ -102,14 +106,27 @@ mod test {
     }
 
     #[test]
+    fn test_cum_min() {
+        let ca = UInt8Chunked::new_from_opt_slice("foo", &[None, Some(1), Some(3), None, Some(2)]);
+        let out = ca.cum_min(true);
+        assert_eq!(Vec::from(&out), &[None, Some(1), Some(2), None, Some(2)]);
+        let out = ca.cum_min(false);
+        assert_eq!(Vec::from(&out), &[None, Some(1), Some(1), None, Some(1)]);
+    }
+
+    #[test]
     fn test_cum_sum() {
         let ca = Int32Chunked::new_from_opt_slice("foo", &[None, Some(1), Some(3), None, Some(1)]);
         let out = ca.cum_sum(true);
-        assert_eq!(
-            Vec::from(&out),
-            &[Some(5), Some(5), Some(4), Some(1), Some(1)]
+        assert_eq!(Vec::from(&out), &[None, Some(5), Some(4), None, Some(1)]);
+        let out = ca.cum_sum(false);
+        assert_eq!(Vec::from(&out), &[None, Some(1), Some(4), None, Some(5)]);
+
+        // just check if the trait bounds allow for floats
+        let ca = Float32Chunked::new_from_opt_slice(
+            "foo",
+            &[None, Some(1.0), Some(3.0), None, Some(1.0)],
         );
         let out = ca.cum_sum(false);
-        assert_eq!(Vec::from(&out), &[None, Some(1), Some(4), Some(4), Some(5)]);
     }
 }
