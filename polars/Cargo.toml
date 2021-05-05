@@ -55,9 +55,10 @@ pretty_fmt = ["polars-core/pretty_fmt"]
 # features
 # resample operation on DataFrame
 pivot = ["polars-core/pivot"]
-
 # resample operation on DataFrame
 downsample = ["polars-core/downsample"]
+# sort by multiple columns
+sort_multiple = ["polars-core/sort_multiple"]
 
 # all opt-in datatypes
 dtype-full = [

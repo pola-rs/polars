@@ -417,7 +417,7 @@ pub(crate) struct SortExec {
 impl Executor for SortExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
-        df.sort(&self.by_column, self.reverse)
+        df.sort(self.by_column.as_str(), self.reverse)
     }
 }
 
