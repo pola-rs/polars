@@ -198,6 +198,61 @@ where
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         argsort!(self, reverse)
     }
+
+    #[cfg(feature = "sort_multiple")]
+    fn argsort_multiple(&self, other: &[&ChunkedArray<T>], reverse: bool) -> Result<UInt32Chunked> {
+        for ca in other {
+            assert_eq!(self.len(), ca.len());
+        }
+        let mut count: u32 = 0;
+        let mut vals: Vec<_> = match reverse {
+            true => self
+                .into_iter()
+                .rev()
+                .map(|v| {
+                    let i = count;
+                    count += 1;
+                    (i, v)
+                })
+                .collect(),
+            false => self
+                .into_iter()
+                .map(|v| {
+                    let i = count;
+                    count += 1;
+                    (i, v)
+                })
+                .collect(),
+        };
+
+        vals.sort_by(|tpl_a, tpl_b| match sort_with_nulls(&tpl_a.1, &tpl_b.1) {
+            // if ordering is equal, we check the other arrays until we find a non-equal ordering
+            // if we have exhausted all arrays, we keep the equal ordering.
+            Ordering::Equal => {
+                let idx_a = tpl_a.0;
+                let idx_b = tpl_b.0;
+                for ca in other {
+                    // Safety:
+                    // Indexes are in bounds, we asserted equal lengths above
+                    let a = unsafe { ca.get_unchecked(idx_a as usize) };
+                    let b = unsafe { ca.get_unchecked(idx_b as usize) };
+
+                    match a.partial_cmp(&b).unwrap() {
+                        // also equal, try next array
+                        Ordering::Equal => continue,
+                        // this array is not equal, return
+                        ord => return ord,
+                    }
+                }
+                // all arrays exhausted, ordering equal it is.
+                Ordering::Equal
+            }
+            ord => ord,
+        });
+        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect();
+
+        Ok(ca.into_inner())
+    }
 }
 
 macro_rules! sort {
@@ -294,5 +349,33 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         argsort!(self, reverse)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_argsort_multiple() -> Result<()> {
+        let a = Int32Chunked::new_from_slice("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
+        let b = Int32Chunked::new_from_slice("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
+        let df = DataFrame::new(vec![a, b])?;
+
+        let out = df.sort(&["a", "b"], false)?;
+        assert_eq!(
+            Vec::from(out.column("b")?.i32()?),
+            &[
+                Some(0),
+                Some(2),
+                Some(3),
+                Some(1),
+                Some(1),
+                Some(4),
+                Some(6),
+                Some(5)
+            ]
+        );
+        Ok(())
     }
 }

@@ -144,6 +144,12 @@ pub(crate) mod private {
         fn is_in_same_type(&self, _list_array: &ListChunked) -> Result<BooleanChunked> {
             unimplemented!()
         }
+        #[cfg(feature = "sort_multiple")]
+        fn argsort_multiple(&self, _by: &[Series], _reverse: bool) -> Result<UInt32Chunked> {
+            Err(PolarsError::InvalidOperation(
+                "argsort_multiple is not implemented for this Series".into(),
+            ))
+        }
     }
 }
 
