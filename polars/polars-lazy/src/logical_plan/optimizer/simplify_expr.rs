@@ -308,6 +308,23 @@ impl OptimizationRule for SimplifyExprRule {
                     Operator::Or => eval_or(left, right),
                 }
             }
+            AExpr::Reverse(expr) => {
+                let input = expr_arena.get(*expr);
+                match input {
+                    AExpr::Sort { expr, reverse } => Some(AExpr::Sort {
+                        expr: *expr,
+                        reverse: !*reverse,
+                    }),
+                    AExpr::SortBy { expr, by, reverse } => Some(AExpr::SortBy {
+                        expr: *expr,
+                        by: *by,
+                        reverse: !*reverse,
+                    }),
+                    // TODO: add support for cum_sum and other operation that allow reversing.
+                    _ => None,
+                }
+            }
+
             _ => None,
         }
     }
