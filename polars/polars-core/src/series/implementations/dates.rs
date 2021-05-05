@@ -237,13 +237,9 @@ macro_rules! impl_dyn_series {
                 let phys_type = self.0.physical_type();
                 let s = self.cast_with_datatype(&phys_type).unwrap();
 
-                let by = by
-                    .iter()
-                    .map(|s| self.0.unpack_series_matching_type(s))
-                    .collect::<Result<Vec<_>>>()?;
                 self.0
                     .unpack_series_matching_type(&s)?
-                    .argsort_multiple(&by, reverse)
+                    .argsort_multiple(by, reverse)
             }
         }
 

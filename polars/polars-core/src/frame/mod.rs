@@ -766,18 +766,31 @@ impl DataFrame {
 
                     // we only allow this implementation of the same types
                     // se we determine the supertypes and coerce all series.
-                    let first = columns.remove(0);
-                    let first_dtype = Cow::Borrowed(first.dtype());
-                    let dtype = columns
-                        .iter()
-                        .try_fold::<_, _, Result<_>>(first_dtype, |acc, s| {
-                            Ok(Cow::Owned(get_supertype(&*acc, s.dtype())?))
-                        })?;
-                    let columns = columns
-                        .iter()
-                        .map(|s| s.cast_with_datatype(&*dtype))
-                        .collect::<Result<Vec<_>>>()?;
-                    let first = first.cast_with_datatype(&*dtype)?;
+                    let mut first = columns.remove(0);
+                    // let first_dtype = Cow::Borrowed(first.dtype());
+                    let dtype = columns.iter().try_fold::<_, _, Result<_>>(None, |acc, s| {
+                        let acc = match (&acc, s.dtype()) {
+                            (_, DataType::Utf8) => acc,
+                            (None, dt) => Some(dt.clone()),
+                            (Some(acc), dt) => Some(get_supertype(acc, dt)?),
+                        };
+                        Ok(acc)
+                    })?;
+
+                    if let Some(dtype) = dtype {
+                        columns = columns
+                            .into_iter()
+                            .map(|s| match s.dtype() {
+                                DataType::Utf8 => s,
+                                _ => s.cast_with_datatype(&dtype).expect("supertype is known"),
+                            })
+                            .collect::<Vec<_>>();
+
+                        if !matches!(first.dtype(), DataType::Utf8) {
+                            first = first.cast_with_datatype(&dtype)?;
+                        }
+                    }
+
                     first.argsort_multiple(&columns, reverse)?
                 }
                 #[cfg(not(feature = "sort_multiple"))]
