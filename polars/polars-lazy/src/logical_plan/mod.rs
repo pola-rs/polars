@@ -226,7 +226,7 @@ pub enum LogicalPlan {
     /// Sort the table
     Sort {
         input: Box<LogicalPlan>,
-        by_column: String,
+        by_column: Vec<Expr>,
         reverse: bool,
     },
     /// An explode operation
@@ -370,7 +370,7 @@ impl fmt::Debug for LogicalPlan {
             }
             Sort {
                 input, by_column, ..
-            } => write!(f, "SORT {:?} BY COLUMN {}", input, by_column),
+            } => write!(f, "SORT {:?} BY {:?}", input, by_column),
             Explode { input, columns, .. } => {
                 write!(f, "EXPLODE COLUMN(S) {:?} OF {:?}", columns, input)
             }
@@ -526,7 +526,7 @@ impl LogicalPlan {
             Sort {
                 input, by_column, ..
             } => {
-                let current_node = format!("SORT by {} [{}]", by_column, id);
+                let current_node = format!("SORT BY {:?} [{}]", by_column, id);
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
@@ -1126,7 +1126,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn sort(self, by_column: String, reverse: bool) -> Self {
+    pub fn sort(self, by_column: Vec<Expr>, reverse: bool) -> Self {
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,

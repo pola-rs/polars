@@ -8,7 +8,7 @@ pub trait Selection<'a, S> {
     fn to_selection_vec(self) -> Vec<&'a str>;
 
     // a single column is selected
-    fn single(&self) -> Option<&'a str> {
+    fn single(&self) -> Option<&str> {
         None
     }
 }
@@ -35,6 +35,14 @@ where
 {
     fn to_selection_vec(self) -> Vec<&'a str> {
         self.as_ref().iter().map(|s| s.as_ref()).collect()
+    }
+
+    fn single(&self) -> Option<&str> {
+        let a = self.as_ref();
+        match a.len() {
+            1 => Some(a[0].as_ref()),
+            _ => None,
+        }
     }
 }
 

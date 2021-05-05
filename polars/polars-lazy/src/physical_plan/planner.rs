@@ -206,6 +206,8 @@ impl DefaultPlanner {
                 reverse,
             } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let by_column =
+                    self.create_physical_expressions(by_column, Context::Default, expr_arena)?;
                 Ok(Box::new(SortExec {
                     input,
                     by_column,

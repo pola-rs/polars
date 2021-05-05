@@ -354,14 +354,19 @@ impl ProjectionPushDown {
                 reverse,
             } => {
                 if !acc_projections.is_empty() {
-                    // Make sure that the column used for the sort is projected
-                    let node = expr_arena.add(AExpr::Column(Arc::new(by_column.clone())));
-                    add_expr_to_accumulated(
-                        node,
-                        &mut acc_projections,
-                        &mut projected_names,
-                        expr_arena,
-                    );
+                    // Make sure that the column(s) used for the sort is projected
+                    by_column.iter().for_each(|node| {
+                        aexpr_to_root_nodes(*node, expr_arena)
+                            .iter()
+                            .for_each(|root| {
+                                add_expr_to_accumulated(
+                                    *root,
+                                    &mut acc_projections,
+                                    &mut projected_names,
+                                    expr_arena,
+                                );
+                            })
+                    });
                 }
 
                 self.pushdown_and_assign(
