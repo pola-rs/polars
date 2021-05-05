@@ -151,7 +151,7 @@ impl IntoLazy for DataFrame {
 #[derive(Clone)]
 pub struct LazyFrame {
     pub(crate) logical_plan: LogicalPlan,
-    opt_state: OptState,
+    pub(crate) opt_state: OptState,
 }
 
 impl Default for LazyFrame {

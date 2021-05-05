@@ -432,7 +432,7 @@ impl Executor for SortExec {
             column_names.push(name.to_string());
             // if error, expression create a new named column and we must add it to the DataFrame
             // if ok, we have replaced the column with the expression eval
-            if let Err(_) = df.apply(name, |_| column.clone()) {
+            if df.apply(name, |_| column.clone()).is_err() {
                 df.hstack(&[column])?;
             }
         }

@@ -229,13 +229,15 @@ where
             // if ordering is equal, we check the other arrays until we find a non-equal ordering
             // if we have exhausted all arrays, we keep the equal ordering.
             Ordering::Equal => {
-                let idx_a = tpl_a.0;
-                let idx_b = tpl_b.0;
+                let idx_a = tpl_a.0 as usize;
+                let idx_b = tpl_b.0 as usize;
                 for ca in other {
                     // Safety:
                     // Indexes are in bounds, we asserted equal lengths above
-                    let a = unsafe { ca.get_unchecked(idx_a as usize) };
-                    let b = unsafe { ca.get_unchecked(idx_b as usize) };
+                    debug_assert!(idx_a < ca.len());
+                    debug_assert!(idx_b < ca.len());
+                    let a = unsafe { ca.get_unchecked(idx_a) };
+                    let b = unsafe { ca.get_unchecked(idx_b) };
 
                     match a.partial_cmp(&b).unwrap() {
                         // also equal, try next array
@@ -359,12 +361,12 @@ mod test {
     #[test]
     fn test_argsort_multiple() -> Result<()> {
         let a = Int32Chunked::new_from_slice("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
-        let b = Int32Chunked::new_from_slice("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
-        let df = DataFrame::new(vec![a, b])?;
+        let b = Int64Chunked::new_from_slice("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
+        let df = DataFrame::new(vec![a.into_series(), b.into_series()])?;
 
         let out = df.sort(&["a", "b"], false)?;
         assert_eq!(
-            Vec::from(out.column("b")?.i32()?),
+            Vec::from(out.column("b")?.i64()?),
             &[
                 Some(0),
                 Some(2),

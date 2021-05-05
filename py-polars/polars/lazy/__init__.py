@@ -196,8 +196,29 @@ class LazyFrame:
 
         return ldf.describe_optimized_plan()
 
-    def sort(self, by_column: str, reverse: bool = False) -> "LazyFrame":
-        return wrap_ldf(self._ldf.sort(by_column, reverse))
+    def sort(
+        self, by_columns: "Union[str, Expr, List[Expr]]", reverse: bool = False
+    ) -> "LazyFrame":
+        """
+        Sort the DataFrame by:
+
+            - A single column name
+            - An expression
+            - Multiple expressions
+
+        Parameters
+        ----------
+        by_columns
+            Column (expressions) to sort by
+        reverse
+            Whether or not to sort in reverse order
+        """
+        if type(by_columns) is str:
+            return wrap_ldf(self._ldf.sort(by_columns, reverse))
+
+        by_columns = expr_to_lit_or_expr(by_columns)
+        by_columns = _selection_to_pyexpr_list(by_columns)
+        return wrap_ldf(self._ldf.sort_by_exprs(by_columns, reverse))
 
     def collect(
         self,
@@ -1426,9 +1447,11 @@ class Expr:
         return ((expr > start) & (expr < end)).alias("is_between")
 
 
-def expr_to_lit_or_expr(expr: Union["Expr", int, float, str]) -> "Expr":
+def expr_to_lit_or_expr(expr: "Union[Expr, int, float, str, List[Expr]]") -> "Expr":
     if isinstance(expr, (int, float, str)):
         return lit(expr)
+    if isinstance(expr, list):
+        return [expr_to_lit_or_expr(e) for e in expr]
     return expr
 
 
