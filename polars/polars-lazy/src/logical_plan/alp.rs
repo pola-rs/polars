@@ -70,7 +70,7 @@ pub enum ALogicalPlan {
     },
     Sort {
         input: Node,
-        by_column: String,
+        by_column: Vec<Node>,
         reverse: bool,
     },
     Explode {

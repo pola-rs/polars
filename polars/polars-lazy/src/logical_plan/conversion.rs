@@ -254,6 +254,10 @@ pub(crate) fn to_alp(
             reverse,
         } => {
             let input = to_alp(*input, expr_arena, lp_arena);
+            let by_column = by_column
+                .into_iter()
+                .map(|x| to_aexpr(x, expr_arena))
+                .collect();
             ALogicalPlan::Sort {
                 input,
                 by_column,
@@ -578,6 +582,13 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     }
 }
 
+fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
+    nodes
+        .into_iter()
+        .map(|n| node_to_exp(*n, expr_arena))
+        .collect()
+}
+
 pub(crate) fn node_to_lp(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
@@ -625,10 +636,7 @@ pub(crate) fn node_to_lp(
             stop_after_n_rows,
             with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
-            aggregate: aggregate
-                .into_iter()
-                .map(|n| node_to_exp(n, expr_arena))
-                .collect(),
+            aggregate: nodes_to_exprs(&aggregate, expr_arena),
             cache,
         },
         #[cfg(feature = "parquet")]
@@ -645,10 +653,7 @@ pub(crate) fn node_to_lp(
             schema,
             with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
-            aggregate: aggregate
-                .into_iter()
-                .map(|n| node_to_exp(n, expr_arena))
-                .collect(),
+            aggregate: nodes_to_exprs(&aggregate, expr_arena),
             stop_after_n_rows,
             cache,
         },
@@ -670,11 +675,10 @@ pub(crate) fn node_to_lp(
             input,
             schema,
         } => {
-            let exprs = expr.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
             let i = node_to_lp(input, expr_arena, lp_arena);
 
             LogicalPlan::Projection {
-                expr: exprs,
+                expr: nodes_to_exprs(&expr, expr_arena),
                 input: Box::new(i),
                 schema,
             }
@@ -684,11 +688,10 @@ pub(crate) fn node_to_lp(
             input,
             schema,
         } => {
-            let exprs = expr.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
             let i = node_to_lp(input, expr_arena, lp_arena);
 
             LogicalPlan::LocalProjection {
-                expr: exprs,
+                expr: nodes_to_exprs(&expr, expr_arena),
                 input: Box::new(i),
                 schema,
             }
@@ -701,7 +704,7 @@ pub(crate) fn node_to_lp(
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
             LogicalPlan::Sort {
                 input,
-                by_column,
+                by_column: nodes_to_exprs(&by_column, expr_arena),
                 reverse,
             }
         }
@@ -721,13 +724,11 @@ pub(crate) fn node_to_lp(
             apply,
         } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
-            let a = aggs.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
-            let keys = Arc::new(keys.iter().map(|x| node_to_exp(*x, expr_arena)).collect());
 
             LogicalPlan::Aggregate {
                 input: Box::new(i),
-                keys,
-                aggs: a,
+                keys: Arc::new(nodes_to_exprs(&keys, expr_arena)),
+                aggs: nodes_to_exprs(&aggs, expr_arena),
                 schema,
                 apply,
             }
@@ -745,22 +746,13 @@ pub(crate) fn node_to_lp(
             let i_l = node_to_lp(input_left, expr_arena, lp_arena);
             let i_r = node_to_lp(input_right, expr_arena, lp_arena);
 
-            let l_on = left_on
-                .into_iter()
-                .map(|n| node_to_exp(n, expr_arena))
-                .collect();
-            let r_on = right_on
-                .into_iter()
-                .map(|n| node_to_exp(n, expr_arena))
-                .collect();
-
             LogicalPlan::Join {
                 input_left: Box::new(i_l),
                 input_right: Box::new(i_r),
                 schema,
                 how,
-                left_on: l_on,
-                right_on: r_on,
+                left_on: nodes_to_exprs(&left_on, expr_arena),
+                right_on: nodes_to_exprs(&right_on, expr_arena),
                 allow_par,
                 force_par,
             }
@@ -771,11 +763,10 @@ pub(crate) fn node_to_lp(
             schema,
         } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
-            let e = exprs.iter().map(|x| node_to_exp(*x, expr_arena)).collect();
 
             LogicalPlan::HStack {
                 input: Box::new(i),
-                exprs: e,
+                exprs: nodes_to_exprs(&exprs, expr_arena),
                 schema,
             }
         }
