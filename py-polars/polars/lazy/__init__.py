@@ -216,7 +216,7 @@ class LazyFrame:
         if type(by_columns) is str:
             return wrap_ldf(self._ldf.sort(by_columns, reverse))
 
-        by_columns = expr_to_lit_or_expr(by_columns)
+        by_columns = expr_to_lit_or_expr(by_columns, str_to_lit=False)
         by_columns = _selection_to_pyexpr_list(by_columns)
         return wrap_ldf(self._ldf.sort_by_exprs(by_columns, reverse))
 
@@ -1447,11 +1447,30 @@ class Expr:
         return ((expr > start) & (expr < end)).alias("is_between")
 
 
-def expr_to_lit_or_expr(expr: "Union[Expr, int, float, str, List[Expr]]") -> "Expr":
+def expr_to_lit_or_expr(
+    expr: "Union[Expr, int, float, str, List[Expr]]", str_to_lit: bool = True
+) -> "Expr":
+    """
+    Helper function that converts args to expressions
+
+    Parameters
+    ----------
+    expr
+        Any argument
+    str_to_lit
+        If True string argument `"foo"` will be converted to `lit("foo")`,
+        If False it will be converted to `col("foo")`
+
+    Returns
+    -------
+
+    """
+    if isinstance(expr, str) and not str_to_lit:
+        return col(expr)
     if isinstance(expr, (int, float, str)):
         return lit(expr)
     if isinstance(expr, list):
-        return [expr_to_lit_or_expr(e) for e in expr]
+        return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]
     return expr
 
 

@@ -200,6 +200,10 @@ where
     }
 
     #[cfg(feature = "sort_multiple")]
+    /// # Panics
+    ///
+    /// This function is very opinionated.
+    /// We assume that all numeric `Series` are of the same type, if not it will panic
     fn argsort_multiple(&self, other: &[Series], reverse: bool) -> Result<UInt32Chunked> {
         for ca in other {
             assert_eq!(self.len(), ca.len());
@@ -313,6 +317,13 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 
     #[cfg(feature = "sort_multiple")]
+    /// # Panics
+    ///
+    /// This function is very opinionated. On the implementation of `ChunkedArray<T>` for numeric types,
+    /// we assume that all numeric `Series` are of the same type.
+    ///
+    /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
+    /// uphold this contract. If not, it will panic.
     fn argsort_multiple(&self, other: &[Series], reverse: bool) -> Result<UInt32Chunked> {
         for ca in other {
             assert_eq!(self.len(), ca.len());
@@ -369,10 +380,8 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                             partial_ord_by_idx!(ca)
                         }
                         _ => {
-                            // We don't know the type so we use AnyValue's PartialOrd implementation
-                            // This likely is slower, but save a lot of compiler bloat and will only
-                            // be called in case of duplicates in first column sort.
-                            partial_ord_by_idx!(s)
+                            let ca = s.f64().expect("cast to f64 before calling this method");
+                            partial_ord_by_idx!(ca)
                         }
                     }
                 }
