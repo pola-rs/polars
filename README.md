@@ -11,7 +11,7 @@ Polars is a blazingly fast DataFrames library implemented in Rust. Its memory mo
 It currently consists of an eager API similar to pandas and a lazy API that is somewhat similar to spark. 
 Amongst more, Polars has the following functionalities.
 
-To learn more about the inner workings of Polars read the [User Guide (wip)](https://ritchie46.github.io/polars-book/).
+To learn more about the inner workings of Polars read the [User Guide (wip)](https://pola-rs.github.io/polars-book/).
 
 # Rust users read this!
 Polars cannot deploy a new version to `crates.io` until a new arrow release is issued. Arrow's release cycle takes 3/4
@@ -73,20 +73,20 @@ Want to know about all the features Polars support? Read the docs!
 
 #### Rust
 * [Documentation (stable)](https://docs.rs/polars/latest/polars/). 
-* [Documentation (master branch)](https://ritchie46.github.io/polars). 
-    * [DataFrame](https://ritchie46.github.io/polars/polars/frame/struct.DataFrame.html) 
-    * [Series](https://ritchie46.github.io/polars/polars/series/struct.Series.html)
-    * [ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
-    * [Traits for ChunkedArray](https://ritchie46.github.io/polars/polars/chunked_array/ops/index.html)
-    * [Time/ DateTime utilities](https://ritchie46.github.io/polars/polars/doc/time/index.html)
-    * [Groupby, aggregations and pivots](https://ritchie46.github.io/polars/polars/frame/group_by/struct.GroupBy.html)
-    * [Lazy DataFrame](https://ritchie46.github.io/polars/polars_lazy/frame/struct.LazyFrame.html)
-* [User Guide](https://ritchie46.github.io/polars-book/)
+* [Documentation (master branch)](https://pola-rs.github.io/polars/polars/index.html). 
+    * [DataFrame](https://pola-rs.github.io/polars/polars/frame/struct.DataFrame.html) 
+    * [Series](https://pola-rs.github.io/polars/polars/prelude/struct.Series.html)
+    * [ChunkedArray](https://pola-rs.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
+    * [Traits for ChunkedArray](https://pola-rs.github.io/polars/polars/chunked_array/ops/index.html)
+    * [Time/ DateTime utilities](https://pola-rs.github.io/polars/polars/doc/time/index.html)
+    * [Groupby, aggregations and pivots](https://pola-rs.github.io/polars/polars/frame/groupby/struct.GroupBy.html)
+    * [Lazy DataFrame](https://pola-rs.github.io/polars/polars/prelude/struct.LazyFrame.html)
+* [User Guide](https://pola-rs.github.io/polars-book/)
     
 #### Python
 * installation guide: `$ pip3 install polars`
 * [User Guide](https://ritchie46.github.io/polars-book/)
-* [Reference guide](https://ritchie46.github.io/polars/python/polars/index.html)
+* [Reference guide](https://pola-rs.github.io/polars/python/polars/index.html)
 
 ## Performance
 Polars is written to be performant, and it is! But don't take my word for it, take a look at the results in 
