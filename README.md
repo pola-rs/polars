@@ -85,7 +85,7 @@ Want to know about all the features Polars support? Read the docs!
     
 #### Python
 * installation guide: `$ pip3 install polars`
-* [User Guide](https://ritchie46.github.io/polars-book/)
+* [User Guide](https://pola-rs.github.io/polars-book/)
 * [Reference guide](https://pola-rs.github.io/polars/python/polars/index.html)
 
 ## Performance
