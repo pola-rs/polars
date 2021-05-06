@@ -767,15 +767,18 @@ impl DataFrame {
                     // we only allow this implementation of the same types
                     // se we determine the supertypes and coerce all series.
                     let mut first = columns.remove(0);
-                    // let first_dtype = Cow::Borrowed(first.dtype());
-                    let dtype = columns.iter().try_fold::<_, _, Result<_>>(None, |acc, s| {
-                        let acc = match (&acc, s.dtype()) {
-                            (_, DataType::Utf8) => acc,
-                            (None, dt) => Some(dt.clone()),
-                            (Some(acc), dt) => Some(get_supertype(acc, dt)?),
-                        };
-                        Ok(acc)
-                    })?;
+                    let dtype = if first.utf8().is_ok() {
+                        Some(DataType::Float64)
+                    } else {
+                        columns.iter().try_fold::<_, _, Result<_>>(None, |acc, s| {
+                            let acc = match (&acc, s.dtype()) {
+                                (_, DataType::Utf8) => acc,
+                                (None, dt) => Some(dt.clone()),
+                                (Some(acc), dt) => Some(get_supertype(acc, dt)?),
+                            };
+                            Ok(acc)
+                        })?
+                    };
 
                     if let Some(dtype) = dtype {
                         columns = columns
