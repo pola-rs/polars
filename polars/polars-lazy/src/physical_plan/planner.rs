@@ -1,6 +1,5 @@
 use super::expressions as phys_expr;
 use crate::logical_plan::Context;
-use crate::physical_plan::executors::*;
 use crate::prelude::*;
 use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr};
 use ahash::RandomState;
