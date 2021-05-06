@@ -574,6 +574,17 @@ impl DataFrame {
     }
 
     /// Take DataFrame rows by a boolean mask.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars_core::prelude::*;
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    ///     let mask = df.column("sepal.width")?.is_not_null();
+    ///     df.filter(&mask)
+    /// }
+    ///
+    /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
         let new_col = self
             .columns
