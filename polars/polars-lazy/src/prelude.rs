@@ -9,6 +9,10 @@ pub use crate::{
     },
     physical_plan::{expressions::*, planner::DefaultPlanner, Executor, PhysicalPlanner},
 };
+
+#[cfg(feature = "parquet")]
+pub(crate) use crate::physical_plan::executors::scan::ParquetExec;
+
 pub(crate) use crate::{
     logical_plan::{aexpr::*, alp::*, conversion::*},
     physical_plan::{
@@ -20,7 +24,7 @@ pub(crate) use crate::{
             groupby::{GroupByExec, PartitionGroupByExec},
             join::JoinExec,
             melt::MeltExec,
-            scan::{CsvExec, DataFrameExec, ParquetExec},
+            scan::{CsvExec, DataFrameExec},
             slice::SliceExec,
             sort::SortExec,
             stack::StackExec,
