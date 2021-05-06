@@ -30,6 +30,7 @@ from . import datatypes
 from .datatypes import DataType, pytype_to_polars_type
 from ._html import NotebookFormatter
 from .utils import coerce_arrow
+import polars
 import pyarrow as pa
 import pyarrow.parquet
 import numpy as np
@@ -727,6 +728,60 @@ class DataFrame:
         ```
         """
         return [datatypes.dtypes[idx] for idx in self._df.dtypes()]
+
+    def describe(self):
+        """
+        Summary statistics for a DataFrame. Only summarizes numeric datatypes at the moment and returns nulls for non numeric datatypes.
+
+        Example
+        ---
+        ```python
+        >>> df = pl.DataFrame({
+            'a': [1.0, 2.8, 3.0],
+            'b': [4, 5, 6],
+            "c": [True, False, True]
+            })
+        >>> df.describe()
+        shape: (5, 4)
+        ╭──────────┬───────┬─────┬──────╮
+        │ describe ┆ a     ┆ b   ┆ c    │
+        │ ---      ┆ ---   ┆ --- ┆ ---  │
+        │ str      ┆ f64   ┆ f64 ┆ f64  │
+        ╞══════════╪═══════╪═════╪══════╡
+        │ "mean"   ┆ 2.267 ┆ 5   ┆ null │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ "std"    ┆ 1.102 ┆ 1   ┆ null │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ "min"    ┆ 1     ┆ 4   ┆ 0.0  │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ "max"    ┆ 3     ┆ 6   ┆ 1    │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ "median" ┆ 2.8   ┆ 5   ┆ null │
+        ╰──────────┴───────┴─────┴──────╯
+        """
+
+        def describe_cast(self):
+            columns = []
+            for s in self:
+                if s.is_numeric() or s.is_boolean():
+                    columns.append(s.cast(float))
+                else:
+                    columns.append(s)
+            return polars.DataFrame(columns)
+
+        summary = polars.concat(
+            [
+                describe_cast(self.mean()),
+                describe_cast(self.std()),
+                describe_cast(self.min()),
+                describe_cast(self.max()),
+                describe_cast(self.median()),
+            ]
+        )
+        summary.insert_at_idx(
+            0, polars.Series("describe", ["mean", "std", "min", "max", "median"])
+        )
+        return summary
 
     def replace_at_idx(self, index: int, series: Series):
         """

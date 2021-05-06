@@ -529,3 +529,16 @@ def test_multiple_column_sort():
     out = df.sort([col("b"), col("c").reverse()])
     assert out["c"] == [2, 3, 1]
     assert out["b"] == [2, 2, 3]
+
+
+def test_describe():
+    df = pl.DataFrame(
+        {
+            "a": [1.0, 2.8, 3.0],
+            "b": [4, 5, 6],
+            "c": [True, False, True],
+            "d": ["a", "b", "c"],
+        }
+    )
+    assert df.describe().shape != df.shape
+    assert set(df.describe()[2]) == set([1.0, 4.0, 5.0, 6.0])
