@@ -530,6 +530,7 @@ def test_multiple_column_sort():
     assert out["c"] == [2, 3, 1]
     assert out["b"] == [2, 2, 3]
 
+
 def test_describe():
     df = pl.DataFrame(
         {
