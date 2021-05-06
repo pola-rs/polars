@@ -59,6 +59,10 @@ def _prepare_other_arg(other: Any) -> Series:
     return other
 
 
+def _is_expr(arg: Any) -> bool:
+    return hasattr(arg, "_pyexpr")
+
+
 class DataFrame:
     def __init__(
         self,
@@ -785,14 +789,17 @@ class DataFrame:
         self._df.replace_at_idx(index, series._s)
 
     def sort(
-        self, by_column: str, in_place: bool = False, reverse: bool = False
+        self,
+        by: "Union[str, Expr, List[Expr]]",
+        in_place: bool = False,
+        reverse: bool = False,
     ) -> Optional["DataFrame"]:
         """
         Sort the DataFrame by column
 
         Parameters
         ----------
-        by_column
+        by
             By which column to sort. Only accepts string.
         in_place
             Perform operation in-place.
@@ -802,13 +809,13 @@ class DataFrame:
         Example
         ---
         ```python
-        >>> pl.DataFrame({
+        >>> df = pl.DataFrame({
             "foo": [1, 2, 3],
             "bar": [6.0, 7.0, 8.0],
             "ham": ['a', 'b', 'c']
             })
 
-        >>> dataframe.sort('foo', reverse=True)
+        >>> df.sort('foo', reverse=True)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
         │ foo ┆ bar ┆ ham │
@@ -822,11 +829,25 @@ class DataFrame:
         │ 1   ┆ 6   ┆ "a" │
         ╰─────┴─────┴─────╯
         ```
+
+        ### Sort by multiple columns.
+
+        For multiple columns we can use expression syntax
+
+        ```python
+        df.sort([col("foo"), col("bar").reverse()])
+        ```
         """
+        if type(by) is list or _is_expr(by):
+            df = self.lazy().sort(by, reverse).collect(no_optimization=True)
+            if in_place:
+                self._df = df._df
+                return
+            return df
         if in_place:
-            self._df.sort_in_place(by_column, reverse)
+            self._df.sort_in_place(by, reverse)
         else:
-            return wrap_df(self._df.sort(by_column, reverse))
+            return wrap_df(self._df.sort(by, reverse))
 
     def frame_equal(self, other: "DataFrame", null_equal: bool = False) -> bool:
         """

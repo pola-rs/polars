@@ -290,7 +290,6 @@ def test_describe():
     float_s = pl.Series([1.3, 4.6, 8.9])
     str_s = pl.Series(["abc", "pqr", "xyz"])
     bool_s = pl.Series([True, False, True, True])
-    list_s = pl.Series([[5.0, 6.0], [1.0, 2.0]])
     empty_s = pl.Series(np.empty(0))
 
     assert num_s.describe() == {
@@ -314,6 +313,3 @@ def test_describe():
 
     with pytest.raises(ValueError):
         assert empty_s.describe()
-
-    with pytest.raises(TypeError):
-        assert list_s.describe()

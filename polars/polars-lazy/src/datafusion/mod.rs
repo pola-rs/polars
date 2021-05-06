@@ -10,9 +10,13 @@ use tokio::runtime::Runtime;
 
 impl LazyFrame {
     /// Collect Out of Core on the DataFusion query engine
-    pub fn ooc(self) -> Result<DataFrame> {
-        // Don't use Polars optimizer, but transpile and send to DataFusion
-        let lp = self.logical_plan;
+    pub fn ooc(mut self) -> Result<DataFrame> {
+        let mut expr_arena = Arena::with_capacity(64);
+        let mut lp_arena = Arena::with_capacity(64);
+        self.opt_state.predicate_pushdown = false;
+        self.opt_state.projection_pushdown = false;
+        let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
+        let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
         let lp = to_datafusion_lp(lp)?;
 
         let ctx = ExecutionContext::with_config(ExecutionConfig::new().with_concurrency(8));

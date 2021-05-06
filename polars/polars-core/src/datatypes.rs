@@ -17,6 +17,7 @@ pub use arrow::datatypes::{
     TimestampMicrosecondType, TimestampMillisecondType, TimestampNanosecondType,
     TimestampSecondType, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
 };
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 
 pub struct Utf8Type {}
@@ -261,7 +262,7 @@ impl Display for DataType {
     }
 }
 
-impl<'a> PartialEq for AnyValue<'a> {
+impl PartialEq for AnyValue<'_> {
     // Everything of Any is slow. Don't use.
     fn eq(&self, other: &Self) -> bool {
         use AnyValue::*;
@@ -288,6 +289,26 @@ impl<'a> PartialEq for AnyValue<'a> {
             // should it?
             (Null, Null) => true,
             _ => false,
+        }
+    }
+}
+
+impl PartialOrd for AnyValue<'_> {
+    /// Only implemented for the same types and physical types!
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        use AnyValue::*;
+        match (self, other) {
+            (UInt8(l), UInt8(r)) => l.partial_cmp(r),
+            (UInt16(l), UInt16(r)) => l.partial_cmp(r),
+            (UInt32(l), UInt32(r)) => l.partial_cmp(r),
+            (UInt64(l), UInt64(r)) => l.partial_cmp(r),
+            (Int8(l), Int8(r)) => l.partial_cmp(r),
+            (Int16(l), Int16(r)) => l.partial_cmp(r),
+            (Int32(l), Int32(r)) => l.partial_cmp(r),
+            (Int64(l), Int64(r)) => l.partial_cmp(r),
+            (Float32(l), Float32(r)) => l.partial_cmp(r),
+            (Float64(l), Float64(r)) => l.partial_cmp(r),
+            _ => None,
         }
     }
 }

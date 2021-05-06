@@ -16,7 +16,7 @@ docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "performant"]
-lazy = []
+lazy = ["sort_multiple"]
 
 # commented out until UB is fixed
 #parallel = []
@@ -39,6 +39,8 @@ plain_fmt = ["prettytable-rs"]
 pivot = []
 # resample operation on DataFrame
 downsample = ["temporal", "dtype-date64"]
+# sort by multiple columns
+sort_multiple = []
 
 # opt-in datatypes for Series
 dtype-time64-ns = []

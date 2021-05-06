@@ -232,6 +232,15 @@ macro_rules! impl_dyn_series {
             fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
                 cast_and_apply!(self, group_tuples, multithreaded)
             }
+            #[cfg(feature = "sort_multiple")]
+            fn argsort_multiple(&self, by: &[Series], reverse: bool) -> Result<UInt32Chunked> {
+                let phys_type = self.0.physical_type();
+                let s = self.cast_with_datatype(&phys_type).unwrap();
+
+                self.0
+                    .unpack_series_matching_type(&s)?
+                    .argsort_multiple(by, reverse)
+            }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {

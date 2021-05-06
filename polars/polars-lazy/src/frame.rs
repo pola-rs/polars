@@ -151,7 +151,7 @@ impl IntoLazy for DataFrame {
 #[derive(Clone)]
 pub struct LazyFrame {
     pub(crate) logical_plan: LogicalPlan,
-    opt_state: OptState,
+    pub(crate) opt_state: OptState,
 }
 
 impl Default for LazyFrame {
@@ -332,8 +332,28 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(by_column.into(), reverse)
+            .sort(vec![col(by_column)], reverse)
             .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Add a sort operation to the logical plan.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// /// Sort DataFrame by 'sepal.width' column
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .sort_by_exprs(vec![col("sepal.width")], false)
+    /// }
+    /// ```
+    pub fn sort_by_exprs(self, by_exprs: Vec<Expr>, reverse: bool) -> Self {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().sort(by_exprs, reverse).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

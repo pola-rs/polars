@@ -216,7 +216,16 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
             reverse,
         } => DLogicalPlan::Sort {
             input: Arc::new(to_datafusion_lp(*input)?),
-            expr: vec![col(&by_column).sort(!reverse, true)],
+            expr: by_column
+                .into_iter()
+                .map(|e| {
+                    if reverse {
+                        to_datafusion_expr(e.reverse()).map(|e| e.sort(!reverse, true))
+                    } else {
+                        to_datafusion_expr(e).map(|e| e.sort(!reverse, true))
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?,
         },
         Join {
             input_left,

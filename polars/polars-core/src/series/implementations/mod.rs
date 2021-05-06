@@ -179,6 +179,11 @@ macro_rules! impl_dyn_series {
             fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
                 IntoGroupTuples::group_tuples(&self.0, multithreaded)
             }
+
+            #[cfg(feature = "sort_multiple")]
+            fn argsort_multiple(&self, by: &[Series], reverse: bool) -> Result<UInt32Chunked> {
+                self.0.argsort_multiple(by, reverse)
+            }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {

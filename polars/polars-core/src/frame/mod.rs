@@ -13,7 +13,9 @@ use rayon::prelude::*;
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_horizontal, accumulate_dataframes_vertical, NoNull};
+use crate::utils::{
+    accumulate_dataframes_horizontal, accumulate_dataframes_vertical, get_supertype, NoNull,
+};
 
 mod arithmetic;
 pub mod explode;
@@ -743,19 +745,63 @@ impl DataFrame {
 
     /// Sort DataFrame in place by a column.
     pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<&mut Self> {
-        let s = self.column(by_column)?;
-
-        let take = s.argsort(reverse);
-
-        self.columns = self.columns.par_iter().map(|s| s.take(&take)).collect();
+        self.columns = self.sort(by_column, reverse)?.columns;
         Ok(self)
     }
 
     /// Return a sorted clone of this DataFrame.
-    pub fn sort(&self, by_column: &str, reverse: bool) -> Result<Self> {
-        let s = self.column(by_column)?;
+    pub fn sort<'a, S, J>(&self, by_column: S, reverse: bool) -> Result<Self>
+    where
+        S: Selection<'a, J>,
+    {
+        let take = match by_column.single() {
+            Some(by_column) => {
+                let s = self.column(by_column)?;
+                s.argsort(reverse)
+            }
+            None => {
+                #[cfg(feature = "sort_multiple")]
+                {
+                    let mut columns = self.select_series(by_column)?;
 
-        let take = s.argsort(reverse);
+                    // we only allow this implementation of the same types
+                    // se we determine the supertypes and coerce all series.
+                    let mut first = columns.remove(0);
+                    let dtype = if first.utf8().is_ok() {
+                        Some(DataType::Float64)
+                    } else {
+                        columns.iter().try_fold::<_, _, Result<_>>(None, |acc, s| {
+                            let acc = match (&acc, s.dtype()) {
+                                (_, DataType::Utf8) => acc,
+                                (None, dt) => Some(dt.clone()),
+                                (Some(acc), dt) => Some(get_supertype(acc, dt)?),
+                            };
+                            Ok(acc)
+                        })?
+                    };
+
+                    if let Some(dtype) = dtype {
+                        columns = columns
+                            .into_iter()
+                            .map(|s| match s.dtype() {
+                                DataType::Utf8 => s,
+                                _ => s.cast_with_datatype(&dtype).expect("supertype is known"),
+                            })
+                            .collect::<Vec<_>>();
+
+                        if !matches!(first.dtype(), DataType::Utf8) {
+                            first = first.cast_with_datatype(&dtype)?;
+                        }
+                    }
+
+                    first.argsort_multiple(&columns, reverse)?
+                }
+                #[cfg(not(feature = "sort_multiple"))]
+                {
+                    panic!("activate `sort_multiple` feature gate to enable this functionality");
+                }
+            }
+        };
         Ok(self.take(&take))
     }
 

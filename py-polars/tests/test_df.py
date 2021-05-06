@@ -154,7 +154,7 @@ def test_groupby():
     assert (
         df.groupby("a")["b"]
         .sum()
-        .sort(by_column="a")
+        .sort(by="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
 
@@ -162,42 +162,42 @@ def test_groupby():
         df.groupby("a")
         .select("b")
         .sum()
-        .sort(by_column="a")
+        .sort(by="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
     assert (
         df.groupby("a")
         .select("c")
         .sum()
-        .sort(by_column="a")
+        .sort(by="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .min()
-        .sort(by_column="a")
+        .sort(by="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .max()
-        .sort(by_column="a")
+        .sort(by="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .mean()
-        .sort(by_column="a")
+        .sort(by="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .last()
-        .sort(by_column="a")
+        .sort(by="a")
         .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     # check if it runs
@@ -523,6 +523,12 @@ def test_lazy_functions():
     assert np.isclose(out[9], expected)
     assert np.isclose(pl.last(df["b"]), expected)
 
+
+def test_multiple_column_sort():
+    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [2, 2, 3], "c": [1.0, 2.0, 3.0]})
+    out = df.sort([col("b"), col("c").reverse()])
+    assert out["c"] == [2, 3, 1]
+    assert out["b"] == [2, 2, 3]
 
 def test_describe():
     df = pl.DataFrame(
