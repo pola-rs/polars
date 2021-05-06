@@ -8,13 +8,13 @@ with open(path.join(this_directory, "README.md"), encoding="utf-8") as f:
 
 setup(
     name="py-polars",
-    version="0.7.6.1",
+    version="0.7.12",
     description="legacy version of polars",
     author="Ritchie Vink",
     author_email="ritchie46@gmail.com",
     license="MIT",
     packages=["pypolars"],
-    install_requires=["polars==0.7.6"],
+    install_requires=["polars==0.7.12"],
     long_description=long_description,
     long_description_content_type="text/markdown",
 )
