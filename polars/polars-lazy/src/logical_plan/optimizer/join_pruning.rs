@@ -122,6 +122,7 @@ fn combine_lp_nodes(
             predicate,
             aggregate,
             cache,
+            low_memory
         },
             CsvScan {path: path_r, with_columns: with_columns_r, ..})
         if canonicalize(path_l).unwrap() == canonicalize(path_r).unwrap()
@@ -145,7 +146,8 @@ fn combine_lp_nodes(
                 predicate: *predicate,
                 with_columns,
                 aggregate: aggregate.clone(),
-                cache: *cache
+                cache: *cache,
+                low_memory: *low_memory
             })
 
 

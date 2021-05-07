@@ -155,6 +155,7 @@ impl OptimizationRule for AggScanProjection {
                     aggregate,
                     with_columns,
                     cache,
+                    low_memory,
                 } = lp
                 {
                     let new_with_columns = self
@@ -174,6 +175,7 @@ impl OptimizationRule for AggScanProjection {
                             aggregate,
                             with_columns,
                             cache,
+                            low_memory,
                         };
                         lp_arena.replace(node, lp);
                         return None;
@@ -190,6 +192,7 @@ impl OptimizationRule for AggScanProjection {
                         predicate,
                         aggregate,
                         cache,
+                        low_memory,
                     };
                     Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))
                 } else {

@@ -187,6 +187,7 @@ where
     schema_overwrite: Option<&'a Schema>,
     sample_size: usize,
     chunk_size: usize,
+    low_memory: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -302,6 +303,12 @@ where
         self
     }
 
+    /// Reduce memory consumption at the expense of performance
+    pub fn low_memory(mut self, toggle: bool) -> Self {
+        self.low_memory = toggle;
+        self
+    }
+
     pub fn build_inner_reader(self) -> Result<SequentialReader<R>> {
         build_csv_reader(
             self.reader,
@@ -320,6 +327,7 @@ where
             self.schema_overwrite,
             self.sample_size,
             self.chunk_size,
+            self.low_memory,
         )
     }
 }
@@ -357,6 +365,7 @@ where
             schema_overwrite: None,
             sample_size: 1024,
             chunk_size: 8192,
+            low_memory: false,
         }
     }
 
@@ -410,6 +419,7 @@ where
                 Some(&schema),
                 self.sample_size,
                 self.chunk_size,
+                self.low_memory,
             )?;
             let mut df = csv_reader.as_df(None, None)?;
 

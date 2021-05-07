@@ -33,6 +33,7 @@ pub struct LazyCsvReader<'a> {
     cache: bool,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
+    low_memory: bool,
 }
 
 impl<'a> LazyCsvReader<'a> {
@@ -47,6 +48,7 @@ impl<'a> LazyCsvReader<'a> {
             cache: true,
             schema: None,
             schema_overwrite: None,
+            low_memory: false,
         }
     }
 
@@ -100,6 +102,12 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Reduce memory usage in expensive of performance
+    pub fn low_memory(mut self, toggle: bool) -> Self {
+        self.low_memory = toggle;
+        self
+    }
+
     pub fn finish(self) -> LazyFrame {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             self.path,
@@ -111,6 +119,7 @@ impl<'a> LazyCsvReader<'a> {
             self.cache,
             self.schema,
             self.schema_overwrite,
+            self.low_memory,
         )
         .build()
         .into();

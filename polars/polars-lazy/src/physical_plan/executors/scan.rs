@@ -121,48 +121,18 @@ impl Executor for ParquetExec {
 }
 
 pub struct CsvExec {
-    path: PathBuf,
-    schema: SchemaRef,
-    has_header: bool,
-    delimiter: u8,
-    ignore_errors: bool,
-    skip_rows: usize,
-    stop_after_n_rows: Option<usize>,
-    with_columns: Option<Vec<String>>,
-    predicate: Option<Arc<dyn PhysicalExpr>>,
-    aggregate: Vec<ScanAggregation>,
-    cache: bool,
-}
-
-impl CsvExec {
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
-        path: PathBuf,
-        schema: SchemaRef,
-        has_header: bool,
-        delimiter: u8,
-        ignore_errors: bool,
-        skip_rows: usize,
-        stop_after_n_rows: Option<usize>,
-        with_columns: Option<Vec<String>>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
-        aggregate: Vec<ScanAggregation>,
-        cache: bool,
-    ) -> Self {
-        CsvExec {
-            path,
-            schema,
-            has_header,
-            delimiter,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
-            with_columns,
-            predicate,
-            aggregate,
-            cache,
-        }
-    }
+    pub path: PathBuf,
+    pub schema: SchemaRef,
+    pub has_header: bool,
+    pub delimiter: u8,
+    pub ignore_errors: bool,
+    pub skip_rows: usize,
+    pub stop_after_n_rows: Option<usize>,
+    pub with_columns: Option<Vec<String>>,
+    pub predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub aggregate: Vec<ScanAggregation>,
+    pub cache: bool,
+    pub low_memory: bool,
 }
 
 impl Executor for CsvExec {
@@ -201,6 +171,7 @@ impl Executor for CsvExec {
             .with_skip_rows(self.skip_rows)
             .with_stop_after_n_rows(stop_after_n_rows)
             .with_columns(with_columns)
+            .low_memory(self.low_memory)
             .with_encoding(CsvEncoding::LossyUtf8);
 
         let aggregate = if self.aggregate.is_empty() {

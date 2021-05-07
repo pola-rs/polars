@@ -41,6 +41,7 @@ pub enum ALogicalPlan {
         predicate: Option<Node>,
         aggregate: Vec<Node>,
         cache: bool,
+        low_memory: bool,
     },
     #[cfg(feature = "parquet")]
     ParquetScan {
@@ -350,6 +351,7 @@ impl ALogicalPlan {
                 with_columns,
                 predicate,
                 cache,
+                low_memory,
                 ..
             } => {
                 let mut new_predicate = None;
@@ -368,6 +370,7 @@ impl ALogicalPlan {
                     predicate: new_predicate,
                     aggregate: exprs,
                     cache: *cache,
+                    low_memory: *low_memory,
                 }
             }
             DataFrameScan {
