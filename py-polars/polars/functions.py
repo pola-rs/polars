@@ -96,6 +96,7 @@ def read_csv(
     dtype: "Optional[Dict[str, DataType]]" = None,
     new_columns: "Optional[List[str]]" = None,
     use_pyarrow: bool = True,
+    low_memory: bool = False,
 ) -> "DataFrame":
     """
     Read into a DataFrame from a csv file.
@@ -137,6 +138,8 @@ def read_csv(
         Overwrite the dtypes during inference
     use_pyarrow
         Use pyarrow's native CSV parser.
+    low_memory
+        Reduce memory usage in expense of performance
 
     Returns
     -------
@@ -155,6 +158,7 @@ def read_csv(
         and not ignore_errors
         and n_threads is None
         and encoding == "utf8"
+        and not low_memory
     ):
         tbl = pa.csv.read_csv(file, pa.csv.ReadOptions(skip_rows=skip_rows))
         return from_arrow(tbl, rechunk)
@@ -174,6 +178,7 @@ def read_csv(
         encoding=encoding,
         n_threads=n_threads,
         dtype=dtype,
+        low_memory=low_memory,
     )
     if new_columns:
         df.columns = new_columns

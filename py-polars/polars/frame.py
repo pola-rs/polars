@@ -129,6 +129,7 @@ class DataFrame:
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
         dtype: "Optional[Dict[str, DataType]]" = None,
+        low_memory: bool = False,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -185,6 +186,7 @@ class DataFrame:
             n_threads,
             path,
             dtype,
+            low_memory,
         )
         return self
 
