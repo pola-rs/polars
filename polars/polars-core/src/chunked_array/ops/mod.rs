@@ -16,6 +16,8 @@ pub(crate) mod downcast;
 pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
+#[cfg(feature = "is_in")]
+#[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
 pub(crate) mod is_in;
 pub(crate) mod peaks;
 pub(crate) mod set;
@@ -908,9 +910,11 @@ pub trait ChunkPeaks {
 }
 
 /// Check if element is member of list array
+#[cfg(feature = "is_in")]
+#[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
 pub trait IsIn {
-    /// Check if the element of this array is in the elements of the list array
-    fn is_in(&self, _list_array: &ListChunked) -> Result<BooleanChunked> {
+    /// Check if elements of this array are in the right Series, or List values of the right Series.
+    fn is_in(&self, _other: &Series) -> Result<BooleanChunked> {
         unimplemented!()
     }
 }

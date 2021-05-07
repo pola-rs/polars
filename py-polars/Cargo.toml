@@ -39,7 +39,8 @@ features = [
     "performant",
     "dtype-full",
     "pivot",
-    "downsample"
+    "downsample",
+    "is_in"
 ]
 
 [lib]

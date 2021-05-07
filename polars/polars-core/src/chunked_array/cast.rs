@@ -4,7 +4,7 @@ use crate::chunked_array::kernels::{cast_numeric_from_dtype, transmute_array_fro
 use crate::prelude::*;
 use arrow::array::{make_array, Array, ArrayDataBuilder};
 use arrow::compute::cast;
-use num::{NumCast, ToPrimitive};
+use num::NumCast;
 
 fn cast_ca<N, T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<N>>
 where
@@ -127,7 +127,7 @@ impl ChunkCast for CategoricalChunked {
 impl<T> ChunkCast for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + ToPrimitive,
+    T::Native: NumCast,
 {
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
@@ -219,6 +219,7 @@ impl ChunkCast for ListChunked {
         N: PolarsDataType,
     {
         match N::get_dtype() {
+            // Cast list inner type
             DataType::List(child_type) => {
                 let chunks = self
                     .downcast_iter()

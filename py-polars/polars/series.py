@@ -916,14 +916,17 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_not_nan())
 
-    def is_in(self, list_series: "Series") -> "Series":
+    def is_in(self, other: "Series") -> "Series":
         """
-        Check if the values in this Series are in the a member of the values in the Series of dtype List
+        Check if elements of this Series are in the right Series, or List values of the right Series.
+
         Returns
         -------
         Boolean Series
         """
-        return wrap_s(self._s.is_in(list_series._s))
+        if type(other) is list:
+            other = Series("", other)
+        return wrap_s(self._s.is_in(other._s))
 
     def arg_true(self) -> "Series":
         """

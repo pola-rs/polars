@@ -59,6 +59,8 @@ pivot = ["polars-core/pivot"]
 downsample = ["polars-core/downsample"]
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
+# is_in operation
+is_in = ["polars-core/is_in", "polars-lazy/is_in"]
 
 # all opt-in datatypes
 dtype-full = [
