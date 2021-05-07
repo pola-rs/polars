@@ -17,9 +17,9 @@ fn get_supertype_all(df: &DataFrame, rhs: &Series) -> Result<DataType> {
 macro_rules! impl_arithmetic {
     ($self:expr, $rhs:expr, $operand: tt) => {{
         let st = get_supertype_all($self, $rhs)?;
-        let rhs = $rhs.cast_with_datatype(&st)?;
+        let rhs = $rhs.cast_with_dtype(&st)?;
         let cols = $self.columns.par_iter().map(|s| {
-            Ok(&s.cast_with_datatype(&st)? $operand &rhs)
+            Ok(&s.cast_with_dtype(&st)? $operand &rhs)
         }).collect::<Result<_>>()?;
         Ok(DataFrame::new_no_checks(cols))
     }}

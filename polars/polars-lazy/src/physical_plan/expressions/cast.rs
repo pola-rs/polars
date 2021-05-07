@@ -17,7 +17,7 @@ impl CastExpr {
 impl PhysicalExpr for CastExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.input.evaluate(df, state)?;
-        series.cast_with_datatype(&self.data_type)
+        series.cast_with_dtype(&self.data_type)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)

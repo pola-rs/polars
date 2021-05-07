@@ -499,7 +499,7 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         unimplemented!()
     }
 
-    fn cast_with_datatype(&self, _data_type: &DataType) -> Result<Series> {
+    fn cast_with_dtype(&self, _data_type: &DataType) -> Result<Series> {
         unimplemented!()
     }
 
@@ -1091,7 +1091,7 @@ impl Series {
     where
         N: PolarsDataType,
     {
-        self.0.cast_with_datatype(&N::get_dtype())
+        self.0.cast_with_dtype(&N::get_dtype())
     }
     /// Returns `None` if the array is empty or only contains null values.
     /// ```
@@ -1232,7 +1232,7 @@ impl Series {
 
         let st = get_supertype(my_dt, &inner_dt)?;
         let left = if &st != my_dt {
-            Cow::Owned(self.cast_with_datatype(&st)?)
+            Cow::Owned(self.cast_with_dtype(&st)?)
         } else {
             Cow::Borrowed(self)
         };
@@ -1250,10 +1250,10 @@ impl Series {
     pub fn to_physical_repr(&self) -> Series {
         use DataType::*;
         let out = match self.dtype() {
-            Date32 => self.cast_with_datatype(&DataType::Int32),
-            Date64 => self.cast_with_datatype(&DataType::Int64),
-            Time64(_) => self.cast_with_datatype(&DataType::Int64),
-            Duration(_) => self.cast_with_datatype(&DataType::Int64),
+            Date32 => self.cast_with_dtype(&DataType::Int32),
+            Date64 => self.cast_with_dtype(&DataType::Int64),
+            Time64(_) => self.cast_with_dtype(&DataType::Int64),
+            Duration(_) => self.cast_with_dtype(&DataType::Int64),
             _ => return self.clone(),
         };
         out.unwrap()

@@ -607,52 +607,8 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
             }
 
-            fn cast_with_datatype(&self, data_type: &DataType) -> Result<Series> {
-                use DataType::*;
-                match data_type {
-                    Boolean => ChunkCast::cast::<BooleanType>(&self.0).map(|ca| ca.into_series()),
-                    Utf8 => ChunkCast::cast::<Utf8Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-u8")]
-                    UInt8 => ChunkCast::cast::<UInt8Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-u16")]
-                    UInt16 => ChunkCast::cast::<UInt16Type>(&self.0).map(|ca| ca.into_series()),
-                    UInt32 => ChunkCast::cast::<UInt32Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-u64")]
-                    UInt64 => ChunkCast::cast::<UInt64Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-i8")]
-                    Int8 => ChunkCast::cast::<Int8Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-i16")]
-                    Int16 => ChunkCast::cast::<Int16Type>(&self.0).map(|ca| ca.into_series()),
-                    Int32 => ChunkCast::cast::<Int32Type>(&self.0).map(|ca| ca.into_series()),
-                    Int64 => ChunkCast::cast::<Int64Type>(&self.0).map(|ca| ca.into_series()),
-                    Float32 => ChunkCast::cast::<Float32Type>(&self.0).map(|ca| ca.into_series()),
-                    Float64 => ChunkCast::cast::<Float64Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-date32")]
-                    Date32 => ChunkCast::cast::<Date32Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-date64")]
-                    Date64 => ChunkCast::cast::<Date64Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-time64-ns")]
-                    Time64(TimeUnit::Nanosecond) => {
-                        ChunkCast::cast::<Time64NanosecondType>(&self.0).map(|ca| ca.into_series())
-                    }
-                    #[cfg(feature = "dtype-duration-ns")]
-                    Duration(TimeUnit::Nanosecond) => {
-                        ChunkCast::cast::<DurationNanosecondType>(&self.0)
-                            .map(|ca| ca.into_series())
-                    }
-                    #[cfg(feature = "dtype-duration-ms")]
-                    Duration(TimeUnit::Millisecond) => {
-                        ChunkCast::cast::<DurationMillisecondType>(&self.0)
-                            .map(|ca| ca.into_series())
-                    }
-                    List(_) => ChunkCast::cast::<ListType>(&self.0).map(|ca| ca.into_series()),
-                    Categorical => {
-                        ChunkCast::cast::<CategoricalType>(&self.0).map(|ca| ca.into_series())
-                    }
-                    dt => Err(PolarsError::Other(
-                        format!("Casting to {:?} is not supported", dt).into(),
-                    )),
-                }
+            fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
+                self.0.cast_with_dtype(data_type)
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {

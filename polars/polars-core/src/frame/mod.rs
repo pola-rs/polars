@@ -796,12 +796,12 @@ impl DataFrame {
                             .into_iter()
                             .map(|s| match s.dtype() {
                                 DataType::Utf8 => s,
-                                _ => s.cast_with_datatype(&dtype).expect("supertype is known"),
+                                _ => s.cast_with_dtype(&dtype).expect("supertype is known"),
                             })
                             .collect::<Vec<_>>();
 
                         if !matches!(first.dtype(), DataType::Utf8) {
-                            first = first.cast_with_datatype(&dtype)?;
+                            first = first.cast_with_dtype(&dtype)?;
                         }
                     }
 
