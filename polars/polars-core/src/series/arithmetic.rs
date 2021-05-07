@@ -113,12 +113,12 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     let left = if lhs.dtype() == &dtype {
         Cow::Borrowed(lhs)
     } else {
-        Cow::Owned(lhs.cast_with_datatype(&dtype)?)
+        Cow::Owned(lhs.cast_with_dtype(&dtype)?)
     };
     let right = if rhs.dtype() == &dtype {
         Cow::Borrowed(rhs)
     } else {
-        Cow::Owned(rhs.cast_with_datatype(&dtype)?)
+        Cow::Owned(rhs.cast_with_dtype(&dtype)?)
     };
     Ok((left, right))
 }

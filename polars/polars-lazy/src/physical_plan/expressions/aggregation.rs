@@ -238,7 +238,7 @@ impl PhysicalAggregation for CastExpr {
         let agg_expr = self.input.as_agg_expr()?;
         let opt_agg = agg_expr.aggregate(df, groups, state)?;
         opt_agg
-            .map(|agg| agg.cast_with_datatype(&self.data_type))
+            .map(|agg| agg.cast_with_dtype(&self.data_type))
             .transpose()
     }
 }

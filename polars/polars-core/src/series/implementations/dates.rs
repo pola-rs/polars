@@ -36,12 +36,12 @@ macro_rules! physical_dispatch {
     ($s: expr, $method: ident, $($args:expr),*) => {{
         let dtype = $s.dtype();
         let phys_type = $s.physical_type();
-        let s = $s.cast_with_datatype(&phys_type).unwrap();
+        let s = $s.cast_with_dtype(&phys_type).unwrap();
         let s = s.$method($($args),*);
 
         // if the type is unchanged we return the original type
         if s.dtype() == &phys_type {
-            s.cast_with_datatype(dtype).unwrap()
+            s.cast_with_dtype(dtype).unwrap()
         }
         // else the change of type is part of the operation.
         else {
@@ -54,12 +54,12 @@ macro_rules! try_physical_dispatch {
     ($s: expr, $method: ident, $($args:expr),*) => {{
         let dtype = $s.dtype();
         let phys_type = $s.physical_type();
-        let s = $s.cast_with_datatype(&phys_type).unwrap();
+        let s = $s.cast_with_dtype(&phys_type).unwrap();
         let s = s.$method($($args),*)?;
 
         // if the type is unchanged we return the original type
         if s.dtype() == &phys_type {
-            s.cast_with_datatype(dtype)
+            s.cast_with_dtype(dtype)
         }
         // else the change of type is part of the operation.
         else {
@@ -72,12 +72,12 @@ macro_rules! opt_physical_dispatch {
     ($s: expr, $method: ident, $($args:expr),*) => {{
         let dtype = $s.dtype();
         let phys_type = $s.physical_type();
-        let s = $s.cast_with_datatype(&phys_type).unwrap();
+        let s = $s.cast_with_dtype(&phys_type).unwrap();
         let s = s.$method($($args),*)?;
 
         // if the type is unchanged we return the original type
         if s.dtype() == &phys_type {
-            Some(s.cast_with_datatype(dtype).unwrap())
+            Some(s.cast_with_dtype(dtype).unwrap())
         }
         // else the change of type is part of the operation.
         else {
@@ -90,7 +90,7 @@ macro_rules! opt_physical_dispatch {
 macro_rules! cast_and_apply {
     ($s: expr, $method: ident, $($args:expr),*) => {{
         let phys_type = $s.physical_type();
-        let s = $s.cast_with_datatype(&phys_type).unwrap();
+        let s = $s.cast_with_dtype(&phys_type).unwrap();
         s.$method($($args),*)
     }}
 }
@@ -235,7 +235,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "sort_multiple")]
             fn argsort_multiple(&self, by: &[Series], reverse: bool) -> Result<UInt32Chunked> {
                 let phys_type = self.0.physical_type();
-                let s = self.cast_with_datatype(&phys_type).unwrap();
+                let s = self.cast_with_dtype(&phys_type).unwrap();
 
                 self.0
                     .unpack_series_matching_type(&s)?
@@ -443,52 +443,8 @@ macro_rules! impl_dyn_series {
                 physical_dispatch!(self, expand_at_index, index, length)
             }
 
-            fn cast_with_datatype(&self, data_type: &DataType) -> Result<Series> {
-                use DataType::*;
-                match data_type {
-                    Boolean => ChunkCast::cast::<BooleanType>(&self.0).map(|ca| ca.into_series()),
-                    Utf8 => ChunkCast::cast::<Utf8Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-u8")]
-                    UInt8 => ChunkCast::cast::<UInt8Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-u16")]
-                    UInt16 => ChunkCast::cast::<UInt16Type>(&self.0).map(|ca| ca.into_series()),
-                    UInt32 => ChunkCast::cast::<UInt32Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-u64")]
-                    UInt64 => ChunkCast::cast::<UInt64Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-i8")]
-                    Int8 => ChunkCast::cast::<Int8Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-i16")]
-                    Int16 => ChunkCast::cast::<Int16Type>(&self.0).map(|ca| ca.into_series()),
-                    Int32 => ChunkCast::cast::<Int32Type>(&self.0).map(|ca| ca.into_series()),
-                    Int64 => ChunkCast::cast::<Int64Type>(&self.0).map(|ca| ca.into_series()),
-                    Float32 => ChunkCast::cast::<Float32Type>(&self.0).map(|ca| ca.into_series()),
-                    Float64 => ChunkCast::cast::<Float64Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-date32")]
-                    Date32 => ChunkCast::cast::<Date32Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-date64")]
-                    Date64 => ChunkCast::cast::<Date64Type>(&self.0).map(|ca| ca.into_series()),
-                    #[cfg(feature = "dtype-time64-ns")]
-                    Time64(TimeUnit::Nanosecond) => {
-                        ChunkCast::cast::<Time64NanosecondType>(&self.0).map(|ca| ca.into_series())
-                    }
-                    #[cfg(feature = "dtype-duration-ns")]
-                    Duration(TimeUnit::Nanosecond) => {
-                        ChunkCast::cast::<DurationNanosecondType>(&self.0)
-                            .map(|ca| ca.into_series())
-                    }
-                    #[cfg(feature = "dtype-duration-ms")]
-                    Duration(TimeUnit::Millisecond) => {
-                        ChunkCast::cast::<DurationMillisecondType>(&self.0)
-                            .map(|ca| ca.into_series())
-                    }
-                    List(_) => ChunkCast::cast::<ListType>(&self.0).map(|ca| ca.into_series()),
-                    Categorical => {
-                        ChunkCast::cast::<CategoricalType>(&self.0).map(|ca| ca.into_series())
-                    }
-                    dt => Err(PolarsError::Other(
-                        format!("Casting to {:?} is not supported", dt).into(),
-                    )),
-                }
+            fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
+                self.0.cast_with_dtype(data_type)
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {
@@ -728,7 +684,7 @@ mod test {
     #[cfg(feature = "dtype-date64")]
     fn test_agg_list_type() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let s = s.cast_with_datatype(&DataType::Date64)?;
+        let s = s.cast_with_dtype(&DataType::Date64)?;
 
         let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
         assert!(matches!(l.dtype(), DataType::List(ArrowDataType::Date64)));
@@ -740,7 +696,7 @@ mod test {
     #[cfg(feature = "dtype-date64")]
     fn test_datelike_join() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let mut s1 = s.cast_with_datatype(&DataType::Date64)?;
+        let mut s1 = s.cast_with_dtype(&DataType::Date64)?;
         s1.rename("bar");
 
         let df = DataFrame::new(vec![s, s1])?;
@@ -760,7 +716,7 @@ mod test {
     #[cfg(feature = "dtype-date64")]
     fn test_datelike_methods() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let s = s.cast_with_datatype(&DataType::Date64)?;
+        let s = s.cast_with_dtype(&DataType::Date64)?;
 
         let out = s.subtract(&s)?;
         assert!(matches!(out.dtype(), DataType::Date64));

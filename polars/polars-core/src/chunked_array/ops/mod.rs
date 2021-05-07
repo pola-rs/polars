@@ -391,6 +391,8 @@ pub trait ChunkCast {
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
         N: PolarsDataType;
+
+    fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series>;
 }
 
 /// Fastest way to do elementwise operations on a ChunkedArray<T> when the operation is cheaper than
