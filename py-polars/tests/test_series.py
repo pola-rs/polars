@@ -327,3 +327,10 @@ def test_str_slice():
     assert df["a"].str_slice(-3) == ["bar", "foo"]
 
     assert df[[pl.col("a").str_slice(2, 4)]]["a"] == ["obar", "rfoo"]
+
+
+def test_arange_expr():
+    df = pl.DataFrame({"a": ["foobar", "barfoo"]})
+    out = df[[pl.arange(0, pl.col("a").count() * 10)]]
+    assert out.shape == (20, 1)
+    assert out[0][-1] == 19
