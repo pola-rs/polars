@@ -1180,6 +1180,23 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
+    def str_slice(self, start: int, length: "Optional[int]" = None) -> "Expr":
+        """
+        Create subslices of the string values of a Utf8 Series
+
+        Parameters
+        ----------
+        start
+            Start of the slice (negative indexing may be used)
+        length
+            Optional length of the slice
+
+        Returns
+        -------
+        Series of Utf8 type
+        """
+        return wrap_expr(self._pyexpr.str_slice(start, length))
+
     def datetime_str_fmt(self, fmt: str) -> "Expr":
         """
         Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).

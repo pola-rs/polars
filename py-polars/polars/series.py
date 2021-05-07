@@ -1353,6 +1353,23 @@ class Series:
         """
         return self.str_replace(r"^\s*", "")
 
+    def str_slice(self, start: int, length: "Optional[int]" = None) -> "Series":
+        """
+        Create subslices of the string values of a Utf8 Series
+
+        Parameters
+        ----------
+        start
+            Start of the slice (negative indexing may be used)
+        length
+            Optional length of the slice
+
+        Returns
+        -------
+        Series of Utf8 type
+        """
+        return wrap_s(self._s.str_slice(start, length))
+
     def as_duration(self) -> "Series":
         """
         .. deprecated::

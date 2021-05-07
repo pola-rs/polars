@@ -1,5 +1,6 @@
 use crate::chunked_array::kernels::strings::string_lengths;
 use crate::prelude::*;
+use arrow::compute::kernels::substring::substring;
 use regex::Regex;
 
 impl Utf8Chunked {
@@ -48,5 +49,17 @@ impl Utf8Chunked {
     /// Concat with the values from a second Utf8Chunked
     pub fn concat(&self, other: &Utf8Chunked) -> Self {
         self + other
+    }
+
+    /// Slice the string values
+    /// Determines a substring starting from `start` and with optional length `length` of each of the elements in `array`.
+    /// `start` can be negative, in which case the start counts from the end of the string.
+    pub fn str_slice(&self, start: i64, length: Option<u64>) -> Result<Self> {
+        let chunks = self
+            .downcast_iter()
+            .map(|c| substring(c, start, &length))
+            .collect::<arrow::error::Result<_>>()?;
+
+        Ok(Self::new_from_chunks(self.name(), chunks))
     }
 }

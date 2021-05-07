@@ -883,6 +883,12 @@ impl PySeries {
         }
     }
 
+    pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.str_slice(start, length).map_err(PyPolarsEr::from)?.into_series();
+        Ok(s.into())
+    }
+
     pub fn datetime_str_fmt(&self, fmt: &str) -> PyResult<Self> {
         let s = self
             .series

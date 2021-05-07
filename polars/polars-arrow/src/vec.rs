@@ -131,7 +131,6 @@ impl<T> AlignedVec<T> {
     /// Take ownership of the Vec. This is UB because the destructor of Vec<T> probably has a different
     /// alignment than what we allocated.
     unsafe fn into_inner(mut self) -> Vec<T> {
-        self.shrink_to_fit();
         self.taken = true;
         mem::take(&mut self.inner)
     }
