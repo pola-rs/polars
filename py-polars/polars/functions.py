@@ -436,27 +436,6 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
     return df
 
 
-def arange(
-    lower: int, upper: int, step: Optional[int] = None, name: Optional[str] = None
-) -> Series:
-    """
-    Create a Series that ranges from lower bound to upper bound.
-    Parameters
-    ----------
-    lower
-        Lower bound value.
-    upper
-        Upper bound value.
-    step
-        Optional step size. If none given, the step size will be 1.
-    name
-        Name of the Series
-    """
-    if name is None:
-        name = ""
-    return Series(name, np.arange(lower, upper, step), nullable=False)
-
-
 def repeat(
     val: "Union[int, float, str]", n: int, name: Optional[str] = None
 ) -> "Series":

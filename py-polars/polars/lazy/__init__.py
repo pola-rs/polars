@@ -24,6 +24,7 @@ try:
         when as pywhen,
         except_ as pyexcept,
         range as pyrange,
+        series_from_range as _series_from_range,
     )
 except ImportError:
     import warnings
@@ -1975,6 +1976,24 @@ def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
             * Int64
             * UInt32
     """
+    if type(low) is Expr or type(high) is Expr:
+        if type(low) is int:
+            low = lit(low)
+        if type(high) is int:
+            high = lit(high)
+
+        if dtype is None:
+            dtype = datatypes.Int64
+
+        def create_range(s1: "Series", s2: "Series"):
+            from .. import Series
+
+            assert s1.len() == 1
+            assert s2.len() == 1
+            return Series._from_pyseries(_series_from_range(s1[0], s2[0], dtype))
+
+        return map_binary(low, high, create_range, output_type=dtype)
+
     if dtype is None:
         dtype = datatypes.Int64
     return wrap_expr(pyrange(low, high, dtype))
