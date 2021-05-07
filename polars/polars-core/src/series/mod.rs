@@ -9,13 +9,11 @@ pub(crate) mod iterator;
 
 use crate::chunked_array::{builder::get_list_builder, float::IsNan, ChunkIdIter};
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::get_supertype;
 use arrow::array::ArrayData;
 use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
 use std::any::Any;
-use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -139,9 +137,6 @@ pub(crate) mod private {
             unimplemented!()
         }
         fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
-            unimplemented!()
-        }
-        fn is_in_same_type(&self, _list_array: &ListChunked) -> Result<BooleanChunked> {
             unimplemented!()
         }
         #[cfg(feature = "sort_multiple")]
@@ -935,6 +930,13 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     fn peak_min(&self) -> BooleanChunked {
         unimplemented!()
     }
+
+    /// Check if elements of this Series are in the right Series, or List values of the right Series.
+    #[cfg(feature = "is_in")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
+    fn is_in(&self, _other: &Series) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {
@@ -1223,20 +1225,6 @@ impl Series {
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
         let (lhs, rhs) = coerce_lhs_rhs(self, other)?;
         lhs.zip_with_same_type(mask, rhs.as_ref())
-    }
-
-    /// Check if values of this array are in the Series of the list array.
-    pub fn is_in(&self, list_array: &ListChunked) -> Result<BooleanChunked> {
-        let inner_dt = list_array.inner_dtype();
-        let my_dt = self.dtype();
-
-        let st = get_supertype(my_dt, &inner_dt)?;
-        let left = if &st != my_dt {
-            Cow::Owned(self.cast_with_dtype(&st)?)
-        } else {
-            Cow::Borrowed(self)
-        };
-        left.is_in_same_type(list_array)
     }
 
     /// Cast a datelike Series to their physical representation.

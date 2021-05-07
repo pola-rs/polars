@@ -313,3 +313,10 @@ def test_describe():
 
     with pytest.raises(ValueError):
         assert empty_s.describe()
+
+
+def test_is_in():
+    s = pl.Series([1, 2, 3])
+
+    out = s.is_in([1, 2])
+    assert out == [True, True, False]

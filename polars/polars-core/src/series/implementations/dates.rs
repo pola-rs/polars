@@ -117,10 +117,6 @@ macro_rules! impl_dyn_series {
                 try_physical_dispatch!(self, zip_with_same_type, mask, other)
             }
 
-            fn is_in_same_type(&self, list_array: &ListChunked) -> Result<BooleanChunked> {
-                cast_and_apply!(self, is_in_same_type, list_array)
-            }
-
             fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
                 cast_and_apply!(self, vec_hash, random_state)
             }
@@ -660,6 +656,10 @@ macro_rules! impl_dyn_series {
 
             fn peak_min(&self) -> BooleanChunked {
                 cast_and_apply!(self, peak_min,)
+            }
+            #[cfg(feature = "is_in")]
+            fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+                IsIn::is_in(&self.0, other)
             }
         }
     };

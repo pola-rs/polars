@@ -73,6 +73,17 @@
 //! * `random` - Generate array's with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
 //! * `downsample` - [downsample operation](crate::frame::DataFrame::downsample) on `DataFrame`s
+//! * `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
+//! * `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
+//! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
+//! * `simd (nightly only)` - SIMD operations
+//! * `parquet` - Read Apache Parquet format
+//! * `json` - Json serialization
+//! * `ipc` - Arrow's IPC format serialization
+//! * `lazy` - Lazy API
+//! * `strings` - Extra string utilities for `Utf8Chunked`
+//! * `object` - Experimental support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
+//!              These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //!
 //! ## 4.3 Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around
@@ -289,23 +300,6 @@
 //!
 //! Additional cargo features:
 //!
-//! * `temporal (default)`
-//!     - Conversions between Chrono and Polars for temporal data
-//! * `simd (nightly only)`
-//!     - SIMD operations
-//! * `parquet`
-//!     - Read Apache Parquet format
-//! * `json`
-//!     - Json serialization
-//! * `ipc`
-//!     - Arrow's IPC format serialization
-//! * `lazy`
-//!     - Lazy api
-//! * `strings`
-//!     - String utilities for `Utf8Chunked`
-//! * `object`
-//!     - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
-//!       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //!
 //! ## User Guide
 //!

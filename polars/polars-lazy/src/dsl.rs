@@ -846,14 +846,13 @@ impl Expr {
 
     /// Check if the values of the left expression are in the lists of the right expr.
     #[allow(clippy::wrong_self_convention)]
-    pub fn is_in(self, list_expr: Expr) -> Self {
+    #[cfg(feature = "is_in")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
+    pub fn is_in(self, other: Expr) -> Self {
         map_binary(
             self,
-            list_expr,
-            |left, list_ex| {
-                let list_array = list_ex.list()?;
-                left.is_in(list_array).map(|ca| ca.into_series())
-            },
+            other,
+            |left, other| left.is_in(&other).map(|ca| ca.into_series()),
             Some(Field::new("", DataType::Boolean)),
         )
     }

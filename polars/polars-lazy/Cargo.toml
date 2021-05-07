@@ -24,6 +24,9 @@ dtype-date32 = ["polars-core/dtype-date32"]
 dtype-date64 = ["polars-core/dtype-date64"]
 ooc = ["datafusion", "tokio"]
 
+# is_in operation
+is_in = []
+
 [dependencies]
 ahash = "0.7"
 rayon = "1.5"

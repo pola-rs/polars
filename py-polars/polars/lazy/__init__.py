@@ -1424,8 +1424,22 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pow(exponent))
 
-    def is_in(self, list_expr: "Expr") -> "Expr":
-        return wrap_expr(self._pyexpr.is_in(list_expr))
+    def is_in(self, other: "Expr") -> "Expr":
+        """
+        Check if elements of this Series are in the right Series, or List values of the right Series.
+
+        Parameters
+        ----------
+        other
+            Series of primitive type or List type
+
+        Returns
+        -------
+        Expr that evaluates to a Boolean Series.
+        """
+        if type(other) is list:
+            other = lit(Series("", other))
+        return wrap_expr(self._pyexpr.is_in(other))
 
     def is_between(
         self, start: "Union[Expr, datetime]", end: "Union[Expr, datetime]"
