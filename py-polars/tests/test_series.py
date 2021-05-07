@@ -320,3 +320,10 @@ def test_is_in():
 
     out = s.is_in([1, 2])
     assert out == [True, True, False]
+
+
+def test_str_slice():
+    df = pl.DataFrame({"a": ["foobar", "barfoo"]})
+    assert df["a"].str_slice(-3) == ["bar", "foo"]
+
+    assert df[[pl.col("a").str_slice(2, 4)]]["a"] == ["obar", "rfoo"]

@@ -271,6 +271,17 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.str_slice(start, length)?.into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, Some(DataType::Utf8))
+            .into()
+    }
+
     pub fn str_to_lowercase(&self) -> PyExpr {
         let function = |s: Series| {
             let ca = s.utf8()?;
