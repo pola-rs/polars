@@ -158,6 +158,7 @@ pub enum LogicalPlan {
         /// Aggregations at the scan level
         aggregate: Vec<Expr>,
         cache: bool,
+        low_memory: bool,
     },
     #[cfg(feature = "parquet")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
@@ -273,6 +274,7 @@ impl Default for LogicalPlan {
             predicate: None,
             aggregate: vec![],
             cache: true,
+            low_memory: false,
         }
     }
 }
@@ -960,6 +962,7 @@ impl LogicalPlanBuilder {
         cache: bool,
         schema: Option<Arc<Schema>>,
         schema_overwrite: Option<&Schema>,
+        low_memory: bool,
     ) -> Self {
         let path = path.into();
         let mut file = std::fs::File::open(&path).expect("could not open file");
@@ -987,6 +990,7 @@ impl LogicalPlanBuilder {
             predicate: None,
             aggregate: vec![],
             cache,
+            low_memory,
         }
         .into()
     }

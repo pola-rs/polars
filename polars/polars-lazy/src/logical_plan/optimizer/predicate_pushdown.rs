@@ -379,6 +379,7 @@ impl PredicatePushDown {
                 predicate,
                 aggregate,
                 cache,
+                low_memory,
             } => {
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
@@ -394,6 +395,7 @@ impl PredicatePushDown {
                     predicate,
                     aggregate,
                     cache,
+                    low_memory,
                 };
                 Ok(lp)
             }

@@ -124,6 +124,7 @@ impl OptimizationRule for AggregatePushdown {
                 predicate,
                 aggregate,
                 cache,
+                low_memory,
             } => match self.accumulated_projections.is_empty() {
                 true => {
                     lp_arena.replace(
@@ -140,6 +141,7 @@ impl OptimizationRule for AggregatePushdown {
                             predicate,
                             aggregate,
                             cache,
+                            low_memory,
                         },
                     );
                     None
@@ -158,6 +160,7 @@ impl OptimizationRule for AggregatePushdown {
                         predicate,
                         aggregate,
                         cache,
+                        low_memory,
                     })
                 }
             },

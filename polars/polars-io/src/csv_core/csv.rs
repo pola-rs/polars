@@ -35,6 +35,7 @@ pub struct SequentialReader<R: Read> {
     delimiter: u8,
     sample_size: usize,
     chunk_size: usize,
+    low_memory: bool,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -85,6 +86,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         path: Option<PathBuf>,
         sample_size: usize,
         chunk_size: usize,
+        low_memory: bool,
     ) -> Self {
         let csv_reader = init_csv_reader(reader, has_header, delimiter);
         let record_iter = Some(csv_reader.into_byte_records());
@@ -104,6 +106,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
             delimiter,
             sample_size,
             chunk_size,
+            low_memory,
         }
     }
 
@@ -216,7 +219,11 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 }
             })
             .collect();
-        let init_str_bytes = chunk_size * 10;
+        let init_str_bytes = if self.low_memory {
+            chunk_size * 10
+        } else {
+            chunk_size
+        };
         let str_capacities: Vec<_> = str_columns
             .iter()
             .map(|_| AtomicUsize::new(init_str_bytes))
@@ -313,8 +320,13 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             let ca = local_df.column(name)?.utf8()?;
                             let str_bytes_len = ca.get_values_size();
 
-                            let prev_value = str_capacities[str_index]
-                                .fetch_max(str_bytes_len, Ordering::Acquire);
+                            // don't update running statistics if we try to reduce string memory usage.
+                            let prev_value = if self.low_memory {
+                                0
+                            } else {
+                                str_capacities[str_index]
+                                    .fetch_max(str_bytes_len, Ordering::Acquire)
+                            };
                             let prev_cap = (prev_value as f32 * 1.2) as usize;
                             if logging && (prev_cap < str_bytes_len) {
                                 eprintln!(
@@ -407,6 +419,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     schema_overwrite: Option<&Schema>,
     sample_size: usize,
     chunk_size: usize,
+    low_memory: bool,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -447,5 +460,6 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         path,
         sample_size,
         chunk_size,
+        low_memory,
     ))
 }

@@ -330,6 +330,7 @@ impl ProjectionPushDown {
                 predicate,
                 aggregate,
                 cache,
+                low_memory,
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
@@ -345,6 +346,7 @@ impl ProjectionPushDown {
                     predicate,
                     aggregate,
                     cache,
+                    low_memory,
                 };
                 Ok(lp)
             }

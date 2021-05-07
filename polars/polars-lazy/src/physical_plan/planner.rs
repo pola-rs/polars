@@ -127,12 +127,13 @@ impl DefaultPlanner {
                 predicate,
                 aggregate,
                 cache,
+                low_memory,
             } => {
                 let predicate = predicate
                     .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
                 let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
-                Ok(Box::new(CsvExec::new(
+                Ok(Box::new(CsvExec {
                     path,
                     schema,
                     has_header,
@@ -144,7 +145,8 @@ impl DefaultPlanner {
                     predicate,
                     aggregate,
                     cache,
-                )))
+                    low_memory,
+                }))
             }
             #[cfg(feature = "parquet")]
             ParquetScan {
