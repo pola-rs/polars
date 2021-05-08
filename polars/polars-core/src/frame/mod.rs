@@ -827,12 +827,12 @@ impl DataFrame {
     /// ```
     /// use polars_core::prelude::*;
     ///
-    /// fn sort_example(df: &DataFrame, reverse: &[bool]) -> Result<DataFrame> {
+    /// fn sort_example(df: &DataFrame, reverse: bool) -> Result<DataFrame> {
     ///     df.sort("a", reverse)
     /// }
     ///
     /// fn sort_by_multiple_columns_example(df: &DataFrame) -> Result<DataFrame> {
-    ///     df.sort(&["a", "b"], false)
+    ///     df.sort(&["a", "b"], vec![false, true])
     /// }
     /// ```
     pub fn sort<'a, S, J>(&self, by_column: S, reverse: impl IntoVec<bool>) -> Result<Self>
