@@ -72,7 +72,7 @@ pub enum ALogicalPlan {
     Sort {
         input: Node,
         by_column: Vec<Node>,
-        reverse: bool,
+        reverse: Vec<bool>,
     },
     Explode {
         input: Node,
@@ -294,7 +294,7 @@ impl ALogicalPlan {
             } => Sort {
                 input: inputs[0],
                 by_column: by_column.clone(),
-                reverse: *reverse,
+                reverse: reverse.clone(),
             },
             Explode { columns, .. } => Explode {
                 input: inputs[0],

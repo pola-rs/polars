@@ -228,7 +228,7 @@ pub enum LogicalPlan {
     Sort {
         input: Box<LogicalPlan>,
         by_column: Vec<Expr>,
-        reverse: bool,
+        reverse: Vec<bool>,
     },
     /// An explode operation
     Explode {
@@ -1130,7 +1130,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn sort(self, by_column: Vec<Expr>, reverse: bool) -> Self {
+    pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>) -> Self {
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,

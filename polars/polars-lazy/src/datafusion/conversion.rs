@@ -214,19 +214,22 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
             input,
             by_column,
             reverse,
-        } => DLogicalPlan::Sort {
-            input: Arc::new(to_datafusion_lp(*input)?),
-            expr: by_column
-                .into_iter()
-                .map(|e| {
-                    if reverse {
-                        to_datafusion_expr(e.reverse()).map(|e| e.sort(!reverse, true))
-                    } else {
-                        to_datafusion_expr(e).map(|e| e.sort(!reverse, true))
-                    }
-                })
-                .collect::<Result<Vec<_>>>()?,
-        },
+        } => {
+            assert_eq!(reverse.len(), 1);
+            DLogicalPlan::Sort {
+                input: Arc::new(to_datafusion_lp(*input)?),
+                expr: by_column
+                    .into_iter()
+                    .map(|e| {
+                        if reverse[0] {
+                            to_datafusion_expr(e.reverse()).map(|e| e.sort(!reverse[0], true))
+                        } else {
+                            to_datafusion_expr(e).map(|e| e.sort(!reverse[0], true))
+                        }
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            }
+        }
         Join {
             input_left,
             input_right,

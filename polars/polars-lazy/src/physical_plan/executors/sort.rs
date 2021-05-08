@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 pub(crate) struct SortExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) by_column: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) reverse: bool,
+    pub(crate) reverse: Vec<bool>,
 }
 
 impl Executor for SortExec {
@@ -31,6 +31,6 @@ impl Executor for SortExec {
             }
         }
 
-        df.sort(&column_names, self.reverse)
+        df.sort(&column_names, std::mem::take(&mut self.reverse))
     }
 }

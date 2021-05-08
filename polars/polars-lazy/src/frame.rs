@@ -341,7 +341,7 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], reverse)
+            .sort(vec![col(by_column)], vec![reverse])
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -360,7 +360,7 @@ impl LazyFrame {
     ///         .sort_by_exprs(vec![col("sepal.width")], false)
     /// }
     /// ```
-    pub fn sort_by_exprs(self, by_exprs: Vec<Expr>, reverse: bool) -> Self {
+    pub fn sort_by_exprs(self, by_exprs: Vec<Expr>, reverse: Vec<bool>) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().sort(by_exprs, reverse).build();
         Self::from_logical_plan(lp, opt_state)

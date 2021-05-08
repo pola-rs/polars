@@ -530,6 +530,20 @@ def test_multiple_column_sort():
     assert out["c"] == [2, 3, 1]
     assert out["b"] == [2, 2, 3]
 
+    df = pl.DataFrame({"a": np.arange(1, 4), "b": ["a", "a", "b"]})
+
+    df.sort("a", reverse=True).frame_equal(
+        pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]})
+    )
+
+    df.sort("b", reverse=True).frame_equal(
+        pl.DataFrame({"a": [3, 1, 2], "b": ["b", "a", "a"]})
+    )
+
+    df.sort(["b", "a"], reverse=[False, True]).frame_equal(
+        pl.DataFrame({"a": [2, 1, 3], "b": ["a", "a", "b"]})
+    )
+
 
 def test_describe():
     df = pl.DataFrame(
