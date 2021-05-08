@@ -2,6 +2,21 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.13 / 0.7.14 (patch) 2021-05-08
+
+* bug fix
+  - fix bug in cum_sum #604
+  
+* feature
+  - DataFrame.describe method #606
+  - Multi-level sorting of a DataFrame #607
+  - Expand functionality of Expr.is_in #614
+  - Csv-parser low_memory option #615
+  - Allow expressions in `pl.arange` #611
+    
+* performance
+  - sort().reverse() optimization #605
+
 ### polars 0.7.12
 * bug fix
   - null handling in mean, std, var, and cov aggregations. #595
