@@ -357,7 +357,7 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort_by_exprs(vec![col("sepal.width")], false)
+    ///         .sort_by_exprs(vec![col("sepal.width")], vec![false])
     /// }
     /// ```
     pub fn sort_by_exprs(self, by_exprs: Vec<Expr>, reverse: Vec<bool>) -> Self {
