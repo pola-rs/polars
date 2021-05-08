@@ -177,7 +177,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "sort_multiple")]
-            fn argsort_multiple(&self, by: &[Series], reverse: bool) -> Result<UInt32Chunked> {
+            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
                 self.0.argsort_multiple(by, reverse)
             }
         }

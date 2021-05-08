@@ -28,6 +28,7 @@ pub use crate::{
         IntoSeries, NamedFrom, Series, SeriesTrait,
     },
     testing::*,
+    utils::IntoVec,
     vector_hasher::VecHash,
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field as ArrowField, Schema as ArrowSchema};

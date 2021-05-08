@@ -140,7 +140,7 @@ pub(crate) mod private {
             unimplemented!()
         }
         #[cfg(feature = "sort_multiple")]
-        fn argsort_multiple(&self, _by: &[Series], _reverse: bool) -> Result<UInt32Chunked> {
+        fn argsort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> Result<UInt32Chunked> {
             Err(PolarsError::InvalidOperation(
                 "argsort_multiple is not implemented for this Series".into(),
             ))

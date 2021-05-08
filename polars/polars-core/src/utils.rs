@@ -868,3 +868,19 @@ where
         }
     }
 }
+
+pub trait IntoVec<T> {
+    fn into_vec(self) -> Vec<T>;
+}
+
+impl IntoVec<bool> for bool {
+    fn into_vec(self) -> Vec<bool> {
+        vec![self]
+    }
+}
+
+impl<T> IntoVec<T> for Vec<T> {
+    fn into_vec(self) -> Self {
+        self
+    }
+}
