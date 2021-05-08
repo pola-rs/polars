@@ -70,7 +70,7 @@ where
             _ => {
                 // first make sure that the types are equal
                 let st = get_supertype(self.dtype(), other.dtype())?;
-                if &st != self.dtype() {
+                if self.dtype() != other.dtype() {
                     let left = self.cast_with_dtype(&st)?;
                     let right = other.cast_with_dtype(&st)?;
                     return left.is_in(&right);
