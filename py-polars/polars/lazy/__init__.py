@@ -1457,7 +1457,7 @@ class Expr:
         """
         if type(other) is list:
             other = lit(Series("", other))
-        return wrap_expr(self._pyexpr.is_in(other))
+        return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
     def is_between(
         self, start: "Union[Expr, datetime]", end: "Union[Expr, datetime]"

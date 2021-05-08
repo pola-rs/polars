@@ -852,7 +852,13 @@ impl Expr {
         map_binary(
             self,
             other,
-            |left, other| left.is_in(&other).map(|ca| ca.into_series()),
+            |left, other| {
+                left.is_in(&other).map(|ca| {
+                    let mut s = ca.into_series();
+                    s.rename(left.name());
+                    s
+                })
+            },
             Some(Field::new("", DataType::Boolean)),
         )
     }

@@ -320,6 +320,9 @@ def test_is_in():
 
     out = s.is_in([1, 2])
     assert out == [True, True, False]
+    df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4]})
+
+    assert df[pl.col("a").is_in(pl.col("b")).alias("mask")]["mask"] == [True, False]
 
 
 def test_str_slice():
