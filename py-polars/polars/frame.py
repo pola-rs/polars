@@ -802,7 +802,7 @@ class DataFrame:
         self,
         by: "Union[str, Expr, List[Expr]]",
         in_place: bool = False,
-        reverse: bool = False,
+        reverse: "Union[bool, List[bool]]" = False,
     ) -> Optional["DataFrame"]:
         """
         Sort the DataFrame by column
@@ -842,10 +842,10 @@ class DataFrame:
 
         ### Sort by multiple columns.
 
-        For multiple columns we can use expression syntax
+        For multiple columns we can also use expression syntax
 
         ```python
-        df.sort([col("foo"), col("bar").reverse()])
+        df.sort([col("foo"), col("bar") ** 2], reverse=[True, False])
         ```
         """
         if type(by) is list or _is_expr(by):

@@ -198,7 +198,9 @@ class LazyFrame:
         return ldf.describe_optimized_plan()
 
     def sort(
-        self, by_columns: "Union[str, Expr, List[Expr]]", reverse: bool = False
+        self,
+        by_columns: "Union[str, Expr, List[Expr]]",
+        reverse: "Union[bool, List[bool]]" = False,
     ) -> "LazyFrame":
         """
         Sort the DataFrame by:
@@ -216,6 +218,8 @@ class LazyFrame:
         """
         if type(by_columns) is str:
             return wrap_ldf(self._ldf.sort(by_columns, reverse))
+        if type(reverse) is bool:
+            reverse = [reverse]
 
         by_columns = expr_to_lit_or_expr(by_columns, str_to_lit=False)
         by_columns = _selection_to_pyexpr_list(by_columns)
