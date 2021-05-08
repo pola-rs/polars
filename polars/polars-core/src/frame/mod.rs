@@ -760,17 +760,14 @@ impl DataFrame {
         Ok(self)
     }
 
-    /// Return a sorted clone of this DataFrame.
-    pub fn sort<'a, S, J>(&self, by_column: S, reverse: bool) -> Result<Self>
-    where
-        S: Selection<'a, J>,
-    {
-        let take = match by_column.single() {
-            Some(by_column) => {
-                let s = self.column(by_column)?;
-                s.argsort(reverse)
+    /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
+    fn sort_impl(&self, by_column: Vec<&str>, mut reverse: Vec<bool>) -> Result<Self> {
+        let take = match by_column.len() {
+            1 => {
+                let s = self.column(by_column[0])?;
+                s.argsort(reverse[0])
             }
-            None => {
+            n_cols => {
                 #[cfg(feature = "sort_multiple")]
                 {
                     let mut columns = self.select_series(by_column)?;
@@ -800,12 +797,19 @@ impl DataFrame {
                             })
                             .collect::<Vec<_>>();
 
+                        // broadcast ordering
+                        if n_cols > reverse.len() && reverse.len() == 1 {
+                            while n_cols != reverse.len() {
+                                reverse.push(reverse[0]);
+                            }
+                        }
+
                         if !matches!(first.dtype(), DataType::Utf8) {
                             first = first.cast_with_dtype(&dtype)?;
                         }
                     }
 
-                    first.argsort_multiple(&columns, reverse)?
+                    first.argsort_multiple(&columns, &reverse)?
                 }
                 #[cfg(not(feature = "sort_multiple"))]
                 {
@@ -814,6 +818,31 @@ impl DataFrame {
             }
         };
         Ok(self.take(&take))
+    }
+
+    /// Return a sorted clone of this DataFrame.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars_core::prelude::*;
+    ///
+    /// fn sort_example(df: &DataFrame, reverse: &[bool]) -> Result<DataFrame> {
+    ///     df.sort("a", reverse)
+    /// }
+    ///
+    /// fn sort_by_multiple_columns_example(df: &DataFrame) -> Result<DataFrame> {
+    ///     df.sort(&["a", "b"], false)
+    /// }
+    /// ```
+    pub fn sort<'a, S, J>(&self, by_column: S, reverse: impl IntoVec<bool>) -> Result<Self>
+    where
+        S: Selection<'a, J>,
+    {
+        // we do this heap allocation and dispatch to reduce monomorphization bloat
+        let by_column = by_column.to_selection_vec();
+        let reverse = reverse.into_vec();
+        self.sort_impl(by_column, reverse)
     }
 
     /// Replace a column with a series.

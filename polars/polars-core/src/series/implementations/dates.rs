@@ -229,7 +229,7 @@ macro_rules! impl_dyn_series {
                 cast_and_apply!(self, group_tuples, multithreaded)
             }
             #[cfg(feature = "sort_multiple")]
-            fn argsort_multiple(&self, by: &[Series], reverse: bool) -> Result<UInt32Chunked> {
+            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
                 let phys_type = self.0.physical_type();
                 let s = self.cast_with_dtype(&phys_type).unwrap();
 

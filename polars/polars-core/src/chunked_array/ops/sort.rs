@@ -204,30 +204,20 @@ where
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn argsort_multiple(&self, other: &[Series], reverse: bool) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
         for ca in other {
             assert_eq!(self.len(), ca.len());
         }
+        assert_eq!(other.len(), reverse.len() - 1);
         let mut count: u32 = 0;
-        let mut vals: Vec<_> = match reverse {
-            true => self
-                .into_iter()
-                .rev()
-                .map(|v| {
-                    let i = count;
-                    count += 1;
-                    (i, v)
-                })
-                .collect(),
-            false => self
-                .into_iter()
-                .map(|v| {
-                    let i = count;
-                    count += 1;
-                    (i, v)
-                })
-                .collect(),
-        };
+        let mut vals: Vec<_> = self
+            .into_iter()
+            .map(|v| {
+                let i = count;
+                count += 1;
+                (i, v)
+            })
+            .collect();
 
         vals.sort_by(|tpl_a, tpl_b| match sort_with_nulls(&tpl_a.1, &tpl_b.1) {
             // if ordering is equal, we check the other arrays until we find a non-equal ordering
@@ -237,11 +227,18 @@ where
                 let idx_b = tpl_b.0 as usize;
 
                 macro_rules! partial_ord_by_idx {
-                    ($ca: ident) => {{
+                    ($ca: ident, $reverse: expr) => {{
                         // Safety:
                         // Indexes are in bounds, we asserted equal lengths above
-                        let a = unsafe { $ca.get_unchecked(idx_a) };
-                        let b = unsafe { $ca.get_unchecked(idx_b) };
+                        let a;
+                        let b;
+                        if $reverse {
+                            b = unsafe { $ca.get_unchecked(idx_a) };
+                            a = unsafe { $ca.get_unchecked(idx_b) };
+                        } else {
+                            a = unsafe { $ca.get_unchecked(idx_a) };
+                            b = unsafe { $ca.get_unchecked(idx_b) };
+                        }
 
                         match (&a).partial_cmp(&b).unwrap() {
                             // also equal, try next array
@@ -253,17 +250,17 @@ where
                 }
 
                 // series should be matching type or utf8
-                for s in other {
+                for (s, reverse) in other.iter().zip(&reverse[1..]) {
                     match s.dtype() {
                         DataType::Utf8 => {
                             let ca = s.utf8().unwrap();
-                            partial_ord_by_idx!(ca)
+                            partial_ord_by_idx!(ca, *reverse)
                         }
                         _ => {
                             let ca = self
                                 .unpack_series_matching_type(s)
                                 .expect("should be same type");
-                            partial_ord_by_idx!(ca)
+                            partial_ord_by_idx!(ca, *reverse)
                         }
                     }
                 }
@@ -324,12 +321,18 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     ///
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
-    fn argsort_multiple(&self, other: &[Series], reverse: bool) -> Result<UInt32Chunked> {
+    ///
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
         for ca in other {
-            assert_eq!(self.len(), ca.len());
+            if self.len() != ca.len() {
+                return Err(PolarsError::ShapeMisMatch(
+                    "sort column should have equal length".into(),
+                ));
+            }
         }
+        assert_eq!(other.len(), reverse.len() - 1);
         let mut count: u32 = 0;
-        let mut vals: Vec<_> = match reverse {
+        let mut vals: Vec<_> = match reverse[0] {
             true => self
                 .into_iter()
                 .rev()
@@ -357,11 +360,18 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 let idx_b = tpl_b.0 as usize;
 
                 macro_rules! partial_ord_by_idx {
-                    ($ca: ident) => {{
+                    ($ca: ident, $reverse: expr) => {{
                         // Safety:
                         // Indexes are in bounds, we asserted equal lengths above
-                        let a = unsafe { $ca.get_unchecked(idx_a) };
-                        let b = unsafe { $ca.get_unchecked(idx_b) };
+                        let a;
+                        let b;
+                        if $reverse {
+                            b = unsafe { $ca.get_unchecked(idx_a) };
+                            a = unsafe { $ca.get_unchecked(idx_b) };
+                        } else {
+                            a = unsafe { $ca.get_unchecked(idx_a) };
+                            b = unsafe { $ca.get_unchecked(idx_b) };
+                        }
 
                         match (&a).partial_cmp(&b).unwrap() {
                             // also equal, try next array
@@ -373,15 +383,15 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 }
 
                 // series should be matching type or utf8
-                for s in other {
+                for (s, reverse) in other.iter().zip(&reverse[1..]) {
                     match s.dtype() {
                         DataType::Utf8 => {
                             let ca = s.utf8().unwrap();
-                            partial_ord_by_idx!(ca)
+                            partial_ord_by_idx!(ca, *reverse)
                         }
                         _ => {
                             let ca = s.f64().expect("cast to f64 before calling this method");
-                            partial_ord_by_idx!(ca)
+                            partial_ord_by_idx!(ca, *reverse)
                         }
                     }
                 }
