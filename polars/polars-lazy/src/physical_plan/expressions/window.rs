@@ -39,7 +39,24 @@ impl PhysicalExpr for WindowExpr {
         // 1. get the group tuples
         // We keep the lock for the entire window expression, we want those to be sequential
         // The utilize parallelism enough in groupby and join operation
-        let mut groups_lock = state.group_tuples.lock().unwrap();
+        let mut groups_lock;
+
+        // We have got this spin-lock because we can deadlock here. That's because in the gb.aggregations
+        // below, like `sum`, `min` etc. the work is put on a rayon threadpool, stopping this thread
+        // letting other threads do the aggregation, but rayon may also start a new window expression,
+        // trying to acquire the lock that is held here. Therefore we spin while trying to lock,
+        // and if it's held by another thread we release this thread.
+        loop {
+            match state.group_tuples.try_lock() {
+                Ok(lock) => {
+                    groups_lock = lock;
+                    break;
+                }
+                Err(_) => {
+                    std::thread::yield_now();
+                }
+            }
+        }
         let groups = match groups_lock.get_mut(&key) {
             Some(groups) => std::mem::take(groups),
             None => {

@@ -119,6 +119,7 @@ impl<'b> (dyn SeriesTrait + 'b) {
 
 impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Pivot a column of the current `DataFrame` and perform one of the following aggregations:
+    ///
     /// * first
     /// * sum
     /// * min
