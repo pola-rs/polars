@@ -694,6 +694,7 @@ class LazyFrame:
         f: "Union[UDF, Callable[[DataFrame], DataFrame]]",
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
+        no_optimizations: bool = False,
     ) -> "LazyFrame":
         """
         Apply a custom UDF. It is important that the UDF returns a Polars DataFrame.
@@ -706,7 +707,12 @@ class LazyFrame:
             Allow predicate pushdown optimization to pass this node
         projection_pushdown
             Allow projection pushdown optimization to pass this node
+        no_optimizations
+            Turn off all optimizations past this point
         """
+        if not no_optimizations:
+            predicate_pushdown = False
+            projection_pushdown = False
         return wrap_ldf(self._ldf.map(f, predicate_pushdown, projection_pushdown))
 
 
