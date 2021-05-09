@@ -5,13 +5,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 pub type JoinTuplesCache = Arc<Mutex<HashMap<String, Vec<(u32, Option<u32>)>, RandomState>>>;
+pub type GroupTuplesCache = Arc<Mutex<HashMap<String, GroupTuples, RandomState>>>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 #[derive(Clone)]
 pub struct ExecutionState {
     df_cache: Arc<Mutex<HashMap<String, DataFrame, RandomState>>>,
     /// Used by Window Expression to prevent redundant grouping
-    pub(crate) group_tuples: Arc<Mutex<HashMap<String, GroupTuples, RandomState>>>,
+    pub(crate) group_tuples: GroupTuplesCache,
     /// Used by Window Expression to prevent redundant joins
     pub(crate) join_tuples: JoinTuplesCache,
 }
@@ -39,8 +40,10 @@ impl ExecutionState {
 
     /// Clear the cache used by the Window expressions
     pub fn clear_expr_cache(&self) {
-        let mut lock = self.group_tuples.lock().unwrap();
-        lock.clear();
+        {
+            let mut lock = self.group_tuples.lock().unwrap();
+            lock.clear();
+        }
         let mut lock = self.join_tuples.lock().unwrap();
         lock.clear();
     }
