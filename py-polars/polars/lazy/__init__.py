@@ -333,6 +333,14 @@ class LazyFrame:
         return wrap_ldf(self._ldf.cache())
 
     def filter(self, predicate: "Expr") -> "LazyFrame":
+        """
+        Filter the rows in the DataFrame based on a predicate expression.
+
+        Parameters
+        ----------
+        predicate
+            Expression that evaluates to a boolean Series
+        """
         if isinstance(predicate, str):
             predicate = col(predicate)
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
@@ -375,9 +383,9 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: "Union[Optional[Expr], str]" = None,
-        right_on: "Union[Optional[Expr], str]" = None,
-        on: "Union[Optional[Expr], str]" = None,
+        left_on: "Optional[Union[Expr, str, List[Expr], List[str]]]" = None,
+        right_on: "Optional[Union[Expr, str, List[Expr], List[str]]]" = None,
+        on: "Optional[Union[Expr, str, List[Expr], List[str]]]" = None,
         how="inner",
         allow_parallel: bool = True,
         force_parallel: bool = False,

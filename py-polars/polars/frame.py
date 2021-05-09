@@ -614,6 +614,17 @@ class DataFrame:
     def insert_at_idx(self, index: int, series: Series):
         self._df.insert_at_idx(index, series._s)
 
+    def filter(self, predicate: "Expr") -> "DataFrame":
+        """
+        Filter the rows in the DataFrame based on a predicate expression.
+
+        Parameters
+        ----------
+        predicate
+            Expression that evaluates to a boolean Series
+        """
+        return self.lazy().filter(predicate).collect(no_optimization=True)
+
     @property
     def shape(self) -> Tuple[int, int]:
         """
@@ -1116,8 +1127,8 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: "Optional[Union[str, List[str]]]" = None,
-        right_on: "Optional[Union[str, List[str]]]" = None,
+        left_on: "Optional[Union[str, List[str]], Expr, List[Expr]]" = None,
+        right_on: "Optional[Union[str, List[str]], Expr, List[Expr]]" = None,
         on: "Optional[Union[str, List[str]]]" = None,
         how="inner",
     ) -> "DataFrame":
@@ -1200,6 +1211,8 @@ class DataFrame:
             right_on = on
         if left_on is None or right_on is None:
             raise ValueError("you should pass the column to join on as an argument")
+        if _is_expr(left_on[0]) or _is_expr(right_on[0]):
+            return self.lazy().join(df.lazy(), left_on, right_on, how=how)
 
         out = self._df.join(df._df, left_on, right_on, how)
 
