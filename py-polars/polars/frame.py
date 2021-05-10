@@ -237,7 +237,7 @@ class DataFrame:
         DataFrame
         """
         if use_pyarrow:
-            tbl = pa.feather.read_feather(file)
+            tbl = pa.feather.read_table(file)
             return DataFrame.from_arrow(tbl)
 
         self = DataFrame.__new__(DataFrame)
