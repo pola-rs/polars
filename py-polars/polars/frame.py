@@ -33,6 +33,7 @@ from .utils import coerce_arrow
 import polars
 import pyarrow as pa
 import pyarrow.parquet
+import pyarrow.feather
 import numpy as np
 import os
 from pathlib import Path
@@ -220,7 +221,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
+    def read_ipc(file: Union[str, BinaryIO], use_pyarrow: bool = True) -> "DataFrame":
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -228,11 +229,17 @@ class DataFrame:
         ----------
         file
             Path to a file or a file like object.
+        use_pyarrow
+            Use pyarrow or rust arrow backend
 
         Returns
         -------
         DataFrame
         """
+        if use_pyarrow:
+            tbl = pa.feather.read_feather(file)
+            return DataFrame.from_arrow(tbl)
+
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_ipc(file)
         return self
