@@ -263,7 +263,7 @@ def scan_parquet(
     )
 
 
-def read_ipc(file: Union[str, BinaryIO, Path]) -> "DataFrame":
+def read_ipc(file: Union[str, BinaryIO, Path], use_pyarrow: bool = True) -> "DataFrame":
     """
     Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -271,13 +271,15 @@ def read_ipc(file: Union[str, BinaryIO, Path]) -> "DataFrame":
     ----------
     file
         Path to a file or a file like object.
+    use_pyarrow
+        Use pyarrow or rust arrow backend
 
     Returns
     -------
     DataFrame
     """
     file = _prepare_file_arg(file)
-    return DataFrame.read_ipc(file)
+    return DataFrame.read_ipc(file, use_pyarrow)
 
 
 def read_parquet(
