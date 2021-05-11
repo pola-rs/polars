@@ -25,7 +25,7 @@ dtype-date64 = ["polars-core/dtype-date64"]
 ooc = ["datafusion", "tokio"]
 
 # is_in operation
-is_in = []
+is_in = ["polars-core/is_in"]
 
 [dependencies]
 ahash = "0.7"

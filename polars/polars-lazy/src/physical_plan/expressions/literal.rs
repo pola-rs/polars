@@ -18,7 +18,7 @@ impl PhysicalExpr for LiteralExpr {
     fn as_expression(&self) -> &Expr {
         &self.1
     }
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+    fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         use LiteralValue::*;
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
@@ -79,16 +79,7 @@ impl PhysicalExpr for LiteralExpr {
                 let timestamp = naive_datetime_to_date64(ndt);
                 Date64Chunked::full("literal", timestamp, 1).into_series()
             }
-            Series(series) => {
-                let s = series.deref().clone();
-
-                if s.len() != df.height() && s.len() != 1 {
-                    return Err(PolarsError::ValueError(
-                        "Series length should be equal to that of the DataFrame.".into(),
-                    ));
-                }
-                s
-            }
+            Series(series) => series.deref().clone(),
         };
         Ok(s)
     }
