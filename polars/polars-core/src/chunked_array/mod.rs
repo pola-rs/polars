@@ -878,6 +878,7 @@ impl ListChunked {
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
+    use crate::reset_string_cache;
 
     pub(crate) fn get_chunked_array() -> Int32Chunked {
         ChunkedArray::new_from_slice("a", &[1, 2, 3])
@@ -1055,6 +1056,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_iter_categorical() {
+        reset_string_cache();
         let ca =
             Utf8Chunked::new_from_opt_slice("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca.cast::<CategoricalType>().unwrap();
