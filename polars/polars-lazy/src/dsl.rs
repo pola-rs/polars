@@ -575,6 +575,17 @@ impl Expr {
         )
     }
 
+    /// Get the index values that would sort this expression.
+    pub fn arg_sort(self, reverse: bool) -> Self {
+        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
+            panic!("wildcard not supported in unique expr");
+        }
+        self.map(
+            move |s: Series| Ok(s.argsort(reverse).into_series()),
+            Some(DataType::UInt32),
+        )
+    }
+
     /// Cast expression to another data type.
     pub fn cast(self, data_type: DataType) -> Self {
         Expr::Cast {

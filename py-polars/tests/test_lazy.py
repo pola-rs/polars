@@ -148,3 +148,8 @@ def test_arange():
     result = df.filter(pl.lazy.col("a") >= pl.lazy.arange(0, 3)).collect()
     expected = pl.DataFrame({"a": [1, 1]})
     assert result.frame_equal(expected)
+
+
+def test_arg_sort():
+    df = pl.DataFrame({"a": [4, 1, 3]})
+    assert df[col("a").arg_sort()]["a"] == [1, 2, 0]
