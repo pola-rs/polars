@@ -1,3 +1,4 @@
+# flake8: noqa
 from .series import Series, wrap_s
 from .frame import DataFrame, wrap_df, StringCache
 from .functions import *

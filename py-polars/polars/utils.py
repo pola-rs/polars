@@ -36,3 +36,7 @@ def coerce_arrow(array: "pa.Array") -> "pa.Array":
     if hasattr(array, "num_chunks") and array.num_chunks > 1:
         array = array.combine_chunks()
     return array
+
+
+def _is_expr(arg) -> bool:
+    return hasattr(arg, "_pyexpr")

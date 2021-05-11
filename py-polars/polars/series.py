@@ -1204,7 +1204,7 @@ class Series:
 
     def fill_none(self, strategy: str) -> "Series":
         """
-        Fill null values with a fill strategy.
+        Fill null values with a filling strategy.
 
         Parameters
         ----------
@@ -1214,6 +1214,8 @@ class Series:
                * "min"
                * "max"
                * "mean"
+               * "one"
+               * "zero"
         """
         return wrap_s(self._s.fill_none(strategy))
 

@@ -608,6 +608,8 @@ impl PySeries {
             "min" => FillNoneStrategy::Min,
             "max" => FillNoneStrategy::Max,
             "mean" => FillNoneStrategy::Mean,
+            "zero" => FillNoneStrategy::Zero,
+            "one" => FillNoneStrategy::One,
             s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
         };
         let series = self.series.fill_none(strat).map_err(PyPolarsEr::from)?;
