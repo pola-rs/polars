@@ -578,3 +578,11 @@ def test_string_cache_eager_lazy():
     assert df1.join(
         df2, left_on="region_ids", right_on="seq_name", how="left"
     ).frame_equal(expected, null_equal=True)
+
+
+def test_assign():
+    # check if can assign in case of a single column
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    # test if we can assign in case of single column
+    df["a"] = df["a"] * 2
+    assert df["a"] == [2, 4, 6]

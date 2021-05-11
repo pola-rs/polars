@@ -290,7 +290,7 @@ impl DataFrame {
         // first loop check validity. We don't do this in a single pass otherwise
         // this DataFrame is already modified when an error occurs.
         for col in columns {
-            if col.len() != height {
+            if col.len() != height && height != 0 {
                 return Err(PolarsError::ShapeMisMatch(
                     format!("Could not horizontally stack Series. The Series length {} differs from the DataFrame height: {}", col.len(), height).into()));
             }
