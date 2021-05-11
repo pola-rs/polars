@@ -903,6 +903,23 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.sort(reverse))
 
+    def arg_sort(self, reverse: bool = False) -> "Expr":
+        """
+        Get the index values that would sort this column.
+
+        Parameters
+        ----------
+        reverse
+            False -> order from small to large
+            True -> order from large to small
+
+        Returns
+        -------
+        out
+            Series of type UInt32
+        """
+        return wrap_expr(self._pyexpr.arg_sort(reverse))
+
     def sort_by(self, by: "Union[Expr, str]", reverse: bool = False) -> "Expr":
         """
         Sort this column by the ordering of another column.

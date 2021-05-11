@@ -145,6 +145,11 @@ impl PyExpr {
         self.clone().inner.sort(reverse).into()
     }
 
+    pub fn arg_sort(&self, reverse: bool) -> PyExpr {
+        self.clone().inner.arg_sort(reverse).into()
+    }
+
+
     pub fn take(&self, idx: PyExpr) -> PyExpr {
         self.clone().inner.take(idx.inner).into()
     }
