@@ -556,3 +556,25 @@ def test_describe():
     )
     assert df.describe().shape != df.shape
     assert set(df.describe()[2]) == set([1.0, 4.0, 5.0, 6.0])
+
+
+def test_string_cache_eager_lazy():
+    # tests if the global string cache is really global and not interfered by the lazy execution.
+    # first the global settings was thread-local and this breaks with the parallel execution of lazy
+    with pl.StringCache():
+        df1 = pl.DataFrame(
+            {"region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"]}
+        ).select([pl.col("region_ids").cast(pl.Categorical)])
+        df2 = pl.DataFrame(
+            {"seq_name": ["reg4", "reg2", "reg1"], "score": [3.0, 1.0, 2.0]}
+        ).select([pl.col("seq_name").cast(pl.Categorical), pl.col("score")])
+
+    expected = pl.DataFrame(
+        {
+            "region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"],
+            "score": [2.0, 1.0, None, 3.0, None],
+        }
+    )
+    assert df1.join(
+        df2, left_on="region_ids", right_on="seq_name", how="left"
+    ).frame_equal(expected, null_equal=True)

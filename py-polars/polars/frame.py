@@ -630,7 +630,11 @@ class DataFrame:
         predicate
             Expression that evaluates to a boolean Series
         """
-        return self.lazy().filter(predicate).collect(no_optimization=True)
+        return (
+            self.lazy()
+            .filter(predicate)
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     @property
     def shape(self) -> Tuple[int, int]:
@@ -867,7 +871,11 @@ class DataFrame:
         ```
         """
         if type(by) is list or _is_expr(by):
-            df = self.lazy().sort(by, reverse).collect(no_optimization=True)
+            df = (
+                self.lazy()
+                .sort(by, reverse)
+                .collect(no_optimization=True, string_cache=False)
+            )
             if in_place:
                 self._df = df._df
                 return
@@ -1457,11 +1465,7 @@ class DataFrame:
         return (
             self.lazy()
             .shift_and_fill(periods, fill_value)
-            .collect(
-                predicate_pushdown=False,
-                projection_pushdown=False,
-                simplify_expression=False,
-            )
+            .collect(no_optimization=True, string_cache=False)
         )
 
     def is_duplicated(self) -> Series:
@@ -1503,7 +1507,9 @@ class DataFrame:
         exprs
             Column or columns to select
         """
-        return self.lazy().select(exprs).collect(no_optimization=True)
+        return (
+            self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
+        )
 
     def with_columns(self, exprs: "List[Expr]") -> "DataFrame":
         """
@@ -1514,7 +1520,11 @@ class DataFrame:
         exprs
             List of Expressions that evaluate to columns
         """
-        return self.lazy().with_columns(exprs).collect(no_optimization=True)
+        return (
+            self.lazy()
+            .with_columns(exprs)
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def n_chunks(self) -> int:
         """
@@ -1870,7 +1880,7 @@ class GroupBy:
                     .lazy()
                     .groupby(self.by)
                     .agg(column_to_agg)
-                    .collect(no_optimization=True)
+                    .collect(no_optimization=True, string_cache=False)
                 )
 
                 pass
