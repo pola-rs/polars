@@ -800,7 +800,7 @@ class Series:
         indexes
             Indexes that can be used to sort this array.
         """
-        return self._s.argsort(reverse)
+        return wrap_s(self._s.argsort(reverse))
 
     def arg_sort(self, reverse: bool = False) -> "Series":
         """
@@ -811,7 +811,7 @@ class Series:
         indexes
             Indexes that can be used to sort this array.
         """
-        return self._s.argsort(reverse)
+        return wrap_s(self._s.argsort(reverse))
 
     def arg_unique(self) -> "Series":
         """
