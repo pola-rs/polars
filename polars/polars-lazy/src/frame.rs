@@ -566,7 +566,10 @@ impl LazyFrame {
         let mut lp_arena = Arena::with_capacity(128);
         let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
 
-        toggle_string_cache(use_string_cache);
+        // if string cache was already set, we skip this and global settings are respected
+        if use_string_cache {
+            toggle_string_cache(use_string_cache);
+        }
         let planner = DefaultPlanner::default();
         let mut physical_plan =
             planner.create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;

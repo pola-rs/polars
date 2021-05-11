@@ -17,7 +17,7 @@ pub(crate) mod vector_hasher;
 use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 // this is re-exported in utils for polars child crates
@@ -68,7 +68,7 @@ impl Default for StringCache {
     }
 }
 
-thread_local! {pub(crate) static USE_STRING_CACHE: Cell<bool> = Cell::new(false)}
+pub(crate) static USE_STRING_CACHE: AtomicBool = AtomicBool::new(false);
 lazy_static! {
     static ref L_STRING_CACHE: StringCache = Default::default();
 }
@@ -77,12 +77,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub(crate) use L_STRING_CACHE as STRING_CACHE;
 
 pub fn toggle_string_cache(toggle: bool) {
-    USE_STRING_CACHE.with(|val| val.set(toggle));
+    USE_STRING_CACHE.store(toggle, Ordering::Release);
+
     if !toggle {
         STRING_CACHE.clear()
     }
 }
 
 pub(crate) fn use_string_cache() -> bool {
-    USE_STRING_CACHE.with(|val| val.get())
+    USE_STRING_CACHE.load(Ordering::Acquire)
 }
