@@ -284,6 +284,8 @@ impl PyDataFrame {
             "min" => FillNoneStrategy::Min,
             "max" => FillNoneStrategy::Max,
             "mean" => FillNoneStrategy::Mean,
+            "one" => FillNoneStrategy::One,
+            "zero" => FillNoneStrategy::Zero,
             s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
         };
         let df = self.df.fill_none(strat).map_err(PyPolarsEr::from)?;

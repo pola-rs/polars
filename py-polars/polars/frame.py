@@ -29,7 +29,7 @@ from .series import Series, wrap_s
 from . import datatypes
 from .datatypes import DataType, pytype_to_polars_type
 from ._html import NotebookFormatter
-from .utils import coerce_arrow
+from .utils import coerce_arrow, _is_expr
 import polars
 import pyarrow as pa
 import pyarrow.parquet
@@ -58,10 +58,6 @@ def _prepare_other_arg(other: Any) -> Series:
 
         other = Series("", [other])
     return other
-
-
-def _is_expr(arg: Any) -> bool:
-    return hasattr(arg, "_pyexpr")
 
 
 class DataFrame:
@@ -1376,23 +1372,29 @@ class DataFrame:
         """
         return list(map(lambda s: wrap_s(s), self._df.get_columns()))
 
-    def fill_none(self, strategy: str) -> "DataFrame":
+    def fill_none(self, strategy: "Union[str, Expr]") -> "DataFrame":
         """
-        Fill None values by a filling strategy.
+        Fill None values by a filling strategy or an Expression evaluation.
 
         Parameters
         ----------
         strategy
+            One of:
             - "backward"
             - "forward"
             - "mean"
             - "min'
             - "max"
+            - "zero"
+            - "one"
+            Or an expression.
 
         Returns
         -------
             DataFrame with None replaced with the filling strategy.
         """
+        if _is_expr(strategy):
+            return self.lazy().fill_none(strategy).collect()
         return wrap_df(self._df.fill_none(strategy))
 
     def explode(self, columns: "Union[str, List[str]]") -> "DataFrame":

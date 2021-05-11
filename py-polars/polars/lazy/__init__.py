@@ -966,7 +966,7 @@ class Expr:
     def fill_none(self, fill_value: "Union[str, int, float, Expr]") -> "Expr":
         if not isinstance(fill_value, Expr):
             fill_value = lit(fill_value)
-        return wrap_expr(self._pyexpr.fill_none(fill_value))
+        return wrap_expr(self._pyexpr.fill_none(fill_value._pyexpr))
 
     def reverse(self) -> "Expr":
         """
