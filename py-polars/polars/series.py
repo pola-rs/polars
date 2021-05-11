@@ -1305,7 +1305,7 @@ class Series:
 
     def str_replace(self, pattern: str, value: str) -> "Series":
         """
-        Replace first regex math with a string value
+        Replace first regex match with a string value
 
         Parameters
         ----------
