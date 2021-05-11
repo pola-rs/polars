@@ -11,7 +11,7 @@ Polars is a blazingly fast DataFrames library implemented in Rust. Its memory mo
 It currently consists of an eager API similar to pandas and a lazy API that is somewhat similar to spark. 
 Amongst more, Polars has the following functionalities.
 
-To learn more about the inner workings of Polars read the [User Guide (wip)](https://pola-rs.github.io/polars-book/).
+To learn more about the inner workings of Polars read the [User Guide](https://pola-rs.github.io/polars-book/).
 
 # Rust users read this!
 Polars cannot deploy a new version to `crates.io` until a new arrow release is issued. Arrow's release cycle takes 3/4
@@ -86,7 +86,7 @@ Want to know about all the features Polars support? Read the docs!
 #### Python
 * installation guide: `$ pip3 install polars`
 * [User Guide](https://pola-rs.github.io/polars-book/)
-* [Reference guide](https://pola-rs.github.io/polars/python/polars/index.html)
+* [Reference guide](https://pola-rs.github.io/polars-book/api-python/)
 
 ## Performance
 Polars is written to be performant, and it is! But don't take my word for it, take a look at the results in 
