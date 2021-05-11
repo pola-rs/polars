@@ -1175,7 +1175,7 @@ class Expr:
 
     def str_replace(self, pattern: str, value: str) -> "Expr":
         """
-        Replace substring where regex pattern first matches.
+        Replace first regex match with a string value
 
         Parameters
         ----------
