@@ -162,9 +162,9 @@ class Series:
             elif dtype == UInt64:
                 self._s = PySeries.new_u64(name, values)
             elif dtype == Float32:
-                self._s = PySeries.new_f32(name, values)
+                self._s = PySeries.new_f32(name, values, nullable)
             elif dtype == Float64:
-                self._s = PySeries.new_f64(name, values)
+                self._s = PySeries.new_f64(name, values, nullable)
             elif dtype == Boolean:
                 self._s = PySeries.new_bool(name, values)
             elif dtype == Utf8:
