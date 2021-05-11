@@ -76,6 +76,10 @@ lazy_static! {
 use std::time::{SystemTime, UNIX_EPOCH};
 pub(crate) use L_STRING_CACHE as STRING_CACHE;
 
+/// Use a global string cache for the Categorical Types.
+///
+/// This is used to cache the string categories locally.
+/// This allows join operations on categorical types.
 pub fn toggle_string_cache(toggle: bool) {
     USE_STRING_CACHE.store(toggle, Ordering::Release);
 
@@ -84,6 +88,12 @@ pub fn toggle_string_cache(toggle: bool) {
     }
 }
 
+/// Reset the global string cache used for the Categorical Types.
+pub fn reset_string_cache() {
+    STRING_CACHE.clear()
+}
+
+/// Check if string cache is set.
 pub(crate) fn use_string_cache() -> bool {
     USE_STRING_CACHE.load(Ordering::Acquire)
 }
