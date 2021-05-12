@@ -213,10 +213,20 @@ impl PhysicalAggregation for AggregationExpr {
     fn evaluate_partititioned2(
         &self,
         df: &DataFrame,
-        g_map: &GroupedMap<Option<u64>>,
+        g_maps: &[GroupedMap<Option<u64>>],
         state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         let series = self.expr.evaluate(df, state)?;
+
+        // for every group map we run the aggregation
+        // TODO: may switch parallelizatio order? par_iter here and normal iter in impl
+        let mut iter = g_maps.iter().map(|g_map| series.part_agg_sum(g_map));
+
+        // get the first result table
+        let mut first = iter.next().unwrap().unwrap();
+
+        // merge the table with the other tables in a recursive manner
+        first.merge(iter.filter_map(|v| v).collect());
 
         unimplemented!()
     }

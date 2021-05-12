@@ -116,7 +116,7 @@ pub trait PhysicalAggregation {
     fn evaluate_partititioned2(
         &self,
         _df: &DataFrame,
-        _g_map: &GroupedMap<Option<u64>>,
+        _g_maps: &[GroupedMap<Option<u64>>],
         _state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         unimplemented!()
