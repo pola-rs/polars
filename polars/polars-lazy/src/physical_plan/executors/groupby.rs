@@ -4,6 +4,7 @@ use crate::utils::rename_aexpr_root_name;
 use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
+use std::time::Instant;
 
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {
@@ -86,7 +87,7 @@ impl Executor for GroupByExec {
 /// Take an input Executor and a multiple expressions
 pub struct PartitionGroupByExec {
     input: Box<dyn Executor>,
-    keys: Vec<Arc<dyn PhysicalExpr>>,
+    key: Arc<dyn PhysicalExpr>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Expr>,
 }
@@ -94,13 +95,13 @@ pub struct PartitionGroupByExec {
 impl PartitionGroupByExec {
     pub(crate) fn new(
         input: Box<dyn Executor>,
-        keys: Vec<Arc<dyn PhysicalExpr>>,
+        key: Arc<dyn PhysicalExpr>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Expr>,
     ) -> Self {
         Self {
             input,
-            keys,
+            key,
             phys_aggs,
             aggs,
         }
@@ -115,24 +116,26 @@ impl Executor for PartitionGroupByExec {
         // If the column is a categorical, we know the number of groups we have and can decide to continue
         // partitioned or go for the standard groupby. The partitioned is likely to be faster on a small number
         // of groups.
-        let keys = self
-            .keys
-            .iter()
-            .map(|e| e.evaluate(&original_df, state))
-            .collect::<Result<Vec<_>>>()?;
+        let key = self.key.evaluate(&original_df, state)?;
 
-        debug_assert_eq!(keys.len(), 1);
-        let s = &keys[0];
-        if let Ok(ca) = s.categorical() {
+        if let Ok(ca) = key.categorical() {
             let cat_map = ca
                 .get_categorical_map()
                 .expect("categorical type has categorical_map");
             let frac = cat_map.len() as f32 / ca.len() as f32;
             // TODO! proper benchmark which boundary should be chosen.
             if frac > 0.3 {
-                return groupby_helper(original_df, keys, &self.phys_aggs, None, state);
+                return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
             }
         }
+        if std::env::var("POLARS_NO_PARTITION").is_ok() {
+            dbg!("RUN STANDARD");
+            let now = Instant::now();
+            let a = groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
+            println!("standard took {} ms", now.elapsed().as_millis());
+            return a;
+        }
+
         let mut expr_arena = Arena::with_capacity(64);
 
         // This will be the aggregation on the partition results. Due to the groupby
@@ -160,25 +163,22 @@ impl Executor for PartitionGroupByExec {
             .collect::<Result<Vec<_>>>()?;
 
         let n_threads = num_cpus::get();
-        // We do a partitioned groupby. Meaning that we first do the groupby operation arbitrarily
+        // We do a partitioned groupby.
+        // Meaning that we first do the groupby operation arbitrarily
         // splitted on several threads. Than the final result we apply the same groupby again.
         let dfs = split_df(&original_df, n_threads)?;
 
         let dfs = POOL.install(|| {
             dfs.into_par_iter()
                 .map(|df| {
-                    let keys = self
-                        .keys
-                        .iter()
-                        .map(|e| e.evaluate(&df, state))
-                        .collect::<Result<Vec<_>>>()?;
+                    let key = self.key.evaluate(&original_df, state)?;
                     let phys_aggs = &self.phys_aggs;
-                    let gb = df.groupby_with_series(keys, false)?;
+                    let gb = df.groupby_with_series(vec![key], false)?;
                     let groups = gb.get_groups();
 
                     let mut columns = gb.keys();
                     let agg_columns = phys_aggs
-                        .iter()
+                        .par_iter()
                         .map(|expr| {
                             let agg_expr = expr.as_agg_expr()?;
                             let opt_agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
@@ -194,11 +194,7 @@ impl Executor for PartitionGroupByExec {
                             Ok(opt_agg)
                         }).collect::<Result<Vec<_>>>()?;
 
-                    for agg in agg_columns.into_iter().flatten() {
-                        for agg in agg {
-                            columns.push(agg)
-                        }
-                    }
+                    columns.extend(agg_columns.into_iter().flatten().map(|v| v.into_iter()).flatten());
 
                     let df = DataFrame::new_no_checks(columns);
                     Ok(df)
@@ -207,14 +203,10 @@ impl Executor for PartitionGroupByExec {
 
         let df = accumulate_dataframes_vertical(dfs)?;
 
-        let keys = self
-            .keys
-            .iter()
-            .map(|e| e.evaluate(&df, state))
-            .collect::<Result<Vec<_>>>()?;
+        let key = self.key.evaluate(&df, state)?;
 
         // do the same on the outer results
-        let gb = df.groupby_with_series(keys, true)?;
+        let gb = df.groupby_with_series(vec![key], true)?;
         let groups = gb.get_groups();
 
         let mut columns = gb.keys();
