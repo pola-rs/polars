@@ -585,7 +585,7 @@ pub fn get_list_builder(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::toggle_string_cache;
+    use crate::{reset_string_cache, toggle_string_cache};
 
     #[test]
     fn test_primitive_builder() {
@@ -640,6 +640,7 @@ mod test {
     #[test]
     fn test_categorical_builder() {
         for b in &[false, true] {
+            reset_string_cache();
             toggle_string_cache(*b);
 
             // Use 2 builders to check if the global string cache
