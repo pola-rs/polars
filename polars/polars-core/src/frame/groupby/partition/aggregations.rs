@@ -15,7 +15,6 @@ use std::any::Any;
 pub trait AggState {
     fn merge(&mut self, other: Vec<Box<dyn AggState>>);
     fn as_any(&mut self) -> &mut dyn Any;
-    fn keys(&self) -> UInt32Chunked;
     fn finish(&mut self, dtype: DataType) -> Series;
 }
 
@@ -72,18 +71,6 @@ impl AggState for SumAggState {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn keys(&self) -> UInt32Chunked {
-        let len = self.agg.iter().map(|tbl| tbl.len()).sum();
-        let ca: NoNull<UInt32Chunked> = self
-            .agg
-            .iter()
-            .map(|tbl| tbl.iter().map(|(_, v)| v.0))
-            .flatten()
-            .trust_my_length(len)
-            .collect();
-        ca.into_inner()
     }
 
     fn finish(&mut self, dtype: DataType) -> Series {

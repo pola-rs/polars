@@ -1,6 +1,21 @@
 mod aggregations;
 mod split;
+use crate::frame::groupby::GroupedMap;
+use crate::prelude::UInt32Chunked;
+use crate::utils::{CustomIterTools, NoNull};
 pub use aggregations::{AggState, PartitionAgg};
+
+/// Get an index per group
+pub fn group_maps_to_group_index(g_maps: &[GroupedMap<Option<u64>>]) -> UInt32Chunked {
+    let len = g_maps.iter().map(|tbl| tbl.len()).sum();
+    let ca: NoNull<UInt32Chunked> = g_maps
+        .iter()
+        .map(|tbl| tbl.iter().map(|(_, v)| v.0))
+        .flatten()
+        .trust_my_length(len)
+        .collect();
+    ca.into_inner()
+}
 
 #[cfg(test)]
 mod test {
@@ -28,7 +43,7 @@ mod test {
         let mut first = iter.next().unwrap().unwrap();
 
         first.merge(iter.filter_map(|v| v).collect());
-        let keys_idx = first.keys();
+        let keys_idx = group_maps_to_group_index(&g_maps);
         let key_sort = keys_idx.argsort(false);
         let keys = df.column("groups")?.take(&keys_idx.sort(false));
         let values = first.finish(ca.dtype().clone()).take(&key_sort);

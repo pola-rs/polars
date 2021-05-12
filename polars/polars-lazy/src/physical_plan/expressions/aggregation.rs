@@ -215,20 +215,23 @@ impl PhysicalAggregation for AggregationExpr {
         df: &DataFrame,
         g_maps: &[GroupedMap<Option<u64>>],
         state: &ExecutionState,
-    ) -> Result<Option<Vec<Series>>> {
+    ) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df, state)?;
 
         // for every group map we run the aggregation
-        // TODO: may switch parallelizatio order? par_iter here and normal iter in impl
+        // TODO: may switch parallelization order? par_iter here and normal iter in impl
         let mut iter = g_maps.iter().map(|g_map| series.part_agg_sum(g_map));
 
         // get the first result table
-        let mut first = iter.next().unwrap().unwrap();
+        let mut first = iter.next().unwrap();
 
-        // merge the table with the other tables in a recursive manner
-        first.merge(iter.filter_map(|v| v).collect());
+        // maps over option, dtypes that cannot be accumulated return None
+        Ok(first.map(|mut first| {
+            // merge the table with the other tables in a recursive manner
+            first.merge(iter.filter_map(|v| v).collect());
 
-        unimplemented!()
+            first.finish(series.dtype().clone())
+        }))
     }
 }
 impl PhysicalAggregation for AggQuantileExpr {

@@ -248,13 +248,17 @@ impl Executor for PartitionGroupByExec {
 /// Take an input Executor and a multiple expressions
 pub struct PartitionGroupByExec2 {
     input: Box<dyn Executor>,
-    keys: Vec<Arc<dyn PhysicalExpr>>,
+    key: Arc<dyn PhysicalExpr>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Expr>,
 }
 
 impl Executor for PartitionGroupByExec2 {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let df = self.input.execute(state)?;
+        let key = self.key.evaluate(&df, state)?;
+        let g_maps = key.group_maps();
+
         todo!()
     }
 }

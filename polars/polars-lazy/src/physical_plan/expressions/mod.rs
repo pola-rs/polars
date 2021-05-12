@@ -118,7 +118,7 @@ pub trait PhysicalAggregation {
         _df: &DataFrame,
         _g_maps: &[GroupedMap<Option<u64>>],
         _state: &ExecutionState,
-    ) -> Result<Option<Vec<Series>>> {
+    ) -> Result<Option<Series>> {
         unimplemented!()
     }
 }
