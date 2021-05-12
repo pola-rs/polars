@@ -14,19 +14,20 @@ pub type AggMap = HashMap<Option<u64>, AnyValue<'static>, RandomState>;
 pub trait AggState {
     fn merge(&mut self, other: Vec<&mut dyn AggState>);
     fn as_any(&mut self) -> &mut dyn Any;
-    fn finish(self) -> Series;
+    fn finish(self, dtype: DataType) -> Series;
 }
 
 
 pub struct SumAggState {
-    agg: AggMap
+    agg: Vec<AggMap>
 }
 
 impl AggState for SumAggState {
     fn merge(&mut self, other: Vec<&mut dyn AggState>) {
 
+        let mut finished = Vec::with_capacity(other.len() + 1);
         let mut stack = Vec::with_capacity(other.len());
-        stack.push(&mut self.agg);
+        stack.push(&mut self.agg[0]);
         let mut other: Vec<_> = other.into_iter().map(|tbl| {
             tbl.as_any().downcast_mut::<SumAggState>().unwrap()
         }).collect();
@@ -42,24 +43,35 @@ impl AggState for SumAggState {
         while let Some(agg) = stack.pop() {
             for (k, l) in agg.iter_mut() {
                 for tbl in other.iter_mut() {
-                    tbl.agg.remove(k).map(|r| {
+                    tbl.agg[0].remove(k).map(|r| {
                         *l = l.add(&r);
                     });
                 }
 
                 if let Some(o) = other.pop() {
-                    stack.push(&mut o.agg)
+                    stack.push(&mut o.agg[0])
                 }
             };
+            finished.push(std::mem::take(agg));
         }
+        self.agg = finished;
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
 
-    fn finish(self) -> Series {
-        todo!()
+    fn finish(self, dtype: DataType) -> Series {
+        match dtype {
+            DataType::Int64 => {
+                self.agg.into_iter()
+                    .map(|tbl| tbl.into_iter().map(|(_, v)| {
+                        let i: Option<i64> = v.into();
+                        i
+                    })).flatten().collect()
+            }
+            _ => todo!()
+        }
     }
 }
 
@@ -121,7 +133,7 @@ impl<T> PartitionAgg for ChunkedArray<T>
         });
 
         Some(Box::new(SumAggState {
-            agg
+            agg: vec![agg]
         }))
     }
 }

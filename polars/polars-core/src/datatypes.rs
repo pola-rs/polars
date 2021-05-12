@@ -289,6 +289,19 @@ impl<'a> AnyValue<'a> {
     }
 }
 
+impl Into<Option<i64>> for AnyValue<'_> {
+    fn into(self) -> Option<i64> {
+        use AnyValue::*;
+        match self {
+            Null => None,
+            Int32(v) => Some(v as i64),
+            Int64(v) => Some(v as i64),
+            UInt32(v) => Some(v as i64),
+            _ => todo!()
+        }
+    }
+}
+
 impl Display for DataType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
