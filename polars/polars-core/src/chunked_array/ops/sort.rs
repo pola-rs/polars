@@ -219,56 +219,60 @@ where
             })
             .collect();
 
-        vals.sort_by(|tpl_a, tpl_b| match sort_with_nulls(&tpl_a.1, &tpl_b.1) {
-            // if ordering is equal, we check the other arrays until we find a non-equal ordering
-            // if we have exhausted all arrays, we keep the equal ordering.
-            Ordering::Equal => {
-                let idx_a = tpl_a.0 as usize;
-                let idx_b = tpl_b.0 as usize;
+        vals.sort_by(
+            |tpl_a, tpl_b| match (reverse[0], sort_with_nulls(&tpl_a.1, &tpl_b.1)) {
+                // if ordering is equal, we check the other arrays until we find a non-equal ordering
+                // if we have exhausted all arrays, we keep the equal ordering.
+                (_, Ordering::Equal) => {
+                    let idx_a = tpl_a.0 as usize;
+                    let idx_b = tpl_b.0 as usize;
 
-                macro_rules! partial_ord_by_idx {
-                    ($ca: ident, $reverse: expr) => {{
-                        // Safety:
-                        // Indexes are in bounds, we asserted equal lengths above
-                        let a;
-                        let b;
-                        if $reverse {
-                            b = unsafe { $ca.get_unchecked(idx_a) };
-                            a = unsafe { $ca.get_unchecked(idx_b) };
-                        } else {
-                            a = unsafe { $ca.get_unchecked(idx_a) };
-                            b = unsafe { $ca.get_unchecked(idx_b) };
-                        }
+                    macro_rules! partial_ord_by_idx {
+                        ($ca: ident, $reverse: expr) => {{
+                            // Safety:
+                            // Indexes are in bounds, we asserted equal lengths above
+                            let a;
+                            let b;
+                            if $reverse {
+                                b = unsafe { $ca.get_unchecked(idx_a) };
+                                a = unsafe { $ca.get_unchecked(idx_b) };
+                            } else {
+                                a = unsafe { $ca.get_unchecked(idx_a) };
+                                b = unsafe { $ca.get_unchecked(idx_b) };
+                            }
 
-                        match (&a).partial_cmp(&b).unwrap() {
-                            // also equal, try next array
-                            Ordering::Equal => continue,
-                            // this array is not equal, return
-                            ord => return ord,
-                        }
-                    }};
-                }
+                            match (&a).partial_cmp(&b).unwrap() {
+                                // also equal, try next array
+                                Ordering::Equal => continue,
+                                // this array is not equal, return
+                                ord => return ord,
+                            }
+                        }};
+                    }
 
-                // series should be matching type or utf8
-                for (s, reverse) in other.iter().zip(&reverse[1..]) {
-                    match s.dtype() {
-                        DataType::Utf8 => {
-                            let ca = s.utf8().unwrap();
-                            partial_ord_by_idx!(ca, *reverse)
-                        }
-                        _ => {
-                            let ca = self
-                                .unpack_series_matching_type(s)
-                                .expect("should be same type");
-                            partial_ord_by_idx!(ca, *reverse)
+                    // series should be matching type or utf8
+                    for (s, reverse) in other.iter().zip(&reverse[1..]) {
+                        match s.dtype() {
+                            DataType::Utf8 => {
+                                let ca = s.utf8().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            _ => {
+                                let ca = self
+                                    .unpack_series_matching_type(s)
+                                    .expect("should be same type");
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
                         }
                     }
+                    // all arrays exhausted, ordering equal it is.
+                    Ordering::Equal
                 }
-                // all arrays exhausted, ordering equal it is.
-                Ordering::Equal
-            }
-            ord => ord,
-        });
+                (true, Ordering::Less) => Ordering::Greater,
+                (true, Ordering::Greater) => Ordering::Less,
+                (_, ord) => ord,
+            },
+        );
         let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect();
 
         Ok(ca.into_inner())
@@ -332,74 +336,67 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         }
         assert_eq!(other.len(), reverse.len() - 1);
         let mut count: u32 = 0;
-        let mut vals: Vec<_> = match reverse[0] {
-            true => self
-                .into_iter()
-                .rev()
-                .map(|v| {
-                    let i = count;
-                    count += 1;
-                    (i, v)
-                })
-                .collect(),
-            false => self
-                .into_iter()
-                .map(|v| {
-                    let i = count;
-                    count += 1;
-                    (i, v)
-                })
-                .collect(),
-        };
+        let mut vals: Vec<_> = self
+            .into_iter()
+            .map(|v| {
+                let i = count;
+                count += 1;
+                (i, v)
+            })
+            .collect();
 
-        vals.sort_by(|tpl_a, tpl_b| match sort_with_nulls(&tpl_a.1, &tpl_b.1) {
-            // if ordering is equal, we check the other arrays until we find a non-equal ordering
-            // if we have exhausted all arrays, we keep the equal ordering.
-            Ordering::Equal => {
-                let idx_a = tpl_a.0 as usize;
-                let idx_b = tpl_b.0 as usize;
+        vals.sort_by(
+            |tpl_a, tpl_b| match (reverse[0], sort_with_nulls(&tpl_a.1, &tpl_b.1)) {
+                // if ordering is equal, we check the other arrays until we find a non-equal ordering
+                // if we have exhausted all arrays, we keep the equal ordering.
+                (_, Ordering::Equal) => {
+                    let idx_a = tpl_a.0 as usize;
+                    let idx_b = tpl_b.0 as usize;
 
-                macro_rules! partial_ord_by_idx {
-                    ($ca: ident, $reverse: expr) => {{
-                        // Safety:
-                        // Indexes are in bounds, we asserted equal lengths above
-                        let a;
-                        let b;
-                        if $reverse {
-                            b = unsafe { $ca.get_unchecked(idx_a) };
-                            a = unsafe { $ca.get_unchecked(idx_b) };
-                        } else {
-                            a = unsafe { $ca.get_unchecked(idx_a) };
-                            b = unsafe { $ca.get_unchecked(idx_b) };
-                        }
+                    macro_rules! partial_ord_by_idx {
+                        ($ca: ident, $reverse: expr) => {{
+                            // Safety:
+                            // Indexes are in bounds, we asserted equal lengths above
+                            let a;
+                            let b;
+                            if $reverse {
+                                b = unsafe { $ca.get_unchecked(idx_a) };
+                                a = unsafe { $ca.get_unchecked(idx_b) };
+                            } else {
+                                a = unsafe { $ca.get_unchecked(idx_a) };
+                                b = unsafe { $ca.get_unchecked(idx_b) };
+                            }
 
-                        match (&a).partial_cmp(&b).unwrap() {
-                            // also equal, try next array
-                            Ordering::Equal => continue,
-                            // this array is not equal, return
-                            ord => return ord,
-                        }
-                    }};
-                }
+                            match (&a).partial_cmp(&b).unwrap() {
+                                // also equal, try next array
+                                Ordering::Equal => continue,
+                                // this array is not equal, return
+                                ord => return ord,
+                            }
+                        }};
+                    }
 
-                // series should be matching type or utf8
-                for (s, reverse) in other.iter().zip(&reverse[1..]) {
-                    match s.dtype() {
-                        DataType::Utf8 => {
-                            let ca = s.utf8().unwrap();
-                            partial_ord_by_idx!(ca, *reverse)
-                        }
-                        _ => {
-                            let ca = s.f64().expect("cast to f64 before calling this method");
-                            partial_ord_by_idx!(ca, *reverse)
+                    // series should be matching type or utf8
+                    for (s, reverse) in other.iter().zip(&reverse[1..]) {
+                        match s.dtype() {
+                            DataType::Utf8 => {
+                                let ca = s.utf8().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            _ => {
+                                let ca = s.f64().expect("cast to f64 before calling this method");
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
                         }
                     }
+                    // all arrays exhausted, ordering equal it is.
+                    Ordering::Equal
                 }
-                // all arrays exhausted, ordering equal it is.
-                Ordering::Equal
-            }
-            ord => ord,
-        });
+                (true, Ordering::Less) => Ordering::Greater,
+                (true, Ordering::Greater) => Ordering::Less,
+                (_, ord) => ord,
+            },
+        );
         let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect();
 
         Ok(ca.into_inner())
@@ -502,6 +499,26 @@ mod test {
             "b" => [3, 5, 4, 4, 2, 5]
         )?;
         assert!(out.frame_equal(&expected));
+
+        let df = df!(
+            "groups" => [1, 2, 3],
+            "values" => ["a", "a", "b"]
+        )?;
+
+        let out = df.sort(&["groups", "values"], vec![true, false])?;
+        let expected = df!(
+            "groups" => [3, 2, 1],
+            "values" => ["b", "a", "a"]
+        )?;
+        assert!(out.frame_equal(&expected));
+
+        let out = df.sort(&["values", "groups"], vec![false, true])?;
+        let expected = df!(
+            "groups" => [2, 1, 3],
+            "values" => ["a", "a", "b"]
+        )?;
+        assert!(out.frame_equal(&expected));
+
         Ok(())
     }
 }
