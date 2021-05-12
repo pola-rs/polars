@@ -9,6 +9,7 @@ import tempfile
 import subprocess
 import shutil
 from datetime import datetime
+import numpy as np
 
 try:
     from ..polars import (
@@ -1828,9 +1829,19 @@ def lit_date(dt: "datetime") -> Expr:
     return lit(int(dt.timestamp() * 1e3))
 
 
-def lit(value: "Optional[Union[float, int, str, datetime, Series]]") -> "Expr":
+def lit(
+    value: "Optional[Union[float, int, str, datetime, Series]]",
+    dtype: "Optional[DataType]" = None,
+) -> "Expr":
     """
     A literal value
+
+    Parameters
+    ----------
+    value
+        Value that should be used as a `literal`
+    dtype
+        Optionally define a dtype
 
     # Example
 
@@ -1857,6 +1868,11 @@ def lit(value: "Optional[Union[float, int, str, datetime, Series]]") -> "Expr":
     if isinstance(value, Series):
         value = value._s
 
+    if isinstance(value, np.ndarray):
+        return lit(Series("", value))
+
+    if dtype:
+        return wrap_expr(pylit(value)).cast(dtype)
     return wrap_expr(pylit(value))
 
 
