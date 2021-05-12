@@ -43,6 +43,9 @@ features = [
     "is_in"
 ]
 
+[patch.crates-io]
+packed_simd_2 = { git = 'https://github.com/JohnTitor/packed_simd/', branch="fix-build"}
+
 [lib]
 name = "polars"
 crate-type = ["cdylib"]
