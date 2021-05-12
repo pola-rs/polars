@@ -298,7 +298,7 @@ impl DefaultPlanner {
                 if apply.is_some() {
                     partitionable = false;
                 }
-                let phys_keys =
+                let mut phys_keys =
                     self.create_physical_expressions(keys, Context::Default, expr_arena)?;
                 if partitionable {
                     let phys_aggs = self.create_physical_expressions(
@@ -308,7 +308,7 @@ impl DefaultPlanner {
                     )?;
                     Ok(Box::new(PartitionGroupByExec::new(
                         input,
-                        phys_keys,
+                        phys_keys.pop().unwrap(),
                         phys_aggs,
                         aggs.into_iter()
                             .map(|n| node_to_exp(n, expr_arena))

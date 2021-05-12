@@ -21,6 +21,7 @@ pub(crate) mod pivot;
 pub mod resample;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
