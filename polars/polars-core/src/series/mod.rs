@@ -28,7 +28,7 @@ pub(crate) mod private {
     use super::*;
     #[cfg(feature = "pivot")]
     use crate::frame::groupby::pivot::PivotAgg;
-    use crate::frame::groupby::GroupTuples;
+    use crate::frame::groupby::{partition::AggState, GroupTuples, GroupedMap};
 
     use ahash::RandomState;
 
@@ -144,6 +144,9 @@ pub(crate) mod private {
             Err(PolarsError::InvalidOperation(
                 "argsort_multiple is not implemented for this Series".into(),
             ))
+        }
+        fn part_agg_sum(&self, groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
+            unimplemented!()
         }
     }
 }

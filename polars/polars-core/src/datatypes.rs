@@ -261,6 +261,28 @@ impl From<i32> for AnyValue<'_> {
         AnyValue::Int32(a)
     }
 }
+impl From<i16> for AnyValue<'_> {
+    fn from(a: i16) -> Self {
+        AnyValue::Int16(a)
+    }
+}
+impl From<u16> for AnyValue<'_> {
+    fn from(a: u16) -> Self {
+        AnyValue::UInt16(a)
+    }
+}
+
+impl From<i8> for AnyValue<'_> {
+    fn from(a: i8) -> Self {
+        AnyValue::Int8(a)
+    }
+}
+impl From<u8> for AnyValue<'_> {
+    fn from(a: u8) -> Self {
+        AnyValue::UInt8(a)
+    }
+}
+
 impl<'a, T> From<Option<T>> for AnyValue<'a>
 where
     T: Into<AnyValue<'a>>,
@@ -290,10 +312,10 @@ impl<'a> AnyValue<'a> {
     }
 }
 
-impl Into<Option<i64>> for AnyValue<'_> {
-    fn into(self) -> Option<i64> {
+impl<'a> From<AnyValue<'a>> for Option<i64> {
+    fn from(val: AnyValue<'a>) -> Self {
         use AnyValue::*;
-        match self {
+        match val {
             Null => None,
             Int32(v) => Some(v as i64),
             Int64(v) => Some(v as i64),

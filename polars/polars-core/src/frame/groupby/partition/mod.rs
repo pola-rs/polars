@@ -1,5 +1,6 @@
 mod aggregations;
 mod split;
+pub use aggregations::{AggState, PartitionAgg};
 
 #[cfg(test)]
 mod test {

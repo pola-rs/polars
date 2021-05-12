@@ -3,7 +3,7 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
+use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples, GroupedMap};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use std::sync::Arc;
@@ -207,6 +207,18 @@ impl PhysicalAggregation for AggregationExpr {
             }
             _ => PhysicalAggregation::aggregate(self, final_df, groups, state),
         }
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_partititioned2(
+        &self,
+        df: &DataFrame,
+        g_map: &GroupedMap<Option<u64>>,
+        state: &ExecutionState,
+    ) -> Result<Option<Vec<Series>>> {
+        let series = self.expr.evaluate(df, state)?;
+
+        unimplemented!()
     }
 }
 impl PhysicalAggregation for AggQuantileExpr {

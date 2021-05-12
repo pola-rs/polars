@@ -21,6 +21,7 @@ use crate::fmt::FmtList;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
+use crate::frame::groupby::{partition::*, GroupedMap};
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
 use ahash::RandomState;
@@ -179,6 +180,9 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "sort_multiple")]
             fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
                 self.0.argsort_multiple(by, reverse)
+            }
+            fn part_agg_sum(&self, groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
+                self.0.part_agg_sum(groups)
             }
         }
 

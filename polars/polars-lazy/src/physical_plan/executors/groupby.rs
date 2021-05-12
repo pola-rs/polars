@@ -121,6 +121,8 @@ impl Executor for PartitionGroupByExec {
             .map(|e| e.evaluate(&original_df, state))
             .collect::<Result<Vec<_>>>()?;
 
+        // We only do partitioned groupby's on single keys aggregation.
+        // This design choice seems ok, as cardinality rapidly increases with multiple columns
         debug_assert_eq!(keys.len(), 1);
         let s = &keys[0];
         if let Ok(ca) = s.categorical() {
@@ -133,6 +135,8 @@ impl Executor for PartitionGroupByExec {
                 return groupby_helper(original_df, keys, &self.phys_aggs, None, state);
             }
         }
+        if std::env::var("POLARS_NEW_PARTITION").is_ok() {}
+
         let mut expr_arena = Arena::with_capacity(64);
 
         // This will be the aggregation on the partition results. Due to the groupby

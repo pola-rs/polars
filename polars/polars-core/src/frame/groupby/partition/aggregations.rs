@@ -6,6 +6,7 @@ use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use crate::POOL;
 use ahash::RandomState;
+use arrow::ipc::Utf8;
 use hashbrown::HashMap;
 use num::{Bounded, Num, NumCast, Zero};
 use rayon::prelude::*;
@@ -31,8 +32,14 @@ impl AggState for SumAggState {
         let mut finished = Vec::with_capacity(other.len() + 1);
         let mut stack = Vec::with_capacity(other.len());
         stack.push(&mut self.agg[0]);
+
+        // README! we revert the order so that they are added to the stack
+        // in the original order. The ordering is important to make first,
+        // and last work
+        // TODO! Have this logic somewhere more global.
         let mut other: Vec<_> = other
             .iter_mut()
+            .rev()
             .map(|tbl| tbl.as_any().downcast_mut::<SumAggState>().unwrap())
             .collect();
 
@@ -97,11 +104,18 @@ impl AggState for SumAggState {
     }
 }
 
-pub(crate) trait PartitionAgg {
+pub trait PartitionAgg {
     fn part_agg_sum(&self, _groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
         None
     }
 }
+
+impl PartitionAgg for BooleanChunked {}
+impl PartitionAgg for Utf8Chunked {}
+impl PartitionAgg for ListChunked {}
+impl PartitionAgg for CategoricalChunked {}
+#[cfg(feature = "object")]
+impl<T> PartitionAgg for ObjectChunked<T> {}
 
 impl<T> PartitionAgg for ChunkedArray<T>
 where

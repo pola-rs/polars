@@ -15,6 +15,7 @@ use crate::fmt::FmtList;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
+use crate::frame::groupby::{partition::*, GroupedMap};
 use crate::prelude::*;
 use ahash::RandomState;
 use arrow::array::{ArrayData, ArrayRef};
@@ -236,6 +237,9 @@ macro_rules! impl_dyn_series {
                 self.0
                     .unpack_series_matching_type(&s)?
                     .argsort_multiple(by, reverse)
+            }
+            fn part_agg_sum(&self, groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
+                cast_and_apply!(self, part_agg_sum, groups)
             }
         }
 

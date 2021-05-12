@@ -19,7 +19,7 @@ pub(crate) mod window;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::{GroupTuples, GroupedMap};
 use polars_core::prelude::*;
 use polars_io::PhysicalIoExpr;
 use std::borrow::Cow;
@@ -110,5 +110,15 @@ pub trait PhysicalAggregation {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         self.aggregate(final_df, groups, state)
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_partititioned2(
+        &self,
+        _df: &DataFrame,
+        _g_map: &GroupedMap<Option<u64>>,
+        _state: &ExecutionState,
+    ) -> Result<Option<Vec<Series>>> {
+        unimplemented!()
     }
 }

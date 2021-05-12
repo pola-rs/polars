@@ -44,8 +44,39 @@ impl ToBitRepr for i32 {
 }
 
 impl ToBitRepr for i64 {
+    #[inline]
     fn into_bit_repr(self) -> u64 {
         unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl ToBitRepr for i16 {
+    #[inline]
+    fn into_bit_repr(self) -> u64 {
+        let a: u16 = unsafe { std::mem::transmute(self) };
+        a.into_bit_repr()
+    }
+}
+
+impl ToBitRepr for u16 {
+    #[inline]
+    fn into_bit_repr(self) -> u64 {
+        self as u64
+    }
+}
+
+impl ToBitRepr for i8 {
+    #[inline]
+    fn into_bit_repr(self) -> u64 {
+        let a: u8 = unsafe { std::mem::transmute(self) };
+        a.into_bit_repr()
+    }
+}
+
+impl ToBitRepr for u8 {
+    #[inline]
+    fn into_bit_repr(self) -> u64 {
+        self as u64
     }
 }
 
