@@ -15,12 +15,14 @@ use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash};
 
 pub mod aggregations;
+pub mod partition;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
 #[cfg(feature = "downsample")]
 pub mod resample;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+pub type GroupedMap<T> = HashMap<T, (u32, Vec<u32>), RandomState>;
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
@@ -44,13 +46,14 @@ where
 {
     groupby_threaded(iters, group_size_hint)
         .into_iter()
+        .map(|hash_tbl| hash_tbl.into_iter().map(|(_k, v)| v))
         .flatten()
         .collect()
 }
 
 /// Determine groupby tuples from an iterator. The group_size_hint is used to pre-allocate the group vectors.
 /// When the grouping column is a categorical type we already have a good indication of the avg size of the groups.
-fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<GroupTuples>
+fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<GroupedMap<T>>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -105,7 +108,7 @@ where
 
                 offset += len;
             }
-            hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+            hash_tbl
         })
     })
     .collect()

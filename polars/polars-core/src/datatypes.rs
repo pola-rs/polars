@@ -19,6 +19,7 @@ pub use arrow::datatypes::{
 };
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
+use std::ops::Add;
 
 pub struct Utf8Type {}
 
@@ -229,6 +230,63 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "object")]
     /// Use as_any to get a dyn Any
     Object(&'a str),
+}
+
+impl From<f64> for AnyValue<'_> {
+    fn from(a: f64) -> Self {
+        AnyValue::Float64(a)
+    }
+}
+impl From<f32> for AnyValue<'_> {
+    fn from(a: f32) -> Self {
+        AnyValue::Float32(a)
+    }
+}
+impl From<u32> for AnyValue<'_> {
+    fn from(a: u32) -> Self {
+        AnyValue::UInt32(a)
+    }
+}
+impl From<u64> for AnyValue<'_> {
+    fn from(a: u64) -> Self {
+        AnyValue::UInt64(a)
+    }
+}
+impl From<i64> for AnyValue<'_> {
+    fn from(a: i64) -> Self {
+        AnyValue::Int64(a)
+    }
+}
+impl From<i32> for AnyValue<'_> {
+    fn from(a: i32) -> Self {
+        AnyValue::Int32(a)
+    }
+}
+impl<'a, T> From<Option<T>> for AnyValue<'a>
+where T: Into<AnyValue<'a>> {
+    fn from(a: Option<T>) -> Self {
+        match a {
+            None => AnyValue::Null,
+            Some(v) => v.into()
+        }
+    }
+}
+
+impl<'a> AnyValue<'a> {
+    pub fn add<'b>(&self, rhs: &AnyValue<'b>) -> AnyValue<'a> {
+        use AnyValue::*;
+        match (self, rhs) {
+            (Null, _) => Null,
+            (_, Null) => Null,
+            (Int32(l), Int32(r)) => Int32(l + r),
+            (Int64(l), Int64(r)) => Int64(l + r),
+            (UInt32(l), UInt32(r)) => UInt32(l + r),
+            (UInt64(l), UInt64(r)) => UInt64(l + r),
+            (Float32(l), Float32(r)) => Float32(l + r),
+            (Float64(l), Float64(r)) => Float64(l + r),
+            _ => todo!()
+        }
+    }
 }
 
 impl Display for DataType {
