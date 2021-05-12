@@ -19,7 +19,6 @@ pub use arrow::datatypes::{
 };
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
-use std::ops::Add;
 
 pub struct Utf8Type {}
 
@@ -263,11 +262,13 @@ impl From<i32> for AnyValue<'_> {
     }
 }
 impl<'a, T> From<Option<T>> for AnyValue<'a>
-where T: Into<AnyValue<'a>> {
+where
+    T: Into<AnyValue<'a>>,
+{
     fn from(a: Option<T>) -> Self {
         match a {
             None => AnyValue::Null,
-            Some(v) => v.into()
+            Some(v) => v.into(),
         }
     }
 }
@@ -284,7 +285,7 @@ impl<'a> AnyValue<'a> {
             (UInt64(l), UInt64(r)) => UInt64(l + r),
             (Float32(l), Float32(r)) => Float32(l + r),
             (Float64(l), Float64(r)) => Float64(l + r),
-            _ => todo!()
+            _ => todo!(),
         }
     }
 }
@@ -297,7 +298,7 @@ impl Into<Option<i64>> for AnyValue<'_> {
             Int32(v) => Some(v as i64),
             Int64(v) => Some(v as i64),
             UInt32(v) => Some(v as i64),
-            _ => todo!()
+            _ => todo!(),
         }
     }
 }
