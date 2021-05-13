@@ -72,7 +72,7 @@ impl PhysicalPlanner for DefaultPlanner {
 }
 
 impl DefaultPlanner {
-    fn create_physical_expressions(
+    pub fn create_physical_expressions(
         &self,
         exprs: Vec<Node>,
         context: Context,
@@ -260,8 +260,7 @@ impl DefaultPlanner {
                 // TODO: fix this brittle/ buggy state and implement partitioned groupby's in eager
                 let mut partitionable = true;
 
-                // currently only a single aggregation seems faster with ad-hoc partitioning.
-                if aggs.len() == 1 && keys.len() == 1 {
+                if keys.len() == 1 {
                     for agg in &aggs {
                         // make sure that we don't have a binary expr in the expr tree
                         let matches =
@@ -280,6 +279,7 @@ impl DefaultPlanner {
                             Expr::Agg(AggExpr::Min(_))
                             | Expr::Agg(AggExpr::Max(_))
                             | Expr::Agg(AggExpr::Sum(_))
+                            | Expr::Agg(AggExpr::Mean(_))
                             // first need to implement this correctly
                             // | Expr::Agg(AggExpr::Count(_))
                             | Expr::Agg(AggExpr::Last(_))

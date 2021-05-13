@@ -3,12 +3,10 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples, GroupedMap};
+use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::prelude::*;
-use polars_core::{utils::NoNull, POOL};
-use rayon::prelude::*;
+use polars_core::utils::NoNull;
 use std::sync::Arc;
-use std::time::Instant;
 
 pub(crate) struct AggregationExpr {
     pub(crate) expr: Arc<dyn PhysicalExpr>,
