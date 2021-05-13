@@ -5,8 +5,13 @@ use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples, GroupedMap};
 use polars_core::prelude::*;
-use polars_core::utils::NoNull;
+use polars_core::{
+    POOL,
+    utils::NoNull
+};
 use std::sync::Arc;
+use rayon::prelude::*;
+use std::time::Instant;
 
 pub(crate) struct AggregationExpr {
     pub(crate) expr: Arc<dyn PhysicalExpr>,
@@ -218,19 +223,28 @@ impl PhysicalAggregation for AggregationExpr {
     ) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df, state)?;
 
+        let now = Instant::now();
         // for every group map we run the aggregation
         // TODO: may switch parallelization order? par_iter here and normal iter in impl
-        let mut iter = g_maps.iter().map(|g_map| series.part_agg_sum(g_map));
+        let aggs: Vec<_> = POOL.install(|| {
+            g_maps.par_iter().map(|g_map| series.part_agg_sum(g_map)).collect()
+        });
+        println!("agg took {} ms", now.elapsed().as_millis());
+        let mut iter = aggs.into_iter();
 
         // get the first result table
         let first = iter.next().unwrap();
 
         // maps over option, dtypes that cannot be accumulated return None
         Ok(first.map(|mut first| {
+            let now = Instant::now();
             // merge the table with the other tables in a recursive manner
             first.merge(iter.flatten().collect());
-
-            first.finish()
+            println!("merge took {} ms", now.elapsed().as_millis());
+            let now = Instant::now();
+            let a = first.finish();
+            println!("finish took {} ms", now.elapsed().as_millis());
+            a
         }))
     }
 }

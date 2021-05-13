@@ -9,8 +9,9 @@ use hashbrown::HashMap;
 use num::{Bounded, Num, NumCast, Zero};
 use rayon::prelude::*;
 use std::any::Any;
+use std::time::Instant;
 
-pub trait AggState {
+pub trait AggState: Send + Sync {
     fn merge(&mut self, other: Vec<Box<dyn AggState>>);
     fn as_any(&mut self) -> &mut dyn Any;
     fn finish(&mut self) -> Series;
@@ -18,7 +19,7 @@ pub trait AggState {
 
 // u32: an index of the group (can be used to get the keys)
 // AnyValue: the aggregation
-pub type AggMap = HashMap<Option<u64>, (u32, AnyValue<'static>), RandomState>;
+pub type AggMap = HashMap<Option<u64>, AnyValue<'static>, RandomState>;
 
 pub struct SumAggState {
     agg: Vec<AggMap>,
@@ -54,7 +55,7 @@ impl AggState for SumAggState {
             for (k, l) in agg.iter_mut() {
                 for tbl in other.iter_mut() {
                     if let Some(r) = tbl.agg[0].remove(k) {
-                        *l = (l.0, l.1.add(&r.1));
+                        *l = l.add(&r);
                     }
                 }
             }
@@ -80,7 +81,7 @@ impl AggState for SumAggState {
                 .iter()
                 .map(|tbl| {
                     tbl.iter().map(|(_, v)| {
-                        let i: Option<i64> = v.1.clone().into();
+                        let i: Option<i64> = v.clone().into();
                         i
                     })
                 })
@@ -116,42 +117,39 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn part_agg_sum(&self, groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
-        let agg: AggMap = POOL.install(|| {
-            groups
-                .into_par_iter()
-                .map(|(k, (first, idx))| {
-                    let agg = if idx.len() == 1 {
-                        self.get(*first as usize)
-                    } else {
-                        match (self.null_count(), self.chunks.len()) {
-                            (0, 1) => unsafe {
-                                Some(take_agg_no_null_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| a + b,
-                                    T::Native::zero(),
-                                ))
-                            },
-                            (_, 1) => unsafe {
-                                take_agg_primitive_iter_unchecked(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| a + b,
-                                    T::Native::zero(),
-                                )
-                            },
-                            _ => {
-                                let take = unsafe {
-                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                                };
-                                take.sum()
-                            }
+        dbg!(groups.len());
+        let now = Instant::now();
+        let agg: AggMap = groups
+                .into_iter()
+                .map(|(k, idx)| {
+                    let agg = match (self.null_count(), self.chunks.len()) {
+                        (0, 1) => unsafe {
+                            Some(take_agg_no_null_primitive_iter_unchecked(
+                                self.downcast_iter().next().unwrap(),
+                                idx.iter().map(|i| *i as usize),
+                                |a, b| a + b,
+                                T::Native::zero(),
+                            ))
+                        },
+                        (_, 1) => unsafe {
+                            take_agg_primitive_iter_unchecked(
+                                self.downcast_iter().next().unwrap(),
+                                idx.iter().map(|i| *i as usize),
+                                |a, b| a + b,
+                                T::Native::zero(),
+                            )
+                        },
+                        _ => {
+                            let take = unsafe {
+                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                            };
+                            take.sum()
                         }
                     };
-                    (*k, (*first, agg.into()))
+                    (*k, agg.into())
                 })
-                .collect()
-        });
+                .collect();
+        println!("single agg took {} ms", now.elapsed().as_millis());
 
         Some(Box::new(SumAggState {
             agg: vec![agg],

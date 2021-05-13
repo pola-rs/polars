@@ -228,16 +228,21 @@ where
         .enumerate()
         .for_each(|(idx, (h, t))| {
             let idx = (idx + offset) as u32;
-            hash_tbl
+
+            let entry = hash_tbl
                 .raw_entry_mut()
                 // uses the key to check equality to find and entry
-                .from_key_hashed_nocheck(h, &t)
-                // if entry is found modify it
-                .and_modify(|_k, v| {
+                .from_key_hashed_nocheck(h, &t);
+
+            match entry {
+                RawEntryMut::Vacant(entry) => {
+                    entry.insert_hashed_nocheck(h, t, vec![idx]);
+                }
+                RawEntryMut::Occupied(mut entry) => {
+                    let (_k, v) = entry.get_key_value_mut();
                     v.push(idx);
-                })
-                // otherwise we insert both the key and new Vec without hashing
-                .or_insert_with(|| (t, vec![idx]));
+                }
+            }
         });
     hash_tbl
 }

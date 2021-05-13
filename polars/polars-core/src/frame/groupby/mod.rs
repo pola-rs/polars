@@ -22,7 +22,7 @@ pub(crate) mod pivot;
 pub mod resample;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
-pub type GroupedMap<T> = HashMap<T, (u32, Vec<u32>), RandomState>;
+pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
 
 fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
@@ -39,24 +39,24 @@ where
         .collect()
 }
 
+
 fn groupby_threaded_flat<I, T>(iters: Vec<I>, group_size_hint: usize) -> GroupTuples
-where
-    I: IntoIterator<Item = T> + Send,
-    T: Send + Hash + Eq + Sync + Copy,
+    where
+        I: IntoIterator<Item = T> + Send,
+        T: Send + Hash + Eq + Sync + Copy,
 {
     groupby_threaded(iters, group_size_hint)
         .into_iter()
-        .map(|hash_tbl| hash_tbl.into_iter().map(|(_k, v)| v))
         .flatten()
         .collect()
 }
 
 /// Determine groupby tuples from an iterator. The group_size_hint is used to pre-allocate the group vectors.
 /// When the grouping column is a categorical type we already have a good indication of the avg size of the groups.
-fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<GroupedMap<T>>
-where
-    I: IntoIterator<Item = T> + Send,
-    T: Send + Hash + Eq + Sync + Copy,
+fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<GroupTuples>
+    where
+        I: IntoIterator<Item = T> + Send,
+        T: Send + Hash + Eq + Sync + Copy,
 {
     let n_threads = iters.len();
     let (hashes_and_keys, random_state) = create_hash_and_keys_threaded_vectorized(iters, None);
@@ -108,10 +108,10 @@ where
 
                 offset += len;
             }
-            hash_tbl
+            hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
         })
     })
-    .collect()
+        .collect()
 }
 
 /// Utility function used as comparison function in the hashmap.

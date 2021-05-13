@@ -5,6 +5,7 @@ use polars_core::frame::groupby::partition::group_maps_to_group_index;
 use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
+use std::time::Instant;
 
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {
@@ -136,11 +137,19 @@ impl Executor for PartitionGroupByExec {
                 return groupby_helper(original_df, keys, &self.phys_aggs, None, state);
             }
         }
+        if std::env::var("POLARS_NO_PARTITION").is_ok() {
+            dbg!("RUN STANDARD");
+            let now = Instant::now();
+            let a = groupby_helper(original_df, keys, &self.phys_aggs, None, state);
+            println!("standard took {} ms", now.elapsed().as_millis());
+            return a
+        }
+
         if std::env::var("POLARS_NEW_PARTITION").is_ok() && !matches!(key.dtype(), DataType::Utf8) {
             dbg!("RUN PARTITIONED");
             let mut exec = PartitionGroupByExec2 {
                 input: original_df,
-                key: self.keys[0].clone(),
+                key: key.clone(),
                 phys_aggs: std::mem::take(&mut self.phys_aggs),
             };
             return exec.execute(state);
@@ -257,22 +266,24 @@ impl Executor for PartitionGroupByExec {
 /// Take an input Executor and a multiple expressions
 pub struct PartitionGroupByExec2 {
     input: DataFrame,
-    key: Arc<dyn PhysicalExpr>,
+    key: Series,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
 }
 
 impl Executor for PartitionGroupByExec2 {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = &self.input;
-        let key = self.key.evaluate(df, state)?;
-        let g_maps = key.group_maps();
+        let g_maps = self.key.group_maps();
+        let now = Instant::now();
         let key = {
             let key_idx = group_maps_to_group_index(&g_maps);
             // Safety:
             // Indexes of groups are in bounds
-            unsafe { key.take_unchecked(&key_idx)? }
+            unsafe { self.key.take_unchecked(&key_idx)? }
         };
+        println!("key took {} ms", now.elapsed().as_millis());
 
+        let now = Instant::now();
         let agg_columns = self
             .phys_aggs
             .iter()
@@ -281,6 +292,7 @@ impl Executor for PartitionGroupByExec2 {
                 agg_expr.evaluate_partitioned_2(&df, &g_maps, state)
             })
             .collect::<Result<Vec<_>>>()?;
+        println!("total agg took {} ms", now.elapsed().as_millis());
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1);
         columns.push(key);

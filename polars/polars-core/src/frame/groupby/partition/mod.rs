@@ -11,7 +11,7 @@ pub fn group_maps_to_group_index(g_maps: &[GroupedMap<Option<u64>>]) -> UInt32Ch
     let len = g_maps.iter().map(|tbl| tbl.len()).sum();
     let ca: NoNull<UInt32Chunked> = g_maps
         .iter()
-        .map(|tbl| tbl.iter().map(|(_, v)| v.0))
+        .map(|tbl| tbl.iter().map(|(_, v)| v[0]))
         .flatten()
         .trust_my_length(len)
         .collect();

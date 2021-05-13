@@ -1,7 +1,12 @@
 use crate::frame::groupby::{groupby_threaded, GroupedMap};
-use crate::prelude::*;
+use crate::{
+    prelude::*,
+    POOL
+};
 use crate::utils::split_ca;
 use std::hash::Hash;
+use crate::vector_hasher::prepare_hashed_relation;
+use rayon::prelude::*;
 
 pub trait ToBitRepr {
     fn into_bit_repr(self) -> u64;
@@ -115,23 +120,29 @@ where
             let splitted = split_ca(self, n_threads).unwrap();
 
             if self.chunks.len() == 1 {
-                let iters = splitted
-                    .iter()
-                    .map(|ca| {
-                        ca.downcast_iter().map(|arr| {
-                            arr.into_iter()
-                                .map(|opt_v| opt_v.map(|v| v.into_bit_repr()))
+                POOL.install(|| {
+                    splitted
+                        .par_iter()
+                        .map(|ca| {
+                            let iter = ca.downcast_iter().map(|arr| {
+                                arr.into_iter()
+                                    .map(|opt_v| opt_v.map(|v| v.into_bit_repr()))
+                            }).flatten();
+                            prepare_hashed_relation(iter)
                         })
-                    })
-                    .flatten()
-                    .collect();
-                groupby_threaded(iters, group_size_hint)
+                        .collect()
+
+                })
             } else {
-                let iters = splitted
-                    .iter()
-                    .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.into_bit_repr())))
-                    .collect();
-                groupby_threaded(iters, group_size_hint)
+                POOL.install(|| {
+                    splitted
+                        .iter()
+                        .map(|ca| {
+                            let iter = ca.into_iter().map(|opt_v| opt_v.map(|v| v.into_bit_repr()));
+                            prepare_hashed_relation(iter)
+                        })
+                        .collect()
+                })
             }
         }
     }
