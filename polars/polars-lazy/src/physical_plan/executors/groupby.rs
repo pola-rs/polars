@@ -284,11 +284,7 @@ impl Executor for PartitionGroupByExec2 {
 
         let mut columns = Vec::with_capacity(agg_columns.len() + 1);
         columns.push(key);
-        for a in agg_columns {
-            if let Some(a) = a {
-                columns.push(a)
-            }
-        }
+        columns.extend(agg_columns.into_iter().flatten());
 
         Ok(DataFrame::new_no_checks(columns))
     }

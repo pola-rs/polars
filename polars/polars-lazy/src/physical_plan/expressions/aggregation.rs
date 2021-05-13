@@ -223,12 +223,12 @@ impl PhysicalAggregation for AggregationExpr {
         let mut iter = g_maps.iter().map(|g_map| series.part_agg_sum(g_map));
 
         // get the first result table
-        let mut first = iter.next().unwrap();
+        let first = iter.next().unwrap();
 
         // maps over option, dtypes that cannot be accumulated return None
         Ok(first.map(|mut first| {
             // merge the table with the other tables in a recursive manner
-            first.merge(iter.filter_map(|v| v).collect());
+            first.merge(iter.flatten().collect());
 
             first.finish()
         }))

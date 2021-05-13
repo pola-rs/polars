@@ -43,7 +43,7 @@ mod test {
         let mut iter = g_maps.iter().map(|g_map| ca.part_agg_sum(g_map));
         let mut first = iter.next().unwrap().unwrap();
 
-        first.merge(iter.filter_map(|v| v).collect());
+        first.merge(iter.flatten().collect());
         let keys_idx = group_maps_to_group_index(&g_maps);
         let key_sort = keys_idx.argsort(false);
         let keys = df.column("groups")?.take(&keys_idx.sort(false));

@@ -148,7 +148,7 @@ pub(crate) mod private {
         fn group_maps(&self) -> Vec<GroupedMap<Option<u64>>> {
             unimplemented!()
         }
-        fn part_agg_sum(&self, groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
+        fn part_agg_sum(&self, _groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
             unimplemented!()
         }
     }

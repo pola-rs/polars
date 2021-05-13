@@ -3,10 +3,8 @@ use crate::chunked_array::kernels::take_agg::{
 };
 use crate::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupedMap};
 use crate::prelude::*;
-use crate::utils::{CustomIterTools, NoNull};
 use crate::POOL;
 use ahash::RandomState;
-use arrow::ipc::Utf8;
 use hashbrown::HashMap;
 use num::{Bounded, Num, NumCast, Zero};
 use rayon::prelude::*;
@@ -55,9 +53,9 @@ impl AggState for SumAggState {
         while let Some(agg) = stack.pop() {
             for (k, l) in agg.iter_mut() {
                 for tbl in other.iter_mut() {
-                    tbl.agg[0].remove(k).map(|r| {
+                    if let Some(r) = tbl.agg[0].remove(k) {
                         *l = (l.0, l.1.add(&r.1));
-                    });
+                    }
                 }
             }
 
