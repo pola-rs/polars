@@ -120,6 +120,10 @@ macro_rules! impl_dyn_series {
             fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 self.0.agg_median(groups)
             }
+            #[cfg(feature = "lazy")]
+            fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+                self.0.agg_valid_count(groups)
+            }
 
             #[cfg(feature = "pivot")]
             fn pivot<'a>(

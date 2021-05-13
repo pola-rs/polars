@@ -32,6 +32,12 @@ pub(crate) trait NumericAggSync {
     fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
+
+    /// Count the valid values. That is length - null_count
+    /// Used in partitioned aggregation to compute the mean values.
+    fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        None
+    }
 }
 
 fn agg_helper<T, F>(groups: &[(u32, Vec<u32>)], f: F) -> Option<Series>
@@ -220,6 +226,17 @@ where
                 .unpack::<T>()
                 .unwrap()
                 .get(0)
+        })
+    }
+    #[cfg(feature = "lazy")]
+    fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        agg_helper::<UInt32Type, _>(groups, |(_first, idx)| {
+            if self.null_count() == 0 {
+                Some(idx.len() as u32)
+            } else {
+                let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                Some((take.len() - take.null_count()) as u32)
+            }
         })
     }
 }
