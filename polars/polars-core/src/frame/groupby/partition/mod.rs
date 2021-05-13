@@ -4,6 +4,7 @@ use crate::frame::groupby::GroupedMap;
 use crate::prelude::UInt32Chunked;
 use crate::utils::{CustomIterTools, NoNull};
 pub use aggregations::{AggState, PartitionAgg};
+pub use split::IntoGroupMap;
 
 /// Get an index per group
 pub fn group_maps_to_group_index(g_maps: &[GroupedMap<Option<u64>>]) -> UInt32Chunked {
@@ -46,7 +47,7 @@ mod test {
         let keys_idx = group_maps_to_group_index(&g_maps);
         let key_sort = keys_idx.argsort(false);
         let keys = df.column("groups")?.take(&keys_idx.sort(false));
-        let values = first.finish(ca.dtype().clone()).take(&key_sort);
+        let values = first.finish().take(&key_sort);
 
         assert_eq!(Vec::from(keys.u32()?), [Some(1), Some(2), Some(3)]);
         assert_eq!(Vec::from(values.i64()?), [Some(7), Some(9), Some(5)]);

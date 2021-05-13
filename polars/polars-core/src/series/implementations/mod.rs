@@ -181,6 +181,9 @@ macro_rules! impl_dyn_series {
             fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
                 self.0.argsort_multiple(by, reverse)
             }
+            fn group_maps(&self) -> Vec<GroupedMap<Option<u64>>> {
+                self.0.group_maps()
+            }
             fn part_agg_sum(&self, groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
                 self.0.part_agg_sum(groups)
             }

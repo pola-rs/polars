@@ -145,6 +145,9 @@ pub(crate) mod private {
                 "argsort_multiple is not implemented for this Series".into(),
             ))
         }
+        fn group_maps(&self) -> Vec<GroupedMap<Option<u64>>> {
+            unimplemented!()
+        }
         fn part_agg_sum(&self, groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
             unimplemented!()
         }

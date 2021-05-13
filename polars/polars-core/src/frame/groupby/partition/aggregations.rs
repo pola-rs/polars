@@ -1,7 +1,7 @@
 use crate::chunked_array::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
-use crate::frame::groupby::GroupedMap;
+use crate::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupedMap};
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use crate::POOL;
@@ -15,7 +15,7 @@ use std::any::Any;
 pub trait AggState {
     fn merge(&mut self, other: Vec<Box<dyn AggState>>);
     fn as_any(&mut self) -> &mut dyn Any;
-    fn finish(&mut self, dtype: DataType) -> Series;
+    fn finish(&mut self) -> Series;
 }
 
 // u32: an index of the group (can be used to get the keys)
@@ -24,6 +24,8 @@ pub type AggMap = HashMap<Option<u64>, (u32, AnyValue<'static>), RandomState>;
 
 pub struct SumAggState {
     agg: Vec<AggMap>,
+    dtype: DataType,
+    name: String,
 }
 
 impl AggState for SumAggState {
@@ -73,8 +75,8 @@ impl AggState for SumAggState {
         self
     }
 
-    fn finish(&mut self, dtype: DataType) -> Series {
-        match dtype {
+    fn finish(&mut self) -> Series {
+        let mut s: Series = match self.dtype {
             DataType::Int64 => self
                 .agg
                 .iter()
@@ -87,7 +89,11 @@ impl AggState for SumAggState {
                 .flatten()
                 .collect(),
             _ => todo!(),
-        }
+        };
+
+        let out_name = fmt_groupby_column(&*self.name, GroupByMethod::Sum);
+        s.rename(&out_name);
+        s
     }
 }
 
@@ -149,6 +155,10 @@ where
                 .collect()
         });
 
-        Some(Box::new(SumAggState { agg: vec![agg] }))
+        Some(Box::new(SumAggState {
+            agg: vec![agg],
+            name: self.name().to_string(),
+            dtype: self.dtype().clone(),
+        }))
     }
 }

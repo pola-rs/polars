@@ -1,6 +1,7 @@
 use super::*;
 use crate::logical_plan::Context;
 use crate::utils::rename_aexpr_root_name;
+use polars_core::frame::groupby::partition::group_maps_to_group_index;
 use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -124,8 +125,8 @@ impl Executor for PartitionGroupByExec {
         // We only do partitioned groupby's on single keys aggregation.
         // This design choice seems ok, as cardinality rapidly increases with multiple columns
         debug_assert_eq!(keys.len(), 1);
-        let s = &keys[0];
-        if let Ok(ca) = s.categorical() {
+        let key = &keys[0];
+        if let Ok(ca) = key.categorical() {
             let cat_map = ca
                 .get_categorical_map()
                 .expect("categorical type has categorical_map");
@@ -135,7 +136,15 @@ impl Executor for PartitionGroupByExec {
                 return groupby_helper(original_df, keys, &self.phys_aggs, None, state);
             }
         }
-        if std::env::var("POLARS_NEW_PARTITION").is_ok() {}
+        if std::env::var("POLARS_NEW_PARTITION").is_ok() && !matches!(key.dtype(), DataType::Utf8) {
+            dbg!("RUN PARTITIONED");
+            let mut exec = PartitionGroupByExec2 {
+                input: original_df,
+                key: self.keys[0].clone(),
+                phys_aggs: std::mem::take(&mut self.phys_aggs),
+            };
+            return exec.execute(state);
+        }
 
         let mut expr_arena = Arena::with_capacity(64);
 
@@ -247,18 +256,40 @@ impl Executor for PartitionGroupByExec {
 
 /// Take an input Executor and a multiple expressions
 pub struct PartitionGroupByExec2 {
-    input: Box<dyn Executor>,
+    input: DataFrame,
     key: Arc<dyn PhysicalExpr>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
-    aggs: Vec<Expr>,
 }
 
 impl Executor for PartitionGroupByExec2 {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let df = self.input.execute(state)?;
-        let key = self.key.evaluate(&df, state)?;
+        let df = &self.input;
+        let key = self.key.evaluate(df, state)?;
         let g_maps = key.group_maps();
+        let key = {
+            let key_idx = group_maps_to_group_index(&g_maps);
+            // Safety:
+            // Indexes of groups are in bounds
+            unsafe { key.take_unchecked(&key_idx)? }
+        };
 
-        todo!()
+        let agg_columns = self
+            .phys_aggs
+            .iter()
+            .map(|expr| {
+                let agg_expr = expr.as_agg_expr()?;
+                agg_expr.evaluate_partitioned_2(&df, &g_maps, state)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut columns = Vec::with_capacity(agg_columns.len() + 1);
+        columns.push(key);
+        for a in agg_columns {
+            if let Some(a) = a {
+                columns.push(a)
+            }
+        }
+
+        Ok(DataFrame::new_no_checks(columns))
     }
 }

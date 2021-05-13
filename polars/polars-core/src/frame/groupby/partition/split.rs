@@ -81,8 +81,23 @@ impl ToBitRepr for u8 {
 }
 
 pub trait IntoGroupMap<T> {
-    fn group_maps(&self) -> Vec<GroupedMap<Option<u64>>>;
+    fn group_maps(&self) -> Vec<GroupedMap<Option<u64>>> {
+        unimplemented!()
+    }
 }
+impl IntoGroupMap<bool> for BooleanChunked {}
+impl IntoGroupMap<String> for Utf8Chunked {}
+impl IntoGroupMap<Series> for ListChunked {}
+impl IntoGroupMap<f32> for Float32Chunked {}
+impl IntoGroupMap<f64> for Float64Chunked {}
+
+impl IntoGroupMap<u32> for CategoricalChunked {
+    fn group_maps(&self) -> Vec<GroupedMap<Option<u64>>> {
+        self.cast::<UInt32Type>().unwrap().group_maps()
+    }
+}
+#[cfg(feature = "object")]
+impl<T> IntoGroupMap<T> for ObjectChunked<T> {}
 
 impl<T> IntoGroupMap<T::Native> for ChunkedArray<T>
 where

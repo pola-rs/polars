@@ -210,7 +210,7 @@ impl PhysicalAggregation for AggregationExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_partititioned2(
+    fn evaluate_partitioned_2(
         &self,
         df: &DataFrame,
         g_maps: &[GroupedMap<Option<u64>>],
@@ -230,7 +230,7 @@ impl PhysicalAggregation for AggregationExpr {
             // merge the table with the other tables in a recursive manner
             first.merge(iter.filter_map(|v| v).collect());
 
-            first.finish(series.dtype().clone())
+            first.finish()
         }))
     }
 }

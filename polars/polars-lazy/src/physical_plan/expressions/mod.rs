@@ -113,7 +113,7 @@ pub trait PhysicalAggregation {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_partititioned2(
+    fn evaluate_partitioned_2(
         &self,
         _df: &DataFrame,
         _g_maps: &[GroupedMap<Option<u64>>],

@@ -241,6 +241,9 @@ macro_rules! impl_dyn_series {
             fn part_agg_sum(&self, groups: &GroupedMap<Option<u64>>) -> Option<Box<dyn AggState>> {
                 cast_and_apply!(self, part_agg_sum, groups)
             }
+            fn group_maps(&self) -> Vec<GroupedMap<Option<u64>>> {
+                cast_and_apply!(self, group_maps,)
+            }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
