@@ -80,6 +80,10 @@ pub(crate) mod private {
         fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             unimplemented!()
         }
+        #[cfg(feature = "lazy")]
+        fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            unimplemented!()
+        }
         #[cfg(feature = "pivot")]
         fn pivot<'a>(
             &self,

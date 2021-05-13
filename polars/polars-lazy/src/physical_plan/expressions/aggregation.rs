@@ -140,12 +140,15 @@ impl PhysicalAggregation for AggregationExpr {
                 let mut new_name = fmt_groupby_column(series.name(), self.agg_type);
                 let agg_s = series.agg_sum(groups);
 
-                if let Some(mut agg_s) = agg_s {
+                // If the aggregation is successful,
+                // we also count the valid values (len - null count)
+                // this is needed to compute the final mean.
+                if let Some(agg_s) = agg_s {
+                    // we expect f64 from mean, so we already cast
+                    let mut agg_s = agg_s.cast_with_dtype(&DataType::Float64)?;
                     agg_s.rename(&new_name);
                     new_name.push_str("__POLARS_MEAN_COUNT");
-                    let ca: NoNull<UInt32Chunked> =
-                        groups.iter().map(|t| t.1.len() as u32).collect();
-                    let mut count_s = ca.into_inner().into_series();
+                    let mut count_s = series.agg_valid_count(groups).unwrap();
                     count_s.rename(&new_name);
                     Ok(Some(vec![agg_s, count_s]))
                 } else {
