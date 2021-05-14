@@ -1862,6 +1862,8 @@ class GroupBy:
             .agg({"spam": ["sum", "min"})
         ```
         """
+        if _is_expr(column_to_agg):
+            column_to_agg = [column_to_agg]
         if isinstance(column_to_agg, dict):
             column_to_agg = [
                 (column, [agg] if isinstance(agg, str) else agg)
