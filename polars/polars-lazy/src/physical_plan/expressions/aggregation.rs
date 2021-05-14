@@ -181,9 +181,9 @@ impl PhysicalAggregation for AggregationExpr {
                 let count_name = format!("{}__POLARS_MEAN_COUNT", series.name());
                 let new_name = fmt_groupby_column(series.name(), self.agg_type);
                 let count = final_df.column(&count_name).unwrap();
-                // divide by the count
-                let series = &series / count;
+                let agg_count = count.agg_sum(groups);
                 let agg_s = series.agg_sum(groups);
+                let agg_s = agg_s.map(|agg_s| &agg_s / &agg_count.unwrap());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::List => {
