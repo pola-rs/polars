@@ -4,7 +4,6 @@ use crate::utils::rename_aexpr_root_name;
 use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
-use std::time::Instant;
 
 /// Take an input Executor and a multiple expressions
 pub struct GroupByExec {
@@ -153,6 +152,7 @@ fn run_partititions(
     }).collect()
 }
 
+#[allow(clippy::type_complexity)]
 fn get_outer_agg_exprs(
     exec: &PartitionGroupByExec,
     df: &DataFrame,
@@ -185,6 +185,12 @@ fn get_outer_agg_exprs(
     Ok((aggs_and_names, outer_phys_aggs))
 }
 
+fn sample_cardinality(key: &Series, sample_size: usize) -> f32 {
+    let offset = (key.len() / 2) as i64;
+    let s = key.slice(offset, sample_size);
+    s.n_unique().unwrap() as f32 / s.len() as f32
+}
+
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let original_df = self.input.execute(state)?;
@@ -195,22 +201,44 @@ impl Executor for PartitionGroupByExec {
         // of groups.
         let key = self.key.evaluate(&original_df, state)?;
 
-        if let Ok(ca) = key.categorical() {
+        if std::env::var("POLARS_NO_PARTITION").is_ok() {
+            if state.verbose {
+                eprintln!("POLARS_NO_PARTITION set: running default HASH AGGREGATION")
+            }
+            return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
+        }
+
+        let cardinality_frac = std::env::var("POLARS_PARTITION_CARDINALITY_FRAC")
+            .map(|s| s.parse::<f32>().unwrap())
+            .unwrap_or(0.1f32);
+
+        let (frac, a) = if let Ok(ca) = key.categorical() {
             let cat_map = ca
                 .get_categorical_map()
                 .expect("categorical type has categorical_map");
-            let frac = cat_map.len() as f32 / ca.len() as f32;
-            // TODO! proper benchmark which boundary should be chosen.
-            if frac > 0.3 {
-                return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
-            }
+            (cat_map.len() as f32 / ca.len() as f32, "known")
+        } else {
+            let sample_size = std::env::var("POLARS_PARTITION_SAMPLE_SIZE")
+                .map(|s| s.parse::<usize>().unwrap())
+                .unwrap_or(1250usize);
+            (sample_cardinality(&key, sample_size), "estimated")
+        };
+        if state.verbose {
+            eprintln!("{} cardinality: {}%", a, (frac * 100.0) as u32);
         }
-        if std::env::var("POLARS_NO_PARTITION").is_ok() {
-            dbg!("RUN STANDARD");
-            let now = Instant::now();
-            let a = groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
-            println!("standard took {} ms", now.elapsed().as_millis());
-            return a;
+
+        if frac > cardinality_frac {
+            if state.verbose {
+                eprintln!(
+                    "estimated cardinality is > than allowed cardinality: {}\
+                running default HASH AGGREGATION",
+                    (cardinality_frac * 100.0) as u32
+                );
+            }
+            return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
+        }
+        if state.verbose {
+            eprintln!("run PARTITIONED HASH AGGREGATION")
         }
 
         // Run the partitioned aggregations

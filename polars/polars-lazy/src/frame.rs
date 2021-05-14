@@ -2020,28 +2020,4 @@ mod test {
             [Some(6), Some(0), Some(0)]
         );
     }
-
-    #[test]
-    fn test_lazy_partitioned_grouping() {
-        std::env::set_var("POLARS_NEW_PARTITION", "1");
-        let df = df! {
-            "a" => [1, 1, 1, 2, 2, 3, 1],
-            "b" => [1i64, 2, 3, 4, 5, 6, 7]
-        }
-        .unwrap();
-
-        // test if it runs in groupby context
-        let out = df
-            .lazy()
-            .groupby(vec![col("a")])
-            .agg(vec![col("b").sum()])
-            .sort("a", false)
-            .collect()
-            .unwrap();
-
-        assert_eq!(
-            Vec::from(out.column("b_sum").unwrap().i64().unwrap()),
-            [Some(13), Some(9), Some(6)]
-        );
-    }
 }
