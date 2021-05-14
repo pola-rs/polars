@@ -11,28 +11,30 @@ jobs:
     runs-on: "ubuntu-latest"
     strategy:
       matrix:
-        python-version: ["3.6", "3.7"]
+        python-version: [ "3.6", "3.7" ]
     steps:
-        - uses: actions/checkout@v2
-        - name: Install latest Rust nightly
-          uses: actions-rs/toolchain@v1
-          with:
-            toolchain: nightly-2021-03-25
-            override: true
-            components: rustfmt, clippy
-        - name: Set up Python
-          uses: actions/setup-python@v2
-          with:
-            python-version: ${{ matrix.python-version }}
-        - name: Install dependencies
-          run: |
-            python -m pip install --upgrade pip
-            pip install maturin==0.9.4 pytest pandas
-        - name: Run tests
-          run: |
-            cd py-polars
-            ./tasks.sh build-run-tests
-            rm wheels/*
+      - uses: actions/checkout@v2
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2021-03-25
+          override: true
+          components: rustfmt, clippy
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin==0.9.4 pytest pandas
+      - name: Run tests
+        run: |
+          cd py-polars
+          rustup override set nightly-2021-03-24
+          ./tasks.sh build-run-tests
+          rm wheels/*
+
   build:
     needs: build_manylinux
     name: Create Release
@@ -46,7 +48,7 @@ jobs:
         - name: Install latest Rust nightly
           uses: actions-rs/toolchain@v1
           with:
-            toolchain: nightly
+            toolchain: nightly-2021-03-24
             override: true
             components: rustfmt, clippy
         - name: Set up Python
@@ -65,6 +67,7 @@ jobs:
             rm py-polars/README.md
             cp README.md py-polars/README.md
             cd py-polars
+            rustup override set nightly-2021-03-24
             maturin publish \
             -o wheels \
             -i python \
