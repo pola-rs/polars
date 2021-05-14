@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.7.15"
+version = "0.7.16"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 readme = "README.md"
@@ -44,7 +44,7 @@ features = [
 ]
 
 #[patch.crates-io]
-#packed_simd_2 = { git = 'https://github.com/JohnTitor/packed_simd/', branch="fix-build"}
+#packed_simd_2 = { git = 'https://github.com/rust-lang/packed_simd' }
 
 [lib]
 name = "polars"
