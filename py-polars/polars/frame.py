@@ -1230,7 +1230,7 @@ class DataFrame:
         return wrap_df(out)
 
     def apply(
-        self, f: "Callable[[Tuple[Any]], Any]", output_type: "Optional[DataType]" = None
+        self, f: "Callable[[Tuple[Any]], Any]", dtype_out: "Optional[DataType]" = None
     ) -> "Series":
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
@@ -1241,10 +1241,10 @@ class DataFrame:
         ----------
         f
             Custom function/ lambda function
-        output_type
+        dtype_out
             Output type of the operation. If none given, Polars tries to infer the type.
         """
-        return wrap_s(self._df.apply(f, output_type))
+        return wrap_s(self._df.apply(f, dtype_out))
 
     def with_column(self, column: "Union[Series, Expr]") -> "DataFrame":
         """

@@ -1378,7 +1378,7 @@ class Expr:
             dtype of the output Series
         """
         if isinstance(f, UDF):
-            dtype_out = f.output_type
+            dtype_out = f.dtype_out
             f = f.f
         if dtype_out == str:
             dtype_out = datatypes.Utf8
@@ -1922,7 +1922,7 @@ def map_binary(
     a: "Union[str, Expr]",
     b: "Union[str, Expr]",
     f: Callable[[Series, Series], Series],
-    output_type: "Optional[DataType]" = None,
+    dtype_out: "Optional[DataType]" = None,
 ) -> "Expr":
     """
     Map a custom function over two columns and produce a single Series result.
@@ -1935,14 +1935,14 @@ def map_binary(
         Input Series b
     f
         Function to apply
-    output_type
+    dtype_out
         Output type of the udf
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, output_type))
+    return wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, dtype_out))
 
 
 def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) -> Expr:
@@ -1993,13 +1993,13 @@ def quantile(column: str, quantile: float) -> "Expr":
 
 
 class UDF:
-    def __init__(self, f: Callable[[Series], Series], output_type: "DataType"):
+    def __init__(self, f: Callable[[Series], Series], dtype_out: "DataType"):
         self.f = f
-        self.output_type = output_type
+        self.dtype_out = dtype_out
 
 
-def udf(f: Callable[[Series], Series], output_type: "DataType"):
-    return UDF(f, output_type)
+def udf(f: Callable[[Series], Series], dtype_out: "DataType"):
+    return UDF(f, dtype_out)
 
 
 def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
@@ -2043,7 +2043,7 @@ def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
             assert s2.len() == 1
             return Series._from_pyseries(_series_from_range(s1[0], s2[0], dtype))
 
-        return map_binary(low, high, create_range, output_type=dtype)
+        return map_binary(low, high, create_range, dtype_out=dtype)
 
     if dtype is None:
         dtype = datatypes.Int64
