@@ -15,6 +15,7 @@ pub struct ExecutionState {
     pub(crate) group_tuples: GroupTuplesCache,
     /// Used by Window Expression to prevent redundant joins
     pub(crate) join_tuples: JoinTuplesCache,
+    pub(crate) verbose: bool,
 }
 
 impl ExecutionState {
@@ -23,6 +24,7 @@ impl ExecutionState {
             df_cache: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
             group_tuples: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
             join_tuples: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
+            verbose: std::env::var("POLARS_VERBOSE").is_ok(),
         }
     }
 
