@@ -229,6 +229,8 @@ def test_groupby():
 
     # Use lazy API in eager groupby
     assert df.groupby("a").agg([pl.sum("b")]).shape == (3, 2)
+    # test if it accepts a single expression
+    assert df.groupby("a").agg(pl.sum("b")).shape == (3, 2)
 
 
 def test_join():

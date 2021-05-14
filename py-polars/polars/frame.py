@@ -1395,6 +1395,10 @@ class DataFrame:
         """
         if _is_expr(strategy):
             return self.lazy().fill_none(strategy).collect()
+        if not isinstance(strategy, str):
+            from .lazy import lit
+
+            return self.fill_none(lit(strategy))
         return wrap_df(self._df.fill_none(strategy))
 
     def explode(self, columns: "Union[str, List[str]]") -> "DataFrame":
