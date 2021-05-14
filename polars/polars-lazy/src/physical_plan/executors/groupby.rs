@@ -216,6 +216,7 @@ impl Executor for PartitionGroupByExec {
             let cat_map = ca
                 .get_categorical_map()
                 .expect("categorical type has categorical_map");
+
             (cat_map.len() as f32 / ca.len() as f32, "known")
         } else {
             let sample_size = std::env::var("POLARS_PARTITION_SAMPLE_SIZE")
