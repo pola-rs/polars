@@ -4,8 +4,8 @@ use crate::prelude::*;
 use polars_arrow::array::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
-use polars_core::prelude::*;
 use polars_core::utils::NoNull;
+use polars_core::{prelude::*, POOL};
 use std::sync::Arc;
 
 pub(crate) struct AggregationExpr {
@@ -181,8 +181,9 @@ impl PhysicalAggregation for AggregationExpr {
                 let count_name = format!("{}__POLARS_MEAN_COUNT", series.name());
                 let new_name = fmt_groupby_column(series.name(), self.agg_type);
                 let count = final_df.column(&count_name).unwrap();
-                let agg_count = count.agg_sum(groups);
-                let agg_s = series.agg_sum(groups);
+
+                let (agg_count, agg_s) =
+                    POOL.join(|| count.agg_sum(groups), || series.agg_sum(groups));
                 let agg_s = agg_s.map(|agg_s| &agg_s / &agg_count.unwrap());
                 Ok(rename_option_series(agg_s, &new_name))
             }
