@@ -51,6 +51,54 @@ where
     }
 }
 
+pub(crate) struct RunningSize {
+    max: AtomicUsize,
+    sum: AtomicUsize,
+    count: AtomicUsize,
+    last: AtomicUsize,
+}
+
+fn compute_size_hint(max: usize, sum: usize, count: usize, last: usize) -> usize {
+    let avg = (sum as f32 / count as f32) as usize;
+    let size = std::cmp::max(last, avg) as f32;
+    if (max as f32) < (size * 1.5) {
+        max
+    } else {
+        size as usize
+    }
+}
+impl RunningSize {
+    fn new(size: usize) -> Self {
+        Self {
+            max: AtomicUsize::new(size),
+            sum: AtomicUsize::new(size),
+            count: AtomicUsize::new(1),
+            last: AtomicUsize::new(size),
+        }
+    }
+
+    pub(crate) fn update(&self, size: usize) -> (usize, usize, usize, usize) {
+        let max = self.max.fetch_max(size, Ordering::Release);
+        let sum = self.sum.fetch_add(size, Ordering::Release);
+        let count = self.count.fetch_add(1, Ordering::Release);
+        let last = self.last.fetch_add(size, Ordering::Release);
+        (
+            max,
+            sum / count,
+            last,
+            compute_size_hint(max, sum, count, last),
+        )
+    }
+
+    pub(crate) fn size_hint(&self) -> usize {
+        let max = self.max.load(Ordering::Acquire);
+        let sum = self.sum.load(Ordering::Acquire);
+        let count = self.count.load(Ordering::Acquire);
+        let last = self.last.load(Ordering::Acquire);
+        compute_size_hint(max, sum, count, last)
+    }
+}
+
 impl<R: Read + Sync + Send> SequentialReader<R> {
     /// Returns the schema of the reader, useful for getting the schema without reading
     /// record batches
@@ -219,19 +267,17 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 }
             })
             .collect();
-        let init_str_bytes = if self.low_memory {
-            chunk_size * 10
-        } else {
-            chunk_size
-        };
+
+        // assume 10 chars per str
+        // this is not updated in low memory mode
+        let init_str_bytes = chunk_size * 10;
         let str_capacities: Vec<_> = str_columns
             .iter()
-            .map(|_| AtomicUsize::new(init_str_bytes))
+            .map(|_| RunningSize::new(init_str_bytes))
             .collect();
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
-            let str_capacities: Vec<_> = str_columns.iter().map(|_| AtomicUsize::new(0)).collect();
             let buffers = init_buffers(
                 &projection,
                 0,
@@ -321,20 +367,23 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             let str_bytes_len = ca.get_values_size();
 
                             // don't update running statistics if we try to reduce string memory usage.
-                            let prev_value = if self.low_memory {
-                                0
-                            } else {
-                                str_capacities[str_index]
-                                    .fetch_max(str_bytes_len, Ordering::Acquire)
-                            };
-                            let prev_cap = (prev_value as f32 * 1.2) as usize;
-                            if logging && (prev_cap < str_bytes_len) {
-                                eprintln!(
-                                    "needed to reallocate column: {}\
-                            \nprevious capacity was: {}\
-                            \nneeded capacity was: {}",
-                                    name, prev_cap, str_bytes_len
-                                );
+                            if self.low_memory {
+                                let (max, avg, last, size_hint) =
+                                    str_capacities[str_index].update(str_bytes_len);
+                                if logging {
+                                    if size_hint < str_bytes_len {
+                                        eprintln!(
+                                            "probably needed to reallocate column: {}\
+                                        \nprevious capacity was: {}\
+                                        \nneeded capacity was: {}",
+                                            name, size_hint, str_bytes_len
+                                        );
+                                    }
+                                    eprintln!(
+                                        "column {} statistics: \nmax: {}\navg: {}\nlast: {}",
+                                        name, max, avg, last
+                                    )
+                                }
                             }
                         }
                         match &mut df {

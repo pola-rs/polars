@@ -1,8 +1,8 @@
 use crate::csv::CsvEncoding;
+use crate::csv_core::csv::RunningSize;
 use crate::csv_core::parser::{drop_quotes, skip_whitespace};
 use polars_core::prelude::*;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 trait ToPolarsError: Debug {
     fn to_polars_err(&self) -> PolarsError {
@@ -205,7 +205,7 @@ pub(crate) fn init_buffers(
     capacity: usize,
     schema: &SchemaRef,
     // The running statistic of the amount of bytes we must allocate per str column
-    str_capacities: &[AtomicUsize],
+    str_capacities: &[RunningSize],
     delimiter: u8,
 ) -> Result<Vec<Buffer>> {
     // we keep track of the string columns we have seen so that we can increment the index
@@ -219,8 +219,7 @@ pub(crate) fn init_buffers(
             // determine the needed capacity for this column
             // we overallocate 20%
             if field.data_type() == &DataType::Utf8 {
-                str_capacity =
-                    (str_capacities[str_index].load(Ordering::Acquire) as f32 * 1.2) as usize;
+                str_capacity = str_capacities[str_index].size_hint();
                 str_index += 1;
             }
 
@@ -276,12 +275,6 @@ pub(crate) enum Buffer {
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     /// Stores the Utf8 fields and the total string length seen for that column
     Utf8(Utf8Field),
-}
-
-impl Default for Buffer {
-    fn default() -> Self {
-        todo!()
-    }
 }
 
 impl Buffer {
