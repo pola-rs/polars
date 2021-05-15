@@ -49,6 +49,11 @@ def test_selection():
     assert (df.a == df["a"]).sum() == 3
     assert (df.c == df["a"]).sum() == 0
     assert df[:, "a":"b"].shape == (3, 2)
+    assert df[:, "a":"c"].columns == ["a", "b", "c"]
+    expect = pl.DataFrame({"c": ["b"]})
+    assert df[1, [2]].frame_equal(expect)
+    expect = pl.DataFrame({"b": [1.0, 3.0]})
+    assert df[[0, 2], [1]].frame_equal(expect)
 
 
 def test_from_arrow():
