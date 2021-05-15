@@ -1230,7 +1230,9 @@ class DataFrame:
         return wrap_df(out)
 
     def apply(
-        self, f: "Callable[[Tuple[Any]], Any]", output_type: "Optional[DataType]" = None
+        self,
+        f: "Callable[[Tuple[Any]], Any]",
+        return_dtype: "Optional[DataType]" = None,
     ) -> "Series":
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
@@ -1241,10 +1243,10 @@ class DataFrame:
         ----------
         f
             Custom function/ lambda function
-        output_type
+        return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
         """
-        return wrap_s(self._df.apply(f, output_type))
+        return wrap_s(self._df.apply(f, return_dtype))
 
     def with_column(self, column: "Union[Series, Expr]") -> "DataFrame":
         """
@@ -2186,7 +2188,7 @@ class GBSelection:
     def apply(
         self,
         func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",
-        dtype_out: "Optional['DataType']" = None,
+        return_dtype: "Optional['DataType']" = None,
     ) -> "DataFrame":
         """
         Apply a function over the groups
@@ -2197,7 +2199,7 @@ class GBSelection:
         else:
             selection = self.selection
         for name in selection:
-            s = df.drop_in_place(name + "_agg_list").apply(func, dtype_out)
+            s = df.drop_in_place(name + "_agg_list").apply(func, return_dtype)
             s.rename(name)
             df[name] = s
 

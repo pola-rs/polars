@@ -1363,7 +1363,7 @@ class Expr:
     def map(
         self,
         f: "Union[UDF, Callable[[Series], Series]]",
-        dtype_out: Optional["DataType"] = None,
+        return_dtype: Optional["DataType"] = None,
     ) -> "Expr":
         """
         Apply a custom UDF. It is important that the UDF returns a Polars Series.
@@ -1374,26 +1374,26 @@ class Expr:
         ----------
         f
             lambda/ function to apply
-        dtype_out
+        return_dtype
             dtype of the output Series
         """
         if isinstance(f, UDF):
-            dtype_out = f.output_type
+            return_dtype = f.return_dtype
             f = f.f
-        if dtype_out == str:
-            dtype_out = datatypes.Utf8
-        elif dtype_out == int:
-            dtype_out = datatypes.Int64
-        elif dtype_out == float:
-            dtype_out = datatypes.Float64
-        elif dtype_out == bool:
-            dtype_out = datatypes.Boolean
-        return wrap_expr(self._pyexpr.map(f, dtype_out))
+        if return_dtype == str:
+            return_dtype = datatypes.Utf8
+        elif return_dtype == int:
+            return_dtype = datatypes.Int64
+        elif return_dtype == float:
+            return_dtype = datatypes.Float64
+        elif return_dtype == bool:
+            return_dtype = datatypes.Boolean
+        return wrap_expr(self._pyexpr.map(f, return_dtype))
 
     def apply(
         self,
         f: "Union[UDF, Callable[[Series], Series]]",
-        dtype_out: Optional["DataType"] = None,
+        return_dtype: Optional["DataType"] = None,
     ) -> "Expr":
         """
         Apply a custom UDF in a GroupBy context. This is syntactic sugar for the `apply` method which operates on all
@@ -1403,7 +1403,7 @@ class Expr:
         ----------
         f
             lambda/ function to apply
-        dtype_out
+        return_dtype
             dtype of the output Series
 
         # Example
@@ -1440,7 +1440,7 @@ class Expr:
 
         # input x: Series of type list containing the group values
         def wrap_f(x: "Series") -> "Series":
-            return x.apply(f, dtype_out=dtype_out)
+            return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f)
 
@@ -1922,7 +1922,7 @@ def map_binary(
     a: "Union[str, Expr]",
     b: "Union[str, Expr]",
     f: Callable[[Series, Series], Series],
-    output_type: "Optional[DataType]" = None,
+    return_dtype: "Optional[DataType]" = None,
 ) -> "Expr":
     """
     Map a custom function over two columns and produce a single Series result.
@@ -1935,14 +1935,14 @@ def map_binary(
         Input Series b
     f
         Function to apply
-    output_type
+    return_dtype
         Output type of the udf
     """
     if isinstance(a, str):
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, output_type))
+    return wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, return_dtype))
 
 
 def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) -> Expr:
@@ -1993,13 +1993,13 @@ def quantile(column: str, quantile: float) -> "Expr":
 
 
 class UDF:
-    def __init__(self, f: Callable[[Series], Series], output_type: "DataType"):
+    def __init__(self, f: Callable[[Series], Series], return_dtype: "DataType"):
         self.f = f
-        self.output_type = output_type
+        self.return_dtype = return_dtype
 
 
-def udf(f: Callable[[Series], Series], output_type: "DataType"):
-    return UDF(f, output_type)
+def udf(f: Callable[[Series], Series], return_dtype: "DataType"):
+    return UDF(f, return_dtype)
 
 
 def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
@@ -2043,7 +2043,7 @@ def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
             assert s2.len() == 1
             return Series._from_pyseries(_series_from_range(s1[0], s2[0], dtype))
 
-        return map_binary(low, high, create_range, output_type=dtype)
+        return map_binary(low, high, create_range, return_dtype=dtype)
 
     if dtype is None:
         dtype = datatypes.Int64

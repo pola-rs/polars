@@ -203,7 +203,7 @@ def test_apply():
     b = a.apply(lambda x: x + "py")
     assert b == ["foopy", "barpy", None]
 
-    b = a.apply(lambda x: len(x), dtype_out=Int32)
+    b = a.apply(lambda x: len(x), return_dtype=Int32)
     assert b == [3, 3, None]
 
     b = a.apply(lambda x: len(x))

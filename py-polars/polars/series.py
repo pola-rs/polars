@@ -1222,34 +1222,34 @@ class Series:
     def apply(
         self,
         func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",
-        dtype_out: "Optional['DataType']" = None,
+        return_dtype: "Optional['DataType']" = None,
     ):
         """
         Apply a function over elements in this Series and return a new Series.
 
-        If the function returns another datatype, the dtype_out arg should be set, otherwise the method will fail.
+        If the function returns another datatype, the return_dtype arg should be set, otherwise the method will fail.
 
         Parameters
         ----------
         func
             function or lambda.
-        dtype_out
+        return_dtype
             Output datatype. If none given the same datatype as this Series will be used.
 
         Returns
         -------
         Series
         """
-        if dtype_out == str:
-            dtype_out = Utf8
-        elif dtype_out == int:
-            dtype_out = Int64
-        elif dtype_out == float:
-            dtype_out = Float64
-        elif dtype_out == bool:
-            dtype_out = Boolean
+        if return_dtype == str:
+            return_dtype = Utf8
+        elif return_dtype == int:
+            return_dtype = Int64
+        elif return_dtype == float:
+            return_dtype = Float64
+        elif return_dtype == bool:
+            return_dtype = Boolean
 
-        return wrap_s(self._s.apply_lambda(func, dtype_out))
+        return wrap_s(self._s.apply_lambda(func, return_dtype))
 
     def shift(self, periods: int) -> "Series":
         """
