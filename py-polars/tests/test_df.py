@@ -364,7 +364,7 @@ def test_custom_groupby():
     out = (
         df.lazy()
         .groupby("b")
-        .agg([col("a").apply(lambda x: x.sum(), dtype_out=int)])
+        .agg([col("a").apply(lambda x: x.sum(), return_dtype=int)])
         .collect()
     )
     assert out.shape == (3, 2)
