@@ -194,6 +194,7 @@ def scan_csv(
     stop_after_n_rows: "Optional[int]" = None,
     cache: bool = True,
     dtype: "Optional[Dict[str, DataType]]" = None,
+    low_memory: bool = False,
 ) -> "LazyFrame":
     """
     Lazily read from a csv file.
@@ -221,6 +222,8 @@ def scan_csv(
         Cache the result after reading
     dtype
         Overwrite the dtypes during inference
+    low_memory
+        Reduce memory usage in expense of performance
     """
     if isinstance(file, Path):
         file = str(file)
@@ -233,6 +236,7 @@ def scan_csv(
         stop_after_n_rows=stop_after_n_rows,
         cache=cache,
         dtype=dtype,
+        low_memory=low_memory,
     )
 
 

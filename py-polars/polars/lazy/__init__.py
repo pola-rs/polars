@@ -86,6 +86,7 @@ class LazyFrame:
         stop_after_n_rows: "Optional[int]" = None,
         cache: bool = True,
         dtype: "Optional[Dict[str, DataType]]" = None,
+        low_memory: bool = False,
     ):
         if dtype is not None:
             new_dtype = []
@@ -103,6 +104,7 @@ class LazyFrame:
             stop_after_n_rows,
             cache,
             dtype,
+            low_memory,
         )
         return self
 
