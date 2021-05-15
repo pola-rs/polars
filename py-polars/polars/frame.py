@@ -512,13 +512,20 @@ class DataFrame:
 
             # df[2, :] (select row as df)
             if isinstance(row_selection, int):
-                if isinstance(col_selection, slice):
+                if isinstance(col_selection, (slice, list, np.ndarray)):
                     df = self[:, col_selection]
                     return df.slice(row_selection, 1)
 
             # column selection can be "a" and ["a", "b"]
             if isinstance(col_selection, str):
                 col_selection = [col_selection]
+
+            # df[:, [1, 2]]
+            # select by column indexes
+            if isinstance(col_selection[0], int):
+                series = [self.select_at_idx(i) for i in col_selection]
+                df = DataFrame(series)
+                return df[row_selection]
             df = self.__getitem__(col_selection)
             return df.__getitem__(row_selection)
 
