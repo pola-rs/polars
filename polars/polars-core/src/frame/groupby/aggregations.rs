@@ -75,7 +75,9 @@ where
 {
     fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<Float64Type, _>(groups, |(first, idx)| {
-            if idx.len() == 1 {
+            if idx.is_empty() {
+                None
+            } else if idx.len() == 1 {
                 self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
             } else {
                 match (self.null_count(), self.chunks.len()) {
@@ -115,7 +117,9 @@ where
 
     fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<T, _>(groups, |(first, idx)| {
-            if idx.len() == 1 {
+            if idx.is_empty() {
+                None
+            } else if idx.len() == 1 {
                 self.get(*first as usize)
             } else {
                 match (self.null_count(), self.chunks.len()) {
@@ -147,7 +151,9 @@ where
 
     fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<T, _>(groups, |(first, idx)| {
-            if idx.len() == 1 {
+            if idx.is_empty() {
+                None
+            } else if idx.len() == 1 {
                 self.get(*first as usize)
             } else {
                 match (self.null_count(), self.chunks.len()) {
@@ -179,7 +185,9 @@ where
 
     fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<T, _>(groups, |(first, idx)| {
-            if idx.len() == 1 {
+            if idx.is_empty() {
+                None
+            } else if idx.len() == 1 {
                 self.get(*first as usize)
             } else {
                 match (self.null_count(), self.chunks.len()) {
@@ -210,6 +218,9 @@ where
     }
     fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<T, _>(groups, |(_first, idx)| {
+            if idx.is_empty() {
+                return None;
+            }
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
             take.into_series()
                 .var_as_series()
@@ -220,6 +231,9 @@ where
     }
     fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<T, _>(groups, |(_first, idx)| {
+            if idx.is_empty() {
+                return None;
+            }
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
             take.into_series()
                 .std_as_series()
@@ -231,7 +245,9 @@ where
     #[cfg(feature = "lazy")]
     fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<UInt32Type, _>(groups, |(_first, idx)| {
-            if self.null_count() == 0 {
+            if idx.is_empty() {
+                None
+            } else if self.null_count() == 0 {
                 Some(idx.len() as u32)
             } else {
                 let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
@@ -249,7 +265,12 @@ macro_rules! impl_agg_first {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
         let mut ca = $groups
             .iter()
-            .map(|(first, _idx)| $self.get(*first as usize))
+            .map(|(first, idx)| {
+                if idx.is_empty() {
+                    return None;
+                }
+                $self.get(*first as usize)
+            })
             .collect::<$ca_type>();
 
         ca.categorical_map = $self.categorical_map.clone();
@@ -314,7 +335,13 @@ macro_rules! impl_agg_last {
     ($self:ident, $groups:ident, $ca_type:ty) => {{
         let mut ca = $groups
             .iter()
-            .map(|(_first, idx)| $self.get(idx[idx.len() - 1] as usize))
+            .map(|(_first, idx)| {
+                if idx.is_empty() {
+                    return None;
+                }
+
+                $self.get(idx[idx.len() - 1] as usize)
+            })
             .collect::<$ca_type>();
 
         ca.categorical_map = $self.categorical_map.clone();
@@ -378,6 +405,10 @@ macro_rules! impl_agg_n_unique {
         $groups
             .into_par_iter()
             .map(|(_first, idx)| {
+                if idx.is_empty() {
+                    return 0;
+                }
+
                 if $self.null_count() == 0 {
                     let mut set = HashSet::with_hasher(RandomState::new());
                     for i in idx {
@@ -531,6 +562,10 @@ where
 {
     fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
         agg_helper::<T, _>(groups, |(_first, idx)| {
+            if idx.is_empty() {
+                return None;
+            }
+
             let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
             let sorted_idx_ca = group_vals.argsort(false);
             let sorted_idx = sorted_idx_ca.downcast_iter().next().unwrap().values();
@@ -542,6 +577,10 @@ where
 
     fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<Float64Type, _>(groups, |(_first, idx)| {
+            if idx.is_empty() {
+                return None;
+            }
+
             let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
             group_vals.median()
         })

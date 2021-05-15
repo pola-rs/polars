@@ -1,7 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
-use polars_core::prelude::*;
+use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -39,20 +39,22 @@ impl PhysicalExpr for FilterExpr {
         let predicate_s = self.by.evaluate(df, state)?;
         let predicate = predicate_s.bool()?;
 
-        let groups = groups
-            .par_iter()
-            .map(|(first, idx)| {
-                let idx: Vec<u32> = idx
-                    .iter()
-                    .filter_map(|i| match predicate.get(*i as usize) {
-                        Some(true) => Some(*i),
-                        _ => None,
-                    })
-                    .collect();
+        let groups = POOL.install(|| {
+            groups
+                .par_iter()
+                .map(|(first, idx)| {
+                    let idx: Vec<u32> = idx
+                        .iter()
+                        .filter_map(|i| match predicate.get(*i as usize) {
+                            Some(true) => Some(*i),
+                            _ => None,
+                        })
+                        .collect();
 
-                (*idx.get(0).unwrap_or(first), idx)
-            })
-            .collect();
+                    (*idx.get(0).unwrap_or(first), idx)
+                })
+                .collect()
+        });
 
         Ok((s, Cow::Owned(groups)))
     }
