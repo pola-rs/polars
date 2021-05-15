@@ -73,6 +73,9 @@ fn groupby_helper(
 
 impl Executor for GroupByExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        if state.verbose {
+            eprintln!("aggregates are not partitionable: running default HASH AGGREGATION")
+        }
         let df = self.input.execute(state)?;
         let keys = self
             .keys

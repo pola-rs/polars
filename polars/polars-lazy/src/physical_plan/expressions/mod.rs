@@ -36,9 +36,18 @@ pub trait PhysicalExpr: Send + Sync {
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series>;
 
     /// Some expression that are not aggregations can be done per group
-    /// Think of sort, slice, etc.
-    ///
+    /// Think of sort, slice, filter, etc.
     /// defaults to ignoring the group
+    ///
+    /// This method is called by an aggregation function.
+    ///
+    /// In case of a simple expr, like 'column', the groups are ignored and the column is returned.
+    /// In case of an expr where group behavior makes sense, this method is called.
+    /// For a filter operation for instance, a Series is created per groups and filtered.
+    ///
+    /// This has some gotcha's. An implementation may also change the group tuples instead of
+    /// the `Series`.
+    ///
     // we allow this because we pass the vec to the Cow
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
@@ -90,6 +99,13 @@ pub trait PhysicalAggregation {
         state: &ExecutionState,
     ) -> Result<Option<Series>>;
 
+    /// This is called in partitioned aggregation.
+    /// Partitioned results may differ from aggregation results.
+    /// For instance, for a `mean` operation a partitioned result
+    /// needs to return the `sum` and the `valid_count` (length - null count).
+    ///
+    /// A final aggregation can then take the sum of sums and sum of valid_counts
+    /// to produce a final mean.
     #[allow(clippy::ptr_arg)]
     fn evaluate_partitioned(
         &self,
@@ -102,6 +118,7 @@ pub trait PhysicalAggregation {
             .map(|opt| opt.map(|s| vec![s]))
     }
 
+    /// Called to merge all the partitioned results in a final aggregate.
     #[allow(clippy::ptr_arg)]
     fn evaluate_partitioned_final(
         &self,

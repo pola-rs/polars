@@ -1999,25 +1999,44 @@ mod test {
     }
 
     #[test]
-    fn test_lazy_groupby_filter() {
+    fn test_lazy_groupby_filter() -> Result<()> {
         let df = df! {
             "a" => ["a", "a", "a", "b", "b", "c"],
             "b" => [1, 2, 3, 4, 5, 6]
-        }
-        .unwrap();
+        }?;
 
-        // test if it runs in groupby context
+        // We test if the filters work in the groupby context
+        // and that the aggregations can deal with empty sets
+
         let out = df
             .lazy()
             .groupby(vec![col("a")])
-            .agg(vec![col("b").filter(col("a").eq(lit("a"))).sum()])
+            .agg(vec![
+                col("b").filter(col("a").eq(lit("a"))).sum(),
+                col("b").filter(col("a").eq(lit("a"))).first(),
+                col("b").filter(col("a").eq(lit("e"))).mean(),
+                col("b").filter(col("a").eq(lit("a"))).last(),
+            ])
             .sort("a", false)
-            .collect()
-            .unwrap();
+            .collect()?;
 
         assert_eq!(
             Vec::from(out.column("b_sum").unwrap().i32().unwrap()),
-            [Some(6), Some(0), Some(0)]
+            [Some(6), None, None]
         );
+        assert_eq!(
+            Vec::from(out.column("b_first").unwrap().i32().unwrap()),
+            [Some(1), None, None]
+        );
+        assert_eq!(
+            Vec::from(out.column("b_mean").unwrap().f64().unwrap()),
+            [None, None, None]
+        );
+        assert_eq!(
+            Vec::from(out.column("b_last").unwrap().i32().unwrap()),
+            [Some(3), None, None]
+        );
+
+        Ok(())
     }
 }
