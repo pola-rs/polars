@@ -734,16 +734,18 @@ class Series:
         """
         self._s.append(other._s)
 
-    def filter(self, filter: "Series") -> "Series":
+    def filter(self, predicate: "Series") -> "Series":
         """
         Filter elements by a boolean mask
 
         Parameters
         ----------
-        filter
+        predicate
             Boolean mask
         """
-        return Series._from_pyseries(self._s.filter(filter._s))
+        if isinstance(predicate, list):
+            predicate = Series("", predicate)
+        return Series._from_pyseries(self._s.filter(predicate._s))
 
     def head(self, length: Optional[int] = None) -> "Series":
         """
