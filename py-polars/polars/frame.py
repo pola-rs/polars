@@ -515,6 +515,9 @@ class DataFrame:
                 if isinstance(col_selection, (slice, list, np.ndarray)):
                     df = self[:, col_selection]
                     return df.slice(row_selection, 1)
+                # df[2, "a"]
+                if isinstance(col_selection, str):
+                    return self[col_selection][row_selection]
 
             # column selection can be "a" and ["a", "b"]
             if isinstance(col_selection, str):

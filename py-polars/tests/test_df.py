@@ -54,6 +54,10 @@ def test_selection():
     assert df[1, [2]].frame_equal(expect)
     expect = pl.DataFrame({"b": [1.0, 3.0]})
     assert df[[0, 2], [1]].frame_equal(expect)
+    assert df[0, "c"] == "a"
+    assert df[1, "c"] == "b"
+    assert df[2, "c"] == "c"
+    assert df[0, "a"] == 1
 
 
 def test_from_arrow():
