@@ -88,7 +88,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub trait PhysicalAggregation {
+pub trait PhysicalAggregation: Send + Sync {
     #[allow(clippy::ptr_arg)]
     /// Should be called on the final aggregation node like sum, min, max, etc.
     /// When called on a tail, slice, sort, etc. it should return a list-array
