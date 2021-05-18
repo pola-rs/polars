@@ -1,3 +1,5 @@
+#[cfg(feature = "object")]
+use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
@@ -142,6 +144,23 @@ impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
             &*(arr as *const ArrayRef as *const Arc<LargeStringArray>)
         };
         arr.value_unchecked(idx)
+    }
+}
+
+#[cfg(feature = "object")]
+impl<'a, T: PolarsObject> TakeRandom for &'a ObjectChunked<T> {
+    type Item = &'a T;
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        // Safety:
+        // Out of bounds is checked and downcast is of correct type
+        unsafe { impl_take_random_get!(self, index, ObjectArray<T>) }
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        impl_take_random_get_unchecked!(self, index, ObjectArray<T>)
     }
 }
 
