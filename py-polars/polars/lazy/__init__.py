@@ -234,7 +234,7 @@ class LazyFrame:
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
-        string_cache: bool = True,
+        string_cache: bool = False,
         no_optimization: bool = False,
     ) -> DataFrame:
         """
@@ -253,6 +253,10 @@ class LazyFrame:
         string_cache
             Use a global string cache in this query.
             This is needed if you want to join on categorical columns.
+
+            Caution!
+                If you already have set a global string cache, set this to `False` as this will reset the
+                global cache when the query is finished.
         no_optimization
             Turn off optimizations
 
