@@ -1,4 +1,6 @@
 pub mod builder;
+mod iterator;
+
 pub use crate::prelude::*;
 use crate::utils::arrow::array::ArrayData;
 use arrow::array::{Array, ArrayRef, BooleanBufferBuilder, JsonEqual};
@@ -11,7 +13,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct ObjectArray<T>
 where
-    T: Any + Debug + Clone + Send + Sync,
+    T: PolarsObject,
 {
     values: Arc<Vec<T>>,
     null_bitmap: Option<Arc<Bitmap>>,
@@ -20,18 +22,36 @@ where
     len: usize,
 }
 
+pub trait PolarsObject: Any + Debug + Clone + Send + Sync + Default {}
+
 impl<T> ObjectArray<T>
 where
-    T: Any + Debug + Clone + Send + Sync,
+    T: PolarsObject,
 {
+    /// Get a reference to the underlying data
+    pub fn values(&self) -> &Arc<Vec<T>> {
+        &self.values
+    }
+
+    /// Get a value at a certain index location
     pub fn value(&self, index: usize) -> &T {
         &self.values[self.offset + index]
+    }
+
+    /// Get a value at a certain index location
+    ///
+    /// # Safety
+    ///
+    /// This does not any bound checks. The caller needs to ensure the index is within
+    /// the size of the array.
+    pub unsafe fn value_unchecked(&self, index: usize) -> &T {
+        &self.values.get_unchecked(index)
     }
 }
 
 impl<T> JsonEqual for ObjectArray<T>
 where
-    T: Any + Debug + Clone + Send + Sync,
+    T: PolarsObject,
 {
     fn equals_json(&self, _json: &[&Value]) -> bool {
         false
@@ -40,7 +60,7 @@ where
 
 impl<T> Array for ObjectArray<T>
 where
-    T: Any + Debug + Clone + Send + Sync,
+    T: PolarsObject,
 {
     fn as_any(&self) -> &dyn Any {
         self
@@ -115,7 +135,7 @@ where
 
 impl<T> ObjectChunked<T>
 where
-    T: Any + Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     ///
     /// # Safety

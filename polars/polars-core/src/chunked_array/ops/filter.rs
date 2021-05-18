@@ -125,7 +125,7 @@ impl ChunkFilter<ListType> for ListChunked {
 #[cfg(feature = "object")]
 impl<T> ChunkFilter<ObjectType<T>> for ObjectChunked<T>
 where
-    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<ObjectType<T>>>
     where

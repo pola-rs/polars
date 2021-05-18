@@ -89,9 +89,9 @@ impl ListChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> ObjectChunked<T>
+impl<'a, T> ObjectChunked<T>
 where
-    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &ObjectArray<T>> + DoubleEndedIterator {
         self.chunks.iter().map(|arr| {
