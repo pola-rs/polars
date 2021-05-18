@@ -149,14 +149,25 @@ impl ChunkZip<CategoricalType> for CategoricalChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
     fn zip_with(
         &self,
-        _mask: &BooleanChunked,
-        _other: &ChunkedArray<ObjectType<T>>,
+        mask: &BooleanChunked,
+        other: &ChunkedArray<ObjectType<T>>,
     ) -> Result<ChunkedArray<ObjectType<T>>> {
-        Err(PolarsError::InvalidOperation(
-            "zip_with method not supported for ChunkedArray of type Object".into(),
-        ))
+        let (left, right, mask) = align_chunks_ternary(self, other, mask);
+        let mut ca: Self = left
+            .as_ref()
+            .into_iter()
+            .zip(right.into_iter())
+            .zip(mask.into_iter())
+            .map(|((left_c, right_c), mask_c)| match mask_c {
+                Some(true) => left_c.cloned(),
+                Some(false) => right_c.cloned(),
+                None => None,
+            })
+            .collect();
+        ca.rename(self.name());
+        Ok(ca)
     }
 }
