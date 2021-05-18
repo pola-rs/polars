@@ -38,3 +38,6 @@ pub use std::sync::Arc;
 
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
+
+#[cfg(feature = "object")]
+pub use crate::chunked_array::object::PolarsObject;

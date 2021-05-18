@@ -13,7 +13,7 @@ pub struct ObjectChunkedBuilder<T> {
 
 impl<T> ObjectChunkedBuilder<T>
 where
-    T: Any + Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     pub fn new(name: &str, capacity: usize) -> Self {
         ObjectChunkedBuilder {
@@ -24,17 +24,20 @@ where
     }
 
     /// Appends a value of type `T` into the builder
+    #[inline]
     pub fn append_value(&mut self, v: T) {
         self.values.push(v);
         self.bitmask_builder.append(true);
     }
 
     /// Appends a null slot into the builder
+    #[inline]
     pub fn append_null(&mut self) {
         self.values.push(T::default());
         self.bitmask_builder.append(false);
     }
 
+    #[inline]
     pub fn append_value_from_any(&mut self, v: &dyn Any) -> Result<()> {
         match v.downcast_ref::<T>() {
             None => Err(PolarsError::DataTypeMisMatch(
@@ -47,6 +50,7 @@ where
         }
     }
 
+    #[inline]
     pub fn append_option(&mut self, opt: Option<T>) {
         match opt {
             Some(s) => self.append_value(s),
@@ -84,7 +88,7 @@ where
 
 impl<T> Default for ObjectChunkedBuilder<T>
 where
-    T: Any + Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     fn default() -> Self {
         ObjectChunkedBuilder::new("", 0)
@@ -93,7 +97,7 @@ where
 
 impl<T> NewChunkedArray<ObjectType<T>, T> for ObjectChunked<T>
 where
-    T: Any + Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     fn new_from_slice(name: &str, v: &[T]) -> Self {
         Self::new_from_iter(name, v.iter().cloned())
@@ -124,7 +128,7 @@ where
 
 impl<T> ObjectChunked<T>
 where
-    T: Any + Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     pub fn new_from_vec(name: &str, v: Vec<T>) -> Self {
         let field = Arc::new(Field::new(name, DataType::Object));

@@ -7,10 +7,6 @@ use arrow::array::Array;
 use arrow::compute::concat;
 use itertools::Itertools;
 use polars_arrow::prelude::*;
-#[cfg(feature = "object")]
-use std::any::Any;
-#[cfg(feature = "object")]
-use std::fmt::Debug;
 
 pub trait ChunkOps {
     /// Aggregate to contiguous memory.
@@ -93,7 +89,7 @@ impl ChunkOps for ListChunked {
 #[cfg(feature = "object")]
 impl<T> ChunkOps for ObjectChunked<T>
 where
-    T: Any + Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     fn rechunk(&self) -> Self
     where

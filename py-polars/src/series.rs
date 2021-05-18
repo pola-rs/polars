@@ -20,6 +20,8 @@ pub struct ObjectValue {
     inner: PyObject,
 }
 
+impl PolarsObject for ObjectValue {}
+
 impl<'a> FromPyObject<'a> for ObjectValue {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         let gil = Python::acquire_gil();
@@ -887,7 +889,10 @@ impl PySeries {
 
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
-        let s = ca.str_slice(start, length).map_err(PyPolarsEr::from)?.into_series();
+        let s = ca
+            .str_slice(start, length)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
         Ok(s.into())
     }
 

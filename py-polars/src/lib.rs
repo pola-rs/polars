@@ -27,10 +27,10 @@ pub mod prelude;
 pub mod series;
 pub mod utils;
 
-use mimalloc::MiMalloc;
-use std::iter::FromIterator;
 use crate::utils::str_to_polarstype;
+use mimalloc::MiMalloc;
 use polars::prelude::*;
+use std::iter::FromIterator;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -96,7 +96,6 @@ fn toggle_string_cache(toggle: bool) {
     polars::toggle_string_cache(toggle)
 }
 
-
 #[pyfunction]
 fn series_from_range(low: i64, high: i64, dtype: &PyAny) -> PySeries {
     let str_repr = dtype.str().unwrap().to_str().unwrap();
@@ -106,7 +105,7 @@ fn series_from_range(low: i64, high: i64, dtype: &PyAny) -> PySeries {
         DataType::UInt32 => Series::from_iter((low as u32)..(high as u32)).into(),
         DataType::Int32 => Series::from_iter((low as i32)..(high as i32)).into(),
         DataType::Int64 => Series::from_iter((low as i64)..(high as i64)).into(),
-        _ => unimplemented!()
+        _ => unimplemented!(),
     }
 }
 

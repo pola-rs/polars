@@ -14,9 +14,6 @@ jobs:
           toolchain: nightly-2021-03-25
           override: true
       - name: Run tests
-        shell: bash
         run: |
-          # do not produce debug symbols to keep memory usage down
-          export RUSTFLAGS="-C debuginfo=0"
           cd polars && make test
           cd ../py-polars && ./tasks.sh build-run-tests

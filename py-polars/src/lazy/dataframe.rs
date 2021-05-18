@@ -85,7 +85,7 @@ impl PyLazyFrame {
         stop_after_n_rows: Option<usize>,
         cache: bool,
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
-        low_memory: bool
+        low_memory: bool,
     ) -> Self {
         let delimiter = sep.as_bytes()[0];
 

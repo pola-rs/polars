@@ -6,12 +6,11 @@ use crate::series::private::PrivateSeries;
 use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
 use std::any::Any;
-use std::fmt::Debug;
 
 #[cfg(feature = "object")]
 impl<T> IntoSeries for ObjectChunked<T>
 where
-    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
@@ -20,15 +19,12 @@ where
 
 #[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
-impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>> where
-    T: 'static + Debug + Clone + Send + Sync + Default
-{
-}
+impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>> where T: PolarsObject {}
 #[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where
-    T: 'static + Debug + Clone + Send + Sync + Default,
+    T: PolarsObject,
 {
     fn rename(&mut self, name: &str) {
         ObjectChunked::rename(&mut self.0, name)

@@ -1,7 +1,5 @@
 use crate::datatypes::CategoricalChunked;
-use crate::prelude::{
-    BooleanChunked, ChunkedArray, ListChunked, PolarsNumericType, Series, Utf8Chunked,
-};
+use crate::prelude::*;
 use crate::utils::CustomIterTools;
 use arrow::array::{Array, BooleanArray, LargeListArray, LargeStringArray};
 use std::convert::TryFrom;
@@ -262,6 +260,31 @@ impl ListChunked {
     {
         self.downcast_iter()
             .map(|arr| ListIterNoNull::new(arr))
+            .flatten()
+            .trust_my_length(self.len())
+    }
+}
+
+#[cfg(feature = "object")]
+impl<'a, T> IntoIterator for &'a ObjectChunked<T>
+where
+    T: PolarsObject,
+{
+    type Item = Option<&'a T>;
+    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+    }
+}
+
+#[cfg(feature = "object")]
+impl<T: PolarsObject> ObjectChunked<T> {
+    #[allow(clippy::wrong_self_convention)]
+    pub fn into_no_null_iter(
+        &self,
+    ) -> impl Iterator<Item = &T> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator {
+        self.downcast_iter()
+            .map(|arr| arr.values().iter())
             .flatten()
             .trust_my_length(self.len())
     }
