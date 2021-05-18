@@ -321,9 +321,19 @@ impl AggFirst for CategoricalChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> AggFirst for ObjectChunked<T> {
-    fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
-        todo!()
+impl<T: PolarsObject> AggFirst for ObjectChunked<T> {
+    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
+        let ca: Self = groups
+            .iter()
+            .map(|(first, idx)| {
+                if idx.is_empty() {
+                    return None;
+                }
+                self.get(*first as usize).cloned()
+            })
+            .collect();
+
+        ca.into_series()
     }
 }
 
@@ -388,9 +398,19 @@ impl AggLast for ListChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> AggLast for ObjectChunked<T> {
-    fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
-        todo!()
+impl<T: PolarsObject> AggLast for ObjectChunked<T> {
+    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
+        let ca: Self = groups
+            .iter()
+            .map(|(_first, idx)| {
+                if idx.is_empty() {
+                    return None;
+                }
+                self.get((idx.len() - 1) as usize).cloned()
+            })
+            .collect();
+
+        ca.into_series()
     }
 }
 
