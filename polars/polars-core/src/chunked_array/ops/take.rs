@@ -476,23 +476,66 @@ impl ChunkTake for CategoricalChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkTake for ObjectChunked<T> {
-    unsafe fn take_unchecked<I, INulls>(&self, _indices: TakeIdx<I, INulls>) -> Self
+impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
+    // TODO! implement unsafe unchecked
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        unimplemented!()
+        self.take(indices)
     }
 
-    fn take<I, INulls>(&self, _indices: TakeIdx<I, INulls>) -> Self
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
         I: Iterator<Item = usize>,
         INulls: Iterator<Item = Option<usize>>,
     {
-        unimplemented!()
+        // current implementation is suboptimal, every iterator is allocated to UInt32Array
+        match indices {
+            TakeIdx::Array(array) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), array.len());
+                }
+                match self.chunks.len() {
+                    1 => {
+                        let values = self.downcast_chunks().get(0).unwrap().values();
+
+                        let mut ca: Self = array
+                            .into_iter()
+                            .map(|opt_idx| opt_idx.map(|idx| values[idx as usize].clone()))
+                            .collect();
+                        ca.rename(self.name());
+                        ca
+                    }
+                    _ => {
+                        let ca = self.rechunk();
+                        ca.take(indices)
+                    }
+                }
+            }
+            TakeIdx::Iter(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
+                let idx_ca = iter
+                    .map(|idx| idx as u32)
+                    .collect::<NoNull<UInt32Chunked>>()
+                    .into_inner();
+                self.take((&idx_ca).into())
+            }
+            TakeIdx::IterNulls(iter) => {
+                if self.is_empty() {
+                    return Self::full_null(self.name(), iter.size_hint().0);
+                }
+                let idx_ca = iter
+                    .map(|opt_idx| opt_idx.map(|idx| idx as u32))
+                    .collect::<UInt32Chunked>();
+                self.take((&idx_ca).into())
+            }
+        }
     }
 }
 
