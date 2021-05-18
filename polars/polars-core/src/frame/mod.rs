@@ -109,8 +109,13 @@ impl DataFrame {
         Ok(df)
     }
 
-    // doesn't check Series sizes.
-    // todo! make private
+    /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the `Series`.
+    ///
+    /// It is adviced to use [Series::new](Series::new) in favor of this method.
+    ///
+    /// # Panic
+    /// It is the callers responsibility to uphold the contract of all `Series`
+    /// having an equal length, if not this may panic down the line.
     pub fn new_no_checks(columns: Vec<Series>) -> DataFrame {
         DataFrame { columns }
     }

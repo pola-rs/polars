@@ -7,7 +7,7 @@ use crate::utils::{
 };
 use ahash::RandomState;
 use polars_core::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 trait Dsl {
     fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;
@@ -543,8 +543,8 @@ impl PredicatePushDown {
                 // and then we remove the predicates from the eligible container if they are
                 // dependent on data we've added in this node.
 
-                // *use a vec instead of a set because of the low number of expected columns
-                let mut added_cols = Vec::with_capacity(exprs.len());
+                let mut added_cols =
+                    HashSet::with_capacity_and_hasher(exprs.len(), RandomState::default());
                 for e in &exprs {
                     // shifts | sorts are influenced by a filter so we do all predicates before the shift | sort
                     let matches = |e: &AExpr| matches!(e, AExpr::Shift { .. } | AExpr::Sort { .. });
@@ -563,7 +563,7 @@ impl PredicatePushDown {
                     }
 
                     for name in aexpr_to_root_names(*e, expr_arena) {
-                        added_cols.push(name);
+                        added_cols.insert(name);
                     }
                 }
 
