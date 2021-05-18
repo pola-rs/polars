@@ -15,11 +15,11 @@ pub struct ObjectArray<T>
 where
     T: PolarsObject,
 {
-    values: Arc<Vec<T>>,
-    null_bitmap: Option<Arc<Bitmap>>,
-    null_count: usize,
-    offset: usize,
-    len: usize,
+    pub(crate) values: Arc<Vec<T>>,
+    pub(crate) null_bitmap: Option<Arc<Bitmap>>,
+    pub(crate) null_count: usize,
+    pub(crate) offset: usize,
+    pub(crate) len: usize,
 }
 
 pub trait PolarsObject: Any + Debug + Clone + Send + Sync + Default {}

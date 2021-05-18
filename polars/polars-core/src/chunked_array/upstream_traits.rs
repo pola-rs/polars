@@ -1,9 +1,13 @@
 //! Implementations of upstream traits for ChunkedArray<T>
 use crate::chunked_array::builder::get_list_builder;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
 use arrow::array::{BooleanArray, LargeStringArray, PrimitiveArray};
+#[cfg(feature = "object")]
+use polars_arrow::prelude::BooleanBufferBuilder;
 use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
@@ -199,6 +203,53 @@ where
         }
 
         builder.finish()
+    }
+}
+
+#[cfg(feature = "object")]
+impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
+    fn from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let size = iter.size_hint().0;
+        let mut null_mask_builder = BooleanBufferBuilder::new(size);
+
+        let mut null_count = 0;
+        let values: Vec<T> = iter
+            .map(|value| match value {
+                Some(value) => {
+                    null_mask_builder.append(true);
+                    value
+                }
+                None => {
+                    null_count += 1;
+                    null_mask_builder.append(false);
+                    T::default()
+                }
+            })
+            .collect();
+
+        let null_bit_buffer = null_mask_builder.finish();
+        let null_bitmap = arrow::bitmap::Bitmap::from(null_bit_buffer);
+        let null_bitmap = match null_count {
+            0 => None,
+            _ => Some(Arc::new(null_bitmap)),
+        };
+
+        let len = values.len();
+
+        let arr = Arc::new(ObjectArray {
+            values: Arc::new(values),
+            null_bitmap,
+            null_count,
+            offset: 0,
+            len,
+        });
+        ChunkedArray {
+            field: Arc::new(Field::new("", DataType::Object)),
+            chunks: vec![arr],
+            phantom: PhantomData,
+            categorical_map: None,
+        }
     }
 }
 

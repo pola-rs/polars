@@ -735,6 +735,15 @@ impl ChunkFullNull for ListChunked {
     }
 }
 
+#[cfg(feature = "object")]
+impl<T: PolarsObject> ChunkFullNull for ObjectChunked<T> {
+    fn full_null(name: &str, length: usize) -> ObjectChunked<T> {
+        let mut ca: Self = (0..length).map(|_| None).collect();
+        ca.rename(name);
+        ca
+    }
+}
+
 /// Reverse a ChunkedArray<T>
 pub trait ChunkReverse<T> {
     /// Return a reversed version of this array.
@@ -778,7 +787,7 @@ impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(Utf8Type, Utf8Chunked);
 impl_reverse!(ListType, ListChunked);
 #[cfg(feature = "object")]
-impl<T> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
     fn reverse(&self) -> Self {
         // Safety
         // we we know we don't get out of bounds
