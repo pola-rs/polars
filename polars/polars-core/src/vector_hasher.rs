@@ -21,68 +21,6 @@ pub trait VecHash {
     }
 }
 
-pub trait VecHashId {
-    /// Compute the hash id by interpreting the bits as 64 bits.
-    ///
-    /// Watch out for [accidental quadratic behavior](https://accidentallyquadratic.tumblr.com/post/153545455987/rust-hash-iteration-reinsertion)
-    fn vec_hash_id(&self) -> UInt64Chunked {
-        unimplemented!()
-    }
-}
-
-/// A random u64 used for the None case
-/// the other values hash `T` instead of `Option<T>`
-const RANDOM_U64: u64 = 4352984574;
-
-impl VecHashId for UInt64Chunked {
-    fn vec_hash_id(&self) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| match opt_v {
-            None => RANDOM_U64,
-            Some(v) => v,
-        })
-    }
-}
-
-impl VecHashId for UInt32Chunked {
-    fn vec_hash_id(&self) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| match opt_v {
-            None => RANDOM_U64,
-            Some(v) => v as u64,
-        })
-    }
-}
-
-impl VecHashId for Int32Chunked {
-    fn vec_hash_id(&self) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| match opt_v {
-            None => RANDOM_U64,
-            Some(v) => (unsafe { std::mem::transmute::<i32, u32>(v) }) as u64,
-        })
-    }
-}
-
-impl VecHashId for Int64Chunked {
-    fn vec_hash_id(&self) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| match opt_v {
-            None => RANDOM_U64,
-            Some(v) => unsafe { std::mem::transmute::<i64, u64>(v) },
-        })
-    }
-}
-
-impl Series {
-    pub fn vec_hash_id(&self) -> UInt64Chunked {
-        use DataType::*;
-        match self.dtype() {
-            UInt64 => self.u64().unwrap().vec_hash_id(),
-            Int64 => self.i64().unwrap().vec_hash_id(),
-            Int32 => self.i32().unwrap().vec_hash_id(),
-            UInt32 => self.u32().unwrap().vec_hash_id(),
-            _ => unimplemented!(),
-        }
-    }
-}
-
 impl<T> VecHash for ChunkedArray<T>
 where
     T: PolarsIntegerType,
