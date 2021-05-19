@@ -78,6 +78,7 @@ num_cpus = "1.13"
 lazy_static = "1.4"
 hashbrown = {version = "0.11", features = ["rayon"] }
 polars-arrow = {version = "0.13.3", path = "../polars-arrow"}
+smallvec = {version = "1.6", features = ["union"] }
 
 [package.metadata.docs.rs]
 all-features = true
