@@ -401,7 +401,7 @@ def from_pandas(
     data = {}
 
     for (name, dtype) in zip(df.columns, df.dtypes):
-        if dtype == "object" and isinstance(df[name][0], str):
+        if dtype == "object" and isinstance(df[name].iloc[0], str):
             data[name] = pa.array(df[name], pa.large_utf8())
         elif dtype == "datetime64[ns]":
             # We first cast to ms because that's the unit of Date64
