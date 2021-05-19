@@ -235,12 +235,13 @@ impl ProjectionPushDown {
 
                 // the projections should all be done at the latest projection node to keep the same schema order
                 if projections_seen == 0 {
+                    let schema = lp.schema(lp_arena);
                     for expr in expr {
                         // Due to the pushdown, a lot of projections cannot be done anymore at the final
                         // node and should be skipped
                         if expr_arena
                             .get(expr)
-                            .to_field(lp.schema(lp_arena), Context::Default, expr_arena)
+                            .to_field(schema, Context::Default, expr_arena)
                             .is_ok()
                         {
                             local_projection.push(expr);
@@ -256,7 +257,8 @@ impl ProjectionPushDown {
                 }
 
                 let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena);
-                Ok(self.finish_node(local_projection, builder))
+                let lp = self.finish_node(local_projection, builder);
+                Ok(lp)
             }
             LocalProjection { expr, input, .. } => {
                 self.pushdown_and_assign(
@@ -549,6 +551,7 @@ impl ProjectionPushDown {
                         lp_arena,
                         expr_arena,
                     )?;
+
                     let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                         .groupby(keys, aggs, apply);
                     Ok(builder.build())
@@ -571,13 +574,35 @@ impl ProjectionPushDown {
                 let mut local_projection = init_vec();
 
                 // if there are no projections we don't have to do anything
+                // otherwise we build local projections to sort out proper column names due to the
+                // join operation
                 if !acc_projections.is_empty() {
                     let schema_left = lp_arena.get(input_left).schema(lp_arena);
                     let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
                     // We need the join columns so we push the projection downwards
-                    pushdown_left.extend_from_slice(&left_on);
-                    pushdown_right.extend_from_slice(&right_on);
+                    for e in &left_on {
+                        add_expr_to_accumulated(
+                            *e,
+                            &mut pushdown_left,
+                            &mut names_left,
+                            expr_arena,
+                        );
+                        if !local_projection.contains(e) {
+                            local_projection.push(*e)
+                        }
+                    }
+                    for e in &right_on {
+                        add_expr_to_accumulated(
+                            *e,
+                            &mut pushdown_right,
+                            &mut names_right,
+                            expr_arena,
+                        );
+                        if !local_projection.contains(e) {
+                            local_projection.push(*e)
+                        }
+                    }
 
                     for proj in acc_projections {
                         let mut add_local = true;
@@ -643,7 +668,7 @@ impl ProjectionPushDown {
                             // JOIN (["days", "temp"]) WITH (["days", "rain"]) ON (left: days right: days)
                             //
                             // should drop the days column after the join.
-                            local_projection.push(proj)
+                            local_projection.push(proj);
                         }
                     }
                 }
