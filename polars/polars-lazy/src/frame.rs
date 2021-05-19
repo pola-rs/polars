@@ -2039,4 +2039,30 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_groupby_projection_pd_same_column() -> Result<()> {
+        // this query failed when projection pushdown was enabled
+
+        let a = || {
+            let df = df![
+                "col1" => ["a", "ab", "abc"],
+                "col2" => [1, 2, 3]
+            ]
+            .unwrap();
+
+            df.lazy()
+                .select(vec![col("col1").alias("foo"), col("col2").alias("bar")])
+        };
+
+        let out = a()
+            .left_join(a(), col("foo"), col("foo"), None)
+            .select(vec![col("bar")])
+            .collect()?;
+
+        let a = out.column("bar")?.i32()?;
+        assert_eq!(Vec::from(a), &[Some(1), Some(2), Some(3)]);
+
+        Ok(())
+    }
 }

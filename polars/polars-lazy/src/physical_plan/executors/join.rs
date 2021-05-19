@@ -1,5 +1,4 @@
 use crate::logical_plan::FETCH_ROWS;
-use crate::physical_plan::executors::POLARS_VERBOSE;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::prelude::*;
@@ -75,8 +74,8 @@ impl Executor for JoinExec {
             .collect::<Result<Vec<_>>>()?;
 
         let df = df_left.join(&df_right, &left_names, &right_names, self.how);
-        if std::env::var(POLARS_VERBOSE).is_ok() {
-            println!("{:?} join dataframes finished", self.how);
+        if state.verbose {
+            eprintln!("{:?} join dataframes finished", self.how);
         };
         df
     }
