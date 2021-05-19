@@ -1267,8 +1267,7 @@ class DataFrame:
         column
             Series, where the name of the Series refers to the column in the DataFrame.
         """
-        # is Expr
-        if hasattr(column, "_pyexpr"):
+        if _is_expr(column):
             return self.with_columns([column])
         return wrap_df(self._df.with_column(column._s))
 
@@ -1538,6 +1537,8 @@ class DataFrame:
         exprs
             List of Expressions that evaluate to columns
         """
+        if not isinstance(exprs, list):
+            exprs = [exprs]
         return (
             self.lazy()
             .with_columns(exprs)
