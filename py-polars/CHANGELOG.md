@@ -2,6 +2,45 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.17
+* feature
+  - support more indexing
+  - scan_csv low memory argument
+  - Series.filter accept list of expressions
+  - object type:
+      - zip
+      - take -> join / groupby agg
+      - agg first/ last
+
+* bug fix
+
+* performance
+  - change memory usage of csv-parser
+  - binary aggregation in parallel
+  - determine groupby keys in threadpool
+
+### polars 0.7.16
+* feature
+  - Series literal may have any length
+  - change globaly string cache behavior
+  - Add Expr.arg_sort
+  - Make literals typed
+
+* bug fix
+  - Fix Expr.fill_none
+  - set offset in null buffers (fixes aggregation with null values)
+
+* performance
+  - sample cardinality in groupby and choose algorithm
+
+### polars 0.7.15
+* feature
+  - join allows expression syntax
+  - use pyarrow as default ipc backend
+  
+* bug fix
+  - fix deadlock in window expressions
+
 ### polars 0.7.13 / 0.7.14 (patch) 2021-05-08
 
 * bug fix
