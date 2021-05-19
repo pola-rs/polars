@@ -575,22 +575,18 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     }
 
     pub fn keys(&self) -> Vec<Series> {
-        // Keys will later be appended with the aggregation columns, so we already allocate extra space
-        let size;
-        if let Some(sel) = &self.selected_agg {
-            size = sel.len() + self.selected_keys.len();
-        } else {
-            size = self.selected_keys.len();
-        }
-        let mut keys = Vec::with_capacity(size);
-        unsafe {
-            self.selected_keys.iter().for_each(|s| {
-                let key =
-                    s.take_iter_unchecked(&mut self.groups.iter().map(|(idx, _)| *idx as usize));
-                keys.push(key)
-            });
-        }
-        keys
+        POOL.install(|| {
+            self.selected_keys
+                .par_iter()
+                .map(|s| {
+                    // Safety
+                    // groupby indexes are in bound.
+                    unsafe {
+                        s.take_iter_unchecked(&mut self.groups.iter().map(|(idx, _)| *idx as usize))
+                    }
+                })
+                .collect()
+        })
     }
 
     fn prepare_agg(&self) -> Result<(Vec<Series>, Vec<Series>)> {

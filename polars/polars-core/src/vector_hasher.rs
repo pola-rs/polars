@@ -294,11 +294,9 @@ where
     (hashes, build_hasher)
 }
 
-// Combines two hashes into one hash
-// http://myeyesareblind.com/2017/02/06/Combine-hash-values/
-fn combine_hashes(l: u64, r: u64) -> u64 {
-    let hash = (17 * 37u64).wrapping_add(l);
-    hash.wrapping_mul(37).wrapping_add(r)
+// hash combine from c++' boost lib
+fn boost_hash_combine(l: u64, r: u64) -> u64 {
+    l ^ r.wrapping_add(0x9e3779b9u64.wrapping_add(l << 6).wrapping_add(r >> 2))
 }
 
 pub(crate) fn df_rows_to_hashes_threaded(
@@ -335,27 +333,69 @@ pub(crate) fn df_rows_to_hashes(
         })
         .collect();
 
-    let mut iter = hashes.into_iter();
-    let first = iter.next().unwrap();
+    let n_chunks = hashes[0].chunks().len();
+    let mut av = AlignedVec::with_capacity_aligned(keys.height());
 
-    // take the columns of hashes and create one hash from them.
-    // All columns have the same no. of chunks so we can take the fast path.
-    (
-        iter.fold(first, |acc, s| {
-            let chunks = acc
-                .data_views()
-                .zip(s.data_views())
-                .map(|(array_left, array_right)| {
-                    let av: AlignedVec<_> = array_left
-                        .iter()
-                        .zip(array_right)
-                        .map(|(&l, &r)| combine_hashes(l, r))
-                        .collect();
-                    Arc::new(av.into_primitive_array::<UInt64Type>(None)) as ArrayRef
-                })
-                .collect();
-            UInt64Chunked::new_from_chunks("", chunks)
-        }),
-        build_hasher,
-    )
+    // two code paths, one has one layer of indirection less.
+    if n_chunks == 1 {
+        let chunks: Vec<&[u64]> = hashes
+            .iter()
+            .map(|ca| {
+                ca.downcast_iter()
+                    .map(|arr| arr.values())
+                    .collect::<Vec<_>>()[0]
+            })
+            .collect();
+        unsafe {
+            let chunk_len = chunks.get_unchecked(0).len();
+
+            // over chunk length in column direction
+            for idx in 0..chunk_len {
+                let hslice = chunks.get_unchecked(0);
+                let mut h = *hslice.get_unchecked(idx);
+
+                // in row direction
+                for column_i in 1..hashes.len() {
+                    let hslice = chunks.get_unchecked(column_i);
+                    let h_ = *hslice.get_unchecked(idx);
+                    h = boost_hash_combine(h, h_)
+                }
+
+                av.push(h);
+            }
+        }
+    // path with more indirection
+    } else {
+        let chunks: Vec<Vec<&[u64]>> = hashes
+            .iter()
+            .map(|ca| {
+                ca.downcast_iter()
+                    .map(|arr| arr.values())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        unsafe {
+            for chunk_i in 0..n_chunks {
+                let chunk_len = chunks.get_unchecked(0).get_unchecked(chunk_i).len();
+
+                // over chunk length in column direction
+                for idx in 0..chunk_len {
+                    let hslice = chunks.get_unchecked(0).get_unchecked(chunk_i);
+                    let mut h = *hslice.get_unchecked(idx);
+
+                    // in row direction
+                    for column_i in 1..hashes.len() {
+                        let hslice = chunks.get_unchecked(column_i).get_unchecked(chunk_i);
+                        let h_ = *hslice.get_unchecked(idx);
+                        h = boost_hash_combine(h, h_)
+                    }
+
+                    av.push(h);
+                }
+            }
+        }
+    }
+
+    let chunks = vec![Arc::new(av.into_primitive_array::<UInt64Type>(None)) as ArrayRef];
+    (UInt64Chunked::new_from_chunks("", chunks), build_hasher)
 }

@@ -43,10 +43,10 @@ fn groupby_helper(
 
     let groups = gb.get_groups();
 
-    let mut columns = gb.keys();
+    let (mut columns, agg_columns) = POOL.install(|| {
+        let get_columns = || gb.keys();
 
-    let agg_columns = POOL.install(|| {
-        aggs
+        let get_agg = || aggs
             .par_iter()
             .map(|expr| {
                 let agg_expr = expr.as_agg_expr()?;
@@ -62,11 +62,13 @@ fn groupby_helper(
                 };
                 Ok(opt_agg)
             })
-            .collect::<Result<Vec<_>>>()
-    })?;
+            .collect::<Result<Vec<_>>>();
+
+        rayon::join(get_columns, get_agg)
+    });
+    let agg_columns = agg_columns?;
 
     columns.extend(agg_columns.into_iter().flatten());
-
     let df = DataFrame::new_no_checks(columns);
     Ok(df)
 }
@@ -110,7 +112,7 @@ impl PartitionGroupByExec {
     }
 }
 
-fn run_partititions(
+fn run_partitions(
     df: &DataFrame,
     exec: &PartitionGroupByExec,
     state: &ExecutionState,
@@ -247,7 +249,7 @@ impl Executor for PartitionGroupByExec {
 
         // Run the partitioned aggregations
         let n_threads = num_cpus::get();
-        let dfs = run_partititions(&original_df, self, state, n_threads)?;
+        let dfs = run_partitions(&original_df, self, state, n_threads)?;
 
         // MERGE phase
         // merge and hash aggregate again
@@ -259,8 +261,8 @@ impl Executor for PartitionGroupByExec {
 
         let (aggs_and_names, outer_phys_aggs) = get_outer_agg_exprs(self, &original_df)?;
 
-        let mut columns = gb.keys();
-        let agg_columns: Vec<_> = POOL.install(|| {
+        let get_columns = || gb.keys();
+        let get_agg = || {
             outer_phys_aggs
                 .par_iter()
                 .zip(aggs_and_names.par_iter().map(|(_, name)| name))
@@ -278,7 +280,9 @@ impl Executor for PartitionGroupByExec {
                 })
                 .flatten()
                 .collect()
-        });
+        };
+        let (mut columns, agg_columns): (Vec<_>, Vec<_>) =
+            POOL.install(|| rayon::join(get_columns, get_agg));
 
         columns.extend(agg_columns);
 
