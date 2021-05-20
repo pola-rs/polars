@@ -138,7 +138,16 @@
 //! mimalloc = { version = "*", default-features = false }
 //! ```
 //!
-//! ## 7. Examples
+//! ## 7. Compile for WASM
+//! To be able to pretty print a `DataFrame` in WebAssembly you need to patch the `prettytable-rs`
+//! dependency. If you add this snippet to your `Cargo.toml` you can compile and pretty print in WASM.
+//!
+//! ```toml
+//! [patch.crates-io]
+//! prettytable-rs = { git = "https://github.com/phsym/prettytable-rs", branch = "master"}
+//! ```
+//!
+//! ## 8. Examples
 //! Below we show some minimal examples, most can be found in the provided `traits` and `structs`
 //! documentation.
 //!
