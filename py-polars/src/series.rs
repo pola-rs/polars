@@ -20,7 +20,11 @@ pub struct ObjectValue {
     inner: PyObject,
 }
 
-impl PolarsObject for ObjectValue {}
+impl PolarsObject for ObjectValue {
+    fn type_name() -> &'static str {
+        "object"
+    }
+}
 
 impl<'a> FromPyObject<'a> for ObjectValue {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
@@ -233,7 +237,7 @@ impl PySeries {
     pub fn get_object(&self, index: usize) -> PyObject {
         let gil = Python::acquire_gil();
         let python = gil.python();
-        if matches!(self.series.dtype(), DataType::Object) {
+        if matches!(self.series.dtype(), DataType::Object(_)) {
             // we don't use the null bitmap in this context as T::default is pyobject None
             let any = self.series.get_as_any(index);
             let obj: &ObjectValue = any.into();
@@ -558,7 +562,7 @@ impl PySeries {
             DataType::Duration(TimeUnit::Millisecond) => {
                 PyList::new(python, series.duration_millisecond().unwrap())
             }
-            DataType::Object => {
+            DataType::Object(_) => {
                 let v = PyList::empty(python);
                 for i in 0..series.len() {
                     let val = series

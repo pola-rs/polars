@@ -17,7 +17,7 @@ where
 {
     pub fn new(name: &str, capacity: usize) -> Self {
         ObjectChunkedBuilder {
-            field: Field::new(name, DataType::Object),
+            field: Field::new(name, DataType::Object(T::type_name())),
             values: Vec::with_capacity(capacity),
             bitmask_builder: BooleanBufferBuilder::new(capacity),
         }
@@ -131,7 +131,7 @@ where
     T: PolarsObject,
 {
     pub fn new_from_vec(name: &str, v: Vec<T>) -> Self {
-        let field = Arc::new(Field::new(name, DataType::Object));
+        let field = Arc::new(Field::new(name, DataType::Object(T::type_name())));
         let len = v.len();
 
         let arr = Arc::new(ObjectArray {
