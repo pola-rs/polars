@@ -462,7 +462,7 @@ impl DataType {
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
             Object => unimplemented!(),
-            Categorical => ArrowDataType::UInt16,
+            Categorical => ArrowDataType::UInt32,
         }
     }
 }

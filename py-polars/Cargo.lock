@@ -1051,7 +1051,6 @@ dependencies = [
  "rayon",
  "regex",
  "serde_json",
- "smallvec",
  "thiserror",
  "unsafe_unwrap",
 ]

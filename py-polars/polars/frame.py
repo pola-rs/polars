@@ -276,7 +276,10 @@ class DataFrame:
     def to_arrow(self) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
-        This operation is zero copy.
+        This operation is mostly zero copy.
+
+        Data types that do copy:
+            - CategoricalType
         """
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
