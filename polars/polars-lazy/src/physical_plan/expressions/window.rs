@@ -53,7 +53,9 @@ impl PhysicalExpr for WindowExpr {
                     break;
                 }
                 Err(_) => {
-                    std::thread::yield_now();
+                    // thread yield could still cause a dead lock, maybe because it remained
+                    // high priority?
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
             }
         }

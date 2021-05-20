@@ -145,6 +145,6 @@ mod test {
             "foo",
             &[None, Some(1.0), Some(3.0), None, Some(1.0)],
         );
-        let out = ca.cum_sum(false);
+        let _out = ca.cum_sum(false);
     }
 }
