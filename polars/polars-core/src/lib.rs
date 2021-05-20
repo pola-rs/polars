@@ -70,11 +70,15 @@ impl Default for StringCache {
 
 pub(crate) static USE_STRING_CACHE: AtomicBool = AtomicBool::new(false);
 lazy_static! {
-    static ref L_STRING_CACHE: StringCache = Default::default();
+    pub(crate) static ref STRING_CACHE: StringCache = Default::default();
+
+    // utility for the tests to ensure a single thread can execute
+    #[cfg(test)]
+    pub(crate) static ref SINGLE_LOCK: Mutex<()> = Mutex::new(());
 }
 
+
 use std::time::{SystemTime, UNIX_EPOCH};
-pub(crate) use L_STRING_CACHE as STRING_CACHE;
 
 /// Use a global string cache for the Categorical Types.
 ///

@@ -1320,6 +1320,7 @@ mod test {
 
     #[test]
     fn test_join_categorical() {
+        let lock = crate::SINGLE_LOCK.lock();
         toggle_string_cache(true);
 
         let (mut df_a, mut df_b) = get_dfs();
