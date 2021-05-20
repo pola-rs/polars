@@ -592,11 +592,15 @@ impl DataFrame {
     ///
     /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|col| col.filter(mask))
-            .collect::<Result<Vec<_>>>()?;
+        let new_col = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| match s.dtype() {
+                    DataType::Utf8 => s.filter_threaded(mask, true),
+                    _ => s.filter(mask),
+                })
+                .collect::<Result<Vec<_>>>()
+        })?;
         Ok(DataFrame::new_no_checks(new_col))
     }
 
