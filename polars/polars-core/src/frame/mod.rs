@@ -24,6 +24,7 @@ pub mod hash_join;
 pub mod row;
 pub mod select;
 mod upstream_traits;
+use crate::POOL;
 
 #[derive(Clone)]
 pub struct DataFrame {
@@ -642,18 +643,23 @@ impl DataFrame {
             Err(_) => return self.clone(),
             Ok(n) => n,
         };
+        let has_utf8 = self
+            .columns
+            .iter()
+            .any(|s| matches!(s.dtype(), DataType::Utf8));
 
-        if n_chunks == 1 {
+        if n_chunks == 1 || has_utf8 {
             let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
             let idx_ca = idx_ca.into_inner();
-            let cols = self
-                .columns
-                .par_iter()
-                .map(|s| {
-                    s.take_unchecked(&idx_ca)
-                        .expect("already checked single chunk")
-                })
-                .collect();
+            let cols = POOL.install(|| {
+                self.columns
+                    .par_iter()
+                    .map(|s| match s.dtype() {
+                        DataType::Utf8 => s.take_unchecked_threaded(&idx_ca, true).unwrap(),
+                        _ => s.take_unchecked(&idx_ca).unwrap(),
+                    })
+                    .collect()
+            });
             return DataFrame::new_no_checks(cols);
         }
 
@@ -687,16 +693,22 @@ impl DataFrame {
             Ok(n) => n,
         };
 
-        if n_chunks == 1 {
+        let has_utf8 = self
+            .columns
+            .iter()
+            .any(|s| matches!(s.dtype(), DataType::Utf8));
+
+        if n_chunks == 1 || has_utf8 {
             let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
-            let cols = self
-                .columns
-                .par_iter()
-                .map(|s| {
-                    s.take_unchecked(&idx_ca)
-                        .expect("already checked single chunk")
-                })
-                .collect();
+            let cols = POOL.install(|| {
+                self.columns
+                    .par_iter()
+                    .map(|s| match s.dtype() {
+                        DataType::Utf8 => s.take_unchecked_threaded(&idx_ca, true).unwrap(),
+                        _ => s.take_unchecked(&idx_ca).unwrap(),
+                    })
+                    .collect()
+            });
             return DataFrame::new_no_checks(cols);
         }
 
@@ -735,7 +747,15 @@ impl DataFrame {
         } else {
             Cow::Borrowed(indices)
         };
-        let new_col = self.columns.par_iter().map(|s| s.take(&indices)).collect();
+        let new_col = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| match s.dtype() {
+                    DataType::Utf8 => s.take_threaded(&indices, true),
+                    _ => s.take(&indices),
+                })
+                .collect()
+        });
 
         DataFrame::new_no_checks(new_col)
     }

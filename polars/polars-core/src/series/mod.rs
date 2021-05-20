@@ -8,11 +8,13 @@ pub mod implementations;
 pub(crate) mod iterator;
 
 use crate::chunked_array::{builder::get_list_builder, float::IsNan, ChunkIdIter};
-use crate::series::arithmetic::coerce_lhs_rhs;
+use crate::utils::split_ca;
+use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
 use arrow::array::ArrayData;
 use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
+use rayon::prelude::*;
 use std::any::Any;
 use std::convert::TryFrom;
 use std::ops::Deref;
@@ -1249,6 +1251,60 @@ impl Series {
             _ => return self.clone(),
         };
         out.unwrap()
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_unchecked_threaded(
+        &self,
+        idx: &UInt32Chunked,
+        rechunk: bool,
+    ) -> Result<Series> {
+        let n_threads = num_cpus::get();
+        let idx = split_ca(idx, n_threads)?;
+
+        let series: Result<Vec<_>> =
+            POOL.install(|| idx.par_iter().map(|idx| self.take_unchecked(idx)).collect());
+
+        let s = series?
+            .into_iter()
+            .reduce(|mut s, s1| {
+                s.append(&s1).unwrap();
+                s
+            })
+            .unwrap();
+        if rechunk {
+            Ok(s.rechunk())
+        } else {
+            Ok(s)
+        }
+    }
+
+    /// Take by index. This operation is clone.
+    ///
+    /// # Safety
+    ///
+    /// Out of bounds access doesn't Error but will return a Null value
+    pub fn take_threaded(&self, idx: &UInt32Chunked, rechunk: bool) -> Series {
+        let n_threads = num_cpus::get();
+        let idx = split_ca(idx, n_threads).unwrap();
+
+        let series: Vec<_> = POOL.install(|| idx.par_iter().map(|idx| self.take(idx)).collect());
+
+        let s = series
+            .into_iter()
+            .reduce(|mut s, s1| {
+                s.append(&s1).unwrap();
+                s
+            })
+            .unwrap();
+        if rechunk {
+            s.rechunk()
+        } else {
+            s
+        }
     }
 }
 
