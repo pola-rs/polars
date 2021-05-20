@@ -168,7 +168,7 @@ mod test {
 
     #[test]
     fn test_categorical_rev() -> Result<()> {
-        let lock = SINGLE_LOCK.lock();
+        let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let ca = Utf8Chunked::new_from_opt_slice(
             "a",

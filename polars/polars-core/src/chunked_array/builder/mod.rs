@@ -639,7 +639,7 @@ mod test {
 
     #[test]
     fn test_categorical_builder() {
-        let lock = crate::SINGLE_LOCK.lock();
+        let _lock = crate::SINGLE_LOCK.lock();
         for b in &[false, true] {
             reset_string_cache();
             toggle_string_cache(*b);

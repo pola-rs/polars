@@ -1057,7 +1057,7 @@ pub(crate) mod test {
     #[test]
     fn test_iter_categorical() {
         use crate::SINGLE_LOCK;
-        let lock = SINGLE_LOCK.lock();
+        let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let ca =
             Utf8Chunked::new_from_opt_slice("", &[Some("foo"), None, Some("bar"), Some("ham")]);
