@@ -47,7 +47,7 @@ impl From<&DataType> for PyDataType {
             DataType::Time64(TimeUnit::Nanosecond) => Time64Nanosecond,
             DataType::Duration(TimeUnit::Nanosecond) => DurationNanosecond,
             DataType::Duration(TimeUnit::Millisecond) => DurationMillisecond,
-            DataType::Object => Object,
+            DataType::Object(_) => Object,
             DataType::Categorical => Categorical,
             dt => panic!("datatype: {:?} not supported", dt),
         }

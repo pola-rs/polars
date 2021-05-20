@@ -99,9 +99,9 @@ pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
 #[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
-impl<T: Send + Sync> PolarsDataType for ObjectType<T> {
+impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     fn get_dtype() -> DataType {
-        DataType::Object
+        DataType::Object(T::type_name())
     }
 }
 
@@ -348,7 +348,7 @@ impl Display for DataType {
             DataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
             DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
             #[cfg(feature = "object")]
-            DataType::Object => "object",
+            DataType::Object(s) => s,
             DataType::Categorical => "cat",
             _ => panic!("{:?} not implemented", self),
         };
@@ -431,7 +431,9 @@ pub enum DataType {
     List(ArrowDataType),
     Duration(TimeUnit),
     #[cfg(feature = "object")]
-    Object,
+    /// A generic type that can be used in a `Series`
+    /// &'static str can be used to determine/set inner type
+    Object(&'static str),
     Null,
     Categorical,
 }
@@ -461,7 +463,7 @@ impl DataType {
             Duration(tu) => ArrowDataType::Duration(tu.clone()),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
-            Object => unimplemented!(),
+            Object(_) => unimplemented!(),
             Categorical => ArrowDataType::UInt32,
         }
     }

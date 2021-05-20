@@ -22,7 +22,9 @@ where
     pub(crate) len: usize,
 }
 
-pub trait PolarsObject: Any + Debug + Clone + Send + Sync + Default {}
+pub trait PolarsObject: Any + Debug + Clone + Send + Sync + Default {
+    fn type_name() -> &'static str;
+}
 
 impl<T> ObjectArray<T>
 where

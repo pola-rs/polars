@@ -245,7 +245,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             len,
         });
         ChunkedArray {
-            field: Arc::new(Field::new("", DataType::Object)),
+            field: Arc::new(Field::new("", DataType::Object(T::type_name()))),
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
