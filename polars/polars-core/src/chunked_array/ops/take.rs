@@ -478,20 +478,18 @@ impl ChunkTake for ListChunked {
                 if self.is_empty() {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
-                let idx_ca = iter
-                    .map(|idx| idx as u32)
-                    .collect::<NoNull<UInt32Chunked>>()
-                    .into_inner();
-                self.take((&idx_ca).into())
+                let mut ca: ListChunked = take_iter_n_chunks!(self, iter);
+                ca.rename(self.name());
+                ca
             }
             TakeIdx::IterNulls(iter) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
-                let idx_ca = iter
-                    .map(|opt_idx| opt_idx.map(|idx| idx as u32))
-                    .collect::<UInt32Chunked>();
-                self.take((&idx_ca).into())
+
+                let mut ca: ListChunked = take_opt_iter_n_chunks!(self, iter);
+                ca.rename(self.name());
+                ca
             }
         }
     }
@@ -560,7 +558,7 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
 
                             let taker = self.take_rand();
                             let mut ca: ObjectChunked<T> =
-                                iter.map(|idx| taker.get(idx).map(|v| v.clone())).collect();
+                                iter.map(|idx| taker.get(idx).cloned()).collect();
                             ca.rename(self.name());
                             ca
                         } else {
@@ -570,9 +568,7 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
                             let taker = self.take_rand();
 
                             let mut ca: ObjectChunked<T> = iter
-                                .map(|opt_idx| {
-                                    opt_idx.and_then(|idx| taker.get(idx).map(|v| v.clone()))
-                                })
+                                .map(|opt_idx| opt_idx.and_then(|idx| taker.get(idx).cloned()))
                                 .collect();
 
                             ca.rename(self.name());
@@ -585,20 +581,24 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
                 if self.is_empty() {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
-                let idx_ca = iter
-                    .map(|idx| idx as u32)
-                    .collect::<NoNull<UInt32Chunked>>()
-                    .into_inner();
-                self.take((&idx_ca).into())
+
+                let taker = self.take_rand();
+                let mut ca: ObjectChunked<T> = iter.map(|idx| taker.get(idx).cloned()).collect();
+                ca.rename(self.name());
+                ca
             }
             TakeIdx::IterNulls(iter) => {
                 if self.is_empty() {
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
-                let idx_ca = iter
-                    .map(|opt_idx| opt_idx.map(|idx| idx as u32))
-                    .collect::<UInt32Chunked>();
-                self.take((&idx_ca).into())
+                let taker = self.take_rand();
+
+                let mut ca: ObjectChunked<T> = iter
+                    .map(|opt_idx| opt_idx.and_then(|idx| taker.get(idx).cloned()))
+                    .collect();
+
+                ca.rename(self.name());
+                ca
             }
         }
     }
