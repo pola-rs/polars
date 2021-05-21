@@ -139,8 +139,9 @@
 //! ```
 //!
 //! ## 7. Compile for WASM
-//! To be able to pretty print a `DataFrame` in WebAssembly you need to patch the `prettytable-rs`
-//! dependency. If you add this snippet to your `Cargo.toml` you can compile and pretty print in WASM.
+//! To be able to pretty print a `DataFrame` in `wasm32-wasi` you need to patch the `prettytable-rs`
+//! dependency. If you add this snippet to your `Cargo.toml` you can compile and pretty print when
+//! compiling to `wasm32-wasi` target.
 //!
 //! ```toml
 //! [patch.crates-io]
