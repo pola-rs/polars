@@ -24,6 +24,7 @@ pub(crate) mod set;
 pub(crate) mod shift;
 pub(crate) mod sort;
 pub(crate) mod take;
+pub(crate) mod take_random;
 pub(crate) mod take_single;
 pub(crate) mod unique;
 pub(crate) mod window;

@@ -13,7 +13,8 @@ pub use crate::{
         ops::{
             aggregate::*,
             chunkops::ChunkOps,
-            take::{AsTakeIndex, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
+            take::AsTakeIndex,
+            take_random::{IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont},
             window::InitFold,
             *,
         },
