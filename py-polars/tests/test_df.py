@@ -597,3 +597,8 @@ def test_assign():
     # test if we can assign in case of single column
     df["a"] = df["a"] * 2
     assert df["a"] == [2, 4, 6]
+
+
+def test_to_numpy():
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    assert df.to_numpy().shape == (3, 2)

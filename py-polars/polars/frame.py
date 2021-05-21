@@ -426,7 +426,7 @@ class DataFrame:
         numpy.ndarray
         ```
         """
-        return np.vstack([self[:, i].to_numpy() for i in range(self.width)]).T
+        return np.vstack([self[i].to_numpy() for i in range(self.width)]).T
 
     def __mul__(self, other):
         other = _prepare_other_arg(other)
