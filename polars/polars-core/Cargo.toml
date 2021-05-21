@@ -57,8 +57,8 @@ dtype-u16 = []
 dtype-u64 = []
 
 [dependencies]
-arrow = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-rs", rev = "d008f31b107c1030a1f5144c164e8ca8bf543576", default-features=false}
-parquet = {version = "4.0.0-SNAPSHOT", optional = true, git = "https://github.com/apache/arrow-rs", rev = "d008f31b107c1030a1f5144c164e8ca8bf543576"}
+arrow = {git = "https://github.com/apache/arrow-rs", rev = "f042191578cbc2329957015fa0b8d2f01d51ddbd", default-features=false}
+parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "f042191578cbc2329957015fa0b8d2f01d51ddbd"}
 thiserror = "1.0"
 num = "^0.4"
 itertools = "0.10"

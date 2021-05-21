@@ -22,7 +22,9 @@ dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-date32 = ["polars-core/dtype-date32"]
 dtype-date64 = ["polars-core/dtype-date64"]
-ooc = ["datafusion", "tokio"]
+# uncomment to have datafusion integration
+# when uncommenting we both need to point to the same arrow version
+#ooc = ["datafusion", "tokio"]
 
 # is_in operation
 is_in = ["polars-core/is_in"]
@@ -35,8 +37,10 @@ itertools = "0.10"
 polars-io = {version = "0.13.3", path = "../polars-io", features = ["lazy", "csv-file"], default-features=false}
 polars-core = {version = "0.13.3", path = "../polars-core", features = ["lazy"], default-features=false}
 polars-arrow = {version = "0.13.3", path = "../polars-arrow"}
-datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-datafusion", rev = "88222b7", default-features=false, optional=true}
-tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "sync"] , optional=true}
+# uncomment to have datafusion integration
+# when uncommenting we both need to point to the same arrow version
+# datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-datafusion", rev = "88222b7", default-features=false, optional=true}
+# tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "sync"] , optional=true}
 
 [package.metadata.docs.rs]
 all-features = true
