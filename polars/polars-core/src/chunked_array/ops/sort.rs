@@ -166,15 +166,9 @@ where
         }
 
         if self.null_count() == 0 {
-            let mut av: AlignedVec<_> = self.into_no_null_iter().collect();
-            sort_branch(
-                av.as_mut_slice(),
-                sort_parallel,
-                reverse,
-                order_default,
-                order_reverse,
-            );
-            ChunkedArray::new_from_aligned_vec(self.name(), av)
+            // rechunk and call again, then it will fall in the contiguous slice path.
+            let ca = self.rechunk();
+            ca.sort(reverse)
         } else {
             let mut v = Vec::from_iter(self);
             sort_branch(

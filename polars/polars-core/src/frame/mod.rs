@@ -14,7 +14,8 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{
-    accumulate_dataframes_horizontal, accumulate_dataframes_vertical, get_supertype, NoNull,
+    accumulate_dataframes_horizontal, accumulate_dataframes_vertical, get_supertype, split_ca,
+    split_df, NoNull,
 };
 
 mod arithmetic;
@@ -579,6 +580,36 @@ impl DataFrame {
         }
     }
 
+    /// Does a filter but splits thread chunks vertically instead of horizontally
+    /// This yields a DataFrame with `n_chunks == n_threads`.
+    fn filter_vertical(&self, mask: &BooleanChunked) -> Result<Self> {
+        let n_threads = POOL.current_num_threads();
+
+        let masks = split_ca(mask, n_threads).unwrap();
+        let dfs = split_df(self, n_threads).unwrap();
+        let dfs: Result<Vec<_>> = POOL.install(|| {
+            masks
+                .par_iter()
+                .zip(dfs)
+                .map(|(mask, df)| {
+                    let cols = df
+                        .columns
+                        .iter()
+                        .map(|s| s.filter(mask))
+                        .collect::<Result<_>>()?;
+                    Ok(DataFrame::new_no_checks(cols))
+                })
+                .collect()
+        });
+
+        let mut iter = dfs?.into_iter();
+        let first = iter.next().unwrap();
+        Ok(iter.fold(first, |mut acc, df| {
+            acc.vstack_mut(&df).unwrap();
+            acc
+        }))
+    }
+
     /// Take DataFrame rows by a boolean mask.
     ///
     /// # Example
@@ -592,6 +623,10 @@ impl DataFrame {
     ///
     /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
+        if std::env::var("POLARS_VERT_PAR").is_ok() {
+            return self.filter_vertical(mask);
+        }
+
         let new_col = POOL.install(|| {
             self.columns
                 .par_iter()
@@ -643,6 +678,11 @@ impl DataFrame {
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
+        if std::env::var("POLARS_VERT_PAR").is_ok() {
+            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            return self.take_unchecked_vectical(&idx_ca.into_inner());
+        }
+
         let n_chunks = match self.n_chunks() {
             Err(_) => return self.clone(),
             Ok(n) => n,
@@ -655,16 +695,7 @@ impl DataFrame {
         if n_chunks == 1 || has_utf8 {
             let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
             let idx_ca = idx_ca.into_inner();
-            let cols = POOL.install(|| {
-                self.columns
-                    .par_iter()
-                    .map(|s| match s.dtype() {
-                        DataType::Utf8 => s.take_unchecked_threaded(&idx_ca, true).unwrap(),
-                        _ => s.take_unchecked(&idx_ca).unwrap(),
-                    })
-                    .collect()
-            });
-            return DataFrame::new_no_checks(cols);
+            return self.take_unchecked(&idx_ca);
         }
 
         let new_col = self
@@ -692,6 +723,11 @@ impl DataFrame {
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
+        if std::env::var("POLARS_VERT_PAR").is_ok() {
+            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
+            return self.take_unchecked_vectical(&idx_ca);
+        }
+
         let n_chunks = match self.n_chunks() {
             Err(_) => return self.clone(),
             Ok(n) => n,
@@ -704,16 +740,7 @@ impl DataFrame {
 
         if n_chunks == 1 || has_utf8 {
             let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
-            let cols = POOL.install(|| {
-                self.columns
-                    .par_iter()
-                    .map(|s| match s.dtype() {
-                        DataType::Utf8 => s.take_unchecked_threaded(&idx_ca, true).unwrap(),
-                        _ => s.take_unchecked(&idx_ca).unwrap(),
-                    })
-                    .collect()
-            });
-            return DataFrame::new_no_checks(cols);
+            return self.take_unchecked(&idx_ca);
         }
 
         let new_col = self
@@ -762,6 +789,44 @@ impl DataFrame {
         });
 
         DataFrame::new_no_checks(new_col)
+    }
+
+    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Self {
+        let cols = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| match s.dtype() {
+                    DataType::Utf8 => s.take_unchecked_threaded(&idx, true).unwrap(),
+                    _ => s.take_unchecked(&idx).unwrap(),
+                })
+                .collect()
+        });
+        DataFrame::new_no_checks(cols)
+    }
+
+    unsafe fn take_unchecked_vectical(&self, indices: &UInt32Chunked) -> Self {
+        let n_threads = POOL.current_num_threads();
+        let idxs = split_ca(&indices, n_threads).unwrap();
+
+        let dfs: Vec<_> = POOL.install(|| {
+            idxs.par_iter()
+                .map(|idx| {
+                    let cols = self
+                        .columns
+                        .iter()
+                        .map(|s| s.take_unchecked(idx).unwrap())
+                        .collect();
+                    DataFrame::new_no_checks(cols)
+                })
+                .collect()
+        });
+
+        let mut iter = dfs.into_iter();
+        let first = iter.next().unwrap();
+        iter.fold(first, |mut acc, df| {
+            acc.vstack_mut(&df).unwrap();
+            acc
+        })
     }
 
     /// Rename a column in the DataFrame
@@ -846,6 +911,9 @@ impl DataFrame {
                 }
             }
         };
+        if std::env::var("POLARS_VERT_PAR").is_ok() {
+            return Ok(unsafe { self.take_unchecked_vectical(&take) });
+        }
         Ok(self.take(&take))
     }
 

@@ -509,7 +509,7 @@ where
 
         // TODO! use collect, can be faster
         // needed capacity for the list
-        let values_cap = groups.iter().fold(0, |acc, g| acc + g.1.len());
+        let values_cap = self.len();
 
         macro_rules! impl_gb {
             ($type:ty, $agg_col:expr) => {{

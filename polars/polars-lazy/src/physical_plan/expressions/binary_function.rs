@@ -15,10 +15,14 @@ pub(crate) struct BinaryFunctionExpr {
 
 impl PhysicalExpr for BinaryFunctionExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let series_a = self.input_a.evaluate(df, state)?;
-        let series_b = self.input_b.evaluate(df, state)?;
+        let (series_a, series_b) = POOL.install(|| {
+            rayon::join(
+                || self.input_a.evaluate(df, state),
+                || self.input_b.evaluate(df, state),
+            )
+        });
 
-        self.function.call_udf(series_a, series_b).map(|mut s| {
+        self.function.call_udf(series_a?, series_b?).map(|mut s| {
             s.rename("binary_function");
             s
         })

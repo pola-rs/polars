@@ -1,4 +1,3 @@
-use crate::physical_plan::executors::POLARS_VERBOSE;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::prelude::*;
@@ -20,8 +19,8 @@ impl Executor for FilterExec {
         let s = self.predicate.evaluate(&df, state)?;
         let mask = s.bool().expect("filter predicate wasn't of type boolean");
         let df = df.filter(mask)?;
-        if std::env::var(POLARS_VERBOSE).is_ok() {
-            println!("dataframe filtered");
+        if state.verbose {
+            eprintln!("dataframe filtered");
         }
         Ok(df)
     }
