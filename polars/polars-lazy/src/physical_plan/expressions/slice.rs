@@ -24,7 +24,7 @@ impl PhysicalExpr for SliceExpr {
         groups: &'a GroupTuples,
         state: &ExecutionState,
     ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let s = self.input.evaluate(df, state)?;
+        let (s, groups) = self.input.evaluate_on_groups(df, groups, state)?;
 
         let groups = groups
             .iter()

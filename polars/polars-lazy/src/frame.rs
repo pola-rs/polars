@@ -2066,4 +2066,39 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_groupby_sort_slice() -> Result<()> {
+        let df = df![
+            "groups" => [1, 2, 2, 3, 3, 3],
+            "vals" => [1, 5, 6, 3, 9, 8]
+        ]?;
+        // get largest two values per groups
+
+        // expected:
+        // group      values
+        // 1          1
+        // 2          6, 5
+        // 3          9, 8
+
+        let out1 = df
+            .clone()
+            .lazy()
+            .sort("vals", true)
+            .groupby(vec![col("groups")])
+            .agg(vec![col("vals").head(Some(2)).alias("foo")])
+            .sort("groups", false)
+            .collect()?;
+
+        let out2 = df
+            .lazy()
+            .groupby(vec![col("groups")])
+            .agg(vec![col("vals").sort(true).head(Some(2)).alias("foo")])
+            .sort("groups", false)
+            .collect()?;
+
+        assert!(out1.column("foo")?.series_equal(out2.column("foo")?));
+        dbg!(out1, out2);
+        Ok(())
+    }
 }
