@@ -1,3 +1,4 @@
+#[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::downcast::Chunks;
 use crate::prelude::*;
@@ -414,6 +415,7 @@ pub struct ObjectTakeRandom<'a, T: PolarsObject> {
     chunks: Vec<&'a ObjectArray<T>>,
 }
 
+#[cfg(feature = "object")]
 impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandom<'a, T> {
     type Item = &'a T;
 
@@ -433,6 +435,7 @@ pub struct ObjectTakeRandomSingleChunk<'a, T: PolarsObject> {
     arr: &'a ObjectArray<T>,
 }
 
+#[cfg(feature = "object")]
 impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandomSingleChunk<'a, T> {
     type Item = &'a T;
 
@@ -447,6 +450,7 @@ impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandomSingleChunk<'a, T> {
     }
 }
 
+#[cfg(feature = "object")]
 impl<'a, T: PolarsObject> IntoTakeRandom<'a> for &'a ObjectChunked<T> {
     type Item = &'a T;
     type TakeRandom = TakeRandBranch2<ObjectTakeRandomSingleChunk<'a, T>, ObjectTakeRandom<'a, T>>;

@@ -1413,6 +1413,7 @@ mod test {
             .agg(vec![col("day").head(Some(2))])
             .collect()
             .unwrap();
+        dbg!(&out);
         let s = out
             .select_at_idx(1)
             .unwrap()

@@ -29,7 +29,7 @@ impl PhysicalExpr for SliceExpr {
         let groups = groups
             .iter()
             .map(|(first, idx)| {
-                let (offset, len) = slice_offsets(self.offset, self.len, s.len());
+                let (offset, len) = slice_offsets(self.offset, self.len, idx.len());
                 (*first, idx[offset..offset + len].to_vec())
             })
             .collect();
@@ -53,16 +53,7 @@ impl PhysicalAggregation for SliceExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let s = self.input.evaluate(df, state)?;
-        let agg_s = s.agg_list(groups);
-        let out = agg_s.map(|s| {
-            s.list()
-                .unwrap()
-                .into_iter()
-                .map(|opt_s| opt_s.map(|s| s.slice(self.offset, self.len)))
-                .collect::<ListChunked>()
-                .into_series()
-        });
-        Ok(out)
+        let (s, groups) = self.evaluate_on_groups(df, groups, state)?;
+        Ok(s.agg_list(&groups))
     }
 }
