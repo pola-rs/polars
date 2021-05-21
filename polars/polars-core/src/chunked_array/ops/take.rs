@@ -36,6 +36,26 @@ macro_rules! take_opt_iter_n_chunks {
     }};
 }
 
+macro_rules! take_iter_n_chunks_unchecked {
+    ($ca:expr, $indices:expr) => {{
+        let taker = $ca.take_rand();
+        $indices
+            .into_iter()
+            .map(|idx| taker.get_unchecked(idx))
+            .collect()
+    }};
+}
+
+macro_rules! take_opt_iter_n_chunks_unchecked {
+    ($ca:expr, $indices:expr) => {{
+        let taker = $ca.take_rand();
+        $indices
+            .into_iter()
+            .map(|opt_idx| opt_idx.map(|idx| taker.get_unchecked(idx)))
+            .collect()
+    }};
+}
+
 impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -205,7 +225,7 @@ impl ChunkTake for BooleanChunked {
                     }
                     (_, 1) => take_bool_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
-                        let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
+                        let mut ca: BooleanChunked = take_iter_n_chunks_unchecked!(self, iter);
                         ca.rename(self.name());
                         return ca;
                     }
@@ -223,7 +243,7 @@ impl ChunkTake for BooleanChunked {
                         take_bool_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
                     }
                     _ => {
-                        let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
+                        let mut ca: BooleanChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
                         ca.rename(self.name());
                         return ca;
                     }
@@ -248,10 +268,19 @@ impl ChunkTake for BooleanChunked {
                 let array = match self.chunks.len() {
                     1 => take(chunks.next().unwrap(), array, None).unwrap(),
                     _ => {
-                        let iter = array.values().iter().map(|i| *i as usize);
-                        let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
+                        return if array.null_count() == 0 {
+                            let iter = array.values().iter().map(|i| *i as usize);
+                            let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        } else {
+                            let iter = array
+                                .into_iter()
+                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        }
                     }
                 };
                 self.copy_with_chunks(vec![array])
@@ -296,14 +325,14 @@ impl ChunkTake for Utf8Chunked {
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                            let mut ca: Utf8Chunked = take_iter_n_chunks_unchecked!(self, iter);
                             ca.rename(self.name());
                             ca
                         } else {
                             let iter = array
                                 .into_iter()
                                 .map(|opt_idx| opt_idx.map(|idx| idx as usize));
-                            let mut ca: Utf8Chunked = take_opt_iter_n_chunks!(self, iter);
+                            let mut ca: Utf8Chunked = take_opt_iter_n_chunks_unchecked!(self, iter);
                             ca.rename(self.name());
                             ca
                         }
@@ -321,7 +350,7 @@ impl ChunkTake for Utf8Chunked {
                     }
                     (_, 1) => take_utf8_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
-                        let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                        let mut ca: Utf8Chunked = take_iter_n_chunks_unchecked!(self, iter);
                         ca.rename(self.name());
                         return ca;
                     }
@@ -339,7 +368,7 @@ impl ChunkTake for Utf8Chunked {
                         take_utf8_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
                     }
                     _ => {
-                        let mut ca: Utf8Chunked = take_opt_iter_n_chunks!(self, iter);
+                        let mut ca: Utf8Chunked = take_opt_iter_n_chunks_unchecked!(self, iter);
                         ca.rename(self.name());
                         return ca;
                     }
@@ -364,10 +393,19 @@ impl ChunkTake for Utf8Chunked {
                 let array = match self.chunks.len() {
                     1 => take(chunks.next().unwrap(), array, None).unwrap() as ArrayRef,
                     _ => {
-                        let iter = array.values().iter().map(|i| *i as usize);
-                        let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
+                        return if array.null_count() == 0 {
+                            let iter = array.values().iter().map(|i| *i as usize);
+                            let mut ca: Utf8Chunked = take_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        } else {
+                            let iter = array
+                                .into_iter()
+                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            let mut ca: Utf8Chunked = take_opt_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        }
                     }
                 };
                 self.copy_with_chunks(vec![array])
@@ -419,8 +457,19 @@ impl ChunkTake for ListChunked {
                 let array = match self.chunks.len() {
                     1 => take(chunks.next().unwrap(), array, None).unwrap() as ArrayRef,
                     _ => {
-                        let ca = self.rechunk();
-                        return ca.take(indices);
+                        return if array.null_count() == 0 {
+                            let iter = array.values().iter().map(|i| *i as usize);
+                            let mut ca: ListChunked = take_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        } else {
+                            let iter = array
+                                .into_iter()
+                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            let mut ca: ListChunked = take_opt_iter_n_chunks!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        }
                     }
                 };
                 self.copy_with_chunks(vec![array])
@@ -506,8 +555,29 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
                         ca
                     }
                     _ => {
-                        let ca = self.rechunk();
-                        ca.take(indices)
+                        return if array.null_count() == 0 {
+                            let iter = array.values().iter().map(|i| *i as usize);
+
+                            let taker = self.take_rand();
+                            let mut ca: ObjectChunked<T> =
+                                iter.map(|idx| taker.get(idx).map(|v| v.clone())).collect();
+                            ca.rename(self.name());
+                            ca
+                        } else {
+                            let iter = array
+                                .into_iter()
+                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            let taker = self.take_rand();
+
+                            let mut ca: ObjectChunked<T> = iter
+                                .map(|opt_idx| {
+                                    opt_idx.and_then(|idx| taker.get(idx).map(|v| v.clone()))
+                                })
+                                .collect();
+
+                            ca.rename(self.name());
+                            ca
+                        }
                     }
                 }
             }

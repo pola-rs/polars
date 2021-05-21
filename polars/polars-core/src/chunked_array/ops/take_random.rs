@@ -1,3 +1,4 @@
+use crate::chunked_array::object::ObjectArray;
 use crate::prelude::downcast::Chunks;
 use crate::prelude::*;
 use crate::utils::arrow::array::LargeStringArray;
@@ -357,6 +358,7 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
         self.arr.value(index)
     }
 }
+
 pub struct ListTakeRandom<'a> {
     ca: &'a ListChunked,
     chunks: Vec<&'a LargeListArray>,
@@ -403,5 +405,65 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
         let s = Series::try_from((self.name, self.arr.value_unchecked(index)));
         s.unsafe_unwrap()
+    }
+}
+
+#[cfg(feature = "object")]
+pub struct ObjectTakeRandom<'a, T: PolarsObject> {
+    ca: &'a ObjectChunked<T>,
+    chunks: Vec<&'a ObjectArray<T>>,
+}
+
+impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandom<'a, T> {
+    type Item = &'a T;
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        take_random_get!(self, index)
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        take_random_get_unchecked!(self, index)
+    }
+}
+
+#[cfg(feature = "object")]
+pub struct ObjectTakeRandomSingleChunk<'a, T: PolarsObject> {
+    arr: &'a ObjectArray<T>,
+}
+
+impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandomSingleChunk<'a, T> {
+    type Item = &'a T;
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        take_random_get_single!(self, index)
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        self.arr.value(index)
+    }
+}
+
+impl<'a, T: PolarsObject> IntoTakeRandom<'a> for &'a ObjectChunked<T> {
+    type Item = &'a T;
+    type TakeRandom = TakeRandBranch2<ObjectTakeRandomSingleChunk<'a, T>, ObjectTakeRandom<'a, T>>;
+
+    fn take_rand(&self) -> Self::TakeRandom {
+        let mut chunks = self.downcast_iter();
+        if self.chunks.len() == 1 {
+            let t = ObjectTakeRandomSingleChunk {
+                arr: chunks.next().unwrap(),
+            };
+            TakeRandBranch2::Single(t)
+        } else {
+            let t = ObjectTakeRandom {
+                ca: self,
+                chunks: chunks.collect(),
+            };
+            TakeRandBranch2::Multi(t)
+        }
     }
 }
