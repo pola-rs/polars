@@ -5,7 +5,7 @@ use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, h
 use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::prelude::*;
-use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op};
+use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
 use polars_io::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -513,7 +513,7 @@ impl DefaultPlanner {
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
-                                    parallel_op(|s| Ok(s.min_as_series()), s, None)
+                                    parallel_op_series(|s| Ok(s.min_as_series()), s, None)
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
@@ -533,7 +533,7 @@ impl DefaultPlanner {
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
-                                    parallel_op(|s| Ok(s.max_as_series()), s, None)
+                                    parallel_op_series(|s| Ok(s.max_as_series()), s, None)
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
@@ -553,7 +553,7 @@ impl DefaultPlanner {
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
-                                    parallel_op(|s| Ok(s.sum_as_series()), s, None)
+                                    parallel_op_series(|s| Ok(s.sum_as_series()), s, None)
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {
@@ -612,7 +612,7 @@ impl DefaultPlanner {
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: Series| {
                                     let len = s.len() as f64;
-                                    parallel_op(|s| Ok(s.sum_as_series()), s, None)
+                                    parallel_op_series(|s| Ok(s.sum_as_series()), s, None)
                                         .map(|s| s.cast::<Float64Type>().unwrap() / len)
                                 })
                                     as Arc<dyn SeriesUdf>);

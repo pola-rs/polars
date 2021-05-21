@@ -727,7 +727,7 @@ extern "C" {
 
 /// Simple wrapper to parallelize functions that can be divided over threads aggregated and
 /// finally aggregated in the main thread. This can be done for sum, min, max, etc.
-pub fn parallel_op<F>(f: F, s: Series, n_threads: Option<usize>) -> Result<Series>
+pub fn parallel_op_series<F>(f: F, s: Series, n_threads: Option<usize>) -> Result<Series>
 where
     F: Fn(Series) -> Result<Series> + Send + Sync,
 {
