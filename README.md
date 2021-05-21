@@ -17,10 +17,9 @@ Polars is a blazingly fast DataFrames library implemented in Rust using Apache A
 
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
-# Rust users read this!
-Polars cannot deploy a new version to `crates.io` until a new arrow release is issued. Arrow's release cycle takes 3/4
-months which is a lot slower than I'd like to release. If it has been a while since a release is issued, it is recommended 
-to use the current `master` branch instead of the published version on `crates.io`. 
+# Rust setup
+You can take latest release from `crates.io`, or if you want to use the latest features/ performance improvements
+point to the `master` branch of this repo.
 
 You can add the master like this:
 
