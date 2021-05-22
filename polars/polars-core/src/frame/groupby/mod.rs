@@ -1256,6 +1256,7 @@ mod test {
     use crate::frame::groupby::{groupby, groupby_threaded_flat};
     use crate::prelude::*;
     use crate::utils::split_ca;
+    use num::traits::FloatConst;
 
     #[test]
     #[cfg(feature = "dtype-date32")]
@@ -1535,6 +1536,32 @@ mod test {
             Vec::from(out.column("b_mean")?.f64()?),
             &[Some(1.5), Some(1.0)]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_groupby_var() -> Result<()> {
+        // check variance and proper coercion to f64
+        let df = df![
+            "g" => ["foo", "foo", "bar"],
+            "flt" => [1.0, 2.0, 3.0],
+            "int" => [1, 2, 3]
+        ]?;
+
+        let out = df.groupby("g")?.select("int").var()?;
+        assert_eq!(
+            out.column("int_agg_var")?.f64()?.sort(false).get(1),
+            Some(0.5)
+        );
+        let out = df.groupby("g")?.select("int").std()?;
+        let val = out
+            .column("int_agg_std")?
+            .f64()?
+            .sort(false)
+            .get(1)
+            .unwrap();
+        let expected = f64::FRAC_1_SQRT_2();
+        assert!((val - expected).abs() < 0.000001);
         Ok(())
     }
 }
