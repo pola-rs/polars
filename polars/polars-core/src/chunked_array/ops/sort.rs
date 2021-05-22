@@ -18,12 +18,30 @@ fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
 
 /// Reverse sorting when there are no nulls
 fn order_reverse<T: PartialOrd>(a: &T, b: &T) -> Ordering {
-    b.partial_cmp(a).unwrap()
+    b.partial_cmp(a).unwrap_or_else(|| {
+        // nan != nan
+        #[allow(clippy::eq_op)]
+        if a != a {
+            Ordering::Greater
+        } else {
+            Ordering::Less
+        }
+    })
 }
 
 /// Default sorting when there are no nulls
 fn order_default<T: PartialOrd>(a: &T, b: &T) -> Ordering {
-    a.partial_cmp(b).unwrap()
+    a.partial_cmp(b).unwrap_or_else(|| {
+        // nan != nan
+        // this is a simple way to check if it is nan
+        // without convincing the compiler we deal with floats
+        #[allow(clippy::eq_op)]
+        if a != a {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        }
+    })
 }
 
 /// Default sorting nulls

@@ -217,27 +217,27 @@ where
         })
     }
     fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        agg_helper::<T, _>(groups, |(_first, idx)| {
+        agg_helper::<Float64Type, _>(groups, |(_first, idx)| {
             if idx.is_empty() {
                 return None;
             }
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
             take.into_series()
                 .var_as_series()
-                .unpack::<T>()
+                .unpack::<Float64Type>()
                 .unwrap()
                 .get(0)
         })
     }
     fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        agg_helper::<T, _>(groups, |(_first, idx)| {
+        agg_helper::<Float64Type, _>(groups, |(_first, idx)| {
             if idx.is_empty() {
                 return None;
             }
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
             take.into_series()
                 .std_as_series()
-                .unpack::<T>()
+                .unpack::<Float64Type>()
                 .unwrap()
                 .get(0)
         })
