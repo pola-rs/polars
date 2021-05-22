@@ -280,7 +280,7 @@ macro_rules! impl_agg_first {
 
 impl<T> AggFirst for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType + Send,
+    T: PolarsNumericType + Send,
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
@@ -361,7 +361,7 @@ macro_rules! impl_agg_last {
 
 impl<T> AggLast for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType + Send,
+    T: PolarsNumericType + Send,
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {

@@ -1,6 +1,7 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
+use crate::utils::index_to_chunked_index;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
 };
@@ -50,6 +51,15 @@ where
     pub fn downcast_chunks(&self) -> Chunks<'_, PrimitiveArray<T>> {
         Chunks::new(&self.chunks)
     }
+
+    /// Get the index of the chunk and the index of the value in that chunk
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunks.len() == 1 {
+            return (0, index);
+        }
+        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
+    }
 }
 
 impl BooleanChunked {
@@ -61,6 +71,14 @@ impl BooleanChunked {
     }
     pub fn downcast_chunks(&self) -> Chunks<'_, BooleanArray> {
         Chunks::new(&self.chunks)
+    }
+
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunks.len() == 1 {
+            return (0, index);
+        }
+        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
     }
 }
 
@@ -74,6 +92,14 @@ impl Utf8Chunked {
     pub fn downcast_chunks(&self) -> Chunks<'_, LargeStringArray> {
         Chunks::new(&self.chunks)
     }
+
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunks.len() == 1 {
+            return (0, index);
+        }
+        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
+    }
 }
 
 impl ListChunked {
@@ -85,6 +111,14 @@ impl ListChunked {
     }
     pub fn downcast_chunks(&self) -> Chunks<'_, LargeListArray> {
         Chunks::new(&self.chunks)
+    }
+
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunks.len() == 1 {
+            return (0, index);
+        }
+        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
     }
 }
 
@@ -101,5 +135,13 @@ where
     }
     pub fn downcast_chunks(&self) -> Chunks<'_, ObjectArray<T>> {
         Chunks::new(&self.chunks)
+    }
+
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunks.len() == 1 {
+            return (0, index);
+        }
+        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
     }
 }
