@@ -43,7 +43,7 @@ macro_rules! impl_take_random_get_unchecked {
 
 impl<T> TakeRandom for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     type Item = T::Native;
 
@@ -60,7 +60,7 @@ where
 
 impl<'a, T> TakeRandom for &'a ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     type Item = T::Native;
 

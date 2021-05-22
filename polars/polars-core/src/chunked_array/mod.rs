@@ -394,27 +394,6 @@ impl<T> ChunkedArray<T> {
         self.field.data_type()
     }
 
-    /// Get the index of the chunk and the index of the value in that chunk
-    #[inline]
-    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
-        if self.chunks.len() == 1 {
-            return (0, index);
-        }
-        let mut index_remainder = index;
-        let mut current_chunk_idx = 0;
-
-        for chunk in &self.chunks {
-            let chunk_len = chunk.len();
-            if chunk_len > index_remainder {
-                break;
-            } else {
-                index_remainder -= chunk_len;
-                current_chunk_idx += 1;
-            }
-        }
-        (current_chunk_idx, index_remainder)
-    }
-
     /// Get the head of the ChunkedArray
     pub fn head(&self, length: Option<usize>) -> Self {
         match length {
@@ -591,28 +570,6 @@ where
             }
             _ => unimplemented!(),
         }
-    }
-
-    /// Get a single value. Beware this is slow.
-    /// If you need to use this slightly performant, cast Categorical to UInt32
-    #[inline]
-    pub(crate) unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        debug_assert!(chunk_idx < self.chunks.len());
-        let arr = &**self.chunks.get_unchecked(chunk_idx);
-        debug_assert!(idx < arr.len());
-        self.arr_to_any_value(arr, idx)
-    }
-
-    /// Get a single value. Beware this is slow.
-    /// If you need to use this slightly performant, cast Categorical to UInt32
-    pub(crate) fn get_any_value(&self, index: usize) -> AnyValue {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &*self.chunks[chunk_idx];
-        assert!(idx < arr.len());
-        // SAFETY
-        // bounds are checked
-        unsafe { self.arr_to_any_value(arr, idx) }
     }
 }
 

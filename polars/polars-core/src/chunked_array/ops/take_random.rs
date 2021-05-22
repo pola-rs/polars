@@ -9,7 +9,8 @@ use unsafe_unwrap::UnsafeUnwrap;
 
 macro_rules! take_random_get {
     ($self:ident, $index:ident) => {{
-        let (chunk_idx, arr_idx) = crate::utils::index_to_chunked_index(&$self.chunk_lens, $index);
+        let (chunk_idx, arr_idx) =
+            crate::utils::index_to_chunked_index($self.chunk_lens.iter().copied(), $index);
         let arr = $self.chunks.get(chunk_idx);
         match arr {
             Some(arr) => {
@@ -28,7 +29,8 @@ macro_rules! take_random_get {
 
 macro_rules! take_random_get_unchecked {
     ($self:ident, $index:ident) => {{
-        let (chunk_idx, arr_idx) = crate::utils::index_to_chunked_index(&$self.chunk_lens, $index);
+        let (chunk_idx, arr_idx) =
+            crate::utils::index_to_chunked_index($self.chunk_lens.iter().copied(), $index);
         $self
             .chunks
             .get_unchecked(chunk_idx)
@@ -166,10 +168,7 @@ impl<'a> TakeRandom for Utf8TakeRandom<'a> {
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let (chunk_idx, arr_idx) = crate::utils::index_to_chunked_index(&self.chunk_lens, index);
-        self.chunks
-            .get_unchecked(chunk_idx)
-            .value_unchecked(arr_idx)
+        take_random_get_unchecked!(self, index)
     }
 }
 

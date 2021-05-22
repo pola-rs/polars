@@ -164,7 +164,7 @@ macro_rules! set_limit {
 
 impl<T> Debug for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
@@ -585,7 +585,7 @@ pub(crate) trait FmtList {
 
 impl<T> FmtList for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
     T::Native: fmt::Display,
 {
     fn fmt_list(&self) -> String {
