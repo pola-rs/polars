@@ -526,12 +526,18 @@ class DataFrame:
             if isinstance(col_selection, str):
                 col_selection = [col_selection]
 
-            # df[:, [1, 2]]
-            # select by column indexes
-            if isinstance(col_selection[0], int):
-                series = [self.select_at_idx(i) for i in col_selection]
-                df = DataFrame(series)
-                return df[row_selection]
+            # df[:, 1[
+            if isinstance(col_selection, int):
+                series = self.select_at_idx(col_selection)
+                return series[row_selection]
+
+            if isinstance(col_selection, list):
+                # df[:, [1, 2]]
+                # select by column indexes
+                if isinstance(col_selection[0], int):
+                    series = [self.select_at_idx(i) for i in col_selection]
+                    df = DataFrame(series)
+                    return df[row_selection]
             df = self.__getitem__(col_selection)
             return df.__getitem__(row_selection)
 

@@ -33,12 +33,27 @@ def test_init():
 def test_selection():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
-    assert df["a"].dtype == Int64
-    assert df["b"].dtype == Float64
-    assert df["c"].dtype == Utf8
+    assert df["a"] == [1, 2, 3]
+    assert df["b"] == [1.0, 2.0, 3.0]
+    assert df["c"] == ["a", "b", "c"]
 
+    assert df[:, 0] == [1, 2, 3]
+    assert df[:, 1] == [1.0, 2.0, 3.0]
+    assert df[:2, 2] == ["a", "b"]
+
+    assert df[[1, 2]].frame_equal(
+        pl.DataFrame({"a": [2, 3], "b": [2.0, 3.0], "c": ["b", "c"]})
+    )
+    assert df[[True, False, True]].frame_equal(
+        pl.DataFrame({"a": [1, 3], "b": [1.0, 3.0], "c": ["a", "c"]})
+    )
     assert df[["a", "b"]].columns == ["a", "b"]
-    assert df[[True, False, True]].height == 2
+    assert df[[1, 2], [1, 2]].frame_equal(
+        pl.DataFrame({"b": [2.0, 3.0], "c": ["b", "c"]})
+    )
+    assert df[1, 2] == "b"
+    assert df[1, 1] == 2.0
+    assert df[2, 0] == 3
 
     assert df[[True, False, True], "b"].shape == (2, 1)
     assert df[[True, False, False], ["a", "b"]].shape == (1, 2)
