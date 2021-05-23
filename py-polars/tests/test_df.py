@@ -602,3 +602,9 @@ def test_assign():
 def test_to_numpy():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     assert df.to_numpy().shape == (3, 2)
+
+
+def test_argsort_by():
+    df = get_complete_df()
+    a = df[pl.argsort_by(["int_nulls", "floats"], reverse=[False, True])]["int_nulls"]
+    assert a == [1, 0, 3]

@@ -220,6 +220,17 @@ where
         for ca in other {
             assert_eq!(self.len(), ca.len());
         }
+        if other.len() != (reverse.len() - 1) {
+            return Err(PolarsError::ValueError(
+                format!(
+                    "The amount of ordering booleans: {} does not match that no. of Series: {}",
+                    reverse.len(),
+                    other.len() + 1
+                )
+                .into(),
+            ));
+        }
+
         assert_eq!(other.len(), reverse.len() - 1);
         let mut count: u32 = 0;
         let mut vals: Vec<_> = self

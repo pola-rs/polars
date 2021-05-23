@@ -20,6 +20,7 @@ try:
         binary_function as pybinary_function,
         pearson_corr as pypearson_corr,
         cov as pycov,
+        argsort_by as pyargsort_by,
         PyExpr,
         PyLazyGroupBy,
         when as pywhen,
@@ -2054,3 +2055,25 @@ def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
     if dtype is None:
         dtype = datatypes.Int64
     return wrap_expr(pyrange(low, high, dtype))
+
+
+def argsort_by(
+    exprs: "List[Expr]", reverse: "Union[List[bool], bool]" = False
+) -> "Expr":
+    """
+    Find the indexes that would sort the columns.
+
+    Argsort by multiple columns. The first column will be used for the ordering.
+    If there are duplicates in the first column, the second column will be used to determine the ordering
+    and so on.
+    Parameters
+    ----------
+    exprs
+        Columns use to determine the ordering
+    reverse
+        default is ascending
+    """
+    if not isinstance(reverse, list):
+        reverse = [reverse]
+    exprs = _selection_to_pyexpr_list(exprs)
+    return wrap_expr(pyargsort_by(exprs, reverse))
