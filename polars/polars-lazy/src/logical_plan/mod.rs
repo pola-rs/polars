@@ -702,12 +702,15 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             truthy: Box::new(replace_wildcard_with_column(*truthy, column_name.clone())),
             falsy: Box::new(replace_wildcard_with_column(*falsy, column_name)),
         },
-        Expr::Udf {
+        Expr::Function {
             input,
             function,
             output_type,
-        } => Expr::Udf {
-            input: Box::new(replace_wildcard_with_column(*input, column_name)),
+        } => Expr::Function {
+            input: input
+                .into_iter()
+                .map(|e| replace_wildcard_with_column(e, column_name.clone()))
+                .collect(),
             function,
             output_type,
         },
