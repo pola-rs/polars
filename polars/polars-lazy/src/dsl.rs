@@ -16,15 +16,16 @@ use std::{
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
 
+/// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {
-    fn call_udf(&self, s: Series) -> Result<Series>;
+    fn call_udf(&self, s: Vec<Series>) -> Result<Series>;
 }
 
 impl<F> SeriesUdf for F
 where
-    F: Fn(Series) -> Result<Series> + Send + Sync,
+    F: Fn(Vec<Series>) -> Result<Series> + Send + Sync,
 {
-    fn call_udf(&self, s: Series) -> Result<Series> {
+    fn call_udf(&self, s: Vec<Series>) -> Result<Series> {
         self(s)
     }
 }
@@ -35,6 +36,7 @@ impl Debug for dyn SeriesUdf {
     }
 }
 
+/// A wrapper trait for any binary closure `Fn(Series, Series) -> Result<Series>`
 pub trait SeriesBinaryUdf: Send + Sync {
     fn call_udf(&self, a: Series, b: Series) -> Result<Series>;
 }
@@ -194,8 +196,8 @@ pub enum Expr {
         truthy: Box<Expr>,
         falsy: Box<Expr>,
     },
-    Udf {
-        input: Box<Expr>,
+    Function {
+        input: Vec<Expr>,
         function: NoEq<Arc<dyn SeriesUdf>>,
         output_type: Option<DataType>,
     },
@@ -313,7 +315,7 @@ impl fmt::Debug for Expr {
                 "\nWHEN {:?}\n\t{:?}\nOTHERWISE\n\t{:?}",
                 predicate, truthy, falsy
             ),
-            Udf { input, .. } => write!(f, "APPLY({:?})", input),
+            Function { input, .. } => write!(f, "APPLY({:?})", input),
             BinaryFunction {
                 input_a, input_b, ..
             } => write!(f, "BinaryFunction({:?}, {:?})", input_a, input_b),
@@ -622,11 +624,13 @@ impl Expr {
     /// the correct output_type. If None given the output type of the input expr is used.
     pub fn map<F>(self, function: F, output_type: Option<DataType>) -> Self
     where
-        F: SeriesUdf + 'static,
+        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
     {
-        Expr::Udf {
-            input: Box::new(self),
-            function: NoEq::new(Arc::new(function)),
+        let f = move |mut s: Vec<Series>| function(s.pop().unwrap());
+
+        Expr::Function {
+            input: vec![self],
+            function: NoEq::new(Arc::new(f)),
             output_type,
         }
     }

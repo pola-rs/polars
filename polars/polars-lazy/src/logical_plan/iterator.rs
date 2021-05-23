@@ -64,7 +64,7 @@ impl<'a> Iterator for ExprIter<'a> {
                     push(falsy);
                     push(predicate)
                 }
-                Udf { input, .. } => push(input),
+                Function { input, .. } => input.iter().for_each(|e| push(e)),
                 Shift { input, .. } => push(input),
                 Reverse(e) => push(e),
                 Duplicated(e) => push(e),
@@ -164,7 +164,7 @@ impl AExpr {
                 push(falsy);
                 push(predicate)
             }
-            Udf { input, .. } => push(input),
+            Function { input, .. } => input.iter().for_each(|e| push(e)),
             Shift { input, .. } => push(input),
             Reverse(e) => push(e),
             Duplicated(e) => push(e),

@@ -248,37 +248,6 @@ impl PhysicalAggregation for CastExpr {
     }
 }
 
-impl PhysicalAggregation for ApplyExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupTuples,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        match self.input.as_agg_expr() {
-            // layer below is also an aggregation expr.
-            Ok(expr) => {
-                let aggregated = expr.aggregate(df, groups, state)?;
-                let out = aggregated.map(|s| self.function.call_udf(s));
-                out.transpose()
-            }
-            Err(_) => {
-                let series = self.input.evaluate(df, state)?;
-                series
-                    .agg_list(groups)
-                    .map(|s| {
-                        let s = self.function.call_udf(s);
-                        s.map(|mut s| {
-                            s.rename(series.name());
-                            s
-                        })
-                    })
-                    .map_or(Ok(None), |v| v.map(Some))
-            }
-        }
-    }
-}
-
 pub struct AggQuantileExpr {
     pub(crate) expr: Arc<dyn PhysicalExpr>,
     pub(crate) quantile: f64,

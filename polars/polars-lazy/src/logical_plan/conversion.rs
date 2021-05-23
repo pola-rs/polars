@@ -81,12 +81,12 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 falsy: f,
             }
         }
-        Expr::Udf {
+        Expr::Function {
             input,
             function,
             output_type,
-        } => AExpr::Udf {
-            input: to_aexpr(*input, arena),
+        } => AExpr::Function {
+            input: input.into_iter().map(|e| to_aexpr(e, arena)).collect(),
             function,
             output_type,
         },
@@ -533,18 +533,15 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 falsy: Box::new(f),
             }
         }
-        AExpr::Udf {
+        AExpr::Function {
             input,
             function,
             output_type,
-        } => {
-            let i = node_to_exp(input, expr_arena);
-            Expr::Udf {
-                input: Box::new(i),
-                function,
-                output_type,
-            }
-        }
+        } => Expr::Function {
+            input: nodes_to_exprs(&input, expr_arena),
+            function,
+            output_type,
+        },
         AExpr::BinaryFunction {
             input_a,
             input_b,
