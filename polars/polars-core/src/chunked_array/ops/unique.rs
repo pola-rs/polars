@@ -93,11 +93,11 @@ impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     }
 }
 
-fn fill_set<A>(a: impl Iterator<Item = A>, capacity: usize) -> HashSet<A, RandomState>
+fn fill_set<A>(a: impl Iterator<Item = A>) -> HashSet<A, RandomState>
 where
     A: Hash + Eq,
 {
-    let mut set = HashSet::with_capacity_and_hasher(capacity, RandomState::new());
+    let mut set = HashSet::with_hasher(RandomState::new());
 
     for val in a {
         set.insert(val);
@@ -110,7 +110,7 @@ fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> AlignedVec<u32>
 where
     T: Hash + Eq,
 {
-    let mut set = HashSet::with_capacity_and_hasher(capacity, RandomState::new());
+    let mut set = HashSet::with_hasher(RandomState::new());
     let mut unique = AlignedVec::with_capacity_aligned(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
@@ -152,7 +152,7 @@ where
     ChunkedArray<T>: ChunkOps + IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
-        let set = fill_set(self.into_iter(), self.len());
+        let set = fill_set(self.into_iter());
         Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
     }
 
@@ -178,7 +178,7 @@ where
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> Result<Self> {
-        let set = fill_set(self.into_iter(), self.len());
+        let set = fill_set(self.into_iter());
         Ok(Utf8Chunked::new_from_opt_iter(
             self.name(),
             set.iter().copied(),
@@ -206,7 +206,7 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
 
 impl ChunkUnique<CategoricalType> for CategoricalChunked {
     fn unique(&self) -> Result<Self> {
-        let set = fill_set(self.into_iter(), self.len());
+        let set = fill_set(self.into_iter());
         let mut ca = UInt32Chunked::new_from_opt_iter(self.name(), set.iter().copied());
         ca.categorical_map = self.categorical_map.clone();
         ca.cast()
@@ -363,12 +363,10 @@ where
         0 => fill_set(
             ca.into_no_null_iter()
                 .map(|v| Some(integer_decode_f64(v.to_f64().unwrap()))),
-            ca.len(),
         ),
         _ => fill_set(
             ca.into_iter()
                 .map(|opt_v| opt_v.map(|v| integer_decode_f64(v.to_f64().unwrap()))),
-            ca.len(),
         ),
     };
     ChunkedArray::new_from_opt_iter(

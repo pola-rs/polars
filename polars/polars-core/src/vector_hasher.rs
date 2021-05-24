@@ -154,15 +154,17 @@ pub(crate) fn this_thread(h: u64, thread_no: u64, n_threads: u64) -> bool {
 }
 
 fn finish_table_from_key_hashes<T>(
-    hashes_nd_keys: Vec<(u64, T)>,
+    hashes: Vec<u64>,
+    keys: impl Iterator<Item = T>,
     mut hash_tbl: HashMap<T, Vec<u32>, RandomState>,
     offset: usize,
 ) -> HashMap<T, Vec<u32>, RandomState>
 where
     T: Hash + Eq,
 {
-    hashes_nd_keys
+    hashes
         .into_iter()
+        .zip(keys)
         .enumerate()
         .for_each(|(idx, (h, t))| {
             let idx = (idx + offset) as u32;
@@ -186,25 +188,29 @@ where
 }
 
 pub(crate) fn prepare_hashed_relation<T>(
+    a: impl Iterator<Item = T>,
     b: impl Iterator<Item = T>,
+    preallocate: bool,
 ) -> HashMap<T, Vec<u32>, RandomState>
 where
     T: Hash + Eq,
 {
     let build_hasher = RandomState::default();
 
-    let hashes_nd_keys = b
+    let hashes = a
         .map(|val| {
             let mut hasher = build_hasher.build_hasher();
             val.hash(&mut hasher);
-            (hasher.finish(), val)
+            hasher.finish()
         })
         .collect::<Vec<_>>();
 
-    let hash_tbl: HashMap<T, Vec<u32>, RandomState> =
-        HashMap::with_capacity_and_hasher(hashes_nd_keys.len(), build_hasher);
+    let size = if preallocate { hashes.len() } else { 4096 };
 
-    finish_table_from_key_hashes(hashes_nd_keys, hash_tbl, 0)
+    let hash_tbl: HashMap<T, Vec<u32>, RandomState> =
+        HashMap::with_capacity_and_hasher(size, build_hasher);
+
+    finish_table_from_key_hashes(hashes, b, hash_tbl, 0)
 }
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
@@ -216,7 +222,6 @@ where
 {
     let n_threads = iters.len();
     let (hashes_and_keys, build_hasher) = create_hash_and_keys_threaded_vectorized(iters, None);
-    let size = hashes_and_keys.iter().fold(0, |acc, v| acc + v.len());
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -227,7 +232,7 @@ where
             let hashes_and_keys = &hashes_and_keys;
             let thread_no = thread_no as u64;
             let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
-                HashMap::with_capacity_and_hasher(size / (5 * n_threads), build_hasher);
+                HashMap::with_hasher(build_hasher);
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
