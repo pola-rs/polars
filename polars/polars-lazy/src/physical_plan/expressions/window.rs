@@ -78,7 +78,7 @@ impl PhysicalExpr for WindowExpr {
         let out = match &self.function {
             Expr::Function { function, .. } => {
                 let mut df = gb.agg_list()?;
-                df.may_apply_at_idx(1, |s| function.call_udf(vec![s.clone()]))?;
+                df.may_apply_at_idx(1, |s| function.call_udf(&mut [s.clone()]))?;
                 Ok(df)
             }
             Expr::Agg(agg) => match agg {
