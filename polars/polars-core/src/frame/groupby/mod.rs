@@ -23,11 +23,15 @@ pub mod resample;
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
 
-fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
+fn groupby<T>(
+    a: impl Iterator<Item = T>,
+    b: impl Iterator<Item = T>,
+    preallocate: bool,
+) -> GroupTuples
 where
     T: Hash + Eq,
 {
-    let hash_tbl = prepare_hashed_relation(a);
+    let hash_tbl = prepare_hashed_relation(a, b, preallocate);
 
     hash_tbl
         .into_iter()
@@ -38,12 +42,16 @@ where
         .collect()
 }
 
-fn groupby_threaded_flat<I, T>(iters: Vec<I>, group_size_hint: usize) -> GroupTuples
+fn groupby_threaded_flat<I, T>(
+    iters: Vec<I>,
+    group_size_hint: usize,
+    preallocate: bool,
+) -> GroupTuples
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
 {
-    groupby_threaded(iters, group_size_hint)
+    groupby_threaded(iters, group_size_hint, preallocate)
         .into_iter()
         .flatten()
         .collect()
@@ -51,7 +59,11 @@ where
 
 /// Determine groupby tuples from an iterator. The group_size_hint is used to pre-allocate the group vectors.
 /// When the grouping column is a categorical type we already have a good indication of the avg size of the groups.
-fn groupby_threaded<I, T>(iters: Vec<I>, group_size_hint: usize) -> Vec<GroupTuples>
+fn groupby_threaded<I, T>(
+    iters: Vec<I>,
+    group_size_hint: usize,
+    preallocate: bool,
+) -> Vec<GroupTuples>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -69,8 +81,11 @@ where
             let hashes_and_keys = &hashes_and_keys;
             let thread_no = thread_no as u64;
 
-            let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> =
-                HashMap::with_capacity_and_hasher(size / n_threads, random_state);
+            let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> = if preallocate {
+                HashMap::with_capacity_and_hasher(size / n_threads, random_state)
+            } else {
+                HashMap::with_hasher(random_state)
+            };
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
@@ -177,6 +192,8 @@ fn groupby_multiple_keys(keys: DataFrame) -> GroupTuples {
     let (hashes, _) = df_rows_to_hashes(&keys, None);
     let size = hashes.len();
     // rather over allocate because rehashing is expensive
+    // its a complicated trade off, because often rehashing is cheaper than
+    // overallocation because of cache coherence.
     let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
         HashMap::with_capacity_and_hasher(size, IdBuildHasher::default());
 
@@ -270,7 +287,7 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
 }
 
 macro_rules! group_tuples {
-    ($ca: expr, $multithreaded: expr) => {{
+    ($ca: expr, $multithreaded: expr, $preallocate: expr) => {{
         // TODO! choose a splitting len
         if $multithreaded && group_multithreaded($ca) {
             let n_threads = num_cpus::get();
@@ -281,16 +298,18 @@ macro_rules! group_tuples {
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect_vec();
-                groupby_threaded_flat(iters, 0)
+                groupby_threaded_flat(iters, 0, $preallocate)
             } else {
                 let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-                groupby_threaded_flat(iters, 0)
+                groupby_threaded_flat(iters, 0, $preallocate)
             }
         } else {
             if $ca.null_count() == 0 {
-                groupby($ca.into_no_null_iter())
+                let iter = || $ca.into_no_null_iter();
+                groupby(iter(), iter(), $preallocate)
             } else {
-                groupby($ca.into_iter())
+                let iter = || $ca.into_iter();
+                groupby(iter(), iter(), $preallocate)
             }
         }
     }};
@@ -319,14 +338,14 @@ where
                         .map(|ca| ca.downcast_iter().map(|array| array.values()))
                         .flatten()
                         .collect_vec();
-                    groupby_threaded_flat(iters, group_size_hint)
+                    groupby_threaded_flat(iters, group_size_hint, false)
                 } else {
                     let iters = splitted
                         .iter()
                         .map(|ca| ca.downcast_iter())
                         .flatten()
                         .collect_vec();
-                    groupby_threaded_flat(iters, group_size_hint)
+                    groupby_threaded_flat(iters, group_size_hint, false)
                 }
                 // use the polars-iterators
             } else if self.null_count() == 0 {
@@ -334,27 +353,27 @@ where
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
                     .collect_vec();
-                groupby_threaded_flat(iters, group_size_hint)
+                groupby_threaded_flat(iters, group_size_hint, false)
             } else {
                 let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-                groupby_threaded_flat(iters, group_size_hint)
+                groupby_threaded_flat(iters, group_size_hint, false)
             }
         } else if self.null_count() == 0 {
-            groupby(self.into_no_null_iter())
+            groupby(self.into_no_null_iter(), self.into_no_null_iter(), false)
         } else {
-            groupby(self.into_iter())
+            groupby(self.into_iter(), self.into_iter(), false)
         }
     }
 }
 impl IntoGroupTuples for BooleanChunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        group_tuples!(self, multithreaded)
+        group_tuples!(self, multithreaded, false)
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        group_tuples!(self, multithreaded)
+        group_tuples!(self, multithreaded, true)
     }
 }
 
@@ -377,20 +396,26 @@ macro_rules! impl_into_group_tpls_float {
                         .iter()
                         .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
                         .collect_vec();
-                    groupby_threaded_flat(iters, 0)
+                    groupby_threaded_flat(iters, 0, false)
                 }
                 _ => {
                     let iters = splitted
                         .iter()
                         .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
                         .collect_vec();
-                    groupby_threaded_flat(iters, 0)
+                    groupby_threaded_flat(iters, 0, false)
                 }
             }
         } else {
             match $self.null_count() {
-                0 => groupby($self.into_no_null_iter().map(|v| v.to_bits())),
-                _ => groupby($self.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()))),
+                0 => {
+                    let iter = || $self.into_no_null_iter().map(|v| v.to_bits());
+                    groupby(iter(), iter(), false)
+                }
+                _ => {
+                    let iter = || $self.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()));
+                    groupby(iter(), iter(), false)
+                }
             }
         }
     };
@@ -1077,7 +1102,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         Column: AsRef<str>,
     {
         // create a mapping from columns to aggregations on that column
-        let mut map = HashMap::with_capacity_and_hasher(column_to_agg.len(), RandomState::new());
+        let mut map = HashMap::with_hasher(RandomState::new());
         column_to_agg.iter().for_each(|(column, aggregations)| {
             map.insert(column.as_ref(), aggregations.as_ref());
         });
@@ -1514,11 +1539,15 @@ mod test {
             let ca = UInt8Chunked::new_from_slice("", &slice);
             let splitted = split_ca(&ca, 4).unwrap();
 
-            let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
-            let b = groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect(), 0)
+            let a = groupby(ca.into_iter(), ca.into_iter(), false)
                 .into_iter()
                 .sorted()
                 .collect_vec();
+            let b =
+                groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect(), 0, false)
+                    .into_iter()
+                    .sorted()
+                    .collect_vec();
 
             assert_eq!(a, b);
         }

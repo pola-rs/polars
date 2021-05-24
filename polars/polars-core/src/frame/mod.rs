@@ -80,7 +80,7 @@ impl DataFrame {
     pub fn new<S: IntoSeries>(columns: Vec<S>) -> Result<Self> {
         let mut first_len = None;
         let mut series_cols = Vec::with_capacity(columns.len());
-        let mut names = HashSet::with_capacity_and_hasher(columns.len(), RandomState::default());
+        let mut names = HashSet::with_hasher(RandomState::default());
 
         // check for series length equality and convert into series in one pass
         for s in columns {

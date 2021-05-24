@@ -16,7 +16,7 @@ fn process_with_columns(
     if let Some(with_columns) = &with_columns {
         let cols = columns
             .entry(path.to_owned())
-            .or_insert_with(|| HashSet::with_capacity_and_hasher(256, RandomState::default()));
+            .or_insert_with(|| HashSet::with_hasher(RandomState::default()));
         cols.extend(with_columns.iter().cloned());
     }
 }
