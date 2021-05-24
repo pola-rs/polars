@@ -11,22 +11,7 @@ pub struct ApplyExpr {
     pub function: NoEq<Arc<dyn SeriesUdf>>,
     pub output_type: Option<DataType>,
     pub expr: Expr,
-}
-
-impl ApplyExpr {
-    pub fn new(
-        input: Vec<Arc<dyn PhysicalExpr>>,
-        function: NoEq<Arc<dyn SeriesUdf>>,
-        output_type: Option<DataType>,
-        expr: Expr,
-    ) -> Self {
-        ApplyExpr {
-            inputs: input,
-            function,
-            output_type,
-            expr,
-        }
-    }
+    pub collect_groups: bool,
 }
 
 impl PhysicalExpr for ApplyExpr {
@@ -35,13 +20,13 @@ impl PhysicalExpr for ApplyExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let inputs = self
+        let mut inputs = self
             .inputs
             .iter()
             .map(|e| e.evaluate(df, state))
             .collect::<Result<Vec<_>>>()?;
         let in_name = inputs[0].name().to_string();
-        let mut out = self.function.call_udf(inputs)?;
+        let mut out = self.function.call_udf(&mut inputs)?;
         if in_name != out.name() {
             out.rename(&in_name);
         }
@@ -75,7 +60,7 @@ impl PhysicalAggregation for ApplyExpr {
         // we first collect the inputs
         // if any of the input aggregations yields None, we return None as well
         // we check this by comparing the length of the inputs before and after aggregation
-        let inputs: Vec<_> = match self.inputs[0].as_agg_expr() {
+        let mut inputs: Vec<_> = match self.inputs[0].as_agg_expr() {
             Ok(_) => {
                 let inputs = self
                     .inputs
@@ -101,7 +86,56 @@ impl PhysicalAggregation for ApplyExpr {
         };
 
         if inputs.len() == self.inputs.len() {
-            self.function.call_udf(inputs).map(Some)
+            if inputs.len() == 1 {
+                let s = inputs.pop().unwrap();
+
+                match (s.list(), self.collect_groups) {
+                    (Ok(ca), true) => {
+                        let mut container = vec![Default::default()];
+
+                        let ca: ListChunked = ca
+                            .into_iter()
+                            .map(|opt_s| {
+                                opt_s.and_then(|s| {
+                                    container[0] = s;
+                                    self.function.call_udf(&mut container).ok()
+                                })
+                            })
+                            .collect();
+                        Ok(Some(ca.into_series()))
+                    }
+                    _ => self.function.call_udf(&mut [s]).map(Some),
+                }
+            } else {
+                match (inputs[0].list(), self.collect_groups) {
+                    (Ok(_), true) => {
+                        // container that will hold the arguments &[Series]
+                        let mut args = Vec::with_capacity(inputs.len());
+                        let takers: Vec<_> = inputs
+                            .iter()
+                            .map(|s| s.list().unwrap().take_rand())
+                            .collect();
+                        let ca: ListChunked = (0..inputs[0].len())
+                            .map(|i| {
+                                args.clear();
+
+                                takers.iter().for_each(|taker| {
+                                    if let Some(s) = taker.get(i) {
+                                        args.push(s);
+                                    }
+                                });
+                                if args.len() == takers.len() {
+                                    self.function.call_udf(&mut args).ok()
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        Ok(Some(ca.into_series()))
+                    }
+                    _ => self.function.call_udf(&mut inputs).map(Some),
+                }
+            }
         } else {
             Ok(None)
         }

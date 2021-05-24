@@ -2101,4 +2101,30 @@ mod test {
         dbg!(out1, out2);
         Ok(())
     }
+
+    #[test]
+    fn test_groupby_cumsum() -> Result<()> {
+        let df = df![
+            "groups" => [1, 2, 2, 3, 3, 3],
+            "vals" => [1, 5, 6, 3, 9, 8]
+        ]?;
+
+        let out = df
+            .lazy()
+            .groupby(vec![col("groups")])
+            .agg(vec![col("vals").cum_sum(false)])
+            .sort("groups", false)
+            .collect()?;
+
+        assert_eq!(
+            Vec::from(out.column("collected")?.explode()?.i32()?),
+            [1, 5, 11, 3, 12, 20]
+                .iter()
+                .copied()
+                .map(Some)
+                .collect::<Vec<_>>()
+        );
+
+        Ok(())
+    }
 }

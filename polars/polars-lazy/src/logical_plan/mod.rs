@@ -706,6 +706,7 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             input,
             function,
             output_type,
+            collect_groups,
         } => Expr::Function {
             input: input
                 .into_iter()
@@ -713,6 +714,7 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
                 .collect(),
             function,
             output_type,
+            collect_groups,
         },
         Expr::BinaryFunction {
             input_a,

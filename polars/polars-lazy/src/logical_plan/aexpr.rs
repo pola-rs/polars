@@ -74,6 +74,7 @@ pub enum AExpr {
         input: Vec<Node>,
         function: NoEq<Arc<dyn SeriesUdf>>,
         output_type: Option<DataType>,
+        collect_groups: bool,
     },
     Shift {
         input: Node,
