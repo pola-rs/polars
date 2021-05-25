@@ -3,10 +3,11 @@
 //! Functions that might be useful.
 //!
 use crate::prelude::*;
+use crate::utils::all_series_to_supertype;
 use num::{Float, NumCast};
 use std::ops::Div;
 
-/// Compute the convariance between two columns.
+/// Compute the covariance between two columns.
 pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
@@ -37,6 +38,8 @@ where
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
 pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+    let by = all_series_to_supertype(by);
+
     let s = by
         .get(0)
         .ok_or_else(|| PolarsError::ValueError("expected a non empty slice".into()))?;
