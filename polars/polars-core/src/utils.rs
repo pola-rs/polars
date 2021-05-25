@@ -515,22 +515,6 @@ macro_rules! df {
     }
 }
 
-pub fn all_series_to_supertype(s: &[Series]) -> Vec<Series> {
-    let mut iter = s.iter();
-    match iter.next() {
-        Some(first) => {
-            let mut st = first.dtype().clone();
-
-            for s in iter {
-                st = get_supertype(&st, s.dtype()).unwrap();
-            }
-
-            s.iter().map(|s| s.cast_with_dtype(&st).unwrap()).collect()
-        }
-        _ => vec![],
-    }
-}
-
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 pub fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
     match _get_supertype(l, r) {
