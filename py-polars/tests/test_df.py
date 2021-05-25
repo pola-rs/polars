@@ -33,10 +33,16 @@ def test_init():
 def test_selection():
     df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
+    # column selection by string(s) in first dimension
     assert df["a"] == [1, 2, 3]
     assert df["b"] == [1.0, 2.0, 3.0]
     assert df["c"] == ["a", "b", "c"]
 
+    # row selection by integers(s) in first dimension
+    assert df[0].frame_equal(pl.DataFrame({"a": [1], "b": [1.0], "c": ["a"]}))
+    assert df[-1].frame_equal(pl.DataFrame({"a": [3], "b": [3.0], "c": ["c"]}))
+
+    # row, column selection when using two dimensions
     assert df[:, 0] == [1, 2, 3]
     assert df[:, 1] == [1.0, 2.0, 3.0]
     assert df[:2, 2] == ["a", "b"]
@@ -44,6 +50,10 @@ def test_selection():
     assert df[[1, 2]].frame_equal(
         pl.DataFrame({"a": [2, 3], "b": [2.0, 3.0], "c": ["b", "c"]})
     )
+    assert df[[-1, -2]].frame_equal(
+        pl.DataFrame({"a": [3, 2], "b": [3.0, 2.0], "c": ["c", "b"]})
+    )
+
     assert df[[True, False, True]].frame_equal(
         pl.DataFrame({"a": [1, 3], "b": [1.0, 3.0], "c": ["a", "c"]})
     )
@@ -499,7 +509,7 @@ def test_column_names():
 def test_lazy_functions():
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df[[pl.count("a")]]
-    assert out[0] == 3
+    assert out["a"] == 3
     assert pl.count(df["a"]) == 3
     out = df[
         [
@@ -516,37 +526,37 @@ def test_lazy_functions():
         ]
     ]
     expected = 1.0
-    assert np.isclose(out[0], expected)
+    assert np.isclose(out.select_at_idx(0), expected)
     assert np.isclose(pl.var(df["b"]), expected)
     expected = 1.0
-    assert np.isclose(out[1], expected)
+    assert np.isclose(out.select_at_idx(1), expected)
     assert np.isclose(pl.std(df["b"]), expected)
     expected = 3
-    assert np.isclose(out[2], expected)
+    assert np.isclose(out.select_at_idx(2), expected)
     assert np.isclose(pl.max(df["b"]), expected)
     expected = 1
-    assert np.isclose(out[3], expected)
+    assert np.isclose(out.select_at_idx(3), expected)
     assert np.isclose(pl.min(df["b"]), expected)
     expected = 6
-    assert np.isclose(out[4], expected)
+    assert np.isclose(out.select_at_idx(4), expected)
     assert np.isclose(pl.sum(df["b"]), expected)
     expected = 2
-    assert np.isclose(out[5], expected)
+    assert np.isclose(out.select_at_idx(5), expected)
     assert np.isclose(pl.mean(df["b"]), expected)
     expected = 2
-    assert np.isclose(out[6], expected)
+    assert np.isclose(out.select_at_idx(6), expected)
     assert np.isclose(pl.median(df["b"]), expected)
     expected = 3
-    assert np.isclose(out[7], expected)
+    assert np.isclose(out.select_at_idx(7), expected)
     assert np.isclose(pl.n_unique(df["b"]), expected)
     expected = 1
-    assert np.isclose(out[8], expected)
+    assert np.isclose(out.select_at_idx(8), expected)
     assert np.isclose(pl.first(df["b"]), expected)
     expected = 3
-    assert np.isclose(out[9], expected)
+    assert np.isclose(out.select_at_idx(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
     expected = 3
-    assert np.isclose(out[9], expected)
+    assert np.isclose(out.select_at_idx(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
 
 
@@ -581,7 +591,7 @@ def test_describe():
         }
     )
     assert df.describe().shape != df.shape
-    assert set(df.describe()[2]) == set([1.0, 4.0, 5.0, 6.0])
+    assert set(df.describe().select_at_idx(2)) == set([1.0, 4.0, 5.0, 6.0])
 
 
 def test_string_cache_eager_lazy():

@@ -426,7 +426,9 @@ class DataFrame:
         numpy.ndarray
         ```
         """
-        return np.vstack([self[i].to_numpy() for i in range(self.width)]).T
+        return np.vstack(
+            [self.select_at_idx(i).to_numpy() for i in range(self.width)]
+        ).T
 
     def __mul__(self, other):
         other = _prepare_other_arg(other)
@@ -472,6 +474,12 @@ class DataFrame:
             Name of the column to find
         """
         return self._df.find_idx_by_name(name)
+
+    def _pos_idx(self, idx, dim):
+        if idx >= 0:
+            return idx
+        else:
+            return self.shape[dim] + idx
 
     def __getitem__(self, item):
         if hasattr(item, "_pyexpr"):
@@ -526,7 +534,7 @@ class DataFrame:
             if isinstance(col_selection, str):
                 col_selection = [col_selection]
 
-            # df[:, 1[
+            # df[:, 1]
             if isinstance(col_selection, int):
                 series = self.select_at_idx(col_selection)
                 return series[row_selection]
@@ -548,7 +556,7 @@ class DataFrame:
 
         # df[idx]
         if isinstance(item, int):
-            return wrap_s(self._df.select_at_idx(item))
+            return self.slice(self._pos_idx(item, dim=0), 1)
 
         # df[:]
         if isinstance(item, slice):
@@ -587,7 +595,9 @@ class DataFrame:
                 if type(item[0]) == bool:
                     item = Series("", item)
                 else:
-                    return wrap_df(self._df.take(item))
+                    return wrap_df(
+                        self._df.take([self._pos_idx(i, dim=0) for i in item])
+                    )
             dtype = item.dtype
             if dtype == datatypes.Boolean:
                 return wrap_df(self._df.filter(item.inner()))
@@ -1757,10 +1767,10 @@ class DataFrame:
         if self.width == 1:
             return self
         df = self
-        acc = operation(df[0], df[1])
+        acc = operation(df.select_at_idx(0), df.select_at_idx(1))
 
         for i in range(2, df.width):
-            acc = operation(acc, df[i])
+            acc = operation(acc, df.select_at_idx(i))
         return acc
 
     def row(self, index: int) -> Tuple[Any]:
