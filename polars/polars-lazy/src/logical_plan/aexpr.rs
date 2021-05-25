@@ -82,7 +82,7 @@ pub enum AExpr {
     },
     Window {
         function: Node,
-        partition_by: Node,
+        partition_by: Vec<Node>,
         order_by: Option<Node>,
     },
     Wildcard,

@@ -35,7 +35,7 @@ rayon = "1.5"
 itertools = "0.10"
 
 polars-io = {version = "0.13.4", path = "../polars-io", features = ["lazy", "csv-file"], default-features=false}
-polars-core = {version = "0.13.4", path = "../polars-core", features = ["lazy"], default-features=false}
+polars-core = {version = "0.13.4", path = "../polars-core", features = ["lazy", "private"], default-features=false}
 polars-arrow = {version = "0.13.4", path = "../polars-arrow"}
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version

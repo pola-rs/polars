@@ -396,8 +396,8 @@ impl DefaultPlanner {
                 order_by: _,
             } => {
                 // TODO! Order by
-                let group_column =
-                    self.create_physical_expr(partition_by, Context::Default, expr_arena)?;
+                let group_by =
+                    self.create_physical_expressions(&partition_by, Context::Default, expr_arena)?;
                 let mut out_name = None;
                 let mut apply_columns = aexpr_to_root_names(function, expr_arena);
                 if apply_columns.len() > 1 {
@@ -414,7 +414,7 @@ impl DefaultPlanner {
                 let function = node_to_exp(function, expr_arena);
 
                 Ok(Arc::new(WindowExpr {
-                    group_column,
+                    group_by,
                     apply_column,
                     out_name,
                     function,

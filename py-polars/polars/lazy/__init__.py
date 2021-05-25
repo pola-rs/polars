@@ -1071,7 +1071,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: "Union[str, Expr]") -> "Expr":
+    def over(self, expr: "Union[str, Expr, List[Expr]]") -> "Expr":
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -1080,7 +1080,7 @@ class Expr:
         Parameters
         ----------
         expr
-            Expression that evaluates to a column of groups
+            Column(s) to group by.
 
         Examples
         --------
@@ -1129,10 +1129,10 @@ class Expr:
 
         ```
         """
-        if isinstance(expr, str):
-            expr = col(expr)
 
-        return wrap_expr(self._pyexpr.over(expr._pyexpr))
+        pyexprs = _selection_to_pyexpr_list(expr)
+
+        return wrap_expr(self._pyexpr.over(pyexprs))
 
     def is_unique(self) -> "Expr":
         """

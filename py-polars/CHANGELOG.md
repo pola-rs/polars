@@ -2,6 +2,17 @@
 
 The Rust crate `polars` has its own changelog.
 
+### polars 0.7.18
+* feature
+  - window function by multiple group columns
+
+* bug fix
+  - fix bug in argsort multiple
+
+### polars 0.7.18
+* feature
+  - argsort multiple columns
+
 ### polars 0.7.17
 * feature
   - support more indexing
