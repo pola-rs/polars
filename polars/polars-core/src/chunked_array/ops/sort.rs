@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::{get_supertype, NoNull};
+use crate::utils::NoNull;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::cmp::Ordering;
@@ -280,11 +280,32 @@ where
                                 let ca = s.utf8().unwrap();
                                 partial_ord_by_idx!(ca, *reverse)
                             }
-                            _ => {
-                                let ca = self
-                                    .unpack_series_matching_type(s)
-                                    .expect("should be same type");
+                            DataType::Float32 => {
+                                let ca = s.f32().unwrap();
                                 partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::Float64 => {
+                                let ca = s.f64().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::Int64 => {
+                                let ca = s.i64().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::Int32 => {
+                                let ca = s.i32().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::UInt32 => {
+                                let ca = s.u32().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::UInt64 => {
+                                let ca = s.u64().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            _ => {
+                                unreachable!()
                             }
                         }
                     }
@@ -406,9 +427,32 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                                 let ca = s.utf8().unwrap();
                                 partial_ord_by_idx!(ca, *reverse)
                             }
-                            _ => {
-                                let ca = s.f64().expect("cast to f64 before calling this method");
+                            DataType::Float32 => {
+                                let ca = s.f32().unwrap();
                                 partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::Float64 => {
+                                let ca = s.f64().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::Int64 => {
+                                let ca = s.i64().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::Int32 => {
+                                let ca = s.i32().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::UInt32 => {
+                                let ca = s.u32().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            DataType::UInt64 => {
+                                let ca = s.u64().unwrap();
+                                partial_ord_by_idx!(ca, *reverse)
+                            }
+                            _ => {
+                                unreachable!()
                             }
                         }
                     }
@@ -485,45 +529,28 @@ impl ChunkSort<BooleanType> for BooleanChunked {
 }
 
 pub(crate) fn prepare_argsort(
-    mut columns: Vec<Series>,
+    columns: Vec<Series>,
     mut reverse: Vec<bool>,
 ) -> Result<(Series, Vec<Series>, Vec<bool>)> {
     let n_cols = columns.len();
 
-    // we only allow this implementation of the same types
-    // se we determine the supertypes and coerce all series.
-    let mut first = columns.remove(0);
-    let dtype = if first.utf8().is_ok() {
-        Some(DataType::Float64)
-    } else {
-        columns.iter().try_fold::<_, _, Result<_>>(None, |acc, s| {
-            let acc = match (&acc, s.dtype()) {
-                (_, DataType::Utf8) => acc,
-                (None, dt) => Some(dt.clone()),
-                (Some(acc), dt) => Some(get_supertype(acc, dt)?),
-            };
-            Ok(acc)
-        })?
-    };
-
-    if let Some(dtype) = dtype {
-        columns = columns
-            .into_iter()
-            .map(|s| match s.dtype() {
-                DataType::Utf8 => s,
-                _ => s.cast_with_dtype(&dtype).expect("supertype is known"),
-            })
-            .collect::<Vec<_>>();
-
-        // broadcast ordering
-        if n_cols > reverse.len() && reverse.len() == 1 {
-            while n_cols != reverse.len() {
-                reverse.push(reverse[0]);
+    let mut columns = columns
+        .iter()
+        .map(|s| {
+            use DataType::*;
+            match s.dtype() {
+                Float32 | Float64 | Int32 | Int64 | Utf8 | UInt32 | UInt64 => s.clone(),
+                _ => s.cast::<Int32Type>().unwrap(),
             }
-        }
+        })
+        .collect::<Vec<_>>();
 
-        if !matches!(first.dtype(), DataType::Utf8) {
-            first = first.cast_with_dtype(&dtype)?;
+    let first = columns.remove(0);
+
+    // broadcast ordering
+    if n_cols > reverse.len() && reverse.len() == 1 {
+        while n_cols != reverse.len() {
+            reverse.push(reverse[0]);
         }
     }
     Ok((first, columns, reverse))
