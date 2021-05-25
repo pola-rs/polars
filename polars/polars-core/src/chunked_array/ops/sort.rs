@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::NoNull;
+use crate::utils::{get_supertype, NoNull};
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::cmp::Ordering;
@@ -482,6 +482,51 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         argsort!(self, reverse)
     }
+}
+
+pub(crate) fn prepare_argsort(
+    mut columns: Vec<Series>,
+    mut reverse: Vec<bool>,
+) -> Result<(Series, Vec<Series>, Vec<bool>)> {
+    let n_cols = columns.len();
+
+    // we only allow this implementation of the same types
+    // se we determine the supertypes and coerce all series.
+    let mut first = columns.remove(0);
+    let dtype = if first.utf8().is_ok() {
+        Some(DataType::Float64)
+    } else {
+        columns.iter().try_fold::<_, _, Result<_>>(None, |acc, s| {
+            let acc = match (&acc, s.dtype()) {
+                (_, DataType::Utf8) => acc,
+                (None, dt) => Some(dt.clone()),
+                (Some(acc), dt) => Some(get_supertype(acc, dt)?),
+            };
+            Ok(acc)
+        })?
+    };
+
+    if let Some(dtype) = dtype {
+        columns = columns
+            .into_iter()
+            .map(|s| match s.dtype() {
+                DataType::Utf8 => s,
+                _ => s.cast_with_dtype(&dtype).expect("supertype is known"),
+            })
+            .collect::<Vec<_>>();
+
+        // broadcast ordering
+        if n_cols > reverse.len() && reverse.len() == 1 {
+            while n_cols != reverse.len() {
+                reverse.push(reverse[0]);
+            }
+        }
+
+        if !matches!(first.dtype(), DataType::Utf8) {
+            first = first.cast_with_dtype(&dtype)?;
+        }
+    }
+    Ok((first, columns, reverse))
 }
 
 #[cfg(test)]

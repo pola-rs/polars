@@ -14,8 +14,7 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{
-    accumulate_dataframes_horizontal, accumulate_dataframes_vertical, get_supertype, split_ca,
-    split_df, NoNull,
+    accumulate_dataframes_horizontal, accumulate_dataframes_vertical, split_ca, split_df, NoNull,
 };
 
 mod arithmetic;
@@ -25,6 +24,7 @@ pub mod hash_join;
 pub mod row;
 pub mod select;
 mod upstream_traits;
+use crate::prelude::sort::prepare_argsort;
 use crate::POOL;
 
 #[derive(Clone)]
@@ -855,54 +855,18 @@ impl DataFrame {
     }
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
-    fn sort_impl(&self, by_column: Vec<&str>, mut reverse: Vec<bool>) -> Result<Self> {
+    fn sort_impl(&self, by_column: Vec<&str>, reverse: Vec<bool>) -> Result<Self> {
         let take = match by_column.len() {
             1 => {
                 let s = self.column(by_column[0])?;
                 s.argsort(reverse[0])
             }
-            n_cols => {
+            _ => {
                 #[cfg(feature = "sort_multiple")]
                 {
-                    let mut columns = self.select_series(by_column)?;
+                    let columns = self.select_series(by_column)?;
 
-                    // we only allow this implementation of the same types
-                    // se we determine the supertypes and coerce all series.
-                    let mut first = columns.remove(0);
-                    let dtype = if first.utf8().is_ok() {
-                        Some(DataType::Float64)
-                    } else {
-                        columns.iter().try_fold::<_, _, Result<_>>(None, |acc, s| {
-                            let acc = match (&acc, s.dtype()) {
-                                (_, DataType::Utf8) => acc,
-                                (None, dt) => Some(dt.clone()),
-                                (Some(acc), dt) => Some(get_supertype(acc, dt)?),
-                            };
-                            Ok(acc)
-                        })?
-                    };
-
-                    if let Some(dtype) = dtype {
-                        columns = columns
-                            .into_iter()
-                            .map(|s| match s.dtype() {
-                                DataType::Utf8 => s,
-                                _ => s.cast_with_dtype(&dtype).expect("supertype is known"),
-                            })
-                            .collect::<Vec<_>>();
-
-                        // broadcast ordering
-                        if n_cols > reverse.len() && reverse.len() == 1 {
-                            while n_cols != reverse.len() {
-                                reverse.push(reverse[0]);
-                            }
-                        }
-
-                        if !matches!(first.dtype(), DataType::Utf8) {
-                            first = first.cast_with_dtype(&dtype)?;
-                        }
-                    }
-
+                    let (first, columns, reverse) = prepare_argsort(columns, reverse)?;
                     first.argsort_multiple(&columns, &reverse)?
                 }
                 #[cfg(not(feature = "sort_multiple"))]

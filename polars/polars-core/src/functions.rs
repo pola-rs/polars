@@ -2,8 +2,8 @@
 //!
 //! Functions that might be useful.
 //!
+use crate::chunked_array::ops::sort::prepare_argsort;
 use crate::prelude::*;
-use crate::utils::all_series_to_supertype;
 use num::{Float, NumCast};
 use std::ops::Div;
 
@@ -38,12 +38,19 @@ where
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
 pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
-    let by = all_series_to_supertype(by);
-
-    let s = by
-        .get(0)
-        .ok_or_else(|| PolarsError::ValueError("expected a non empty slice".into()))?;
-    s.argsort_multiple(&by[1..], reverse)
+    if by.len() != reverse.len() {
+        return Err(PolarsError::ValueError(
+            format!(
+                "The amount of ordering booleans: {} does not match amount of Series: {}",
+                reverse.len(),
+                by.len()
+            )
+            .into(),
+        ));
+    }
+    let (first, by, reverse) =
+        prepare_argsort(by.to_vec(), reverse.iter().copied().collect()).unwrap();
+    first.argsort_multiple(&by, &reverse)
 }
 
 #[cfg(test)]

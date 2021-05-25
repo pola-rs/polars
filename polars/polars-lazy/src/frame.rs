@@ -2132,10 +2132,12 @@ mod test {
     fn test_argsort_multiple() -> Result<()> {
         let df = df![
             "int" => [1, 2, 3, 1, 2],
-            "flt" => [3.0, 2.0, 1.0, 2.0, 1.0]
+            "flt" => [3.0, 2.0, 1.0, 2.0, 1.0],
+            "str" => ["a", "a", "a", "b", "b"]
         ]?;
 
         let out = df
+            .clone()
             .lazy()
             .select(vec![argsort_by(
                 vec![col("int"), col("flt")],
@@ -2151,6 +2153,15 @@ mod test {
                 .map(Some)
                 .collect::<Vec<_>>()
         );
+
+        // check if this runs
+        let out = df
+            .lazy()
+            .select(vec![argsort_by(
+                vec![col("str"), col("flt")],
+                &[true, false],
+            )])
+            .collect()?;
         Ok(())
     }
 }
