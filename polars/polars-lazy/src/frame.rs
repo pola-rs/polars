@@ -1041,7 +1041,7 @@ mod test {
     use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
     use polars_core::*;
 
-    use crate::functions::pearson_corr;
+    use crate::functions::{argsort_by, pearson_corr};
     use crate::tests::get_df;
 
     use super::*;
@@ -2125,6 +2125,32 @@ mod test {
                 .collect::<Vec<_>>()
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_argsort_multiple() -> Result<()> {
+        let df = df![
+            "int" => [1, 2, 3, 1, 2],
+            "flt" => [3.0, 2.0, 1.0, 2.0, 1.0]
+        ]?;
+
+        let out = df
+            .lazy()
+            .select(vec![argsort_by(
+                vec![col("int"), col("flt")],
+                &[true, false],
+            )])
+            .collect()?;
+
+        assert_eq!(
+            Vec::from(out.column("int")?.u32()?),
+            [2, 4, 1, 3, 0]
+                .iter()
+                .copied()
+                .map(Some)
+                .collect::<Vec<_>>()
+        );
         Ok(())
     }
 }
