@@ -1682,13 +1682,13 @@ mod test {
         let _ = df
             .clone()
             .lazy()
-            .select(&[avg("values").over(col("groups")).alias("part")])
+            .select(&[avg("values").over(vec![col("groups")]).alias("part")])
             .collect()
             .unwrap();
         // test if partition aggregation is correct
         let out = df
             .lazy()
-            .select(&[col("groups"), sum("values").over(col("groups"))])
+            .select(&[col("groups"), sum("values").over(vec![col("groups")])])
             .collect()
             .unwrap();
         assert_eq!(

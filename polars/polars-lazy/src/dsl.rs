@@ -223,7 +223,7 @@ pub enum Expr {
     Window {
         /// Also has the input. i.e. avg("foo")
         function: Box<Expr>,
-        partition_by: Box<Expr>,
+        partition_by: Vec<Expr>,
         order_by: Option<Box<Expr>>,
     },
     Wildcard,
@@ -784,7 +784,7 @@ impl Expr {
     ///      .lazy()
     ///      .select(&[
     ///          col("groups"),
-    ///          sum("values").over(col("groups")),
+    ///          sum("values").over(vec![col("groups")]),
     ///      ])
     ///      .collect()?;
     ///     dbg!(&out);
@@ -822,10 +822,10 @@ impl Expr {
     /// │ 1      ┆ 16     │
     /// ╰────────┴────────╯
     /// ```
-    pub fn over(self, partition_by: Expr) -> Self {
+    pub fn over(self, partition_by: Vec<Expr>) -> Self {
         Expr::Window {
             function: Box::new(self),
-            partition_by: Box::new(partition_by),
+            partition_by,
             order_by: None,
         }
     }

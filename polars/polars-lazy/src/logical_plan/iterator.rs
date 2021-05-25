@@ -76,7 +76,9 @@ impl<'a> Iterator for ExprIter<'a> {
                     order_by,
                 } => {
                     push(function);
-                    push(partition_by);
+                    for e in partition_by {
+                        push(e)
+                    }
                     if let Some(e) = order_by {
                         push(e);
                     }
@@ -176,7 +178,9 @@ impl AExpr {
                 order_by,
             } => {
                 push(function);
-                push(partition_by);
+                for e in partition_by {
+                    push(e);
+                }
                 if let Some(e) = order_by {
                     push(e);
                 }

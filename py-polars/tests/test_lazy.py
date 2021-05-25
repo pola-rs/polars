@@ -153,3 +153,27 @@ def test_arange():
 def test_arg_sort():
     df = pl.DataFrame({"a": [4, 1, 3]})
     assert df[col("a").arg_sort()]["a"] == [1, 2, 0]
+
+
+def test_window_function():
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B": [5, 4, 3, 2, 1],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        }
+    )
+
+    q = df.lazy().with_columns(
+        [
+            pl.sum("A").over("fruits").alias("fruit_sum_A"),
+            pl.first("B").over("fruits").alias("fruit_first_B"),
+            pl.max("B").over("cars").alias("cars_max_B"),
+        ]
+    )
+    out = q.collect()
+    assert out["cars_max_B"] == [5, 4, 5, 5, 5]
+
+    out = df[[pl.first("B").over(["fruits", "cars"])]]
+    assert out["B_first"] == [5, 4, 3, 3, 5]

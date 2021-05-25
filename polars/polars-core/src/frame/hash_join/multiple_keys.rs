@@ -186,6 +186,12 @@ pub(crate) fn inner_join_multiple_keys(
             .collect()
     })
 }
+
+#[cfg(feature = "private")]
+pub fn private_left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32, Option<u32>)> {
+    left_join_multiple_keys(a, b)
+}
+
 pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32, Option<u32>)> {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
