@@ -80,7 +80,8 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
-          black --check .
+          pre-commit install
+          pre-commit run --all-files
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
