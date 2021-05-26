@@ -40,7 +40,8 @@ features = [
     "dtype-full",
     "pivot",
     "downsample",
-    "is_in"
+    "is_in",
+    "private"
 ]
 
 #[patch.crates-io]

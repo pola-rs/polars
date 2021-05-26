@@ -1,7 +1,7 @@
 //! Lazy API of Polars
 //!
-//! *Credits to the work of Andy Grove and Ballista/ DataFusion / Apache Arrow, which gave
-//! this a huge kickstart.*
+//! *Credits to the work of Andy Grove and Ballista/ DataFusion / Apache Arrow, which served as
+//! insipration for the lazy API.*
 //!
 //! The lazy api of Polars supports a subset of the eager api. Apart from the distributed compute,
 //! it is very similar to [Apache Spark](https://spark.apache.org/). You write queries in a
@@ -158,7 +158,7 @@
 //!
 //! fn example(df_a: DataFrame, df_b: DataFrame) -> LazyFrame {
 //!     df_a.lazy()
-//!     .left_join(df_b.lazy(), col("b_left"), col("b_right"), None)
+//!     .left_join(df_b.lazy(), col("b_left"), col("b_right"))
 //!     .filter(
 //!         col("a").lt(lit(2))
 //!     )

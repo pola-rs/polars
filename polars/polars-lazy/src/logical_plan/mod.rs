@@ -1362,10 +1362,10 @@ mod test {
 
         // check if optimizations succeeds without selection
         {
-            let lf =
-                left.clone()
-                    .lazy()
-                    .left_join(right.clone().lazy(), col("days"), col("days"), None);
+            let lf = left
+                .clone()
+                .lazy()
+                .left_join(right.clone().lazy(), col("days"), col("days"));
 
             print_plans(&lf);
             // implicitly checks logical plan == optimized logical plan
@@ -1378,7 +1378,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"), None)
+                .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp")]);
 
             print_plans(&lf);
@@ -1391,7 +1391,7 @@ mod test {
             let lf = left
                 .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"), None)
+                .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp"), col("rain_right")]);
 
             print_plans(&lf);

@@ -1,7 +1,7 @@
 //!
 //! # Polars Eager cookbook
 //!
-//! This page should serve a cookbook to quickly get you started with most fundamental operation
+//! This page should serve a cookbook to quickly get you started with most fundamental operations
 //! executed on a `ChunkedArray`, `Series` or `DataFrame`.
 //!
 //! ## Tree Of Contents
@@ -11,10 +11,12 @@
 //!     - [Series](#series)
 //!     - [DataFrame](#dataframe)
 //! * [Arithmetic](#arithmetic)
-//! * [Comparissons](#comparissons)
+//! * [Comparisons](#comparisons)
 //! * [Apply functions/ closures](#apply-functions-closures)
 //!     - [Series / ChunkedArrays](#dataframe-1)
 //!     - [DataFrame](#dataframe-1)
+//! * [Filter](#filter)
+//! * [Sort](#sort)
 //! * [Joins](#joins)
 //! * [GroupBy](#groupby)
 //!     - [pivot](#pivot)
@@ -147,9 +149,9 @@
 //! let divide_one_by_ca = ca.apply(|rhs| 1 / rhs);
 //! ```
 //!
-//! ## Comparissons
+//! ## Comparisons
 //!
-//! `Series` and `ChunkedArray`s can be used in comparisson operations to create `boolean` masks/predicates.
+//! `Series` and `ChunkedArray`s can be used in comparison operations to create `boolean` masks/predicates.
 //!
 //! ```
 //! use polars::prelude::*;
@@ -276,6 +278,64 @@
 //! # }
 //! ```
 //!
+//! ## Filter
+//! ```
+//! use polars::prelude::*;
+//!
+//! # fn example(df: &DataFrame) -> Result<()> {
+//! // create a mask to filter out null values
+//! let mask = df.column("sepal.width")?.is_not_null();
+//!
+//! // select column
+//! let s = df.column("sepal.length")?;
+//!
+//! // apply filter on a Series
+//! let filtered_series = s.filter(&mask);
+//!
+//! // apply the filter on a DataFrame
+//! let filtered_df = df.filter(&mask)?;
+//!
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Sort
+//! ```
+//! use polars::prelude::*;
+//! use polars::df;
+//!
+//! # fn example() -> Result<()> {
+//! let df = df![
+//!     "a" => [1, 2, 3],
+//!     "b" => ["a", "a", "b"]
+//! ]?;
+//! // sort this DataFrame by multiple columns
+//!
+//! // ordering of the columns
+//! let reverse = &[true, false];
+//! // columns to sort by
+//! let by = &["b", "a"];
+//! // do the sort operation
+//! let sorted = df.sort(by, reverse)?;
+//!
+//! // sorted:
+//!
+//! // ╭─────┬─────╮
+//! // │ a   ┆ b   │
+//! // │ --- ┆ --- │
+//! // │ i64 ┆ str │
+//! // ╞═════╪═════╡
+//! // │ 1   ┆ "a" │
+//! // ├╌╌╌╌╌┼╌╌╌╌╌┤
+//! // │ 2   ┆ "a" │
+//! // ├╌╌╌╌╌┼╌╌╌╌╌┤
+//! // │ 3   ┆ "b" │
+//! // ╰─────┴─────╯
+//!
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! ## Joins
 //!
 //! ```
@@ -305,7 +365,6 @@
 //!
 //! # Ok(())
 //! # }
-//!
 //! ```
 //!
 //! ## Groupby

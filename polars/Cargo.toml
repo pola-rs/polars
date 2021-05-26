@@ -62,6 +62,9 @@ sort_multiple = ["polars-core/sort_multiple"]
 # is_in operation
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
 
+# dont use this
+private = ["polars-core/private", "polars-lazy/private"]
+
 # all opt-in datatypes
 dtype-full = [
     "dtype-time64-ns",

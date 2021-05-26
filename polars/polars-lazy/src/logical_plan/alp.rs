@@ -1,4 +1,3 @@
-use crate::logical_plan::iterator::ArenaLpIter;
 use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
@@ -7,7 +6,6 @@ use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::utils::{Arena, Node};
 use std::collections::HashSet;
-use std::fs::canonicalize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -161,12 +159,16 @@ impl ALogicalPlan {
     ///
     /// For instance: there can be two columns "foo" in the memory arena. These are equal,
     /// but would have different node values.
+    #[cfg(feature = "private")]
     pub(crate) fn eq(
         node_left: Node,
         node_right: Node,
         lp_arena: &Arena<ALogicalPlan>,
         expr_arena: &Arena<AExpr>,
     ) -> bool {
+        use crate::logical_plan::iterator::ArenaLpIter;
+        use std::fs::canonicalize;
+
         let cmp = |(node_left, node_right)| {
             use ALogicalPlan::*;
             match (lp_arena.get(node_left), lp_arena.get(node_right)) {
