@@ -658,6 +658,9 @@ class Series:
         self._s.rename(name)
 
     def chunk_lengths(self) -> "List[int]":
+        """
+        Get the length of each individual chunk
+        """
         return self._s.chunk_lengths()
 
     def n_chunks(self) -> int:
@@ -1097,6 +1100,9 @@ class Series:
         return array
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        """
+        Numpy universal functions
+        """
         if self._s.n_chunks() > 0:
             self._s.rechunk(in_place=True)
 
@@ -1731,6 +1737,10 @@ class Series:
 
 
 class SeriesIter:
+    """
+    Utility class that allows slow iteration over a `Series`
+    """
+
     def __init__(self, length: int, s: "Series"):
         self.len = length
         self.i = 0

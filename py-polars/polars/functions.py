@@ -76,6 +76,14 @@ def _prepare_file_arg(
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
+    """
+    Convert categorical variable into dummy/indicator variables.
+
+    Parameters
+    ----------
+    df
+        DataFrame to convert
+    """
     return df.to_dummies()
 
 

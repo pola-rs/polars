@@ -1,3 +1,6 @@
+"""
+Module containing logic related to eager DataFrames
+"""
 from io import BytesIO
 
 try:
@@ -61,6 +64,10 @@ def _prepare_other_arg(other: Any) -> Series:
 
 
 class DataFrame:
+    """
+    A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
+    """
+
     def __init__(
         self,
         data: "Union[Dict[str, Sequence], List[Series], np.ndarray]",
@@ -482,6 +489,9 @@ class DataFrame:
             return self.shape[dim] + idx
 
     def __getitem__(self, item):
+        """
+        Does quite a lot. Read the comments.
+        """
         if hasattr(item, "_pyexpr"):
             return self.select(item)
         if isinstance(item, np.ndarray):
@@ -639,11 +649,29 @@ class DataFrame:
         return self.height
 
     def _repr_html_(self) -> str:
+        """
+        Used by jupyter notebooks to get a html table.
+
+        Output rows and columns can be modified by setting the following ENVIRONMENT variables:
+
+        * POLARS_FMT_MAX_COLS: set the number of columns
+        * POLARS_FMT_MAX_ROWS: set the number of rows
+        """
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         max_rows = int(os.environ.get("POLARS_FMT_MAX_rows", 25))
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
     def insert_at_idx(self, index: int, series: Series):
+        """
+        Insert a Series at a certain column index. This operation is in place.
+
+        Parameters
+        ----------
+        index
+            Column to insert the new `Series` column.
+        series
+            `Series` to insert.
+        """
         self._df.insert_at_idx(index, series._s)
 
     def filter(self, predicate: "Expr") -> "DataFrame":
@@ -743,6 +771,15 @@ class DataFrame:
 
     @columns.setter
     def columns(self, columns: "List[str]"):
+        """
+        Change the column names of the `DataFrame`
+
+        Parameters
+        ----------
+        columns
+            A list with new names for the `DataFrame`.
+            The length of the list should be equal to the widht of the `DataFrame`
+        """
         self._df.set_column_names(columns)
 
     @property
@@ -1786,6 +1823,17 @@ class DataFrame:
 
 
 class GroupBy:
+    """
+    Starts a new GroupBy operation.
+
+    You can also loop over this Object to loop over `DataFrames` with unique groups.
+
+    ```python
+    for group in df.groupby("foo"):
+        print(group)
+    ```
+    """
+
     def __init__(
         self,
         df: "PyDataFrame",
@@ -1811,6 +1859,13 @@ class GroupBy:
             yield df[groups[i]]
 
     def get_group(self, group_value: "Union[Any, Tuple[Any]]") -> DataFrame:
+        """
+        Select a single group as a new DataFrame.
+        Parameters
+        ----------
+        group_value
+            Group to select
+        """
         groups_df = self.groups()
         groups = groups_df["groups"]
 
@@ -1839,6 +1894,12 @@ class GroupBy:
         return df[groups_idx]
 
     def groups(self) -> DataFrame:
+        """
+        Return a `DataFrame` with:
+
+        * the groupby keys
+        * the group indexes aggregated as lists
+        """
         return wrap_df(self._df.groupby(self.by, None, "groups"))
 
     def apply(self, f: "Callable[[DataFrame], DataFrame]"):
@@ -2048,6 +2109,10 @@ class GroupBy:
 
 
 class PivotOps:
+    """
+    Utility class returned in a pivot operation.
+    """
+
     def __init__(
         self, df: DataFrame, by: "List[str]", pivot_column: str, values_column: str
     ):
@@ -2114,6 +2179,10 @@ class PivotOps:
 
 
 class GBSelection:
+    """
+    Utility class returned in a groupby operation.
+    """
+
     def __init__(
         self,
         df: DataFrame,
@@ -2251,7 +2320,6 @@ class StringCache:
     """
     Context manager that allows to data sources to share the same categorical features.
     This will temporarily cache the string categories until the context manager is finished.
-
     """
 
     def __init__(self):

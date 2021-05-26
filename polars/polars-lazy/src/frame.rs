@@ -1024,6 +1024,8 @@ impl LazyGroupBy {
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
 
+    /// Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
+    /// this as materializing the `DataFrame` is quite expensive.
     pub fn apply<F>(self, f: F) -> LazyFrame
     where
         F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,

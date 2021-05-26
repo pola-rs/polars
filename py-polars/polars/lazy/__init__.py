@@ -1,3 +1,7 @@
+"""
+This module contains all expressions and classes needed for lazy computation/ query execution.
+"""
+
 from typing import Union, List, Callable, Optional, Dict, Any
 
 from polars import Series
@@ -56,18 +60,55 @@ def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
 
 
 class LazyGroupBy:
+    """
+    Created by `df.lazy().groupby("foo)"`
+    """
+
     def __init__(self, lgb: "PyLazyGroupBy"):
         self.lgb = lgb
 
     def agg(self, aggs: "Union[List[Expr], Expr]") -> "LazyFrame":
+        """
+        Describe the aggregation that need to be done on a group.
+
+        Parameters
+        ----------
+        aggs
+            Single/ Multiple aggregation expression(s)
+
+        # Example
+
+        ```python
+        (pl.scan_csv("data.csv")
+            .groupby("groups")
+            .agg([
+                    pl.col("name").n_unique().alias("unique_names"),
+                    pl.max("values")
+                ])
+        )
+        ```
+        """
         aggs = _selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
 
     def apply(self, f: "Callable[[DataFrame], DataFrame]") -> "LazyFrame":
+        """
+        Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
+        this as materializing the `DataFrame` is quite expensive.
+
+        Parameters
+        ----------
+        f
+            Function to apply over the `DataFrame`
+        """
         return wrap_ldf(self.lgb.apply(f))
 
 
 class LazyFrame:
+    """
+    Representation of a Lazy computation graph/ query.
+    """
+
     def __init__(self):
         self._ldf = None
 
@@ -89,6 +130,9 @@ class LazyFrame:
         dtype: "Optional[Dict[str, DataType]]" = None,
         low_memory: bool = False,
     ):
+        """
+        See Also: `pl.scan_csv`
+        """
         if dtype is not None:
             new_dtype = []
             for k, v in dtype.items():
@@ -113,6 +157,9 @@ class LazyFrame:
     def scan_parquet(
         file: str, stop_after_n_rows: "Optional[int]" = None, cache: bool = True
     ):
+        """
+        See Also: `pl.scan_parquet`
+        """
 
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = PyLazyFrame.new_from_parquet(file, stop_after_n_rows, cache)
@@ -134,7 +181,27 @@ class LazyFrame:
         return func(self, *args, **kwargs)
 
     def describe_plan(self) -> str:
+        """
+        A string representation on of the NOT optimized query plan
+        """
         return self._ldf.describe_plan()
+
+    def describe_optimized_plan(
+        self,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+    ) -> str:
+        """
+        A string representation on of the optimized query plan
+        """
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
+        )
+
+        return ldf.describe_optimized_plan()
 
     def show_graph(
         self,
@@ -186,20 +253,6 @@ class LazyFrame:
                 img = mpimg.imread(out_path)
                 plt.imshow(img)
                 plt.show()
-
-    def describe_optimized_plan(
-        self,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-    ) -> str:
-
-        ldf = self._ldf.optimization_toggle(
-            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
-        )
-
-        return ldf.describe_optimized_plan()
 
     def sort(
         self,
@@ -336,7 +389,7 @@ class LazyFrame:
         self,
     ) -> "LazyFrame":
         """
-        Cache the result once Physical plan hits this node.
+        Cache the result once the execution of the physical plan hits this node.
         """
         return wrap_ldf(self._ldf.cache())
 
@@ -729,6 +782,10 @@ def wrap_expr(pyexpr: "PyExpr") -> "Expr":
 
 
 class Expr:
+    """
+    Expressions that can be used in various contexts
+    """
+
     def __init__(self):
         self._pyexpr = None
 
@@ -811,30 +868,63 @@ class Expr:
         return wrap_expr(self._pyexpr.lt(other._pyexpr))
 
     def alias(self, name: str) -> "Expr":
+        """
+        Rename the output of an expression.
+
+        Parameters
+        ----------
+        name
+            new name
+        """
         return wrap_expr(self._pyexpr.alias(name))
 
     def is_not(self) -> "Expr":
+        """
+        Negate a boolean expression.
+        """
         return wrap_expr(self._pyexpr.is_not())
 
     def is_null(self) -> "Expr":
+        """
+        Create a boolean expression returning `True` where the expression contains null values.
+        """
         return wrap_expr(self._pyexpr.is_null())
 
     def is_not_null(self) -> "Expr":
+        """
+        Create a boolean expression returning `True` where the expression not contains null values.
+        """
         return wrap_expr(self._pyexpr.is_not_null())
 
     def is_finite(self) -> "Expr":
+        """
+        Create a boolean expression returning `True` where the expression values are finite.
+        """
         return wrap_expr(self._pyexpr.is_finite())
 
     def is_infinite(self) -> "Expr":
+        """
+        Create a boolean expression returning `True` where the expression values are infinite.
+        """
         return wrap_expr(self._pyexpr.is_infinite())
 
     def is_nan(self) -> "Expr":
+        """
+        Create a boolean expression returning `True` where the expression values are NaN (Not A Number).
+        """
         return wrap_expr(self._pyexpr.is_nan())
 
     def is_not_nan(self) -> "Expr":
+        """
+        Create a boolean expression returning `True` where the expression values are not NaN (Not A Number).
+        """
         return wrap_expr(self._pyexpr.is_not_nan())
 
     def agg_groups(self) -> "Expr":
+        """
+        Get the group indexes of the group by operation.
+        Should be used in aggregation context only.
+        """
         return wrap_expr(self._pyexpr.agg_groups())
 
     def count(self) -> "Expr":
@@ -888,6 +978,14 @@ class Expr:
         return wrap_expr(self._pyexpr.cum_max(reverse))
 
     def cast(self, dtype: "DataType") -> "Expr":
+        """
+        Cast an expression to a different data type.
+
+        Parameters
+        ----------
+        dtype
+            Output data type
+        """
         if dtype == str:
             dtype = datatypes.Utf8
         elif dtype == bool:
@@ -1550,19 +1648,37 @@ def expr_to_lit_or_expr(
 
 
 class WhenThen:
+    """
+    Utility class. See the `when` function.
+    """
+
     def __init__(self, pywhenthen: "PyWhenThen"):  # noqa F821
         self._pywhenthen = pywhenthen
 
     def otherwise(self, expr: "Union[Expr, int, float, str]") -> "Expr":
+        """
+        Values to return in case of the predicate being `False`
+
+        See Also: the `when` function.
+        """
         expr = expr_to_lit_or_expr(expr)
         return wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
 
 class When:
+    """
+    Utility class. See the `when` function.
+    """
+
     def __init__(self, pywhen: "pywhen"):  # noqa F821
         self._pywhen = pywhen
 
     def then(self, expr: "Union[Expr, int, float, str]") -> WhenThen:
+        """
+        Values to return in case of the predicate being `True`
+
+        See Also: the `when` function.
+        """
         expr = expr_to_lit_or_expr(expr)
         whenthen = self._pywhen.then(expr._pyexpr)
         return WhenThen(whenthen)
@@ -1994,20 +2110,33 @@ def all(name: "Union[str, List[Expr]]") -> "Expr":
 
 
 def groups(column: str) -> "Expr":
-    return col(column).groups()
+    """
+    Syntactic sugar for `column("foo").agg_groups()`
+    """
+    return col(column).agg_groups()
 
 
 def quantile(column: str, quantile: float) -> "Expr":
+    """
+    Syntactic sugar for `column("foo").quantile(..)`
+    """
     return col(column).quantile(quantile)
 
 
 class UDF:
+    """
+    Deprecated: don't use me
+    """
+
     def __init__(self, f: Callable[[Series], Series], return_dtype: "DataType"):
         self.f = f
         self.return_dtype = return_dtype
 
 
 def udf(f: Callable[[Series], Series], return_dtype: "DataType"):
+    """
+    Deprecated: don't use me
+    """
     return UDF(f, return_dtype)
 
 
