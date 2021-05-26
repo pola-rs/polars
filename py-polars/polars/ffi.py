@@ -1,8 +1,9 @@
+import ctypes
+from typing import Any
+
 import numpy as np
 import numpy.core
 from numpy import ctypeslib
-import ctypes
-from typing import Any
 
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
 

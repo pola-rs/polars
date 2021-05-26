@@ -1,5 +1,6 @@
-import polars as pl
 import io
+
+import polars as pl
 
 csv = rb"""id1,id2,id3,id4,id5,id6,v1,v2,v3
 id046,id007,id0000043878,51,10,59276,1,2,9.33179

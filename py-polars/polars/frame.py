@@ -4,47 +4,46 @@ Module containing logic related to eager DataFrames
 from io import BytesIO
 
 try:
-    from .polars import (  # noqa: F401
-        PyDataFrame,
-        PySeries,
-        toggle_string_cache as pytoggle_string_cache,
-        version,
-    )
+    from .polars import version  # noqa: F401
+    from .polars import PyDataFrame, PySeries
+    from .polars import toggle_string_cache as pytoggle_string_cache  # noqa: F401
 except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
     __pdoc__ = {"wrap_df": False}
 
-from typing import (
-    Dict,
-    Sequence,
-    List,
-    Tuple,
-    Optional,
-    Union,
-    TextIO,
-    BinaryIO,
-    Callable,
-    Any,
-)
-from .series import Series, wrap_s
-from . import datatypes
-from .datatypes import DataType, pytype_to_polars_type
-from ._html import NotebookFormatter
-from .utils import coerce_arrow, _is_expr
-import polars
-import pyarrow as pa
-import pyarrow.parquet
-import pyarrow.feather
-import numpy as np
 import os
 from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    TextIO,
+    Tuple,
+    Union,
+)
 
-from typing import TYPE_CHECKING
+import numpy as np
+import pyarrow as pa
+import pyarrow.feather
+import pyarrow.parquet
+
+import polars
+
+from . import datatypes
+from ._html import NotebookFormatter
+from .datatypes import DataType, pytype_to_polars_type
+from .series import Series, wrap_s
+from .utils import _is_expr, coerce_arrow
 
 if TYPE_CHECKING:
-    from .lazy import LazyFrame, Expr
+    from .lazy import Expr, LazyFrame
 
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":

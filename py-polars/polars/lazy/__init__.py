@@ -2,36 +2,31 @@
 This module contains all expressions and classes needed for lazy computation/ query execution.
 """
 
-from typing import Union, List, Callable, Optional, Dict, Any
-
-from polars import Series
-from polars.frame import DataFrame, wrap_df
-from polars import datatypes
-from polars.datatypes import DataType
 import os
-import tempfile
-import subprocess
 import shutil
+import subprocess
+import tempfile
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Union
+
 import numpy as np
+from polars.datatypes import DataType
+from polars.frame import DataFrame, wrap_df
+
+from polars import Series, datatypes
 
 try:
-    from ..polars import (
-        PyLazyFrame,
-        col as pycol,
-        lit as pylit,
-        # binary_expr,
-        binary_function as pybinary_function,
-        pearson_corr as pypearson_corr,
-        cov as pycov,
-        argsort_by as pyargsort_by,
-        PyExpr,
-        PyLazyGroupBy,
-        when as pywhen,
-        except_ as pyexcept,
-        range as pyrange,
-        series_from_range as _series_from_range,
-    )
+    from ..polars import PyExpr, PyLazyFrame, PyLazyGroupBy
+    from ..polars import argsort_by as pyargsort_by
+    from ..polars import binary_function as pybinary_function
+    from ..polars import col as pycol  # binary_expr,
+    from ..polars import cov as pycov
+    from ..polars import except_ as pyexcept
+    from ..polars import lit as pylit
+    from ..polars import pearson_corr as pypearson_corr
+    from ..polars import range as pyrange
+    from ..polars import series_from_range as _series_from_range
+    from ..polars import when as pywhen
 except ImportError:
     import warnings
 
@@ -228,8 +223,8 @@ class LazyFrame:
             Passed to matlotlib if `show` == True
         """
         try:
-            import matplotlib.pyplot as plt
             import matplotlib.image as mpimg
+            import matplotlib.pyplot as plt
         except ImportError:
             raise ImportError(
                 "graphviz dot binary should be on your PATH and matplotlib should be installed to show graph"

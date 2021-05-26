@@ -38,19 +38,13 @@ repos:
   - id: black
     language_version: python3
 
-## If like to embrace black styles even in the docs:
-# - repo: https://github.com/asottile/blacken-docs
-#   rev: v1.9.1
-#   hooks:
-#   - id: blacken-docs
-#     additional_dependencies: [black]
-
-- repo: https://gitlab.com/pycqa/flake8
-  rev: 3.8.4
-  hooks:
-  - id: flake8
-    args: [
-      --max-line-length=88,  
-    ]
+# Deactivatd due to hundreds of errors, mainly line length >= 88
+#- repo: https://gitlab.com/pycqa/flake8
+#  rev: 3.8.4
+#  hooks:
+#  - id: flake8
+#    args: [
+#      --max-line-length=88,
+#    ]
   ## You can add flake8 plugins via `additional_dependencies`:
   #  additional_dependencies: [flake8-bugbear]

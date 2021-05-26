@@ -11,37 +11,38 @@ except ImportError:
         "get_ffi_func": False,
         "SeriesIter": False,
     }
+from numbers import Number
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Sequence, Tuple, Union
+
 import numpy as np
-from typing import Optional, List, Sequence, Union, Any, Callable, Tuple
-from .ffi import _ptr_to_numpy
+import pyarrow as pa
+
+import polars
+
+from . import datatypes
 from .datatypes import (
-    Utf8,
-    Int64,
-    UInt64,
-    UInt32,
-    dtypes,
-    Boolean,
-    Float32,
-    Float64,
     DTYPE_TO_FFINAME,
-    dtype_to_primitive,
-    UInt8,
-    dtype_to_ctype,
+    Boolean,
     DataType,
     Date32,
     Date64,
-    Int32,
-    Int16,
+    Float32,
+    Float64,
     Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
     UInt16,
+    UInt32,
+    UInt64,
+    Utf8,
+    dtype_to_ctype,
+    dtype_to_primitive,
+    dtypes,
 )
-from . import datatypes
-from numbers import Number
-import polars
-import pyarrow as pa
+from .ffi import _ptr_to_numpy
 from .utils import coerce_arrow
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .frame import DataFrame
