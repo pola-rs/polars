@@ -149,6 +149,10 @@ where
 }
 
 /// Write a DataFrame to parquet format
+///
+/// # Example
+///
+///
 pub struct ParquetWriter<W> {
     writer: W,
 }

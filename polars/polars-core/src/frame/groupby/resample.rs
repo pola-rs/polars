@@ -50,7 +50,7 @@ impl DataFrame {
     /// use polars_core::frame::groupby::resample::SampleRule;
     ///
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
-    ///     df.downsample("datetime", SampleRule::Minute(6))?
+    ///     df.downsample("datetime", SampleRule::Minute(5))?
     ///         .first()?
     ///         .sort("datetime", false)
     /// }

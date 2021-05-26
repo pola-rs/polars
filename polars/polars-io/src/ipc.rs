@@ -42,6 +42,21 @@ use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 /// Read Arrows IPC format into a DataFrame
+///
+/// # Example
+/// ```
+/// use polars_core::prelude::*;
+/// use std::fs::File;
+/// use polars_io::ipc::IpcReader;
+/// use polars_io::SerReader;
+///
+/// fn example() -> Result<DataFrame> {
+///     let file = File::open("file.ipc").expect("file not found");
+///
+///     IpcReader::new(file)
+///         .finish()
+/// }
+/// ```
 pub struct IpcReader<R> {
     /// File or Stream object
     reader: R,
@@ -85,6 +100,23 @@ where
 }
 
 /// Write a DataFrame to Arrow's IPC format
+///
+/// # Example
+///
+/// ```
+/// use polars_core::prelude::*;
+/// use polars_io::ipc::IpcWriter;
+/// use std::fs::File;
+/// use polars_io::SerWriter;
+///
+/// fn example(df: &mut DataFrame) -> Result<()> {
+///     let mut file = File::create("file.ipc").expect("could not create file");
+///
+///     IpcWriter::new(&mut file)
+///         .finish(df)
+/// }
+///
+/// ```
 pub struct IpcWriter<'a, W> {
     writer: &'a mut W,
 }

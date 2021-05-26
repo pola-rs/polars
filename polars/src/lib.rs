@@ -7,6 +7,11 @@
 //! This means that Polars data structures can be shared zero copy with processes in many different
 //! languages.
 //!
+//! ## 0. Cookbooks
+//! See examples in the cookbooks:
+//!
+//! * [Eager](crate::docs::eager)
+//!
 //! ## 1. Data Structures
 //! The base data structures provided by polars are `DataFrame`, `Series`, and `ChunkedArray<T>`.
 //! We will provide a short top down view of these data structures.
@@ -171,144 +176,6 @@
 //! * [the json module](polars_io::json)
 //! * [the IPC module](polars_io::ipc)
 //! * [the parquet module](polars_io::parquet)
-//!
-//! ### Joins
-//!
-//! ```
-//! # #[macro_use] extern crate polars;
-//! # fn main() {
-//! use polars::prelude::*;
-//!
-//! fn join() -> Result<DataFrame> {
-//!     // Create first df.
-//!     let temp = df!("days" => &[0, 1, 2, 3, 4],
-//!                    "temp" => &[22.1, 19.9, 7., 2., 3.])?;
-//!
-//!     // Create second df.
-//!     let rain = df!("days" => &[1, 2],
-//!                    "rain" => &[0.1, 0.2])?;
-//!
-//!     // Left join on days column.
-//!     temp.left_join(&rain, "days", "days")
-//! }
-//!
-//! println!("{}", join().unwrap())
-//! # }
-//! ```
-//!
-//! ```text
-//! +------+------+------+
-//! | days | temp | rain |
-//! | ---  | ---  | ---  |
-//! | i32  | f64  | f64  |
-//! +======+======+======+
-//! | 0    | 22.1 | null |
-//! +------+------+------+
-//! | 1    | 19.9 | 0.1  |
-//! +------+------+------+
-//! | 2    | 7    | 0.2  |
-//! +------+------+------+
-//! | 3    | 2    | null |
-//! +------+------+------+
-//! | 4    | 3    | null |
-//! +------+------+------+
-//! ```
-//!
-//! ### Groupby's | aggregations | pivots | melts
-//!
-//! ```
-//! use polars::prelude::*;
-//! fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
-//!     df.groupby("column_name")?
-//!     .select("agg_column_name")
-//!     .sum()
-//! }
-//! ```
-//!
-//! ### Arithmetic
-//! The syntax required for arithmetic require understanding a few **gotcha's**. Due to the ownership
-//! rules and because we don't want an operation such as a **multiply** or an **addition** takes
-//! ownership of a Series, these need to be referenced when doing an arithmetic operation.
-//! ```
-//! use polars::prelude::*;
-//! let s = Series::new("foo", [1, 2, 3]);
-//! let s_squared = &s * &s;
-//!
-//! let s_twice = &s * 100;
-//! ```
-//!
-//! Because Rusts Orphan Rule doesn't allow use to implement left side operations, we need to call
-//! such operation directly.
-//!
-//! ```rust
-//! # use polars::prelude::*;
-//! let series = Series::new("foo", [1, 2, 3]);
-//!
-//! // 1 / s
-//! let divide_one_by_s = 1.div(&series);
-//!
-//! // 1 - s
-//! let subtract_one_by_s = 1.sub(&series);
-//! ```
-//!
-//! For `ChunkedArray`s this left hand side operations can be done with the `apply` method.
-//!
-//! ```rust
-//! # use polars::prelude::*;
-//! let ca = UInt32Chunked::new_from_slice("foo", &[1, 2, 3]);
-//!
-//! // 1 / ca
-//! let divide_one_by_ca = ca.apply(|rhs| 1 / rhs);
-//! ```
-//!
-//! ### Rust iterators
-//!
-//! ```
-//! use polars::prelude::*;
-//!
-//! let s: Series = [1, 2, 3].iter().collect();
-//! let s_squared: Series = s.i32()
-//!      .expect("datatype mismatch")
-//!      .into_iter()
-//!      .map(|optional_v| {
-//!          match optional_v {
-//!              Some(v) => Some(v * v),
-//!              None => None, // null value
-//!          }
-//!  }).collect();
-//! ```
-//!
-//! ### Apply custom closures
-//!
-//! Besides running custom iterators, custom closures can be applied on the values of [ChunkedArray](chunked_array/struct.ChunkedArray.html)
-//! by using the [apply](chunked_array/apply/trait.Apply.html) method. This method accepts
-//! a closure that will be applied on all values of `Option<T>` that are non null. Note that this is the
-//! **fastest** way to apply a custom closure on `ChunkedArray`'s.
-//! ```
-//! # use polars::prelude::*;
-//! let s: Series = Series::new("values", [Some(1.0), None, Some(3.0)]);
-//! // null values are ignored automatically
-//! let squared = s.f64()
-//!     .unwrap()
-//!     .apply(|value| value.powf(2.0))
-//!     .into_series();
-//!
-//! assert_eq!(Vec::from(squared.f64().unwrap()), &[Some(1.0), None, Some(9.0)])
-//! ```
-//!
-//! ### Comparisons
-//!
-//! ```
-//! use polars::prelude::*;
-//! let s = Series::new("dollars", &[1, 2, 3]);
-//! let mask = s.eq(1);
-//!
-//! assert_eq!(Vec::from(mask), &[Some(true), Some(false), Some(false)]);
-//! ```
-//!
-//! ## Features
-//!
-//! Additional cargo features:
 //!
 //!
 //! ## User Guide
