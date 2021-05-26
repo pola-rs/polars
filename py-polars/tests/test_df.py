@@ -623,3 +623,20 @@ def test_argsort_by():
     df = get_complete_df()
     a = df[pl.argsort_by(["int_nulls", "floats"], reverse=[False, True])]["int_nulls"]
     assert a == [1, 0, 3]
+
+
+def test_literal_series():
+    df = pl.DataFrame(
+        {
+            "a": np.array([21.7, 21.8, 21], dtype=np.float32),
+            "b": np.array([1, 3, 2], dtype=np.int64),
+            "c": ["reg1", "reg2", "reg3"],
+        }
+    )
+    out = (
+        df.lazy()
+        .with_column(pl.Series("e", [2, 1, 3]))
+        .with_column(pl.col("e").cast(pl.Float32))
+        .collect()
+    )
+    assert out["e"] == [2, 1, 3]

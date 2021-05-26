@@ -1873,7 +1873,9 @@ def lit(
         return lit(int(value.timestamp() * 1e3)).cast(datatypes.Date64)
 
     if isinstance(value, Series):
+        name = value.name
         value = value._s
+        return wrap_expr(pylit(value)).alias(name)
 
     if isinstance(value, np.ndarray):
         return lit(Series("", value))
