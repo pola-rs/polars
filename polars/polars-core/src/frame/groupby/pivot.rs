@@ -143,7 +143,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///     let df = df!("foo" => &["A", "A", "B", "B", "C"],
     ///         "N" => &[1, 2, 2, 4, 2],
     ///         "bar" => &["k", "l", "m", "n", "0"]
-    ///         ).unwrap();
+    ///         )?;
     ///
     ///     df.groupby("foo")?
     ///     .pivot("bar", "N")
