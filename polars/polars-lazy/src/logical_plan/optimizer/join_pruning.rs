@@ -189,8 +189,7 @@ mod test {
             .groupby(vec![col("b")])
             .agg(vec![col("a").last()]);
 
-        let (root, mut expr_arena, mut alp_arena) =
-            q1.left_join(q2, col("b"), col("b"), None).into_alp();
+        let (root, mut expr_arena, mut alp_arena) = q1.left_join(q2, col("b"), col("b")).into_alp();
         dbg!(alp_arena.get(root));
         let mut opt = JoinPrune {};
         let out = opt
@@ -213,8 +212,7 @@ mod test {
             .groupby(vec![col("b")])
             .agg(vec![col("a").last()]);
 
-        let (root, mut expr_arena, mut alp_arena) =
-            q1.left_join(q2, col("b"), col("b"), None).into_alp();
+        let (root, mut expr_arena, mut alp_arena) = q1.left_join(q2, col("b"), col("b")).into_alp();
         dbg!(alp_arena.get(root));
         let mut opt = JoinPrune {};
         let out = opt

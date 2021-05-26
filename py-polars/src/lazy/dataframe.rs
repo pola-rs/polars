@@ -3,7 +3,7 @@ use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{
-    AllowedOptimizations, JoinOptions, LazyCsvReader, LazyFrame, LazyGroupBy,
+    AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy,
 };
 use polars::lazy::prelude::col;
 use polars::prelude::{DataFrame, Field, JoinType, Schema};
@@ -223,15 +223,17 @@ impl PyLazyFrame {
 
         let ldf = self.ldf.clone();
         let other = other.ldf;
-        let options = JoinOptions {
-            allow_parallel,
-            force_parallel,
-        };
         let left_on = left_on.into_iter().map(|pyexpr| pyexpr.inner).collect();
         let right_on = right_on.into_iter().map(|pyexpr| pyexpr.inner).collect();
 
-        ldf.join(other, left_on, right_on, Some(options), how)
-            .into()
+        ldf.join_builder()
+            .with(other)
+            .left_on(left_on)
+            .right_on(right_on)
+            .allow_parallel(allow_parallel)
+            .force_parallel(force_parallel)
+            .how(how)
+            .finish().into()
     }
 
     pub fn with_column(&mut self, expr: PyExpr) -> PyLazyFrame {

@@ -29,6 +29,9 @@ dtype-date64 = ["polars-core/dtype-date64"]
 # is_in operation
 is_in = ["polars-core/is_in"]
 
+# no guarantees whatsoever
+private = []
+
 [dependencies]
 ahash = "0.7"
 rayon = "1.5"

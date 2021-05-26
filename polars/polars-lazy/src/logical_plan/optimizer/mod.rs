@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
+#[cfg(feature = "private")]
 pub(crate) mod join_pruning;
 pub(crate) mod predicate_pushdown;
 pub(crate) mod projection_pushdown;

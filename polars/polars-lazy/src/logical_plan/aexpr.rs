@@ -1,4 +1,3 @@
-use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::rename_field;
@@ -319,10 +318,12 @@ impl AExpr {
     }
 
     /// Check if AExpr equality. The nodes may differ.
-    /// j
+    ///
     /// For instance: there can be two columns "foo" in the memory arena. These are equal,
     /// but would have different node values.
+    #[cfg(feature = "private")]
     pub(crate) fn eq(node_left: Node, node_right: Node, expr_arena: &Arena<AExpr>) -> bool {
+        use crate::logical_plan::iterator::ArenaExprIter;
         let cmp = |(node_left, node_right)| {
             use AExpr::*;
             match (expr_arena.get(node_left), expr_arena.get(node_right)) {

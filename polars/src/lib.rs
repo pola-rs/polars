@@ -11,6 +11,7 @@
 //! See examples in the cookbooks:
 //!
 //! * [Eager](crate::docs::eager)
+//! * [Lazy](crate::docs::lazy)
 //!
 //! ## 1. Data Structures
 //! The base data structures provided by polars are `DataFrame`, `Series`, and `ChunkedArray<T>`.
@@ -153,33 +154,7 @@
 //! prettytable-rs = { git = "https://github.com/phsym/prettytable-rs", branch = "master"}
 //! ```
 //!
-//! ## 8. Examples
-//! Below we show some minimal examples, most can be found in the provided `traits` and `structs`
-//! documentation.
-//!
-//! ### Read and write CSV/ JSON
-//!
-//! ```
-//! use polars::prelude::*;
-//!
-//! fn example() -> Result<DataFrame> {
-//!     CsvReader::from_path("iris.csv")?
-//!             .infer_schema(None)
-//!             .has_header(true)
-//!             .finish()
-//! }
-//! ```
-//!
-//! For more IO examples see:
-//!
-//! * [the csv module](polars_io::csv)
-//! * [the json module](polars_io::json)
-//! * [the IPC module](polars_io::ipc)
-//! * [the parquet module](polars_io::parquet)
-//!
-//!
 //! ## User Guide
-//!
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).
 pub mod docs;
 pub mod prelude;

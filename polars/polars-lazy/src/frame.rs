@@ -17,7 +17,6 @@ use crate::logical_plan::optimizer::{
 };
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::aggregate_scan_projections::agg_projection;
-use crate::prelude::join_pruning::JoinPrune;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::combine_predicates_expr;
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
@@ -457,9 +456,8 @@ impl LazyFrame {
         let type_coercion = self.opt_state.type_coercion;
         let simplify_expr = self.opt_state.simplify_expr;
 
-        let mut agg_scan_projection = self.opt_state.agg_scan_projection;
+        let agg_scan_projection = self.opt_state.agg_scan_projection;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
-        let join_pruning = self.opt_state.join_pruning;
 
         let logical_plan = self.get_plan_builder().build();
 
@@ -501,10 +499,6 @@ impl LazyFrame {
         }
         if aggregate_pushdown {
             rules.push(Box::new(AggregatePushdown::new()))
-        }
-        if join_pruning {
-            rules.push(Box::new(JoinPrune {}));
-            agg_scan_projection = true;
         }
 
         if agg_scan_projection {
@@ -682,23 +676,11 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .left_join(other, col("foo"), col("bar"), None)
+    ///         .left_join(other, col("foo"), col("bar"))
     /// }
     /// ```
-    pub fn left_join(
-        self,
-        other: LazyFrame,
-        left_on: Expr,
-        right_on: Expr,
-        options: Option<JoinOptions>,
-    ) -> LazyFrame {
-        self.join(
-            other,
-            vec![left_on],
-            vec![right_on],
-            options,
-            JoinType::Left,
-        )
+    pub fn left_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+        self.join(other, vec![left_on], vec![right_on], JoinType::Left)
     }
 
     /// Join query with other lazy query.
@@ -710,23 +692,11 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .outer_join(other, col("foo"), col("bar"), None)
+    ///         .outer_join(other, col("foo"), col("bar"))
     /// }
     /// ```
-    pub fn outer_join(
-        self,
-        other: LazyFrame,
-        left_on: Expr,
-        right_on: Expr,
-        options: Option<JoinOptions>,
-    ) -> LazyFrame {
-        self.join(
-            other,
-            vec![left_on],
-            vec![right_on],
-            options,
-            JoinType::Outer,
-        )
+    pub fn outer_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+        self.join(other, vec![left_on], vec![right_on], JoinType::Outer)
     }
 
     /// Join query with other lazy query.
@@ -738,23 +708,11 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .inner_join(other, col("foo"), col("bar").cast(DataType::Utf8), None)
+    ///         .inner_join(other, col("foo"), col("bar").cast(DataType::Utf8))
     /// }
     /// ```
-    pub fn inner_join(
-        self,
-        other: LazyFrame,
-        left_on: Expr,
-        right_on: Expr,
-        options: Option<JoinOptions>,
-    ) -> LazyFrame {
-        self.join(
-            other,
-            vec![left_on],
-            vec![right_on],
-            options,
-            JoinType::Inner,
-        )
+    pub fn inner_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
+        self.join(other, vec![left_on], vec![right_on], JoinType::Inner)
     }
 
     /// Generic join function that can join on multiple columns.
@@ -767,7 +725,7 @@ impl LazyFrame {
     ///
     /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .join(other, vec![col("foo"), col("bar")], vec![col("foo"), col("bar")], None, JoinType::Inner)
+    ///         .join(other, vec![col("foo"), col("bar")], vec![col("foo"), col("bar")], JoinType::Inner)
     /// }
     /// ```
     pub fn join(
@@ -775,23 +733,18 @@ impl LazyFrame {
         other: LazyFrame,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
-        options: Option<JoinOptions>,
         how: JoinType,
     ) -> LazyFrame {
-        let opt_state = self.get_opt_state();
-        let opts = options.unwrap_or_default();
-        let lp = self
-            .get_plan_builder()
-            .join(
-                other.logical_plan,
-                how,
-                left_on,
-                right_on,
-                opts.allow_parallel,
-                opts.force_parallel,
-            )
-            .build();
-        Self::from_logical_plan(lp, opt_state)
+        self.join_builder()
+            .with(other)
+            .left_on(left_on)
+            .right_on(right_on)
+            .how(how)
+            .finish()
+    }
+
+    pub fn join_builder(self) -> JoinBuilder {
+        JoinBuilder::new(self)
     }
 
     /// Add a column to a DataFrame
@@ -1034,6 +987,74 @@ impl LazyGroupBy {
             .groupby(Arc::new(self.keys), vec![], Some(Arc::new(f)))
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
+    }
+}
+
+pub struct JoinBuilder {
+    lf: LazyFrame,
+    how: JoinType,
+    other: Option<LazyFrame>,
+    left_on: Vec<Expr>,
+    right_on: Vec<Expr>,
+    allow_parallel: bool,
+    force_parallel: bool,
+}
+impl JoinBuilder {
+    fn new(lf: LazyFrame) -> Self {
+        Self {
+            lf,
+            other: None,
+            how: JoinType::Inner,
+            left_on: vec![],
+            right_on: vec![],
+            allow_parallel: true,
+            force_parallel: false,
+        }
+    }
+
+    pub fn with(mut self, other: LazyFrame) -> Self {
+        self.other = Some(other);
+        self
+    }
+
+    pub fn how(mut self, how: JoinType) -> Self {
+        self.how = how;
+        self
+    }
+
+    pub fn left_on(mut self, on: Vec<Expr>) -> Self {
+        self.left_on = on;
+        self
+    }
+
+    pub fn right_on(mut self, on: Vec<Expr>) -> Self {
+        self.right_on = on;
+        self
+    }
+    pub fn allow_parallel(mut self, allow: bool) -> Self {
+        self.allow_parallel = allow;
+        self
+    }
+    pub fn force_parallel(mut self, allow: bool) -> Self {
+        self.allow_parallel = allow;
+        self
+    }
+    pub fn finish(self) -> LazyFrame {
+        let opt_state = self.lf.opt_state;
+
+        let lp = self
+            .lf
+            .get_plan_builder()
+            .join(
+                self.other.expect("with not set").logical_plan,
+                self.how,
+                self.left_on,
+                self.right_on,
+                self.allow_parallel,
+                self.force_parallel,
+            )
+            .build();
+        LazyFrame::from_logical_plan(lp, opt_state)
     }
 }
 
@@ -1319,7 +1340,7 @@ mod test {
         let df_a = load_df();
         let df_b = df_a.clone();
         df_a.lazy()
-            .left_join(df_b.lazy(), col("b"), col("b"), None)
+            .left_join(df_b.lazy(), col("b"), col("b"))
             .filter(col("a").lt(lit(2)))
             .groupby(vec![col("b")])
             .agg(vec![col("b").first(), col("c").first()])
@@ -1388,7 +1409,6 @@ mod test {
                 base_df,
                 vec![col("uid"), col("day")],
                 vec![col("uid"), col("day")],
-                None,
                 JoinType::Inner,
             )
             .collect()
@@ -2059,7 +2079,7 @@ mod test {
         };
 
         let out = a()
-            .left_join(a(), col("foo"), col("foo"), None)
+            .left_join(a(), col("foo"), col("foo"))
             .select(vec![col("bar")])
             .collect()?;
 
