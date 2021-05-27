@@ -14,7 +14,7 @@ use itertools::Itertools;
 use num::NumCast;
 use rayon::prelude::*;
 use std::fmt::Debug;
-use std::hash::{BuildHasher, Hash};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 pub mod aggregations;
 #[cfg(feature = "pivot")]
@@ -44,24 +44,26 @@ where
         .collect()
 }
 
-trait ToU64 {
-    fn to_u64(self) -> u64;
+// Used to to get a u64 from the hashing keys
+trait AsU64 {
+    #[allow(clippy::wrong_self_convention)]
+    fn as_u64(self) -> u64;
 }
 
-impl ToU64 for u32 {
-    fn to_u64(self) -> u64 {
+impl AsU64 for u32 {
+    fn as_u64(self) -> u64 {
         self as u64
     }
 }
 
-impl ToU64 for u64 {
-    fn to_u64(self) -> u64 {
+impl AsU64 for u64 {
+    fn as_u64(self) -> u64 {
         self
     }
 }
 
-impl ToU64 for Option<u32> {
-    fn to_u64(self) -> u64 {
+impl AsU64 for Option<u32> {
+    fn as_u64(self) -> u64 {
         match self {
             Some(v) => v as u64,
             // just a number
@@ -70,19 +72,15 @@ impl ToU64 for Option<u32> {
     }
 }
 
-impl ToU64 for Option<u64> {
-    fn to_u64(self) -> u64 {
-        match self {
-            Some(v) => v,
-            // just a number
-            None => 13,
-        }
+impl AsU64 for Option<u64> {
+    fn as_u64(self) -> u64 {
+        self.unwrap_or(13)
     }
 }
 
 fn groupby_threaded_num<T>(keys: Vec<&[T]>, group_size_hint: usize) -> GroupTuples
 where
-    T: Send + Hash + Eq + Sync + Copy + ToU64,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     let n_threads = keys.len();
 
@@ -105,7 +103,7 @@ where
                     let idx = cnt + offset;
                     cnt += 1;
 
-                    if this_thread(k.to_u64(), thread_no, n_threads) {
+                    if this_thread(k.as_u64(), thread_no, n_threads) {
                         let entry = hash_tbl.entry(*k);
 
                         match entry {
@@ -228,7 +226,7 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     // row index
     idx: u32,
     // hash
-    h: u64,
+    original_h: u64,
     // keys of the hash table (will not be inserted, the indexes will be used)
     // the keys are needed for the equality check
     keys: &DataFrame,
@@ -241,6 +239,10 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     F: Fn(&mut V),
     H: BuildHasher,
 {
+    let hb = hash_tbl.hasher();
+    let mut state = hb.build_hasher();
+    original_h.hash(&mut state);
+    let h = state.finish();
     let entry = hash_tbl
         .raw_entry_mut()
         // uses the idx to probe rows in the original DataFrame with keys
@@ -253,7 +255,7 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
         });
     match entry {
         RawEntryMut::Vacant(entry) => {
-            entry.insert_hashed_nocheck(h, IdxHash::new(idx, h), vacant_fn());
+            entry.insert_hashed_nocheck(h, IdxHash::new(idx, original_h), vacant_fn());
         }
         RawEntryMut::Occupied(mut entry) => {
             let (_k, v) = entry.get_key_value_mut();
@@ -292,14 +294,10 @@ fn groupby_multiple_keys(keys: DataFrame) -> GroupTuples {
 fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> GroupTuples {
     let dfs = split_df(&keys, n_threads).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
-    let size = hashes.len();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-
-    // We use a combination of a custom IdentityHasher and a utility key IdxHash that stores
-    // the index of the row and and the hash. The Hash function of this key just returns the hash it stores.
     POOL.install(|| {
         (0..n_threads).into_par_iter().map(|thread_no| {
             let hashes = &hashes;
@@ -307,9 +305,7 @@ fn groupby_threaded_multiple_keys_flat(keys: DataFrame, n_threads: usize) -> Gro
 
             let keys = &keys;
 
-            // rather over allocate because rehashing is expensive
-            let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(size / n_threads, IdBuildHasher::default());
+            let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), RandomState> = HashMap::default();
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
@@ -392,8 +388,8 @@ macro_rules! group_tuples {
 fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupTuples
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + ToU64,
-    Option<T::Native>: ToU64,
+    T::Native: Hash + Eq + Send + AsU64,
+    Option<T::Native>: AsU64,
 {
     let group_size_hint = if let Some(m) = &ca.categorical_map {
         ca.len() / m.len()
@@ -417,11 +413,16 @@ where
                     .iter()
                     .map(|ca| {
                         ca.downcast_iter()
-                            .map(|v| v.into_iter().map(|v| v.to_u64())).flatten().collect::<Vec<_>>()
+                            .map(|v| v.into_iter().map(|v| v.as_u64()))
+                            .flatten()
+                            .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>();
 
-                groupby_threaded_num(keys.iter().map(|vec| vec.as_slice()).collect(), group_size_hint)
+                groupby_threaded_num(
+                    keys.iter().map(|vec| vec.as_slice()).collect(),
+                    group_size_hint,
+                )
             }
             // use the polars-iterators
         } else if ca.null_count() == 0 {
@@ -429,10 +430,19 @@ where
                 .iter()
                 .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
                 .collect::<Vec<_>>();
-            groupby_threaded_num(keys.iter().map(|vec| vec.as_slice()).collect(), group_size_hint)
+            groupby_threaded_num(
+                keys.iter().map(|vec| vec.as_slice()).collect(),
+                group_size_hint,
+            )
         } else {
-            let keys = splitted.iter().map(|ca| ca.into_iter().map(|v| v.to_u64()).collect::<Vec<_>>()).collect::<Vec<_>>();
-            groupby_threaded_num(keys.iter().map(|vec| vec.as_slice()).collect(), group_size_hint)
+            let keys = splitted
+                .iter()
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            groupby_threaded_num(
+                keys.iter().map(|vec| vec.as_slice()).collect(),
+                group_size_hint,
+            )
         }
     } else if ca.null_count() == 0 {
         groupby(ca.into_no_null_iter(), ca.into_no_null_iter(), false)
