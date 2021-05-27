@@ -18,9 +18,12 @@ pub mod parquet;
 pub mod prelude;
 
 use arrow::{
-    csv::Reader as ArrowCsvReader, error::Result as ArrowResult, json::Reader as ArrowJsonReader,
-    record_batch::RecordBatch,
+    error::Result as ArrowResult, json::Reader as ArrowJsonReader, record_batch::RecordBatch,
 };
+
+#[cfg(feature = "csv-file")]
+use arrow::csv::Reader as ArrowCsvReader;
+
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
@@ -61,6 +64,7 @@ pub trait ArrowReader {
     fn schema(&self) -> Arc<Schema>;
 }
 
+#[cfg(feature = "csv-file")]
 impl<R: Read> ArrowReader for ArrowCsvReader<R> {
     fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
