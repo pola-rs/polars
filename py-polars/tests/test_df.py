@@ -650,3 +650,9 @@ def test_literal_series():
         .collect()
     )
     assert out["e"] == [2, 1, 3]
+
+
+def test_to_html():
+    df = get_complete_df()
+    # check if it does not panic/ error
+    df._repr_html_()
