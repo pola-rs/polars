@@ -8,6 +8,7 @@ use crate::vector_hasher::{
 };
 use crate::POOL;
 use ahash::RandomState;
+use hashbrown::hash_map::Entry;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use num::NumCast;
@@ -43,28 +44,99 @@ where
         .collect()
 }
 
+trait ToU64 {
+    fn to_u64(self) -> u64;
+}
+
+impl ToU64 for u32 {
+    fn to_u64(self) -> u64 {
+        self as u64
+    }
+}
+
+impl ToU64 for u64 {
+    fn to_u64(self) -> u64 {
+        self
+    }
+}
+
+impl ToU64 for Option<u32> {
+    fn to_u64(self) -> u64 {
+        match self {
+            Some(v) => v as u64,
+            // just a number
+            None => 13,
+        }
+    }
+}
+
+impl ToU64 for Option<u64> {
+    fn to_u64(self) -> u64 {
+        match self {
+            Some(v) => v,
+            // just a number
+            None => 13,
+        }
+    }
+}
+
+fn groupby_threaded_num<T>(keys: Vec<&[T]>, group_size_hint: usize) -> GroupTuples
+where
+    T: Send + Hash + Eq + Sync + Copy + ToU64,
+{
+    let n_threads = keys.len();
+
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+    POOL.install(|| {
+        (0..n_threads).into_par_iter().map(|thread_no| {
+            let thread_no = thread_no as u64;
+
+            let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> = HashMap::default();
+
+            let n_threads = n_threads as u64;
+            let mut offset = 0;
+            for keys in &keys {
+                let len = keys.len() as u32;
+
+                let mut cnt = 0;
+                keys.iter().for_each(|k| {
+                    let idx = cnt + offset;
+                    cnt += 1;
+
+                    if this_thread(k.to_u64(), thread_no, n_threads) {
+                        let entry = hash_tbl.entry(*k);
+
+                        match entry {
+                            Entry::Vacant(entry) => {
+                                let mut tuples = Vec::with_capacity(group_size_hint);
+                                tuples.push(idx);
+                                entry.insert((idx, tuples));
+                            }
+                            Entry::Occupied(mut entry) => {
+                                let v = entry.get_mut();
+                                v.1.push(idx);
+                            }
+                        }
+                    }
+                });
+                offset += len;
+            }
+            hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+        })
+    })
+    .flatten()
+    .collect()
+}
+
+/// Determine groupby tuples from an iterator. The group_size_hint is used to pre-allocate the group vectors.
+/// When the grouping column is a categorical type we already have a good indication of the avg size of the groups.
 fn groupby_threaded_flat<I, T>(
     iters: Vec<I>,
     group_size_hint: usize,
     preallocate: bool,
 ) -> GroupTuples
-where
-    I: IntoIterator<Item = T> + Send,
-    T: Send + Hash + Eq + Sync + Copy,
-{
-    groupby_threaded(iters, group_size_hint, preallocate)
-        .into_iter()
-        .flatten()
-        .collect()
-}
-
-/// Determine groupby tuples from an iterator. The group_size_hint is used to pre-allocate the group vectors.
-/// When the grouping column is a categorical type we already have a good indication of the avg size of the groups.
-fn groupby_threaded<I, T>(
-    iters: Vec<I>,
-    group_size_hint: usize,
-    preallocate: bool,
-) -> Vec<GroupTuples>
 where
     I: IntoIterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
@@ -125,6 +197,7 @@ where
             hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
         })
     })
+    .flatten()
     .collect()
 }
 
@@ -319,7 +392,8 @@ macro_rules! group_tuples {
 fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupTuples
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send,
+    T::Native: Hash + Eq + Send + ToU64,
+    Option<T::Native>: ToU64,
 {
     let group_size_hint = if let Some(m) = &ca.categorical_map {
         ca.len() / m.len()
@@ -333,30 +407,32 @@ where
         // use the arrays as iterators
         if ca.chunks.len() == 1 {
             if ca.null_count() == 0 {
-                let iters = splitted
+                let keys = splitted
                     .iter()
-                    .map(|ca| ca.downcast_iter().map(|array| array.values()))
-                    .flatten()
-                    .collect_vec();
-                groupby_threaded_flat(iters, group_size_hint, false)
+                    .map(|ca| ca.cont_slice().unwrap())
+                    .collect::<Vec<_>>();
+                groupby_threaded_num(keys, group_size_hint)
             } else {
-                let iters = splitted
+                let keys = splitted
                     .iter()
-                    .map(|ca| ca.downcast_iter())
-                    .flatten()
-                    .collect_vec();
-                groupby_threaded_flat(iters, group_size_hint, false)
+                    .map(|ca| {
+                        ca.downcast_iter()
+                            .map(|v| v.into_iter().map(|v| v.to_u64())).flatten().collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+
+                groupby_threaded_num(keys.iter().map(|vec| vec.as_slice()).collect(), group_size_hint)
             }
             // use the polars-iterators
         } else if ca.null_count() == 0 {
-            let iters = splitted
+            let keys = splitted
                 .iter()
-                .map(|ca| ca.into_no_null_iter())
-                .collect_vec();
-            groupby_threaded_flat(iters, group_size_hint, false)
+                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            groupby_threaded_num(keys.iter().map(|vec| vec.as_slice()).collect(), group_size_hint)
         } else {
-            let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-            groupby_threaded_flat(iters, group_size_hint, false)
+            let keys = splitted.iter().map(|ca| ca.into_iter().map(|v| v.to_u64()).collect::<Vec<_>>()).collect::<Vec<_>>();
+            groupby_threaded_num(keys.iter().map(|vec| vec.as_slice()).collect(), group_size_hint)
         }
     } else if ca.null_count() == 0 {
         groupby(ca.into_no_null_iter(), ca.into_no_null_iter(), false)
