@@ -148,7 +148,7 @@ macro_rules! impl_value_counts {
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq,
+    T::Native: Hash + Eq + NumCast,
     ChunkedArray<T>: ChunkOps + IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
@@ -295,7 +295,7 @@ impl ToDummies<Utf8Type> for Utf8Chunked {
 impl<T> ToDummies<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType + Sync,
-    T::Native: Hash + Eq + Display,
+    T::Native: Hash + Eq + Display + NumCast,
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {

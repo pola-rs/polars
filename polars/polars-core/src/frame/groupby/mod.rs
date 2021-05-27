@@ -10,6 +10,7 @@ use crate::POOL;
 use ahash::RandomState;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
+use num::NumCast;
 use rayon::prelude::*;
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash};
@@ -315,53 +316,88 @@ macro_rules! group_tuples {
     }};
 }
 
-impl<T> IntoGroupTuples for ChunkedArray<T>
+fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupTuples
 where
     T: PolarsIntegerType,
-    T::Native: Eq + Hash + Send,
+    T::Native: Hash + Eq + Send,
 {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        let group_size_hint = if let Some(m) = &self.categorical_map {
-            self.len() / m.len()
-        } else {
-            0
-        };
-        if multithreaded && group_multithreaded(self) {
-            let n_threads = num_cpus::get();
-            let splitted = split_ca(self, n_threads).unwrap();
+    let group_size_hint = if let Some(m) = &ca.categorical_map {
+        ca.len() / m.len()
+    } else {
+        0
+    };
+    if multithreaded && group_multithreaded(ca) {
+        let n_threads = num_cpus::get();
+        let splitted = split_ca(ca, n_threads).unwrap();
 
-            // use the arrays as iterators
-            if self.chunks.len() == 1 {
-                if self.null_count() == 0 {
-                    let iters = splitted
-                        .iter()
-                        .map(|ca| ca.downcast_iter().map(|array| array.values()))
-                        .flatten()
-                        .collect_vec();
-                    groupby_threaded_flat(iters, group_size_hint, false)
-                } else {
-                    let iters = splitted
-                        .iter()
-                        .map(|ca| ca.downcast_iter())
-                        .flatten()
-                        .collect_vec();
-                    groupby_threaded_flat(iters, group_size_hint, false)
-                }
-                // use the polars-iterators
-            } else if self.null_count() == 0 {
+        // use the arrays as iterators
+        if ca.chunks.len() == 1 {
+            if ca.null_count() == 0 {
                 let iters = splitted
                     .iter()
-                    .map(|ca| ca.into_no_null_iter())
+                    .map(|ca| ca.downcast_iter().map(|array| array.values()))
+                    .flatten()
                     .collect_vec();
                 groupby_threaded_flat(iters, group_size_hint, false)
             } else {
-                let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters = splitted
+                    .iter()
+                    .map(|ca| ca.downcast_iter())
+                    .flatten()
+                    .collect_vec();
                 groupby_threaded_flat(iters, group_size_hint, false)
             }
-        } else if self.null_count() == 0 {
-            groupby(self.into_no_null_iter(), self.into_no_null_iter(), false)
+            // use the polars-iterators
+        } else if ca.null_count() == 0 {
+            let iters = splitted
+                .iter()
+                .map(|ca| ca.into_no_null_iter())
+                .collect_vec();
+            groupby_threaded_flat(iters, group_size_hint, false)
         } else {
-            groupby(self.into_iter(), self.into_iter(), false)
+            let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
+            groupby_threaded_flat(iters, group_size_hint, false)
+        }
+    } else if ca.null_count() == 0 {
+        groupby(ca.into_no_null_iter(), ca.into_no_null_iter(), false)
+    } else {
+        groupby(ca.into_iter(), ca.into_iter(), false)
+    }
+}
+
+impl<T> IntoGroupTuples for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+{
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+        match self.dtype() {
+            DataType::UInt64 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt64Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
+                };
+                num_group_tuples(ca, multithreaded)
+            }
+            DataType::UInt32 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt32Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
+                };
+                num_group_tuples(ca, multithreaded)
+            }
+            DataType::Int64 | DataType::Float64 => {
+                let ca = self.bit_repr_large();
+                num_group_tuples(&ca, multithreaded)
+            }
+            DataType::Int32 | DataType::Float32 => {
+                let ca = self.bit_repr_small();
+                num_group_tuples(&ca, multithreaded)
+            }
+            _ => {
+                let ca = self.cast::<UInt32Type>().unwrap();
+                num_group_tuples(&ca, multithreaded)
+            }
         }
     }
 }
@@ -385,52 +421,6 @@ impl IntoGroupTuples for CategoricalChunked {
     }
 }
 
-macro_rules! impl_into_group_tpls_float {
-    ($self: ident, $multithreaded:expr) => {
-        if $multithreaded && group_multithreaded($self) {
-            let n_threads = num_cpus::get();
-            let splitted = split_ca($self, n_threads).unwrap();
-            match $self.null_count() {
-                0 => {
-                    let iters = splitted
-                        .iter()
-                        .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
-                        .collect_vec();
-                    groupby_threaded_flat(iters, 0, false)
-                }
-                _ => {
-                    let iters = splitted
-                        .iter()
-                        .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
-                        .collect_vec();
-                    groupby_threaded_flat(iters, 0, false)
-                }
-            }
-        } else {
-            match $self.null_count() {
-                0 => {
-                    let iter = || $self.into_no_null_iter().map(|v| v.to_bits());
-                    groupby(iter(), iter(), false)
-                }
-                _ => {
-                    let iter = || $self.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()));
-                    groupby(iter(), iter(), false)
-                }
-            }
-        }
-    };
-}
-
-impl IntoGroupTuples for Float64Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        impl_into_group_tpls_float!(self, multithreaded)
-    }
-}
-impl IntoGroupTuples for Float32Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        impl_into_group_tpls_float!(self, multithreaded)
-    }
-}
 impl IntoGroupTuples for ListChunked {}
 #[cfg(feature = "object")]
 impl<T> IntoGroupTuples for ObjectChunked<T> {}
