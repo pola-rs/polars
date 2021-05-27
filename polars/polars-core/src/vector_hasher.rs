@@ -127,6 +127,9 @@ impl Default for IdHasher {
 pub type IdBuildHasher = BuildHasherDefault<IdHasher>;
 
 #[derive(Debug)]
+/// Contains an idx of a row in a DataFrame and the precomputed hash of that row.
+/// That hash still needs to be used to create another hash to be able to resize hashmaps without
+/// accidental quadratic behavior. So do not use and Identity function!
 pub(crate) struct IdxHash {
     // idx in row of Series, DataFrame
     pub(crate) idx: u32,
