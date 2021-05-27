@@ -60,9 +60,9 @@ dtype-u16 = []
 dtype-u64 = []
 
 [dependencies]
-arrow = {git = "https://github.com/apache/arrow-rs", rev = "f042191578cbc2329957015fa0b8d2f01d51ddbd", default-features=false}
+arrow = {git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246edc4a6fcc2c8e5b9bc570", default-features=false}
 #arrow = {version = "4.1", default-features = false }
-parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "f042191578cbc2329957015fa0b8d2f01d51ddbd"}
+parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246edc4a6fcc2c8e5b9bc570"}
 #parquet = {version = "4.1", default-features = false, optional = true }
 polars-arrow = {version = "0.13.4", path = "../polars-arrow"}
 thiserror = "1.0"
