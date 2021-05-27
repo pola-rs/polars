@@ -11,6 +11,7 @@ use std::marker::Sized;
 pub(crate) mod aggregate;
 pub(crate) mod any_value;
 pub(crate) mod apply;
+pub(crate) mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod cum_agg;
 pub(crate) mod downcast;
@@ -30,6 +31,16 @@ pub(crate) mod take_single;
 pub(crate) mod unique;
 pub(crate) mod window;
 pub(crate) mod zip;
+
+/// Transmute ChunkedArray to bit representation.
+/// This is useful in hashing context and reduces no.
+/// of compiled code paths.
+pub(crate) trait ToBitRepr {
+    fn is_large() -> bool;
+
+    fn bit_repr_large(&self) -> UInt64Chunked;
+    fn bit_repr_small(&self) -> UInt32Chunked;
+}
 
 pub trait ChunkAnyValue {
     /// Get a single value. Beware this is slow.
