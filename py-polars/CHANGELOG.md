@@ -2,12 +2,17 @@
 
 The Rust crate `polars` has its own changelog.
 
-### polars 0.7.18
+### polars 0.7.19
 * feature
   - window function by multiple group columns
 
 * bug fix
   - fix bug in argsort multiple
+  - fix bug in filter with nulls (upstream)
+
+* performance
+  - improve numeric hashing in groupby
+  - fast paths for filters (upstream)
 
 ### polars 0.7.18
 * feature
@@ -22,8 +27,6 @@ The Rust crate `polars` has its own changelog.
       - zip
       - take -> join / groupby agg
       - agg first/ last
-
-* bug fix
 
 * performance
   - change memory usage of csv-parser
