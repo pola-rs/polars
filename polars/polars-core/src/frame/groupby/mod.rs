@@ -71,10 +71,7 @@ where
                     })
                     .collect::<Vec<_>>();
 
-                groupby_threaded_num(
-                    keys.iter().map(|vec| vec.as_slice()).collect(),
-                    group_size_hint,
-                )
+                groupby_threaded_num(keys, group_size_hint)
             }
             // use the polars-iterators
         } else if ca.null_count() == 0 {
@@ -82,19 +79,13 @@ where
                 .iter()
                 .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
                 .collect::<Vec<_>>();
-            groupby_threaded_num(
-                keys.iter().map(|vec| vec.as_slice()).collect(),
-                group_size_hint,
-            )
+            groupby_threaded_num(keys, group_size_hint)
         } else {
             let keys = splitted
                 .iter()
                 .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
                 .collect::<Vec<_>>();
-            groupby_threaded_num(
-                keys.iter().map(|vec| vec.as_slice()).collect(),
-                group_size_hint,
-            )
+            groupby_threaded_num(keys, group_size_hint)
         }
     } else if ca.null_count() == 0 {
         groupby(ca.into_no_null_iter())
@@ -1040,7 +1031,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 mod test {
     use itertools::Itertools;
 
-    use crate::frame::groupby::{groupby, groupby_threaded_flat};
+    use crate::frame::groupby::{groupby, groupby_threaded_num};
     use crate::prelude::*;
     use crate::utils::split_ca;
     use num::traits::FloatConst;
@@ -1298,15 +1289,17 @@ mod test {
             vec![1, 2, 3, 4, 4, 4, 2, 1, 1],
             vec![1, 2, 3, 4, 4, 4],
         ] {
-            let ca = UInt8Chunked::new_from_slice("", &slice);
+            let ca = UInt32Chunked::new_from_slice("", &slice);
             let splitted = split_ca(&ca, 4).unwrap();
 
-            let a = groupby(ca.into_iter(), ca.into_iter(), false)
+            let a = groupby(ca.into_iter())
                 .into_iter()
                 .sorted()
                 .collect_vec();
+
+            let keys = splitted.iter().map(|ca| ca.cont_slice().unwrap()).collect();
             let b =
-                groupby_threaded_flat(splitted.iter().map(|ca| ca.into_iter()).collect(), 0, false)
+                groupby_threaded_num(keys, 0,)
                     .into_iter()
                     .sorted()
                     .collect_vec();
