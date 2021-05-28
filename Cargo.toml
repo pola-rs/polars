@@ -6,4 +6,3 @@ members = [
     "polars/polars-lazy",
     "polars/polars-arrow",
 ]
-

@@ -48,7 +48,7 @@ The Rust crate `polars` has its own changelog.
 * feature
   - join allows expression syntax
   - use pyarrow as default ipc backend
-  
+
 * bug fix
   - fix deadlock in window expressions
 
@@ -56,14 +56,14 @@ The Rust crate `polars` has its own changelog.
 
 * bug fix
   - fix bug in cum_sum #604
-  
+
 * feature
   - DataFrame.describe method #606
   - Multi-level sorting of a DataFrame #607
   - Expand functionality of Expr.is_in #614
   - Csv-parser low_memory option #615
   - Allow expressions in `pl.arange` #611
-    
+
 * performance
   - sort().reverse() optimization #605
 
@@ -73,7 +73,7 @@ The Rust crate `polars` has its own changelog.
   - rev-mapping of categorical stored duplicates. #595
   - fix memory surge after csv-parsing #593
 
-### polars 0.7.11 
+### polars 0.7.11
 * bug fix
   - Throw error on join from different string cache #584
   - fix covariance of array with null values #585
@@ -110,7 +110,7 @@ The Rust crate `polars` has its own changelog.
   - DataFrame.apply method
   - Make a Series a Literal
   - Make None a Literal
-    
+
 * performance
   - Update arrow
     * faster iterators
@@ -156,7 +156,7 @@ The Rust crate `polars` has its own changelog.
   - \[python | rust\] join by unlimited columns
   - \[python\] ~Create a list Series directly.~
   - \[python\] Create DataFrame from np.ndarray
-  
+
 
 ### polars 0.7.3
 * bug fix
@@ -177,7 +177,7 @@ The Rust crate `polars` has its own changelog.
 ### polars 0.7.2
 * bug fix
   - \[python\] More pyarrow -> polars conversions.
-    
+
 * feature
   - \[python\] DataFrame methods: \[ shift_and_fill\].
   - \[python\] eager: sum, min, max, mean horizontal aggregation.
@@ -204,7 +204,7 @@ The Rust crate `polars` has its own changelog.
   - \[rust\] reduce default compile time by making less features default.
   - \[python | rust\] Series zip_with implicitly cast to supertype.
   - \[python | rust\] window functions have a `min_periods` argument to control when to compute a result
-  
+
 * bug fix
   - \[python\] support file buffers for reading and writing csv and parquet
   - \[python | rust\] fix csv-parser: allow new-line character in a string field
@@ -232,7 +232,7 @@ The Rust crate `polars` has its own changelog.
 ### py-polars 0.6.5
 * bug fix
   - \[python\] fix various pyarrow related bugs
-  
+
 ### py-polars 0.6.4
 * feature
   - \[python\] render html tables
