@@ -1,28 +1,26 @@
+use self::hashing::*;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_vertical, split_ca, NoNull};
+use crate::vector_hasher::{AsU64, StrHash};
 use crate::POOL;
 use ahash::RandomState;
 use hashbrown::HashMap;
-use itertools::Itertools;
 use num::NumCast;
 use rayon::prelude::*;
 use std::fmt::Debug;
-use std::hash::Hash;
-use self::hashing::*;
-use crate::vector_hasher::AsU64;
+use std::hash::{BuildHasher, Hash, Hasher};
 
 pub mod aggregations;
+pub(crate) mod hashing;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
 #[cfg(feature = "downsample")]
 pub mod resample;
-pub(crate) mod hashing;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
-
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupTuples {
@@ -39,35 +37,6 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
     ca.len() > 1000
 }
 
-macro_rules! group_tuples {
-    ($ca: expr, $multithreaded: expr, $preallocate: expr) => {{
-        // TODO! choose a splitting len
-        if $multithreaded && group_multithreaded($ca) {
-            let n_threads = num_cpus::get();
-            let splitted = split_ca($ca, n_threads).unwrap();
-
-            if $ca.null_count() == 0 {
-                let iters = splitted
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                groupby_threaded_flat(iters, 0, $preallocate)
-            } else {
-                let iters = splitted.iter().map(|ca| ca.into_iter()).collect_vec();
-                groupby_threaded_flat(iters, 0, $preallocate)
-            }
-        } else {
-            if $ca.null_count() == 0 {
-                let iter = || $ca.into_no_null_iter();
-                groupby(iter(), iter(), $preallocate)
-            } else {
-                let iter = || $ca.into_iter();
-                groupby(iter(), iter(), $preallocate)
-            }
-        }
-    }};
-}
-
 fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupTuples
 where
     T: PolarsIntegerType,
@@ -80,7 +49,7 @@ where
         0
     };
     if multithreaded && group_multithreaded(ca) {
-        let n_threads = num_cpus::get();
+        let n_threads = POOL.current_num_threads();
         let splitted = split_ca(ca, n_threads).unwrap();
 
         // use the arrays as iterators
@@ -172,13 +141,47 @@ where
 }
 impl IntoGroupTuples for BooleanChunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        group_tuples!(self, multithreaded, false)
+        self.cast::<UInt32Type>()
+            .unwrap()
+            .group_tuples(multithreaded)
     }
 }
 
 impl IntoGroupTuples for Utf8Chunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        group_tuples!(self, multithreaded, true)
+        let hb = RandomState::default();
+        if multithreaded {
+            let n_threads = POOL.current_num_threads();
+            let splitted = split_ca(self, n_threads).unwrap();
+
+            let str_hashes = POOL.install(|| {
+                splitted
+                    .par_iter()
+                    .map(|ca| {
+                        ca.into_iter()
+                            .map(|opt_s| {
+                                let mut state = hb.build_hasher();
+                                opt_s.hash(&mut state);
+                                let hash = state.finish();
+                                StrHash::new(opt_s, hash)
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            });
+            groupby_threaded_num(str_hashes, 0)
+        } else {
+            let str_hashes = self
+                .into_iter()
+                .map(|opt_s| {
+                    let mut state = hb.build_hasher();
+                    opt_s.hash(&mut state);
+                    let hash = state.finish();
+                    StrHash::new(opt_s, hash)
+                })
+                .collect::<Vec<_>>();
+            groupby(str_hashes.iter(), str_hashes.iter(), false)
+        }
     }
 }
 
