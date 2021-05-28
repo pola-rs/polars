@@ -97,9 +97,9 @@ where
             )
         }
     } else if ca.null_count() == 0 {
-        groupby(ca.into_no_null_iter(), ca.into_no_null_iter(), false)
+        groupby(ca.into_no_null_iter())
     } else {
-        groupby(ca.into_iter(), ca.into_iter(), false)
+        groupby(ca.into_iter())
     }
 }
 
@@ -180,7 +180,7 @@ impl IntoGroupTuples for Utf8Chunked {
                     StrHash::new(opt_s, hash)
                 })
                 .collect::<Vec<_>>();
-            groupby(str_hashes.iter(), str_hashes.iter(), false)
+            groupby(str_hashes.iter())
         }
     }
 }
