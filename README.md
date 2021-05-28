@@ -30,24 +30,24 @@ polars = {version="0.13.0", git = "https://github.com/ritchie46/polars" }
 Or by fixing to a specific version:
 
 ```toml
-polars = {version="0.13.0", git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" }
+polars = {version="0.13.0", git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
 ```
 ## Rust version
 Required Rust version `>=1.51`
 
 # Python users read this!
-Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name.
+Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name. 
 
-Install the latest polars version with:
+Install the latest polars version with: 
 `$ pip3 install polars`
 
 ## Documentation
 Want to know about all the features Polars support? Read the docs!
 
 #### Rust
-* [Documentation (stable)](https://docs.rs/polars/latest/polars/).
-* [Documentation (master branch)](https://pola-rs.github.io/polars/polars/index.html).
-    * [DataFrame](https://pola-rs.github.io/polars/polars/frame/struct.DataFrame.html)
+* [Documentation (stable)](https://docs.rs/polars/latest/polars/). 
+* [Documentation (master branch)](https://pola-rs.github.io/polars/polars/index.html). 
+    * [DataFrame](https://pola-rs.github.io/polars/polars/frame/struct.DataFrame.html) 
     * [Series](https://pola-rs.github.io/polars/polars/prelude/struct.Series.html)
     * [ChunkedArray](https://pola-rs.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
     * [Traits for ChunkedArray](https://pola-rs.github.io/polars/polars/chunked_array/ops/index.html)
@@ -55,14 +55,14 @@ Want to know about all the features Polars support? Read the docs!
     * [Groupby, aggregations and pivots](https://pola-rs.github.io/polars/polars/frame/groupby/struct.GroupBy.html)
     * [Lazy DataFrame](https://pola-rs.github.io/polars/polars/prelude/struct.LazyFrame.html)
 * [User Guide](https://pola-rs.github.io/polars-book/)
-
+    
 #### Python
 * installation guide: `$ pip3 install polars`
 * [User Guide](https://pola-rs.github.io/polars-book/)
 * [Reference guide](https://pola-rs.github.io/polars-book/api-python/)
 
 ## Performance
-Polars is written to be performant, and it is! But don't take my word for it, take a look at the results in
+Polars is written to be performant, and it is! But don't take my word for it, take a look at the results in 
 [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
 
 ## Cargo Features
@@ -88,13 +88,13 @@ Additional cargo features:
 * `strings`
     - String utilities for `Utf8Chunked`
 * `object`
-    - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
+    - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`). 
       These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 * `[plain_fmt | pretty_fmt]` (mutually exclusive)
-  - one of them should be chosen to fmt DataFrames.
+  - one of them should be chosen to fmt DataFrames. 
     `pretty_fmt` can deal with overflowing cells and looks nicer but has more dependencies.
     `plain_fmt (default)` is plain formatting.
-
+  
 
 
 ## Contribution
@@ -121,7 +121,7 @@ This can be done by going through the following steps in sequence:
   * Very long compile times, fastest binary: `$ cd py-polars && maturin develop --rustc-extra-args="-C target-cpu=native" --release`
   * Shorter compile times, fast binary: `$ cd py-polars && maturin develop --rustc-extra-args="-C codegen-units=16 lto=no target-cpu=native" --release`
 
-Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped
+Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped 
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
 can `pip install polars` and `import polars` (previously, these were called `py-polars` and `pypolars`).
 

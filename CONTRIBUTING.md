@@ -17,12 +17,12 @@ We use github to host code, to track issues and feature requests, as well as acc
 6. Issue that pull request!
 
 ## Want to discuss something?
-I can imagine that some questions don't fit an issue.
+I can imagine that some questions don't fit an issue. 
 Therefore there is also a [chat on gitter](https://gitter.im/polars-rs/community).
 
 ## Any contributions you make will be under the MIT Software License
-In short, when you submit code changes, your submissions are understood to be under the same
-[MIT License](http://choosealicense.com/licenses/mit/) that covers the project.
+In short, when you submit code changes, your submissions are understood to be under the same 
+[MIT License](http://choosealicense.com/licenses/mit/) that covers the project. 
 Feel free to contact the maintainers if that's a concern.
 
 ## Report bugs using Github's [issues](https://github.com/ritchie46/polars/issues)
@@ -44,8 +44,8 @@ We test the code formatting in the CI pipelines. If you don't want these to fail
 ## Linting
 We use linters to enforce code quality. This will be checked in CI.
 
-* **Rust** We use [clippy](https://github.com/rust-lang/rust-clippy) as linter.
-* **Python** We use [flake8](https://flake8.pycqa.org/en/latest/) as linter.
+* **Rust** We use [clippy](https://github.com/rust-lang/rust-clippy) as linter. 
+* **Python** We use [flake8](https://flake8.pycqa.org/en/latest/) as linter. 
 
 ## Python setup
 If you want to contribute to the Python code, you also have to setup a Rust installation to be able to test your changes.

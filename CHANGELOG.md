@@ -7,7 +7,7 @@ The Python bindings `polars` have their own changelog.
 * performance
   - Vast reduction of compile times by making compilation dtypes of Series opt-in.
   - Fast multi-threaded csv parser. Fixes multiple gripes of old parser.
-
+  
 * features
   - Series / ChunkedArray implementations
     * Series::week
@@ -17,7 +17,7 @@ The Python bindings `polars` have their own changelog.
 
 * breaking
   - ChunkedArray::arg_unique return UInt32Chunked instead of Vec<u32>
-
+  
 * bug fixes
   - various
 

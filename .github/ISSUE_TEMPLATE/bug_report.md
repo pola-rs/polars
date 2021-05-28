@@ -60,7 +60,7 @@ If we cannot reproduce the bug, it is unlikely that we will be able fix it.
 
 #### What is the actual behavior?
 
-Show the query you ran and the actual output.
+Show the query you ran and the actual output. 
 
 If the output is large, put it in a gist: https://gist.github.com/
 

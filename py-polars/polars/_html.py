@@ -3,8 +3,11 @@ Module for formatting output data in HTML.
 """
 
 from textwrap import dedent
-from typing import Dict, List, Optional
-
+from typing import (
+    Dict,
+    List,
+    Optional,
+)
 import polars as pl
 
 

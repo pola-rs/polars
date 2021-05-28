@@ -1,9 +1,9 @@
-black==20.8b1
-flake8
-ghp-import
 maturin==0.9.4
-numpy
-pandas
-pdoc3
-pre-commit==2.13
 pytest==5.3.1
+black==20.8b1
+pre-commit==2.13
+pdoc3
+numpy
+ghp-import
+pandas
+flake8

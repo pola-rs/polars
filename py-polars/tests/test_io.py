@@ -1,10 +1,8 @@
 import io
-
-import numpy as np
-import pandas as pd
 from utils import get_complete_df
-
 import polars as pl
+import pandas as pd
+import numpy as np
 
 
 def test_to_from_buffer():
