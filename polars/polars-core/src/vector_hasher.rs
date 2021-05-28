@@ -163,7 +163,7 @@ pub type IdBuildHasher = BuildHasherDefault<IdHasher>;
 #[derive(Debug)]
 /// Contains an idx of a row in a DataFrame and the precomputed hash of that row.
 /// That hash still needs to be used to create another hash to be able to resize hashmaps without
-/// accidental quadratic behavior. So do not use and Identity function!
+/// accidental quadratic behavior. So do not use an Identity function!
 pub(crate) struct IdxHash {
     // idx in row of Series, DataFrame
     pub(crate) idx: u32,
@@ -181,6 +181,39 @@ impl IdxHash {
     #[inline]
     pub(crate) fn new(idx: u32, hash: u64) -> Self {
         IdxHash { idx, hash }
+    }
+}
+
+/// Contains a ptr to the string slice an the precomputed hash of that string.
+/// During rehashes, we will rehash the hash instead of the string, that makes rehashing
+/// cheap and allows cache coherent small hash tables.
+#[derive(Eq, Copy, Clone)]
+pub(crate) struct StrHash<'a> {
+    str: Option<&'a str>,
+    hash: u64,
+}
+
+impl<'a> Hash for StrHash<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
+    }
+}
+
+impl<'a> StrHash<'a> {
+    pub(crate) fn new(s: Option<&'a str>, hash: u64) -> Self {
+        Self { str: s, hash }
+    }
+}
+
+impl<'a> PartialEq for StrHash<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.str == other.str
+    }
+}
+
+impl<'a> AsU64 for StrHash<'a> {
+    fn as_u64(self) -> u64 {
+        self.hash
     }
 }
 
