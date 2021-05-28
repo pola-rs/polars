@@ -1292,17 +1292,13 @@ mod test {
             let ca = UInt32Chunked::new_from_slice("", &slice);
             let splitted = split_ca(&ca, 4).unwrap();
 
-            let a = groupby(ca.into_iter())
+            let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
+
+            let keys = splitted.iter().map(|ca| ca.cont_slice().unwrap()).collect();
+            let b = groupby_threaded_num(keys, 0)
                 .into_iter()
                 .sorted()
                 .collect_vec();
-
-            let keys = splitted.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b =
-                groupby_threaded_num(keys, 0,)
-                    .into_iter()
-                    .sorted()
-                    .collect_vec();
 
             assert_eq!(a, b);
         }
