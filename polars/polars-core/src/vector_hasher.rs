@@ -84,6 +84,40 @@ impl VecHash for Float64Chunked {
 
 impl VecHash for ListChunked {}
 
+// Used to to get a u64 from the hashing keys
+pub(crate) trait AsU64 {
+    #[allow(clippy::wrong_self_convention)]
+    fn as_u64(self) -> u64;
+}
+
+impl AsU64 for u32 {
+    fn as_u64(self) -> u64 {
+        self as u64
+    }
+}
+
+impl AsU64 for u64 {
+    fn as_u64(self) -> u64 {
+        self
+    }
+}
+
+impl AsU64 for Option<u32> {
+    fn as_u64(self) -> u64 {
+        match self {
+            Some(v) => v as u64,
+            // just a number
+            None => 13,
+        }
+    }
+}
+
+impl AsU64 for Option<u64> {
+    fn as_u64(self) -> u64 {
+        self.unwrap_or(13)
+    }
+}
+
 pub struct IdHasher {
     hash: u64,
 }
