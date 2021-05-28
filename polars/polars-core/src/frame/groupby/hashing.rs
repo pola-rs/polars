@@ -3,8 +3,7 @@ use crate::prelude::*;
 use crate::utils::split_df;
 use crate::vector_hasher::AsU64;
 use crate::vector_hasher::{
-    df_rows_to_hashes, df_rows_to_hashes_threaded, prepare_hashed_relation, this_thread,
-    IdBuildHasher, IdxHash,
+    df_rows_to_hashes, df_rows_to_hashes_threaded, this_thread, IdBuildHasher, IdxHash,
 };
 use crate::POOL;
 use ahash::RandomState;
@@ -13,23 +12,29 @@ use hashbrown::{hash_map::RawEntryMut, HashMap};
 use rayon::prelude::*;
 use std::hash::{BuildHasher, Hash, Hasher};
 
-pub(crate) fn groupby<T>(
-    a: impl Iterator<Item = T>,
-    b: impl Iterator<Item = T>,
-    preallocate: bool,
-) -> GroupTuples
+pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
     T: Hash + Eq,
 {
-    let hash_tbl = prepare_hashed_relation(a, b, preallocate);
+    let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> = HashMap::default();
+    let mut cnt = 0;
+    a.for_each(|k| {
+        let idx = cnt;
+        cnt += 1;
+        let entry = hash_tbl.entry(k);
 
-    hash_tbl
-        .into_iter()
-        .map(|(_, indexes)| {
-            let first = unsafe { *indexes.get_unchecked(0) };
-            (first, indexes)
-        })
-        .collect()
+        match entry {
+            Entry::Vacant(entry) => {
+                entry.insert((idx, vec![idx]));
+            }
+            Entry::Occupied(mut entry) => {
+                let v = entry.get_mut();
+                v.1.push(idx);
+            }
+        }
+    });
+
+    hash_tbl.into_iter().map(|(_k, tpl)| tpl).collect()
 }
 
 /// Determine group tuples over different threads. The hash of the key is used to determine the partitions.

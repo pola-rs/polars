@@ -223,66 +223,6 @@ pub(crate) fn this_thread(h: u64, thread_no: u64, n_threads: u64) -> bool {
     (h + thread_no) % n_threads == 0
 }
 
-fn finish_table_from_key_hashes<T>(
-    hashes: Vec<u64>,
-    keys: impl Iterator<Item = T>,
-    mut hash_tbl: HashMap<T, Vec<u32>, RandomState>,
-    offset: usize,
-) -> HashMap<T, Vec<u32>, RandomState>
-where
-    T: Hash + Eq,
-{
-    hashes
-        .into_iter()
-        .zip(keys)
-        .enumerate()
-        .for_each(|(idx, (h, t))| {
-            let idx = (idx + offset) as u32;
-
-            let entry = hash_tbl
-                .raw_entry_mut()
-                // uses the key to check equality to find and entry
-                .from_key_hashed_nocheck(h, &t);
-
-            match entry {
-                RawEntryMut::Vacant(entry) => {
-                    entry.insert_hashed_nocheck(h, t, vec![idx]);
-                }
-                RawEntryMut::Occupied(mut entry) => {
-                    let (_k, v) = entry.get_key_value_mut();
-                    v.push(idx);
-                }
-            }
-        });
-    hash_tbl
-}
-
-pub(crate) fn prepare_hashed_relation<T>(
-    a: impl Iterator<Item = T>,
-    b: impl Iterator<Item = T>,
-    preallocate: bool,
-) -> HashMap<T, Vec<u32>, RandomState>
-where
-    T: Hash + Eq,
-{
-    let build_hasher = RandomState::default();
-
-    let hashes = a
-        .map(|val| {
-            let mut hasher = build_hasher.build_hasher();
-            val.hash(&mut hasher);
-            hasher.finish()
-        })
-        .collect::<Vec<_>>();
-
-    let size = if preallocate { hashes.len() } else { 4096 };
-
-    let hash_tbl: HashMap<T, Vec<u32>, RandomState> =
-        HashMap::with_capacity_and_hasher(size, build_hasher);
-
-    finish_table_from_key_hashes(hashes, b, hash_tbl, 0)
-}
-
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
 ) -> Vec<HashMap<T, Vec<u32>, RandomState>>
