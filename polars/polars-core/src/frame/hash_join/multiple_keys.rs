@@ -1,4 +1,4 @@
-use crate::frame::groupby::populate_multiple_key_hashmap;
+use crate::frame::groupby::hashing::populate_multiple_key_hashmap;
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join, get_hash_tbl_threaded_join_mut, n_join_threads,
 };
