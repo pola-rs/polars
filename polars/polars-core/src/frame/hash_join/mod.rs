@@ -7,17 +7,18 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{split_ca, NoNull};
 use crate::vector_hasher::{
-    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded,
+    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_thread, AsU64,
+    StrHash,
 };
 use crate::POOL;
 use ahash::RandomState;
-use hashbrown::hash_map::RawEntryMut;
+use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Deref;
 use unsafe_unwrap::UnsafeUnwrap;
 
@@ -91,56 +92,102 @@ unsafe fn get_hash_tbl_threaded_join_mut<T, H>(
 }
 
 /// Probe the build table and add tuples to the results (inner join)
-fn probe_inner<T, F>(
-    probe_hashes: &[(u64, T)],
+fn probe_inner2<T, F>(
+    probe: &[T],
     hash_tbls: &[HashMap<T, Vec<u32>, RandomState>],
     results: &mut Vec<(u32, u32)>,
     local_offset: usize,
     n_tables: u64,
     swap_fn: F,
 ) where
-    T: Send + Hash + Eq + Sync + Copy,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
     F: Fn(u32, u32) -> (u32, u32),
 {
-    probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+    probe.iter().enumerate().for_each(|(idx_a, k)| {
         let idx_a = (idx_a + local_offset) as u32;
         // probe table that contains the hashed value
-        let current_probe_table = unsafe { get_hash_tbl_threaded_join(*h, hash_tbls, n_tables) };
+        let current_probe_table =
+            unsafe { get_hash_tbl_threaded_join(k.as_u64(), hash_tbls, n_tables) };
 
-        let entry = current_probe_table
-            .raw_entry()
-            .from_key_hashed_nocheck(*h, k);
+        let value = current_probe_table.get(k);
 
-        if let Some((_, indexes_b)) = entry {
+        if let Some(indexes_b) = value {
             let tuples = indexes_b.iter().map(|&idx_b| swap_fn(idx_a, idx_b));
             results.extend(tuples);
         }
     });
 }
 
-#[allow(clippy::needless_collect)]
-fn hash_join_tuples_inner_threaded<T, I, J>(
-    a: Vec<I>,
-    b: Vec<J>,
+pub(crate) fn create_probe_table<T, IntoSlice>(
+    keys: Vec<IntoSlice>,
+) -> Vec<HashMap<T, Vec<u32>, RandomState>>
+where
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    IntoSlice: AsRef<[T]> + Send + Sync,
+{
+    let n_threads = keys.len();
+
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+    POOL.install(|| {
+        (0..n_threads).into_par_iter().map(|thread_no| {
+            let thread_no = thread_no as u64;
+
+            let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> = HashMap::default();
+
+            let n_threads = n_threads as u64;
+            let mut offset = 0;
+            for keys in &keys {
+                let keys = keys.as_ref();
+                let len = keys.len() as u32;
+
+                let mut cnt = 0;
+                keys.iter().for_each(|k| {
+                    let idx = cnt + offset;
+                    cnt += 1;
+
+                    if this_thread(k.as_u64(), thread_no, n_threads) {
+                        let entry = hash_tbl.entry(*k);
+
+                        match entry {
+                            Entry::Vacant(entry) => {
+                                entry.insert(vec![idx]);
+                            }
+                            Entry::Occupied(mut entry) => {
+                                let v = entry.get_mut();
+                                v.push(idx);
+                            }
+                        }
+                    }
+                });
+                offset += len;
+            }
+            hash_tbl
+        })
+    })
+    .collect()
+}
+
+fn hash_join_tuples_inner<T, IntoSlice>(
+    probe: Vec<IntoSlice>,
+    build: Vec<IntoSlice>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swap: bool,
 ) -> Vec<(u32, u32)>
 where
-    I: Iterator<Item = T> + Send,
-    J: Iterator<Item = T> + Send,
-    T: Send + Hash + Eq + Sync + Copy + Debug,
+    IntoSlice: AsRef<[T]> + Send + Sync,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // NOTE: see the left join for more elaborate comments
 
     // first we hash one relation
-    let hash_tbls = prepare_hashed_relation_threaded(b);
-    let random_state = hash_tbls[0].hasher().clone();
-    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
+    let hash_tbls = create_probe_table(build);
 
     let n_tables = hash_tbls.len() as u64;
-    let offsets = probe_hashes
+    let offsets = probe
         .iter()
-        .map(|ph| ph.len())
+        .map(|ph| ph.as_ref().len())
         .scan(0, |state, val| {
             let out = *state;
             *state += val;
@@ -150,20 +197,20 @@ where
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
     POOL.install(|| {
-        probe_hashes
+        probe
             .into_par_iter()
             .zip(offsets)
-            .map(|(probe_hashes, offset)| {
+            .map(|(probe, offset)| {
+                let probe = probe.as_ref();
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results =
-                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
+                let mut results = Vec::with_capacity(probe.len());
                 let local_offset = offset;
 
                 // branch is to hoist swap out of the inner loop.
                 if swap {
-                    probe_inner(
-                        &probe_hashes,
+                    probe_inner2(
+                        probe,
                         hash_tbls,
                         &mut results,
                         local_offset,
@@ -171,8 +218,8 @@ where
                         |idx_a, idx_b| (idx_b, idx_a),
                     )
                 } else {
-                    probe_inner(
-                        &probe_hashes,
+                    probe_inner2(
+                        probe,
                         hash_tbls,
                         &mut results,
                         local_offset,
@@ -434,37 +481,124 @@ fn n_join_threads() -> usize {
     let max = std::env::var("POLARS_MAX_THREADS")
         .map(|s| s.parse::<usize>().expect("integer"))
         .unwrap_or(usize::MAX);
-    std::cmp::min(num_cpus::get(), max)
+    std::cmp::min(POOL.current_num_threads(), max)
+}
+
+fn num_group_join_inner<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> Vec<(u32, u32)>
+where
+    T: PolarsIntegerType,
+    T::Native: Hash + Eq + Send + AsU64,
+    Option<T::Native>: AsU64,
+{
+    let n_threads = n_join_threads();
+    let (a, b, swap) = det_hash_prone_order!(left, right);
+    let splitted_a = split_ca(a, n_threads).unwrap();
+    let splitted_b = split_ca(b, n_threads).unwrap();
+    match (
+        left.null_count(),
+        right.null_count(),
+        left.chunks.len(),
+        right.chunks.len(),
+    ) {
+        (0, 0, 1, 1) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| ca.cont_slice().unwrap())
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| ca.cont_slice().unwrap())
+                .collect::<Vec<_>>();
+            hash_join_tuples_inner(keys_a, keys_b, swap)
+        }
+        (0, 0, _, _) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            hash_join_tuples_inner(keys_a, keys_b, swap)
+        }
+        (_, _, 1, 1) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| {
+                    ca.downcast_iter()
+                        .map(|v| v.into_iter().map(|v| v.as_u64()))
+                        .flatten()
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| {
+                    ca.downcast_iter()
+                        .map(|v| v.into_iter().map(|v| v.as_u64()))
+                        .flatten()
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            hash_join_tuples_inner(keys_a, keys_b, swap)
+        }
+        _ => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            hash_join_tuples_inner(keys_a, keys_b, swap)
+        }
+    }
 }
 
 impl<T> HashJoin<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType + Sync,
-    T::Native: Eq + Hash,
+    T::Native: Eq + Hash + num::NumCast,
 {
     fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(u32, u32)> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
-
-        let n_threads = n_join_threads();
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
-
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
+        match self.dtype() {
+            DataType::UInt64 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt64Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
+                };
+                let other: &UInt64Chunked = unsafe {
+                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
+                };
+                num_group_join_inner(&ca, &other)
+            }
+            DataType::UInt32 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt32Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
+                };
+                let other: &UInt32Chunked = unsafe {
+                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
+                };
+                num_group_join_inner(&ca, &other)
+            }
+            DataType::Int64 | DataType::Float64 => {
+                let ca = self.bit_repr_large();
+                let other = other.bit_repr_large();
+                num_group_join_inner(&ca, &other)
+            }
+            DataType::Int32 | DataType::Float32 => {
+                let ca = self.bit_repr_small();
+                let other = other.bit_repr_small();
+                num_group_join_inner(&ca, &other)
             }
             _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
-                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
+                let ca = self.cast::<UInt32Type>().unwrap();
+                let other = other.cast::<UInt32Type>().unwrap();
+                num_group_join_inner(&ca, &other)
             }
         }
     }
@@ -527,30 +661,9 @@ where
 
 impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(u32, u32)> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
-
-        let n_threads = n_join_threads();
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
-
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
-            }
-            _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
-                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
-            }
-        }
+        let ca = self.cast::<UInt32Type>().unwrap();
+        let other = other.cast::<UInt32Type>().unwrap();
+        ca.hash_join_inner(&other)
     }
 
     fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(u32, Option<u32>)> {
@@ -611,30 +724,45 @@ impl HashJoin<BooleanType> for BooleanChunked {
 
 impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(u32, u32)> {
+        let n_threads = POOL.current_num_threads();
+
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_threads = n_join_threads();
+        let hb = RandomState::default();
         let splitted_a = split_ca(a, n_threads).unwrap();
         let splitted_b = split_ca(b, n_threads).unwrap();
 
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
-            }
-            _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
-                hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
-            }
-        }
+        let str_hashes_a = POOL.install(|| {
+            splitted_a
+                .par_iter()
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|opt_s| {
+                            let mut state = hb.build_hasher();
+                            opt_s.hash(&mut state);
+                            let hash = state.finish();
+                            StrHash::new(opt_s, hash)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        });
+        let str_hashes_b = POOL.install(|| {
+            splitted_b
+                .par_iter()
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|opt_s| {
+                            let mut state = hb.build_hasher();
+                            opt_s.hash(&mut state);
+                            let hash = state.finish();
+                            StrHash::new(opt_s, hash)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        });
+        hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
     }
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(u32, Option<u32>)> {
