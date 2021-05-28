@@ -381,96 +381,41 @@ pub(crate) trait HashJoin<T> {
     }
 }
 
-macro_rules! impl_float_hash_join {
-    ($type: ty, $ca: ty) => {
-        impl HashJoin<$type> for $ca {
-            fn hash_join_inner(&self, other: &$ca) -> Vec<(u32, u32)> {
-                let (a, b, swap) = det_hash_prone_order!(self, other);
-
-                let n_threads = n_join_threads();
-                let splitted_a = split_ca(a, n_threads).unwrap();
-                let splitted_b = split_ca(b, n_threads).unwrap();
-
-                match (a.null_count(), b.null_count()) {
-                    (0, 0) => {
-                        let iters_a = splitted_a
-                            .iter()
-                            .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
-                            .collect_vec();
-                        let iters_b = splitted_b
-                            .iter()
-                            .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
-                            .collect_vec();
-                        hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
-                    }
-                    _ => {
-                        let iters_a = splitted_a
-                            .iter()
-                            .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
-                            .collect_vec();
-                        let iters_b = splitted_b
-                            .iter()
-                            .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
-                            .collect_vec();
-                        hash_join_tuples_inner_threaded(iters_a, iters_b, swap)
-                    }
-                }
-            }
-            fn hash_join_left(&self, other: &$ca) -> Vec<(u32, Option<u32>)> {
-                let n_threads = n_join_threads();
-
-                let a = self;
-                let b = other;
-                let splitted_a = split_ca(a, n_threads).unwrap();
-                let splitted_b = split_ca(b, n_threads).unwrap();
-
-                match (a.null_count(), b.null_count()) {
-                    (0, 0) => {
-                        let iters_a = splitted_a
-                            .iter()
-                            .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
-                            .collect_vec();
-                        let iters_b = splitted_b
-                            .iter()
-                            .map(|ca| ca.into_no_null_iter().map(|v| v.to_bits()))
-                            .collect_vec();
-                        hash_join_tuples_left_threaded(iters_a, iters_b)
-                    }
-                    _ => {
-                        let iters_a = splitted_a
-                            .iter()
-                            .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
-                            .collect_vec();
-                        let iters_b = splitted_b
-                            .iter()
-                            .map(|ca| ca.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits())))
-                            .collect_vec();
-                        hash_join_tuples_left_threaded(iters_a, iters_b)
-                    }
-                }
-            }
-            fn hash_join_outer(&self, other: &$ca) -> Vec<(Option<u32>, Option<u32>)> {
-                let (a, b, swap) = det_hash_prone_order!(self, other);
-
-                match (a.null_count() == 0, b.null_count() == 0) {
-                    (true, true) => hash_join_tuples_outer(
-                        vec![a.into_no_null_iter().map(|v| v.to_bits())],
-                        vec![b.into_no_null_iter().map(|v| v.to_bits())],
-                        swap,
-                    ),
-                    _ => hash_join_tuples_outer(
-                        vec![a.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()))],
-                        vec![b.into_iter().map(|opt_v| opt_v.map(|v| v.to_bits()))],
-                        swap,
-                    ),
-                }
-            }
-        }
-    };
+impl HashJoin<Float32Type> for Float32Chunked {
+    fn hash_join_inner(&self, other: &Float32Chunked) -> Vec<(u32, u32)> {
+        let ca = self.bit_repr_small();
+        let other = other.bit_repr_small();
+        ca.hash_join_inner(&other)
+    }
+    fn hash_join_left(&self, other: &Float32Chunked) -> Vec<(u32, Option<u32>)> {
+        let ca = self.bit_repr_small();
+        let other = other.bit_repr_small();
+        ca.hash_join_left(&other)
+    }
+    fn hash_join_outer(&self, other: &Float32Chunked) -> Vec<(Option<u32>, Option<u32>)> {
+        let ca = self.bit_repr_small();
+        let other = other.bit_repr_small();
+        ca.hash_join_outer(&other)
+    }
 }
 
-impl_float_hash_join!(Float32Type, Float32Chunked);
-impl_float_hash_join!(Float64Type, Float64Chunked);
+impl HashJoin<Float64Type> for Float64Chunked {
+    fn hash_join_inner(&self, other: &Float64Chunked) -> Vec<(u32, u32)> {
+        let ca = self.bit_repr_large();
+        let other = other.bit_repr_large();
+        ca.hash_join_inner(&other)
+    }
+    fn hash_join_left(&self, other: &Float64Chunked) -> Vec<(u32, Option<u32>)> {
+        let ca = self.bit_repr_large();
+        let other = other.bit_repr_large();
+        ca.hash_join_left(&other)
+    }
+    fn hash_join_outer(&self, other: &Float64Chunked) -> Vec<(Option<u32>, Option<u32>)> {
+        let ca = self.bit_repr_large();
+        let other = other.bit_repr_large();
+        ca.hash_join_outer(&other)
+    }
+}
 
 impl HashJoin<ListType> for ListChunked {}
 impl HashJoin<CategoricalType> for CategoricalChunked {
