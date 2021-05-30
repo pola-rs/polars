@@ -235,22 +235,21 @@ where
     })
 }
 
-fn hash_join_tuples_left_threaded<T, I, J>(a: Vec<I>, b: Vec<J>) -> Vec<(u32, Option<u32>)>
+fn hash_join_tuples_left<T, IntoSlice>(
+    probe: Vec<IntoSlice>,
+    build: Vec<IntoSlice>,
+) -> Vec<(u32, Option<u32>)>
 where
-    I: Iterator<Item = T> + Send,
-    J: Iterator<Item = T> + Send,
-    T: Send + Hash + Eq + Sync + Copy + Debug,
+    IntoSlice: AsRef<[T]> + Send + Sync,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // first we hash one relation
-    let hash_tbls = prepare_hashed_relation_threaded(b);
-    let random_state = hash_tbls[0].hasher().clone();
-    // we pre hash the probing values
-    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
+    let hash_tbls = create_probe_table(build);
 
     // we determine the offset so that we later know which index to store in the join tuples
-    let offsets = probe_hashes
+    let offsets = probe
         .iter()
-        .map(|ph| ph.len())
+        .map(|ph| ph.as_ref().len())
         .scan(0, |state, val| {
             let out = *state;
             *state += val;
@@ -262,32 +261,31 @@ where
 
     // next we probe the other relation
     POOL.install(|| {
-        probe_hashes
+        probe
             .into_par_iter()
             .zip(offsets)
             // probes_hashes: Vec<u64> processed by this thread
             // offset: offset index
-            .map(|(probe_hashes, offset)| {
+            .map(|(probe, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
+                let probe = probe.as_ref();
 
                 // assume the result tuples equal lenght of the no. of hashes processed by this thread.
-                let mut results = Vec::with_capacity(probe_hashes.len());
+                let mut results = Vec::with_capacity(probe.len());
 
-                probe_hashes.iter().enumerate().for_each(|(idx_a, (h, k))| {
+                probe.iter().enumerate().for_each(|(idx_a, k)| {
                     let idx_a = (idx_a + offset) as u32;
                     // probe table that contains the hashed value
                     let current_probe_table =
-                        unsafe { get_hash_tbl_threaded_join(*h, hash_tbls, n_tables) };
+                        unsafe { get_hash_tbl_threaded_join(k.as_u64(), hash_tbls, n_tables) };
 
                     // we already hashed, so we don't have to hash again.
-                    let entry = current_probe_table
-                        .raw_entry()
-                        .from_key_hashed_nocheck(*h, k);
+                    let value = current_probe_table.get(k);
 
-                    match entry {
+                    match value {
                         // left and right matches
-                        Some((_, indexes_b)) => {
+                        Some(indexes_b) => {
                             results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
                         }
                         // only left values, right = null
@@ -558,6 +556,82 @@ where
     }
 }
 
+fn num_group_join_left<T>(
+    left: &ChunkedArray<T>,
+    right: &ChunkedArray<T>,
+) -> Vec<(u32, Option<u32>)>
+where
+    T: PolarsIntegerType,
+    T::Native: Hash + Eq + Send + AsU64,
+    Option<T::Native>: AsU64,
+{
+    let n_threads = n_join_threads();
+    let splitted_a = split_ca(left, n_threads).unwrap();
+    let splitted_b = split_ca(right, n_threads).unwrap();
+    match (
+        left.null_count(),
+        right.null_count(),
+        left.chunks.len(),
+        right.chunks.len(),
+    ) {
+        (0, 0, 1, 1) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| ca.cont_slice().unwrap())
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| ca.cont_slice().unwrap())
+                .collect::<Vec<_>>();
+            hash_join_tuples_left(keys_a, keys_b)
+        }
+        (0, 0, _, _) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            hash_join_tuples_left(keys_a, keys_b)
+        }
+        (_, _, 1, 1) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| {
+                    ca.downcast_iter()
+                        .map(|v| v.into_iter().map(|v| v.as_u64()))
+                        .flatten()
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| {
+                    ca.downcast_iter()
+                        .map(|v| v.into_iter().map(|v| v.as_u64()))
+                        .flatten()
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            hash_join_tuples_left(keys_a, keys_b)
+        }
+        _ => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            hash_join_tuples_left(keys_a, keys_b)
+        }
+    }
+}
+
 impl<T> HashJoin<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType + Sync,
@@ -604,29 +678,41 @@ where
     }
 
     fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(u32, Option<u32>)> {
-        let n_threads = n_join_threads();
-
-        let a = self;
-        let b = other;
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
-
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                hash_join_tuples_left_threaded(iters_a, iters_b)
+        match self.dtype() {
+            DataType::UInt64 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt64Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
+                };
+                let other: &UInt64Chunked = unsafe {
+                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
+                };
+                num_group_join_left(&ca, &other)
+            }
+            DataType::UInt32 => {
+                // convince the compiler that we are this type.
+                let ca: &UInt32Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
+                };
+                let other: &UInt32Chunked = unsafe {
+                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
+                };
+                num_group_join_left(&ca, &other)
+            }
+            DataType::Int64 | DataType::Float64 => {
+                let ca = self.bit_repr_large();
+                let other = other.bit_repr_large();
+                num_group_join_left(&ca, &other)
+            }
+            DataType::Int32 | DataType::Float32 => {
+                let ca = self.bit_repr_small();
+                let other = other.bit_repr_small();
+                num_group_join_left(&ca, &other)
             }
             _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
-                hash_join_tuples_left_threaded(iters_a, iters_b)
+                let ca = self.cast::<UInt32Type>().unwrap();
+                let other = other.cast::<UInt32Type>().unwrap();
+                num_group_join_left(&ca, &other)
             }
         }
     }
@@ -667,31 +753,9 @@ impl HashJoin<BooleanType> for BooleanChunked {
     }
 
     fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(u32, Option<u32>)> {
-        let n_threads = n_join_threads();
-
-        let a = self;
-        let b = other;
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
-
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                hash_join_tuples_left_threaded(iters_a, iters_b)
-            }
-            _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
-                hash_join_tuples_left_threaded(iters_a, iters_b)
-            }
-        }
+        let ca = self.cast::<UInt32Type>().unwrap();
+        let other = other.cast::<UInt32Type>().unwrap();
+        ca.hash_join_left(&other)
     }
 
     fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<u32>, Option<u32>)> {
@@ -722,6 +786,24 @@ impl HashJoin<BooleanType> for BooleanChunked {
     }
 }
 
+fn prepare_strs<'a>(been_split: &'a [Utf8Chunked], hb: &RandomState) -> Vec<Vec<StrHash<'a>>> {
+    POOL.install(|| {
+        been_split
+            .par_iter()
+            .map(|ca| {
+                ca.into_iter()
+                    .map(|opt_s| {
+                        let mut state = hb.build_hasher();
+                        opt_s.hash(&mut state);
+                        let hash = state.finish();
+                        StrHash::new(opt_s, hash)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    })
+}
+
 impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(u32, u32)> {
         let n_threads = POOL.current_num_threads();
@@ -732,65 +814,21 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         let splitted_a = split_ca(a, n_threads).unwrap();
         let splitted_b = split_ca(b, n_threads).unwrap();
 
-        let str_hashes_a = POOL.install(|| {
-            splitted_a
-                .par_iter()
-                .map(|ca| {
-                    ca.into_iter()
-                        .map(|opt_s| {
-                            let mut state = hb.build_hasher();
-                            opt_s.hash(&mut state);
-                            let hash = state.finish();
-                            StrHash::new(opt_s, hash)
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>()
-        });
-        let str_hashes_b = POOL.install(|| {
-            splitted_b
-                .par_iter()
-                .map(|ca| {
-                    ca.into_iter()
-                        .map(|opt_s| {
-                            let mut state = hb.build_hasher();
-                            opt_s.hash(&mut state);
-                            let hash = state.finish();
-                            StrHash::new(opt_s, hash)
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>()
-        });
+        let str_hashes_a = prepare_strs(&splitted_a, &hb);
+        let str_hashes_b = prepare_strs(&splitted_b, &hb);
         hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
     }
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(u32, Option<u32>)> {
-        let n_threads = n_join_threads();
+        let n_threads = POOL.current_num_threads();
 
-        let a = self;
-        let b = other;
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
+        let hb = RandomState::default();
+        let splitted_a = split_ca(self, n_threads).unwrap();
+        let splitted_b = split_ca(other, n_threads).unwrap();
 
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
-                hash_join_tuples_left_threaded(iters_a, iters_b)
-            }
-            _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
-                hash_join_tuples_left_threaded(iters_a, iters_b)
-            }
-        }
+        let str_hashes_a = prepare_strs(&splitted_a, &hb);
+        let str_hashes_b = prepare_strs(&splitted_b, &hb);
+        hash_join_tuples_left(str_hashes_a, str_hashes_b)
     }
 
     fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<u32>, Option<u32>)> {
