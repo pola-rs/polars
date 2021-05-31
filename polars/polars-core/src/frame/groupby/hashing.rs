@@ -14,7 +14,7 @@ use std::hash::{BuildHasher, Hash};
 
 // We must strike a balance between cache coherence and resizing costs.
 // Overallocation seems a lot more expensive than resizing so we start reasonable small.
-pub(crate) const HASHMAP_INIT_SIZE: usize = 8192;
+pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
 
 pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
