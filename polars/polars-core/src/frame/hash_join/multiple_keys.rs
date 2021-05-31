@@ -1,4 +1,4 @@
-use crate::frame::groupby::hashing::populate_multiple_key_hashmap;
+use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join, get_hash_tbl_threaded_join_mut, n_join_threads,
 };
@@ -30,7 +30,6 @@ fn create_build_table(
     keys: &DataFrame,
 ) -> Vec<HashMap<IdxHash, Vec<u32>, IdBuildHasher>> {
     let n_threads = hashes.len();
-    let size = hashes.iter().fold(0, |acc, v| acc + v.len());
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -38,9 +37,8 @@ fn create_build_table(
     POOL.install(|| {
         (0..n_threads).into_par_iter().map(|thread_no| {
             let thread_no = thread_no as u64;
-            // TODO:: benchmark size
             let mut hash_tbl: HashMap<IdxHash, Vec<u32>, IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(size / (5 * n_threads), IdBuildHasher::default());
+                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
             let n_threads = n_threads as u64;
             let mut offset = 0;

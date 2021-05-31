@@ -10,13 +10,18 @@ use ahash::RandomState;
 use hashbrown::hash_map::Entry;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use rayon::prelude::*;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
+
+// We must strike a balance between cache coherence and resizing costs.
+// Overallocation seems a lot more expensive than resizing so we start reasonable small.
+pub(crate) const HASHMAP_INIT_SIZE: usize = 8192;
 
 pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> = HashMap::default();
+    let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> =
+        HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
     let mut cnt = 0;
     a.for_each(|k| {
         let idx = cnt;
@@ -59,7 +64,8 @@ where
         (0..n_threads).into_par_iter().map(|thread_no| {
             let thread_no = thread_no as u64;
 
-            let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> = HashMap::default();
+            let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> =
+                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
@@ -137,15 +143,14 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     F: Fn(&mut V),
     H: BuildHasher,
 {
-    let hb = hash_tbl.hasher();
-    let mut state = hb.build_hasher();
-    original_h.hash(&mut state);
-    let h = state.finish();
     let entry = hash_tbl
         .raw_entry_mut()
         // uses the idx to probe rows in the original DataFrame with keys
         // to check equality to find an entry
-        .from_hash(h, |idx_hash| {
+        // this does not invalidate the hashmap as this equality function is not used
+        // during rehashing/resize (then the keys are already known to be unique).
+        // Only during insertion and probing an equality function is needed
+        .from_hash(original_h, |idx_hash| {
             let key_idx = idx_hash.idx;
             // Safety:
             // indices in a groupby operation are always in bounds.
@@ -153,7 +158,7 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
         });
     match entry {
         RawEntryMut::Vacant(entry) => {
-            entry.insert_hashed_nocheck(h, IdxHash::new(idx, original_h), vacant_fn());
+            entry.insert_hashed_nocheck(original_h, IdxHash::new(idx, original_h), vacant_fn());
         }
         RawEntryMut::Occupied(mut entry) => {
             let (_k, v) = entry.get_key_value_mut();
@@ -164,12 +169,8 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
 
 pub(crate) fn groupby_multiple_keys(keys: DataFrame) -> GroupTuples {
     let (hashes, _) = df_rows_to_hashes(&keys, None);
-    let size = hashes.len();
-    // rather over allocate because rehashing is expensive
-    // its a complicated trade off, because often rehashing is cheaper than
-    // overallocation because of cache coherence.
     let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
-        HashMap::with_capacity_and_hasher(size, IdBuildHasher::default());
+        HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
     // hashes has no nulls
     let mut idx = 0;
@@ -206,7 +207,8 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
 
             let keys = &keys;
 
-            let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), RandomState> = HashMap::default();
+            let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
+                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
             let n_threads = n_threads as u64;
             let mut offset = 0;

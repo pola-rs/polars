@@ -24,6 +24,7 @@ use unsafe_unwrap::UnsafeUnwrap;
 
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
+use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
@@ -92,7 +93,7 @@ unsafe fn get_hash_tbl_threaded_join_mut<T, H>(
 }
 
 /// Probe the build table and add tuples to the results (inner join)
-fn probe_inner2<T, F>(
+fn probe_inner<T, F>(
     probe: &[T],
     hash_tbls: &[HashMap<T, Vec<u32>, RandomState>],
     results: &mut Vec<(u32, u32)>,
@@ -134,7 +135,8 @@ where
         (0..n_threads).into_par_iter().map(|thread_no| {
             let thread_no = thread_no as u64;
 
-            let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> = HashMap::default();
+            let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
+                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
             let n_threads = n_threads as u64;
             let mut offset = 0;
@@ -209,7 +211,7 @@ where
 
                 // branch is to hoist swap out of the inner loop.
                 if swap {
-                    probe_inner2(
+                    probe_inner(
                         probe,
                         hash_tbls,
                         &mut results,
@@ -218,7 +220,7 @@ where
                         |idx_a, idx_b| (idx_b, idx_a),
                     )
                 } else {
-                    probe_inner2(
+                    probe_inner(
                         probe,
                         hash_tbls,
                         &mut results,
