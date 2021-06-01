@@ -900,11 +900,8 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn datetime_str_fmt(&self, fmt: &str) -> PyResult<Self> {
-        let s = self
-            .series
-            .datetime_str_fmt(fmt)
-            .map_err(PyPolarsEr::from)?;
+    pub fn strftime(&self, fmt: &str) -> PyResult<Self> {
+        let s = self.series.strftime(fmt).map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
