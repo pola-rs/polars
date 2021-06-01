@@ -33,7 +33,6 @@ pub(crate) mod private {
     use crate::frame::groupby::GroupTuples;
 
     use ahash::RandomState;
-    #[cfg(feature = "object")]
     use std::borrow::Cow;
 
     pub trait PrivateSeries {
@@ -153,7 +152,6 @@ pub(crate) mod private {
                 "argsort_multiple is not implemented for this Series".into(),
             ))
         }
-        #[cfg(feature = "object")]
         fn str_value(&self, _index: usize) -> Cow<str> {
             unimplemented!()
         }
