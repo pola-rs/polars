@@ -64,6 +64,17 @@ pub trait ApplyLambda<'a> {
     ) -> PyResult<ListChunked> {
         unimplemented!()
     }
+
+    /// Apply a lambda with list output type
+    fn apply_lambda_with_object_out_type(
+        &'a self,
+        _py: Python,
+        _lambda: &'a PyAny,
+        _init_null_count: usize,
+        _first_value: Option<ObjectValue>,
+    ) -> PyResult<ObjectChunked<ObjectValue>> {
+        unimplemented!()
+    }
 }
 
 fn call_lambda<'a, T, S>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<S>
@@ -537,6 +548,44 @@ where
                 it,
                 init_null_count,
                 Some(first_value),
+                self.name(),
+                self.len(),
+            ))
+        }
+    }
+
+    fn apply_lambda_with_object_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<ObjectValue>,
+    ) -> PyResult<ObjectChunked<ObjectValue>> {
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        if init_null_count == self.len() {
+            Ok(ChunkedArray::full_null(self.name(), self.len()))
+        } else if self.null_count() == 0 {
+            let it = self
+                .into_no_null_iter()
+                .skip(init_null_count + skip)
+                .map(|val| call_lambda(py, lambda, val).ok());
+
+            Ok(iterator_to_object(
+                it,
+                init_null_count,
+                first_value,
+                self.name(),
+                self.len(),
+            ))
+        } else {
+            let it = self
+                .into_iter()
+                .skip(init_null_count + skip)
+                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+            Ok(iterator_to_object(
+                it,
+                init_null_count,
+                first_value,
                 self.name(),
                 self.len(),
             ))

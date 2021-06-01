@@ -1,8 +1,10 @@
 pub mod dataframe;
 pub mod series;
+use crate::prelude::ObjectValue;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
+use pyo3::PyObject;
 
 pub trait PyArrowPrimitiveType: PolarsPrimitiveType {}
 
@@ -60,6 +62,33 @@ fn iterator_to_bool(
     capacity: usize,
 ) -> ChunkedArray<BooleanType> {
     let mut ca: BooleanChunked = if init_null_count > 0 {
+        (0..init_null_count)
+            .map(|_| None)
+            .chain(std::iter::once(first_value))
+            .chain(it)
+            .trust_my_length(capacity)
+            .collect()
+    } else if first_value.is_some() {
+        std::iter::once(first_value)
+            .chain(it)
+            .trust_my_length(capacity)
+            .collect()
+    } else {
+        it.collect()
+    };
+    debug_assert_eq!(ca.len(), capacity);
+    ca.rename(name);
+    ca
+}
+
+fn iterator_to_object(
+    it: impl Iterator<Item = Option<ObjectValue>>,
+    init_null_count: usize,
+    first_value: Option<ObjectValue>,
+    name: &str,
+    capacity: usize,
+) -> ObjectChunked<ObjectValue> {
+    let mut ca: ObjectChunked<ObjectValue> = if init_null_count > 0 {
         (0..init_null_count)
             .map(|_| None)
             .chain(std::iter::once(first_value))

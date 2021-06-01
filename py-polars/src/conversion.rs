@@ -5,6 +5,8 @@ use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
+use std::any::Any;
+use std::fmt::{Display, Formatter};
 
 pub struct Wrap<T>(pub T);
 
@@ -109,5 +111,57 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
 impl ToPyObject for Wrap<AnyValue<'_>> {
     fn to_object(&self, py: Python) -> PyObject {
         self.clone().into_py(py)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ObjectValue {
+    pub inner: PyObject,
+}
+
+impl Display for ObjectValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
+
+impl PolarsObject for ObjectValue {
+    fn type_name() -> &'static str {
+        "object"
+    }
+}
+
+impl<'a> FromPyObject<'a> for ObjectValue {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        Ok(ObjectValue {
+            inner: ob.to_object(python),
+        })
+    }
+}
+
+/// # Safety
+///
+/// The caller is responsible for checking that val is Object otherwise UB
+impl From<&dyn Any> for &ObjectValue {
+    fn from(val: &dyn Any) -> Self {
+        unsafe { &*(val as *const dyn Any as *const ObjectValue) }
+    }
+}
+
+impl ToPyObject for ObjectValue {
+    fn to_object(&self, _py: Python) -> PyObject {
+        self.inner.clone()
+    }
+}
+
+impl Default for ObjectValue {
+    fn default() -> Self {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        ObjectValue {
+            inner: python.None(),
+        }
     }
 }

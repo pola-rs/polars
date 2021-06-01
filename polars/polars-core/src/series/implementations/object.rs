@@ -6,6 +6,7 @@ use crate::series::private::PrivateSeries;
 use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
 use std::any::Any;
+use std::borrow::Cow;
 
 #[cfg(feature = "object")]
 impl<T> IntoSeries for ObjectChunked<T>
@@ -19,7 +20,17 @@ where
 
 #[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
-impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>> where T: PolarsObject {}
+impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
+where
+    T: PolarsObject,
+{
+    fn str_value(&self, index: usize) -> Cow<str> {
+        match (&self.0).get(index) {
+            None => Cow::Borrowed("null"),
+            Some(val) => Cow::Owned(format!("{}", val).to_string()),
+        }
+    }
+}
 #[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
@@ -86,7 +97,6 @@ where
     }
 
     unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
-        use std::borrow::Cow;
         let idx = if idx.chunks.len() > 1 {
             Cow::Owned(idx.rechunk())
         } else {

@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::ops::{BitAnd, BitOr};
 
 use numpy::PyArray1;
@@ -14,52 +13,6 @@ use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::utils::str_to_polarstype;
 use crate::{arrow_interop, npy::aligned_array, prelude::*};
-
-#[derive(Clone, Debug)]
-pub struct ObjectValue {
-    inner: PyObject,
-}
-
-impl PolarsObject for ObjectValue {
-    fn type_name() -> &'static str {
-        "object"
-    }
-}
-
-impl<'a> FromPyObject<'a> for ObjectValue {
-    fn extract(ob: &'a PyAny) -> PyResult<Self> {
-        let gil = Python::acquire_gil();
-        let python = gil.python();
-        Ok(ObjectValue {
-            inner: ob.to_object(python),
-        })
-    }
-}
-
-/// # Safety
-///
-/// The caller is responsible for checking that val is Object otherwise UB
-impl From<&dyn Any> for &ObjectValue {
-    fn from(val: &dyn Any) -> Self {
-        unsafe { &*(val as *const dyn Any as *const ObjectValue) }
-    }
-}
-
-impl ToPyObject for ObjectValue {
-    fn to_object(&self, _py: Python) -> PyObject {
-        self.inner.clone()
-    }
-}
-
-impl Default for ObjectValue {
-    fn default() -> Self {
-        let gil = Python::acquire_gil();
-        let python = gil.python();
-        ObjectValue {
-            inner: python.None(),
-        }
-    }
-}
 
 #[pyclass]
 #[repr(transparent)]
@@ -807,6 +760,17 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
+            Some(DataType::Object(_)) => {
+                let ca: ObjectChunked<ObjectValue> = apply_method_all_arrow_series!(
+                    series,
+                    apply_lambda_with_object_out_type,
+                    py,
+                    lambda,
+                    0,
+                    None
+                )?;
+                ca.into_series()
+            }
             None => {
                 return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda)
             }
@@ -903,6 +867,11 @@ impl PySeries {
     pub fn strftime(&self, fmt: &str) -> PyResult<Self> {
         let s = self.series.strftime(fmt).map_err(PyPolarsEr::from)?;
         Ok(s.into())
+    }
+
+    pub fn timestamp(&self) -> PyResult<Self> {
+        let ca = self.series.timestamp().map_err(PyPolarsEr::from)?;
+        Ok(ca.into_series().into())
     }
 
     pub fn as_duration(&self) -> PyResult<Self> {

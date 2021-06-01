@@ -19,8 +19,8 @@ polars-core = {path = "../polars/polars-core", default-features = false}
 pyo3 = {version = "0.13", features = ["abi3-py36", "extension-module"] }
 libc = "0.2"
 thiserror = "1.0.20"
-numpy = "0.13.0"
-ndarray = "0.14.0"
+numpy = "0.13"
+ndarray = "0.14"
 mimalloc = { version = "*", default-features = false}
 
 [dependencies.polars]
@@ -58,12 +58,12 @@ name = "polars"
 requires-dist = ["numpy", "pyarrow==4.0"]
 
 [profile.release]
-#codegen-units = 1
+codegen-units = 1
 
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
 # target-cpu = "native"
-#lto = "fat"
+lto = "fat"
 
 #[profile.dev]
 #opt-level = 1
