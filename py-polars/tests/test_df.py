@@ -656,3 +656,8 @@ def test_to_html():
     df = get_complete_df()
     # check if it does not panic/ error
     df._repr_html_()
+
+
+def test_rows():
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
+    assert df.rows() == [(1, 1), (2, 2)]

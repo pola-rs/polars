@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use pyo3::types::PyTuple;
+use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use polars::frame::groupby::GroupBy;
@@ -201,6 +201,26 @@ impl PyDataFrame {
                 .get_columns()
                 .iter()
                 .map(|s| Wrap(s.get(idx)).into_py(py)),
+        )
+        .into_py(py)
+    }
+
+    pub fn row_tuples(&self) -> PyObject {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+
+        let df = &self.df;
+        PyList::new(
+            py,
+            (0..df.height()).map(|idx| {
+                PyTuple::new(
+                    py,
+                    self.df
+                        .get_columns()
+                        .iter()
+                        .map(|s| Wrap(s.get(idx)).into_py(py)),
+                )
+            }),
         )
         .into_py(py)
     }
