@@ -126,34 +126,23 @@ fn format_object_array(
     name: &str,
     array_type: &str,
 ) -> fmt::Result {
-    write![f, "{}: '{}' [object]\n[\n", array_type, name]?;
+    match object.dtype() {
+        DataType::Object(inner_type) => {
+            write![
+                f,
+                "{}: '{}' [object({})]\n[\n",
+                array_type, name, inner_type
+            ]?;
 
-    for i in 0..limit {
-        let v = object.get(i);
-        match v {
-            AnyValue::Null => writeln!(f, "\tnull")?,
-            _ => writeln!(f, "\tobject")?,
-        }
-    }
-
-    write![f, "]"]
-}
-
-#[cfg(feature = "object")]
-macro_rules! format_object_array {
-    ($limit:expr, $f:expr, $object:expr, $name:expr, $array_type: expr) => {{
-        write![$f, "{}: '{}' [object]\n[\n", $array_type, $name]?;
-
-        for i in 0..$limit {
-            let v = $object.get_any_value(i);
-            match v {
-                AnyValue::Null => writeln!($f, "\tnull")?,
-                _ => writeln!($f, "\tobject")?,
+            for i in 0..limit {
+                let v = object.str_value(i);
+                write!(f, "\t{}\n", v)?;
             }
-        }
 
-        write![$f, "]"]
-    }};
+            write![f, "]"]
+        }
+        _ => unreachable!(),
+    }
 }
 
 macro_rules! set_limit {
@@ -209,8 +198,32 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
-        format_object_array!(limit, f, self, self.name(), "ChunkedArray")
+
+        let taker = self.take_rand();
+        match self.dtype() {
+            DataType::Object(inner_type) => {
+                write![
+                    f,
+                    "{}: '{}' [object({})]\n[\n",
+                    "ChunkedArray",
+                    self.name(),
+                    inner_type
+                ]?;
+                for i in 0..limit {
+                    match taker.get(i) {
+                        None => writeln!(f, "\tnull")?,
+                        Some(val) => writeln!(f, "\t{}", val)?,
+                    };
+                }
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
     }
+}
+
+pub trait FormatSeries {
+    fn fmt_series(f: &mut Formatter<'_>) -> fmt::Result;
 }
 
 impl Debug for Series {

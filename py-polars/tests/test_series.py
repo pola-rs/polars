@@ -344,3 +344,11 @@ def test_strftime():
     assert a.dtype == pl.Date32
     a = a.dt.strftime("%F")
     assert a[2] == "2052-02-20"
+
+
+def test_timestamp():
+    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date64)
+    assert a.dt.timestamp() == [10000, 20000, 30000]
+    print(a.dt.to_python_datetime())
+
+    assert False

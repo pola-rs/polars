@@ -33,6 +33,7 @@ pub(crate) mod private {
     use crate::frame::groupby::GroupTuples;
 
     use ahash::RandomState;
+    use std::borrow::Cow;
 
     pub trait PrivateSeries {
         unsafe fn equal_element(
@@ -150,6 +151,10 @@ pub(crate) mod private {
             Err(PolarsError::InvalidOperation(
                 "argsort_multiple is not implemented for this Series".into(),
             ))
+        }
+        #[cfg(feature = "object")]
+        fn str_value(&self, _index: usize) -> Cow<str> {
+            unimplemented!()
         }
     }
 }
@@ -894,6 +899,21 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         match self.dtype() {
             DataType::Date32 => self.date32().map(|ca| ca.strftime(fmt).into_series()),
             DataType::Date64 => self.date64().map(|ca| ca.strftime(fmt).into_series()),
+            _ => Err(PolarsError::InvalidOperation(
+                format!("operation not supported on dtype {:?}", self.dtype()).into(),
+            )),
+        }
+    }
+
+    #[cfg(feature = "temporal")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
+    /// Convert date(time) object to timestamp in ms.
+    fn timestamp(&self) -> Result<Int64Chunked> {
+        match self.dtype() {
+            DataType::Date32 => self
+                .date32()
+                .map(|ca| (ca.cast::<Int64Type>().unwrap() * 1000)),
+            DataType::Date64 => self.date64().map(|ca| ca.cast::<Int64Type>().unwrap()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),

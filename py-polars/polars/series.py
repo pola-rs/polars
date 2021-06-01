@@ -1755,6 +1755,22 @@ class DateTime:
         """
         return wrap_s(self._s.nanosecond())
 
+    def timestamp(self) -> "Series":
+        """
+        Return timestamp in ms as Int64 type.
+        """
+        return wrap_s(self._s.timestamp())
+
+    def to_python_datetime(self) -> "Series":
+        """
+        Go from Date32/Date64 to python DataTime objects
+        """
+        from datetime import datetime
+
+        return (self.timestamp() // 1000).apply(
+            lambda ts: datetime.fromtimestamp(ts), datatypes.Object
+        )
+
 
 class SeriesIter:
     """

@@ -7,7 +7,7 @@ use arrow::array::{Array, ArrayRef, BooleanBufferBuilder, JsonEqual};
 use arrow::bitmap::Bitmap;
 use serde_json::Value;
 use std::any::Any;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -22,7 +22,7 @@ where
     pub(crate) len: usize,
 }
 
-pub trait PolarsObject: Any + Debug + Clone + Send + Sync + Default {
+pub trait PolarsObject: Any + Debug + Clone + Send + Sync + Default + Display {
     fn type_name() -> &'static str;
 }
 

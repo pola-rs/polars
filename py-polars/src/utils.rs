@@ -18,6 +18,7 @@ pub fn str_to_polarstype(s: &str) -> DataType {
         "<class 'polars.datatypes.Date64'>" => DataType::Date64,
         "<class 'polars.datatypes.List'>" => DataType::List(ArrowDataType::Null),
         "<class 'polars.datatypes.Categorical'>" => DataType::Categorical,
+        "<class 'polars.datatypes.Object'>" => DataType::Object("object"),
         tp => panic!("Type {} not implemented in str_to_polarstype", tp),
     }
 }
