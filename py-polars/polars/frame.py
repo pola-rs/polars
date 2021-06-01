@@ -1810,7 +1810,7 @@ class DataFrame:
             acc = operation(acc, df.select_at_idx(i))
         return acc
 
-    def row(self, index: int) -> Tuple[Any]:
+    def row(self, index: int) -> "Tuple[Any]":
         """
         Get a row as tuple
 
@@ -1820,6 +1820,12 @@ class DataFrame:
             Row index
         """
         return self._df.row_tuple(index)
+
+    def rows(self) -> "List[Tuple[Any]]":
+        """
+        Convert columnar data to rows as python tuples.
+        """
+        return self._df.row_tuples()
 
 
 class GroupBy:

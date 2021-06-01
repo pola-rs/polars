@@ -2,9 +2,7 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use crate::utils::str_to_polarstype;
-use polars::lazy::frame::{
-    AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy,
-};
+use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{DataFrame, Field, JoinType, Schema};
 use pyo3::prelude::*;
@@ -233,7 +231,8 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .how(how)
-            .finish().into()
+            .finish()
+            .into()
     }
 
     pub fn with_column(&mut self, expr: PyExpr) -> PyLazyFrame {
