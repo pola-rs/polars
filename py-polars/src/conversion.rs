@@ -131,6 +131,12 @@ impl PolarsObject for ObjectValue {
     }
 }
 
+impl From<PyObject> for ObjectValue {
+    fn from(p: PyObject) -> Self {
+        Self { inner: p }
+    }
+}
+
 impl<'a> FromPyObject<'a> for ObjectValue {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         let gil = Python::acquire_gil();
