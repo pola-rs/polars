@@ -136,7 +136,7 @@ fn format_object_array(
 
             for i in 0..limit {
                 let v = object.str_value(i);
-                write!(f, "\t{}\n", v)?;
+                writeln!(f, "\t{}", v)?;
             }
 
             write![f, "]"]
@@ -204,8 +204,7 @@ where
             DataType::Object(inner_type) => {
                 write![
                     f,
-                    "{}: '{}' [object({})]\n[\n",
-                    "ChunkedArray",
+                    "ChunkedArray: '{}' [object({})]\n[\n",
                     self.name(),
                     inner_type
                 ]?;

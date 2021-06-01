@@ -27,7 +27,7 @@ where
     fn str_value(&self, index: usize) -> Cow<str> {
         match (&self.0).get(index) {
             None => Cow::Borrowed("null"),
-            Some(val) => Cow::Owned(format!("{}", val).to_string()),
+            Some(val) => Cow::Owned(format!("{}", val)),
         }
     }
 }

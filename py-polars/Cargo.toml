@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.7.19"
+version = "0.8.0-beta.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 readme = "README.md"
@@ -19,7 +19,7 @@ polars-core = {path = "../polars/polars-core", default-features = false}
 pyo3 = {version = "0.13", features = ["abi3-py36", "extension-module"] }
 libc = "0.2"
 thiserror = "1.0.20"
-numpy = "0.13"
+numpy = "0.13.0"
 ndarray = "0.14"
 mimalloc = { version = "*", default-features = false}
 
