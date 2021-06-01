@@ -152,6 +152,7 @@ pub(crate) mod private {
                 "argsort_multiple is not implemented for this Series".into(),
             ))
         }
+        /// Formatted string representation. Can used in formatting.
         fn str_value(&self, _index: usize) -> Cow<str> {
             unimplemented!()
         }

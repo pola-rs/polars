@@ -131,7 +131,7 @@ fn format_object_array(
         DataType::Object(inner_type) => {
             write![
                 f,
-                "{}: '{}' [object({})]\n[\n",
+                "{}: '{}' [o][{}]\n[\n",
                 array_type, name, inner_type
             ]?;
 
@@ -201,29 +201,21 @@ where
         let limit = set_limit!(self);
 
         let taker = self.take_rand();
-        match self.dtype() {
-            DataType::Object(inner_type) => {
-                write![
-                    f,
-                    "ChunkedArray: '{}' [object({})]\n[\n",
-                    self.name(),
-                    inner_type
-                ]?;
-                for i in 0..limit {
-                    match taker.get(i) {
-                        None => writeln!(f, "\tnull")?,
-                        Some(val) => writeln!(f, "\t{}", val)?,
-                    };
-                }
-            }
-            _ => unreachable!(),
+        let inner_type = T::type_name();
+        write![
+            f,
+            "ChunkedArray: '{}' [o][{}]\n[\n",
+            self.name(),
+            inner_type
+        ]?;
+        for i in 0..limit {
+            match taker.get(i) {
+                None => writeln!(f, "\tnull")?,
+                Some(val) => writeln!(f, "\t{}", val)?,
+            };
         }
         Ok(())
     }
-}
-
-pub trait FormatSeries {
-    fn fmt_series(f: &mut Formatter<'_>) -> fmt::Result;
 }
 
 impl Debug for Series {
