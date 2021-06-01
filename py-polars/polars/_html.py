@@ -113,7 +113,11 @@ class HTMLFormatter:
                             elif c == -1:
                                 self.elements.append("...")
                             else:
-                                self.elements.append(f"{self.df[:, c]._s.get_fmt(r)}")
+                                series = self.df[:, c]
+                                if series.dtype == pl.Object:
+                                    self.elements.append(f"{series[r]}")
+                                else:
+                                    self.elements.append(f"{series._s.get_fmt(r)}")
 
     def write(self, inner: str):
         self.elements.append(inner)

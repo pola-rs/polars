@@ -68,6 +68,7 @@ mod temporal {
         v
     }
 }
+use std::borrow::Cow;
 #[cfg(not(feature = "temporal"))]
 use temporal::*;
 
@@ -343,17 +344,13 @@ impl Debug for DataFrame {
     }
 }
 
-fn prepare_row(row: Vec<AnyValue>, n_first: usize, n_last: usize) -> Vec<String> {
-    fn make_str_val(v: &AnyValue) -> String {
+fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
+    fn make_str_val(v: &str) -> String {
         let string_limit = 32;
-        if let AnyValue::Utf8(s) = v {
-            if s.len() > string_limit {
-                format!("\"{}...\"", &s[..string_limit])
-            } else {
-                format!("\"{}\"", s)
-            }
+        if v.len() > string_limit {
+            format!("\"{}...\"", &v[..string_limit])
         } else {
-            format!("{}", v)
+            format!("\"{}\"", v)
         }
     }
 
@@ -427,13 +424,13 @@ impl Display for DataFrame {
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
-                    let row = self.get(i).unwrap();
+                    let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
                 for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
-                    let row = self.get(i).unwrap();
+                    let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
                 for row in rows {
@@ -441,8 +438,8 @@ impl Display for DataFrame {
                 }
             } else {
                 for i in 0..max_n_rows {
-                    let opt = self.get(i);
-                    if let Some(row) = opt {
+                    if i < self.height() && self.width() > 0 {
+                        let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                         table.add_row(prepare_row(row, n_first, n_last));
                     } else {
                         break;
@@ -468,13 +465,13 @@ impl Display for DataFrame {
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
-                    let row = self.get(i).unwrap();
+                    let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
                 for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
-                    let row = self.get(i).unwrap();
+                    let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
                 for row in rows {
@@ -482,8 +479,8 @@ impl Display for DataFrame {
                 }
             } else {
                 for i in 0..max_n_rows {
-                    let opt = self.get(i);
-                    if let Some(row) = opt {
+                    if i < self.height() && self.width() > 0 {
+                        let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                         table.add_row(Row::new(
                             prepare_row(row, n_first, n_last)
                                 .into_iter()

@@ -184,6 +184,11 @@ macro_rules! impl_dyn_series {
             fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
                 self.0.argsort_multiple(by, reverse)
             }
+
+            fn str_value(&self, index: usize) -> Cow<str> {
+                // get AnyValue
+                Cow::Owned(format!("{}", self.get(index)))
+            }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {

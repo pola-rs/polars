@@ -4,7 +4,6 @@ use crate::prelude::ObjectValue;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
-use pyo3::PyObject;
 
 pub trait PyArrowPrimitiveType: PolarsPrimitiveType {}
 

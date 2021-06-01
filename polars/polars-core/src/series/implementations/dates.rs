@@ -19,6 +19,7 @@ use crate::prelude::*;
 use ahash::RandomState;
 use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
+use std::borrow::Cow;
 
 impl<T> ChunkedArray<T> {
     /// get the physical memory type of a date type
@@ -240,6 +241,11 @@ macro_rules! impl_dyn_series {
                 self.0
                     .unpack_series_matching_type(&s)?
                     .argsort_multiple(by, reverse)
+            }
+
+            fn str_value(&self, index: usize) -> Cow<str> {
+                // get AnyValue
+                Cow::Owned(format!("{}", self.get(index)))
             }
         }
 
