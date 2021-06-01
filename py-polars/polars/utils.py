@@ -1,24 +1,15 @@
 import pyarrow as pa
+import warnings
 
 
 def coerce_arrow(array: "pa.Array") -> "pa.Array":
-    if array.type == pa.timestamp("s"):
-        array = pa.compute.cast(
-            pa.compute.multiply(pa.compute.cast(array, pa.int64()), 1000),
-            pa.date64(),
+    # also coerces timezone to naive representation
+    # units are accounted for by pyarrow
+    if "timestamp" in str(array.type):
+        warnings.warn(
+            "Conversion of (potentially) timezone aware to naive datetimes. TZ information may be lost",
         )
-    elif array.type == pa.timestamp("ms"):
-        array = pa.compute.cast(pa.compute.cast(array, pa.int64()), pa.date64())
-    elif array.type == pa.timestamp("us"):
-        array = pa.compute.cast(
-            pa.compute.divide(pa.compute.cast(array, pa.int64()), 1000),
-            pa.date64(),
-        )
-    elif array.type == pa.timestamp("ns"):
-        array = pa.compute.cast(
-            pa.compute.divide(pa.compute.cast(array, pa.int64()), 1000000),
-            pa.date64(),
-        )
+        array = pa.compute.cast(array, pa.date64(), safe=False)
     # note: Decimal256 could not be cast to float
     elif isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())
