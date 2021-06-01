@@ -1295,127 +1295,12 @@ class Series:
         """
         return wrap_s(self._s.zip_with(mask._s, other._s))
 
-    def str_lengths(self) -> "Series":
-        """
-        Get length of the string values in the Series.
-
-        Returns
-        -------
-        Series[u32]
-        """
-        return wrap_s(self._s.str_lengths())
-
-    def str_contains(self, pattern: str) -> "Series":
-        """
-        Check if strings in Series contain regex pattern
-
-        Parameters
-        ----------
-        pattern
-            A valid regex pattern
-
-        Returns
-        -------
-        Boolean mask
-        """
-        return wrap_s(self._s.str_contains(pattern))
-
-    def str_replace(self, pattern: str, value: str) -> "Series":
-        """
-        Replace first regex match with a string value
-
-        Parameters
-        ----------
-        pattern
-            A valid regex pattern
-        value
-            Substring to replace
-        """
-        return wrap_s(self._s.str_replace(pattern, value))
-
-    def str_replace_all(self, pattern: str, value: str) -> "Series":
-        """
-        Replace all regex matches with a string value
-
-        Parameters
-        ----------
-        pattern
-            A valid regex pattern
-        value
-            Substring to replace
-        """
-        return wrap_s(self._s.str_replace_all(pattern, value))
-
-    def str_to_lowercase(self) -> "Series":
-        """
-        Modify the strings to their lowercase equivalent
-        """
-        return wrap_s(self._s.str_to_lowercase())
-
-    def str_to_uppercase(self) -> "Series":
-        """
-        Modify the strings to their uppercase equivalent
-        """
-        return wrap_s(self._s.str_to_uppercase())
-
-    def str_rstrip(self) -> "Series":
-        """
-        Remove trailing whitespace
-        """
-        return self.str_replace(r"[ \t]+$", "")
-
-    def str_lstrip(self) -> "Series":
-        """
-        Remove leading whitespace
-        """
-        return self.str_replace(r"^\s*", "")
-
-    def str_slice(self, start: int, length: "Optional[int]" = None) -> "Series":
-        """
-        Create subslices of the string values of a Utf8 Series
-
-        Parameters
-        ----------
-        start
-            Start of the slice (negative indexing may be used)
-        length
-            Optional length of the slice
-
-        Returns
-        -------
-        Series of Utf8 type
-        """
-        return wrap_s(self._s.str_slice(start, length))
-
     def as_duration(self) -> "Series":
         """
         .. deprecated::
         If Series is a date32 or a date64 it can be turned into a duration.
         """
         return wrap_s(self._s.as_duration())
-
-    def str_parse_date(
-        self, datatype: "DataType", fmt: Optional[str] = None
-    ) -> "Series":
-        """
-        Parse a Series of dtype Utf8 to a Date32/Date64 Series.
-
-        Parameters
-        ----------
-        datatype
-            polars.Date32 or polars.Date64
-        fmt
-            formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
-
-        Returns
-        -------
-        A Date32/ Date64 Series
-        """
-        if datatype == Date32:
-            return wrap_s(self._s.str_parse_date32(fmt))
-        if datatype == Date64:
-            return wrap_s(self._s.str_parse_date64(fmt))
-        raise NotImplementedError
 
     def rolling_min(
         self,
@@ -1598,11 +1483,143 @@ class Series:
         return self._s.n_unique()
 
     @property
-    def dt(self) -> "DateTime":
-        return DateTime(self)
+    def dt(self) -> "DateTimeNameSpace":
+        """
+        Create an object namespace of all datetime related methods
+        """
+        return DateTimeNameSpace(self)
+
+    @property
+    def str(self) -> "StringNameSpace":
+        """
+        Create an object namespace of all string related methods
+        """
+        return StringNameSpace(self)
 
 
-class DateTime:
+class StringNameSpace:
+    """
+    Series.str namespace
+    """
+
+    def __init__(self, series: "Series"):
+        self._s = series._s
+
+    def strptime(self, datatype: "DataType", fmt: Optional[str] = None) -> "Series":
+        """
+        Parse a Series of dtype Utf8 to a Date32/Date64 Series.
+
+        Parameters
+        ----------
+        datatype
+            polars.Date32 or polars.Date64
+        fmt
+            formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
+
+        Returns
+        -------
+        A Date32/ Date64 Series
+        """
+        if datatype == Date32:
+            return wrap_s(self._s.str_parse_date32(fmt))
+        if datatype == Date64:
+            return wrap_s(self._s.str_parse_date64(fmt))
+        raise NotImplementedError
+
+    def lengths(self) -> "Series":
+        """
+        Get length of the string values in the Series.
+
+        Returns
+        -------
+        Series[u32]
+        """
+        return wrap_s(self._s.str_lengths())
+
+    def contains(self, pattern: str) -> "Series":
+        """
+        Check if strings in Series contain regex pattern
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        Boolean mask
+        """
+        return wrap_s(self._s.str_contains(pattern))
+
+    def replace(self, pattern: str, value: str) -> "Series":
+        """
+        Replace first regex match with a string value
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+        value
+            Substring to replace
+        """
+        return wrap_s(self._s.str_replace(pattern, value))
+
+    def replace_all(self, pattern: str, value: str) -> "Series":
+        """
+        Replace all regex matches with a string value
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+        value
+            Substring to replace
+        """
+        return wrap_s(self._s.str_replace_all(pattern, value))
+
+    def to_lowercase(self) -> "Series":
+        """
+        Modify the strings to their lowercase equivalent
+        """
+        return wrap_s(self._s.str_to_lowercase())
+
+    def to_uppercase(self) -> "Series":
+        """
+        Modify the strings to their uppercase equivalent
+        """
+        return wrap_s(self._s.str_to_uppercase())
+
+    def rstrip(self) -> "Series":
+        """
+        Remove trailing whitespace
+        """
+        return self.replace(r"[ \t]+$", "")
+
+    def lstrip(self) -> "Series":
+        """
+        Remove leading whitespace
+        """
+        return self.replace(r"^\s*", "")
+
+    def slice(self, start: int, length: "Optional[int]" = None) -> "Series":
+        """
+        Create subslices of the string values of a Utf8 Series
+
+        Parameters
+        ----------
+        start
+            Start of the slice (negative indexing may be used)
+        length
+            Optional length of the slice
+
+        Returns
+        -------
+        Series of Utf8 type
+        """
+        return wrap_s(self._s.str_slice(start, length))
+
+
+class DateTimeNameSpace:
     """
     Series.dt namespace
     """
