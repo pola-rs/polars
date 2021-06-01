@@ -347,8 +347,9 @@ def test_strftime():
 
 
 def test_timestamp():
+    from datetime import datetime
+
     a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date64)
     assert a.dt.timestamp() == [10000, 20000, 30000]
-    print(a.dt.to_python_datetime())
-
-    assert False
+    a = a.dt.to_python_datetime()
+    assert isinstance(a[0], datetime)

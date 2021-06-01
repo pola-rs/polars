@@ -33,6 +33,7 @@ pub(crate) mod private {
     use crate::frame::groupby::GroupTuples;
 
     use ahash::RandomState;
+    #[cfg(feature = "object")]
     use std::borrow::Cow;
 
     pub trait PrivateSeries {
