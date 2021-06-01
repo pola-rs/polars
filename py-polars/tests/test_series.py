@@ -337,3 +337,10 @@ def test_arange_expr():
     out = df[[pl.arange(0, pl.col("a").count() * 10)]]
     assert out.shape == (20, 1)
     assert out.select_at_idx(0)[-1] == 19
+
+
+def test_strftime():
+    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date32)
+    assert a.dtype == pl.Date32
+    a = a.dt.strftime("%F")
+    assert a[2] == "2052-02-20"

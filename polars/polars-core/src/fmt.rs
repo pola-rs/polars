@@ -92,8 +92,8 @@ macro_rules! format_utf8_array {
                 write!($f, "\tnull\n").ok();
             }
             Some(s) => {
-                if s.len() >= $limit {
-                    write!($f, "\t\"{}...\"\n", &s[..$limit]).ok();
+                if s.len() > 12 {
+                    write!($f, "\t\"{}...\"\n", &s[..12]).ok();
                 } else {
                     write!($f, "\t\"{}\"\n", &s).ok();
                 }

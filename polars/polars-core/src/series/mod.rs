@@ -890,10 +890,10 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
     #[cfg(feature = "temporal")]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Format Date32/Date64 with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn datetime_str_fmt(&self, fmt: &str) -> Result<Series> {
+    fn strftime(&self, fmt: &str) -> Result<Series> {
         match self.dtype() {
-            DataType::Date32 => self.date32().map(|ca| ca.str_fmt(fmt).into_series()),
-            DataType::Date64 => self.date64().map(|ca| ca.str_fmt(fmt).into_series()),
+            DataType::Date32 => self.date32().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Date64 => self.date64().map(|ca| ca.strftime(fmt).into_series()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),

@@ -345,8 +345,8 @@ impl PyExpr {
             .into()
     }
 
-    pub fn datetime_str_fmt(&self, fmt: String) -> PyExpr {
-        let function = move |s: Series| s.datetime_str_fmt(&fmt);
+    pub fn strftime(&self, fmt: String) -> PyExpr {
+        let function = move |s: Series| s.strftime(&fmt);
         self.clone()
             .inner
             .map(function, Some(DataType::Utf8))

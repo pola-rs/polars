@@ -144,37 +144,6 @@ class Series:
         if not isinstance(values, np.ndarray) and not nullable:
             values = np.array(values)
 
-        if dtype is not None:
-            if dtype == Int8:
-                self._s = PySeries.new_i8(name, values)
-            elif dtype == Int16:
-                self._s = PySeries.new_i16(name, values)
-            elif dtype == Int32:
-                self._s = PySeries.new_i32(name, values)
-            elif dtype == Int64:
-                self._s = PySeries.new_i64(name, values)
-            elif dtype == UInt8:
-                self._s = PySeries.new_u8(name, values)
-            elif dtype == UInt16:
-                self._s = PySeries.new_u16(name, values)
-            elif dtype == UInt32:
-                self._s = PySeries.new_u32(name, values)
-            elif dtype == UInt64:
-                self._s = PySeries.new_u64(name, values)
-            elif dtype == Float32:
-                self._s = PySeries.new_f32(name, values, nullable)
-            elif dtype == Float64:
-                self._s = PySeries.new_f64(name, values, nullable)
-            elif dtype == Boolean:
-                self._s = PySeries.new_bool(name, values)
-            elif dtype == Utf8:
-                self._s = PySeries.new_str(name, values)
-            else:
-                raise ValueError(
-                    f"dtype {dtype} not yet supported when creating a Series"
-                )
-            return
-
         # numpy path
         if isinstance(values, np.ndarray):
             if not values.data.contiguous:
@@ -212,40 +181,78 @@ class Series:
             return
         # list path
         else:
-            dtype = _find_first_non_none(values)
-            # order is important as booleans are instance of int in python.
-            if isinstance(dtype, bool):
-                self._s = PySeries.new_opt_bool(name, values)
-            elif isinstance(dtype, int):
-                self._s = PySeries.new_opt_i64(name, values)
-            elif isinstance(dtype, float):
-                self._s = PySeries.new_opt_f64(name, values)
-            elif isinstance(dtype, str):
-                self._s = PySeries.new_str(name, values)
-            # make list array
-            elif isinstance(dtype, (list, tuple)):
-                value_dtype = _find_first_non_none(dtype)
-
-                # we can expect a failure if we pass `[[12], "foo", 9]`
-                # in that case we catch the exception and create an object type
-                try:
-                    if isinstance(value_dtype, bool):
-                        arrow_array = pa.array(values, pa.large_list(pa.bool_()))
-                    elif isinstance(value_dtype, int):
-                        arrow_array = pa.array(values, pa.large_list(pa.int64()))
-                    elif isinstance(value_dtype, float):
-                        arrow_array = pa.array(values, pa.large_list(pa.float64()))
-                    elif isinstance(value_dtype, str):
-                        arrow_array = pa.array(values, pa.large_list(pa.large_utf8()))
-                    else:
-                        self._s = PySeries.new_object(name, values)
-                        return
-                    self._s = Series.from_arrow(name, arrow_array)._s
-
-                except pa.lib.ArrowInvalid:
+            if dtype is not None:
+                if dtype == Date32:
+                    self._s = PySeries.new_opt_i32(name, values)
+                    self._s = self.cast(Date32)._s
+                elif dtype == Date64:
+                    self._s = PySeries.new_opt_i32(name, values)
+                    self._s = self.cast(Date64)._s
+                elif dtype == Int32:
+                    self._s = PySeries.new_opt_i32(name, values)
+                elif dtype == Int64:
+                    self._s = PySeries.new_opt_i64(name, values)
+                elif dtype == Float32:
+                    self._s = PySeries.new_opt_f32(name, values)
+                elif dtype == Float64:
+                    self._s = PySeries.new_opt_f64(name, values)
+                elif dtype == Boolean:
+                    self._s = PySeries.new_opt_bool(name, values)
+                elif dtype == Utf8:
+                    self._s = PySeries.new_str(name, values)
+                elif dtype == Int16:
+                    self._s = PySeries.new_opt_i16(name, values)
+                elif dtype == Int8:
+                    self._s = PySeries.new_opt_i8(name, values)
+                elif dtype == UInt8:
+                    self._s = PySeries.new_opt_u8(name, values)
+                elif dtype == UInt16:
+                    self._s = PySeries.new_opt_u16(name, values)
+                elif dtype == UInt32:
+                    self._s = PySeries.new_opt_u32(name, values)
+                elif dtype == UInt64:
+                    self._s = PySeries.new_opt_u64(name, values)
+                elif dtype == datatypes.Object:
                     self._s = PySeries.new_object(name, values)
+                else:
+                    raise ValueError(f"{dtype} not yet implemented")
             else:
-                self._s = PySeries.new_object(name, values)
+                dtype = _find_first_non_none(values)
+                # order is important as booleans are instance of int in python.
+                if isinstance(dtype, bool):
+                    self._s = PySeries.new_opt_bool(name, values)
+                elif isinstance(dtype, int):
+                    self._s = PySeries.new_opt_i64(name, values)
+                elif isinstance(dtype, float):
+                    self._s = PySeries.new_opt_f64(name, values)
+                elif isinstance(dtype, str):
+                    self._s = PySeries.new_str(name, values)
+                # make list array
+                elif isinstance(dtype, (list, tuple)):
+                    value_dtype = _find_first_non_none(dtype)
+
+                    # we can expect a failure if we pass `[[12], "foo", 9]`
+                    # in that case we catch the exception and create an object type
+                    try:
+                        if isinstance(value_dtype, bool):
+                            arrow_array = pa.array(values, pa.large_list(pa.bool_()))
+                        elif isinstance(value_dtype, int):
+                            arrow_array = pa.array(values, pa.large_list(pa.int64()))
+                        elif isinstance(value_dtype, float):
+                            arrow_array = pa.array(values, pa.large_list(pa.float64()))
+                        elif isinstance(value_dtype, str):
+                            arrow_array = pa.array(
+                                values, pa.large_list(pa.large_utf8())
+                            )
+                        else:
+                            self._s = PySeries.new_object(name, values)
+                            return
+                        self._s = Series.from_arrow(name, arrow_array)._s
+
+                    except pa.lib.ArrowInvalid:
+                        self._s = PySeries.new_object(name, values)
+                else:
+                    self._s = PySeries.new_object(name, values)
 
     @staticmethod
     def _from_pyseries(s: "PySeries") -> "Series":
@@ -1002,7 +1009,7 @@ class Series:
     def __len__(self):
         return self.len()
 
-    def cast(self, data_type="DataType"):
+    def cast(self, data_type: "DataType"):
         if data_type == int:
             data_type = Int64
         elif data_type == str:
@@ -1538,6 +1545,81 @@ class Series:
             self._s.rolling_sum(window_size, weight, ignore_null, min_periods)
         )
 
+    @staticmethod
+    def parse_date(
+        name: str, values: Sequence[str], dtype: "DataType", fmt: str
+    ) -> "Series":
+        """
+        .. deprecated::
+        """
+        f = get_ffi_func("parse_<>_from_str_slice", dtype, PySeries)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(name, values, fmt))
+
+    def sample(
+        self,
+        n: "Optional[int]" = None,
+        frac: "Optional[float]" = None,
+        with_replacement: bool = False,
+    ) -> "DataFrame":
+        """
+        Sample from this Series by setting either `n` or `frac`
+
+        Parameters
+        ----------
+        n
+            Number of samples < self.len()
+        frac
+            Fraction between 0.0 and 1.0
+        with_replacement
+            sample with replacement
+        """
+        if n is not None:
+            return wrap_s(self._s.sample_n(n, with_replacement))
+        return wrap_s(self._s.sample_frac(frac, with_replacement))
+
+    def peak_max(self) -> "Series":
+        """
+        Get a boolean mask of the local maximum peaks.
+        """
+        return wrap_s(self._s.peak_max())
+
+    def peak_min(self) -> "Series":
+        """
+        Get a boolean mask of the local minimum peaks.
+        """
+        return wrap_s(self._s.peak_min())
+
+    def n_unique(self) -> int:
+        """
+        Count the number of unique values in this Series
+        """
+        return self._s.n_unique()
+
+    @property
+    def dt(self) -> "DateTime":
+        return DateTime(self)
+
+
+class DateTime:
+    """
+    Series.dt namespace
+    """
+
+    def __init__(self, series: "Series"):
+        self._s = series._s
+
+    def strftime(self, fmt: str):
+        """
+        Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+
+        Returns
+        -------
+        Utf8 Series
+        """
+        return wrap_s(self._s.strftime(fmt))
+
     def year(self):
         """
         Extract year from underlying Date representation.
@@ -1672,68 +1754,6 @@ class Series:
         Nanosecond as UInt32
         """
         return wrap_s(self._s.nanosecond())
-
-    def datetime_str_fmt(self, fmt):
-        """
-        Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-
-        Returns
-        -------
-        Utf8 Series
-        """
-        return wrap_s(self._s.date_str_fmt(fmt))
-
-    @staticmethod
-    def parse_date(
-        name: str, values: Sequence[str], dtype: "DataType", fmt: str
-    ) -> "Series":
-        """
-        .. deprecated::
-        """
-        f = get_ffi_func("parse_<>_from_str_slice", dtype, PySeries)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(name, values, fmt))
-
-    def sample(
-        self,
-        n: "Optional[int]" = None,
-        frac: "Optional[float]" = None,
-        with_replacement: bool = False,
-    ) -> "DataFrame":
-        """
-        Sample from this Series by setting either `n` or `frac`
-
-        Parameters
-        ----------
-        n
-            Number of samples < self.len()
-        frac
-            Fraction between 0.0 and 1.0
-        with_replacement
-            sample with replacement
-        """
-        if n is not None:
-            return wrap_s(self._s.sample_n(n, with_replacement))
-        return wrap_s(self._s.sample_frac(frac, with_replacement))
-
-    def peak_max(self) -> "Series":
-        """
-        Get a boolean mask of the local maximum peaks.
-        """
-        return wrap_s(self._s.peak_max())
-
-    def peak_min(self) -> "Series":
-        """
-        Get a boolean mask of the local minimum peaks.
-        """
-        return wrap_s(self._s.peak_min())
-
-    def n_unique(self) -> int:
-        """
-        Count the number of unique values in this Series
-        """
-        return self._s.n_unique()
 
 
 class SeriesIter:
