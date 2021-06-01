@@ -129,11 +129,7 @@ fn format_object_array(
 ) -> fmt::Result {
     match object.dtype() {
         DataType::Object(inner_type) => {
-            write![
-                f,
-                "{}: '{}' [o][{}]\n[\n",
-                array_type, name, inner_type
-            ]?;
+            write![f, "{}: '{}' [o][{}]\n[\n", array_type, name, inner_type]?;
 
             for i in 0..limit {
                 let v = object.str_value(i);
