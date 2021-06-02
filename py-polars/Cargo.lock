@@ -962,7 +962,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.13.4"
+version = "0.14.0"
 dependencies = [
  "polars-core",
  "polars-io",
@@ -971,7 +971,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.13.4"
+version = "0.14.0"
 dependencies = [
  "arrow",
  "num",
@@ -980,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.13.4"
+version = "0.14.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1006,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.13.4"
+version = "0.14.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1028,7 +1028,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.13.4"
+version = "0.14.0"
 dependencies = [
  "ahash",
  "itertools",
