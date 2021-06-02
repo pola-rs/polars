@@ -1543,6 +1543,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 #[cfg(not(feature = "dtype-i8"))]
                 Ok(UInt32Chunked::full_null(name, len).into_series())
             }
+            #[cfg(feature = "dtype-date64")]
             ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
                 let chunks = chunks
                     .iter()
