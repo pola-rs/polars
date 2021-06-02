@@ -1,10 +1,30 @@
 use crate::prelude::*;
+use crate::utils::NoNull;
 use num::{Float, NumCast};
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
 use rand::seq::IteratorRandom;
 use rand_distr::{Distribution, Normal, StandardNormal, Uniform};
-use rayon::prelude::*;
+
+fn create_rand_index_with_replacement(
+    n: usize,
+    len: usize,
+) -> (ThreadRng, impl Iterator<Item = usize>) {
+    let mut rng = rand::thread_rng();
+    (
+        rng,
+        (0..n).map(move |_| Uniform::new(0, len).sample(&mut rng)),
+    )
+}
+
+fn create_rand_index_no_replacement(
+    n: usize,
+    len: usize,
+) -> (ThreadRng, impl Iterator<Item = usize>) {
+    // TODO! prevent allocation.
+    let mut rng = rand::thread_rng();
+    (rng, (0..len).choose_multiple(&mut rng, n).into_iter())
+}
 
 impl<T> ChunkedArray<T>
 where
@@ -18,18 +38,16 @@ where
             ));
         }
         let len = self.len();
-        let mut rng = rand::thread_rng();
 
         match with_replacement {
             true => {
-                let iter = (0..n).map(|_| Uniform::new(0, len).sample(&mut rng));
+                let (_, iter) = create_rand_index_with_replacement(n, len);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked(iter.into())) }
             }
             false => {
-                // TODO! prevent allocation.
-                let iter = (0..len).choose_multiple(&mut rng, n).into_iter();
+                let (_, iter) = create_rand_index_no_replacement(n, len);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked(iter.into())) }
@@ -47,12 +65,25 @@ where
 impl DataFrame {
     /// Sample n datapoints from this DataFrame.
     pub fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Self> {
-        let columns = self
-            .columns
-            .par_iter()
-            .map(|s| s.sample_n(n, with_replacement))
-            .collect::<Result<_>>()?;
-        Ok(DataFrame::new_no_checks(columns))
+        if !with_replacement && n > self.height() {
+            return Err(PolarsError::ShapeMisMatch(
+                "n is larger than the number of elements in this array".into(),
+            ));
+        }
+        // all columns should used the same indices. So we first create the indices.
+        let idx: NoNull<UInt32Chunked> = match with_replacement {
+            true => create_rand_index_with_replacement(n, self.height())
+                .1
+                .map(|i| i as u32)
+                .collect(),
+            false => create_rand_index_no_replacement(n, self.height())
+                .1
+                .map(|i| i as u32)
+                .collect(),
+        };
+        // Safety:
+        // indices are withing bounds
+        Ok(unsafe { self.take_unchecked(&idx.into_inner()) })
     }
 
     /// Sample a fraction between 0.0-1.0 of this DataFrame.

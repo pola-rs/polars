@@ -791,7 +791,7 @@ impl DataFrame {
         DataFrame::new_no_checks(new_col)
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Self {
+    pub(crate) unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Self {
         let cols = POOL.install(|| {
             self.columns
                 .par_iter()

@@ -773,8 +773,6 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
     }
 }
 
-pub struct NoNull<T>(pub T);
-
 impl Deref for CategoricalChunked {
     type Target = UInt32Chunked;
 

@@ -18,7 +18,7 @@ pub use crate::{
             window::InitFold,
             *,
         },
-        ChunkedArray, NoNull,
+        ChunkedArray,
     },
     datatypes,
     datatypes::*,
