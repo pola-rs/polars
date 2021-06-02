@@ -353,3 +353,7 @@ def test_timestamp():
     assert a.dt.timestamp() == [10000, 20000, 30000]
     a = a.dt.to_python_datetime()
     assert isinstance(a[0], datetime)
+
+    df = pl.DataFrame([a])
+    # test if rows returns objects
+    assert isinstance(df.row(0)[0], datetime)

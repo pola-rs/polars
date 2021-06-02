@@ -11,7 +11,7 @@ use crate::apply::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_utf8_out_type,
 };
-use crate::conversion::Wrap;
+use crate::conversion::{Wrap, ObjectValue};
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
@@ -200,7 +200,16 @@ impl PyDataFrame {
             self.df
                 .get_columns()
                 .iter()
-                .map(|s| Wrap(s.get(idx)).into_py(py)),
+                .map(|s| {
+                    match s.dtype() {
+                        DataType::Object(_) => {
+                            let any = s.get_as_any(idx);
+                            let obj: &ObjectValue = any.into();
+                            obj.to_object(py)
+                        },
+                        _ => Wrap(s.get(idx)).into_py(py)
+                    }
+                }),
         )
         .into_py(py)
     }
@@ -218,7 +227,16 @@ impl PyDataFrame {
                     self.df
                         .get_columns()
                         .iter()
-                        .map(|s| Wrap(s.get(idx)).into_py(py)),
+                        .map(|s| {
+                            match s.dtype() {
+                                DataType::Object(_) => {
+                                    let any = s.get_as_any(idx);
+                                    let obj: &ObjectValue = any.into();
+                                    obj.to_object(py)
+                                },
+                                _ => Wrap(s.get(idx)).into_py(py)
+                            }
+                        }),
                 )
             }),
         )
