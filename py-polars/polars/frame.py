@@ -407,6 +407,22 @@ class DataFrame:
 
         if use_pyarrow:
             tbl = self.to_arrow()
+
+            data = {}
+
+            for i, column in enumerate(tbl):
+                # extract the name before casting
+                if column._name is None:
+                    name = f"column_{i}"
+                else:
+                    name = column._name
+
+                # parquet casts date64 to date32 for some reason
+                if column.type == pa.date64():
+                    column = pa.compute.cast(column, pa.timestamp("ms", None))
+                data[name] = column
+            tbl = pa.table(data)
+
             pa.parquet.write_table(
                 table=tbl, where=file, compression=compression, **kwargs
             )
