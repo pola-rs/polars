@@ -525,6 +525,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
+            #[cfg(feature = "temporal")]
             AnyValue::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
             #[cfg(feature = "temporal")]
             AnyValue::Date64(v) => write!(f, "{}", date64_as_datetime(*v)),
