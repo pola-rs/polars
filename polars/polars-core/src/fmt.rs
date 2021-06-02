@@ -336,9 +336,9 @@ fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<Str
     fn make_str_val(v: &str) -> String {
         let string_limit = 32;
         if v.len() > string_limit {
-            format!("\"{}...\"", &v[..string_limit])
+            format!("{}...", &v[..string_limit])
         } else {
-            format!("\"{}\"", v)
+            v.to_string()
         }
     }
 
