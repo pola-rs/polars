@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use regex::{Regex, RegexBuilder};
 use std::borrow::Cow;
 use std::collections::HashSet;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 
 pub(crate) fn init_csv_reader<R: Read>(
     reader: R,
@@ -100,7 +100,15 @@ pub fn infer_file_schema<R: Read + Seek>(
     max_read_records: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
+    skip_rows: usize,
 ) -> Result<(Schema, usize)> {
+    let mut reader = BufReader::new(reader);
+    let mut line = String::new();
+    for _ in 0..skip_rows {
+        reader.read_line(&mut line)?;
+        line.clear()
+    }
+
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
@@ -144,7 +152,7 @@ pub fn infer_file_schema<R: Read + Seek>(
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut records;
 
-    for result in records_ref.take(max_read_records.unwrap_or(std::usize::MAX)) {
+    for result in records_ref.take(max_read_records.unwrap_or(usize::MAX)) {
         let record = result.map_err(anyhow::Error::from)?;
         records_count += 1;
 
