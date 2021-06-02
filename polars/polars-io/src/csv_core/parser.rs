@@ -16,7 +16,10 @@ pub(crate) fn skip_bom(input: &[u8]) -> &[u8] {
 /// Find the nearest next line position.
 /// Does not check for new line characters embedded in String fields.
 pub(crate) fn next_line_position_naive(input: &[u8]) -> Option<usize> {
-    let pos = input.iter().position(|b| *b == b'\n')?;
+    let pos = input.iter().position(|b| *b == b'\n')? + 1;
+    if input.len() - pos == 0 {
+        return None;
+    }
     input.get(pos + 1).and_then(|&b| {
         Option::from({
             if b == b'\r' {
@@ -98,10 +101,10 @@ where
 ///     '\nfield_1,field_1'
 pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
     let mut pos = next_line_position_naive(input).expect("no lines in the file");
-    if input[pos + 1] == b'\n' {
+    if input[pos] == b'\n' {
         pos += 1;
     }
-    (&input[pos + 1..], pos + 1)
+    (&input[pos..], pos)
 }
 
 /// Remove whitespace and line endings from the start of file.

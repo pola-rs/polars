@@ -819,4 +819,24 @@ AUDCAD,1616455921,0.96212,0.95666,1"#;
         );
         Ok(())
     }
+
+    #[test]
+    fn test_skip_rows() -> Result<()> {
+        let csv = r"#doc source pos typeindex type topic
+#alpha : 25.0 25.0
+#beta : 0.1
+0 NA 0 0 57 0
+0 NA 0 0 57 0
+0 NA 5 5 513 0";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(false)
+            .with_skip_rows(3)
+            .with_delimiter(b' ')
+            .finish()?;
+
+        assert_eq!(df.height(), 3);
+        Ok(())
+    }
 }

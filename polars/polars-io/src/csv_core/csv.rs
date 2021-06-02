@@ -169,7 +169,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
         if self.skip_rows > 0 {
             for _ in 0..self.skip_rows {
-                let pos = next_line_position(bytes, self.schema.fields().len(), self.delimiter)
+                // This does not check embedding of new line chars in string quotes.
+                // TODO create a state machine/ or use that of csv crate to skip lines with proper
+                // escaping
+                let pos = next_line_position_naive(bytes)
                     .ok_or_else(|| PolarsError::NoData("not enough lines to skip".into()))?;
                 bytes = &bytes[pos..];
             }
@@ -185,8 +188,10 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
     ) -> Result<DataFrame> {
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
 
+        println!("{}", std::str::from_utf8(&bytes).unwrap());
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let mut bytes = self.find_starting_point(bytes)?;
+        println!("{}", std::str::from_utf8(&bytes).unwrap());
 
         // initial row guess. We use the line statistic to guess the number of rows to allocate
         let mut total_rows = 128;
@@ -481,6 +486,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
                 max_records,
                 has_header,
                 schema_overwrite,
+                skip_rows,
             )?;
             Arc::new(inferred_schema)
         }
