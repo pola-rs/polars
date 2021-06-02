@@ -20,7 +20,7 @@ parquet = ["polars-core/parquet", "parquet_lib"]
 dtype-u64 = ["polars-core/dtype-u64"]
 dtype-date64 = ["polars-core/dtype-date64", "polars-core/temporal"]
 dtype-date32 = ["polars-core/dtype-date32"]
-csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
+csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical", "arrow/csv"]
 
 [dependencies]
 arrow = {git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246edc4a6fcc2c8e5b9bc570", default-features=false}
