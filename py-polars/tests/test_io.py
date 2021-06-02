@@ -52,3 +52,28 @@ def test_parquet_chunks():
 
         # read it with polars
         polars_df = pl.read_parquet(f)
+
+
+def test_parquet_datetime():
+    """
+    This failed because parquet writers cast date64 to date32
+    """
+    f = io.BytesIO()
+    data = {
+        "datetime": [  # unix timestamp in ms
+            1618354800000,
+            1618354740000,
+            1618354680000,
+            1618354620000,
+            1618354560000,
+        ],
+        "laf_max": [73.1999969482, 71.0999984741, 74.5, 69.5999984741, 69.6999969482],
+        "laf_eq": [59.5999984741, 61.0, 62.2999992371, 56.9000015259, 60.0],
+    }
+    df = pl.DataFrame(data)
+    df = df.with_column(df["datetime"].cast(pl.Date64))
+
+    df.to_parquet(f, use_pyarrow=True)
+    f.seek(0)
+    read = pl.read_parquet(f)
+    assert read.frame_equal(df)
