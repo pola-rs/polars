@@ -158,9 +158,7 @@ def read_csv(
     if (
         use_pyarrow
         and dtype is None
-        and has_headers
         and projection is None
-        and sep == ","
         and columns is None
         and stop_after_n_rows is None
         and not ignore_errors
@@ -168,7 +166,13 @@ def read_csv(
         and encoding == "utf8"
         and not low_memory
     ):
-        tbl = pa.csv.read_csv(file, pa.csv.ReadOptions(skip_rows=skip_rows))
+        tbl = pa.csv.read_csv(
+            file,
+            pa.csv.ReadOptions(
+                skip_rows=skip_rows, autogenerate_column_names=not has_headers
+            ),
+            pa.csv.ParseOptions(delimiter=sep),
+        )
         return from_arrow(tbl, rechunk)
 
     df = DataFrame.read_csv(
