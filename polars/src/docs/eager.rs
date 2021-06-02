@@ -30,6 +30,8 @@
 //!     - [Write IPC](#write-ipc)
 //!     - [Read Parquet](#read-parquet)
 //!     - [Write Parquet](#write-parquet)
+//! * [Various]
+//!     - [Replace NaN](#replace-nan)
 //!
 //! ## Creation of Data structures
 //!
@@ -670,3 +672,32 @@
 //!     .finish(df)
 //! # }
 //! ```
+//!
+//! # Various
+//!
+//! ## Replace NaN
+//! ```
+//! use polars::prelude::*;
+//! use polars::df;
+//!
+//! /// Replaces NaN with missing values.
+//! fn fill_nan_with_nulls() -> Result<DataFrame> {
+//!     let nan = f64::NAN;
+//!
+//!     let mut df = df! {
+//!        "a" => [nan, 1.0, 2.0],
+//!        "b" => [nan, 1.0, 2.0]
+//!     }
+//!     .unwrap();
+//!
+//!     for idx in 0..df.width() {
+//!         df.may_apply_at_idx(idx, |series| {
+//!             let mask = series.is_nan()?;
+//!             let ca = series.f64()?;
+//!             ca.set(&mask, None)
+//!         })?;
+//!     }
+//!     Ok(df)
+//! }
+//! ```
+//!
