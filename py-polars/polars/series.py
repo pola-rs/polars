@@ -1512,7 +1512,7 @@ class StringNameSpace:
         Parameters
         ----------
         datatype
-            polars.Date32 or polars.Date64
+            Date32 or Date64
         fmt
             formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
 
@@ -1785,7 +1785,7 @@ class DateTimeNameSpace:
         from datetime import datetime
 
         return (self.timestamp() // 1000).apply(
-            lambda ts: datetime.fromtimestamp(ts), datatypes.Object
+            lambda ts: datetime.utcfromtimestamp(ts), datatypes.Object
         )
 
 
