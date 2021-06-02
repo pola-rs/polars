@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.13.4"
+version = "0.14.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -98,9 +98,9 @@ dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
 dtype-u64 = ["polars-core/dtype-u64", "polars-lazy/dtype-u64", "polars-io/dtype-u64"]
 
 [dependencies]
-polars-core = {version = "0.13.4", path = "./polars-core", features= ["docs"], default-features = false}
-polars-io = {version = "0.13.4", path = "./polars-io", default-features = false, optional=true}
-polars-lazy = {version = "0.13.4", path = "./polars-lazy", default-features = false, optional=true}
+polars-core = {version = "0.14.0", path = "./polars-core", features= ["docs"], default-features = false}
+polars-io = {version = "0.14.0", path = "./polars-io", default-features = false, optional=true}
+polars-lazy = {version = "0.14.0", path = "./polars-lazy", default-features = false, optional=true}
 
 [dev-dependencies]
 criterion = "0.3"

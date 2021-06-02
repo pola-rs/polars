@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.13.4"
+version = "0.14.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -14,19 +14,20 @@ repository = "https://github.com/ritchie46/polars"
 json = []
 # support for arrows ipc file parsing
 ipc = ["arrow/ipc"]
+#ipc = []
 lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
 dtype-u64 = ["polars-core/dtype-u64"]
 dtype-date64 = ["polars-core/dtype-date64"]
 dtype-date32 = ["polars-core/dtype-date32"]
-csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical", "arrow/csv"]
+csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
 
 [dependencies]
 arrow = {git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246edc4a6fcc2c8e5b9bc570", default-features=false}
-#arrow = {version = "4.1", default-features = false }
+#arrow = {version = "4.2", default-features = false }
 parquet_lib = {optional = true, package="parquet", git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246edc4a6fcc2c8e5b9bc570"}
-#parquet_lib = {version = "4.1", package="parquet", optional = true}
-polars-arrow = {version = "0.13.4", path = "../polars-arrow"}
+#parquet_lib = {version = "4.2", package="parquet", optional = true}
+polars-arrow = {version = "0.14.0", path = "../polars-arrow"}
 csv = {version="1.1", optional=true}
 lexical = {version = "5.2", optional = true}
 num_cpus = "1.13.0"
@@ -41,7 +42,7 @@ ahash = "0.7"
 num = "^0.4.0"
 
 [dependencies.polars-core]
-version = "0.13.0"
+version = "0.14.0"
 path = "../polars-core"
 default-features = false
 
