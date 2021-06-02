@@ -1491,7 +1491,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                         )
                         .unwrap()
                     })
-                    .collect_vec();
+                    .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Boolean => {
@@ -1542,6 +1542,13 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 return Ok(Int8Chunked::full_null(name, len).into_series());
                 #[cfg(not(feature = "dtype-i8"))]
                 Ok(UInt32Chunked::full_null(name, len).into_series())
+            }
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
+                let chunks = chunks
+                    .iter()
+                    .map(|arr| cast(arr, &ArrowDataType::Date64).unwrap())
+                    .collect();
+                Ok(Date64Chunked::new_from_chunks(name, chunks).into_series())
             }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?} type", dt).into(),

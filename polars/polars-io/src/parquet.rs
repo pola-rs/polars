@@ -17,7 +17,7 @@
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
-use arrow::record_batch::RecordBatchReader;
+use arrow::{compute::cast, record_batch::RecordBatchReader};
 use parquet_lib::file::reader::{FileReader, SerializedFileReader};
 pub use parquet_lib::file::serialized_reader::SliceableCursor;
 use parquet_lib::{
@@ -171,10 +171,52 @@ where
 
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(self, df: &mut DataFrame) -> Result<()> {
-        let mut parquet_writer =
-            ParquetArrowWriter::try_new(self.writer, Arc::new(df.schema().to_arrow()), None)?;
+        let mut fields = df.schema().to_arrow().fields().clone();
 
-        let iter = df.iter_record_batches(df.height());
+        // date64 is not supported by parquet and will be be truncated to date32
+        // We coerce these to timestamp(ms)
+        let date64_columns = df
+            .get_columns()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| match s.dtype() {
+                DataType::Date64 => {
+                    fields[i] = ArrowField::new(
+                        s.name(),
+                        ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
+                        s.null_count() > 0,
+                    );
+                    Some(i)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let column_names = df
+            .get_columns()
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect::<Vec<_>>();
+
+        let iter = df.iter_record_batches(df.height()).map(|rb| {
+            if !date64_columns.is_empty() {
+                let mut columns = rb.columns().to_vec();
+                for i in &date64_columns {
+                    let array = cast(&columns[*i], &ArrowDataType::Int64).unwrap();
+                    let array = cast(
+                        &array,
+                        &ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
+                    )
+                    .unwrap();
+                    columns[*i] = array;
+                }
+                RecordBatch::try_from_iter(column_names.iter().zip(columns)).unwrap()
+            } else {
+                rb
+            }
+        });
+
+        let mut parquet_writer =
+            ParquetArrowWriter::try_new(self.writer, Arc::new(ArrowSchema::new(fields)), None)?;
 
         for batch in iter {
             parquet_writer.write(&batch)?
@@ -187,7 +229,10 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use parquet_lib::file::writer::InMemoryWriteableCursor;
+    use polars_core::{df, prelude::*};
     use std::fs::File;
+    use std::io::{Cursor, Seek, SeekFrom};
 
     #[test]
     fn test_parquet() {
@@ -198,5 +243,26 @@ mod test {
             assert_eq!(df.get_column_names(), ["a", "b"]);
             assert_eq!(df.shape(), (3, 2));
         }
+    }
+
+    #[test]
+    #[cfg(all(feature = "dtype-date64", feature = "parquet"))]
+    fn test_parquet_date64_round_trip() -> Result<()> {
+        let mut f: InMemoryWriteableCursor = Default::default();
+
+        let mut df = df![
+            "date64" => [Some(191845729i64), Some(89107598), None, Some(3158971092)]
+        ]?;
+
+        df.may_apply("date64", |s| s.cast::<Date64Type>())?;
+
+        ParquetWriter::new(f.clone()).finish(&mut df)?;
+        let data = f.data();
+
+        let f = SliceableCursor::new(data);
+
+        let read = ParquetReader::new(f).finish()?;
+        assert!(read.frame_equal_missing(&df));
+        Ok(())
     }
 }
