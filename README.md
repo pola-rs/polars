@@ -119,7 +119,8 @@ This can be done by going through the following steps in sequence:
 2. `$ pip3 install maturin`
 4.  Choose any of:
   * Very long compile times, fastest binary: `$ cd py-polars && maturin develop --rustc-extra-args="-C target-cpu=native" --release`
-  * Shorter compile times, fast binary: `$ cd py-polars && maturin develop --rustc-extra-args="-C codegen-units=16 lto=no target-cpu=native" --release`
+  * Shorter compile times, fast binary: `$ cd py-polars && maturin develop --rustc-extra-args="-C codegen-units=16 -C lto=thin -C target-cpu=native" --release
+    `
 
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped 
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
