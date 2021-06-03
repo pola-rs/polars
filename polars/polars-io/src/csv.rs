@@ -69,7 +69,6 @@ pub struct CsvWriter<'a, W: Write> {
     buffer: &'a mut W,
     /// Builds an Arrow CSV Writer
     writer_builder: WriterBuilder,
-    buffer_size: usize,
 }
 
 impl<'a, W> SerWriter<'a, W> for CsvWriter<'a, W>
@@ -80,14 +79,13 @@ where
         CsvWriter {
             buffer,
             writer_builder: WriterBuilder::new(),
-            buffer_size: 1000,
         }
     }
 
     fn finish(self, df: &mut DataFrame) -> Result<()> {
         let mut csv_writer = self.writer_builder.build(self.buffer);
 
-        let iter = df.iter_record_batches(self.buffer_size);
+        let iter = df.iter_record_batches();
         for batch in iter {
             csv_writer.write(&batch)?
         }
@@ -129,9 +127,9 @@ where
         self
     }
 
+    #[deprecated(since = "0.14.1", note = "is a no-op")]
     /// Set the size of the write buffers. Batch size is the amount of rows written at once.
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
-        self.buffer_size = batch_size;
+    pub fn with_batch_size(self, _batch_size: usize) -> Self {
         self
     }
 }

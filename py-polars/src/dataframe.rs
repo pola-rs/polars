@@ -165,7 +165,6 @@ impl PyDataFrame {
     pub fn to_csv(
         &mut self,
         py_f: PyObject,
-        batch_size: usize,
         has_headers: bool,
         delimiter: u8,
     ) -> PyResult<()> {
@@ -173,7 +172,6 @@ impl PyDataFrame {
         CsvWriter::new(&mut buf)
             .has_headers(has_headers)
             .with_delimiter(delimiter)
-            .with_batch_size(batch_size)
             .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())

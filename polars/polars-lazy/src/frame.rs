@@ -2177,7 +2177,7 @@ mod test {
         );
 
         // check if this runs
-        let out = df
+        let _out = df
             .lazy()
             .select(vec![argsort_by(
                 vec![col("str"), col("flt")],
