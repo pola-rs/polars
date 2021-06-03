@@ -34,6 +34,7 @@
 //! ```
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
+use crate::utils::to_arrow_compatible_df;
 use arrow::ipc::{
     reader::FileReader as ArrowIPCFileReader, writer::FileWriter as ArrowIPCFileWriter,
 };
@@ -129,7 +130,8 @@ where
         IpcWriter { writer }
     }
 
-    fn finish(self, df: &mut DataFrame) -> Result<()> {
+    fn finish(self, df: &DataFrame) -> Result<()> {
+        let df = to_arrow_compatible_df(df);
         let mut ipc_writer = ArrowIPCFileWriter::try_new(self.writer, &df.schema().to_arrow())?;
 
         let iter = df.iter_record_batches();

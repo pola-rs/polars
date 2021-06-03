@@ -55,6 +55,7 @@
 //! ```
 //!
 use crate::csv_core::csv::{build_csv_reader, SequentialReader};
+use crate::utils::to_arrow_compatible_df;
 use crate::{SerReader, SerWriter};
 pub use arrow::csv::WriterBuilder;
 use polars_core::prelude::*;
@@ -82,7 +83,8 @@ where
         }
     }
 
-    fn finish(self, df: &mut DataFrame) -> Result<()> {
+    fn finish(self, df: &DataFrame) -> Result<()> {
+        let df = to_arrow_compatible_df(df);
         let mut csv_writer = self.writer_builder.build(self.buffer);
 
         let iter = df.iter_record_batches();

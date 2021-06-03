@@ -11,7 +11,7 @@ use crate::apply::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_utf8_out_type,
 };
-use crate::conversion::{Wrap, ObjectValue};
+use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
@@ -162,12 +162,7 @@ impl PyDataFrame {
         Ok(Self::from(df))
     }
 
-    pub fn to_csv(
-        &mut self,
-        py_f: PyObject,
-        has_headers: bool,
-        delimiter: u8,
-    ) -> PyResult<()> {
+    pub fn to_csv(&mut self, py_f: PyObject, has_headers: bool, delimiter: u8) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         CsvWriter::new(&mut buf)
             .has_headers(has_headers)
@@ -195,19 +190,14 @@ impl PyDataFrame {
         };
         PyTuple::new(
             py,
-            self.df
-                .get_columns()
-                .iter()
-                .map(|s| {
-                    match s.dtype() {
-                        DataType::Object(_) => {
-                            let any = s.get_as_any(idx);
-                            let obj: &ObjectValue = any.into();
-                            obj.to_object(py)
-                        },
-                        _ => Wrap(s.get(idx)).into_py(py)
-                    }
-                }),
+            self.df.get_columns().iter().map(|s| match s.dtype() {
+                DataType::Object(_) => {
+                    let any = s.get_as_any(idx);
+                    let obj: &ObjectValue = any.into();
+                    obj.to_object(py)
+                }
+                _ => Wrap(s.get(idx)).into_py(py),
+            }),
         )
         .into_py(py)
     }
@@ -222,19 +212,14 @@ impl PyDataFrame {
             (0..df.height()).map(|idx| {
                 PyTuple::new(
                     py,
-                    self.df
-                        .get_columns()
-                        .iter()
-                        .map(|s| {
-                            match s.dtype() {
-                                DataType::Object(_) => {
-                                    let any = s.get_as_any(idx);
-                                    let obj: &ObjectValue = any.into();
-                                    obj.to_object(py)
-                                },
-                                _ => Wrap(s.get(idx)).into_py(py)
-                            }
-                        }),
+                    self.df.get_columns().iter().map(|s| match s.dtype() {
+                        DataType::Object(_) => {
+                            let any = s.get_as_any(idx);
+                            let obj: &ObjectValue = any.into();
+                            obj.to_object(py)
+                        }
+                        _ => Wrap(s.get(idx)).into_py(py),
+                    }),
                 )
             }),
         )
@@ -253,12 +238,22 @@ impl PyDataFrame {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
-        let rbs = self
+
+        // Arrow does not know about our categorical type implementation, so we cast to utf8
+        let cols = self
             .df
-            .as_record_batches()
-            .map_err(PyPolarsEr::from)?
+            .get_columns()
             .iter()
-            .map(|rb| arrow_interop::to_py::to_py_rb(rb, py, pyarrow))
+            .map(|s| match s.dtype() {
+                DataType::Categorical => s.cast::<Utf8Type>().unwrap(),
+                _ => s.clone(),
+            })
+            .collect::<Vec<_>>();
+        let df = DataFrame::new_no_checks(cols);
+
+        let rbs = df
+            .iter_record_batches()
+            .map(|rb| arrow_interop::to_py::to_py_rb(&rb, py, pyarrow))
             .collect::<PyResult<_>>()?;
         Ok(rbs)
     }
