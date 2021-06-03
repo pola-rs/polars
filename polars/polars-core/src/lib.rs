@@ -10,6 +10,9 @@ mod fmt;
 pub mod frame;
 pub mod functions;
 pub mod prelude;
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+pub mod serde;
 pub mod series;
 pub mod testing;
 pub(crate) mod vector_hasher;

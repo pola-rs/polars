@@ -78,6 +78,8 @@ rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
 regex = {version = "1.4", optional = true}
 serde_json = {version = "1.0", optional = true }
+# activate if you want to serde Series and DataFrames
+serde = {version = "1", features=["derive"], optional = true }
 anyhow = "1.0"
 ahash = "0.7"
 num_cpus = "1.1"
