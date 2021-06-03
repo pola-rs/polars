@@ -187,11 +187,8 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> Result<DataFrame> {
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
-
-        println!("{}", std::str::from_utf8(&bytes).unwrap());
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let mut bytes = self.find_starting_point(bytes)?;
-        println!("{}", std::str::from_utf8(&bytes).unwrap());
 
         // initial row guess. We use the line statistic to guess the number of rows to allocate
         let mut total_rows = 128;
