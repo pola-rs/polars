@@ -63,12 +63,7 @@ where
             } else {
                 let keys = splitted
                     .iter()
-                    .map(|ca| {
-                        ca.downcast_iter()
-                            .map(|v| v.into_iter().map(|v| v.as_u64()))
-                            .flatten()
-                            .collect::<Vec<_>>()
-                    })
+                    .map(|ca| ca.downcast_iter().flatten().collect::<Vec<_>>())
                     .collect::<Vec<_>>();
 
                 groupby_threaded_num(keys, group_size_hint)
@@ -83,7 +78,7 @@ where
         } else {
             let keys = splitted
                 .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .map(|ca| ca.into_iter().collect::<Vec<_>>())
                 .collect::<Vec<_>>();
             groupby_threaded_num(keys, group_size_hint)
         }
@@ -213,7 +208,7 @@ impl DataFrame {
             }
             _ => {
                 if multithreaded {
-                    let n_threads = num_cpus::get();
+                    let n_threads = POOL.current_num_threads();
                     groupby_threaded_multiple_keys_flat(keys_df, n_threads)
                 } else {
                     groupby_multiple_keys(keys_df)
@@ -1342,6 +1337,22 @@ mod test {
             .unwrap();
         let expected = f64::FRAC_1_SQRT_2();
         assert!((val - expected).abs() < 0.000001);
+        Ok(())
+    }
+
+    #[test]
+    fn test_groupby_null_group() -> Result<()> {
+        // check if null is own group
+        let mut df = df![
+            "g" => [Some("foo"), Some("foo"), Some("bar"), None, None],
+            "flt" => [1.0, 2.0, 3.0, 1.0, 1.0],
+            "int" => [1, 2, 3, 1, 1]
+        ]?;
+
+        df.may_apply("g", |s| s.cast::<CategoricalType>())?;
+
+        let out = df.groupby("g")?.sum()?;
+        dbg!(out);
         Ok(())
     }
 }
