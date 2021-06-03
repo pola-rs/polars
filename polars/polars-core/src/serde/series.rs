@@ -1,75 +1,211 @@
 use crate::prelude::*;
-use serde::ser::SerializeStruct;
-use serde::{Serialize, Serializer};
-use std::cell::RefCell;
+use crate::serde::DeDataType;
+use serde::de::{MapAccess, Visitor};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt::Formatter;
 
-pub struct IterSer<I>
-where
-    I: IntoIterator,
-    <I as IntoIterator>::Item: Serialize,
-{
-    iter: RefCell<Option<I>>,
-}
-
-impl<I> IterSer<I>
-where
-    I: IntoIterator,
-    <I as IntoIterator>::Item: Serialize,
-{
-    fn new(iter: I) -> Self {
-        IterSer {
-            iter: RefCell::new(Some(iter)),
+impl Serialize for Series {
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        if let Ok(ca) = self.i32() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.u32() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.i64() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.u64() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.f32() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.f64() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.date32() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.date64() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.time64_nanosecond() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.utf8() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.bool() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.categorical() {
+            ca.serialize(serializer)
+        } else if let Ok(ca) = self.list() {
+            ca.serialize(serializer)
+        } else {
+            // cast small integers to i32
+            self.cast_with_dtype(&DataType::Int32)
+                .unwrap()
+                .serialize(serializer)
         }
     }
 }
 
-impl<I> Serialize for IterSer<I>
-where
-    I: IntoIterator,
-    <I as IntoIterator>::Item: Serialize,
-{
-    fn serialize<S>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+impl<'de> Deserialize<'de> for Series {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, <D as Deserializer<'de>>::Error>
     where
-        S: Serializer,
+        D: Deserializer<'de>,
     {
-        let iter: I = self.iter.borrow_mut().take().unwrap();
-        serializer.collect_seq(iter.into_iter())
-    }
-}
+        const FIELDS: &[&str] = &["name", "datatype", "values"];
 
-impl<T> Serialize for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: Serialize,
-{
-    fn serialize<S>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("series", 3)?;
-        state.serialize_field("name", self.name());
-        state.serialize_field("datatype", self.dtype());
-        state.serialize_field("values", &IterSer::new(self.into_iter()));
-        state.end()
-    }
-}
+        struct SeriesVisitor;
 
-#[cfg(test)]
-mod test {
-    use super::*;
+        impl<'de> Visitor<'de> for SeriesVisitor {
+            type Value = Series;
 
-    #[test]
-    fn test_serde() -> Result<()> {
-        let ca = UInt32Chunked::new_from_opt_slice("foo", &[Some(1), None, Some(2)]);
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter
+                    .write_str("struct {name: <name>, datatype: <dtype>, values: <values array>}")
+            }
 
-        dbg!(serde_json::to_string(&ca).unwrap());
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                enum Field {
+                    Name,
+                    DataType,
+                    Values,
+                }
 
-        Ok(())
+                impl<'de> Deserialize<'de> for Field {
+                    fn deserialize<D>(
+                        deserializer: D,
+                    ) -> std::result::Result<Self, <D as Deserializer<'de>>::Error>
+                    where
+                        D: Deserializer<'de>,
+                    {
+                        struct FieldVisitor;
+
+                        impl<'de> Visitor<'de> for FieldVisitor {
+                            type Value = Field;
+
+                            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                                formatter.write_str("'name', 'datatype', or 'values'")
+                            }
+
+                            fn visit_str<E>(
+                                self,
+                                value: &str,
+                            ) -> std::result::Result<Self::Value, E>
+                            where
+                                E: serde::de::Error,
+                            {
+                                match value {
+                                    "name" => Ok(Field::Name),
+                                    "datatype" => Ok(Field::DataType),
+                                    "values" => Ok(Field::Values),
+
+                                    _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                                }
+                            }
+                        }
+
+                        deserializer.deserialize_identifier(FieldVisitor)
+                    }
+                }
+
+                let mut name = None;
+                let mut dtype = None;
+                let mut values_set = false;
+                let mut count = 0;
+                while let Some(key) = map.next_key()? {
+                    count += 1;
+                    match key {
+                        Field::Name => {
+                            name = Some(map.next_value()?);
+                        }
+                        Field::DataType => {
+                            dtype = Some(map.next_value()?);
+                        }
+                        Field::Values => {
+                            // we delay calling next_value until we know the dtype
+                            values_set = true;
+                            if count != 3 {
+                                return Err(de::Error::custom(
+                                    "field values should be behind name and datatype",
+                                ));
+                            }
+                            break;
+                        }
+                    }
+                }
+                if !values_set {
+                    return Err(de::Error::missing_field("values"));
+                }
+                let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
+                let dtype = dtype.ok_or_else(|| de::Error::missing_field("datatype"))?;
+
+                match dtype {
+                    #[cfg(feature = "dtype-i8")]
+                    DeDataType::Int8 => {
+                        let values: Vec<Option<i8>> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    #[cfg(feature = "dtype-u8")]
+                    DeDataType::UInt8 => {
+                        let values: Vec<Option<u8>> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    DeDataType::Int32 => {
+                        let values: Vec<Option<i32>> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    DeDataType::UInt32 => {
+                        let values: Vec<Option<u32>> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    DeDataType::Int64 => {
+                        let values: Vec<Option<i64>> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    #[cfg(feature = "dtype-u64")]
+                    DeDataType::UInt64 => {
+                        let values: Vec<Option<u64>> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    #[cfg(feature = "dtype-date32")]
+                    DeDataType::Date32 => {
+                        let values: Vec<Option<i32>> = map.next_value()?;
+                        Ok(Series::new(name, values).cast::<Date32Type>().unwrap())
+                    }
+                    #[cfg(feature = "dtype-date64")]
+                    DeDataType::Date64 => {
+                        let values: Vec<Option<i64>> = map.next_value()?;
+                        Ok(Series::new(name, values).cast::<Date64Type>().unwrap())
+                    }
+                    DeDataType::Boolean => {
+                        let values: Vec<Option<bool>> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    #[cfg(feature = "dtype-time64-ns")]
+                    DeDataType::Time64(TimeUnit::Nanosecond) => {
+                        let values: Vec<Option<i64>> = map.next_value()?;
+                        Ok(Series::new(name, values)
+                            .cast::<Time64NanosecondType>()
+                            .unwrap())
+                    }
+                    DeDataType::Utf8 => {
+                        let values: Vec<Option<&str>> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    DeDataType::List => {
+                        let values: Vec<Series> = map.next_value()?;
+                        Ok(Series::new(name, values))
+                    }
+                    dt => {
+                        panic!("{:?} dtype deserialization not yet implemented", dt)
+                    }
+                }
+            }
+        }
+
+        deserializer.deserialize_map(SeriesVisitor)
     }
 }

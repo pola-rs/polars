@@ -26,8 +26,11 @@ pub mod select;
 mod upstream_traits;
 use crate::prelude::sort::prepare_argsort;
 use crate::POOL;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
     pub(crate) columns: Vec<Series>,
 }

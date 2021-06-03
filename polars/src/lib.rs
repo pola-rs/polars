@@ -90,6 +90,7 @@
 //! * `strings` - Extra string utilities for `Utf8Chunked`
 //! * `object` - Experimental support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
 //!              These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
+//! * `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization
 //!
 //! ## 4.3 Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around

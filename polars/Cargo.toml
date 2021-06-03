@@ -22,6 +22,8 @@ default = ["docs",
     "dtype-slim",
 ]
 ndarray = ["polars-core/ndarray"]
+# serde support for dataframes and series
+serde = ["polars-core/serde"]
 parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
 lazy = ["polars-core/lazy", "polars-lazy"]
 # commented out until UB is fixed
