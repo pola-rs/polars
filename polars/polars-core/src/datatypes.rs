@@ -24,6 +24,7 @@ use std::fmt::{Display, Formatter};
 
 pub struct Utf8Type {}
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
 
 pub struct CategoricalType {}
@@ -410,7 +411,6 @@ impl PartialOrd for AnyValue<'_> {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DataType {
     Boolean,
     UInt8,
