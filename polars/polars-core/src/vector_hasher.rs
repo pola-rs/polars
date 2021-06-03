@@ -107,14 +107,14 @@ impl AsU64 for Option<u32> {
         match self {
             Some(v) => v as u64,
             // just a number
-            None => 13,
+            None => u64::MAX,
         }
     }
 }
 
 impl AsU64 for Option<u64> {
     fn as_u64(self) -> u64 {
-        self.unwrap_or(13)
+        self.unwrap_or(u64::MAX)
     }
 }
 
