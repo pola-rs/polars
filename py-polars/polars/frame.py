@@ -327,7 +327,6 @@ class DataFrame:
     def to_csv(
         self,
         file: "Optional[Union[TextIO, str, Path]]" = None,
-        batch_size: int = 100000,
         has_headers: bool = True,
         delimiter: str = ",",
     ):
@@ -338,8 +337,6 @@ class DataFrame:
         ---
         file
             File path to which the file should be written.
-        batch_size
-            Size of the write buffer. Increase to have faster io.
         has_headers
             Whether or not to include header in the CSV output.
         delimiter
@@ -358,13 +355,13 @@ class DataFrame:
         """
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, batch_size, has_headers, ord(delimiter))
+            self._df.to_csv(buffer, has_headers, ord(delimiter))
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, Path):
             file = str(file)
 
-        self._df.to_csv(file, batch_size, has_headers, ord(delimiter))
+        self._df.to_csv(file, has_headers, ord(delimiter))
 
     def to_ipc(self, file: Union[BinaryIO, str, Path]):
         """

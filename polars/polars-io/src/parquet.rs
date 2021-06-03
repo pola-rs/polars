@@ -170,7 +170,7 @@ where
     }
 
     /// Write the given DataFrame in the the writer `W`.
-    pub fn finish(self, df: &mut DataFrame) -> Result<()> {
+    pub fn finish(self, df: &DataFrame) -> Result<()> {
         let mut fields = df.schema().to_arrow().fields().clone();
 
         // date64 is not supported by parquet and will be be truncated to date32
@@ -197,7 +197,7 @@ where
             .map(|s| s.name().to_string())
             .collect::<Vec<_>>();
 
-        let iter = df.iter_record_batches(df.height()).map(|rb| {
+        let iter = df.iter_record_batches().map(|rb| {
             if !date64_columns.is_empty() {
                 let mut columns = rb.columns().to_vec();
                 for i in &date64_columns {
@@ -232,7 +232,6 @@ mod test {
     use parquet_lib::file::writer::InMemoryWriteableCursor;
     use polars_core::{df, prelude::*};
     use std::fs::File;
-    use std::io::{Cursor, Seek, SeekFrom};
 
     #[test]
     fn test_parquet() {
@@ -248,7 +247,7 @@ mod test {
     #[test]
     #[cfg(all(feature = "dtype-date64", feature = "parquet"))]
     fn test_parquet_date64_round_trip() -> Result<()> {
-        let mut f: InMemoryWriteableCursor = Default::default();
+        let f: InMemoryWriteableCursor = Default::default();
 
         let mut df = df![
             "date64" => [Some(191845729i64), Some(89107598), None, Some(3158971092)]
@@ -256,7 +255,7 @@ mod test {
 
         df.may_apply("date64", |s| s.cast::<Date64Type>())?;
 
-        ParquetWriter::new(f.clone()).finish(&mut df)?;
+        ParquetWriter::new(f.clone()).finish(&df)?;
         let data = f.data();
 
         let f = SliceableCursor::new(data);

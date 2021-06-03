@@ -1281,7 +1281,6 @@ impl Rem for Expr {
 mod test {
     use super::*;
     use polars_core::df;
-    use polars_core::prelude::*;
 
     #[test]
     #[cfg(feature = "is_in")]

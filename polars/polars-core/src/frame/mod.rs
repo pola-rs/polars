@@ -1253,23 +1253,12 @@ impl DataFrame {
     }
 
     /// Iterator over the rows in this DataFrame as Arrow RecordBatches.
-    pub fn iter_record_batches(
-        &mut self,
-        buffer_size: usize,
-    ) -> impl Iterator<Item = RecordBatch> + '_ {
-        match self.n_chunks() {
-            Ok(1) => {}
-            Ok(_) => {
-                self.columns = self.columns.iter().map(|s| s.rechunk()).collect();
-            }
-            Err(_) => {} // no data. So iterator will be empty
-        }
+    pub fn iter_record_batches(&self) -> impl Iterator<Item = RecordBatch> + '_ {
         RecordBatchIter {
             columns: &self.columns,
             schema: Arc::new(self.schema().to_arrow()),
-            buffer_size,
             idx: 0,
-            len: self.height(),
+            n_chunks: self.n_chunks().unwrap_or(0),
         }
     }
 
@@ -1636,35 +1625,27 @@ impl DataFrame {
 pub struct RecordBatchIter<'a> {
     columns: &'a Vec<Series>,
     schema: Arc<ArrowSchema>,
-    buffer_size: usize,
     idx: usize,
-    len: usize,
+    n_chunks: usize,
 }
 
 impl<'a> Iterator for RecordBatchIter<'a> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= self.len {
-            return None;
-        }
-        // most iterations the slice length will be buffer_size, except for the last. That one
-        // may be shorter
-        let length = if self.idx + self.buffer_size < self.len {
-            self.buffer_size
+        if self.idx >= self.n_chunks {
+            None
         } else {
-            self.len - self.idx
-        };
+            // create a batch of the columns with the same chunk no.
+            let batch_cols = self
+                .columns
+                .iter()
+                .map(|s| s.chunks()[self.idx].clone())
+                .collect();
+            self.idx += 1;
 
-        let mut rb_cols = Vec::with_capacity(self.columns.len());
-        // take a slice from all columns and add the the current RecordBatch
-        self.columns.iter().for_each(|s| {
-            let slice = s.slice(self.idx as i64, length);
-            rb_cols.push(Arc::clone(&slice.chunks()[0]))
-        });
-        let rb = RecordBatch::try_new(Arc::clone(&self.schema), rb_cols).unwrap();
-        self.idx += length;
-        Some(rb)
+            Some(RecordBatch::try_new(self.schema.clone(), batch_cols).unwrap())
+        }
     }
 }
 
@@ -1781,14 +1762,12 @@ mod test {
 
     #[test]
     fn test_recordbatch_iterator() {
-        let mut df = df!(
+        let df = df!(
             "foo" => &[1, 2, 3, 4, 5]
         )
         .unwrap();
-        let mut iter = df.iter_record_batches(2);
-        assert_eq!(2, iter.next().unwrap().num_rows());
-        assert_eq!(2, iter.next().unwrap().num_rows());
-        assert_eq!(1, iter.next().unwrap().num_rows());
+        let mut iter = df.iter_record_batches();
+        assert_eq!(5, iter.next().unwrap().num_rows());
         assert!(iter.next().is_none());
     }
 

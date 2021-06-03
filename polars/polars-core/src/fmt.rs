@@ -534,7 +534,7 @@ impl Display for AnyValue<'_> {
             }
             AnyValue::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
             AnyValue::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
-            AnyValue::List(s) => write!(f, "{:?}", s.fmt_list()),
+            AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(_) => write!(f, "object"),
             _ => unimplemented!(),
