@@ -1233,23 +1233,8 @@ impl DataFrame {
 
     /// Transform the underlying chunks in the DataFrame to Arrow RecordBatches
     pub fn as_record_batches(&self) -> Result<Vec<RecordBatch>> {
-        let n_chunks = self.n_chunks()?;
-        let width = self.width();
-
-        let schema = Arc::new(self.schema().to_arrow());
-
-        let mut record_batches = Vec::with_capacity(n_chunks);
-        for i in 0..n_chunks {
-            // the columns of a single recorbatch
-            let mut rb_cols = Vec::with_capacity(width);
-
-            for col in &self.columns {
-                rb_cols.push(Arc::clone(&col.chunks()[i]))
-            }
-            let rb = RecordBatch::try_new(Arc::clone(&schema), rb_cols)?;
-            record_batches.push(rb)
-        }
-        Ok(record_batches)
+        self.n_chunks()?;
+        Ok(self.iter_record_batches().collect())
     }
 
     /// Iterator over the rows in this DataFrame as Arrow RecordBatches.

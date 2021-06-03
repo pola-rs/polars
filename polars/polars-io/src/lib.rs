@@ -16,6 +16,7 @@ pub mod json;
 #[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
 pub mod prelude;
+pub(crate) mod utils;
 
 use arrow::{
     error::Result as ArrowResult, json::Reader as ArrowJsonReader, record_batch::RecordBatch,
@@ -52,7 +53,7 @@ where
     W: Write,
 {
     fn new(writer: &'a mut W) -> Self;
-    fn finish(self, df: &mut DataFrame) -> Result<()>;
+    fn finish(self, df: &DataFrame) -> Result<()>;
 }
 
 pub trait ArrowReader {
