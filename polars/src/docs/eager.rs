@@ -599,7 +599,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &mut DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> Result<()> {
 //! // create a file
 //! let mut file = File::create("example.csv").expect("could not create file");
 //!
@@ -633,7 +633,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &mut DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> Result<()> {
 //! // create a file
 //! let mut file = File::create("file.ipc").expect("could not create file");
 //!
@@ -664,7 +664,7 @@
 //! use polars::prelude::*;
 //! use std::fs::File;
 //!
-//! # fn example(df: &mut DataFrame) -> Result<()> {
+//! # fn example(df: &DataFrame) -> Result<()> {
 //! // create a file
 //! let file = File::create("example.parquet").expect("could not create file");
 //!
