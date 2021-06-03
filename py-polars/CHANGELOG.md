@@ -2,6 +2,27 @@
 
 The Rust crate `polars` has its own changelog.
 
+### Polars 0.8.0
+* breaking change
+  - `str` namespace Series.str_* methods to Series.str.<method>
+  - `dt` namespace Series datetime related methods to Series.dt.<method>
+    
+* feature
+  - DataFrame.rows method
+  - apply on object types
+  - `Series.dt.to_python_datetime`
+  - `Series.dt.timestamp`
+  
+* bug fix
+  - preserve date64 in round trip to parquet #723
+  - during arrow conversion coerce categorical to utf8 (this preserves string data) #725
+  - fix bug in csv skip rows
+
+* performance
+  - improve hashing of string data in groupby and join
+  - improve numeric hashing in join
+  - fast path for filtering no data and all date (upstream)
+
 ### polars 0.7.19
 * feature
   - window function by multiple group columns
