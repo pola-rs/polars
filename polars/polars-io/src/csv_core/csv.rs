@@ -257,18 +257,17 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         // Per string column we keep a statistic of the maximum length of string bytes per chunk
         // We must the names, not the indexes, (the indexes are incorrect due to projection
         // pushdown)
-        let str_columns: Vec<_> = projection
-            .iter()
-            .copied()
-            .filter_map(|i| {
-                let fld = self.schema.field(i).unwrap();
-                if fld.data_type() == &DataType::Utf8 {
-                    Some(fld.name())
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let mut str_columns = Vec::with_capacity(projection.len());
+        for i in &projection {
+            let fld = self.schema.field(*i).ok_or_else(||
+                PolarsError::ValueError(
+                    format!("the given projection index: {} is out of bounds for csv schema with {} columns", i, self.schema.len()).into())
+                )?;
+
+            if fld.data_type() == &DataType::Utf8 {
+                str_columns.push(fld.name())
+            }
+        }
 
         // assume 10 chars per str
         // this is not updated in low memory mode

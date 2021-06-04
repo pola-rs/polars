@@ -130,7 +130,7 @@ def read_csv(
     skip_rows
         Start reading after `skip_rows`.
     projection
-        Indexes of columns to select
+        Indexes of columns to select. Note that column indexes count from zero.
     sep
         Delimiter/ value separator
     columns
@@ -144,8 +144,13 @@ def read_csv(
         Number of threads to use in csv parsing. Defaults to the number of physical cpu's of you system.
     dtype
         Overwrite the dtypes during inference
+    new_columns
+        Rename columns to these right after parsing. Note that the length of this list must equal the width of the DataFrame
+        that's parsed
     use_pyarrow
-        Use pyarrow's native CSV parser.
+        Try to use pyarrow's native CSV parser. This is not always possible. The set of arguments given to this function
+        determine if it is possible to use pyarrows native parser. Note that pyarrow and polars may have a different
+        strategy regarding type inference.
     low_memory
         Reduce memory usage in expense of performance
 
