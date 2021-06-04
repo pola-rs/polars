@@ -1,4 +1,3 @@
-from polars import DataFrame, Series
 from polars.datatypes import *
 from polars.lazy import *
 from polars import functions
@@ -668,3 +667,10 @@ def test_rename():
     out = df.rename({"strings": "bars", "int": "foos"})
     # check if wel can select these new columns
     _ = out[["foos", "bars"]]
+
+
+def test_to_json():
+    df = get_complete_df()
+    s = df.to_json(to_string=True)
+    out = pl.read_json(s)
+    assert df.frame_equal(out, null_equal=True)

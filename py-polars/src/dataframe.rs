@@ -159,6 +159,25 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
+    pub fn read_json(json: &str) -> PyResult<Self> {
+        // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
+        // so don't bother with files.
+        let df: DataFrame =
+            serde_json::from_str(json).map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
+        Ok(df.into())
+    }
+
+    pub fn to_json(&self, py_f: PyObject, pretty: bool) -> PyResult<()> {
+        let file = get_file_like(py_f, false)?;
+        let r = match pretty {
+            true => serde_json::to_writer_pretty(file, &self.df),
+            false => serde_json::to_writer(file, &self.df),
+        };
+        r.map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
+        Ok(())
+    }
+
+    #[staticmethod]
     pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
         let batches = arrow_interop::to_rust::to_rust_rb(&rb)?;
         let df = DataFrame::try_from(batches).map_err(PyPolarsEr::from)?;

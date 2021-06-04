@@ -196,6 +196,9 @@ pub enum EitherRustPythonFile {
     Rust(File),
 }
 
+///
+/// # Arguments
+/// * `truncate` - open or create a new file.
 pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPythonFile> {
     let gil = Python::acquire_gil();
     let py = gil.python();

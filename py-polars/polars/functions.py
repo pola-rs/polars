@@ -482,3 +482,17 @@ def repeat(
         return s
     else:
         return Series.from_arrow(name, pa.repeat(val, n))
+
+
+def read_json(
+    source: "Union[str, StringIO, Path]",
+) -> "DataFrame":
+    """
+    Read into a DataFrame from JSON format.
+
+    Parameters
+    ----------
+    source
+        Path to a file or a file like object.
+    """
+    return DataFrame.read_json(source)
