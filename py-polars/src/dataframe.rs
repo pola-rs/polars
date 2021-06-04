@@ -5,6 +5,7 @@ use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use polars::frame::groupby::GroupBy;
 use polars::prelude::*;
+#[cfg(feature = "downsample")]
 use polars_core::frame::groupby::resample::SampleRule;
 
 use crate::apply::dataframe::{
@@ -130,6 +131,7 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
+    #[cfg(feature = "parquet")]
     pub fn read_parquet(py_f: PyObject, stop_after_n_rows: Option<usize>) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -149,6 +151,7 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
+    #[cfg(feature = "ipc")]
     pub fn read_ipc(py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let df = IpcReader::new(file).finish().map_err(PyPolarsEr::from)?;
@@ -172,6 +175,7 @@ impl PyDataFrame {
         Ok(())
     }
 
+    #[cfg(feature = "ipc")]
     pub fn to_ipc(&mut self, py_f: PyObject) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         IpcWriter::new(&mut buf)
@@ -226,6 +230,7 @@ impl PyDataFrame {
         .into_py(py)
     }
 
+    #[cfg(feature = "parquet")]
     pub fn to_parquet(&mut self, path: &str) -> PyResult<()> {
         let f = std::fs::File::create(path).expect("to open a new file");
         ParquetWriter::new(f)
@@ -549,6 +554,7 @@ impl PyDataFrame {
         }
     }
 
+    #[cfg(feature = "downsample")]
     pub fn downsample_agg(
         &self,
         by: &str,
@@ -573,6 +579,7 @@ impl PyDataFrame {
         Ok(out.into())
     }
 
+    #[cfg(feature = "downsample")]
     pub fn downsample(&self, by: &str, rule: &str, n: u32, agg: &str) -> PyResult<Self> {
         let rule = match rule {
             "second" => SampleRule::Second(n),
@@ -656,6 +663,7 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
+    #[cfg(feature = "pivot")]
     pub fn pivot(
         &self,
         by: Vec<String>,

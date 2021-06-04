@@ -23,24 +23,30 @@ numpy = "0.13.0"
 ndarray = "0.14"
 mimalloc = { version = "*", default-features = false}
 
+# features are only there to enable building a slim binary for the benchmark in CI
+[features]
+parquet = ["polars/parquet"]
+json = ["polars/json"]
+pivot = ["polars/pivot"]
+ipc = ["polars/ipc"]
+downsample = ["polars/downsample"]
+is_in = ["polars/is_in"]
+
+default = ["pivot", "json", "parquet", "downsample", "ipc", "is_in"]
+
 [dependencies.polars]
 path = "../polars"
 features = [
-    "parquet",
     "simd",
     "lazy",
     "strings",
     "temporal",
     "random",
     "object",
-    "ipc",
     "csv-file",
     "pretty_fmt",
     "performant",
     "dtype-full",
-    "pivot",
-    "downsample",
-    "is_in",
     "private"
 ]
 

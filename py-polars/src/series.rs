@@ -583,6 +583,7 @@ impl PySeries {
         arrow_interop::to_py::to_py_array(&self.series.chunks()[0], py, pyarrow)
     }
 
+    #[cfg(feature = "is_in")]
     pub fn is_in(&self, other: &PySeries) -> PyResult<Self> {
         let out = self.series.is_in(&other.series).map_err(PyPolarsEr::from)?;
         Ok(out.into_series().into())

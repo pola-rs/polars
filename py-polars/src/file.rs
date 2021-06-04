@@ -1,4 +1,5 @@
 // Credits to https://github.com/omerbenamram/pyo3-file
+#[cfg(feature = "parquet")]
 use polars::io::parquet::SliceableCursor;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -22,6 +23,7 @@ impl PyFileLikeObject {
         PyFileLikeObject { inner: object }
     }
 
+    #[cfg(feature = "parquet")]
     pub fn as_slicable_buffer(&self) -> SliceableCursor {
         let data = self.as_file_buffer().into_inner();
         SliceableCursor::new(data)
