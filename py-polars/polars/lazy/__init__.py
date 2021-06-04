@@ -1679,6 +1679,39 @@ def expr_to_lit_or_expr(
     return expr
 
 
+class WhenThenThen:
+    """
+    Utility class. See the `when` function.
+    """
+
+    def __init__(self, pywhenthenthen):
+        self.pywenthenthen = pywhenthenthen
+
+    def when(self, predicate: "Expr") -> "WhenThenThen":
+        """
+        start another when, then, otherwise layer
+        """
+        return WhenThenThen(self.pywenthenthen.when(predicate._pyexpr))
+
+    def then(self, expr: "Union[Expr, int, float, str]") -> "WhenThenThen":
+        """
+        Values to return in case of the predicate being `True`
+
+        See Also: the `when` function.
+        """
+        expr = expr_to_lit_or_expr(expr)
+        return WhenThenThen(self.pywenthenthen.then(expr._pyexpr))
+
+    def otherwise(self, expr: "Union[Expr, int, float, str]") -> "Expr":
+        """
+        Values to return in case of the predicate being `False`
+
+        See Also: the `when` function.
+        """
+        expr = expr_to_lit_or_expr(expr)
+        return wrap_expr(self.pywenthenthen.otherwise(expr._pyexpr))
+
+
 class WhenThen:
     """
     Utility class. See the `when` function.
@@ -1686,6 +1719,12 @@ class WhenThen:
 
     def __init__(self, pywhenthen: "PyWhenThen"):  # noqa F821
         self._pywhenthen = pywhenthen
+
+    def when(self, predicate: "Expr"):
+        """
+        start another when, then, otherwise layer
+        """
+        return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
     def otherwise(self, expr: "Union[Expr, int, float, str]") -> "Expr":
         """
@@ -1729,6 +1768,17 @@ def when(expr: "Expr") -> When:
         when(col("foo") > 2)
         .then(lit(1))
         .otherwise(lit(-1))
+    )
+    ```
+
+    Or with multiple `when, thens` chained:
+
+
+    ```python
+    lf.with_column(
+        when(col("foo") > 2).then(1)
+        when(col("bar") > 2).then(4)
+        .otherwise(-1)
     )
     ```
     """

@@ -385,13 +385,29 @@ pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     }
 }
 
+/// Intermediate state of `when(..).then(..).otherwise(..)` expr.
 pub struct When {
     predicate: Expr,
 }
 
+/// Intermediate state of `when(..).then(..).otherwise(..)` expr.
 pub struct WhenThen {
     predicate: Expr,
     then: Expr,
+}
+
+/// Intermediate state of chain when then exprs.
+///
+/// ```ignore
+/// when(..).then(..)
+/// when(..).then(..)
+/// when(..).then(..)
+/// .otherwise(..)`
+/// ```
+#[derive(Clone)]
+pub struct WhenThenThen {
+    predicates: Vec<Expr>,
+    thens: Vec<Expr>,
 }
 
 impl When {
@@ -404,12 +420,81 @@ impl When {
 }
 
 impl WhenThen {
+    pub fn when(self, predicate: Expr) -> WhenThenThen {
+        WhenThenThen {
+            predicates: vec![self.predicate, predicate],
+            thens: vec![self.then],
+        }
+    }
+
     pub fn otherwise(self, expr: Expr) -> Expr {
         Expr::Ternary {
             predicate: Box::new(self.predicate),
             truthy: Box::new(self.then),
             falsy: Box::new(expr),
         }
+    }
+}
+
+impl WhenThenThen {
+    pub fn then(mut self, expr: Expr) -> Self {
+        self.thens.push(expr);
+        self
+    }
+
+    pub fn when(mut self, predicate: Expr) -> Self {
+        self.predicates.push(predicate);
+        self
+    }
+
+    pub fn otherwise(self, expr: Expr) -> Expr {
+        // we iterate the preds/ exprs last in first out
+        // and nest them.
+        //
+        // // this expr:
+        //   when((col('x') == 'a')).then(1)
+        //         .when(col('x') == 'a').then(2)
+        //         .when(col('x') == 'b').then(3)
+        //         .otherwise(4)
+        //
+        // needs to become:
+        //       when((col('x') == 'a')).then(1)                        -
+        //         .otherwise(                                           |
+        //             when(col('x') == 'a').then(2)            -        |
+        //             .otherwise(                               |       |
+        //                 pl.when(col('x') == 'b').then(3)      |       |
+        //                 .otherwise(4)                         | inner | outer
+        //             )                                         |       |
+        //         )                                            _|      _|
+        //
+        // by iterating lifo we first create
+        // `inner` and then assighn that to `otherwise`,
+        // which will be used in the next layer `outer`
+        //
+
+        let pred_iter = self.predicates.into_iter().rev();
+        let mut then_iter = self.thens.into_iter().rev();
+
+        let mut otherwise = expr;
+
+        for e in pred_iter {
+            otherwise = Expr::Ternary {
+                predicate: Box::new(e),
+                truthy: Box::new(
+                    then_iter
+                        .next()
+                        .expect("expr expected, did you call when().then().otherwise?"),
+                ),
+                falsy: Box::new(otherwise),
+            }
+        }
+        if then_iter.next().is_some() {
+            panic!(
+                "this expr is not properly constructed. \
+            Every `when` should have an accompanied `then` call."
+            )
+        }
+        otherwise
     }
 }
 
@@ -1300,5 +1385,16 @@ mod test {
             &[Some(true), Some(true), Some(false)]
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_when_then_when_then() {
+        let e = when(col("a"))
+            .then(col("b"))
+            .when(col("c"))
+            .then(col("d"))
+            .otherwise(col("f"));
+
+        dbg!(e);
     }
 }
