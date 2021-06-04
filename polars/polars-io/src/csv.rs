@@ -266,7 +266,8 @@ where
         self
     }
 
-    /// Set the reader's column projection
+    /// Set the reader's column projection. This counts from 0, meaning that
+    /// `vec![0, 4]` would select the 1st and 5th column.
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
         self.projection = projection;
         self
@@ -837,6 +838,33 @@ AUDCAD,1616455921,0.96212,0.95666,1"#;
             .finish()?;
 
         assert_eq!(df.height(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_projection_idx() -> Result<()> {
+        let csv = r"#0 NA 0 0 57 0
+0 NA 0 0 57 0
+0 NA 5 5 513 0";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(false)
+            .with_projection(Some(vec![4, 5]))
+            .with_delimiter(b' ')
+            .finish()?;
+
+        assert_eq!(df.width(), 2);
+
+        // this should give out of bounds error
+        let file = Cursor::new(csv);
+        let out = CsvReader::new(file)
+            .has_header(false)
+            .with_projection(Some(vec![4, 6]))
+            .with_delimiter(b' ')
+            .finish();
+
+        assert!(out.is_err());
         Ok(())
     }
 }
