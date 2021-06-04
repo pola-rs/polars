@@ -410,7 +410,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&[ScanAggregation]>,
     ) -> Result<DataFrame> {
-        let n_threads = self.n_threads.unwrap_or_else(num_cpus::get);
+        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
         let mut df = match (&self.path, self.record_iter.is_some()) {
             (Some(p), _) => {

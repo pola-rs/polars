@@ -1,7 +1,7 @@
 use super::*;
 use crate::logical_plan::Context;
 use crate::utils::rename_aexpr_root_name;
-use polars_core::utils::{accumulate_dataframes_vertical, num_cpus, split_df};
+use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
 
@@ -248,7 +248,7 @@ impl Executor for PartitionGroupByExec {
         }
 
         // Run the partitioned aggregations
-        let n_threads = num_cpus::get();
+        let n_threads = POOL.current_num_threads();
         let dfs = run_partitions(&original_df, self, state, n_threads)?;
 
         // MERGE phase

@@ -26,7 +26,11 @@ use std::sync::{Mutex, MutexGuard};
 // this is re-exported in utils for polars child crates
 lazy_static! {
     pub static ref POOL: ThreadPool = ThreadPoolBuilder::new()
-        .num_threads(num_cpus::get())
+        .num_threads(
+            std::env::var("POLARS_MAX_THREADS")
+                .map(|s| s.parse::<usize>().expect("integer"))
+                .unwrap_or_else(|_| num_cpus::get())
+        )
         .build()
         .expect("could not spawn threads");
 }
