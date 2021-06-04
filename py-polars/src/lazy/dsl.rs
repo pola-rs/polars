@@ -225,6 +225,7 @@ impl PyExpr {
     pub fn _or(&self, expr: PyExpr) -> PyExpr {
         self.clone().inner.or(expr.inner).into()
     }
+    #[cfg(feature = "is_in")]
     pub fn is_in(&self, expr: PyExpr) -> PyExpr {
         self.clone().inner.is_in(expr.inner).into()
     }

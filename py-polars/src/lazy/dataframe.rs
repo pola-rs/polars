@@ -113,6 +113,7 @@ impl PyLazyFrame {
     }
 
     #[staticmethod]
+    #[cfg(feature = "parquet")]
     pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
         LazyFrame::new_from_parquet(path, stop_after_n_rows, cache).into()
     }
