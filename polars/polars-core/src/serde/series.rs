@@ -2,6 +2,7 @@ use crate::prelude::*;
 use crate::serde::DeDataType;
 use serde::de::{MapAccess, Visitor};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use std::borrow::Cow;
 use std::fmt::Formatter;
 
 impl Serialize for Series {
@@ -111,7 +112,7 @@ impl<'de> Deserialize<'de> for Series {
                     }
                 }
 
-                let mut name = None;
+                let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
                 let mut values_set = false;
                 let mut count = 0;
@@ -119,7 +120,10 @@ impl<'de> Deserialize<'de> for Series {
                     count += 1;
                     match key {
                         Field::Name => {
-                            name = Some(map.next_value()?);
+                            name = match map.next_value::<&str>() {
+                                Ok(s) => Some(Cow::Borrowed(s)),
+                                Err(_) => Some(Cow::Owned(map.next_value::<String>()?)),
+                            };
                         }
                         Field::DataType => {
                             dtype = Some(map.next_value()?);
@@ -146,58 +150,66 @@ impl<'de> Deserialize<'de> for Series {
                     #[cfg(feature = "dtype-i8")]
                     DeDataType::Int8 => {
                         let values: Vec<Option<i8>> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
                     }
                     #[cfg(feature = "dtype-u8")]
                     DeDataType::UInt8 => {
                         let values: Vec<Option<u8>> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
                     }
                     DeDataType::Int32 => {
                         let values: Vec<Option<i32>> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
                     }
                     DeDataType::UInt32 => {
                         let values: Vec<Option<u32>> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
                     }
                     DeDataType::Int64 => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
                     }
                     #[cfg(feature = "dtype-u64")]
                     DeDataType::UInt64 => {
                         let values: Vec<Option<u64>> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
                     }
                     #[cfg(feature = "dtype-date32")]
                     DeDataType::Date32 => {
                         let values: Vec<Option<i32>> = map.next_value()?;
-                        Ok(Series::new(name, values).cast::<Date32Type>().unwrap())
+                        Ok(Series::new(&name, values).cast::<Date32Type>().unwrap())
                     }
                     #[cfg(feature = "dtype-date64")]
                     DeDataType::Date64 => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(name, values).cast::<Date64Type>().unwrap())
+                        Ok(Series::new(&name, values).cast::<Date64Type>().unwrap())
                     }
                     DeDataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
+                    }
+                    DeDataType::Float32 => {
+                        let values: Vec<Option<f32>> = map.next_value()?;
+                        Ok(Series::new(&name, values))
+                    }
+                    DeDataType::Float64 => {
+                        let values: Vec<Option<f64>> = map.next_value()?;
+                        Ok(Series::new(&name, values))
                     }
                     #[cfg(feature = "dtype-time64-ns")]
                     DeDataType::Time64(TimeUnit::Nanosecond) => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(name, values)
+                        Ok(Series::new(&name, values)
                             .cast::<Time64NanosecondType>()
                             .unwrap())
                     }
                     DeDataType::Utf8 => {
                         let values: Vec<Option<&str>> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
                     }
                     DeDataType::List => {
                         let values: Vec<Series> = map.next_value()?;
-                        Ok(Series::new(name, values))
+                        Ok(Series::new(&name, values))
                     }
                     dt => {
                         panic!("{:?} dtype deserialization not yet implemented", dt)

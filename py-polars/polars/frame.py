@@ -248,6 +248,22 @@ class DataFrame:
         return self
 
     @staticmethod
+    def read_json(file: "Union[str, BytesIO]") -> "DataFrame":
+        """
+        Read into a DataFrame from JSON format.
+
+        Parameters
+        ----------
+        file
+            Path to a file or a file like object.
+        """
+        if not isinstance(file, str):
+            file = file.read().decode("utf8")
+        self = DataFrame.__new__(DataFrame)
+        self._df = PyDataFrame.read_json(file)
+        return self
+
+    @staticmethod
     def from_arrow(table: pa.Table, rechunk: bool = True) -> "DataFrame":
         """
         Create DataFrame from arrow Table.
@@ -290,6 +306,31 @@ class DataFrame:
         """
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
+
+    def to_json(
+        self,
+        file: "Optional[Union[BytesIO, str, Path]]" = None,
+        pretty: bool = False,
+        to_string: bool = False,
+    ) -> Optional[str]:
+        """
+        Serialize to JSON representation
+
+        Parameters
+        ----------
+        file
+            write to this file instead of returning an string.
+        pretty
+            pretty serialize json
+        to_string
+            ignore file argument and return a string
+        """
+        if to_string:
+            file = BytesIO()
+            self._df.to_json(file, pretty)
+            file.seek(0)
+            return file.read().decode("utf8")
+        self._df.to_json(file, pretty)
 
     def to_pandas(
         self, *args, date_as_object=False, **kwargs
