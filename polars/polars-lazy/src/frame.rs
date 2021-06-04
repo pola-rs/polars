@@ -2186,4 +2186,26 @@ mod test {
             .collect()?;
         Ok(())
     }
+
+    #[test]
+    fn test_multiple_explode() -> Result<()> {
+        let df = df![
+            "a" => [0, 1, 2, 0, 2],
+            "b" => [5, 4, 3, 2, 1],
+            "c" => [2, 3, 4, 1, 5]
+        ]?;
+
+        let out = df
+            .lazy()
+            .groupby(vec![col("a")])
+            .agg(vec![
+                col("b").list().alias("b_list"),
+                col("c").list().alias("c_list"),
+            ])
+            .explode(&[col("c_list"), col("b_list")])
+            .collect()?;
+        assert_eq!(out.shape(), (5, 3));
+
+        Ok(())
+    }
 }
