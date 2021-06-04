@@ -71,7 +71,15 @@ impl DataFrame {
     ///  +-----+-----+-----+
     /// ```
     pub fn explode<'a, J, S: Selection<'a, J>>(&self, columns: S) -> Result<DataFrame> {
-        let columns = self.select_series(columns)?;
+        // We need to sort the column by order of original occurence. Otherwise the insert by index
+        // below will panic
+        let mut columns = self.select_series(columns)?;
+        columns.sort_by(|sa, sb| {
+            self.name_to_idx(sa.name())
+                .expect("checked above")
+                .partial_cmp(&self.name_to_idx(sb.name()).expect("checked above"))
+                .expect("cmp usize -> Ordering")
+        });
 
         // first remove all the exploded columns
         let mut df = self.clone();
