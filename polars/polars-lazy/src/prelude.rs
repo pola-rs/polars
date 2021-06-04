@@ -10,6 +10,8 @@ pub use crate::{
     physical_plan::{expressions::*, planner::DefaultPlanner, Executor, PhysicalPlanner},
 };
 
+#[cfg(feature = "csv-file")]
+pub(crate) use crate::physical_plan::executors::scan::CsvExec;
 #[cfg(feature = "parquet")]
 pub(crate) use crate::physical_plan::executors::scan::ParquetExec;
 
@@ -24,7 +26,7 @@ pub(crate) use crate::{
             groupby::{GroupByExec, PartitionGroupByExec},
             join::JoinExec,
             melt::MeltExec,
-            scan::{CsvExec, DataFrameExec},
+            scan::DataFrameExec,
             slice::SliceExec,
             sort::SortExec,
             stack::StackExec,

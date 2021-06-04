@@ -29,6 +29,7 @@ pub(crate) fn agg_projection(
 ) {
     use ALogicalPlan::*;
     match lp_arena.get(root) {
+        #[cfg(feature = "csv-file")]
         CsvScan {
             path, with_columns, ..
         } => {
@@ -93,10 +94,9 @@ impl OptimizationRule for AggScanProjection {
         node: Node,
     ) -> Option<ALogicalPlan> {
         let lp = lp_arena.get_mut(node);
-        use ALogicalPlan::*;
         match lp {
             #[cfg(feature = "parquet")]
-            ParquetScan { .. } => {
+            ALogicalPlan::ParquetScan { .. } => {
                 let lp = std::mem::take(lp);
                 if let ALogicalPlan::ParquetScan {
                     path,
@@ -127,7 +127,7 @@ impl OptimizationRule for AggScanProjection {
                         return None;
                     }
 
-                    let lp = ParquetScan {
+                    let lp = ALogicalPlan::ParquetScan {
                         path: path.clone(),
                         schema,
                         with_columns: new_with_columns,
@@ -141,7 +141,8 @@ impl OptimizationRule for AggScanProjection {
                     unreachable!()
                 }
             }
-            CsvScan { .. } => {
+            #[cfg(feature = "csv-file")]
+            ALogicalPlan::CsvScan { .. } => {
                 let lp = std::mem::take(lp);
                 if let ALogicalPlan::CsvScan {
                     path,
@@ -180,7 +181,7 @@ impl OptimizationRule for AggScanProjection {
                         lp_arena.replace(node, lp);
                         return None;
                     }
-                    let lp = CsvScan {
+                    let lp = ALogicalPlan::CsvScan {
                         path: path.clone(),
                         schema,
                         has_header,

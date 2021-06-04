@@ -367,6 +367,7 @@ impl PredicatePushDown {
                 };
                 Ok(lp)
             }
+            #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
                 schema,

@@ -1,7 +1,9 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
+#[cfg(any(feature = "parquet", feature = "csv-file"))]
 use std::collections::HashMap;
 use std::sync::Arc;
 
+#[cfg(any(feature = "parquet", feature = "csv-file"))]
 use ahash::RandomState;
 
 use polars_core::frame::hash_join::JoinType;
@@ -9,6 +11,7 @@ use polars_core::prelude::*;
 use polars_core::toggle_string_cache;
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
+#[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
@@ -16,12 +19,14 @@ use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
 use crate::physical_plan::state::ExecutionState;
+#[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::combine_predicates_expr;
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
 
 #[derive(Clone)]
+#[cfg(feature = "csv-file")]
 pub struct LazyCsvReader<'a> {
     path: String,
     delimiter: u8,
@@ -35,6 +40,7 @@ pub struct LazyCsvReader<'a> {
     low_memory: bool,
 }
 
+#[cfg(feature = "csv-file")]
 impl<'a> LazyCsvReader<'a> {
     pub fn new(path: String) -> Self {
         LazyCsvReader {
@@ -456,6 +462,7 @@ impl LazyFrame {
         let type_coercion = self.opt_state.type_coercion;
         let simplify_expr = self.opt_state.simplify_expr;
 
+        #[cfg(any(feature = "parquet", feature = "csv-file"))]
         let agg_scan_projection = self.opt_state.agg_scan_projection;
         let aggregate_pushdown = self.opt_state.aggregate_pushdown;
 
@@ -501,6 +508,7 @@ impl LazyFrame {
             rules.push(Box::new(AggregatePushdown::new()))
         }
 
+        #[cfg(any(feature = "parquet", feature = "csv-file"))]
         if agg_scan_projection {
             // scan the LP to aggregate all the column used in scans
             // these columns will be added to the state of the AggScanProjection rule

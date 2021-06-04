@@ -120,6 +120,7 @@ impl Executor for ParquetExec {
     }
 }
 
+#[cfg(feature = "csv-file")]
 pub struct CsvExec {
     pub path: PathBuf,
     pub schema: SchemaRef,
@@ -135,6 +136,7 @@ pub struct CsvExec {
     pub low_memory: bool,
 }
 
+#[cfg(feature = "csv-file")]
 impl Executor for CsvExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let path_str = try_path_to_str(&self.path)?;

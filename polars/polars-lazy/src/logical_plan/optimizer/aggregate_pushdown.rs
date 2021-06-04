@@ -112,6 +112,7 @@ impl OptimizationRule for AggregatePushdown {
                     })
                 }
             }
+            #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
                 schema,

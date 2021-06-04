@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use std::collections::HashMap;
 
 pub(crate) mod aggregate_pushdown;
+#[cfg(any(feature = "parquet", feature = "csv-file"))]
 pub(crate) mod aggregate_scan_projections;
 #[cfg(feature = "private")]
 pub(crate) mod join_pruning;

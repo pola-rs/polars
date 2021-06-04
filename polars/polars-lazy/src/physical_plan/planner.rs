@@ -6,10 +6,12 @@ use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::prelude::*;
 use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
+#[cfg(any(feature = "parquet", feature = "csv-file"))]
 use polars_io::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+#[cfg(any(feature = "parquet", feature = "csv-file"))]
 fn aggregate_expr_to_scan_agg(
     aggregate: Vec<Node>,
     expr_arena: &mut Arena<AExpr>,
@@ -115,6 +117,7 @@ impl DefaultPlanner {
                     self.create_physical_expr(predicate, Context::Default, expr_arena)?;
                 Ok(Box::new(FilterExec::new(predicate, input)))
             }
+            #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
                 schema,

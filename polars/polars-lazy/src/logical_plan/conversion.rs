@@ -167,6 +167,7 @@ pub(crate) fn to_alp(
                 schema,
             }
         }
+        #[cfg(feature = "csv-file")]
         LogicalPlan::CsvScan {
             path,
             schema,
@@ -618,6 +619,7 @@ pub(crate) fn node_to_lp(
                 predicate: p,
             }
         }
+        #[cfg(feature = "csv-file")]
         ALogicalPlan::CsvScan {
             path,
             schema,

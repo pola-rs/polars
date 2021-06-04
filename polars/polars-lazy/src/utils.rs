@@ -215,6 +215,7 @@ pub(crate) fn agg_source_paths(
         Cache { input } => {
             agg_source_paths(*input, paths, lp_arena);
         }
+        #[cfg(feature = "csv-file")]
         CsvScan { path, .. } => {
             paths.insert(path.clone());
         }
