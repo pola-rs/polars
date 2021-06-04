@@ -42,7 +42,7 @@ json = ["polars-io", "polars-io/json"]
 ipc = ["polars-io", "polars-io/ipc"]
 
 # support for arrows csv file parsing
-csv-file = ["polars-io", "polars-io/csv-file"]
+csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 
 # ~40% faster chunkedarray creation, but may larrowead to unexpected panic if iterator incorrectly sets a size_hint
 # that fits a TrustedLen iterator.

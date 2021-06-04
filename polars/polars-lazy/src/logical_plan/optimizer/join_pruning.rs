@@ -111,6 +111,7 @@ fn combine_lp_nodes(
 
                 })
         }
+        #[cfg(feature = "csv-file")]
         (CsvScan {path: path_l,
             with_columns: with_columns_l,
             schema,

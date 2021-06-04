@@ -6,6 +6,7 @@ use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::utils::{Arena, Node};
 use std::collections::HashSet;
+#[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,6 +28,7 @@ pub enum ALogicalPlan {
         input: Node,
         predicate: Node,
     },
+    #[cfg(feature = "csv-file")]
     CsvScan {
         path: PathBuf,
         schema: SchemaRef,
@@ -139,6 +141,7 @@ impl ALogicalPlan {
             ParquetScan { schema, .. } => schema,
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => arena.get(*input).schema(arena),
+            #[cfg(feature = "csv-file")]
             CsvScan { schema, .. } => schema,
             Projection { schema, .. } => schema,
             LocalProjection { schema, .. } => schema,
@@ -172,6 +175,7 @@ impl ALogicalPlan {
         let cmp = |(node_left, node_right)| {
             use ALogicalPlan::*;
             match (lp_arena.get(node_left), lp_arena.get(node_right)) {
+                #[cfg(feature = "csv-file")]
                 (CsvScan { path: path_a, .. }, CsvScan { path: path_b, .. }) => {
                     canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
                 }
@@ -342,6 +346,7 @@ impl ALogicalPlan {
                     cache: *cache,
                 }
             }
+            #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
                 schema,
@@ -449,6 +454,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             }
+            #[cfg(feature = "csv-file")]
             CsvScan {
                 predicate,
                 aggregate,
@@ -513,7 +519,9 @@ impl ALogicalPlan {
             Udf { input, .. } => *input,
             #[cfg(feature = "parquet")]
             ParquetScan { .. } => return,
-            CsvScan { .. } | DataFrameScan { .. } => return,
+            #[cfg(feature = "csv-file")]
+            CsvScan { .. } => return,
+            DataFrameScan { .. } => return,
         };
         container.push_node(input)
     }

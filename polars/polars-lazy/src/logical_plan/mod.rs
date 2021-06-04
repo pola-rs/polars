@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+#[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::{
     cell::Cell,
@@ -14,11 +15,12 @@ use polars_core::prelude::*;
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 #[cfg(feature = "temporal")]
 use polars_core::utils::chrono::NaiveDateTime;
+#[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "parquet")]
 use polars_io::{parquet::ParquetReader, SerReader};
 
-use crate::logical_plan::LogicalPlan::CsvScan;
+use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::utils::{
     combine_predicates_expr, expr_to_root_column_name, expr_to_root_column_names, has_expr,
     rename_expr_root_name,
@@ -144,6 +146,7 @@ pub enum LogicalPlan {
     /// Cache the input at this point in the LP
     Cache { input: Box<LogicalPlan> },
     /// Scan a CSV file
+    #[cfg(feature = "csv-file")]
     CsvScan {
         path: PathBuf,
         schema: SchemaRef,
@@ -262,19 +265,13 @@ pub enum LogicalPlan {
 
 impl Default for LogicalPlan {
     fn default() -> Self {
-        CsvScan {
-            path: PathBuf::new(),
-            schema: Arc::new(Schema::new(vec![Field::new("", DataType::Null)])),
-            has_header: false,
-            delimiter: b',',
-            ignore_errors: false,
-            skip_rows: 0,
-            stop_after_n_rows: None,
-            with_columns: None,
-            predicate: None,
-            aggregate: vec![],
-            cache: true,
-            low_memory: false,
+        let df = DataFrame::new::<Series>(vec![]).unwrap();
+        let schema = df.schema();
+        DataFrameScan {
+            df: Arc::new(df),
+            schema: Arc::new(schema),
+            projection: None,
+            selection: None,
         }
     }
 }
@@ -312,6 +309,7 @@ impl fmt::Debug for LogicalPlan {
             Melt { input, .. } => {
                 write!(f, "MELT\n\t{:?}", input)
             }
+            #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
                 with_columns,
@@ -459,6 +457,7 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
+            #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
                 with_columns,
@@ -896,6 +895,7 @@ impl LogicalPlan {
             ParquetScan { schema, .. } => schema,
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => input.schema(),
+            #[cfg(feature = "csv-file")]
             CsvScan { schema, .. } => schema,
             Projection { schema, .. } => schema,
             LocalProjection { schema, .. } => schema,
@@ -957,6 +957,7 @@ impl LogicalPlanBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "csv-file")]
     pub fn scan_csv<P: Into<PathBuf>>(
         path: P,
         delimiter: u8,
