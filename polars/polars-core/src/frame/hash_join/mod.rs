@@ -477,20 +477,13 @@ impl HashJoin<CategoricalType> for CategoricalChunked {
     }
 }
 
-fn n_join_threads() -> usize {
-    let max = std::env::var("POLARS_MAX_THREADS")
-        .map(|s| s.parse::<usize>().expect("integer"))
-        .unwrap_or(usize::MAX);
-    std::cmp::min(POOL.current_num_threads(), max)
-}
-
 fn num_group_join_inner<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> Vec<(u32, u32)>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
     Option<T::Native>: AsU64,
 {
-    let n_threads = n_join_threads();
+    let n_threads = POOL.current_num_threads();
     let (a, b, swap) = det_hash_prone_order!(left, right);
     let splitted_a = split_ca(a, n_threads).unwrap();
     let splitted_b = split_ca(b, n_threads).unwrap();
@@ -567,7 +560,7 @@ where
     T::Native: Hash + Eq + Send + AsU64,
     Option<T::Native>: AsU64,
 {
-    let n_threads = n_join_threads();
+    let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();
     let splitted_b = split_ca(right, n_threads).unwrap();
     match (
@@ -722,7 +715,7 @@ where
     fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_threads = n_join_threads();
+        let n_threads = POOL.current_num_threads();
         let splitted_a = split_ca(a, n_threads).unwrap();
         let splitted_b = split_ca(b, n_threads).unwrap();
 
@@ -763,7 +756,7 @@ impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_threads = n_join_threads();
+        let n_threads = POOL.current_num_threads();
         let splitted_a = split_ca(a, n_threads).unwrap();
         let splitted_b = split_ca(b, n_threads).unwrap();
 
@@ -836,7 +829,7 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_threads = n_join_threads();
+        let n_threads = POOL.current_num_threads();
         let splitted_a = split_ca(a, n_threads).unwrap();
         let splitted_b = split_ca(b, n_threads).unwrap();
 

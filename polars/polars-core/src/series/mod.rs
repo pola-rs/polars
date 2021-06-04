@@ -1282,7 +1282,7 @@ impl Series {
         idx: &UInt32Chunked,
         rechunk: bool,
     ) -> Result<Series> {
-        let n_threads = num_cpus::get();
+        let n_threads = POOL.current_num_threads();
         let idx = split_ca(idx, n_threads)?;
 
         let series: Result<Vec<_>> =
@@ -1308,7 +1308,7 @@ impl Series {
     ///
     /// Out of bounds access doesn't Error but will return a Null value
     pub fn take_threaded(&self, idx: &UInt32Chunked, rechunk: bool) -> Series {
-        let n_threads = num_cpus::get();
+        let n_threads = POOL.current_num_threads();
         let idx = split_ca(idx, n_threads).unwrap();
 
         let series: Vec<_> = POOL.install(|| idx.par_iter().map(|idx| self.take(idx)).collect());
@@ -1329,7 +1329,7 @@ impl Series {
 
     /// Filter by boolean mask. This operation clones data.
     pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> Result<Series> {
-        let n_threads = num_cpus::get();
+        let n_threads = POOL.current_num_threads();
         let filters = split_ca(filter, n_threads).unwrap();
         let series = split_series(self, n_threads).unwrap();
 

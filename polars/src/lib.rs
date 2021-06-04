@@ -7,24 +7,39 @@
 //! This means that Polars data structures can be shared zero copy with processes in many different
 //! languages.
 //!
-//! ## 0. Cookbooks
+//! ## Tree Of Contents
+//!
+//! * [Cookbooks](#cookbooks)
+//! * [Data structures](#data-structures)
+//!     - [DataFrame](#dtaframe)
+//!     - [Series](#series)
+//!     - [ChunkedArray](#chunkedarray)
+//! * [SIMD](#simd)
+//! * [API](#api)
+//! * [Compile times](#compile-times)
+//! * [Performance](#performance-and-string-data)
+//!     - [Custom allocator](#custom-allocator)
+//! * [Config](#config-with-env-vars)
+//! * [WASM target](#compile-for-wasm)
+//!
+//! ## Cookbooks
 //! See examples in the cookbooks:
 //!
 //! * [Eager](crate::docs::eager)
 //! * [Lazy](crate::docs::lazy)
 //!
-//! ## 1. Data Structures
+//! ## Data Structures
 //! The base data structures provided by polars are `DataFrame`, `Series`, and `ChunkedArray<T>`.
 //! We will provide a short top down view of these data structures.
 //!
-//! ### 1.1 DataFrame
+//! ### DataFrame
 //! A `DataFrame` is a 2 dimensional data structure that is backed by a `Series`, and it could be
 //! seen as an abstraction on `Vec<Series>`. Operations that can be executed on `DataFrame`s are very
 //! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc. The closes
 //! arrow equivalent to a `DataFrame` is a [RecordBatch](https://docs.rs/arrow/4.0.0/arrow/record_batch/struct.RecordBatch.html),
 //! and Polars provides zero copy coercion.
 //!
-//! ### 1.2 Series
+//! ### Series
 //! `Series` are the type agnostic columnar data representation of Polars. They provide many
 //! operations out of the box, many via the [Series struct](crate::prelude::Series) and
 //! [SeriesTrait trait](crate::series/trait.SeriesTrait.html). Whether or not an operation is provided
@@ -32,23 +47,23 @@
 //! underlying columnar type, this operation probably is provided by the `Series`. If not, you must
 //! downcast to the typed data structure that is wrapped by the `Series`. That is the `ChunkedArray<T>`.
 //!
-//! ### 1.3 ChunkedArray
+//! ### ChunkedArray
 //! `ChunkedArray<T>` are wrappers around an arrow array, that can contain multiples chunks, e.g.
 //! `Vec<dyn ArrowArray>`. These are the root data structures of Polars, and implement many operations.
 //! Most operations are implemented by traits defined in [chunked_array::ops](crate::chunked_array::ops),
 //! or on the [ChunkedArray struct](crate::chunked_array::ops).
 //!
-//! ## 2. SIMD
+//! ## SIMD
 //! Polars / Arrow uses packed_simd to speed up kernels with SIMD operations. SIMD is an optional
 //! `feature = "simd"`, and requires a nightly compiler. If you don't need SIMD, **Polars runs on stable!**
 //!
-//! ## 3. API
+//! ## API
 //! Polars supports an eager and a lazy API, and strives to make them both equally capable.
 //! The eager API is similar to [pandas](https://pandas.pydata.org/), and is easy to get started.
 //! The lazy API is similar to [Spark](https://spark.apache.org/), and builds a query plan that will
 //! be optimized. This may be less intuitive, but you may gain of additional performance.
 //!
-//! ### 3.1 Eager
+//! ### Eager
 //! Read more in the pages of the following data structures /traits.
 //!
 //! * [DataFrame struct](crate::frame::DataFrame)
@@ -57,13 +72,13 @@
 //! * [ChunkedArray struct](crate::chunked_array::ChunkedArray)
 //! * [ChunkedArray operations traits](crate::chunked_array::ops)
 //!
-//! ### 3.2 Lazy
+//! ### Lazy
 //! Unlock full potential with lazy computation. This allows query optimizations and provides Polars
 //! the full query context so that the fastest algorithm can be chosen.
 //!
 //! **[Read more in the lazy module.](polars_lazy)**
 //!
-//! ## 4. Compile times
+//! ## Compile times
 //! A DataFrame library typically consists of
 //!
 //! * Tons of features
@@ -72,7 +87,7 @@
 //! Both of these really put large strains on compile times. To keep Polars lean, we make both **opt-in**,
 //! meaning that you only pay the compilation cost, if you need it.
 //!
-//! ## 4.2 Compile times and opt-in featurs
+//! ## Compile times and opt-in features
 //! The opt-in features are:
 //!
 //! * `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
@@ -92,7 +107,7 @@
 //!              These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization
 //!
-//! ## 4.3 Compile times and opt-in data types
+//! ## Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around
 //! `ChunkedArray<T>` without the generic parameter `T`.
 //! To get rid of the generic parameter, all the possible value of `T` are compiled
@@ -122,16 +137,16 @@
 //! * `dtype-full` - all opt-in dtypes.
 //! * `dtype-slim` - slim preset of opt-in dtypes.
 //!
-//! ## 5. Performance and string data
+//! ## Performance and string data
 //! Large string data can really slow down your queries.
 //! Read more in the [performance section](crate::docs::performance)
 //!
-//! ## 6. Custom allocator
+//! ### Custom allocator
 //! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
 //! allocator. [Mimalloc](https://docs.rs/mimalloc/0.1.25/mimalloc/) for instance, shows a significant
 //! performance gain in runtime as well as memory usage.
 //!
-//! ### Usage
+//! #### Usage
 //! ```ignore
 //! use mimalloc::MiMalloc;
 //!
@@ -139,13 +154,22 @@
 //! static GLOBAL: MiMalloc = MiMalloc;
 //! ```
 //!
-//! ### Cargo.toml
+//! #### Cargo.toml
 //! ```ignore
 //! [dependencies]
 //! mimalloc = { version = "*", default-features = false }
 //! ```
+//! ## Config with ENV vars
 //!
-//! ## 7. Compile for WASM
+//! * `POLARS_PAR_SORT_BOUND` -> Sets the lower bound of rows at which Polars will use a parallel sorting algorithm.
+//!                              Default is 1M rows.
+//! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
+//! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
+//! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
+//! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).
+//! * `POLARS_VERBOSE` -> print logging info to stderr
+//!
+//! ## Compile for WASM
 //! To be able to pretty print a `DataFrame` in `wasm32-wasi` you need to patch the `prettytable-rs`
 //! dependency. If you add this snippet to your `Cargo.toml` you can compile and pretty print when
 //! compiling to `wasm32-wasi` target.

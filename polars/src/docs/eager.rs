@@ -30,7 +30,7 @@
 //!     - [Write IPC](#write-ipc)
 //!     - [Read Parquet](#read-parquet)
 //!     - [Write Parquet](#write-parquet)
-//! * [Various]
+//! * [Various](#various)
 //!     - [Replace NaN](#replace-nan)
 //!
 //! ## Creation of Data structures

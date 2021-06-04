@@ -1,7 +1,5 @@
 use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
-use crate::frame::hash_join::{
-    get_hash_tbl_threaded_join, get_hash_tbl_threaded_join_mut, n_join_threads,
-};
+use crate::frame::hash_join::{get_hash_tbl_threaded_join, get_hash_tbl_threaded_join_mut};
 use crate::prelude::*;
 use crate::utils::split_df;
 use crate::vector_hasher::{df_rows_to_hashes_threaded, this_thread, IdBuildHasher, IdxHash};
@@ -128,7 +126,7 @@ pub(crate) fn inner_join_multiple_keys(
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 
-    let n_threads = n_join_threads();
+    let n_threads = POOL.current_num_threads();
     let dfs_a = split_df(&a, n_threads).unwrap();
     let dfs_b = split_df(&b, n_threads).unwrap();
 
@@ -194,7 +192,7 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32,
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 
-    let n_threads = n_join_threads();
+    let n_threads = POOL.current_num_threads();
     let dfs_a = split_df(&a, n_threads).unwrap();
     let dfs_b = split_df(&b, n_threads).unwrap();
 
@@ -331,7 +329,7 @@ pub(crate) fn outer_join_multiple_keys(
     let size = a.height() + b.height();
     let mut results = Vec::with_capacity(size);
 
-    let n_threads = n_join_threads();
+    let n_threads = POOL.current_num_threads();
     let dfs_a = split_df(&a, n_threads).unwrap();
     let dfs_b = split_df(&b, n_threads).unwrap();
 
