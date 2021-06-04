@@ -9,7 +9,7 @@ use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
 };
-const LIMIT: usize = 10;
+const LIMIT: usize = 25;
 
 #[cfg(feature = "pretty_fmt")]
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
@@ -73,45 +73,46 @@ use std::borrow::Cow;
 use temporal::*;
 
 macro_rules! format_array {
-    ($limit:ident, $f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
-        write![$f, "{}: '{}' [{}]\n[\n", $array_type, $name, $dtype]?;
+    ($limit:expr, $f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
+        write![
+            $f,
+            "shape: ({},)\n{}: '{}' [{}]\n[\n",
+            $a.len(),
+            $array_type,
+            $name,
+            $dtype
+        ]?;
+        let truncate = matches!($a.dtype(), DataType::Utf8);
+        let limit = std::cmp::min($limit, $a.len());
 
-        for i in 0..$limit {
-            let v = $a.get_any_value(i);
-            write!($f, "\t{}\n", v)?;
-        }
-
-        write![$f, "]"]
-    }};
-}
-
-macro_rules! format_utf8_array {
-    ($limit:expr, $f:expr, $a:expr, $name:expr, $array_type:expr) => {{
-        write![$f, "{}: '{}' [str]\n[\n", $array_type, $name]?;
-        $a.into_iter().take($limit).for_each(|opt_s| match opt_s {
-            None => {
-                write!($f, "\tnull\n").ok();
-            }
-            Some(s) => {
-                if s.len() > 12 {
-                    write!($f, "\t\"{}...\"\n", &s[..12]).ok();
+        let write = |v, f: &mut Formatter| {
+            if truncate {
+                let v = format!("{}", v);
+                if v.len() > 15 {
+                    write!(f, "\t{}...\n", &v[..15])?;
                 } else {
-                    write!($f, "\t\"{}\"\n", &s).ok();
+                    write!(f, "\t{}\n", v)?;
                 }
-            }
-        });
-        write![$f, "]"]
-    }};
-}
-macro_rules! format_list_array {
-    ($limit:ident, $f:ident, $a:expr, $name:expr, $array_type:expr) => {{
-        write![$f, "{}: '{}' [list]\n[\n", $array_type, $name]?;
+            } else {
+                write!(f, "\t{}\n", v)?;
+            };
+            Ok(())
+        };
 
-        for i in 0..$limit {
-            let opt_v = $a.get(i);
-            match opt_v {
-                Some(v) => write!($f, "\t{}\n", v.fmt_list())?,
-                None => write!($f, "\tnull\n")?,
+        if limit < $a.len() {
+            for i in 0..limit / 2 {
+                let v = $a.get_any_value(i);
+                write(v, $f)?;
+            }
+            write!($f, "\t...\n")?;
+            for i in (0..limit / 2).rev() {
+                let v = $a.get_any_value($a.len() - i - 1);
+                write(v, $f)?;
+            }
+        } else {
+            for i in 0..limit {
+                let v = $a.get_any_value(i);
+                write(v, $f)?;
             }
         }
 
@@ -129,7 +130,14 @@ fn format_object_array(
 ) -> fmt::Result {
     match object.dtype() {
         DataType::Object(inner_type) => {
-            write![f, "{}: '{}' [o][{}]\n[\n", array_type, name, inner_type]?;
+            write![
+                f,
+                "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
+                object.len(),
+                array_type,
+                name,
+                inner_type
+            ]?;
 
             for i in 0..limit {
                 let v = object.str_value(i);
@@ -162,29 +170,27 @@ where
 impl Debug for ChunkedArray<BooleanType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
-        let dtype = format!("{:?}", DataType::Boolean);
-        format_array!(limit, f, self, dtype, self.name(), "ChunkedArray")
+        format_array!(limit, f, self, "bool", self.name(), "ChunkedArray")
     }
 }
 
 impl Debug for Utf8Chunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        format_utf8_array!(80, f, self, self.name(), "ChunkedArray")
+        format_array!(80, f, self, "str", self.name(), "ChunkedArray")
     }
 }
 
 impl Debug for ListChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
-        format_list_array!(limit, f, self, self.name(), "ChunkedArray")
+        format_array!(limit, f, self, "list", self.name(), "ChunkedArray")
     }
 }
 
 impl Debug for CategoricalChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
-        let dtype = format!("{:?}", DataType::Categorical);
-        format_array!(limit, f, self, dtype, self.name(), "ChunkedArray")
+        format_array!(limit, f, self, "cat", self.name(), "ChunkedArray")
     }
 }
 
@@ -204,11 +210,28 @@ where
             self.name(),
             inner_type
         ]?;
-        for i in 0..limit {
-            match taker.get(i) {
-                None => writeln!(f, "\tnull")?,
-                Some(val) => writeln!(f, "\t{}", val)?,
-            };
+
+        if limit < self.len() {
+            for i in 0..limit / 2 {
+                match taker.get(i) {
+                    None => writeln!(f, "\tnull")?,
+                    Some(val) => writeln!(f, "\t{}", val)?,
+                };
+            }
+            writeln!(f, "\t...")?;
+            for i in (0..limit / 2).rev() {
+                match taker.get(self.len() - i - 1) {
+                    None => writeln!(f, "\tnull")?,
+                    Some(val) => writeln!(f, "\t{}", val)?,
+                };
+            }
+        } else {
+            for i in 0..limit {
+                match taker.get(i) {
+                    None => writeln!(f, "\tnull")?,
+                    Some(val) => writeln!(f, "\t{}", val)?,
+                };
+            }
         }
         Ok(())
     }
@@ -228,7 +251,7 @@ impl Debug for Series {
                 "Series"
             ),
             DataType::Utf8 => {
-                format_utf8_array!(limit, f, self.utf8().unwrap(), self.name(), "Series")
+                format_array!(limit, f, self.utf8().unwrap(), "str", self.name(), "Series")
             }
             DataType::UInt8 => {
                 format_array!(limit, f, self.u8().unwrap(), "u8", self.name(), "Series")
@@ -300,9 +323,14 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            DataType::List(_) => {
-                format_list_array!(limit, f, self.list().unwrap(), self.name(), "Series")
-            }
+            DataType::List(_) => format_array!(
+                limit,
+                f,
+                self.list().unwrap(),
+                "list",
+                self.name(),
+                "Series"
+            ),
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 format_object_array(limit, f, self.as_ref(), self.name(), "Series")
@@ -498,7 +526,6 @@ fn fmt_integer<T: Num + NumCast + Display>(
 
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
-    let v = (v * 1000.).round() / 1000.;
     if v == 0.0 {
         write!(f, "{:>width$.1}", v, width = width)
     } else if !(0.0001..=9999.).contains(&v) {
@@ -633,7 +660,7 @@ mod test {
     use polars_arrow::prelude::PrimitiveArrayBuilder;
 
     #[test]
-    fn list() {
+    fn test_fmt_list() {
         let values_builder = PrimitiveArrayBuilder::<UInt32Type>::new(10);
         let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
         builder.append_slice(Some(&[1, 2, 3]));
@@ -642,7 +669,8 @@ mod test {
 
         println!("{:?}", list);
         assert_eq!(
-            r#"Series: 'a' [list]
+            r#"shape: (2,)
+Series: 'a' [list]
 [
 	[1, 2, 3]
 	null
@@ -653,10 +681,11 @@ mod test {
 
     #[test]
     #[cfg(feature = "dtype-time64-ns")]
-    fn temporal() {
+    fn test_fmt_temporal() {
         let s = Date32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
         assert_eq!(
-            r#"Series: 'date32' [date32]
+            r#"shape: (3,)
+Series: 'date32' [date32]
 [
 	1970-01-02
 	null
@@ -667,7 +696,8 @@ mod test {
 
         let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)]);
         assert_eq!(
-            r#"Series: '' [date64]
+            r#"shape: (3,)
+Series: '' [date64]
 [
 	1970-01-01 00:00:00.001
 	null
@@ -680,7 +710,8 @@ mod test {
             &[1_000_000, 37_800_005_000_000, 86_399_210_000_000],
         );
         assert_eq!(
-            r#"Series: '' [time64(ns)]
+            r#"shape: (3,)
+Series: '' [time64(ns)]
 [
 	00:00:00.001
 	10:30:00.005
@@ -694,7 +725,8 @@ mod test {
         let ca = Int32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
         println!("{:?}", ca);
         assert_eq!(
-            r#"ChunkedArray: 'date32' [Int32]
+            r#"shape: (3,)
+ChunkedArray: 'date32' [Int32]
 [
 	1
 	null
@@ -705,7 +737,8 @@ mod test {
         let ca = Utf8Chunked::new_from_slice("name", &["a", "b"]);
         println!("{:?}", ca);
         assert_eq!(
-            r#"ChunkedArray: 'name' [str]
+            r#"shape: (2,)
+ChunkedArray: 'name' [str]
 [
 	"a"
 	"b"
@@ -715,8 +748,52 @@ mod test {
     }
 
     #[test]
-    fn test_series() {
+    fn test_fmt_series() {
         let s = Series::new("foo", &["Somelongstringto eeat wit me oundaf"]);
-        dbg!(s);
+        dbg!(&s);
+        assert_eq!(
+            r#"shape: (1,)
+Series: 'foo' [str]
+[
+	"Somelongstring...
+]"#,
+            format!("{:?}", s)
+        );
+
+        let s = Series::new("foo", (0..100).collect::<Vec<_>>());
+
+        dbg!(&s);
+        assert_eq!(
+            r#"shape: (100,)
+Series: 'foo' [i32]
+[
+	0
+	1
+	2
+	3
+	4
+	5
+	6
+	7
+	8
+	9
+	10
+	11
+	...
+	88
+	89
+	90
+	91
+	92
+	93
+	94
+	95
+	96
+	97
+	98
+	99
+]"#,
+            format!("{:?}", s)
+        );
     }
 }
