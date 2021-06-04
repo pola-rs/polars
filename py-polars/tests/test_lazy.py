@@ -177,3 +177,15 @@ def test_window_function():
 
     out = df[[pl.first("B").over(["fruits", "cars"])]]
     assert out["B_first"] == [5, 4, 3, 3, 5]
+
+
+def test_when_then_flatten():
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [3, 4, 5]})
+
+    assert df[
+        when(col("foo") > 1)
+        .then(col("bar"))
+        .when(col("bar") < 3)
+        .then(10)
+        .otherwise(30)
+    ]["bar"] == [30, 4, 5]
