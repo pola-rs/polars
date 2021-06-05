@@ -217,10 +217,64 @@ impl<'a> AsU64 for StrHash<'a> {
     }
 }
 
+impl From<u64> for NThreads {
+    fn from(n: u64) -> Self {
+        use NThreads::*;
+        match n {
+            2 => T2,
+            4 => T4,
+            8 => T8,
+            10 => T10,
+            12 => T12,
+            16 => T16,
+            20 => T20,
+            32 => T32,
+            40 => T40,
+            64 => T64,
+            _ => Other(n),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum NThreads {
+    T2,
+    T4,
+    T8,
+    T10,
+    T12,
+    T16,
+    T20,
+    T32,
+    T40,
+    T64,
+    Other(u64),
+}
+
+impl NThreads {
+    #[inline]
+    fn modulo(&self, h: u64) -> u64 {
+        use NThreads::*;
+        match self {
+            T2 => h % 2,
+            T4 => h % 4,
+            T8 => h % 8,
+            T10 => h % 10,
+            T12 => h % 12,
+            T16 => h % 16,
+            T20 => h % 20,
+            T32 => h % 32,
+            T40 => h % 20,
+            T64 => h % 64,
+            Other(n) => h % n,
+        }
+    }
+}
+
 /// Check if a hash should be processed in that thread.
 #[inline]
-pub(crate) fn this_thread(h: u64, thread_no: u64, n_threads: u64) -> bool {
-    (h + thread_no) % n_threads == 0
+pub fn this_thread(h: u64, thread_no: u64, n_threads: NThreads) -> bool {
+    n_threads.modulo(h + thread_no) == 0
 }
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
@@ -244,7 +298,7 @@ where
             let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
                 HashMap::with_hasher(build_hasher);
 
-            let n_threads = n_threads as u64;
+            let n_threads = (n_threads as u64).into();
             let mut offset = 0;
             for hashes_and_keys in hashes_and_keys {
                 let len = hashes_and_keys.len();
