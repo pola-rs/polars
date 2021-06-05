@@ -159,6 +159,7 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
+    #[cfg(feature = "json")]
     pub fn read_json(json: &str) -> PyResult<Self> {
         // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
         // so don't bother with files.
@@ -167,6 +168,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    #[cfg(feature = "json")]
     pub fn to_json(&self, py_f: PyObject, pretty: bool) -> PyResult<()> {
         let file = get_file_like(py_f, false)?;
         let r = match pretty {
