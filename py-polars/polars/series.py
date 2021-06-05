@@ -123,7 +123,7 @@ class Series:
             values = name
             name = ""
         if values.__class__ == self.__class__:
-            values.rename(name)
+            values.rename(name, in_place=True)
             self._s = values._s
             return
 
@@ -653,7 +653,7 @@ class Series:
         """
         return self._s.name()
 
-    def rename(self, name: str):
+    def rename(self, name: str, in_place=False) -> "Optional[Series]":
         """
         Rename this Series.
 
@@ -661,8 +661,15 @@ class Series:
         ----------
         name
             New name
+        in_place
+            Modify the Series in place
         """
-        self._s.rename(name)
+        if in_place:
+            self._s.rename(name)
+        else:
+            s = self.clone()
+            s._s.rename(name)
+            return s
 
     def chunk_lengths(self) -> "List[int]":
         """

@@ -440,7 +440,6 @@ pub struct WhenThenThen {
     inner: dsl::WhenThenThen,
 }
 
-
 #[pymethods]
 impl When {
     pub fn then(&self, expr: PyExpr) -> WhenThen {
@@ -457,9 +456,7 @@ impl WhenThen {
         let e = dsl::when(self.predicate.inner.clone())
             .then(self.then.inner.clone())
             .when(predicate.inner);
-        WhenThenThen {
-            inner: e
-        }
+        WhenThenThen { inner: e }
     }
 
     pub fn otherwise(&self, expr: PyExpr) -> PyExpr {
@@ -475,10 +472,14 @@ impl WhenThen {
 #[pymethods]
 impl WhenThenThen {
     pub fn when(&self, predicate: PyExpr) -> WhenThenThen {
-        Self { inner: self.inner.clone().when(predicate.inner) }
+        Self {
+            inner: self.inner.clone().when(predicate.inner),
+        }
     }
     pub fn then(&self, expr: PyExpr) -> WhenThenThen {
-        Self { inner: self.inner.clone().then(expr.inner) }
+        Self {
+            inner: self.inner.clone().then(expr.inner),
+        }
     }
     pub fn otherwise(&self, expr: PyExpr) -> PyExpr {
         self.inner.clone().otherwise(expr.clone().inner).into()
