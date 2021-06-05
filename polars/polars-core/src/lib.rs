@@ -23,12 +23,24 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
+const fn is_power_of_two(x: usize) -> bool {
+    (x != 0) && ((x & (x - 1)) == 0)
+}
+
 // this is re-exported in utils for polars child crates
 lazy_static! {
     pub static ref POOL: ThreadPool = ThreadPoolBuilder::new()
         .num_threads(
             std::env::var("POLARS_MAX_THREADS")
-                .map(|s| s.parse::<usize>().expect("integer"))
+                .map(|s|{
+            let size = s.parse::<usize>().expect("integer");
+            // We only accept powers of two threads pools due to optimizations
+            // in the group partitioning
+            if !is_power_of_two(size) {
+                panic!("thread pool size should be power of 2!")
+            };
+            size
+        })
                 .unwrap_or_else(|_| num_cpus::get())
         )
         .build()

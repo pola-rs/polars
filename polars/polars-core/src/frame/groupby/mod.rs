@@ -34,7 +34,7 @@ pub trait IntoGroupTuples {
 
 fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
     // TODO! change to something sensible
-    ca.len() > 1000
+    ca.len() > 1000 && POOL.current_num_threads() > 1
 }
 
 fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupTuples
@@ -136,7 +136,7 @@ impl IntoGroupTuples for BooleanChunked {
 impl IntoGroupTuples for Utf8Chunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         let hb = RandomState::default();
-        if multithreaded {
+        if multithreaded && group_multithreaded(self) {
             let n_threads = POOL.current_num_threads();
             let splitted = split_ca(self, n_threads).unwrap();
 
@@ -207,8 +207,8 @@ impl DataFrame {
                 series.group_tuples(multithreaded)
             }
             _ => {
-                if multithreaded {
-                    let n_threads = POOL.current_num_threads();
+                let n_threads = POOL.current_num_threads();
+                if multithreaded && n_threads > 1 {
                     groupby_threaded_multiple_keys_flat(keys_df, n_threads)
                 } else {
                     groupby_multiple_keys(keys_df)

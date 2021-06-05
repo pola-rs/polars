@@ -91,18 +91,21 @@ pub(crate) trait AsU64 {
 }
 
 impl AsU64 for u32 {
+    #[inline]
     fn as_u64(self) -> u64 {
         self as u64
     }
 }
 
 impl AsU64 for u64 {
+    #[inline]
     fn as_u64(self) -> u64 {
         self
     }
 }
 
 impl AsU64 for Option<u32> {
+    #[inline]
     fn as_u64(self) -> u64 {
         match self {
             Some(v) => v as u64,
@@ -113,6 +116,7 @@ impl AsU64 for Option<u32> {
 }
 
 impl AsU64 for Option<u64> {
+    #[inline]
     fn as_u64(self) -> u64 {
         self.unwrap_or(u64::MAX)
     }
@@ -135,6 +139,7 @@ impl Hasher for IdHasher {
         self.write_u64(i as u64)
     }
 
+    #[inline]
     fn write_u64(&mut self, i: u64) {
         self.hash = i;
     }
@@ -212,6 +217,7 @@ impl<'a> PartialEq for StrHash<'a> {
 }
 
 impl<'a> AsU64 for StrHash<'a> {
+    #[inline]
     fn as_u64(self) -> u64 {
         self.hash
     }
@@ -220,7 +226,9 @@ impl<'a> AsU64 for StrHash<'a> {
 /// Check if a hash should be processed in that thread.
 #[inline]
 pub(crate) fn this_thread(h: u64, thread_no: u64, n_threads: u64) -> bool {
-    (h + thread_no) % n_threads == 0
+    // n % 2^i = n & (2^i - 1)
+    // we only accept thread pools that are 2^i
+    (h + thread_no) & (n_threads - 1) == 0
 }
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
