@@ -1,10 +1,8 @@
 use super::GroupTuples;
 use crate::prelude::*;
-use crate::utils::split_df;
-use crate::vector_hasher::AsU64;
-use crate::vector_hasher::{
-    df_rows_to_hashes, df_rows_to_hashes_threaded, this_thread, IdBuildHasher, IdxHash,
-};
+use crate::utils::{is_power_of_2, split_df};
+use crate::vector_hasher::{df_rows_to_hashes, df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
+use crate::vector_hasher::{this_partition, AsU64};
 use crate::POOL;
 use ahash::RandomState;
 use hashbrown::hash_map::Entry;
@@ -55,19 +53,19 @@ where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
-    let n_threads = keys.len();
+    let n_partitions = keys.len() as u64;
+    assert!(is_power_of_2(n_partitions as usize));
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
-        (0..n_threads).into_par_iter().map(|thread_no| {
+        (0..n_partitions).into_par_iter().map(|thread_no| {
             let thread_no = thread_no as u64;
 
             let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let n_threads = (n_threads as u64).into();
             let mut offset = 0;
             for keys in &keys {
                 let keys = keys.as_ref();
@@ -78,7 +76,7 @@ where
                     let idx = cnt + offset;
                     cnt += 1;
 
-                    if this_thread(k.as_u64(), thread_no, n_threads) {
+                    if this_partition(k.as_u64(), thread_no, n_partitions) {
                         let entry = hash_tbl.entry(*k);
 
                         match entry {
@@ -192,16 +190,17 @@ pub(crate) fn groupby_multiple_keys(keys: DataFrame) -> GroupTuples {
 
 pub(crate) fn groupby_threaded_multiple_keys_flat(
     keys: DataFrame,
-    n_threads: usize,
+    n_partitions: usize,
 ) -> GroupTuples {
-    let dfs = split_df(&keys, n_threads).unwrap();
+    let dfs = split_df(&keys, n_partitions).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
+    let n_partitions = n_partitions as u64;
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
-        (0..n_threads).into_par_iter().map(|thread_no| {
+        (0..n_partitions).into_par_iter().map(|thread_no| {
             let hashes = &hashes;
             let thread_no = thread_no as u64;
 
@@ -210,7 +209,6 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
             let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let n_threads = (n_threads as u64).into();
             let mut offset = 0;
             for hashes in hashes {
                 let len = hashes.len() as u32;
@@ -220,7 +218,7 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
                     for &h in hashes_chunk {
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
-                        if this_thread(h, thread_no, n_threads) {
+                        if this_partition(h, thread_no, n_partitions) {
                             let idx = idx + offset;
                             populate_multiple_key_hashmap(
                                 &mut hash_tbl,

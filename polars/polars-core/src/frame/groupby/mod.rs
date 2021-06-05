@@ -2,7 +2,7 @@ use self::hashing::*;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_vertical, split_ca, NoNull};
+use crate::utils::{accumulate_dataframes_vertical, set_partition_size, split_ca, NoNull};
 use crate::vector_hasher::{AsU64, StrHash};
 use crate::POOL;
 use ahash::RandomState;
@@ -49,8 +49,8 @@ where
         0
     };
     if multithreaded && group_multithreaded(ca) {
-        let n_threads = POOL.current_num_threads();
-        let splitted = split_ca(ca, n_threads).unwrap();
+        let n_partitions = set_partition_size();
+        let splitted = split_ca(ca, n_partitions).unwrap();
 
         // use the arrays as iterators
         if ca.chunks.len() == 1 {
@@ -137,8 +137,9 @@ impl IntoGroupTuples for Utf8Chunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         let hb = RandomState::default();
         if multithreaded {
-            let n_threads = POOL.current_num_threads();
-            let splitted = split_ca(self, n_threads).unwrap();
+            let n_partitions = set_partition_size();
+
+            let splitted = split_ca(self, n_partitions).unwrap();
 
             let str_hashes = POOL.install(|| {
                 splitted
@@ -208,8 +209,8 @@ impl DataFrame {
             }
             _ => {
                 if multithreaded {
-                    let n_threads = POOL.current_num_threads();
-                    groupby_threaded_multiple_keys_flat(keys_df, n_threads)
+                    let n_partitions = set_partition_size();
+                    groupby_threaded_multiple_keys_flat(keys_df, n_partitions)
                 } else {
                     groupby_multiple_keys(keys_df)
                 }

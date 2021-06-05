@@ -71,6 +71,23 @@ pub(crate) fn floating_encode_f64(mantissa: u64, exponent: i16, sign: i8) -> f64
     sign as f64 * mantissa as f64 * (2.0f64).powf(exponent as f64)
 }
 
+pub(crate) fn is_power_of_2(x: usize) -> bool {
+    (x != 0) && ((x & (x - 1)) == 0)
+}
+
+pub(crate) fn set_partition_size() -> usize {
+    let mut n_partitions = POOL.current_num_threads();
+    // set n_partitions to closes 2^n above the no of threads.
+    loop {
+        if is_power_of_2(n_partitions) {
+            break;
+        } else {
+            n_partitions += 1;
+        }
+    }
+    n_partitions
+}
+
 /// Just a wrapper structure. Useful for certain impl specializations
 /// This is for instance use to implement
 /// `impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>`
