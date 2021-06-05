@@ -67,7 +67,7 @@ where
             let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let n_threads = n_threads as u64;
+            let n_threads = (n_threads as u64).into();
             let mut offset = 0;
             for keys in &keys {
                 let keys = keys.as_ref();
@@ -210,7 +210,7 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
             let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let n_threads = n_threads as u64;
+            let n_threads = (n_threads as u64).into();
             let mut offset = 0;
             for hashes in hashes {
                 let len = hashes.len() as u32;
