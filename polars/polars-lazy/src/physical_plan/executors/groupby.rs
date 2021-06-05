@@ -213,30 +213,38 @@ impl Executor for PartitionGroupByExec {
             return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
         }
 
-        let cardinality_frac = std::env::var("POLARS_PARTITION_CARDINALITY_FRAC")
+        // 0.5% is approximately the tipping point
+        // and 1% for estimated (we get that by 1/2 sample frac)
+        let mut cardinality_frac = std::env::var("POLARS_PARTITION_CARDINALITY_FRAC")
             .map(|s| s.parse::<f32>().unwrap())
-            .unwrap_or(0.1f32);
+            .unwrap_or(0.005f32);
 
-        let (frac, a) = if let Ok(ca) = key.categorical() {
+        let (frac, sampled_method) = if let Ok(ca) = key.categorical() {
             let cat_map = ca
                 .get_categorical_map()
                 .expect("categorical type has categorical_map");
 
             (cat_map.len() as f32 / ca.len() as f32, "known")
         } else {
-            let sample_size = std::env::var("POLARS_PARTITION_SAMPLE_SIZE")
-                .map(|s| s.parse::<usize>().unwrap())
-                .unwrap_or(1250usize);
+            let sample_frac = std::env::var("POLARS_PARTITION_SAMPLE_FRAC")
+                .map(|s| s.parse::<f32>().unwrap())
+                .unwrap_or(0.001);
+            let sample_size = (original_df.height() as f32 * sample_frac) as usize;
+
+            // if not set, we set it to 1% for sampling
+            if std::env::var("POLARS_PARTITION_CARDINALITY_FRAC").is_err() {
+                cardinality_frac = 0.01f32;
+            }
             (sample_cardinality(&key, sample_size), "estimated")
         };
         if state.verbose {
-            eprintln!("{} cardinality: {}%", a, (frac * 100.0) as u32);
+            eprintln!("{} cardinality: {}%", sampled_method, (frac * 100.0) as u32);
         }
 
         if frac > cardinality_frac {
             if state.verbose {
                 eprintln!(
-                    "estimated cardinality is > than allowed cardinality: {}\
+                    "(estimated cardinality is > than allowed cardinality: {}\
                 running default HASH AGGREGATION",
                     (cardinality_frac * 100.0) as u32
                 );
