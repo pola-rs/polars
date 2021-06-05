@@ -275,11 +275,20 @@ fn collect_into_linked_list<I>(par_iter: I) -> LinkedList<Vec<I::Item>>
 where
     I: IntoParallelIterator,
 {
-    par_iter
-        .into_par_iter()
-        .fold(Vec::new, vec_push)
+    use crate::POOL;
+    let it = par_iter.into_par_iter();
+    if let Some(len) = it.opt_len() {
+        it.fold(
+            || Vec::with_capacity(len / POOL.current_num_threads()),
+            vec_push,
+        )
         .map(as_list)
         .reduce(LinkedList::new, list_append)
+    } else {
+        it.fold(Vec::new, vec_push)
+            .map(as_list)
+            .reduce(LinkedList::new, list_append)
+    }
 }
 
 fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
