@@ -138,7 +138,7 @@ where
             let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let n_threads = n_threads as u64;
+            let n_threads = (n_threads as u64).into();
             let mut offset = 0;
             for keys in &keys {
                 let keys = keys.as_ref();

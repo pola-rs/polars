@@ -38,7 +38,7 @@ fn create_build_table(
             let mut hash_tbl: HashMap<IdxHash, Vec<u32>, IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let n_threads = n_threads as u64;
+            let n_threads = (n_threads as u64).into();
             let mut offset = 0;
             for hashes in hashes {
                 for hashes in hashes.data_views() {
