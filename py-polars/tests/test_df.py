@@ -661,3 +661,10 @@ def test_to_html():
 def test_rows():
     df = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
     assert df.rows() == [(1, 1), (2, 2)]
+
+
+def test_rename():
+    df = get_complete_df()
+    out = df.rename({"strings": "bars", "int": "foos"})
+    # check if wel can select these new columns
+    _ = out[["foos", "bars"]]

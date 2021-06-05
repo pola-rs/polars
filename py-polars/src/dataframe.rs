@@ -497,6 +497,11 @@ impl PyDataFrame {
         Ok(())
     }
 
+    pub fn rename(&mut self, column: &str, new_col: &str) -> PyResult<()> {
+        self.df.rename(column, new_col).map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
     pub fn replace_at_idx(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
         self.df
             .replace_at_idx(index, new_col.series)

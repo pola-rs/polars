@@ -846,7 +846,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> Result<&mut Self> {
         self.select_mut(column)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string()))
+            .ok_or_else(|| PolarsError::NotFound(name.into()))
             .map(|s| s.rename(name))?;
         Ok(self)
     }

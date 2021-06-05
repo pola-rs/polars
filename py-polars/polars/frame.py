@@ -674,6 +674,20 @@ class DataFrame:
         max_rows = int(os.environ.get("POLARS_FMT_MAX_rows", 25))
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
+    def rename(self, mapping: "Dict[str, str]") -> "DataFrame":
+        """
+        Rename column names.
+
+        Parameters
+        ----------
+        mapping
+            Key value pairs that map from old name to new name.
+        """
+        df = self.clone()
+        for k, v in mapping.items():
+            df._df.rename(k, v)
+        return df
+
     def insert_at_idx(self, index: int, series: Series):
         """
         Insert a Series at a certain column index. This operation is in place.
@@ -2322,7 +2336,7 @@ class GBSelection:
             selection = self.selection
         for name in selection:
             s = df.drop_in_place(name + "_agg_list").apply(func, return_dtype)
-            s.rename(name)
+            s.rename(name, in_place=True)
             df[name] = s
 
         return df

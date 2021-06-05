@@ -73,7 +73,7 @@ def test_various():
 
     assert a.is_null().sum() == 0
     assert a.name == "a"
-    a.rename("b")
+    a.rename("b", in_place=True)
     assert a.name == "b"
     assert a.len() == 2
     assert len(a) == 2
