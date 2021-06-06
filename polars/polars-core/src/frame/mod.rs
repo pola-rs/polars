@@ -24,6 +24,7 @@ pub mod hash_join;
 pub mod row;
 pub mod select;
 mod upstream_traits;
+#[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
 use crate::POOL;
 #[cfg(feature = "serde")]

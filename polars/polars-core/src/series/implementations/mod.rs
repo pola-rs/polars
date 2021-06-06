@@ -128,7 +128,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "pivot")]
             fn pivot<'a>(
                 &self,
-                pivot_series: &'a (dyn SeriesTrait + 'a),
+                pivot_series: &'a Series,
                 keys: Vec<Series>,
                 groups: &[(u32, Vec<u32>)],
                 agg_type: PivotAgg,
@@ -139,7 +139,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "pivot")]
             fn pivot_count<'a>(
                 &self,
-                pivot_series: &'a (dyn SeriesTrait + 'a),
+                pivot_series: &'a Series,
                 keys: Vec<Series>,
                 groups: &[(u32, Vec<u32>)],
             ) -> Result<DataFrame> {

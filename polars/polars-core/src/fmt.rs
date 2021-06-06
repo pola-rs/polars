@@ -68,6 +68,7 @@ mod temporal {
         v
     }
 }
+#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
 use std::borrow::Cow;
 #[cfg(not(feature = "temporal"))]
 use temporal::*;
@@ -360,6 +361,7 @@ impl Debug for DataFrame {
     }
 }
 
+#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
 fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
     fn make_str_val(v: &str) -> String {
         let string_limit = 32;
@@ -395,6 +397,7 @@ impl Display for DataFrame {
             .unwrap_or_else(|_| "8".to_string())
             .parse()
             .unwrap_or(8);
+        #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
         let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
             .unwrap_or_else(|_| "8".to_string())
             .parse()

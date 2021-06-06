@@ -35,38 +35,6 @@ fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
     }
 }
 
-/// Used to split the mantissa and exponent of floating point numbers
-/// https://stackoverflow.com/questions/39638363/how-can-i-use-a-hashmap-with-f64-as-key-in-rust
-pub(crate) fn integer_decode_f64(val: f64) -> (u64, i16, i8) {
-    let bits: u64 = val.to_bits();
-    let sign: i8 = if bits >> 63 == 0 { 1 } else { -1 };
-    let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
-    let mantissa = if exponent == 0 {
-        (bits & 0xfffffffffffff) << 1
-    } else {
-        (bits & 0xfffffffffffff) | 0x10000000000000
-    };
-
-    exponent -= 1023 + 52;
-    (mantissa, exponent, sign)
-}
-
-/// Returns the mantissa, exponent and sign as integers.
-/// https://github.com/rust-lang/rust/blob/5c674a11471ec0569f616854d715941757a48a0a/src/libcore/num/f32.rs#L203-L216
-pub(crate) fn integer_decode_f32(val: f32) -> (u64, i16, i8) {
-    let bits: u32 = val.to_bits();
-    let sign: i8 = if bits >> 31 == 0 { 1 } else { -1 };
-    let mut exponent: i16 = ((bits >> 23) & 0xff) as i16;
-    let mantissa = if exponent == 0 {
-        (bits & 0x7fffff) << 1
-    } else {
-        (bits & 0x7fffff) | 0x800000
-    };
-    // Exponent bias + mantissa shift
-    exponent -= 127 + 23;
-    (mantissa as u64, exponent, sign)
-}
-
 pub(crate) fn is_power_of_2(x: usize) -> bool {
     (x != 0) && ((x & (x - 1)) == 0)
 }
