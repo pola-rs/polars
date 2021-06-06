@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.14.0"
+version = "0.14.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -64,7 +64,7 @@ arrow = {git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246e
 #arrow = {version = "4.2", default-features = false }
 parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246edc4a6fcc2c8e5b9bc570"}
 #parquet = {version = "4.2", default-features = false, optional = true }
-polars-arrow = {version = "0.14.0", path = "../polars-arrow"}
+polars-arrow = {version = "0.14.1", path = "../polars-arrow"}
 thiserror = "1.0"
 num = "^0.4"
 itertools = "0.10"
@@ -78,7 +78,7 @@ rand_distr = {version = "0.3", optional = true}
 ndarray = {version = "0.13", optional = true, default_features = false}
 regex = {version = "1.4", optional = true}
 serde_json = {version = "1.0", optional = true }
-# activate if you want to serde Series and DataFrames
+# activate if you want serde support for Series and DataFrames
 serde = {version = "1", features=["derive"], optional = true }
 anyhow = "1.0"
 ahash = "0.7"
