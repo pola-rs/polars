@@ -47,7 +47,7 @@ jobs:
           cargo clippy -Z unstable-options -- -D warnings
       - name: Feature test
         run: |
-          cd polars && cargo hack check --each-feature --no-dev-deps
+          cd polars && cargo hack check --each-feature --no-dev-deps --features private
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
