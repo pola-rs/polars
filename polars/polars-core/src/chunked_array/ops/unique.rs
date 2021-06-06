@@ -1,14 +1,12 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
-use crate::frame::groupby::GroupTuples;
+use crate::datatypes::PlHashSet;
+use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
-use crate::utils::{floating_encode_f64, integer_decode_f64, NoNull};
-use crate::{chunked_array::float::IntegerDecode, frame::groupby::IntoGroupTuples};
-use ahash::RandomState;
+use crate::utils::NoNull;
 use itertools::Itertools;
-use num::{NumCast, ToPrimitive};
+use num::NumCast;
 use rayon::prelude::*;
-use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::Hash;
 
@@ -93,24 +91,18 @@ impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     }
 }
 
-fn fill_set<A>(a: impl Iterator<Item = A>) -> HashSet<A, RandomState>
+fn fill_set<A>(a: impl Iterator<Item = A>) -> PlHashSet<A>
 where
     A: Hash + Eq,
 {
-    let mut set = HashSet::with_hasher(RandomState::new());
-
-    for val in a {
-        set.insert(val);
-    }
-
-    set
+    a.collect()
 }
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> AlignedVec<u32>
 where
     T: Hash + Eq,
 {
-    let mut set = HashSet::with_hasher(RandomState::new());
+    let mut set = PlHashSet::new();
     let mut unique = AlignedVec::with_capacity_aligned(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
@@ -174,6 +166,10 @@ where
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
     }
+
+    fn n_unique(&self) -> Result<usize> {
+        Ok(fill_set(self.into_iter()).len())
+    }
 }
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
@@ -202,6 +198,10 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
     }
+
+    fn n_unique(&self) -> Result<usize> {
+        Ok(fill_set(self.into_iter()).len())
+    }
 }
 
 impl ChunkUnique<CategoricalType> for CategoricalChunked {
@@ -213,21 +213,21 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            arg_unique_ca!(self),
-        ))
+        self.cast::<UInt32Type>()?.arg_unique()
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        Ok(is_unique(self))
+        self.cast::<UInt32Type>()?.is_unique()
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        Ok(is_duplicated(self))
+        self.cast::<UInt32Type>()?.is_duplicated()
     }
 
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
+    }
+    fn n_unique(&self) -> Result<usize> {
+        self.cast::<UInt32Type>()?.n_unique()
     }
 }
 
@@ -354,66 +354,25 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     }
 }
 
-fn float_unique<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
-where
-    T: PolarsFloatType,
-    T::Native: NumCast + ToPrimitive,
-{
-    let set = match ca.null_count() {
-        0 => fill_set(
-            ca.into_no_null_iter()
-                .map(|v| Some(integer_decode_f64(v.to_f64().unwrap()))),
-        ),
-        _ => fill_set(
-            ca.into_iter()
-                .map(|opt_v| opt_v.map(|v| integer_decode_f64(v.to_f64().unwrap()))),
-        ),
-    };
-    ChunkedArray::new_from_opt_iter(
-        ca.name(),
-        set.iter().copied().map(|opt| match opt {
-            Some((mantissa, exponent, sign)) => {
-                let flt = floating_encode_f64(mantissa, exponent, sign);
-                let val: T::Native = NumCast::from(flt).unwrap();
-                Some(val)
-            }
-            None => None,
-        }),
-    )
-}
-
-fn float_arg_unique<T>(ca: &ChunkedArray<T>) -> AlignedVec<u32>
-where
-    T: PolarsFloatType,
-    T::Native: IntegerDecode,
-{
-    match ca.null_count() {
-        0 => arg_unique(ca.into_no_null_iter().map(|v| v.integer_decode()), ca.len()),
-        _ => arg_unique(
-            ca.into_iter()
-                .map(|opt_v| opt_v.map(|v| v.integer_decode())),
-            ca.len(),
-        ),
-    }
-}
-
 impl ChunkUnique<Float32Type> for Float32Chunked {
     fn unique(&self) -> Result<ChunkedArray<Float32Type>> {
-        Ok(float_unique(self))
+        let ca = self.bit_repr_small();
+        let set = fill_set(ca.into_iter());
+        Ok(set
+            .into_iter()
+            .map(|opt_v| opt_v.map(f32::from_bits))
+            .collect())
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            float_arg_unique(self),
-        ))
+        self.bit_repr_small().arg_unique()
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        Ok(is_unique(self))
+        self.bit_repr_small().is_unique()
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        Ok(is_duplicated(self))
+        self.bit_repr_small().is_duplicated()
     }
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
@@ -422,21 +381,23 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
     fn unique(&self) -> Result<ChunkedArray<Float64Type>> {
-        Ok(float_unique(self))
+        let ca = self.bit_repr_large();
+        let set = fill_set(ca.into_iter());
+        Ok(set
+            .into_iter()
+            .map(|opt_v| opt_v.map(f64::from_bits))
+            .collect())
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            float_arg_unique(self),
-        ))
+        self.bit_repr_large().arg_unique()
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        Ok(is_unique(self))
+        self.bit_repr_large().is_unique()
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        Ok(is_duplicated(self))
+        self.bit_repr_large().is_duplicated()
     }
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
