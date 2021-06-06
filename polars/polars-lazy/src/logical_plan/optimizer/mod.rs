@@ -1,7 +1,5 @@
 use crate::prelude::*;
-use ahash::RandomState;
-use polars_core::prelude::*;
-use std::collections::HashMap;
+use polars_core::{datatypes::PlHashMap, prelude::*};
 
 pub(crate) mod aggregate_pushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
@@ -19,8 +17,8 @@ pub trait Optimize {
 }
 
 // arbitrary constant to reduce reallocation.
-const HASHMAP_SIZE: usize = 32;
+const HASHMAP_SIZE: usize = 16;
 
-pub(crate) fn init_hashmap<K, V>() -> HashMap<K, V, RandomState> {
-    HashMap::with_capacity_and_hasher(HASHMAP_SIZE, RandomState::new())
+pub(crate) fn init_hashmap<K, V>() -> PlHashMap<K, V> {
+    PlHashMap::with_capacity(HASHMAP_SIZE)
 }

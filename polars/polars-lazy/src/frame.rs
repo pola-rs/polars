@@ -1,14 +1,10 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
-use std::collections::HashMap;
-use std::sync::Arc;
-
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
-use ahash::RandomState;
-
+use polars_core::datatypes::PlHashMap;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::toggle_string_cache;
+use std::sync::Arc;
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
@@ -512,7 +508,7 @@ impl LazyFrame {
         if agg_scan_projection {
             // scan the LP to aggregate all the column used in scans
             // these columns will be added to the state of the AggScanProjection rule
-            let mut columns = HashMap::with_capacity_and_hasher(32, RandomState::default());
+            let mut columns = PlHashMap::with_capacity(32);
             agg_projection(lp_top, &mut columns, lp_arena);
 
             let opt = AggScanProjection { columns };

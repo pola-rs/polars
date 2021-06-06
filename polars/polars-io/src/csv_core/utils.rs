@@ -1,11 +1,10 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::parser::next_line_position;
-use ahash::RandomState;
 use lazy_static::lazy_static;
+use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use regex::{Regex, RegexBuilder};
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 
 pub(crate) fn init_csv_reader<R: Read>(
@@ -141,8 +140,7 @@ pub fn infer_file_schema<R: Read + Seek>(
     };
 
     // keep track of inferred field types
-    let mut column_types: Vec<HashSet<DataType, RandomState>> =
-        vec![HashSet::with_hasher(RandomState::new()); header_length];
+    let mut column_types: Vec<PlHashSet<DataType>> = vec![PlHashSet::new(); header_length];
     // keep track of columns with nulls
     let mut nulls: Vec<bool> = vec![false; header_length];
 

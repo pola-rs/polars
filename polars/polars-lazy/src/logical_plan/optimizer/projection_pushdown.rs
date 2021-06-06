@@ -1,15 +1,13 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, check_down_node, has_aexpr};
-use ahash::RandomState;
-use polars_core::prelude::*;
-use std::collections::HashSet;
+use polars_core::{datatypes::PlHashSet, prelude::*};
 
 fn init_vec() -> Vec<Node> {
     Vec::with_capacity(100)
 }
-fn init_set() -> HashSet<Arc<String>, RandomState> {
-    HashSet::with_capacity_and_hasher(128, RandomState::default())
+fn init_set() -> PlHashSet<Arc<String>> {
+    PlHashSet::with_capacity(32)
 }
 
 /// utility function to get names of the columns needed in projection at scan level
@@ -40,15 +38,11 @@ fn split_acc_projections(
     acc_projections: Vec<Node>,
     down_schema: &Schema,
     expr_arena: &mut Arena<AExpr>,
-) -> (Vec<Node>, Vec<Node>, HashSet<Arc<String>, RandomState>) {
+) -> (Vec<Node>, Vec<Node>, PlHashSet<Arc<String>>) {
     // If node above has as many columns as the projection there is nothing to pushdown.
     if down_schema.fields().len() == acc_projections.len() {
         let local_projections = acc_projections;
-        (
-            vec![],
-            local_projections,
-            HashSet::with_hasher(RandomState::default()),
-        )
+        (vec![], local_projections, PlHashSet::new())
     } else {
         let (acc_projections, local_projections): (Vec<Node>, Vec<Node>) = acc_projections
             .into_iter()
@@ -67,7 +61,7 @@ fn split_acc_projections(
 fn add_expr_to_accumulated(
     expr: Node,
     acc_projections: &mut Vec<Node>,
-    projected_names: &mut HashSet<Arc<String>, RandomState>,
+    projected_names: &mut PlHashSet<Arc<String>>,
     expr_arena: &mut Arena<AExpr>,
 ) {
     for root_node in aexpr_to_root_nodes(expr, expr_arena) {
@@ -82,7 +76,7 @@ fn add_expr_to_accumulated(
 fn add_str_to_accumulated(
     name: &str,
     acc_projections: &mut Vec<Node>,
-    projected_names: &mut HashSet<Arc<String>, RandomState>,
+    projected_names: &mut PlHashSet<Arc<String>>,
     expr_arena: &mut Arena<AExpr>,
 ) {
     // if empty: all columns are already projected.
@@ -115,8 +109,8 @@ impl ProjectionPushDown {
         proj: Node,
         pushdown_left: &mut Vec<Node>,
         pushdown_right: &mut Vec<Node>,
-        names_left: &mut HashSet<Arc<String>, RandomState>,
-        names_right: &mut HashSet<Arc<String>, RandomState>,
+        names_left: &mut PlHashSet<Arc<String>>,
+        names_right: &mut PlHashSet<Arc<String>>,
         expr_arena: &mut Arena<AExpr>,
     ) -> bool {
         let mut pushed_at_least_one = false;
@@ -146,7 +140,7 @@ impl ProjectionPushDown {
         &self,
         input: Node,
         acc_projections: Vec<Node>,
-        names: HashSet<Arc<String>, RandomState>,
+        names: PlHashSet<Arc<String>>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
@@ -179,7 +173,7 @@ impl ProjectionPushDown {
         &self,
         logical_plan: ALogicalPlan,
         mut acc_projections: Vec<Node>,
-        mut projected_names: HashSet<Arc<String>, RandomState>,
+        mut projected_names: PlHashSet<Arc<String>>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,

@@ -5,9 +5,8 @@ use crate::utils::rename_aexpr_root_name;
 use crate::utils::{
     aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node, has_aexpr,
 };
-use ahash::RandomState;
+use polars_core::datatypes::{PlHashMap, PlHashSet};
 use polars_core::prelude::*;
-use std::collections::{HashMap, HashSet};
 
 trait Dsl {
     fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;
@@ -25,7 +24,7 @@ impl Dsl for Node {
 
 /// Don't overwrite predicates but combine them.
 fn insert_and_combine_predicate(
-    predicates_map: &mut HashMap<Arc<String>, Node, RandomState>,
+    predicates_map: &mut PlHashMap<Arc<String>, Node>,
     name: Arc<String>,
     predicate: Node,
     arena: &mut Arena<AExpr>,
@@ -62,7 +61,7 @@ where
 }
 
 fn predicate_at_scan(
-    acc_predicates: HashMap<Arc<String>, Node, RandomState>,
+    acc_predicates: PlHashMap<Arc<String>, Node>,
     predicate: Option<Node>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
@@ -117,7 +116,7 @@ fn no_pushdown_preds<F>(
     matches: F,
     // predicates that will be filtered at this node in the LP
     local_predicates: &mut Vec<Node>,
-    acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
+    acc_predicates: &mut PlHashMap<Arc<String>, Node>,
 ) where
     F: Fn(&AExpr) -> bool,
 {
@@ -135,7 +134,7 @@ fn no_pushdown_preds<F>(
 /// to a local_predicates vec based on a condition.
 fn transfer_to_local<F>(
     expr_arena: &Arena<AExpr>,
-    acc_predicates: &mut HashMap<Arc<String>, Node, RandomState>,
+    acc_predicates: &mut PlHashMap<Arc<String>, Node>,
     mut condition: F,
 ) -> Vec<Node>
 where
@@ -181,7 +180,7 @@ impl PredicatePushDown {
     fn finish_at_leaf(
         &self,
         lp: ALogicalPlan,
-        acc_predicates: HashMap<Arc<String>, Node, RandomState>,
+        acc_predicates: PlHashMap<Arc<String>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> ALogicalPlan {
@@ -198,7 +197,7 @@ impl PredicatePushDown {
     fn pushdown_and_assign(
         &self,
         input: Node,
-        acc_predicates: HashMap<Arc<String>, Node, RandomState>,
+        acc_predicates: PlHashMap<Arc<String>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<()> {
@@ -222,7 +221,7 @@ impl PredicatePushDown {
     fn push_down(
         &self,
         logical_plan: ALogicalPlan,
-        mut acc_predicates: HashMap<Arc<String>, Node, RandomState>,
+        mut acc_predicates: PlHashMap<Arc<String>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
@@ -544,8 +543,7 @@ impl PredicatePushDown {
                 // and then we remove the predicates from the eligible container if they are
                 // dependent on data we've added in this node.
 
-                let mut added_cols =
-                    HashSet::with_capacity_and_hasher(exprs.len(), RandomState::default());
+                let mut added_cols = PlHashSet::with_capacity(exprs.len());
                 for e in &exprs {
                     // shifts | sorts are influenced by a filter so we do all predicates before the shift | sort
                     let matches = |e: &AExpr| matches!(e, AExpr::Shift { .. } | AExpr::Sort { .. });
@@ -665,7 +663,7 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
-        let acc_predicates = HashMap::with_capacity_and_hasher(100, RandomState::new());
+        let acc_predicates = PlHashMap::with_capacity(32);
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }
@@ -676,7 +674,7 @@ mod test {
 
     #[test]
     fn test_insert_and_combine_predicate() {
-        let mut acc_predicates = HashMap::with_capacity_and_hasher(10, RandomState::new());
+        let mut acc_predicates = PlHashMap::with_capacity(32);
         let mut expr_arena = Arena::new();
 
         let predicate_expr = col("foo").gt(col("bar"));
