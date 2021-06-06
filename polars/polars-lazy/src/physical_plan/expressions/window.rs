@@ -119,7 +119,21 @@ impl PhysicalExpr for WindowExpr {
 
         // 3. get the join tuples and use them to take the new Series
         let out_column = out.select_at_idx(out.width() - 1).unwrap();
-        let mut join_tuples_lock = state.join_tuples.lock().unwrap();
+
+        // Same logic as above. The join algorithm also spawns new threads.
+        let mut join_tuples_lock;
+        loop {
+            match state.join_tuples.try_lock() {
+                Ok(lock) => {
+                    join_tuples_lock = lock;
+                    break;
+                }
+                Err(_) => {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+        }
+
         let opt_join_tuples = match join_tuples_lock.get_mut(&key) {
             Some(t) => std::mem::take(t),
             None => {
