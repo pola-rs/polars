@@ -1,10 +1,12 @@
 use super::GroupTuples;
 use crate::prelude::*;
-use crate::utils::{is_power_of_2, split_df};
 use crate::vector_hasher::{df_rows_to_hashes, df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
 use crate::vector_hasher::{this_partition, AsU64};
 use crate::POOL;
-use ahash::RandomState;
+use crate::{
+    datatypes::PlHashMap,
+    utils::{is_power_of_2, split_df},
+};
 use hashbrown::hash_map::Entry;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use rayon::prelude::*;
@@ -18,8 +20,7 @@ pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> =
-        HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+    let mut hash_tbl: PlHashMap<T, (u32, Vec<u32>)> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
     let mut cnt = 0;
     a.for_each(|k| {
         let idx = cnt;
@@ -63,8 +64,8 @@ where
         (0..n_partitions).into_par_iter().map(|thread_no| {
             let thread_no = thread_no as u64;
 
-            let mut hash_tbl: HashMap<T, (u32, Vec<u32>), RandomState> =
-                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+            let mut hash_tbl: PlHashMap<T, (u32, Vec<u32>)> =
+                PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
             let mut offset = 0;
             for keys in &keys {

@@ -121,7 +121,7 @@ impl<T> DerefMut for NoNull<T> {
     }
 }
 
-pub fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
+pub(crate) fn get_iter_capacity<T, I: Iterator<Item = T>>(iter: &I) -> usize {
     match iter.size_hint() {
         (_lower, Some(upper)) => upper,
         (0, None) => 1024,
@@ -152,14 +152,17 @@ macro_rules! split_array {
     }};
 }
 
+#[cfg(feature = "private")]
 pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> Result<Vec<ChunkedArray<T>>> {
     split_array!(ca, n, i64)
 }
 
+#[cfg(feature = "private")]
 pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
+#[cfg(feature = "private")]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
     trait Len {
         fn len(&self) -> usize;
@@ -173,6 +176,7 @@ pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
 }
 
 #[inline]
+#[cfg(feature = "private")]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
     let abs_offset = offset.abs() as usize;
 
@@ -204,6 +208,7 @@ impl Default for Node {
 }
 
 #[derive(Clone)]
+#[cfg(feature = "private")]
 pub struct Arena<T> {
     items: Vec<T>,
 }
@@ -289,47 +294,6 @@ impl<T: Default> Arena<T> {
         let val = self.take(idx);
         self.replace(idx, f(val)?);
         Ok(())
-    }
-}
-
-/// An iterator that iterates an unknown at compile time number
-/// of iterators simultaneously.
-///
-/// IMPORTANT: It differs from `std::iter::Zip` in the return type
-/// of `next`. It returns a `Vec` instead of a `tuple`, which implies
-/// that the result is non-copiable anymore.
-pub struct DynamicZip<I>
-where
-    I: Iterator,
-{
-    iterators: Vec<I>,
-}
-
-impl<I, T> Iterator for DynamicZip<I>
-where
-    I: Iterator<Item = T>,
-{
-    type Item = Vec<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iterators.iter_mut().map(|iter| iter.next()).collect()
-    }
-}
-
-/// A trait to convert a value to a `DynamicZip`.
-pub trait IntoDynamicZip<I>
-where
-    I: Iterator,
-{
-    fn into_dynamic_zip(self) -> DynamicZip<I>;
-}
-
-impl<I> IntoDynamicZip<I> for Vec<I>
-where
-    I: Iterator,
-{
-    fn into_dynamic_zip(self) -> DynamicZip<I> {
-        DynamicZip { iterators: self }
     }
 }
 
@@ -533,6 +497,7 @@ macro_rules! df {
 }
 
 /// Given two datatypes, determine the supertype that both types can safely be cast to
+#[cfg(feature = "private")]
 pub fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
     match _get_supertype(l, r) {
         Some(dt) => Ok(dt),
@@ -736,14 +701,9 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> Result<DataFrame
     Ok(acc_df)
 }
 
-#[cfg(target_os = "linux")]
-extern "C" {
-    #[allow(dead_code)]
-    pub fn malloc_trim(__pad: usize) -> std::os::raw::c_int;
-}
-
 /// Simple wrapper to parallelize functions that can be divided over threads aggregated and
 /// finally aggregated in the main thread. This can be done for sum, min, max, etc.
+#[cfg(feature = "private")]
 pub fn parallel_op_series<F>(f: F, s: Series, n_threads: Option<usize>) -> Result<Series>
 where
     F: Fn(Series) -> Result<Series> + Send + Sync,

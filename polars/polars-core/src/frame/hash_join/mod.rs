@@ -10,7 +10,7 @@ use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_thread, AsU64,
     StrHash,
 };
-use crate::POOL;
+use crate::{datatypes::PlHashMap, POOL};
 use ahash::RandomState;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
@@ -95,7 +95,7 @@ unsafe fn get_hash_tbl_threaded_join_mut<T, H>(
 /// Probe the build table and add tuples to the results (inner join)
 fn probe_inner<T, F>(
     probe: &[T],
-    hash_tbls: &[HashMap<T, Vec<u32>, RandomState>],
+    hash_tbls: &[PlHashMap<T, Vec<u32>>],
     results: &mut Vec<(u32, u32)>,
     local_offset: usize,
     n_tables: u64,
@@ -119,9 +119,7 @@ fn probe_inner<T, F>(
     });
 }
 
-pub(crate) fn create_probe_table<T, IntoSlice>(
-    keys: Vec<IntoSlice>,
-) -> Vec<HashMap<T, Vec<u32>, RandomState>>
+pub(crate) fn create_probe_table<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashMap<T, Vec<u32>>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
@@ -135,8 +133,7 @@ where
         (0..n_threads).into_par_iter().map(|thread_no| {
             let thread_no = thread_no as u64;
 
-            let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
-                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+            let mut hash_tbl: PlHashMap<T, Vec<u32>> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
             let n_threads = (n_threads as u64).into();
             let mut offset = 0;
@@ -304,7 +301,7 @@ where
 /// Probe the build table and add tuples to the results (inner join)
 fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
-    hash_tbls: &mut [HashMap<T, Vec<u32>, RandomState>],
+    hash_tbls: &mut [PlHashMap<T, Vec<u32>>],
     results: &mut Vec<(Option<u32>, Option<u32>)>,
     n_tables: u64,
     // Function that get index_a, index_b when there is a match and pushes to result

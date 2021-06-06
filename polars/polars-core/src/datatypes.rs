@@ -7,6 +7,7 @@
 //! are currently supported.
 //!
 use crate::prelude::*;
+use ahash::RandomState;
 pub use arrow::datatypes::DataType as ArrowDataType;
 pub use arrow::datatypes::{
     ArrowNumericType, ArrowPrimitiveType, BooleanType, Date32Type, Date64Type,
@@ -674,3 +675,8 @@ impl From<ArrowSchema> for Schema {
         (&a_schema).into()
     }
 }
+
+#[cfg(feature = "private")]
+pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
+#[cfg(feature = "private")]
+pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;

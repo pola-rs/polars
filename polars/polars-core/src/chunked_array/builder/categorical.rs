@@ -1,13 +1,15 @@
 use crate::prelude::*;
-use crate::use_string_cache;
-use crate::utils::arrow::array::{Array, ArrayBuilder};
-use ahash::AHashMap;
+use crate::{
+    datatypes::PlHashMap,
+    use_string_cache,
+    utils::arrow::array::{Array, ArrayBuilder},
+};
 use arrow::array::{LargeStringArray, LargeStringBuilder};
 use polars_arrow::builder::PrimitiveArrayBuilder;
 use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
-    Global(AHashMap<u32, u32>, LargeStringBuilder, u128),
+    Global(PlHashMap<u32, u32>, LargeStringBuilder, u128),
     Local(LargeStringBuilder),
 }
 
@@ -39,7 +41,7 @@ impl RevMappingBuilder {
 }
 
 pub enum RevMapping {
-    Global(AHashMap<u32, u32>, LargeStringArray, u128),
+    Global(PlHashMap<u32, u32>, LargeStringArray, u128),
     Local(LargeStringArray),
 }
 
@@ -81,7 +83,7 @@ impl CategoricalChunkedBuilder {
         let builder = LargeStringBuilder::new(capacity / 10);
         let reverse_mapping = if use_string_cache() {
             let uuid = crate::STRING_CACHE.lock_map().uuid;
-            RevMappingBuilder::Global(AHashMap::default(), builder, uuid)
+            RevMappingBuilder::Global(PlHashMap::default(), builder, uuid)
         } else {
             RevMappingBuilder::Local(builder)
         };
@@ -123,7 +125,7 @@ impl CategoricalChunkedBuilder {
                 }
             }
         } else {
-            let mut mapping = AHashMap::new();
+            let mut mapping = PlHashMap::new();
             for opt_s in i {
                 match opt_s {
                     Some(s) => {

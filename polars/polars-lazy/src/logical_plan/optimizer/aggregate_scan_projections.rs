@@ -1,22 +1,19 @@
-use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use ahash::RandomState;
-
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
+use polars_core::datatypes::{PlHashMap, PlHashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 fn process_with_columns(
     path: &Path,
     with_columns: &Option<Vec<String>>,
-    columns: &mut HashMap<PathBuf, HashSet<String, RandomState>, RandomState>,
+    columns: &mut PlHashMap<PathBuf, PlHashSet<String>>,
 ) {
     if let Some(with_columns) = &with_columns {
         let cols = columns
             .entry(path.to_owned())
-            .or_insert_with(|| HashSet::with_hasher(RandomState::default()));
+            .or_insert_with(PlHashSet::new);
         cols.extend(with_columns.iter().cloned());
     }
 }
@@ -24,7 +21,7 @@ fn process_with_columns(
 /// Aggregate all the projections in an LP
 pub(crate) fn agg_projection(
     root: Node,
-    columns: &mut HashMap<PathBuf, HashSet<String, RandomState>, RandomState>,
+    columns: &mut PlHashMap<PathBuf, PlHashSet<String>>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     use ALogicalPlan::*;
@@ -54,7 +51,7 @@ pub(crate) fn agg_projection(
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
 pub struct AggScanProjection {
-    pub columns: HashMap<PathBuf, HashSet<String, RandomState>, RandomState>,
+    pub columns: PlHashMap<PathBuf, PlHashSet<String>>,
 }
 
 impl AggScanProjection {
