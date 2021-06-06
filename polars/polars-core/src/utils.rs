@@ -67,10 +67,6 @@ pub(crate) fn integer_decode_f32(val: f32) -> (u64, i16, i8) {
     (mantissa as u64, exponent, sign)
 }
 
-pub(crate) fn floating_encode_f64(mantissa: u64, exponent: i16, sign: i8) -> f64 {
-    sign as f64 * mantissa as f64 * (2.0f64).powf(exponent as f64)
-}
-
 pub(crate) fn is_power_of_2(x: usize) -> bool {
     (x != 0) && ((x & (x - 1)) == 0)
 }
