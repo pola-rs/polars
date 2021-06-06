@@ -21,16 +21,8 @@ To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 You can take latest release from `crates.io`, or if you want to use the latest features/ performance improvements
 point to the `master` branch of this repo.
 
-You can add the master like this:
-
 ```toml
-polars = {version="0.13.0", git = "https://github.com/ritchie46/polars" }
-```
-
-Or by fixing to a specific version:
-
-```toml
-polars = {version="0.13.0", git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
+polars = {git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
 ```
 ## Rust version
 Required Rust version `>=1.51`
