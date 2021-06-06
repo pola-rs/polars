@@ -13,8 +13,8 @@ repository = "https://github.com/ritchie46/polars"
 # support for arrows json parsing
 json = []
 # support for arrows ipc file parsing
-#ipc = ["arrow/ipc"]
-ipc = []
+ipc = ["arrow/ipc"]
+#ipc = []
 lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
 dtype-u64 = ["polars-core/dtype-u64"]
