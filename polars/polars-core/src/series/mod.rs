@@ -90,7 +90,7 @@ pub(crate) mod private {
         #[cfg(feature = "pivot")]
         fn pivot<'a>(
             &self,
-            _pivot_series: &'a (dyn SeriesTrait + 'a),
+            _pivot_series: &'a Series,
             _keys: Vec<Series>,
             _groups: &[(u32, Vec<u32>)],
             _agg_type: PivotAgg,
@@ -101,7 +101,7 @@ pub(crate) mod private {
         #[cfg(feature = "pivot")]
         fn pivot_count<'a>(
             &self,
-            _pivot_series: &'a (dyn SeriesTrait + 'a),
+            _pivot_series: &'a Series,
             _keys: Vec<Series>,
             _groups: &[(u32, Vec<u32>)],
         ) -> Result<DataFrame> {

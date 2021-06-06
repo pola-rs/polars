@@ -528,6 +528,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 }
 
+#[cfg(feature = "sort_multiple")]
 pub(crate) fn prepare_argsort(
     columns: Vec<Series>,
     mut reverse: Vec<bool>,

@@ -2,6 +2,7 @@
 //!
 //! Functions that might be useful.
 //!
+#[cfg(feature = "sort_multiple")]
 use crate::chunked_array::ops::sort::prepare_argsort;
 use crate::prelude::*;
 use num::{Float, NumCast};

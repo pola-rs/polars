@@ -390,14 +390,38 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        self.bit_repr_large().arg_unique()
+        #[cfg(feature = "dtype-u64")]
+        {
+            self.bit_repr_large().arg_unique()
+        }
+
+        #[cfg(not(feature = "dtype-u64"))]
+        {
+            panic!("activate feature dtype-u64")
+        }
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        self.bit_repr_large().is_unique()
+        #[cfg(feature = "dtype-u64")]
+        {
+            self.bit_repr_large().is_unique()
+        }
+
+        #[cfg(not(feature = "dtype-u64"))]
+        {
+            panic!("activate feature dtype-u64")
+        }
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        self.bit_repr_large().is_duplicated()
+        #[cfg(feature = "dtype-u64")]
+        {
+            self.bit_repr_large().is_duplicated()
+        }
+
+        #[cfg(not(feature = "dtype-u64"))]
+        {
+            panic!("activate feature dtype-u64")
+        }
     }
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
