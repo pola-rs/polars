@@ -21,6 +21,7 @@ mod arithmetic;
 pub mod explode;
 pub mod groupby;
 pub mod hash_join;
+#[cfg(feature = "rows")]
 pub mod row;
 pub mod select;
 mod upstream_traits;

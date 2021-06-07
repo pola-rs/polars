@@ -8,7 +8,9 @@ trait ToPolarsError: Debug {
     fn to_polars_err(&self) -> PolarsError {
         PolarsError::Other(
             format!(
-                "Could not parse primitive type during csv parsing: {:?}",
+                "Could not parse primitive type during csv parsing: {:?}.\
+                This can occur when a column was inferred as integer type but we stumbled upon a floating point value\
+                You could pass a predefined schema or set `with_ignore_parser_errors` to `true`",
                 self
             )
             .into(),

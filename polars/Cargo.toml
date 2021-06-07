@@ -9,6 +9,7 @@ repository = "https://github.com/ritchie46/polars"
 readme = "../README.md"
 
 [features]
+rows = ["polars-core/rows"]
 simd = ["polars-core/simd"]
 avx512 = ["polars-core/avx512"]
 docs = ["polars-core/docs"]
