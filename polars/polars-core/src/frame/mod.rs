@@ -914,13 +914,13 @@ impl DataFrame {
         self.apply(column, |_| new_col.into_series())
     }
 
-    /// Replace or update a column.
+    /// Replace or update a column. The difference between this method and [DataFrame::with_column]
+    /// is that now the value of `column: &str` determines the name of the column and not the name
+    /// of the `Series` passed to this method.
     pub fn replace_or_add<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
-        let new_col = new_col.into_series();
-        match self.replace(column, new_col.clone()) {
-            Err(_) => self.with_column(new_col),
-            Ok(_) => Ok(self),
-        }
+        let mut new_col = new_col.into_series();
+        new_col.rename(column);
+        self.with_column(new_col)
     }
 
     /// Replace column at index `idx` with a series.
@@ -1926,5 +1926,19 @@ mod test {
             Vec::from(df.hmax().unwrap().unwrap().i32().unwrap()),
             &[Some(4), Some(2), Some(6)]
         );
+    }
+
+    #[test]
+    fn test_replace_or_add() -> Result<()> {
+        let mut df = df!(
+            "a" => [1, 2, 3],
+            "b" => [1, 2, 3]
+        )?;
+
+        // check that the new column is "c" and not "bar".
+        df.replace_or_add("c", Series::new("bar", [1, 2, 3]))?;
+
+        assert_eq!(df.get_column_names(), &["a", "b", "c"]);
+        Ok(())
     }
 }
