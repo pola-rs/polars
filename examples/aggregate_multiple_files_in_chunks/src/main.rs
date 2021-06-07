@@ -154,11 +154,11 @@ fn read_csv<P: AsRef<Path>>(path: P) -> PolarResult<DataFrame> {
 // # Input
 //
 // dataframe: The dataframe where to get the sum_column and count_column.
-//     These columns will be droped and extracted from the dataframe, so the
+//     These columns will be dropped and extracted from the dataframe, so the
 //     dataframe shall be mutable.
 // sum_column_name: The name of the sum column in the `dataframe`.
 // count_column_name: The name of the count column in the `dataframe`.
-// mean_column_name: The name of the mean serie to be returned.
+// mean_column_name: The name of the mean series to be returned.
 fn compute_mean(
     dataframe: &mut DataFrame,
     sum_column_name: &str,
@@ -185,7 +185,7 @@ fn compute_mean(
 }
 
 // Helper function for fold DataFrames. It appends DataFrames to the accumulator,
-// if the acumulator is the default DataFrame, then, return the right DataFrame, as the
+// if the accumulator is the default DataFrame, then, return the right DataFrame, as the
 // accumulator.
 fn right_or_append(mut accumulator: DataFrame, right: DataFrame) -> PolarResult<DataFrame> {
     if accumulator.width() == 0 {
@@ -230,10 +230,10 @@ fn process_files_parallel(paths: &[PathBuf]) -> PolarResult<DataFrame> {
 // - sugars_g_mean from sugars_g_sum_sum and sugars_g_count_sum
 //
 // The input is the dataframe used to get the '${field}_count_sum' and
-// '${field}_sum_sum' fiels. It shall be mutable, as the fields are going
+// '${field}_sum_sum' fields. It shall be mutable, as the fields are going
 // to be dropped when computed the '${field}_mean'.
 //
-// The output is a result containg the Vector of mean Series computed.
+// The output is a result containing the Vector of mean Series computed.
 fn compute_all_means(dataframe: &mut DataFrame) -> PolarResult<Vec<Series>> {
     const SERIES_NAMES: &[(&str, &str, &str)] = &[
         ("calories_sum_sum", "calories_count_sum", "calories_mean"),
@@ -256,7 +256,7 @@ fn compute_all_means(dataframe: &mut DataFrame) -> PolarResult<Vec<Series>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Get the directory where dataset are located.
+    // Get the directory where dataset is located.
     let dataset_dir: PathBuf = [env!("CARGO_MANIFEST_DIR"), "datasets"].iter().collect();
 
     // Read all the files in the directory and sort them.
