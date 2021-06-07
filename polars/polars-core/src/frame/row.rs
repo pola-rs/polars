@@ -13,7 +13,7 @@ impl DataFrame {
     }
 
     /// Amortize allocations by reusing a row.
-    /// The caller is responsible for the making sure the row has at least capacity for the number
+    /// The caller is responsible to make sure that the row has at least the capacity for the number
     /// of columns in the DataFrame
     pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
         self.columns
@@ -25,7 +25,7 @@ impl DataFrame {
     }
 
     /// Amortize allocations by reusing a row.
-    /// The caller is responsible for the making sure the row has at least capacity for the number
+    /// The caller is responsible to make sure that the row has at least the capacity for the number
     /// of columns in the DataFrame
     ///
     /// # Safety
