@@ -904,7 +904,7 @@ impl<T> IntoVec<T> for Vec<T> {
 
 /// This logic is same as the impl on ChunkedArray
 /// The difference is that there is less indirection because the caller should preallocate
-/// `chunk_lens` once. On the `ChunkedArray` we indicrect through an `ArrayRef` which is an indirection
+/// `chunk_lens` once. On the `ChunkedArray` we indirect through an `ArrayRef` which is an indirection
 /// and a vtable.
 #[inline]
 pub(crate) fn index_to_chunked_index<I: Iterator<Item = usize>>(

@@ -558,6 +558,11 @@ impl Schema {
         &self.fields
     }
 
+    /// Returns a mutable reference of the vector of `Field` instances
+    pub fn fields_mut(&mut self) -> &mut Vec<Field> {
+        &mut self.fields
+    }
+
     /// Returns an immutable reference of a specific `Field` instance selected using an
     /// offset within the internal `fields` vector
     pub fn field(&self, i: usize) -> Option<&Field> {
