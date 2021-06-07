@@ -8,6 +8,7 @@ from builtins import range
 import pyarrow as pa
 import polars as pl
 import pandas as pd
+from datetime import datetime
 
 from utils import get_complete_df
 
@@ -674,3 +675,16 @@ def test_to_json():
     s = df.to_json(to_string=True)
     out = pl.read_json(s)
     assert df.frame_equal(out, null_equal=True)
+
+
+def test_from_rows():
+    df = pl.from_rows([[1, 2, "foo"], [2, 3, "bar"]], column_name_mapping={1: "foo"})
+    assert df.frame_equal(
+        pl.DataFrame({"column_0": [1, 2], "foo": [2, 3], "column_2": ["foo", "bar"]})
+    )
+
+    df = pl.from_rows(
+        [[1, datetime.fromtimestamp(100)], [2, datetime.fromtimestamp(2398754908)]],
+        column_name_mapping={1: "foo"},
+    )
+    assert df.dtypes == [pl.Int64, pl.Date64]

@@ -48,6 +48,7 @@ features = [
     "pretty_fmt",
     "performant",
     "dtype-full",
+    "rows",
     "private"
 ]
 

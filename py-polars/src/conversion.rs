@@ -7,7 +7,10 @@ use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::any::Any;
 use std::fmt::{Display, Formatter};
+use crate::error::PyPolarsEr;
+use polars::frame::row::Row;
 
+#[repr(transparent)]
 pub struct Wrap<T>(pub T);
 
 impl<T> Clone for Wrap<T>
@@ -16,6 +19,11 @@ where
 {
     fn clone(&self) -> Self {
         Wrap(self.0.clone())
+    }
+}
+impl<T> From<T> for Wrap<T> {
+    fn from(t: T) -> Self {
+        Wrap(t)
     }
 }
 
@@ -111,6 +119,35 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
 impl ToPyObject for Wrap<AnyValue<'_>> {
     fn to_object(&self, py: Python) -> PyObject {
         self.clone().into_py(py)
+    }
+}
+
+impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
+    fn extract(ob: &'s PyAny) -> PyResult<Self> {
+        if let Ok(v) = ob.extract::<i64>() {
+            Ok(AnyValue::Int64(v).into())
+        } else if let Ok(v) = ob.extract::<f64>() {
+            Ok(AnyValue::Float64(v).into())
+        } else if let Ok(v) = ob.extract::<&'s str>() {
+            Ok(AnyValue::Utf8(v).into())
+        } else if let Ok(v) = ob.extract::<bool>() {
+            Ok(AnyValue::Boolean(v).into())
+
+        } else if let Ok(res) = ob.call_method0("timestamp") {
+            // s to ms
+            let v = res.extract::<f64>()? as i64;
+            Ok(AnyValue::Date64(v * 1000).into())
+        } else {
+            Err(PyErr::from(PyPolarsEr::Other(format!("row type not supported {:?}", ob))))
+        }
+    }
+}
+
+impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
+    fn extract(ob: &'s PyAny) -> PyResult<Self> {
+        let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
+        let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
+        Ok(Wrap(Row(vals)))
     }
 }
 

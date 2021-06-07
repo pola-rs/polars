@@ -1,4 +1,4 @@
-from typing import Union, TextIO, Optional, List, BinaryIO
+from typing import Union, TextIO, Optional, List, BinaryIO, Sequence, Any
 from io import StringIO, BytesIO
 import numpy as np
 from pathlib import Path
@@ -496,3 +496,28 @@ def read_json(
         Path to a file or a file like object.
     """
     return DataFrame.read_json(source)
+
+
+def from_rows(
+    rows: "Sequence[Sequence[Any]]",
+    column_names: "Optional[List[str]]" = None,
+    column_name_mapping: "Optional[Dict[int, str]]" = None,
+) -> "DataFrame":
+    """
+    Create a DataFrame from rows. This should only be used as a last resort, as this is more expensive than
+    creating from columnar data.
+
+    Parameters
+    ----------
+    rows
+        rows
+    column_names
+        column names to use for the DataFrame
+    column_name_mapping
+        map column index to a new name:
+        Example:
+        ```python
+            column_mapping: {0: "first_column, 3: "fourth column"}
+        ```
+    """
+    return DataFrame.from_rows(rows, column_names, column_name_mapping)
