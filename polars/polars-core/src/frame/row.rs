@@ -7,6 +7,7 @@ pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
 impl DataFrame {
     /// Get a row from a DataFrame. Use of this is discouraged as it will likely be slow.
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn get_row(&self, idx: usize) -> Row {
         let values = self.columns.iter().map(|s| s.get(idx)).collect_vec();
         Row(values)
@@ -15,6 +16,7 @@ impl DataFrame {
     /// Amortize allocations by reusing a row.
     /// The caller is responsible to make sure that the row has at least the capacity for the number
     /// of columns in the DataFrame
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
         self.columns
             .iter()
@@ -31,6 +33,7 @@ impl DataFrame {
     /// # Safety
     /// Does not do any bounds checking.
     #[inline]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub unsafe fn get_row_amortized_unchecked<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
         self.columns
             .iter()
@@ -42,6 +45,7 @@ impl DataFrame {
 
     /// Create a new DataFrame from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> Result<Self> {
         let capacity = rows.len();
         let mut buffers: Vec<_> = schema
@@ -73,6 +77,7 @@ impl DataFrame {
 
     /// Create a new DataFrame from rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the `Series` in a columnar fashion
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows(rows: &[Row]) -> Result<Self> {
         // no of rows to use to infer dtype
         let max_infer = std::cmp::min(rows.len(), 50);
