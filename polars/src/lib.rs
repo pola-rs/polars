@@ -106,6 +106,7 @@
 //! * `object` - Experimental support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
 //!              These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization
+//! * `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
 //!
 //! ## Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around
