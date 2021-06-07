@@ -7,6 +7,7 @@ use polars_core::utils::arrow::{
     record_batch::RecordBatch,
 };
 use pyo3::prelude::*;
+use crate::error::PyPolarsEr;
 
 pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
@@ -23,7 +24,7 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
 }
 
 pub fn to_rust_rb(rb: &[&PyAny]) -> PyResult<Vec<RecordBatch>> {
-    let schema = rb[0].getattr("schema")?;
+    let schema = rb.get(0).ok_or_else(|| PyPolarsEr::Other("empty table".into()))?.getattr("schema")?;
     let names = schema.getattr("names")?.extract::<Vec<String>>()?;
 
     let arrays = rb

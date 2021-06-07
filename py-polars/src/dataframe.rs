@@ -23,6 +23,7 @@ use crate::{
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
+use polars::frame::row::Row;
 
 #[pyclass]
 #[repr(transparent)]
@@ -184,6 +185,17 @@ impl PyDataFrame {
         let batches = arrow_interop::to_rust::to_rust_rb(&rb)?;
         let df = DataFrame::try_from(batches).map_err(PyPolarsEr::from)?;
         Ok(Self::from(df))
+    }
+
+    // somehow from_rows did not work
+    #[staticmethod]
+    pub fn read_rows(rows: Vec<Wrap<Row>>) -> PyResult<Self> {
+        // safety:
+        // wrap is transparent
+        let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
+        let df = DataFrame::from_rows(&rows)
+            .map_err(PyPolarsEr::from)?;
+        Ok(df.into())
     }
 
     pub fn to_csv(&mut self, py_f: PyObject, has_headers: bool, delimiter: u8) -> PyResult<()> {

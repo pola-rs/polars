@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use itertools::Itertools;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
@@ -59,7 +59,15 @@ impl DataFrame {
             }
             Ok(())
         })?;
-        let v = buffers.into_iter().map(|b| b.into_series()).collect();
+        let v = buffers
+            .into_iter()
+            .zip(schema.fields())
+            .map(|(b, fld)| {
+                let mut s = b.into_series();
+                s.rename(fld.name());
+                s
+            })
+            .collect();
         DataFrame::new(v)
     }
 
@@ -130,9 +138,10 @@ impl From<&Row<'_>> for Schema {
         let fields = row
             .0
             .iter()
-            .map(|av| {
+            .enumerate()
+            .map(|(i, av)| {
                 let field: Field = av.into();
-                field
+                Field::new(format!("column_{}", i).as_ref(), field.data_type().clone())
             })
             .collect();
 
@@ -154,6 +163,27 @@ pub(crate) enum Buffer {
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
+}
+
+impl Debug for Buffer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use Buffer::*;
+        match self {
+            Boolean(_) => f.write_str("boolean"),
+            Int32(_) => f.write_str("i32"),
+            Int64(_) => f.write_str("i64"),
+            UInt32(_) => f.write_str("u32"),
+            #[cfg(feature = "dtype-u64")]
+            UInt64(_) => f.write_str("u64"),
+            #[cfg(feature = "dtype-date32")]
+            Date32(_) => f.write_str("date32"),
+            #[cfg(feature = "dtype-date64")]
+            Date64(_) => f.write_str("date64"),
+            Float32(_) => f.write_str("f32"),
+            Float64(_) => f.write_str("f64"),
+            Utf8(_) => f.write_str("utf8"),
+        }
+    }
 }
 
 impl Buffer {
