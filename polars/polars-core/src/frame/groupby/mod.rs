@@ -49,38 +49,24 @@ where
         0
     };
     if multithreaded && group_multithreaded(ca) {
-        let n_partitions = set_partition_size();
-        let splitted = split_ca(ca, n_partitions).unwrap();
+        let n_partitions = set_partition_size() as u64;
 
         // use the arrays as iterators
         if ca.chunks.len() == 1 {
             if ca.null_count() == 0 {
-                let keys = splitted
-                    .iter()
-                    .map(|ca| ca.cont_slice().unwrap())
-                    .collect::<Vec<_>>();
-                groupby_threaded_num(keys, group_size_hint)
+                let keys = vec![ca.cont_slice().unwrap()];
+                groupby_threaded_num(keys, group_size_hint, n_partitions)
             } else {
-                let keys = splitted
-                    .iter()
-                    .map(|ca| ca.downcast_iter().flatten().collect::<Vec<_>>())
-                    .collect::<Vec<_>>();
-
-                groupby_threaded_num(keys, group_size_hint)
+                let keys = vec![ca.downcast_iter().flatten().collect::<Vec<_>>()];
+                groupby_threaded_num(keys, group_size_hint, n_partitions)
             }
             // use the polars-iterators
         } else if ca.null_count() == 0 {
-            let keys = splitted
-                .iter()
-                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
-                .collect::<Vec<_>>();
-            groupby_threaded_num(keys, group_size_hint)
+            let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
+            groupby_threaded_num(keys, group_size_hint, n_partitions)
         } else {
-            let keys = splitted
-                .iter()
-                .map(|ca| ca.into_iter().collect::<Vec<_>>())
-                .collect::<Vec<_>>();
-            groupby_threaded_num(keys, group_size_hint)
+            let keys = vec![ca.into_iter().collect::<Vec<_>>()];
+            groupby_threaded_num(keys, group_size_hint, n_partitions)
         }
     } else if ca.null_count() == 0 {
         groupby(ca.into_no_null_iter())
@@ -156,7 +142,7 @@ impl IntoGroupTuples for Utf8Chunked {
                     })
                     .collect::<Vec<_>>()
             });
-            groupby_threaded_num(str_hashes, 0)
+            groupby_threaded_num(str_hashes, 0, n_partitions as u64)
         } else {
             let str_hashes = self
                 .into_iter()
