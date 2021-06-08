@@ -14,6 +14,7 @@ import subprocess
 import shutil
 from datetime import datetime
 import numpy as np
+from polars.utils import _is_expr
 
 try:
     from ..polars import (
@@ -504,7 +505,7 @@ class LazyFrame:
 
         return wrap_ldf(out)
 
-    def with_columns(self, exprs: "List[Expr]") -> "LazyFrame":
+    def with_columns(self, exprs: "Union[List[Expr], Expr]") -> "LazyFrame":
         """
         Add or overwrite multiple columns in a DataFrame
 
@@ -513,6 +514,9 @@ class LazyFrame:
         exprs
             List of Expressions that evaluate to columns
         """
+        if _is_expr(exprs):
+            return self.with_column(exprs)
+
         pyexprs = []
 
         for e in exprs:
