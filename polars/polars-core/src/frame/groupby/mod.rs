@@ -57,7 +57,10 @@ where
                 let keys = vec![ca.cont_slice().unwrap()];
                 groupby_threaded_num(keys, group_size_hint, n_partitions)
             } else {
-                let keys = vec![ca.downcast_iter().flatten().collect::<Vec<_>>()];
+                let keys = ca
+                    .downcast_iter()
+                    .map(|arr| arr.into_iter().collect::<Vec<_>>())
+                    .collect::<Vec<_>>();
                 groupby_threaded_num(keys, group_size_hint, n_partitions)
             }
             // use the polars-iterators

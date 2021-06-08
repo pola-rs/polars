@@ -830,9 +830,6 @@ macro_rules! impl_dyn_series {
 
 impl_dyn_series!(Float32Chunked);
 impl_dyn_series!(Float64Chunked);
-impl_dyn_series!(Utf8Chunked);
-impl_dyn_series!(ListChunked);
-impl_dyn_series!(BooleanChunked);
 #[cfg(feature = "dtype-u8")]
 impl_dyn_series!(UInt8Chunked);
 #[cfg(feature = "dtype-u16")]
@@ -847,3 +844,39 @@ impl_dyn_series!(Int16Chunked);
 impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);
 impl_dyn_series!(CategoricalChunked);
+impl_dyn_series!(Utf8Chunked);
+impl_dyn_series!(ListChunked);
+impl_dyn_series!(BooleanChunked);
+
+macro_rules! impl_dyn_series_numeric {
+    ($ca: ident) => {
+        impl private::PrivateSeriesNumeric for SeriesWrap<$ca> {
+            fn bit_repr_is_large(&self) -> bool {
+                $ca::bit_repr_is_large()
+            }
+            fn bit_repr_large(&self) -> UInt64Chunked {
+                self.0.bit_repr_large()
+            }
+            fn bit_repr_small(&self) -> UInt32Chunked {
+                self.0.bit_repr_small()
+            }
+        }
+    };
+}
+
+impl_dyn_series_numeric!(Float32Chunked);
+impl_dyn_series_numeric!(Float64Chunked);
+#[cfg(feature = "dtype-u8")]
+impl_dyn_series_numeric!(UInt8Chunked);
+#[cfg(feature = "dtype-u16")]
+impl_dyn_series_numeric!(UInt16Chunked);
+impl_dyn_series_numeric!(UInt32Chunked);
+#[cfg(feature = "dtype-u64")]
+impl_dyn_series_numeric!(UInt64Chunked);
+#[cfg(feature = "dtype-i8")]
+impl_dyn_series_numeric!(Int8Chunked);
+#[cfg(feature = "dtype-i16")]
+impl_dyn_series_numeric!(Int16Chunked);
+impl_dyn_series_numeric!(Int32Chunked);
+impl_dyn_series_numeric!(Int64Chunked);
+impl_dyn_series_numeric!(CategoricalChunked);

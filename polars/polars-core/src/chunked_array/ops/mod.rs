@@ -36,7 +36,7 @@ pub(crate) mod zip;
 /// This is useful in hashing context and reduces no.
 /// of compiled code paths.
 pub(crate) trait ToBitRepr {
-    fn is_large() -> bool;
+    fn bit_repr_is_large() -> bool;
 
     fn bit_repr_large(&self) -> UInt64Chunked;
     fn bit_repr_small(&self) -> UInt32Chunked;
