@@ -49,12 +49,12 @@ where
 pub(crate) fn groupby_threaded_num<T, IntoSlice>(
     keys: Vec<IntoSlice>,
     group_size_hint: usize,
+    n_partitions: u64,
 ) -> GroupTuples
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
-    let n_partitions = keys.len() as u64;
     assert!(is_power_of_2(n_partitions as usize));
 
     // We will create a hashtable in every thread.
@@ -110,6 +110,7 @@ where
 ///
 /// # Safety
 /// Doesn't check any bounds
+#[inline]
 pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: usize, idx_b: usize) -> bool {
     for s in keys.get_columns() {
         if !s.equal_element(idx_a, idx_b, s) {
