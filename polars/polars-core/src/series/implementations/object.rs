@@ -2,7 +2,7 @@ use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-use crate::series::private::PrivateSeries;
+use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
 use std::any::Any;
@@ -17,6 +17,10 @@ where
         Series(Arc::new(SeriesWrap(self)))
     }
 }
+
+#[cfg(feature = "object")]
+#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
+impl<T> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
 
 #[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]

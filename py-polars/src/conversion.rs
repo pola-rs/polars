@@ -1,5 +1,7 @@
+use crate::error::PyPolarsEr;
 use crate::prelude::*;
 use crate::series::PySeries;
+use polars::frame::row::Row;
 use polars::prelude::AnyValue;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
@@ -7,8 +9,6 @@ use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::any::Any;
 use std::fmt::{Display, Formatter};
-use crate::error::PyPolarsEr;
-use polars::frame::row::Row;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -132,13 +132,15 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Utf8(v).into())
         } else if let Ok(v) = ob.extract::<bool>() {
             Ok(AnyValue::Boolean(v).into())
-
         } else if let Ok(res) = ob.call_method0("timestamp") {
             // s to ms
             let v = res.extract::<f64>()? as i64;
             Ok(AnyValue::Date64(v * 1000).into())
         } else {
-            Err(PyErr::from(PyPolarsEr::Other(format!("row type not supported {:?}", ob))))
+            Err(PyErr::from(PyPolarsEr::Other(format!(
+                "row type not supported {:?}",
+                ob
+            ))))
         }
     }
 }

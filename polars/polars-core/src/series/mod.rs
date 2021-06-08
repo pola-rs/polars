@@ -171,7 +171,9 @@ pub(crate) mod private {
     }
 }
 
-pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
+pub trait SeriesTrait:
+    Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
+{
     /// Get an array with the cumulative max computed at every element
     fn cum_max(&self, _reverse: bool) -> Series {
         panic!("operation cum_max not supported for this dtype")
@@ -368,6 +370,40 @@ pub trait SeriesTrait: Send + Sync + private::PrivateSeries {
         Err(PolarsError::DataTypeMisMatch(
             format!("{:?} != categorical", self.dtype()).into(),
         ))
+    }
+
+    /// Check if underlying physical data is numeric.
+    ///
+    /// Date types and Categoricals are also considered numeric.
+    fn is_numeric_physical(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self.dtype() {
+            DataType::Utf8 | DataType::List(_) | DataType::Boolean | DataType::Null => false,
+            #[cfg(feature = "object")]
+            DataType::Object(_) => false,
+            _ => true,
+        }
+    }
+
+    /// Check if underlying data is numeric
+    fn is_numeric(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self.dtype() {
+            DataType::Utf8
+            | DataType::List(_)
+            | DataType::Categorical
+            | DataType::Date32
+            | DataType::Date64
+            | DataType::Duration(_)
+            | DataType::Time64(_)
+            | DataType::Boolean
+            | DataType::Null => false,
+            #[cfg(feature = "object")]
+            DataType::Object(_) => false,
+            _ => true,
+        }
     }
 
     /// Append Arrow array of same dtype to this Series.

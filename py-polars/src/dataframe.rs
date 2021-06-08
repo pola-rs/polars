@@ -193,8 +193,7 @@ impl PyDataFrame {
         // safety:
         // wrap is transparent
         let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
-        let df = DataFrame::from_rows(&rows)
-            .map_err(PyPolarsEr::from)?;
+        let df = DataFrame::from_rows(&rows).map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 

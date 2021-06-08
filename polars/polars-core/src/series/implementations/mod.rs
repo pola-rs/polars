@@ -880,3 +880,7 @@ impl_dyn_series_numeric!(Int16Chunked);
 impl_dyn_series_numeric!(Int32Chunked);
 impl_dyn_series_numeric!(Int64Chunked);
 impl_dyn_series_numeric!(CategoricalChunked);
+
+impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}

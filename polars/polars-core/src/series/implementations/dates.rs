@@ -690,28 +690,28 @@ macro_rules! impl_dyn_series_numeric {
     ($ca: ident) => {
         impl private::PrivateSeriesNumeric for SeriesWrap<$ca> {
             fn bit_repr_is_large(&self) -> bool {
-                physical_dispatch!(self, bit_repr_is_large)
+                cast_and_apply!(self, bit_repr_is_large,)
             }
             fn bit_repr_large(&self) -> UInt64Chunked {
-                physical_dispatch!(self, bit_repr_large)
+                cast_and_apply!(self, bit_repr_large,)
             }
             fn bit_repr_small(&self) -> UInt32Chunked {
-                physical_dispatch!(self, bit_repr_small)
+                cast_and_apply!(self, bit_repr_small,)
             }
         }
     };
 }
 
 #[cfg(feature = "dtype-duration-ns")]
-impl_dyn_series!(DurationNanosecondChunked);
+impl_dyn_series_numeric!(DurationNanosecondChunked);
 #[cfg(feature = "dtype-duration-ms")]
-impl_dyn_series!(DurationMillisecondChunked);
+impl_dyn_series_numeric!(DurationMillisecondChunked);
 #[cfg(feature = "dtype-date32")]
-impl_dyn_series!(Date32Chunked);
+impl_dyn_series_numeric!(Date32Chunked);
 #[cfg(feature = "dtype-date64")]
-impl_dyn_series!(Date64Chunked);
+impl_dyn_series_numeric!(Date64Chunked);
 #[cfg(feature = "dtype-time64-ns")]
-impl_dyn_series!(Time64NanosecondChunked);
+impl_dyn_series_numeric!(Time64NanosecondChunked);
 
 #[cfg(test)]
 mod test {

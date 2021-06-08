@@ -35,15 +35,11 @@ fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
     }
 }
 
-pub(crate) fn is_power_of_2(x: usize) -> bool {
-    (x != 0) && ((x & (x - 1)) == 0)
-}
-
 pub(crate) fn set_partition_size() -> usize {
     let mut n_partitions = POOL.current_num_threads();
     // set n_partitions to closes 2^n above the no of threads.
     loop {
-        if is_power_of_2(n_partitions) {
+        if n_partitions.is_power_of_two() {
             break;
         } else {
             n_partitions += 1;
