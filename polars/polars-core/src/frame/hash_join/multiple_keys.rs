@@ -16,7 +16,8 @@ unsafe fn compare_df_rows2(
     right_idx: usize,
 ) -> bool {
     for (l, r) in left.get_columns().iter().zip(right.get_columns()) {
-        if !(l.get_unchecked(left_idx) == r.get_unchecked(right_idx)) {
+        // get: there could be nulls.
+        if !(l.get(left_idx) == r.get(right_idx)) {
             return false;
         }
     }
