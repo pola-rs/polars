@@ -5,7 +5,7 @@ impl<T> ToBitRepr for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn is_large() -> bool {
+    fn bit_repr_is_large() -> bool {
         std::mem::size_of::<T::Native>() == 8
     }
 
@@ -57,5 +57,20 @@ where
         } else {
             unreachable!()
         }
+    }
+}
+
+impl ToBitRepr for CategoricalChunked {
+    fn bit_repr_is_large() -> bool {
+        // u32
+        false
+    }
+
+    fn bit_repr_large(&self) -> UInt64Chunked {
+        unimplemented!()
+    }
+
+    fn bit_repr_small(&self) -> UInt32Chunked {
+        self.cast::<UInt32Type>().unwrap()
     }
 }

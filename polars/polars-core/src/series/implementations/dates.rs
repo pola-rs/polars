@@ -686,6 +686,33 @@ impl_dyn_series!(Date64Chunked);
 #[cfg(feature = "dtype-time64-ns")]
 impl_dyn_series!(Time64NanosecondChunked);
 
+macro_rules! impl_dyn_series_numeric {
+    ($ca: ident) => {
+        impl private::PrivateSeriesNumeric for SeriesWrap<$ca> {
+            fn bit_repr_is_large(&self) -> bool {
+                physical_dispatch!(self, bit_repr_is_large)
+            }
+            fn bit_repr_large(&self) -> UInt64Chunked {
+                physical_dispatch!(self, bit_repr_large)
+            }
+            fn bit_repr_small(&self) -> UInt32Chunked {
+                physical_dispatch!(self, bit_repr_small)
+            }
+        }
+    };
+}
+
+#[cfg(feature = "dtype-duration-ns")]
+impl_dyn_series!(DurationNanosecondChunked);
+#[cfg(feature = "dtype-duration-ms")]
+impl_dyn_series!(DurationMillisecondChunked);
+#[cfg(feature = "dtype-date32")]
+impl_dyn_series!(Date32Chunked);
+#[cfg(feature = "dtype-date64")]
+impl_dyn_series!(Date64Chunked);
+#[cfg(feature = "dtype-time64-ns")]
+impl_dyn_series!(Time64NanosecondChunked);
+
 #[cfg(test)]
 mod test {
     use super::*;

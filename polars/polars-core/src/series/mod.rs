@@ -35,6 +35,18 @@ pub(crate) mod private {
     use ahash::RandomState;
     use std::borrow::Cow;
 
+    pub trait PrivateSeriesNumeric {
+        fn bit_repr_is_large(&self) -> bool {
+            unimplemented!()
+        }
+        fn bit_repr_large(&self) -> UInt64Chunked {
+            unimplemented!()
+        }
+        fn bit_repr_small(&self) -> UInt32Chunked {
+            unimplemented!()
+        }
+    }
+
     pub trait PrivateSeries {
         unsafe fn equal_element(
             &self,
