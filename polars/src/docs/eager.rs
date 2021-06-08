@@ -6,7 +6,7 @@
 //!
 //! ## Tree Of Contents
 //!
-//! * [creation of data structures](#creation-of-data-structures)
+//! * [Creation of data structures](#creation-of-data-structures)
 //!     - [ChunkedArray](#chunkedarray)
 //!     - [Series](#series)
 //!     - [DataFrame](#dataframe)
@@ -32,6 +32,7 @@
 //!     - [Write Parquet](#write-parquet)
 //! * [Various](#various)
 //!     - [Replace NaN](#replace-nan)
+//!     * [Extracting data](#extracting-data)
 //!
 //! ## Creation of Data structures
 //!
@@ -675,7 +676,10 @@
 //!
 //! # Various
 //!
-//! ## Replace NaN
+//! ## Replace NaN with Missing.
+//! The floating point [Not a Number: NaN](https://en.wikipedia.org/wiki/NaN) is conceptually different
+//! than missing data in Polars. In the snippet below we show how we can replace `NaN` values with
+//! missing values, by setting them to `None`.
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
@@ -700,4 +704,36 @@
 //!     Ok(df)
 //! }
 //! ```
+//!
+//! ## Extracting data
+//!
+//! To be able to extract data out of `Series`, either by iterating over them or converting them
+//! to other datatypes like a `Vec<T>`, we first need to downcast them to a `ChunkedArray<T>`. This
+//! is needed because we don't know the data type that is hold by the `Series`.
+//!
+//! ```
+//! use polars::prelude::*;
+//! use polars::df;
+//!
+//! fn extract_data() -> Result<()> {
+//!     let df = df! [
+//!        "a" => [None, Some(1.0f32), Some(2.0)],
+//!        "str" => ["foo", "bar", "ham"]
+//!     ]?;
+//!
+//!     // first extract ChunkedArray to get the inner type.
+//!     let ca = df.column("a").f32();
+//!
+//!     // Then convert to vec
+//!     let to_vec: Vec<Option<f32>> = Vec::from(ca);
+//!
+//!     // We can also do this with iterators
+//!     let ca = df.column("str").utf8();
+//!     let to_vec: Vec<Option<&str>> = ca.into_iter().collect();
+//!     let to_vec_no_options: Vec<&str> = ca.into_no_null_iter().collect();
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
 //!

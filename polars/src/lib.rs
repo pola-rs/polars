@@ -42,7 +42,7 @@
 //! ### Series
 //! `Series` are the type agnostic columnar data representation of Polars. They provide many
 //! operations out of the box, many via the [Series struct](crate::prelude::Series) and
-//! [SeriesTrait trait](crate::series/trait.SeriesTrait.html). Whether or not an operation is provided
+//! [SeriesTrait trait](crate::series::SeriesTrait). Whether or not an operation is provided
 //! by a `Series` is determined by the operation. If the operation can be done without knowing the
 //! underlying columnar type, this operation probably is provided by the `Series`. If not, you must
 //! downcast to the typed data structure that is wrapped by the `Series`. That is the `ChunkedArray<T>`.

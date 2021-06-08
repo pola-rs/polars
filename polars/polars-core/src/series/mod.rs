@@ -981,7 +981,11 @@ impl<'a> (dyn SeriesTrait + 'a) {
 }
 
 /// # Series
-/// The columnar data type for a DataFrame. The [Series enum](enum.Series.html) consists
+/// The columnar data type for a DataFrame.
+///
+/// Most of the available functions are definedin the [SeriesTrait trait](crate::series::SeriesTrait).
+///
+/// The `Series` struct consists
 /// of typed [ChunkedArray](../chunked_array/struct.ChunkedArray.html)'s. To quickly cast
 /// a `Series` to a `ChunkedArray` you can call the method with the name of the type:
 ///
