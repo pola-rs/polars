@@ -6,6 +6,7 @@ use arrow::array::ArrayRef;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use rayon::prelude::*;
+use std::convert::TryInto;
 use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 
 // Read more:
@@ -115,6 +116,14 @@ impl AsU64 for Option<u32> {
 impl AsU64 for Option<u64> {
     fn as_u64(self) -> u64 {
         self.unwrap_or(u64::MAX)
+    }
+}
+
+impl AsU64 for [u8; 9] {
+    fn as_u64(self) -> u64 {
+        // the last byte includes the null information.
+        // that one is skipped. Worst thing that could happen is unbalanced partition.
+        u64::from_ne_bytes(self[..8].try_into().unwrap())
     }
 }
 

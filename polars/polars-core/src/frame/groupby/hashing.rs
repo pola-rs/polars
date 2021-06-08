@@ -1,12 +1,9 @@
 use super::GroupTuples;
 use crate::prelude::*;
-use crate::vector_hasher::{df_rows_to_hashes, df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
+use crate::vector_hasher::{df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
 use crate::vector_hasher::{this_partition, AsU64};
 use crate::POOL;
-use crate::{
-    datatypes::PlHashMap,
-    utils::{is_power_of_2, split_df},
-};
+use crate::{datatypes::PlHashMap, utils::split_df};
 use hashbrown::hash_map::Entry;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use rayon::prelude::*;
@@ -55,7 +52,7 @@ where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
-    assert!(is_power_of_2(n_partitions as usize));
+    assert!(n_partitions.is_power_of_two());
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -165,29 +162,6 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
             occupied_fn(v);
         }
     }
-}
-
-pub(crate) fn groupby_multiple_keys(keys: DataFrame) -> GroupTuples {
-    let (hashes, _) = df_rows_to_hashes(&keys, None);
-    let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
-        HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
-
-    // hashes has no nulls
-    let mut idx = 0;
-    for hashes_chunk in hashes.data_views() {
-        for &h in hashes_chunk {
-            populate_multiple_key_hashmap(
-                &mut hash_tbl,
-                idx,
-                h,
-                &keys,
-                || (idx, vec![idx]),
-                |v| v.1.push(idx),
-            );
-            idx += 1;
-        }
-    }
-    hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
 }
 
 pub(crate) fn groupby_threaded_multiple_keys_flat(
