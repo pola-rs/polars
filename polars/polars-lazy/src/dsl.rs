@@ -1164,8 +1164,6 @@ pub fn sum_exprs(exprs: Vec<Expr>) -> Expr {
 }
 
 /// Get the the minimum value per row
-#[cfg(feature = "zip_with")]
-#[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
 pub fn max_exprs(exprs: Vec<Expr>) -> Expr {
     let func = |s1: Series, s2: Series| {
         let mask = s1.gt(&s2);
@@ -1175,8 +1173,6 @@ pub fn max_exprs(exprs: Vec<Expr>) -> Expr {
 }
 
 /// Get the the minimum value per row
-#[cfg(feature = "zip_with")]
-#[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
 pub fn min_exprs(exprs: Vec<Expr>) -> Expr {
     let func = |s1: Series, s2: Series| {
         let mask = s1.lt(&s2);

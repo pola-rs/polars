@@ -114,6 +114,7 @@ macro_rules! impl_dyn_series {
                 self.0.equal_element(idx_self, idx_other, other)
             }
 
+            #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
                 try_physical_dispatch!(self, zip_with_same_type, mask, other)
             }

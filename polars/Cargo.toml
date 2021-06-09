@@ -16,6 +16,7 @@ docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal"]
 random = ["polars-core/random"]
 default = ["docs",
+    "zip_with",
     "csv-file",
     "temporal",
     "performant",
@@ -65,7 +66,7 @@ sort_multiple = ["polars-core/sort_multiple"]
 
 # extra operations
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
-zip_with = ["polars-core/zip_with", "polars-lazy/zip_with"]
+zip_with = ["polars-core/zip_with"]
 
 # dont use this
 private = ["polars-core/private", "polars-lazy/private"]

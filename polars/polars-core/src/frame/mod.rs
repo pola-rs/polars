@@ -1344,6 +1344,8 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their min values
+    #[cfg(feature = "zip_with")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmin(&self) -> Result<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
@@ -1365,6 +1367,8 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their max values
+    #[cfg(feature = "zip_with")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmax(&self) -> Result<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),

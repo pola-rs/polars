@@ -38,6 +38,7 @@ default = ["pivot", "json", "parquet", "downsample", "ipc", "is_in", "json"]
 [dependencies.polars]
 path = "../polars"
 features = [
+    "zip_with",
     "simd",
     "lazy",
     "strings",
