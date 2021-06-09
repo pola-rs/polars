@@ -1110,6 +1110,19 @@ class DataFrame:
         """
         return wrap_df(self._df.slice(offset, length))
 
+    def limit(self, length: int = 5) -> "DataFrame":
+        """
+        Get first N rows as DataFrame
+
+        See Also `DataFrame.head`
+
+        Parameters
+        ----------
+        length
+            amount of rows to take.
+        """
+        return self.head(length)
+
     def head(self, length: int = 5) -> "DataFrame":
         """
         Get first N rows as DataFrame

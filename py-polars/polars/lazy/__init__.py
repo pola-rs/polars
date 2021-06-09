@@ -627,6 +627,19 @@ class LazyFrame:
         """
         return self.slice(0, n)
 
+    def head(self, n: int):
+        """
+        Get the first `n` rows of the DataFrame
+        Note if you don't want the rows to be scanned,
+        use the `fetch` operation.
+
+        Parameters
+        ----------
+        n
+            Number of rows.
+        """
+        return self.limit(n)
+
     def tail(self, n: int):
         """
         Get the last `n` rows of the DataFrame
