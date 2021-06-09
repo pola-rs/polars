@@ -5,10 +5,10 @@ use crate::frame::hash_join::multiple_keys::{
 };
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{split_ca, NoNull};
+use crate::utils::{set_partition_size, split_ca, NoNull};
 use crate::vector_hasher::{
-    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_thread, AsU64,
-    StrHash,
+    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
+    AsU64, StrHash,
 };
 use crate::{datatypes::PlHashMap, POOL};
 use ahash::RandomState;
@@ -64,14 +64,16 @@ pub enum JoinType {
     Outer,
 }
 
-unsafe fn get_hash_tbl_threaded_join<T, H>(
+unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
     h: u64,
     hash_tables: &[HashMap<T, Vec<u32>, H>],
     len: u64,
 ) -> &HashMap<T, Vec<u32>, H> {
     let mut idx = 0;
     for i in 0..len {
-        if (h + i) % len == 0 {
+        // can only be done for powers of two.
+        // n % 2^i = n & (2^i - 1)
+        if (h + i) & (len - 1) == 0 {
             idx = i as usize;
         }
     }
@@ -79,6 +81,22 @@ unsafe fn get_hash_tbl_threaded_join<T, H>(
 }
 
 unsafe fn get_hash_tbl_threaded_join_mut<T, H>(
+    h: u64,
+    hash_tables: &mut [HashMap<T, Vec<u32>, H>],
+    len: u64,
+) -> &mut HashMap<T, Vec<u32>, H> {
+    let mut idx = 0;
+    for i in 0..len {
+        // can only be done for powers of two.
+        // n % 2^i = n & (2^i - 1)
+        if (h + i) & (len - 1) == 0 {
+            idx = i as usize;
+        }
+    }
+    hash_tables.get_unchecked_mut(idx)
+}
+
+unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     h: u64,
     hash_tables: &mut [HashMap<T, Vec<u32>, H>],
     len: u64,
@@ -104,11 +122,12 @@ fn probe_inner<T, F>(
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     F: Fn(u32, u32) -> (u32, u32),
 {
+    assert!(hash_tbls.len().is_power_of_two());
     probe.iter().enumerate().for_each(|(idx_a, k)| {
         let idx_a = (idx_a + local_offset) as u32;
         // probe table that contains the hashed value
         let current_probe_table =
-            unsafe { get_hash_tbl_threaded_join(k.as_u64(), hash_tbls, n_tables) };
+            unsafe { get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables) };
 
         let value = current_probe_table.get(k);
 
@@ -124,18 +143,18 @@ where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
-    let n_threads = keys.len();
+    let n_partitions = set_partition_size();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
-        (0..n_threads).into_par_iter().map(|thread_no| {
-            let thread_no = thread_no as u64;
+        (0..n_partitions).into_par_iter().map(|partition_no| {
+            let partition_no = partition_no as u64;
 
             let mut hash_tbl: PlHashMap<T, Vec<u32>> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
-            let n_threads = (n_threads as u64).into();
+            let n_partitions = n_partitions as u64;
             let mut offset = 0;
             for keys in &keys {
                 let keys = keys.as_ref();
@@ -146,7 +165,7 @@ where
                     let idx = cnt + offset;
                     cnt += 1;
 
-                    if this_thread(k.as_u64(), thread_no, n_threads) {
+                    if this_partition(k.as_u64(), partition_no, n_partitions) {
                         let entry = hash_tbl.entry(*k);
 
                         match entry {
@@ -276,8 +295,9 @@ where
                 probe.iter().enumerate().for_each(|(idx_a, k)| {
                     let idx_a = (idx_a + offset) as u32;
                     // probe table that contains the hashed value
-                    let current_probe_table =
-                        unsafe { get_hash_tbl_threaded_join(k.as_u64(), hash_tbls, n_tables) };
+                    let current_probe_table = unsafe {
+                        get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables)
+                    };
 
                     // we already hashed, so we don't have to hash again.
                     let value = current_probe_table.get(k);

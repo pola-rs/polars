@@ -1,8 +1,10 @@
 use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
-use crate::frame::hash_join::{get_hash_tbl_threaded_join, get_hash_tbl_threaded_join_mut};
+use crate::frame::hash_join::{
+    get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
+};
 use crate::prelude::*;
-use crate::utils::split_df;
-use crate::vector_hasher::{df_rows_to_hashes_threaded, this_thread, IdBuildHasher, IdxHash};
+use crate::utils::{set_partition_size, split_df};
+use crate::vector_hasher::{df_rows_to_hashes_threaded, this_partition, IdBuildHasher, IdxHash};
 use crate::POOL;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
@@ -28,18 +30,18 @@ fn create_build_table(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
 ) -> Vec<HashMap<IdxHash, Vec<u32>, IdBuildHasher>> {
-    let n_threads = hashes.len();
+    let n_partitions = set_partition_size();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
-        (0..n_threads).into_par_iter().map(|thread_no| {
-            let thread_no = thread_no as u64;
+        (0..n_partitions).into_par_iter().map(|part_no| {
+            let part_no = part_no as u64;
             let mut hash_tbl: HashMap<IdxHash, Vec<u32>, IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let n_threads = (n_threads as u64).into();
+            let n_partitions = n_partitions as u64;
             let mut offset = 0;
             for hashes in hashes {
                 for hashes in hashes.data_views() {
@@ -48,7 +50,7 @@ fn create_build_table(
                     hashes.iter().for_each(|h| {
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
-                        if this_thread(*h, thread_no, n_threads) {
+                        if this_partition(*h, part_no, n_partitions) {
                             let idx = idx + offset;
                             populate_multiple_key_hashmap(
                                 &mut hash_tbl,
@@ -89,7 +91,8 @@ fn probe_inner<F>(
     for probe_hashes in probe_hashes.data_views() {
         for &h in probe_hashes {
             // probe table that contains the hashed value
-            let current_probe_table = unsafe { get_hash_tbl_threaded_join(h, hash_tbls, n_tables) };
+            let current_probe_table =
+                unsafe { get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables) };
 
             let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                 let idx_b = idx_hash.idx;
@@ -224,8 +227,9 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32,
                 for probe_hashes in probe_hashes.data_views() {
                     for &h in probe_hashes {
                         // probe table that contains the hashed value
-                        let current_probe_table =
-                            unsafe { get_hash_tbl_threaded_join(h, hash_tbls, n_tables) };
+                        let current_probe_table = unsafe {
+                            get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables)
+                        };
 
                         let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                             let idx_b = idx_hash.idx;
@@ -286,7 +290,7 @@ fn probe_outer<F, G, H>(
             for &h in probe_hashes {
                 // probe table that contains the hashed value
                 let current_probe_table =
-                    unsafe { get_hash_tbl_threaded_join_mut(h, hash_tbls, n_tables) };
+                    unsafe { get_hash_tbl_threaded_join_mut_partitioned(h, hash_tbls, n_tables) };
 
                 let entry = current_probe_table
                     .raw_entry_mut()
