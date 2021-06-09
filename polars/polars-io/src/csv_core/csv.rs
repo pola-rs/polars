@@ -369,6 +369,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
                             // don't update running statistics if we try to reduce string memory usage.
                             if self.low_memory {
+                                local_df.shrink_to_fit();
                                 let (max, avg, last, size_hint) =
                                     str_capacities[str_index].update(str_bytes_len);
                                 if logging {
