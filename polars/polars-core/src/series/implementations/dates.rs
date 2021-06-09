@@ -286,6 +286,10 @@ macro_rules! impl_dyn_series {
                 self.0.chunks()
             }
 
+            fn shrink_to_fit(&mut self) {
+                self.0.shrink_to_fit()
+            }
+
             fn date32(&self) -> Result<&Date32Chunked> {
                 if matches!(self.0.dtype(), DataType::Date32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Date32Chunked)) }

@@ -879,6 +879,10 @@ impl PyDataFrame {
 
         Ok(out.into())
     }
+
+    pub fn shrink_to_fit(&mut self)  {
+        self.df.shrink_to_fit();
+    }
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
