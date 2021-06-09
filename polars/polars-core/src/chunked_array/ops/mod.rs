@@ -30,6 +30,8 @@ pub(crate) mod take_random;
 pub(crate) mod take_single;
 pub(crate) mod unique;
 pub(crate) mod window;
+#[cfg(feature = "zip_with")]
+#[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
 pub(crate) mod zip;
 
 /// Transmute ChunkedArray to bit representation.

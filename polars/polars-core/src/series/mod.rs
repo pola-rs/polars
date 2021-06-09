@@ -1252,6 +1252,8 @@ impl Series {
 
     /// Create a new ChunkedArray with values from self where the mask evaluates `true` and values
     /// from `other` where the mask evaluates `false`
+    #[cfg(feature = "zip_with")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
         let (lhs, rhs) = coerce_lhs_rhs(self, other)?;
         lhs.zip_with_same_type(mask, rhs.as_ref())

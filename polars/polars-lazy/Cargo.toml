@@ -27,8 +27,10 @@ dtype-date64 = ["polars-core/dtype-date64"]
 # when uncommenting we both need to point to the same arrow version
 #ooc = ["datafusion", "tokio"]
 
-# is_in operation
+# operations
 is_in = ["polars-core/is_in"]
+zip_with = ["polars-core/zip_with"]
+
 
 # no guarantees whatsoever
 private = []

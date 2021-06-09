@@ -62,8 +62,10 @@ pivot = ["polars-core/pivot"]
 downsample = ["polars-core/downsample"]
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
-# is_in operation
+
+# extra operations
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
+zip_with = ["polars-core/zip_with", "polars-lazy/zip_with"]
 
 # dont use this
 private = ["polars-core/private", "polars-lazy/private"]
