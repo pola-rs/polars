@@ -848,6 +848,13 @@ impl Expr {
         self.apply(move |s: Series| Ok(s.cum_max(reverse)), None)
     }
 
+    /// Round underlying floating point array to given decimal numbers.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn round(self, decimals: u32) -> Self {
+        self.apply(move |s: Series| s.round(decimals), None)
+    }
+
     /// Apply window function over a subgroup.
     /// This is similar to a groupby + aggregation + self join.
     /// Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).

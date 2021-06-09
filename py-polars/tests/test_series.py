@@ -357,3 +357,9 @@ def test_timestamp():
     df = pl.DataFrame([a])
     # test if rows returns objects
     assert isinstance(df.row(0)[0], datetime)
+
+
+def test_round():
+    a = pl.Series("f", [1.003, 2.003])
+    b = a.round(2)
+    assert b == [1.00, 2.00]

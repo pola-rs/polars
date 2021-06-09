@@ -114,6 +114,7 @@
 //! * `Series` operations:
 //!     -  `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     -  `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
+//!     -  `round_series` - round underyling float types of `Series`.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)

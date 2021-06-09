@@ -29,6 +29,7 @@ dtype-date64 = ["polars-core/dtype-date64"]
 
 # operations
 is_in = ["polars-core/is_in"]
+round_series = ["polars-core/round_series"]
 
 # no guarantees whatsoever
 private = []

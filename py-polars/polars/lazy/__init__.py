@@ -981,6 +981,17 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cum_max(reverse))
 
+    def round(self, decimals: int) -> "Series":
+        """
+        Round underlying floating point data by `decimals` digits.
+
+        Parameters
+        ----------
+        decimals
+            number of decimals to round by.
+        """
+        return wrap_expr(self._pyexpr.round(decimals))
+
     def cast(self, dtype: "DataType") -> "Expr":
         """
         Cast an expression to a different data type.
