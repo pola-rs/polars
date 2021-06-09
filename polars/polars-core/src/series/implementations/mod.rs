@@ -227,6 +227,9 @@ macro_rules! impl_dyn_series {
             fn chunks(&self) -> &Vec<ArrayRef> {
                 self.0.chunks()
             }
+            fn shrink_to_fit(&mut self) {
+                self.0.shrink_to_fit()
+            }
 
             fn i8(&self) -> Result<&Int8Chunked> {
                 if matches!(self.0.dtype(), DataType::Int8) {

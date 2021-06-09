@@ -226,6 +226,14 @@ pub trait SeriesTrait:
         self.chunks().len()
     }
 
+    /// Shrink the capacity of this array to fit it's length.
+    fn shrink_to_fit(&mut self) {
+        eprintln!(
+            "shrink to fit, not yet supported for this {:?}",
+            self.dtype()
+        )
+    }
+
     /// Unpack to ChunkedArray of dtype i8
     fn i8(&self) -> Result<&Int8Chunked> {
         Err(PolarsError::DataTypeMisMatch(
@@ -1140,6 +1148,11 @@ impl Series {
     pub fn rename(&mut self, name: &str) -> &mut Series {
         self.get_inner_mut().rename(name);
         self
+    }
+
+    /// Shrink the capacity of this array to fit it's length.
+    pub fn shrink_to_fit(&mut self) {
+        self.get_inner_mut().shrink_to_fit()
     }
 
     /// Append arrow array of same datatype.

@@ -2416,6 +2416,16 @@ class GBSelection:
 
         return df
 
+    def shrink_to_fit(self, in_place: bool = False) -> "Optional[DataFrame]":
+        """
+        Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
+        """
+        if in_place:
+            df = self.clone()
+            df._df.shrink_to_fit()
+            return df
+        self._df.shrink_to_fit()
+
 
 def _series_to_frame(self: "Series") -> "DataFrame":
     return wrap_df(PyDataFrame([self._s]))

@@ -1027,6 +1027,9 @@ impl PySeries {
         let n = self.series.n_unique().map_err(PyPolarsEr::from)?;
         Ok(n)
     }
+    pub fn shrink_to_fit(&mut self) {
+        self.series.shrink_to_fit();
+    }
 }
 
 macro_rules! impl_ufuncs {

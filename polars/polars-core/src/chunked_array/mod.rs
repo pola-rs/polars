@@ -201,6 +201,14 @@ impl<T> ChunkedArray<T> {
         self.chunks.iter().map(|arr| get_bitmap(arr.as_ref()))
     }
 
+    /// Shrink the capacity of this array to fit it's length.
+    pub fn shrink_to_fit(&mut self) {
+        self.chunks = vec![arrow::compute::concat(
+            &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+        )
+        .unwrap()];
+    }
+
     /// Unpack a Series to the same physical type.
     ///
     /// # Safety
@@ -1019,5 +1027,24 @@ pub(crate) mod test {
         let ca = ca.cast::<CategoricalType>().unwrap();
         let v: Vec<_> = ca.into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
+    }
+
+    #[test]
+    fn test_shrink_to_fit() {
+        let mut builder = Utf8ChunkedBuilder::new("foo", 2048, 100 * 2048);
+        builder.append_value("foo");
+        let mut arr = builder.finish();
+        let before = arr
+            .chunks()
+            .iter()
+            .map(|arr| arr.get_buffer_memory_size())
+            .sum::<usize>();
+        arr.shrink_to_fit();
+        let after = arr
+            .chunks()
+            .iter()
+            .map(|arr| arr.get_buffer_memory_size())
+            .sum::<usize>();
+        assert!(before > after);
     }
 }
