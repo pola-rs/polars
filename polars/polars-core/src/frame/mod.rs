@@ -135,6 +135,14 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
+    /// Shrink the capacity of this DataFrame to fit it's length.
+    pub fn shrink_to_fit(&mut self) {
+        // Don't parallelize this. Memory overhead
+        for s in &mut self.columns {
+            s.shrink_to_fit();
+        }
+    }
+
     /// Aggregate all the chunks in the DataFrame to a single chunk.
     pub fn as_single_chunk(&mut self) -> &mut Self {
         // Don't parallelize this. Memory overhead

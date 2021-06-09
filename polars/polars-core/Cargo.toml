@@ -15,7 +15,7 @@ avx512 = ["arrow/avx512"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "performant"]
+default = ["docs", "temporal", "performant", "private"]
 lazy = ["sort_multiple"]
 
 # commented out until UB is fixed

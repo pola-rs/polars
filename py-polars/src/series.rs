@@ -1027,9 +1027,14 @@ impl PySeries {
         let n = self.series.n_unique().map_err(PyPolarsEr::from)?;
         Ok(n)
     }
+
     pub fn round(&self, decimals: u32) -> PyResult<Self> {
         let s = self.series.round(decimals).map_err(PyPolarsEr::from)?;
         Ok(s.into())
+   }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.series.shrink_to_fit();
     }
 }
 

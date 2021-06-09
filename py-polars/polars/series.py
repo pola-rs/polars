@@ -1500,6 +1500,16 @@ class Series:
         """
         return self._s.n_unique()
 
+    def shrink_to_fit(self, in_place: bool = False) -> "Optional[Series]":
+        """
+        Shrink memory usage of this Series to fit the exact capacity needed to hold the data.
+        """
+        if in_place:
+            series = self.clone()
+            series._s.shrink_to_fit()
+            return series
+        self._s.shrink_to_fit()
+
     @property
     def dt(self) -> "DateTimeNameSpace":
         """
