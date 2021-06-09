@@ -1,7 +1,6 @@
 name: Windows tests
 
 on:
-  - push
   - pull_request
 jobs:
   test:
