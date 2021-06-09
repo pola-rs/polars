@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use num::{Bounded, NumCast, One, Zero};
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 /// a fold function to compute the sum. Returns a Null if there is a single null in the window
 fn sum_fold<T>(acc: Option<T>, opt_v: Option<T>) -> Option<T>
@@ -235,6 +235,7 @@ where
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
+        + Rem<Output = T::Native>
         + Zero
         + Bounded
         + NumCast

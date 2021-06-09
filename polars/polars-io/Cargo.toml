@@ -24,9 +24,9 @@ csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical", "arrow/csv"]
 #csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
 
 [dependencies]
-arrow = {git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246edc4a6fcc2c8e5b9bc570", default-features=false}
+arrow = {git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1", default-features=false}
 #arrow = {version = "4.2", default-features = false }
-parquet_lib = {optional = true, package="parquet", git = "https://github.com/apache/arrow-rs", rev = "f26ffb3091ae355d246edc4a6fcc2c8e5b9bc570"}
+parquet_lib = {optional = true, package="parquet", git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1"}
 #parquet_lib = {version = "4.2", package="parquet", optional = true}
 polars-arrow = {version = "0.14.1", path = "../polars-arrow"}
 csv = {version="1.1", optional=true}

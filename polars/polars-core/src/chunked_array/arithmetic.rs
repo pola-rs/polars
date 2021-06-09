@@ -1,6 +1,6 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
 use crate::prelude::*;
-use crate::utils::{align_chunks_binary, NoNull};
+use crate::utils::align_chunks_binary;
 use arrow::array::PrimitiveArray;
 use arrow::compute::divide_scalar;
 use arrow::{array::ArrayRef, compute};
@@ -124,6 +124,7 @@ where
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
+        + Rem<Output = T::Native>
         + num::Zero
         + num::One,
 {
@@ -141,6 +142,7 @@ where
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
+        + Rem<Output = T::Native>
         + num::Zero,
 {
     type Output = ChunkedArray<T>;
@@ -153,23 +155,18 @@ where
 impl<T> Rem for &ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Rem<Output = T::Native>,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + Rem<Output = T::Native>
+        + num::Zero
+        + num::One,
 {
     type Output = ChunkedArray<T>;
 
     fn rem(self, rhs: Self) -> Self::Output {
-        let mut ca = if rhs.len() == 1 {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(self.name(), self.len()),
-                Some(rhs) => self.apply(|val| val % rhs),
-            }
-        } else {
-            // we will clean this mess up once there is a remainder kernel in arrow.
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, %)
-        };
-        ca.rename(self.name());
-        ca
+        arithmetic_helper(self, rhs, compute::modulus, |lhs, rhs| lhs % rhs)
     }
 }
 
@@ -180,6 +177,7 @@ where
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
+        + Rem<Output = T::Native>
         + num::Zero,
 {
     type Output = ChunkedArray<T>;
@@ -196,6 +194,7 @@ where
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
+        + Rem<Output = T::Native>
         + num::Zero,
 {
     type Output = Self;
@@ -212,6 +211,7 @@ where
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
+        + Rem<Output = T::Native>
         + num::Zero
         + num::One,
 {
@@ -229,6 +229,7 @@ where
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
+        + Rem<Output = T::Native>
         + num::Zero,
 {
     type Output = Self;
@@ -245,6 +246,7 @@ where
         + Sub<Output = T::Native>
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
+        + Rem<Output = T::Native>
         + num::Zero,
 {
     type Output = Self;
@@ -257,7 +259,13 @@ where
 impl<T> Rem for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Rem<Output = T::Native>,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + Rem<Output = T::Native>
+        + num::Zero
+        + num::One,
 {
     type Output = ChunkedArray<T>;
 
@@ -301,7 +309,12 @@ where
 impl<T, N> Div<N> for &ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + Div<Output = T::Native> + One + Zero + Sub<Output = T::Native>,
+    T::Native: NumCast
+        + Div<Output = T::Native>
+        + One
+        + Zero
+        + Rem<Output = T::Native>
+        + Sub<Output = T::Native>,
     N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
@@ -332,13 +345,14 @@ where
     T: PolarsNumericType,
     T::Native: NumCast,
     N: Num + ToPrimitive,
-    T::Native: Rem<Output = T::Native>,
+    T::Native:
+        Div<Output = T::Native> + One + Zero + Rem<Output = T::Native> + Sub<Output = T::Native>,
 {
     type Output = ChunkedArray<T>;
 
     fn rem(self, rhs: N) -> Self::Output {
-        let operand: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val % operand)
+        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
+        self.apply_kernel(|arr| Arc::new(compute::modulus_scalar(arr, rhs).unwrap()))
     }
 }
 
@@ -373,7 +387,12 @@ where
 impl<T, N> Div<N> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + Div<Output = T::Native> + One + Zero + Sub<Output = T::Native>,
+    T::Native: NumCast
+        + Div<Output = T::Native>
+        + One
+        + Zero
+        + Sub<Output = T::Native>
+        + Rem<Output = T::Native>,
     N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
@@ -402,7 +421,8 @@ where
     T: PolarsNumericType,
     T::Native: NumCast,
     N: Num + ToPrimitive,
-    T::Native: Rem<Output = T::Native>,
+    T::Native:
+        Div<Output = T::Native> + One + Zero + Rem<Output = T::Native> + Sub<Output = T::Native>,
 {
     type Output = ChunkedArray<T>;
 
