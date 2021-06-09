@@ -1241,6 +1241,17 @@ class Series:
         """
         return wrap_s(self._s.fill_none(strategy))
 
+    def round(self, decimals: int) -> "Series":
+        """
+        Round underlying floating point data by `decimals` digits.
+
+        Parameters
+        ----------
+        decimals
+            number of decimals to round by.
+        """
+        return wrap_s(self._s.round(decimals))
+
     def apply(
         self,
         func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",

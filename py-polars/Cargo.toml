@@ -50,7 +50,8 @@ features = [
     "performant",
     "dtype-full",
     "rows",
-    "private"
+    "private",
+    "round_series"
 ]
 
 #[patch.crates-io]

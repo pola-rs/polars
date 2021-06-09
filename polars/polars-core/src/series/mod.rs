@@ -7,7 +7,7 @@ mod comparison;
 pub mod implementations;
 pub(crate) mod iterator;
 
-use crate::chunked_array::{builder::get_list_builder, float::IsNan, ChunkIdIter};
+use crate::chunked_array::{builder::get_list_builder, ChunkIdIter};
 use crate::utils::{split_ca, split_series};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
 use arrow::array::ArrayData;
@@ -1408,6 +1408,30 @@ impl Series {
             Ok(s)
         }
     }
+
+    /// Round underlying floating point array to given decimal.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn round(&self, decimals: u32) -> Result<Self> {
+        use num::traits::Pow;
+        if let Ok(ca) = self.f32() {
+            let multiplier = 10.0.pow(decimals as f32) as f32;
+            let s = ca
+                .apply(|val| (val * multiplier).round() / multiplier)
+                .into_series();
+            return Ok(s);
+        }
+        if let Ok(ca) = self.f64() {
+            let multiplier = 10.0.pow(decimals as f32) as f64;
+            let s = ca
+                .apply(|val| (val * multiplier).round() / multiplier)
+                .into_series();
+            return Ok(s);
+        }
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} is not a floating point datatype", self.dtype()).into(),
+        ))
+    }
 }
 
 impl Deref for Series {
@@ -1734,5 +1758,14 @@ mod test {
         series.slice(-3, 4);
         series.slice(-6, 2);
         series.slice(4, 2);
+    }
+
+    #[test]
+    #[cfg(feature = "round_series")]
+    fn test_round_series() {
+        let series = Series::new("a", &[1.003, 2.23222, 3.4352]);
+        let out = series.round(2).unwrap();
+        let ca = out.f64().unwrap();
+        assert_eq!(ca.get(0), Some(1.0));
     }
 }

@@ -67,6 +67,7 @@ sort_multiple = ["polars-core/sort_multiple"]
 # extra operations
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
 zip_with = ["polars-core/zip_with"]
+round_series = ["polars-core/round_series", "polars-lazy/round_series"]
 
 # dont use this
 private = ["polars-core/private", "polars-lazy/private"]

@@ -209,6 +209,10 @@ impl PyExpr {
         self.clone().inner.slice(offset, length).into()
     }
 
+    pub fn round(&self, decimals: u32) -> PyExpr {
+        self.clone().inner.round(decimals).into()
+    }
+
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }

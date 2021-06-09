@@ -1910,6 +1910,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "zip_with")]
     fn test_h_agg() {
         let a = Series::new("a", &[1, 2, 6]);
         let b = Series::new("b", &[Some(1), None, None]);
