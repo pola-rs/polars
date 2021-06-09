@@ -88,25 +88,32 @@
 //! meaning that you only pay the compilation cost, if you need it.
 //!
 //! ## Compile times and opt-in features
-//! The opt-in features are:
+//! The opt-in features are (not including dtype features):
 //!
-//! * `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
+//! * `lazy` - Lazy API
 //! * `random` - Generate array's with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
-//! * `downsample` - [downsample operation](crate::frame::DataFrame::downsample) on `DataFrame`s
-//! * `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
-//! * `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
-//! * `simd (nightly only)` - SIMD operations
-//! * `parquet` - Read Apache Parquet format
-//! * `json` - Json serialization
-//! * `ipc` - Arrow's IPC format serialization
-//! * `lazy` - Lazy API
 //! * `strings` - Extra string utilities for `Utf8Chunked`
-//! * `object` - Experimental support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
+//! * `object` - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
 //!              These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
-//! * `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization
-//! * `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
+//! * Performance related:
+//!     - `simd` - SIMD operations _(nightly only)_
+//!     - `performant` - ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
+//! * IO related:
+//!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
+//!                 Can be used for JSON and more serde supported serialization formats.
+//!     - `parquet` - Read Apache Parquet format
+//!     - `json` - Json serialization
+//!     - `ipc` - Arrow's IPC format serialization
+//! * `DataFrame` operations:
+//!     - `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
+//!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
+//!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
+//!     - `downsample` - [downsample operation](crate::frame::DataFrame::downsample) on `DataFrame`s
+//! * `Series` operations:
+//!     -  `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
+//!     -  `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
 //!
 //! ## Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around
