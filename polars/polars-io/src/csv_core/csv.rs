@@ -315,23 +315,109 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         // all the buffers returned from the threads
         // Structure:
         //      the inner vec has got buffers from all the columns.
-        let dfs = pool.install(|| {
-            file_chunks
-                .into_par_iter()
-                .map(|(bytes_offset_thread, stop_at_nbytes)| {
-                    let delimiter = self.delimiter;
-                    let schema = self.schema.clone();
-                    let ignore_parser_errors = self.ignore_parser_errors;
-                    let projection = &projection;
 
-                    let mut read = bytes_offset_thread;
-                    let mut df: Option<DataFrame> = None;
+        if predicate.is_some() {
+            let dfs = pool.install(|| {
+                file_chunks
+                    .into_par_iter()
+                    .map(|(bytes_offset_thread, stop_at_nbytes)| {
+                        let delimiter = self.delimiter;
+                        let schema = self.schema.clone();
+                        let ignore_parser_errors = self.ignore_parser_errors;
+                        let projection = &projection;
 
-                    loop {
-                        if read >= stop_at_nbytes {
-                            break;
+                        let mut read = bytes_offset_thread;
+                        let mut df: Option<DataFrame> = None;
+
+                        loop {
+                            if read >= stop_at_nbytes {
+                                break;
+                            }
+
+                            let mut buffers = init_buffers(
+                                &projection,
+                                chunk_size,
+                                &schema,
+                                &str_capacities,
+                                self.delimiter,
+                            )?;
+
+                            let local_bytes = &bytes[read..stop_at_nbytes];
+
+                            read = parse_lines(
+                                local_bytes,
+                                read,
+                                delimiter,
+                                projection,
+                                &mut buffers,
+                                ignore_parser_errors,
+                                self.encoding,
+                                chunk_size,
+                            )?;
+
+                            let mut local_df = DataFrame::new_no_checks(
+                                buffers.into_iter().map(|buf| buf.into_series()).collect(),
+                            );
+                            if let Some(predicate) = predicate {
+                                let s = predicate.evaluate(&local_df)?;
+                                let mask =
+                                    s.bool().expect("filter predicates was not of type boolean");
+                                local_df = local_df.filter(mask)?;
+                            }
+
+                            // update the running str bytes statistics
+                            for (str_index, name) in str_columns.iter().enumerate() {
+                                let ca = local_df.column(name)?.utf8()?;
+                                let str_bytes_len = ca.get_values_size();
+
+                                // don't update running statistics if we try to reduce string memory usage.
+                                if self.low_memory {
+                                    local_df.shrink_to_fit();
+                                    let (max, avg, last, size_hint) =
+                                        str_capacities[str_index].update(str_bytes_len);
+                                    if logging {
+                                        if size_hint < str_bytes_len {
+                                            eprintln!(
+                                                "probably needed to reallocate column: {}\
+                                    \nprevious capacity was: {}\
+                                    \nneeded capacity was: {}",
+                                                name, size_hint, str_bytes_len
+                                            );
+                                        }
+                                        eprintln!(
+                                            "column {} statistics: \nmax: {}\navg: {}\nlast: {}",
+                                            name, max, avg, last
+                                        )
+                                    }
+                                }
+                            }
+                            match &mut df {
+                                None => df = Some(local_df),
+                                Some(df) => {
+                                    df.vstack_mut(&local_df).unwrap();
+                                }
+                            }
                         }
 
+                        Ok(df)
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })?;
+            accumulate_dataframes_vertical(dfs.into_iter().flatten())
+        } else {
+            // let exponential growth solve the needed size. This leads to less memory overhead
+            // in the later rechunk. Because we have large chunks they are easier reused for the
+            // large final contiguous memory needed at the end.
+            let dfs = pool.install(|| {
+                file_chunks
+                    .into_par_iter()
+                    .map(|(bytes_offset_thread, stop_at_nbytes)| {
+                        let delimiter = self.delimiter;
+                        let schema = self.schema.clone();
+                        let ignore_parser_errors = self.ignore_parser_errors;
+                        let projection = &projection;
+
+                        let mut read = bytes_offset_thread;
                         let mut buffers = init_buffers(
                             &projection,
                             chunk_size,
@@ -340,68 +426,33 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             self.delimiter,
                         )?;
 
-                        let local_bytes = &bytes[read..stop_at_nbytes];
+                        loop {
+                            if read >= stop_at_nbytes {
+                                break;
+                            }
+                            let local_bytes = &bytes[read..stop_at_nbytes];
 
-                        read = parse_lines(
-                            local_bytes,
-                            read,
-                            delimiter,
-                            projection,
-                            &mut buffers,
-                            ignore_parser_errors,
-                            self.encoding,
-                            chunk_size,
-                        )?;
-
-                        let mut local_df = DataFrame::new_no_checks(
+                            read = parse_lines(
+                                local_bytes,
+                                read,
+                                delimiter,
+                                projection,
+                                &mut buffers,
+                                ignore_parser_errors,
+                                self.encoding,
+                                // chunk size doesn't really matter anymore,
+                                // less calls if we increase the size
+                                chunk_size * 32,
+                            )?;
+                        }
+                        Ok(DataFrame::new_no_checks(
                             buffers.into_iter().map(|buf| buf.into_series()).collect(),
-                        );
-                        if let Some(predicate) = predicate {
-                            let s = predicate.evaluate(&local_df)?;
-                            let mask = s.bool().expect("filter predicates was not of type boolean");
-                            local_df = local_df.filter(mask)?;
-                        }
-
-                        // update the running str bytes statistics
-                        for (str_index, name) in str_columns.iter().enumerate() {
-                            let ca = local_df.column(name)?.utf8()?;
-                            let str_bytes_len = ca.get_values_size();
-
-                            // don't update running statistics if we try to reduce string memory usage.
-                            if self.low_memory {
-                                local_df.shrink_to_fit();
-                                let (max, avg, last, size_hint) =
-                                    str_capacities[str_index].update(str_bytes_len);
-                                if logging {
-                                    if size_hint < str_bytes_len {
-                                        eprintln!(
-                                            "probably needed to reallocate column: {}\
-                                        \nprevious capacity was: {}\
-                                        \nneeded capacity was: {}",
-                                            name, size_hint, str_bytes_len
-                                        );
-                                    }
-                                    eprintln!(
-                                        "column {} statistics: \nmax: {}\navg: {}\nlast: {}",
-                                        name, max, avg, last
-                                    )
-                                }
-                            }
-                        }
-                        match &mut df {
-                            None => df = Some(local_df),
-                            Some(df) => {
-                                df.vstack_mut(&local_df).unwrap();
-                            }
-                        }
-                    }
-
-                    Ok(df)
-                })
-                .collect::<Result<Vec<_>>>()
-        })?;
-
-        accumulate_dataframes_vertical(dfs.into_iter().flatten())
+                        ))
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })?;
+            accumulate_dataframes_vertical(dfs.into_iter())
+        }
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
