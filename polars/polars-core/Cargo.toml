@@ -50,6 +50,7 @@ private = []
 is_in = []
 zip_with = []
 round_series = []
+checked_arithmetic = []
 
 # opt-in datatypes for Series
 dtype-time64-ns = []

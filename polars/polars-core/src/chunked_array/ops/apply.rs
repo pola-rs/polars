@@ -86,6 +86,17 @@ where
         ca
     }
 
+    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
+    {
+        self.downcast_iter()
+            .flatten()
+            .trust_my_length(self.len())
+            .map(f)
+            .collect()
+    }
+
     fn apply_with_idx<F>(&'a self, f: F) -> Self
     where
         F: Fn((usize, T::Native)) -> T::Native + Copy,
@@ -148,6 +159,14 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     {
         apply!(self, f)
     }
+
+    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(Option<bool>) -> Option<bool> + Copy,
+    {
+        self.into_iter().map(f).collect()
+    }
+
     fn apply_with_idx<F>(&'a self, f: F) -> Self
     where
         F: Fn((usize, bool)) -> bool + Copy,
@@ -206,6 +225,14 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     {
         apply!(self, f)
     }
+
+    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
+    {
+        self.into_iter().map(f).collect()
+    }
+
     fn apply_with_idx<F>(&'a self, f: F) -> Self
     where
         F: Fn((usize, &'a str)) -> Cow<'a, str> + Copy,
@@ -345,6 +372,13 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         F: Fn(Series) -> Series + Copy,
     {
         apply!(self, f)
+    }
+
+    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(Option<Series>) -> Option<Series> + Copy,
+    {
+        self.into_iter().map(f).collect()
     }
 
     /// Apply a closure elementwise. The closure gets the index of the element as first argument.

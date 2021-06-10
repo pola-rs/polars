@@ -214,7 +214,7 @@ impl<T> ChunkedArray<T> {
     /// # Safety
     ///
     /// This is unsafe as the dtype may be uncorrect and
-    /// is assumed to be correct in other unsafe code.
+    /// is assumed to be correct in other safe code.
     pub(crate) unsafe fn unpack_series_matching_physical_type(
         &self,
         series: &Series,
