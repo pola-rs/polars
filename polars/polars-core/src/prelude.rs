@@ -37,8 +37,9 @@ pub(crate) use polars_arrow::array::*;
 pub use polars_arrow::vec::AlignedVec;
 pub use std::sync::Arc;
 
-#[cfg(feature = "temporal")]
-pub use crate::chunked_array::temporal::conversion::*;
-
 #[cfg(feature = "object")]
 pub use crate::chunked_array::object::PolarsObject;
+#[cfg(feature = "temporal")]
+pub use crate::chunked_array::temporal::conversion::*;
+#[cfg(feature = "checked_arithmetic")]
+pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
