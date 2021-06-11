@@ -80,7 +80,7 @@ unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
     hash_tables.get_unchecked(idx)
 }
 
-unsafe fn get_hash_tbl_threaded_join_mut<T, H>(
+unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     h: u64,
     hash_tables: &mut [HashMap<T, Vec<u32>, H>],
     len: u64,
@@ -90,20 +90,6 @@ unsafe fn get_hash_tbl_threaded_join_mut<T, H>(
         // can only be done for powers of two.
         // n % 2^i = n & (2^i - 1)
         if (h + i) & (len - 1) == 0 {
-            idx = i as usize;
-        }
-    }
-    hash_tables.get_unchecked_mut(idx)
-}
-
-unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
-    h: u64,
-    hash_tables: &mut [HashMap<T, Vec<u32>, H>],
-    len: u64,
-) -> &mut HashMap<T, Vec<u32>, H> {
-    let mut idx = 0;
-    for i in 0..len {
-        if (h + i) % len == 0 {
             idx = i as usize;
         }
     }
@@ -203,6 +189,7 @@ where
     let hash_tbls = create_probe_table(build);
 
     let n_tables = hash_tbls.len() as u64;
+    debug_assert!(n_tables.is_power_of_two());
     let offsets = probe
         .iter()
         .map(|ph| ph.as_ref().len())
@@ -276,6 +263,7 @@ where
         .collect::<Vec<_>>();
 
     let n_tables = hash_tbls.len() as u64;
+    debug_assert!(n_tables.is_power_of_two());
 
     // next we probe the other relation
     POOL.install(|| {
@@ -339,13 +327,15 @@ fn probe_outer<T, F, G, H>(
     // idx_b -> ...
     H: Fn(u32) -> (Option<u32>, Option<u32>),
 {
+    // needed for the partition shift instead of modulo to make sense
+    assert!(n_tables.is_power_of_two());
     let mut idx_a = 0;
     for probe_hashes in probe_hashes {
         for (h, key) in probe_hashes {
             let h = *h;
             // probe table that contains the hashed value
             let current_probe_table =
-                unsafe { get_hash_tbl_threaded_join_mut(h, hash_tbls, n_tables) };
+                unsafe { get_hash_tbl_threaded_join_mut_partitioned(h, hash_tbls, n_tables) };
 
             let entry = current_probe_table
                 .raw_entry_mut()
@@ -732,9 +722,9 @@ where
     fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_threads = POOL.current_num_threads();
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
+        let n_partitions = set_partition_size();
+        let splitted_a = split_ca(a, n_partitions).unwrap();
+        let splitted_b = split_ca(b, n_partitions).unwrap();
 
         match (a.null_count(), b.null_count()) {
             (0, 0) => {
@@ -773,9 +763,9 @@ impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_threads = POOL.current_num_threads();
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
+        let n_partitions = set_partition_size();
+        let splitted_a = split_ca(a, n_partitions).unwrap();
+        let splitted_b = split_ca(b, n_partitions).unwrap();
 
         match (a.null_count(), b.null_count()) {
             (0, 0) => {
@@ -846,9 +836,9 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
     fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<u32>, Option<u32>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
-        let n_threads = POOL.current_num_threads();
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
+        let n_partitions = set_partition_size();
+        let splitted_a = split_ca(a, n_partitions).unwrap();
+        let splitted_b = split_ca(b, n_partitions).unwrap();
 
         match (a.null_count(), b.null_count()) {
             (0, 0) => {
@@ -1243,6 +1233,7 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
+    use crate::df;
     use crate::prelude::*;
     use crate::toggle_string_cache;
 
@@ -1322,12 +1313,28 @@ mod test {
     }
 
     #[test]
-    fn test_outer_join() {
+    fn test_outer_join() -> Result<()> {
         let (temp, rain) = create_frames();
-        let joined = temp.outer_join(&rain, "days", "days").unwrap();
+        let joined = temp.outer_join(&rain, "days", "days")?;
         println!("{:?}", &joined);
         assert_eq!(joined.height(), 5);
-        assert_eq!(joined.column("days").unwrap().sum::<i32>(), Some(7));
+        assert_eq!(joined.column("days")?.sum::<i32>(), Some(7));
+
+        let df_left = df!(
+                "a"=> ["a", "b", "a", "z"],
+                "b"=>[1, 2, 3, 4],
+                "c"=>[6, 5, 4, 3]
+        )?;
+        let df_right = df!(
+                "a"=> ["b", "c", "b", "a"],
+                "k"=> [0, 3, 9, 6],
+                "c"=> [1, 0, 2, 1]
+        )?;
+
+        let out = df_left.outer_join(&df_right, "a", "a")?;
+        assert_eq!(out.column("c_right")?.null_count(), 1);
+
+        Ok(())
     }
 
     #[test]
