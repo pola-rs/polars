@@ -371,10 +371,16 @@ impl Debug for DataFrame {
 fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
     fn make_str_val(v: &str) -> String {
         let string_limit = 32;
-        if v.len() > string_limit {
-            format!("{}...", &v[..string_limit])
-        } else {
+        let v_trunc = &v[..v
+            .char_indices()
+            .take(string_limit)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0)];
+        if v == v_trunc {
             v.to_string()
+        } else {
+            format!("{}...", v_trunc)
         }
     }
 
