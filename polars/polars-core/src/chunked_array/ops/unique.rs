@@ -1,9 +1,10 @@
 #[cfg(feature = "object")]
-use crate::chunked_array::object::ObjectType;
+use crate::chunked_array::{builder::categorical::RevMapping, object::ObjectType};
 use crate::datatypes::PlHashSet;
 use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
 use crate::utils::NoNull;
+use arrow::array::Array;
 use itertools::Itertools;
 use num::NumCast;
 use rayon::prelude::*;
@@ -206,8 +207,13 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
 
 impl ChunkUnique<CategoricalType> for CategoricalChunked {
     fn unique(&self) -> Result<Self> {
-        let set = fill_set(self.into_iter());
-        let mut ca = UInt32Chunked::new_from_opt_iter(self.name(), set.iter().copied());
+        let cat_map = self.categorical_map.as_ref().unwrap();
+        let mut ca = match &**cat_map {
+            RevMapping::Local(a) => UInt32Chunked::new_from_iter(self.name(), 0..(a.len() as u32)),
+            RevMapping::Global(map, _, _) => {
+                UInt32Chunked::new_from_iter(self.name(), map.keys().copied())
+            }
+        };
         ca.categorical_map = self.categorical_map.clone();
         ca.cast()
     }
@@ -227,7 +233,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         impl_value_counts!(self)
     }
     fn n_unique(&self) -> Result<usize> {
-        self.cast::<UInt32Type>()?.n_unique()
+        Ok(self.categorical_map.as_ref().unwrap().len())
     }
 }
 
