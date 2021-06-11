@@ -1573,20 +1573,10 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .collect_vec();
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
-            ArrowDataType::List(_) => {
+            ArrowDataType::List(fld) => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| {
-                        cast(
-                            arr,
-                            &ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                                "",
-                                ArrowDataType::Null,
-                                true,
-                            ))),
-                        )
-                        .unwrap()
-                    })
+                    .map(|arr| cast(arr, &ArrowDataType::LargeList(fld.clone())).unwrap())
                     .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }
