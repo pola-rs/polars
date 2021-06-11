@@ -89,10 +89,16 @@ macro_rules! format_array {
         let write = |v, f: &mut Formatter| {
             if truncate {
                 let v = format!("{}", v);
-                if v.len() > 15 {
-                    write!(f, "\t{}...\n", &v[..15])?;
-                } else {
+                let v_trunc = &v[..v
+                    .char_indices()
+                    .take(15)
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(0)];
+                if v == v_trunc {
                     write!(f, "\t{}\n", v)?;
+                } else {
+                    write!(f, "\t{}...\n", v_trunc)?;
                 }
             } else {
                 write!(f, "\t{}\n", v)?;
