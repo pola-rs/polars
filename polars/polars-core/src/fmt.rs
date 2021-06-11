@@ -775,6 +775,28 @@ Series: 'foo' [str]
             format!("{:?}", s)
         );
 
+        let s = Series::new("foo", &["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"]);
+        dbg!(&s);
+        assert_eq!(
+            r#"shape: (1,)
+Series: 'foo' [str]
+[
+	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎...
+]"#,
+            format!("{:?}", s)
+        );
+
+        let s = Series::new("foo", &["yzäöüäöüäöüäö"]);
+        dbg!(&s);
+        assert_eq!(
+            r#"shape: (1,)
+Series: 'foo' [str]
+[
+	"yzäöüäöüäöüäö"
+]"#,
+            format!("{:?}", s)
+        );
+
         let s = Series::new("foo", (0..100).collect::<Vec<_>>());
 
         dbg!(&s);
