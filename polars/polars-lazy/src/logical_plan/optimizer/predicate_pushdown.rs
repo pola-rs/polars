@@ -24,12 +24,12 @@ impl Dsl for Node {
 
 /// Don't overwrite predicates but combine them.
 fn insert_and_combine_predicate(
-    predicates_map: &mut PlHashMap<Arc<String>, Node>,
+    acc_predicates: &mut PlHashMap<Arc<String>, Node>,
     name: Arc<String>,
     predicate: Node,
     arena: &mut Arena<AExpr>,
 ) {
-    let existing_predicate = predicates_map
+    let existing_predicate = acc_predicates
         .entry(name)
         .or_insert_with(|| arena.add(AExpr::Literal(LiteralValue::Boolean(true))));
 
@@ -153,8 +153,9 @@ where
     }
     let mut local_predicates = Vec::with_capacity(remove_keys.len());
     for key in remove_keys {
-        let pred = acc_predicates.remove(&*key).unwrap();
-        local_predicates.push(pred)
+        if let Some(pred) = acc_predicates.remove(&*key) {
+            local_predicates.push(pred)
+        }
     }
     local_predicates
 }

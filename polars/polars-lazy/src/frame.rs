@@ -2212,4 +2212,25 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_filter_and_alias() -> Result<()> {
+        let df = df![
+            "a" => [0, 1, 2, 0, 2]
+        ]?;
+
+        let out = df
+            .lazy()
+            .with_column(col("a").pow(2.0).alias("a_squared"))
+            .filter(col("a_squared").gt(lit(1)).and(col("a").gt(lit(1))))
+            .collect()?;
+
+        let expected = df![
+            "a" => [2, 2],
+            "a_squared" => [4, 4]
+        ]?;
+
+        assert!(out.frame_equal(&expected));
+        Ok(())
+    }
 }
