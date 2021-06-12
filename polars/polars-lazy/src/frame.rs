@@ -362,9 +362,13 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn sort_by_exprs(self, by_exprs: Vec<Expr>, reverse: Vec<bool>) -> Self {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().sort(by_exprs, reverse).build();
-        Self::from_logical_plan(lp, opt_state)
+        if by_exprs.is_empty() {
+            self
+        } else {
+            let opt_state = self.get_opt_state();
+            let lp = self.get_plan_builder().sort(by_exprs, reverse).build();
+            Self::from_logical_plan(lp, opt_state)
+        }
     }
 
     /// Reverse the DataFrame
