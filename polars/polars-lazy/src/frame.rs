@@ -1076,6 +1076,7 @@ mod test {
     use crate::tests::get_df;
 
     use super::*;
+    use std::iter::FromIterator;
 
     fn scan_foods_csv() -> LazyFrame {
         let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
@@ -2236,5 +2237,17 @@ mod test {
 
         assert!(out.frame_equal(&expected));
         Ok(())
+    }
+
+    #[test]
+    fn test_filter_lit() {
+        // see https://github.com/pola-rs/polars/issues/790
+        // failed due to broadcasting filters and splitting threads.
+        let iter = (0..100).map(|i| ('A'..='Z').nth(i % 26).unwrap().to_string());
+        let a = Series::from_iter(iter);
+        let df = DataFrame::new([a].into()).unwrap();
+
+        let out = df.lazy().filter(lit(true)).collect().unwrap();
+        assert_eq!(out.shape(), (100, 1));
     }
 }

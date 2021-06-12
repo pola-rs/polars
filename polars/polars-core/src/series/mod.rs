@@ -1401,6 +1401,12 @@ impl Series {
 
     /// Filter by boolean mask. This operation clones data.
     pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> Result<Series> {
+        // this would fail if there is a broadcasting filter.
+        // because we cannot split that filter over threads
+        // besides they are a no-op, so we do the standard filter.
+        if filter.len() == 1 {
+            return self.filter(filter);
+        }
         let n_threads = POOL.current_num_threads();
         let filters = split_ca(filter, n_threads).unwrap();
         let series = split_series(self, n_threads).unwrap();
