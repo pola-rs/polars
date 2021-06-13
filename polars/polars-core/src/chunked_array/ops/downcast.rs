@@ -80,13 +80,15 @@ impl BooleanChunked {
 }
 
 impl Utf8Chunked {
-    pub fn downcast_iter(&self) -> impl Iterator<Item = &LargeStringArray> + DoubleEndedIterator {
+    pub fn downcast_iter(&self) -> impl Iterator<Item = &Utf8Array<i64>> + DoubleEndedIterator {
+        // Safety:
+        // This is the array type that must be in a Utf8Chunnked
         self.chunks.iter().map(|arr| {
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const LargeStringArray) }
+            unsafe { &*(arr as *const dyn Array as *const Utf8Array<i64>) }
         })
     }
-    pub fn downcast_chunks(&self) -> Chunks<'_, LargeStringArray> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, Utf8Array<i64>> {
         Chunks::new(&self.chunks)
     }
 
@@ -100,13 +102,15 @@ impl Utf8Chunked {
 }
 
 impl ListChunked {
-    pub fn downcast_iter(&self) -> impl Iterator<Item = &LargeListArray> + DoubleEndedIterator {
+    pub fn downcast_iter(&self) -> impl Iterator<Item = &ListArray<i64>> + DoubleEndedIterator {
+        // Safety:
+        // This is the array type that must be in a ListChunked
         self.chunks.iter().map(|arr| {
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const LargeListArray) }
+            unsafe { &*(arr as *const dyn Array as *const ListArray<i64>) }
         })
     }
-    pub fn downcast_chunks(&self) -> Chunks<'_, LargeListArray> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, ListArray<i64>> {
         Chunks::new(&self.chunks)
     }
 

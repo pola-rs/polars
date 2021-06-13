@@ -2,8 +2,7 @@
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::downcast::Chunks;
 use crate::prelude::*;
-use crate::utils::arrow::array::LargeStringArray;
-use arrow::array::{Array, BooleanArray, LargeListArray, PrimitiveArray};
+use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use std::convert::TryFrom;
 use unsafe_unwrap::UnsafeUnwrap;
 
@@ -154,7 +153,7 @@ where
 }
 
 pub struct Utf8TakeRandom<'a> {
-    chunks: Chunks<'a, LargeStringArray>,
+    chunks: Chunks<'a, ListArray<i64>>,
     chunk_lens: Vec<u32>,
 }
 
@@ -173,7 +172,7 @@ impl<'a> TakeRandom for Utf8TakeRandom<'a> {
 }
 
 pub struct Utf8TakeRandomSingleChunk<'a> {
-    arr: &'a LargeStringArray,
+    arr: &'a Utf8Array<i64>,
 }
 
 impl<'a> TakeRandom for Utf8TakeRandomSingleChunk<'a> {
@@ -368,7 +367,7 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
 
 pub struct ListTakeRandom<'a> {
     ca: &'a ListChunked,
-    chunks: Vec<&'a LargeListArray>,
+    chunks: Vec<&'a ListArray<i64>>,
     chunk_lens: Vec<u32>,
 }
 
@@ -393,7 +392,7 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
 }
 
 pub struct ListTakeRandomSingleChunk<'a> {
-    arr: &'a LargeListArray,
+    arr: &'a ListArray<i64>,
     name: &'a str,
 }
 
