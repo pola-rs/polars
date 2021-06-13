@@ -17,7 +17,7 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use ahash::RandomState;
-use arrow::array::{ArrayData, ArrayRef};
+use arrow::array::ArrayRef;
 use arrow::buffer::Buffer;
 use std::borrow::Cow;
 
@@ -265,10 +265,6 @@ macro_rules! impl_dyn_series {
 
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);
-            }
-
-            fn array_data(&self) -> Vec<&ArrayData> {
-                self.0.array_data()
             }
 
             fn chunk_lengths(&self) -> ChunkIdIter {

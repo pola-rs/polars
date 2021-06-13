@@ -32,10 +32,12 @@ pub use crate::{
     utils::IntoVec,
     vector_hasher::VecHash,
 };
-pub use arrow::datatypes::{ArrowPrimitiveType, Field as ArrowField, Schema as ArrowSchema};
-pub(crate) use polars_arrow::array::*;
-pub use polars_arrow::vec::AlignedVec;
+pub(crate) use arrow::array::*;
+pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
 pub use std::sync::Arc;
+pub type LargeStringArray = Utf8Array<i64>;
+pub type LargeListArray = ListArray<i64>;
+pub type AlignedVec<T> = arrow::buffer::MutableBuffer<T>;
 
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;

@@ -1,14 +1,15 @@
 use super::*;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::buffer::MutableBuffer;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
 pub struct ObjectChunkedBuilder<T> {
     field: Field,
-    bitmask_builder: BooleanBufferBuilder,
-    values: Vec<T>,
+    bitmask_builder: MutableBitmap,
+    values: MutableBuffer<T>,
 }
 
 impl<T> ObjectChunkedBuilder<T>
@@ -19,7 +20,7 @@ where
         ObjectChunkedBuilder {
             field: Field::new(name, DataType::Object(T::type_name())),
             values: Vec::with_capacity(capacity),
-            bitmask_builder: BooleanBufferBuilder::new(capacity),
+            bitmask_builder: MutableBitmap::with_capacity(capacity),
         }
     }
 

@@ -10,7 +10,6 @@ pub(crate) mod iterator;
 use crate::chunked_array::{builder::get_list_builder, ChunkIdIter};
 use crate::utils::{split_ca, split_series};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
-use arrow::array::ArrayData;
 use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
@@ -191,11 +190,6 @@ pub trait SeriesTrait:
 
     /// Rename the Series.
     fn rename(&mut self, name: &str);
-
-    /// Get Arrow ArrayData
-    fn array_data(&self) -> Vec<&ArrayData> {
-        unimplemented!()
-    }
 
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkIdIter {
@@ -1197,7 +1191,7 @@ impl Series {
         T: NumCast,
     {
         self.sum_as_series()
-            .cast::<Float64Type>()
+            .cast::<f64>()
             .ok()
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
@@ -1564,7 +1558,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Utf8 => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| cast(arr, &ArrowDataType::LargeUtf8).unwrap())
+                    .map(|arr| cast::cast(arr, &ArrowDataType::LargeUtf8).unwrap().into())
                     .collect_vec();
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
@@ -1572,7 +1566,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 let chunks = chunks
                     .iter()
                     .map(|arr| {
-                        cast(
+                        cast::cast(
                             arr,
                             &ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                                 "",
@@ -1581,6 +1575,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                             ))),
                         )
                         .unwrap()
+                        .into()
                     })
                     .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
@@ -1638,7 +1633,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| cast(arr, &ArrowDataType::Date64).unwrap())
+                    .map(|arr| cast::cast(arr, &ArrowDataType::Date64).unwrap().into())
                     .collect();
                 Ok(Date64Chunked::new_from_chunks(name, chunks).into_series())
             }
@@ -1710,7 +1705,6 @@ where
 mod test {
     use crate::prelude::*;
     use crate::series::*;
-    use arrow::array::*;
 
     #[test]
     fn cast() {

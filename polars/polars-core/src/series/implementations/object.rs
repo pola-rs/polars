@@ -3,7 +3,7 @@ use crate::fmt::FmtList;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
-use arrow::array::{ArrayData, ArrayRef};
+use arrow::array::ArrayRef;
 use arrow::buffer::Buffer;
 use std::any::Any;
 use std::borrow::Cow;
@@ -43,10 +43,6 @@ where
 {
     fn rename(&mut self, name: &str) {
         ObjectChunked::rename(&mut self.0, name)
-    }
-
-    fn array_data(&self) -> Vec<&ArrayData> {
-        ObjectChunked::array_data(&self.0)
     }
 
     fn chunk_lengths(&self) -> ChunkIdIter {

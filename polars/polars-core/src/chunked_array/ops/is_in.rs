@@ -179,7 +179,7 @@ impl IsIn for BooleanChunked {
 
 impl IsIn for CategoricalChunked {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
-        self.cast::<UInt32Type>().unwrap().is_in(other)
+        self.cast::<u32>().unwrap().is_in(other)
     }
 }
 

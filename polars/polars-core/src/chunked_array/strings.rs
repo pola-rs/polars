@@ -1,6 +1,6 @@
 use crate::chunked_array::kernels::strings::string_lengths;
 use crate::prelude::*;
-use arrow::compute::kernels::substring::substring;
+use arrow::compute::substring::substring;
 use regex::Regex;
 
 impl Utf8Chunked {

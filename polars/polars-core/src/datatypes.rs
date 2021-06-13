@@ -8,16 +8,9 @@
 //!
 use crate::prelude::*;
 use ahash::RandomState;
-pub use arrow::datatypes::DataType as ArrowDataType;
-pub use arrow::datatypes::{
-    ArrowNumericType, ArrowPrimitiveType, BooleanType, Date32Type, Date64Type,
-    DurationMicrosecondType, DurationMillisecondType, DurationNanosecondType, DurationSecondType,
-    Field as ArrowField, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
-    IntervalDayTimeType, IntervalUnit, IntervalYearMonthType, Schema as ArrowSchema,
-    Time32MillisecondType, Time32SecondType, Time64MicrosecondType, Time64NanosecondType, TimeUnit,
-    TimestampMicrosecondType, TimestampMillisecondType, TimestampNanosecondType,
-    TimestampSecondType, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
-};
+use arrow::array::*;
+pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
+use arrow::types::NativeType;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -35,7 +28,9 @@ pub trait PolarsDataType: Send + Sync {
 }
 
 macro_rules! impl_polars_datatype {
-    ($ca:ident, $variant:ident) => {
+    ($ca:ident, $variant:ident, $physical:ty) => {
+        pub struct $ca {}
+
         impl PolarsDataType for $ca {
             fn get_dtype() -> DataType {
                 DataType::$variant
@@ -44,19 +39,20 @@ macro_rules! impl_polars_datatype {
     };
 }
 
-impl_polars_datatype!(UInt8Type, UInt8);
-impl_polars_datatype!(UInt16Type, UInt16);
-impl_polars_datatype!(UInt32Type, UInt32);
-impl_polars_datatype!(UInt64Type, UInt64);
-impl_polars_datatype!(Int8Type, Int8);
-impl_polars_datatype!(Int16Type, Int16);
-impl_polars_datatype!(Int32Type, Int32);
-impl_polars_datatype!(Int64Type, Int64);
-impl_polars_datatype!(Float32Type, Float32);
-impl_polars_datatype!(Float64Type, Float64);
-impl_polars_datatype!(BooleanType, Boolean);
-impl_polars_datatype!(Date32Type, Date32);
-impl_polars_datatype!(Date64Type, Date64);
+impl_polars_datatype!(UInt8Type, UInt8, u8);
+impl_polars_datatype!(UInt16Type, UInt16, u16);
+impl_polars_datatype!(UInt32Type, UInt32, u32);
+impl_polars_datatype!(UInt64Type, UInt64, u64);
+impl_polars_datatype!(Int8Type, Int8, i8);
+impl_polars_datatype!(Int16Type, Int16, i16);
+impl_polars_datatype!(Int32Type, Int32, i32);
+impl_polars_datatype!(Int64Type, Int64, i64);
+impl_polars_datatype!(Float32Type, Float32, f32);
+impl_polars_datatype!(Float64Type, Float64, f64);
+impl_polars_datatype!(Date32Type, Date32, i32);
+impl_polars_datatype!(Date64Type, Date64, i64);
+
+pub struct Time64NanosecondType {}
 
 impl PolarsDataType for Time64NanosecondType {
     fn get_dtype() -> DataType {
@@ -64,11 +60,15 @@ impl PolarsDataType for Time64NanosecondType {
     }
 }
 
+pub struct DurationNanosecondType {}
+
 impl PolarsDataType for DurationNanosecondType {
     fn get_dtype() -> DataType {
         DataType::Duration(TimeUnit::Nanosecond)
     }
 }
+
+pub struct DurationMillisecondType {}
 
 impl PolarsDataType for DurationMillisecondType {
     fn get_dtype() -> DataType {
@@ -77,6 +77,14 @@ impl PolarsDataType for DurationMillisecondType {
 }
 
 impl PolarsDataType for Utf8Type {
+    fn get_dtype() -> DataType {
+        DataType::Utf8
+    }
+}
+
+pub struct BooleanType {}
+
+impl PolarsDataType for BooleanType {
     fn get_dtype() -> DataType {
         DataType::Utf8
     }
@@ -112,7 +120,7 @@ impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
 /// Any type that is not nested
 pub trait PolarsSingleType: PolarsDataType {}
 
-impl<T> PolarsSingleType for T where T: ArrowPrimitiveType + PolarsDataType {}
+impl<T> PolarsSingleType for T where T: NativeType + PolarsDataType {}
 
 impl PolarsSingleType for Utf8Type {}
 
@@ -136,8 +144,7 @@ pub type DurationMillisecondChunked = ChunkedArray<DurationMillisecondType>;
 pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
-pub trait PolarsPrimitiveType: ArrowPrimitiveType + Send + Sync + PolarsDataType {}
-// impl PolarsPrimitiveType for BooleanType {}
+pub trait PolarsPrimitiveType: NativeType + Send + Sync + PolarsDataType {}
 impl PolarsPrimitiveType for UInt8Type {}
 impl PolarsPrimitiveType for UInt16Type {}
 impl PolarsPrimitiveType for UInt32Type {}
@@ -154,22 +161,33 @@ impl PolarsPrimitiveType for Time64NanosecondType {}
 impl PolarsPrimitiveType for DurationNanosecondType {}
 impl PolarsPrimitiveType for DurationMillisecondType {}
 
-pub trait PolarsNumericType: PolarsPrimitiveType + ArrowNumericType {}
-impl PolarsNumericType for UInt8Type {}
-impl PolarsNumericType for UInt16Type {}
-impl PolarsNumericType for UInt32Type {}
-impl PolarsNumericType for UInt64Type {}
-impl PolarsNumericType for Int8Type {}
-impl PolarsNumericType for Int16Type {}
-impl PolarsNumericType for Int32Type {}
-impl PolarsNumericType for Int64Type {}
-impl PolarsNumericType for Float32Type {}
-impl PolarsNumericType for Float64Type {}
-impl PolarsNumericType for Date32Type {}
-impl PolarsNumericType for Date64Type {}
-impl PolarsNumericType for Time64NanosecondType {}
-impl PolarsNumericType for DurationNanosecondType {}
-impl PolarsNumericType for DurationMillisecondType {}
+macro_rules! impl_polars_numeric {
+    ($ca:ident, $physical:ty) => {
+        impl PolarsNumericType for $ca {
+            type NATIVE = $physical;
+        }
+    };
+}
+
+pub trait PolarsNumericType: PolarsPrimitiveType {
+    type NATIVE;
+}
+impl_polars_numeric!(UInt8Type, u8);
+impl_polars_numeric!(UInt16Type, u16);
+impl_polars_numeric!(UInt32Type, u32);
+impl_polars_numeric!(UInt64Type, u64);
+impl_polars_numeric!(Int8Type, i8);
+impl_polars_numeric!(Int16Type, i16);
+impl_polars_numeric!(Int32Type, i32);
+impl_polars_numeric!(Int64Type, i64);
+impl_polars_numeric!(Float32Type, f32);
+impl_polars_numeric!(Float64Type, f64);
+impl_polars_numeric!(Float32Type, f32);
+impl_polars_numeric!(Date32Type, i32);
+impl_polars_numeric!(Date64Type, i64);
+impl_polars_numeric!(Time64NanosecondType, i64);
+impl_polars_numeric!(DurationNanosecondType, i64);
+impl_polars_numeric!(DurationMillisecondType, i64);
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -186,7 +204,7 @@ impl PolarsIntegerType for Time64NanosecondType {}
 impl PolarsIntegerType for DurationNanosecondType {}
 impl PolarsIntegerType for DurationMillisecondType {}
 
-pub trait PolarsFloatType: PolarsNumericType {}
+pub trait PolarsFloatType: PolarsPrimitiveType {}
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 

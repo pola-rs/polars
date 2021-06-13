@@ -1,21 +1,19 @@
 use crate::{prelude::*, utils::NoNull};
-use arrow::compute::*;
 use arrow::{
-    array::{ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray},
+    array::{ArrayRef, BooleanArray, PrimitiveArray, Utf8Array},
     compute,
-    compute::kernels::comparison,
+    compute::comparison,
 };
 use num::{Num, NumCast, ToPrimitive};
 use std::ops::{BitAnd, BitOr, Not};
 use std::sync::Arc;
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
+type LargeStringArray = Utf8Array<u64>;
+
+impl ChunkedArray {
     /// First ensure that the chunks of lhs and rhs match and then iterates over the chunks and applies
     /// the comparison operator.
-    fn comparison(
+    fn comparison<T: PolarsNumericType>(
         &self,
         rhs: &ChunkedArray<T>,
         operator: impl Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> arrow::error::Result<BooleanArray>,
@@ -75,8 +73,10 @@ where
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             // should not fail if arrays are equal
-            self.comparison(rhs, comparison::eq)
-                .expect("should not fail.")
+            self.comparison(rhs, |x, y| {
+                comparison::compare(x, comparison::Operator::Eq, y)
+            })
+            .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
         }
@@ -93,8 +93,10 @@ where
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, comparison::neq)
-                .expect("should not fail.")
+            self.comparison(rhs, |x, y| {
+                comparison::compare(x, comparison::Operator::Neq, y)
+            })
+            .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
         }
@@ -111,8 +113,10 @@ where
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, comparison::gt)
-                .expect("should not fail.")
+            self.comparison(rhs, |x, y| {
+                comparison::compare(x, comparison::Operator::Gt, y)
+            })
+            .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
         }
@@ -129,8 +133,10 @@ where
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, comparison::gt_eq)
-                .expect("should not fail.")
+            self.comparison(rhs, |x, y| {
+                comparison::compare(x, comparison::Operator::GtEq, y)
+            })
+            .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
         }
@@ -147,8 +153,10 @@ where
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, comparison::lt)
-                .expect("should not fail.")
+            self.comparison(rhs, |x, y| {
+                comparison::compare(x, comparison::Operator::Lt, y)
+            })
+            .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
         }
@@ -165,8 +173,10 @@ where
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, comparison::lt_eq)
-                .expect("should not fail.")
+            self.comparison(rhs, |x, y| {
+                comparison::compare(x, comparison::Operator::LtEq, y)
+            })
+            .expect("should not fail.")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
         }

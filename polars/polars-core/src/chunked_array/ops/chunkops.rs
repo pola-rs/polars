@@ -23,8 +23,10 @@ where
         if self.chunks().len() == 1 {
             self.clone()
         } else {
-            let chunks =
-                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+            let chunks = vec![concat::concatenate(
+                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+            )
+            .unwrap()];
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
@@ -35,8 +37,10 @@ impl ChunkOps for BooleanChunked {
         if self.chunks().len() == 1 {
             self.clone()
         } else {
-            let chunks =
-                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+            let chunks = vec![concat::concatenate(
+                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+            )
+            .unwrap()];
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
@@ -47,8 +51,10 @@ impl ChunkOps for Utf8Chunked {
         if self.chunks().len() == 1 {
             self.clone()
         } else {
-            let chunks =
-                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+            let chunks = vec![concat::concatenate(
+                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+            )
+            .unwrap()];
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
@@ -60,7 +66,7 @@ impl ChunkOps for CategoricalChunked {
         Self: std::marker::Sized,
     {
         let cat_map = self.categorical_map.clone();
-        let mut ca = self.cast::<UInt32Type>().unwrap().rechunk().cast().unwrap();
+        let mut ca = self.cast::<u32>().unwrap().rechunk().cast().unwrap();
         ca.categorical_map = cat_map;
         ca
     }

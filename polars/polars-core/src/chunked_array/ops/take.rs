@@ -16,7 +16,7 @@ use crate::chunked_array::kernels::take::{
 use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::array::{Array, ArrayRef};
-use arrow::compute::kernels::take::take;
+use arrow::compute::take::take;
 use std::ops::Deref;
 
 macro_rules! take_iter_n_chunks {
@@ -74,7 +74,7 @@ where
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_primitive(chunks.next().unwrap(), array) as ArrayRef,
-                    (_, 1) => take(chunks.next().unwrap(), array, None).unwrap(),
+                    (_, 1) => take::take(chunks.next().unwrap(), array).unwrap(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -147,7 +147,7 @@ where
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks.next().unwrap(), array, None).unwrap(),
+                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
                     _ => {
                         let iter = array
                             .into_iter()
@@ -196,7 +196,7 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks.next().unwrap(), array, None).unwrap(),
+                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -266,7 +266,7 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks.next().unwrap(), array, None).unwrap(),
+                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);

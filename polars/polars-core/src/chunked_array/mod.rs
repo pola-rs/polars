@@ -1,15 +1,6 @@
 //! The typed heart of every Series column.
-use crate::chunked_array::builder::get_bitmap;
 use crate::prelude::*;
-use arrow::{
-    array::{
-        ArrayRef, BooleanArray, Date64Array, Float32Array, Float64Array, Int16Array, Int32Array,
-        Int64Array, Int8Array, LargeStringArray, Time64NanosecondArray, UInt16Array, UInt32Array,
-        UInt64Array, UInt8Array,
-    },
-    buffer::Buffer,
-    datatypes::TimeUnit,
-};
+use arrow::{array::*, bitmap::Bitmap, buffer::Buffer, datatypes::TimeUnit};
 use itertools::Itertools;
 use std::convert::TryFrom;
 use std::iter::{Copied, Map};
@@ -43,15 +34,10 @@ pub mod strings;
 pub mod temporal;
 pub mod upstream_traits;
 
-use arrow::array::{
-    Array, ArrayData, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
-    LargeListArray,
-};
+use arrow::array::Array;
 
 use crate::chunked_array::builder::categorical::RevMapping;
 use crate::utils::{slice_offsets, CustomIterTools};
-use arrow::util::bit_util::{get_bit, round_upto_power_of_2};
-use polars_arrow::array::ValueSize;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
@@ -155,11 +141,6 @@ pub struct ChunkedArray<T> {
 }
 
 impl<T> ChunkedArray<T> {
-    /// Get Arrow ArrayData
-    pub fn array_data(&self) -> Vec<&ArrayData> {
-        self.chunks.iter().map(|arr| arr.data()).collect()
-    }
-
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_categorical_map(&self) -> Option<&Arc<RevMapping>> {
         self.categorical_map.as_ref()
@@ -197,13 +178,13 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Get the null count and the buffer of bits representing null values
-    pub fn null_bits(&self) -> impl Iterator<Item = (usize, Option<Buffer>)> + '_ {
-        self.chunks.iter().map(|arr| get_bitmap(arr.as_ref()))
+    pub fn null_bits(&self) -> impl Iterator<Item = &Option<Bitmap>> + '_ {
+        self.chunks.iter().map(|arr| arr.as_ref().validity())
     }
 
     /// Shrink the capacity of this array to fit it's length.
     pub fn shrink_to_fit(&mut self) {
-        self.chunks = vec![arrow::compute::concat(
+        self.chunks = vec![arrow::compute::concat::concatenate(
             &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
         )
         .unwrap()];
@@ -551,18 +532,18 @@ where
             DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
             DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
             DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
-            DataType::Date32 => downcast_and_pack!(Date32Array, Date32),
-            DataType::Date64 => downcast_and_pack!(Date64Array, Date64),
+            DataType::Date32 => downcast_and_pack!(Int32Array, Date32),
+            DataType::Date64 => downcast_and_pack!(Int64Array, Date64),
             DataType::Time64(TimeUnit::Nanosecond) => {
-                let v = downcast!(Time64NanosecondArray);
+                let v = downcast!(Int64Array);
                 AnyValue::Time64(v, TimeUnit::Nanosecond)
             }
             DataType::Duration(TimeUnit::Nanosecond) => {
-                let v = downcast!(DurationNanosecondArray);
+                let v = downcast!(Int64Array);
                 AnyValue::Duration(v, TimeUnit::Nanosecond)
             }
             DataType::Duration(TimeUnit::Millisecond) => {
-                let v = downcast!(DurationMillisecondArray);
+                let v = downcast!(Int64Array);
                 AnyValue::Duration(v, TimeUnit::Millisecond)
             }
             DataType::List(_) => {

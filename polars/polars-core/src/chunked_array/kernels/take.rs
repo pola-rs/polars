@@ -1,10 +1,6 @@
 use crate::prelude::*;
-use arrow::array::{
-    Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray,
-    UInt32Array,
-};
+use arrow::array::*;
 use arrow::buffer::MutableBuffer;
-use std::mem;
 use std::sync::Arc;
 
 /// Take kernel for single chunk without nulls and arrow array as index.
@@ -18,7 +14,7 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
     let array_values = arr.values();
     let index_values = indices.values();
 
-    let mut values = AlignedVec::<T::Native>::with_capacity_aligned(data_len);
+    let mut values = MutableBuffer::<T::Native>::with_capacity_aligned(data_len);
     let iter = index_values
         .iter()
         .map(|idx| *array_values.get_unchecked(*idx as usize));
@@ -352,15 +348,13 @@ pub(crate) unsafe fn take_utf8(
 ) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
-    let offset_len_in_bytes = (data_len + 1) * mem::size_of::<i64>();
-    let mut offset_buf = MutableBuffer::new(offset_len_in_bytes);
-    offset_buf.resize(offset_len_in_bytes, 0);
-    let offset_typed = offset_buf.typed_data_mut();
+    let mut offset_buf = MutableBuffer::<i64>::from_len_zeroed(data_len + 1);
+    let offset_typed = offset_buf.as_mut_slice();
 
     let mut length_so_far = 0;
     offset_typed[0] = length_so_far;
 
-    let nulls;
+    let validity;
 
     // The required size is yet unknown
     // Allocate 2.0 times the expected size.
@@ -393,7 +387,7 @@ pub(crate) unsafe fn take_utf8(
 
                 values_buf.extend_from_slice(s.as_bytes())
             });
-        nulls = None;
+        validity = None;
     } else if arr.null_count() == 0 {
         offset_typed
             .iter_mut()
@@ -414,18 +408,18 @@ pub(crate) unsafe fn take_utf8(
                 }
                 *offset = length_so_far;
             });
-        nulls = indices.data_ref().null_buffer().cloned();
+        validity = indices.validity().clone();
     } else {
-        let mut builder = LargeStringBuilder::with_capacity(data_len, length_so_far as usize);
+        let mut builder = Utf8Primitive::with_capacities(data_len, length_so_far as usize);
 
         if indices.null_count() == 0 {
             (0..data_len).for_each(|idx| {
                 let index = indices.value_unchecked(idx) as usize;
                 if arr.is_valid(index) {
                     let s = arr.value_unchecked(index);
-                    builder.append_value(s).unwrap();
+                    builder.push(Some(s));
                 } else {
-                    builder.append_null().unwrap();
+                    builder.push(None);
                 }
             });
         } else {
@@ -448,14 +442,12 @@ pub(crate) unsafe fn take_utf8(
         return Arc::new(builder.finish());
     }
 
-    let mut data = ArrayData::builder(ArrowDataType::LargeUtf8)
-        .len(data_len)
-        .add_buffer(offset_buf.into())
-        .add_buffer(values_buf.into_arrow_buffer());
-    if let Some(null_buffer) = nulls {
-        data = data.null_bit_buffer(null_buffer);
-    }
-    Arc::new(LargeStringArray::from(data.build()))
+    // Safety: all "values" are &str, and thus valid utf8
+    Arc::new(Utf8Array::<i64>::from_data_unchecked(
+        offset_buf.into(),
+        values_buf.into(),
+        validity,
+    ))
 }
 
 #[cfg(test)]

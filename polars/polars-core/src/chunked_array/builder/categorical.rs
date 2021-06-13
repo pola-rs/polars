@@ -1,16 +1,11 @@
 use crate::prelude::*;
-use crate::{
-    datatypes::PlHashMap,
-    use_string_cache,
-    utils::arrow::array::{Array, ArrayBuilder},
-};
-use arrow::array::{LargeStringArray, LargeStringBuilder};
-use polars_arrow::builder::PrimitiveArrayBuilder;
+use crate::{datatypes::PlHashMap, use_string_cache, utils::arrow::array::Array};
+use arrow::array::*;
 use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
-    Global(PlHashMap<u32, u32>, LargeStringBuilder, u128),
-    Local(LargeStringBuilder),
+    Global(PlHashMap<u32, u32>, Utf8Primitive<i64>, u128),
+    Local(Utf8Primitive<i64>),
 }
 
 impl RevMappingBuilder {
@@ -41,8 +36,8 @@ impl RevMappingBuilder {
 }
 
 pub enum RevMapping {
-    Global(PlHashMap<u32, u32>, LargeStringArray, u128),
-    Local(LargeStringArray),
+    Global(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
+    Local(Utf8Array<i64>),
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -73,14 +68,14 @@ impl RevMapping {
 }
 
 pub struct CategoricalChunkedBuilder {
-    array_builder: PrimitiveArrayBuilder<UInt32Type>,
+    array_builder: Primitive<u32>,
     field: Field,
     reverse_mapping: RevMappingBuilder,
 }
 
 impl CategoricalChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
-        let builder = LargeStringBuilder::new(capacity / 10);
+        let builder = Utf8Primitive::<i64>::with_capacity(capacity / 10);
         let reverse_mapping = if use_string_cache() {
             let uuid = crate::STRING_CACHE.lock_map().uuid;
             RevMappingBuilder::Global(PlHashMap::default(), builder, uuid)
@@ -88,8 +83,8 @@ impl CategoricalChunkedBuilder {
             RevMappingBuilder::Local(builder)
         };
 
-        CategoricalChunkedBuilder {
-            array_builder: PrimitiveArrayBuilder::<UInt32Type>::new(capacity),
+        Self {
+            array_builder: Primitive::<u32>::with_capacity(capacity),
             field: Field::new(name, DataType::Categorical),
             reverse_mapping,
         }

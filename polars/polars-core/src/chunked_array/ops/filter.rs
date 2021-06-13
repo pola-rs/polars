@@ -4,7 +4,7 @@ use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::compute::filter as filter_fn;
+use arrow::compute::filter::filter as filter_fn;
 use std::ops::Deref;
 
 macro_rules! check_filter_len {

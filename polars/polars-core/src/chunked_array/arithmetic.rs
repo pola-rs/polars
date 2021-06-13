@@ -2,8 +2,7 @@
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 use arrow::array::PrimitiveArray;
-use arrow::compute::divide_scalar;
-use arrow::{array::ArrayRef, compute};
+use arrow::{array::ArrayRef, compute::arithmetics::basic};
 use num::{Num, NumCast, One, ToPrimitive, Zero};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
@@ -113,7 +112,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, compute::add, |lhs, rhs| lhs + rhs)
+        arithmetic_helper(self, rhs, basic::add::add, |lhs, rhs| lhs + rhs)
     }
 }
 
@@ -131,7 +130,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, compute::divide, |lhs, rhs| lhs / rhs)
+        arithmetic_helper(self, rhs, basic::div::div, |lhs, rhs| lhs / rhs)
     }
 }
 
@@ -148,7 +147,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, compute::multiply, |lhs, rhs| lhs * rhs)
+        arithmetic_helper(self, rhs, basic::mul::mul, |lhs, rhs| lhs * rhs)
     }
 }
 
@@ -166,7 +165,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn rem(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, compute::modulus, |lhs, rhs| lhs % rhs)
+        arithmetic_helper(self, rhs, basic::rem::rem, |lhs, rhs| lhs % rhs)
     }
 }
 
@@ -183,7 +182,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, compute::subtract, |lhs, rhs| lhs - rhs)
+        arithmetic_helper(self, rhs, basic::sub::sub, |lhs, rhs| lhs - rhs)
     }
 }
 
@@ -321,7 +320,7 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(divide_scalar(arr, rhs).unwrap()))
+        self.apply_kernel(|arr| Arc::new(basic::div::div_scalar(arr, rhs).unwrap()))
     }
 }
 
@@ -352,7 +351,7 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(compute::modulus_scalar(arr, rhs).unwrap()))
+        self.apply_kernel(|arr| Arc::new(basic::rem::rem_scalar(arr, rhs).unwrap()))
     }
 }
 

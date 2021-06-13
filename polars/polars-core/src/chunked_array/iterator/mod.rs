@@ -1,9 +1,12 @@
 use crate::datatypes::CategoricalChunked;
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
-use arrow::array::{Array, BooleanArray, LargeListArray, LargeStringArray};
+use arrow::array::*;
 use std::convert::TryFrom;
 use std::ops::Deref;
+
+type LargeStringArray = Utf8Array<i64>;
+type LargeListArray = ListArray<i64>;
 
 // If parallel feature is enable, then, activate the parallel module.
 #[cfg(feature = "parallel")]

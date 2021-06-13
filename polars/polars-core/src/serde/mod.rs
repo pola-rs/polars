@@ -53,7 +53,6 @@ impl From<&DataType> for DeDataType<'_> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::prelude::*;
 
     #[test]
     fn test_serde() -> Result<()> {

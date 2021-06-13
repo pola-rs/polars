@@ -1,9 +1,7 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
-use arrow::array::{
-    Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
-};
+use arrow::array::*;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;

@@ -4,16 +4,17 @@ use crate::{
     prelude::*,
     utils::{get_iter_capacity, NoNull},
 };
-pub use arrow::alloc;
-use arrow::array::{ArrayRef, LargeListBuilder};
-use arrow::{array::Array, buffer::Buffer};
+use arrow::{
+    array::*,
+    buffer::{Buffer, MutableBuffer},
+};
 use num::Num;
-use polars_arrow::prelude::*;
 use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+// N: the value type; T: the sentinel type
 pub trait ChunkedBuilder<N, T> {
     fn append_value(&mut self, val: N);
     fn append_null(&mut self);
@@ -70,7 +71,7 @@ where
     T: PolarsPrimitiveType,
     T::Native: Default,
 {
-    array_builder: PrimitiveArrayBuilder<T>,
+    array_builder: Primitive<T>,
     field: Field,
 }
 
@@ -109,14 +110,14 @@ where
 {
     pub fn new(name: &str, capacity: usize) -> Self {
         PrimitiveChunkedBuilder {
-            array_builder: PrimitiveArrayBuilder::<T>::new(capacity),
+            array_builder: Primitive::<T>::with_capacity(capacity),
             field: Field::new(name, T::get_dtype()),
         }
     }
 }
 
 pub struct Utf8ChunkedBuilder {
-    pub builder: LargeStringBuilder,
+    pub builder: Utf8Primitive<i64>,
     pub capacity: usize,
     field: Field,
 }
@@ -130,7 +131,7 @@ impl Utf8ChunkedBuilder {
     /// * `bytes_capacity` - Number of bytes needed to store the string values.
     pub fn new(name: &str, capacity: usize, bytes_capacity: usize) -> Self {
         Utf8ChunkedBuilder {
-            builder: LargeStringBuilder::with_capacity(bytes_capacity, capacity),
+            builder: Utf8Primitive::<i32>::with_capacity(bytes_capacity, capacity),
             capacity,
             field: Field::new(name, DataType::Utf8),
         }
@@ -208,11 +209,13 @@ pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
-impl<T> FromIterator<(AlignedVec<T::Native>, Option<Buffer>)> for ChunkedArray<T>
+impl<T> FromIterator<(MutableBuffer<T::Native>, Option<Buffer>)> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn from_iter<I: IntoIterator<Item = (AlignedVec<T::Native>, Option<Buffer>)>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = (MutableBuffer<T::Native>, Option<Buffer>)>>(
+        iter: I,
+    ) -> Self {
         let mut chunks = vec![];
 
         for (values, opt_buffer) in iter {
@@ -297,7 +300,7 @@ where
     fn new_from_slice(name: &str, v: &[S]) -> Self {
         let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
 
-        let mut builder = LargeStringBuilder::with_capacity(values_size, v.len());
+        let mut builder = Utf8Primitive::<i64>::with_capacities(values_size, v.len());
         v.iter().for_each(|val| {
             builder.append_value(val.as_ref()).unwrap();
         });
@@ -306,7 +309,7 @@ where
 
         ChunkedArray {
             field,
-            chunks: vec![Arc::new(builder.finish())],
+            chunks: vec![builder.into_arc()],
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -353,7 +356,7 @@ pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub builder: LargeListBuilder<PrimitiveArrayBuilder<T>>,
+    pub builder: ListPrimitive<i32, Primitive<T>, T>,
     field: Field,
 }
 
@@ -373,7 +376,7 @@ impl<T> ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub fn new(name: &str, values_builder: PrimitiveArrayBuilder<T>, capacity: usize) -> Self {
+    pub fn new(name: &str, values_builder: Primitive<T>, capacity: usize) -> Self {
         let builder = LargeListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
 
@@ -448,14 +451,17 @@ where
     }
 }
 
+type LargeListUtf8Builder = ListPrimitive<i64, Utf8Primitive<i64>, _>;
+type LargeListBooleanBuilder = ListPrimitive<i64, BooleanPrimitive, _>;
+
 pub struct ListUtf8ChunkedBuilder {
-    builder: LargeListBuilder<LargeStringBuilder>,
+    builder: LargeListUtf8Builder,
     field: Field,
 }
 
 impl ListUtf8ChunkedBuilder {
-    pub fn new(name: &str, values_builder: LargeStringBuilder, capacity: usize) -> Self {
-        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
+    pub fn new(name: &str, capacity: usize) -> Self {
+        let builder = LargeListUtf8Builder::with_capacity(values_builder, capacity);
         let field = Field::new(name, DataType::List(ArrowDataType::LargeUtf8));
 
         ListUtf8ChunkedBuilder { builder, field }

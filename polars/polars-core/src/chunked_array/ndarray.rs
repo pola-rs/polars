@@ -35,7 +35,7 @@ impl ListChunked {
             if let Some(series) = iter.next() {
                 width = series.len();
 
-                ndarray = unsafe { Array::uninitialized((self.len(), series.len())) };
+                ndarray = unsafe { ndarray::Array::uninitialized((self.len(), series.len())) };
 
                 let series = series.cast::<N>()?;
                 let ca = series.unpack::<N>()?;

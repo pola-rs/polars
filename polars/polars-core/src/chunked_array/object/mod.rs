@@ -2,10 +2,9 @@ pub mod builder;
 mod iterator;
 
 pub use crate::prelude::*;
-use crate::utils::arrow::array::ArrayData;
-use arrow::array::{Array, ArrayRef, BooleanBufferBuilder, JsonEqual};
+use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use serde_json::Value;
+use arrow::buffer::MutableBuffer;
 use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::sync::Arc;
@@ -15,7 +14,7 @@ pub struct ObjectArray<T>
 where
     T: PolarsObject,
 {
-    pub(crate) values: Arc<Vec<T>>,
+    pub(crate) values: Arc<MutableBuffer<T>>,
     pub(crate) null_bitmap: Option<Arc<Bitmap>>,
     pub(crate) null_count: usize,
     pub(crate) offset: usize,
@@ -31,7 +30,7 @@ where
     T: PolarsObject,
 {
     /// Get a reference to the underlying data
-    pub fn values(&self) -> &Arc<Vec<T>> {
+    pub fn values(&self) -> &Arc<MutableBuffer<T>> {
         &self.values
     }
 
@@ -51,29 +50,12 @@ where
     }
 }
 
-impl<T> JsonEqual for ObjectArray<T>
-where
-    T: PolarsObject,
-{
-    fn equals_json(&self, _json: &[&Value]) -> bool {
-        false
-    }
-}
-
 impl<T> Array for ObjectArray<T>
 where
     T: PolarsObject,
 {
     fn as_any(&self) -> &dyn Any {
         self
-    }
-
-    fn data(&self) -> &ArrayData {
-        unimplemented!()
-    }
-
-    fn data_ref(&self) -> &ArrayData {
-        unimplemented!()
     }
 
     fn data_type(&self) -> &ArrowDataType {
@@ -104,10 +86,6 @@ where
         self.len == 0
     }
 
-    fn offset(&self) -> usize {
-        self.offset
-    }
-
     fn is_null(&self, index: usize) -> bool {
         match &self.null_bitmap {
             Some(b) => !b.is_set(index),
@@ -124,14 +102,6 @@ where
 
     fn null_count(&self) -> usize {
         self.null_count
-    }
-
-    fn get_buffer_memory_size(&self) -> usize {
-        unimplemented!()
-    }
-
-    fn get_array_memory_size(&self) -> usize {
-        unimplemented!()
     }
 }
 

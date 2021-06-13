@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use arrow::array::{make_array, Array, ArrayData};
+use arrow::array::Array;
 
 impl<T> ToBitRepr for ChunkedArray<T>
 where

@@ -1,7 +1,6 @@
 use crate::POOL;
 use ahash::RandomState;
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
-use polars_arrow::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::hash::Hash;

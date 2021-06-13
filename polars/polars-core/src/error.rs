@@ -6,8 +6,6 @@ type ErrString = Cow<'static, str>;
 #[derive(Debug, ThisError)]
 pub enum PolarsError {
     #[error(transparent)]
-    PolarsArrowError(#[from] polars_arrow::error::PolarsError),
-    #[error(transparent)]
     ArrowError(#[from] arrow::error::ArrowError),
     #[error("Invalid operation {0}")]
     InvalidOperation(ErrString),
@@ -29,9 +27,6 @@ pub enum PolarsError {
     ValueError(ErrString),
     #[error("Memory should be 64 byte aligned")]
     MemoryNotAligned,
-    #[cfg(feature = "parquet")]
-    #[error(transparent)]
-    ParquetError(#[from] parquet::errors::ParquetError),
     #[cfg(feature = "random")]
     #[error("{0}")]
     RandError(String),

@@ -1,10 +1,5 @@
 use crate::prelude::*;
-use arrow::array::{ArrayRef, BooleanBufferBuilder};
-use arrow::datatypes::ToByteSlice;
-use arrow::{
-    array::{Array, ArrayData, LargeListArray, LargeStringArray},
-    buffer::Buffer,
-};
+use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
 use itertools::Itertools;
 use std::convert::TryFrom;
 
@@ -54,7 +49,7 @@ impl ChunkExplode for Utf8Chunked {
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
-        let stringarr: &LargeStringArray = ca
+        let stringarr: &Utf8Array<i64> = ca
             .downcast_iter()
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
@@ -85,7 +80,7 @@ impl ChunkExplode for Utf8Chunked {
         // the old bitmap doesn't fit on the exploded array, so we need to create a new one.
         if self.null_count() > 0 {
             let capacity = new_offsets.len();
-            let mut bitmap_builder = BooleanBufferBuilder::new(new_offsets.len());
+            let mut bitmap_builder = MutableBitmap::with_capacity(new_offsets.len());
 
             let mut count = 0;
             let mut last_idx = 0;
@@ -93,13 +88,13 @@ impl ChunkExplode for Utf8Chunked {
             for &offset in offsets.iter().skip(1) {
                 while count < offset {
                     count += 1;
-                    bitmap_builder.append(last_valid);
+                    bitmap_builder.push(last_valid);
                 }
                 last_idx += 1;
                 last_valid = stringarr.is_valid(last_idx);
             }
             for _ in 0..(capacity - count as usize) {
-                bitmap_builder.append(last_valid);
+                bitmap_builder.push(last_valid);
             }
             builder = builder.null_bit_buffer(bitmap_builder.finish());
         }

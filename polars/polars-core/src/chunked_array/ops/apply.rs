@@ -1,7 +1,7 @@
 //! Implementations of the ChunkApply Trait.
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
-use arrow::array::{Array, ArrayRef, BooleanArray, LargeStringArray, PrimitiveArray};
+use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use std::borrow::Cow;
 use std::convert::TryFrom;
 

@@ -11,7 +11,7 @@ repository = "https://github.com/ritchie46/polars"
 
 [features]
 simd = ["arrow/simd"]
-avx512 = ["arrow/avx512"]
+avx512 = []
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
@@ -63,12 +63,12 @@ dtype-u8 = []
 dtype-u16 = []
 dtype-u64 = []
 
+parquet = ["arrow/io_parquet"]
+
 [dependencies]
-arrow = {git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1", default-features=false}
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "a0068a8ae892b281f7c66f0d1ee7396cb20f753a", default-features = false }
 #arrow = {version = "4.2", default-features = false }
-parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1"}
 #parquet = {version = "4.2", default-features = false, optional = true }
-polars-arrow = {version = "0.14.1", path = "../polars-arrow"}
 thiserror = "1.0"
 num = "^0.4"
 itertools = "0.10"

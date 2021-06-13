@@ -5,10 +5,9 @@ use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
-use arrow::array::{BooleanArray, LargeStringArray, PrimitiveArray};
-#[cfg(feature = "object")]
-use polars_arrow::prelude::BooleanBufferBuilder;
-use polars_arrow::utils::TrustMyLength;
+use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::bitmap::MutableBitmap;
+use arrow::buffer::MutableBuffer;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::{Borrow, Cow};
@@ -73,8 +72,7 @@ where
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         // 2021-02-07: aligned vec was ~2x faster than arrow collect.
         let iter = iter.into_iter();
-        let mut av = AlignedVec::with_capacity_aligned(0);
-        av.extend(iter);
+        let mut av = MutableBuffer::<T::Native>::from_iter(iter);
         NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
     }
 }
@@ -108,8 +106,7 @@ where
     Ptr: AsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        // 2021-02-07: this was ~30% faster than with the builder.
-        let arr = LargeStringArray::from_iter(iter);
+        let arr = Utf8Array::<i64>::from_iter(iter);
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
@@ -128,7 +125,7 @@ where
     Ptr: PolarsAsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = LargeStringArray::from_iter_values(iter);
+        let arr = Utf8Array::<i64>::from_iter_values(iter);
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
@@ -211,7 +208,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let size = iter.size_hint().0;
-        let mut null_mask_builder = BooleanBufferBuilder::new(size);
+        let mut null_mask_builder = MutableBitmap::with_capacity(size);
 
         let mut null_count = 0;
         let values: Vec<T> = iter
@@ -304,7 +301,7 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut av = AlignedVec::with_capacity_aligned(capacity);
+        let mut av = MutableBuffer::<T>::with_capacity_aligned(capacity);
         for v in vectors {
             av.extend_from_slice(&v)
         }

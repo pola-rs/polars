@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 use arrow::array::ArrayRef;
-use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
 use std::sync::Arc;
 
 macro_rules! impl_set_at_idx_with {

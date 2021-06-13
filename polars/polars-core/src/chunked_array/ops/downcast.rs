@@ -2,9 +2,7 @@
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::index_to_chunked_index;
-use arrow::array::{
-    Array, ArrayRef, BooleanArray, LargeListArray, LargeStringArray, PrimitiveArray,
-};
+use arrow::array::*;
 use std::marker::PhantomData;
 
 pub struct Chunks<'a, T> {
@@ -43,10 +41,9 @@ where
     T: PolarsNumericType,
 {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &PrimitiveArray<T>> + DoubleEndedIterator {
-        self.chunks.iter().map(|arr| {
-            let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const PrimitiveArray<T>) }
-        })
+        self.chunks
+            .iter()
+            .map(|arr| arr.as_any().downcast_ref().unwrap())
     }
     pub fn downcast_chunks(&self) -> Chunks<'_, PrimitiveArray<T>> {
         Chunks::new(&self.chunks)
