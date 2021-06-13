@@ -23,6 +23,8 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
+#[cfg(feature = "checked_arithmetic")]
+use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
 use arrow::buffer::Buffer;
@@ -823,6 +825,11 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "is_in")]
             fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
                 IsIn::is_in(&self.0, other)
+            }
+
+            #[cfg(feature = "checked_arithmetic")]
+            fn checked_div(&self, rhs: &Series) -> Result<Series> {
+                self.0.checked_div(rhs)
             }
         }
     };

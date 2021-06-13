@@ -15,6 +15,8 @@ pub(crate) fn init_csv_reader<R: Read>(
     let mut reader_builder = csv::ReaderBuilder::new();
     reader_builder.has_headers(has_header);
     reader_builder.delimiter(delimiter);
+    // don't error on shorter fields.
+    reader_builder.flexible(true);
     reader_builder.from_reader(reader)
 }
 

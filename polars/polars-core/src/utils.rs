@@ -827,19 +827,22 @@ impl<T> IntoVec<T> for Vec<T> {
 /// `chunk_lens` once. On the `ChunkedArray` we indirect through an `ArrayRef` which is an indirection
 /// and a vtable.
 #[inline]
-pub(crate) fn index_to_chunked_index<I: Iterator<Item = usize>>(
+pub(crate) fn index_to_chunked_index<
+    I: Iterator<Item = Idx>,
+    Idx: PartialOrd + std::ops::AddAssign + std::ops::SubAssign + num::Zero + num::One,
+>(
     chunk_lens: I,
-    index: usize,
-) -> (usize, usize) {
+    index: Idx,
+) -> (Idx, Idx) {
     let mut index_remainder = index;
-    let mut current_chunk_idx = 0;
+    let mut current_chunk_idx = num::Zero::zero();
 
     for chunk_len in chunk_lens {
         if chunk_len > index_remainder {
             break;
         } else {
             index_remainder -= chunk_len;
-            current_chunk_idx += 1;
+            current_chunk_idx += num::One::one();
         }
     }
     (current_chunk_idx, index_remainder)

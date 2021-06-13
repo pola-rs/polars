@@ -67,6 +67,9 @@ where
 {
     fn subtract(&self, rhs: &Series) -> Result<Series> {
         // Safety:
+        // There will be UB if a ChunkedArray is alive with the wrong datatype.
+        // we now only create the potentially wrong dtype for a short time.
+        // Note that the physical type correctness is checked!
         // The ChunkedArray with the wrong dtype is dropped after this operation
         let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
         let out = self - rhs;
@@ -104,6 +107,135 @@ impl NumOpsDispatch for Utf8Chunked {
 impl NumOpsDispatch for BooleanChunked {}
 impl NumOpsDispatch for ListChunked {}
 impl NumOpsDispatch for CategoricalChunked {}
+
+#[cfg(feature = "checked_arithmetic")]
+pub mod checked {
+    use super::*;
+    use crate::utils::align_chunks_binary;
+    use num::{CheckedDiv, ToPrimitive};
+
+    pub trait NumOpsDispatchChecked: Debug {
+        /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.
+        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+            Err(PolarsError::InvalidOperation(
+                format!(
+                    "checked division operation not supported for {:?} and {:?}",
+                    self, rhs
+                )
+                .into(),
+            ))
+        }
+        fn checked_div_num<T: ToPrimitive>(&self, _rhs: T) -> Result<Series> {
+            Err(PolarsError::InvalidOperation(
+                format!(
+                    "checked division by number operation not supported for {:?}",
+                    self
+                )
+                .into(),
+            ))
+        }
+    }
+
+    impl<T> NumOpsDispatchChecked for ChunkedArray<T>
+    where
+        T: PolarsIntegerType,
+        T::Native:
+            CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + num::Zero + num::One,
+        ChunkedArray<T>: IntoSeries,
+    {
+        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+            let (l, r) = align_chunks_binary(self, rhs);
+
+            Ok((l)
+                .downcast_iter()
+                .zip(r.downcast_iter())
+                .map(|(l_arr, r_arr)| {
+                    l_arr
+                        .into_iter()
+                        .zip(r_arr)
+                        // we don't use a kernel, because the checked div also supplies nulls.
+                        // so the usual bit combining is not enough.
+                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                            (Some(l), Some(r)) => l.checked_div(&r),
+                            _ => None,
+                        })
+                })
+                .flatten()
+                .collect::<ChunkedArray<T>>()
+                .into_series())
+        }
+    }
+
+    impl NumOpsDispatchChecked for BooleanChunked {}
+    impl NumOpsDispatchChecked for Float32Chunked {}
+    impl NumOpsDispatchChecked for Float64Chunked {}
+    impl NumOpsDispatchChecked for ListChunked {}
+    impl NumOpsDispatchChecked for CategoricalChunked {}
+    impl NumOpsDispatchChecked for Utf8Chunked {}
+
+    impl NumOpsDispatchChecked for Series {
+        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+            let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");
+            lhs.as_ref().as_ref().checked_div(rhs.as_ref())
+        }
+
+        fn checked_div_num<T: ToPrimitive>(&self, rhs: T) -> Result<Series> {
+            use DataType::*;
+            let s = self.to_physical_repr();
+
+            let out = match s.dtype() {
+                #[cfg(feature = "dtype-u8")]
+                UInt8 => s
+                    .u8()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u8().unwrap())))
+                    .into_series(),
+                #[cfg(feature = "dtype-i8")]
+                Int8 => s
+                    .i8()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i8().unwrap())))
+                    .into_series(),
+                #[cfg(feature = "dtype-i16")]
+                Int16 => s
+                    .i16()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i16().unwrap())))
+                    .into_series(),
+                #[cfg(feature = "dtype-u16")]
+                UInt16 => s
+                    .u16()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u16().unwrap())))
+                    .into_series(),
+                UInt32 => s
+                    .u32()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u32().unwrap())))
+                    .into_series(),
+                Int32 => s
+                    .i32()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i32().unwrap())))
+                    .into_series(),
+                #[cfg(feature = "dtype-u64")]
+                UInt64 => s
+                    .u64()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u64().unwrap())))
+                    .into_series(),
+                Int64 => s
+                    .i64()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i64().unwrap())))
+                    .into_series(),
+                _ => panic!("dtype not yet supported in checked div"),
+            };
+            out.cast_with_dtype(self.dtype())
+        }
+    }
+}
 
 pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
@@ -528,5 +660,15 @@ mod test {
         let _ = s.minute().map(|m| &m / 5);
         let _ = s.minute().map(|m| m / 5);
         let _ = s.minute().map(|m| m.into_series() / 5);
+    }
+
+    #[test]
+    #[cfg(feature = "checked_arithmetic")]
+    fn test_checked_div() {
+        let s = Series::new("foo", [1i32, 0, 1]);
+        let out = s.checked_div(&s).unwrap();
+        assert_eq!(Vec::from(out.i32().unwrap()), &[Some(1), None, Some(1)]);
+        let out = s.checked_div_num(0).unwrap();
+        assert_eq!(Vec::from(out.i32().unwrap()), &[None, None, None]);
     }
 }

@@ -1013,6 +1013,11 @@ pub trait SeriesTrait:
     fn is_in(&self, _other: &Series) -> Result<BooleanChunked> {
         unimplemented!()
     }
+    #[cfg(feature = "checked_arithmetic")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "checked_arithmetic")))]
+    fn checked_div(&self, _rhs: &Series) -> Result<Series> {
+        unimplemented!()
+    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {
@@ -1390,6 +1395,12 @@ impl Series {
 
     /// Filter by boolean mask. This operation clones data.
     pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> Result<Series> {
+        // this would fail if there is a broadcasting filter.
+        // because we cannot split that filter over threads
+        // besides they are a no-op, so we do the standard filter.
+        if filter.len() == 1 {
+            return self.filter(filter);
+        }
         let n_threads = POOL.current_num_threads();
         let filters = split_ca(filter, n_threads).unwrap();
         let series = split_series(self, n_threads).unwrap();
@@ -1562,21 +1573,10 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .collect_vec();
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
-            ArrowDataType::List(_) => {
+            ArrowDataType::List(fld) => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| {
-                        cast::cast(
-                            arr,
-                            &ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                                "",
-                                ArrowDataType::Null,
-                                true,
-                            ))),
-                        )
-                        .unwrap()
-                        .into()
-                    })
+                    .map(|arr| cast(arr, &ArrowDataType::LargeList(fld.clone())).unwrap())
                     .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }

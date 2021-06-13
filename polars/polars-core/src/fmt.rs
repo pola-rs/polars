@@ -89,10 +89,16 @@ macro_rules! format_array {
         let write = |v, f: &mut Formatter| {
             if truncate {
                 let v = format!("{}", v);
-                if v.len() > 15 {
-                    write!(f, "\t{}...\n", &v[..15])?;
-                } else {
+                let v_trunc = &v[..v
+                    .char_indices()
+                    .take(15)
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(0)];
+                if v == v_trunc {
                     write!(f, "\t{}\n", v)?;
+                } else {
+                    write!(f, "\t{}...\n", v_trunc)?;
                 }
             } else {
                 write!(f, "\t{}\n", v)?;
@@ -365,10 +371,16 @@ impl Debug for DataFrame {
 fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
     fn make_str_val(v: &str) -> String {
         let string_limit = 32;
-        if v.len() > string_limit {
-            format!("{}...", &v[..string_limit])
-        } else {
+        let v_trunc = &v[..v
+            .char_indices()
+            .take(string_limit)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0)];
+        if v == v_trunc {
             v.to_string()
+        } else {
+            format!("{}...", v_trunc)
         }
     }
 
@@ -759,6 +771,28 @@ ChunkedArray: 'name' [str]
 Series: 'foo' [str]
 [
 	"Somelongstring...
+]"#,
+            format!("{:?}", s)
+        );
+
+        let s = Series::new("foo", &["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"]);
+        dbg!(&s);
+        assert_eq!(
+            r#"shape: (1,)
+Series: 'foo' [str]
+[
+	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎...
+]"#,
+            format!("{:?}", s)
+        );
+
+        let s = Series::new("foo", &["yzäöüäöüäöüäö"]);
+        dbg!(&s);
+        assert_eq!(
+            r#"shape: (1,)
+Series: 'foo' [str]
+[
+	"yzäöüäöüäöüäö"
 ]"#,
             format!("{:?}", s)
         );

@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.14.1"
+version = "0.14.2"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -50,6 +50,7 @@ private = []
 is_in = []
 zip_with = []
 round_series = []
+checked_arithmetic = []
 
 # opt-in datatypes for Series
 dtype-time64-ns = []

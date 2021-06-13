@@ -39,8 +39,9 @@ pub type LargeStringArray = Utf8Array<i64>;
 pub type LargeListArray = ListArray<i64>;
 pub type AlignedVec<T> = arrow::buffer::MutableBuffer<T>;
 
-#[cfg(feature = "temporal")]
-pub use crate::chunked_array::temporal::conversion::*;
-
 #[cfg(feature = "object")]
 pub use crate::chunked_array::object::PolarsObject;
+#[cfg(feature = "temporal")]
+pub use crate::chunked_array::temporal::conversion::*;
+#[cfg(feature = "checked_arithmetic")]
+pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;

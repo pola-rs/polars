@@ -51,6 +51,13 @@ impl<'a> FromIterator<&'a str> for Series {
     }
 }
 
+impl FromIterator<String> for Series {
+    fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
+        let ca: Utf8Chunked = iter.into_iter().collect();
+        ca.into_series()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
