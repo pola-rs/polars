@@ -1,29 +1,25 @@
+use crate::chunked_array::builder::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
 use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
 use crate::utils::NoNull;
+use arrow::array::Array;
 use itertools::Itertools;
 use num::NumCast;
 use rayon::prelude::*;
 use std::fmt::Display;
 use std::hash::Hash;
 
-pub(crate) fn is_unique_helper(
-    mut groups: GroupTuples,
+fn finish_is_unique_helper(
+    mut unique_idx: Vec<u32>,
     len: u32,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
-    debug_assert_ne!(unique_val, duplicated_val);
-    groups.sort_unstable_by_key(|t| t.0);
-
-    let mut unique_idx_iter = groups
-        .into_iter()
-        .filter(|(_, g)| g.len() == 1)
-        .map(|(first, _)| first);
-
+    unique_idx.sort_unstable();
+    let mut unique_idx_iter = unique_idx.into_iter();
     let mut next_unique_idx = unique_idx_iter.next();
     (0..len)
         .into_iter()
@@ -41,26 +37,53 @@ pub(crate) fn is_unique_helper(
         .collect()
 }
 
-fn is_unique<T>(ca: &ChunkedArray<T>) -> BooleanChunked
-where
-    T: PolarsDataType,
-    ChunkedArray<T>: IntoGroupTuples,
-{
-    let groups = ca.group_tuples(true);
-    let mut out = is_unique_helper(groups, ca.len() as u32, true, false);
-    out.rename(ca.name());
-    out
+pub(crate) fn is_unique_helper2(
+    unique_idx: Vec<u32>,
+    len: u32,
+    unique_val: bool,
+    duplicated_val: bool,
+) -> BooleanChunked {
+    debug_assert_ne!(unique_val, duplicated_val);
+    finish_is_unique_helper(unique_idx, len, unique_val, duplicated_val)
 }
 
-fn is_duplicated<T>(ca: &ChunkedArray<T>) -> BooleanChunked
-where
-    T: PolarsDataType,
-    ChunkedArray<T>: IntoGroupTuples,
-{
-    let groups = ca.group_tuples(true);
-    let mut out = is_unique_helper(groups, ca.len() as u32, false, true);
-    out.rename(ca.name());
-    out
+pub(crate) fn is_unique_helper(
+    groups: GroupTuples,
+    len: u32,
+    unique_val: bool,
+    duplicated_val: bool,
+) -> BooleanChunked {
+    debug_assert_ne!(unique_val, duplicated_val);
+    let idx = groups
+        .into_iter()
+        .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
+        .collect::<Vec<_>>();
+    finish_is_unique_helper(idx, len, unique_val, duplicated_val)
+}
+
+/// if inverse is true, this is an `is_duplicated`
+/// otherwise an `is_unique`
+macro_rules! is_unique_duplicated {
+    ($ca:expr, $inverse:expr) => {{
+        let mut idx_key = PlHashMap::new();
+
+        // instead of grouptuples, wich allocates a full vec per group, we now just toggle a boolean
+        // that's false if a group has multiple entries.
+        $ca.into_iter().enumerate().for_each(|(idx, key)| {
+            idx_key
+                .entry(key)
+                .and_modify(|v: &mut (u32, bool)| v.1 = false)
+                .or_insert((idx as u32, true));
+        });
+
+        let idx: Vec<_> = idx_key
+            .into_iter()
+            .filter_map(|(_k, v)| if v.1 { Some(v.0) } else { None })
+            .collect();
+        let mut out = is_unique_helper2(idx, $ca.len() as u32, !$inverse, $inverse);
+        out.rename($ca.name());
+        Ok(out)
+    }};
 }
 
 impl ChunkUnique<ListType> for ListChunked {
@@ -156,11 +179,11 @@ where
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        Ok(is_unique(self))
+        is_unique_duplicated!(self, false)
     }
 
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        Ok(is_duplicated(self))
+        is_unique_duplicated!(self, true)
     }
 
     fn value_counts(&self) -> Result<DataFrame> {
@@ -189,10 +212,10 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        Ok(is_unique(self))
+        is_unique_duplicated!(self, false)
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        Ok(is_duplicated(self))
+        is_unique_duplicated!(self, true)
     }
 
     fn value_counts(&self) -> Result<DataFrame> {
@@ -206,8 +229,13 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
 
 impl ChunkUnique<CategoricalType> for CategoricalChunked {
     fn unique(&self) -> Result<Self> {
-        let set = fill_set(self.into_iter());
-        let mut ca = UInt32Chunked::new_from_opt_iter(self.name(), set.iter().copied());
+        let cat_map = self.categorical_map.as_ref().unwrap();
+        let mut ca = match &**cat_map {
+            RevMapping::Local(a) => UInt32Chunked::new_from_iter(self.name(), 0..(a.len() as u32)),
+            RevMapping::Global(map, _, _) => {
+                UInt32Chunked::new_from_iter(self.name(), map.keys().copied())
+            }
+        };
         ca.categorical_map = self.categorical_map.clone();
         ca.cast()
     }
@@ -227,7 +255,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         impl_value_counts!(self)
     }
     fn n_unique(&self) -> Result<usize> {
-        self.cast::<UInt32Type>()?.n_unique()
+        Ok(self.categorical_map.as_ref().unwrap().len())
     }
 }
 
@@ -235,11 +263,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
 fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();
 
-    // let mut group_member_iter = groups.into_iter();
-    let mut av = AlignedVec::with_capacity_aligned(len);
-    for _ in 0..len {
-        av.push(0u8)
-    }
+    let mut av: AlignedVec<_> = (0..len).map(|_| 0u8).collect();
 
     for idx in groups {
         let elem = unsafe { av.inner.get_unchecked_mut(idx as usize) };
@@ -250,14 +274,11 @@ fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked 
 }
 
 #[cfg(not(feature = "dtype-u8"))]
-fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> Int64Chunked {
+fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> Int32Chunked {
     groups.sort_unstable();
 
     // let mut group_member_iter = groups.into_iter();
-    let mut av = AlignedVec::with_capacity_aligned(len);
-    for _ in 0..len {
-        av.push(0i64)
-    }
+    let mut av: AlignedVec<_> = (0..len).map(|_| 0i32).collect();
 
     for idx in groups {
         let elem = unsafe { av.inner.get_unchecked_mut(idx as usize) };
@@ -347,10 +368,10 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        Ok(is_unique(self))
+        is_unique_duplicated!(self, false)
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        Ok(is_duplicated(self))
+        is_unique_duplicated!(self, true)
     }
 }
 

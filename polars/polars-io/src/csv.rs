@@ -867,4 +867,25 @@ AUDCAD,1616455921,0.96212,0.95666,1"#;
         assert!(out.is_err());
         Ok(())
     }
+
+    #[test]
+    fn test_missing_fields() -> Result<()> {
+        let csv = r"1,2,3,4,5
+1,2,3
+1,2,3,4,5
+1,3,5";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).has_header(false).finish()?;
+        use polars_core::df;
+        let expect = df![
+            "column_1" => [1, 1, 1, 1],
+            "column_2" => [2, 2, 2, 3],
+            "column_3" => [3, 3, 3, 5],
+            "column_4" => [Some(4), None, Some(4), None],
+            "column_5" => [Some(5), None, Some(5), None]
+        ]?;
+        assert!(df.frame_equal_missing(&expect));
+        Ok(())
+    }
 }

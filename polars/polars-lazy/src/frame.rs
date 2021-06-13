@@ -362,9 +362,13 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn sort_by_exprs(self, by_exprs: Vec<Expr>, reverse: Vec<bool>) -> Self {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().sort(by_exprs, reverse).build();
-        Self::from_logical_plan(lp, opt_state)
+        if by_exprs.is_empty() {
+            self
+        } else {
+            let opt_state = self.get_opt_state();
+            let lp = self.get_plan_builder().sort(by_exprs, reverse).build();
+            Self::from_logical_plan(lp, opt_state)
+        }
     }
 
     /// Reverse the DataFrame
@@ -1072,6 +1076,7 @@ mod test {
     use crate::tests::get_df;
 
     use super::*;
+    use std::iter::FromIterator;
 
     fn scan_foods_csv() -> LazyFrame {
         let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
@@ -2211,5 +2216,38 @@ mod test {
         assert_eq!(out.shape(), (5, 3));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_filter_and_alias() -> Result<()> {
+        let df = df![
+            "a" => [0, 1, 2, 0, 2]
+        ]?;
+
+        let out = df
+            .lazy()
+            .with_column(col("a").pow(2.0).alias("a_squared"))
+            .filter(col("a_squared").gt(lit(1)).and(col("a").gt(lit(1))))
+            .collect()?;
+
+        let expected = df![
+            "a" => [2, 2],
+            "a_squared" => [4, 4]
+        ]?;
+
+        assert!(out.frame_equal(&expected));
+        Ok(())
+    }
+
+    #[test]
+    fn test_filter_lit() {
+        // see https://github.com/pola-rs/polars/issues/790
+        // failed due to broadcasting filters and splitting threads.
+        let iter = (0..100).map(|i| ('A'..='Z').nth(i % 26).unwrap().to_string());
+        let a = Series::from_iter(iter);
+        let df = DataFrame::new([a].into()).unwrap();
+
+        let out = df.lazy().filter(lit(true)).collect().unwrap();
+        assert_eq!(out.shape(), (100, 1));
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.14.1"
+version = "0.14.2"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -22,10 +22,13 @@ dtype-date64 = ["polars-core/dtype-date64", "polars-core/temporal"]
 dtype-date32 = ["polars-core/dtype-date32"]
 csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical", "arrow/io_csv"]
 #csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
+fmt = ["polars-core/plain_fmt"]
 
 [dependencies]
 arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "a0068a8ae892b281f7c66f0d1ee7396cb20f753a" }
 #arrow = {version = "4.2", default-features = false }
+#parquet_lib = {version = "4.2", package="parquet", optional = true}
+polars-core = {version = "0.14.2", path = "../polars-core", features = ["private"], default-features=false}
 csv = {version="1.1", optional=true}
 lexical = {version = "5.2", optional = true}
 num_cpus = "1.13.0"
@@ -38,11 +41,6 @@ anyhow = "1.0"
 rayon = "1.5"
 ahash = "0.7"
 num = "^0.4.0"
-
-[dependencies.polars-core]
-version = "0.14.1"
-path = "../polars-core"
-default-features = false
 
 [package.metadata.docs.rs]
 all-features = true
