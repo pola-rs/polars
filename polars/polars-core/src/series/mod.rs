@@ -1576,7 +1576,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::List(fld) => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| cast(arr, &ArrowDataType::LargeList(fld.clone())).unwrap())
+                    .map(|arr| cast::cast(arr, &ArrowDataType::LargeList(fld.clone())).unwrap())
                     .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }

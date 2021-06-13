@@ -231,8 +231,24 @@ impl ChunkCast for BooleanChunked {
     }
 }
 
+fn cast_inner_list_type(
+    list: &ListArray<i64>,
+    child_type: &arrow::datatypes::DataType,
+) -> ArrayRef {
+    let child = list.values();
+    let offsets = list.offsets();
+    let child = cast::cast(child, child_type)?;
+    let list = ListArray::from_data(
+        child_type.clone(),
+        offsets.clone(),
+        Arc::new(*child),
+        list.validity.clone(),
+    );
+    Arc::new(list) as ArrayRef
+}
+
 /// We cannot cast anything to or from List/LargeList
-/// So this implementation casts the inner tyupe
+/// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
@@ -243,21 +259,7 @@ impl ChunkCast for ListChunked {
             DataType::List(child_type) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|list| {
-                        let ad = list.data().clone();
-                        let child = ad.child_data()[0].clone();
-                        let child = make_array(child);
-                        let child = cast(&child, &child_type)?;
-
-                        let new = ArrayDataBuilder::new(ArrowDataType::LargeList(Box::new(
-                            ArrowField::new("", child.data_type().clone(), true),
-                        )))
-                        .len(list.len())
-                        .buffers(ad.buffers().to_vec())
-                        .add_child_data(child.data().clone())
-                        .build();
-                        Ok(make_array(new))
-                    })
+                    .map(|list| cast_inner_list_type(list, &child_type))
                     .collect::<Result<_>>()?;
                 let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
                 Ok(ChunkedArray::new_from_chunks(
@@ -273,21 +275,7 @@ impl ChunkCast for ListChunked {
             DataType::List(child_type) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|list| {
-                        let ad = list.data().clone();
-                        let child = ad.child_data()[0].clone();
-                        let child = make_array(child);
-                        let child = cast(&child, &child_type)?;
-
-                        let new = ArrayDataBuilder::new(ArrowDataType::LargeList(Box::new(
-                            ArrowField::new("", child.data_type().clone(), true),
-                        )))
-                        .len(list.len())
-                        .buffers(ad.buffers().to_vec())
-                        .add_child_data(child.data().clone())
-                        .build();
-                        Ok(make_array(new))
-                    })
+                    .map(|list| cast_inner_list_type(list, data_type))
                     .collect::<Result<_>>()?;
                 let ca = ListChunked::new_from_chunks(self.name(), chunks);
                 Ok(ca.into_series())
