@@ -210,7 +210,7 @@ impl ChunkCast for BooleanChunked {
     where
         N: PolarsDataType,
     {
-        if matches!(N::get_dtype(), Utf8Type) {
+        if matches!(N::get_dtype(), DataType::Utf8) {
             let mut ca = boolean_to_utf8(self);
             Ok(ChunkedArray::new_from_chunks(
                 self.name(),
@@ -221,7 +221,7 @@ impl ChunkCast for BooleanChunked {
         }
     }
     fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
-        if matches!(data_type, Utf8Type) {
+        if matches!(data_type, DataType::Utf8) {
             let mut ca = boolean_to_utf8(self);
             ca.rename(self.name());
             Ok(ca.into_series())
