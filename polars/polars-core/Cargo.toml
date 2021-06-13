@@ -70,6 +70,7 @@ parquet = ["arrow/io_parquet"]
 arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "a0068a8ae892b281f7c66f0d1ee7396cb20f753a", default-features = false }
 #arrow = {version = "4.2", default-features = false }
 #parquet = {version = "4.2", default-features = false, optional = true }
+polars-arrow = {version = "0.14.2", path = "../polars-arrow"}
 thiserror = "1.0"
 num = "^0.4"
 itertools = "0.10"
