@@ -12,11 +12,7 @@ where
     T: PolarsDataType,
 {
     if N::get_dtype() == T::get_dtype() {
-        // convince the compiler that N and T are the same type
-        return unsafe {
-            let ca = std::mem::transmute(ca.clone());
-            Ok(ca)
-        };
+        return Ok(ChunkedArray::new_from_chunks(ca.name(), ca.chunks.clone()));
     };
     let chunks = ca
         .chunks
@@ -199,15 +195,39 @@ impl ChunkCast for Utf8Chunked {
     }
 }
 
+fn boolean_to_utf8(ca: &BooleanChunked) -> Utf8Chunked {
+    ca.into_iter()
+        .map(|opt_b| match opt_b {
+            Some(true) => Some("true"),
+            Some(false) => Some("false"),
+            None => None,
+        })
+        .collect()
+}
+
 impl ChunkCast for BooleanChunked {
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
         N: PolarsDataType,
     {
-        cast_ca(self)
+        if matches!(N::get_dtype(), Utf8Type) {
+            let mut ca = boolean_to_utf8(self);
+            Ok(ChunkedArray::new_from_chunks(
+                self.name(),
+                std::mem::take(&mut ca.chunks),
+            ))
+        } else {
+            cast_ca(self)
+        }
     }
     fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
-        cast_with_dtype!(self, data_type)
+        if matches!(data_type, Utf8Type) {
+            let mut ca = boolean_to_utf8(self);
+            ca.rename(self.name());
+            Ok(ca.into_series())
+        } else {
+            cast_with_dtype!(self, data_type)
+        }
     }
 }
 
@@ -239,9 +259,11 @@ impl ChunkCast for ListChunked {
                         Ok(make_array(new))
                     })
                     .collect::<Result<_>>()?;
-                let ca = ListChunked::new_from_chunks(self.name(), chunks);
-                let ca = unsafe { std::mem::transmute(ca) };
-                Ok(ca)
+                let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
+                Ok(ChunkedArray::new_from_chunks(
+                    self.name(),
+                    std::mem::take(&mut ca.chunks),
+                ))
             }
             _ => Err(PolarsError::Other("Cannot cast list type".into())),
         }

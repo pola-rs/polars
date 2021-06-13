@@ -2250,4 +2250,21 @@ mod test {
         let out = df.lazy().filter(lit(true)).collect().unwrap();
         assert_eq!(out.shape(), (100, 1));
     }
+
+    #[test]
+    fn test_ternary_null() -> Result<()> {
+        let df = df![
+            "a" => ["a", "b", "c"]
+        ]?;
+
+        let out = df
+            .lazy()
+            .select(vec![when(col("a").eq(lit("c")))
+                .then(Null {}.lit())
+                .otherwise(col("a"))])
+            .collect()?;
+
+        dbg!(out);
+        Ok(())
+    }
 }
