@@ -67,7 +67,7 @@ dtype-u64 = []
 parquet = ["arrow/io_parquet"]
 
 [dependencies]
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "a0068a8ae892b281f7c66f0d1ee7396cb20f753a", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "c2fb6415327ae354f4d38408a7d894a175e557b3", default-features = false }
 #arrow = {version = "4.2", default-features = false }
 #parquet = {version = "4.2", default-features = false, optional = true }
 polars-arrow = {version = "0.14.2", path = "../polars-arrow"}
