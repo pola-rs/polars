@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use arrow::array::Array;
+use arrow::buffer::Buffer;
 
 impl<T> ToBitRepr for ChunkedArray<T>
 where
@@ -14,18 +15,11 @@ where
             let chunks = self
                 .downcast_iter()
                 .map(|array| {
-                    let data = array.data();
-                    let buffers = data.buffers().to_vec();
-                    let null_buf = data.null_buffer().cloned();
-
-                    let mut builder = ArrayData::builder(ArrowDataType::UInt64)
-                        .buffers(buffers)
-                        .len(array.len())
-                        .offset(array.offset());
-                    if let Some(null_buf) = null_buf {
-                        builder = builder.null_bit_buffer(null_buf);
-                    }
-                    make_array(builder.build())
+                    let buf = array.values().clone();
+                    // Safety:
+                    // we just check the size of T::Native to be 64 bits
+                    let buf = unsafe { std::mem::transmute::<_, Buffer<u64>>(buf) };
+                    PrimitiveArray::from_data(ArrowDataType::UInt64, buf, array.validity().clone())
                 })
                 .collect::<Vec<_>>();
             UInt64Chunked::new_from_chunks(self.name(), chunks)
@@ -39,18 +33,11 @@ where
             let chunks = self
                 .downcast_iter()
                 .map(|array| {
-                    let data = array.data();
-                    let buffers = data.buffers().to_vec();
-                    let null_buf = data.null_buffer().cloned();
-
-                    let mut builder = ArrayData::builder(ArrowDataType::UInt32)
-                        .buffers(buffers)
-                        .len(array.len())
-                        .offset(array.offset());
-                    if let Some(null_buf) = null_buf {
-                        builder = builder.null_bit_buffer(null_buf);
-                    }
-                    make_array(builder.build())
+                    let buf = array.values().clone();
+                    // Safety:
+                    // we just check the size of T::Native to be 32 bits
+                    let buf = unsafe { std::mem::transmute::<_, Buffer<u32>>(buf) };
+                    PrimitiveArray::from_data(ArrowDataType::UInt32, buf, array.validity().clone())
                 })
                 .collect::<Vec<_>>();
             UInt32Chunked::new_from_chunks(self.name(), chunks)
