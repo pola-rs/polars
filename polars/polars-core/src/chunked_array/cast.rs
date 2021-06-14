@@ -1,5 +1,6 @@
 //! Implementations of the ChunkCast Trait.
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
+use crate::chunked_array::kernels::{cast_logical, cast_physical};
 use crate::prelude::*;
 use arrow::array::Array;
 use arrow::compute::cast;
@@ -137,8 +138,8 @@ where
                 return Ok(ca);
             }
             // the underlying datatype is i64 so we transmute array
-            (Duration(_), Int64) => unsafe {
-                cast_from_dtype!(self, transmute_array_from_dtype, Int64.to_arrow())
+            (Duration(_), Int64) => {
+                cast_from_dtype!(self, cast_logical, Int64)
             },
             // paths not supported by arrow kernel
             // to float32
@@ -148,16 +149,16 @@ where
             // underlying type: i64
             | (Duration(_), UInt64)
             => {
-                cast_from_dtype!(self, cast_numeric_from_dtype, N::get_dtype().to_arrow())
+                cast_from_dtype!(self, cast_physical, N::get_dtype())
             }
             // to date64
             (Float64, Date64) | (Float32, Date64) => {
-                let out: Result<Int64Chunked> = cast_from_dtype!(self, cast_numeric_from_dtype, Int64.to_arrow());
+                let out: Result<Int64Chunked> = cast_from_dtype!(self, cast_physical, Int64);
                 out?.cast::<N>()
             }
             // to date64
             (Float64, Date32) | (Float32, Date32) => {
-                let out: Result<Int32Chunked> = cast_from_dtype!(self, cast_numeric_from_dtype, Int32.to_arrow());
+                let out: Result<Int32Chunked> = cast_from_dtype!(self, cast_physical, Int32);
                 out?.cast::<N>()
             }
             _ => cast_ca(self),
