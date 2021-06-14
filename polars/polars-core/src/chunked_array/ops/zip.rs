@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::utils::align_chunks_ternary;
-use arrow::compute::kernels::zip::zip;
+use arrow::compute::if_then_else::if_then_else;
 
 fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
     if predicate {
@@ -66,7 +66,7 @@ where
                 .zip(right.downcast_iter())
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
-                    let arr = zip(mask_c, left_c, right_c)?;
+                    let arr = if_then_else(mask_c, left_c, right_c)?;
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -87,7 +87,7 @@ impl ChunkZip<BooleanType> for BooleanChunked {
                 .zip(right.downcast_iter())
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
-                    let arr = zip(mask_c, left_c, right_c)?;
+                    let arr = if_then_else(mask_c, left_c, right_c)?.into();
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -107,7 +107,7 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
                 .zip(right.downcast_iter())
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
-                    let arr = zip(mask_c, left_c, right_c)?;
+                    let arr = if_then_else(mask_c, left_c, right_c)?.into();
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -127,7 +127,7 @@ impl ChunkZip<ListType> for ListChunked {
             .zip(right.downcast_iter())
             .zip(mask.downcast_iter())
             .map(|((left_c, right_c), mask_c)| {
-                let arr = zip(mask_c, left_c, right_c)?;
+                let arr = if_then_else(mask_c, left_c, right_c)?.into();
                 Ok(arr)
             })
             .collect::<Result<Vec<_>>>()?;
