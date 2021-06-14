@@ -40,7 +40,9 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    pub fn downcast_iter(&self) -> impl Iterator<Item = &PrimitiveArray<T>> + DoubleEndedIterator {
+    pub fn downcast_iter(
+        &self,
+    ) -> impl Iterator<Item = &PrimitiveArray<T::Native>> + DoubleEndedIterator {
         self.chunks
             .iter()
             .map(|arr| arr.as_any().downcast_ref().unwrap())

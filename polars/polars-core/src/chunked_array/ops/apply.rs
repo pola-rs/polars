@@ -275,7 +275,7 @@ impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
     }
 }
 
-impl<T> ChunkApplyKernel<PrimitiveArray<T>> for ChunkedArray<T>
+impl<T> ChunkApplyKernel<PrimitiveArray<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
