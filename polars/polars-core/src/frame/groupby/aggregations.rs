@@ -512,9 +512,7 @@ where
 
         macro_rules! impl_gb {
             ($type:ty, $agg_col:expr) => {{
-                let values_builder = PrimitiveArrayBuilder::<$type>::new(values_cap);
-                let mut builder =
-                    ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
+                let mut builder = ListPrimitiveChunkedBuilder::new("", groups.len(), values_cap);
                 for (_first, idx) in groups {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))
@@ -527,8 +525,7 @@ where
 
         macro_rules! impl_gb_utf8 {
             ($agg_col:expr) => {{
-                let values_builder = LargeStringBuilder::with_capacity(values_cap * 5, values_cap);
-                let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
+                let mut builder = ListUtf8ChunkedBuilder::new("", groups.len(), values_cap * 5);
                 for (_first, idx) in groups {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))
@@ -541,8 +538,7 @@ where
 
         macro_rules! impl_gb_bool {
             ($agg_col:expr) => {{
-                let values_builder = BooleanArrayBuilder::new(values_cap);
-                let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
+                let mut builder = ListBooleanChunkedBuilder::new("", groups.len(), values_cap);
                 for (_first, idx) in groups {
                     let s = unsafe {
                         $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))

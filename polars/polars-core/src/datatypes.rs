@@ -210,7 +210,6 @@ impl_polars_numeric!(Int32Type, i32);
 impl_polars_numeric!(Int64Type, i64);
 impl_polars_numeric!(Float32Type, f32);
 impl_polars_numeric!(Float64Type, f64);
-impl_polars_numeric!(Float32Type, f32);
 impl_polars_numeric!(Date32Type, i32);
 impl_polars_numeric!(Date64Type, i64);
 impl_polars_numeric!(Time64NanosecondType, i64);

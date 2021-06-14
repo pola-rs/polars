@@ -47,7 +47,7 @@ where
             .iter()
             .map(|arr| arr.as_any().downcast_ref().unwrap())
     }
-    pub fn downcast_chunks(&self) -> Chunks<'_, PrimitiveArray<T>> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, PrimitiveArray<T::Native>> {
         Chunks::new(&self.chunks)
     }
 

@@ -8,6 +8,7 @@ use crate::utils::{get_iter_capacity, CustomIterTools};
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::MutableBuffer;
+use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::{Borrow, Cow};

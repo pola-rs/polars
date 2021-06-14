@@ -34,6 +34,16 @@ pub(crate) mod window;
 #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
 pub(crate) mod zip;
 
+/// Transmute ChunkedArray to bit representation.
+/// This is useful in hashing context and reduces no.
+/// of compiled code paths.
+pub(crate) trait ToBitRepr {
+    fn bit_repr_is_large() -> bool;
+
+    fn bit_repr_large(&self) -> UInt64Chunked;
+    fn bit_repr_small(&self) -> UInt32Chunked;
+}
+
 pub trait ChunkAnyValue {
     /// Get a single value. Beware this is slow.
     /// If you need to use this slightly performant, cast Categorical to UInt32

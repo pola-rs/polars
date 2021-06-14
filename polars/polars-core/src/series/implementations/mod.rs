@@ -27,7 +27,7 @@ use crate::prelude::*;
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
-use arrow::buffer::Buffer;
+use arrow::bitmap::Bitmap;
 use std::borrow::Cow;
 use std::ops::Deref;
 
@@ -692,7 +692,7 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::is_duplicated(&self.0)
             }
 
-            fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+            fn null_bits(&self) -> Vec<(usize, Option<Bitmap>)> {
                 self.0.null_bits().collect()
             }
 

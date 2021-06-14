@@ -49,7 +49,7 @@ impl ChunkShiftFill<BooleanType, Option<bool>> for BooleanChunked {
     }
 }
 
-impl ChunkShift for BooleanChunked {
+impl ChunkShift<BooleanType> for BooleanChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }

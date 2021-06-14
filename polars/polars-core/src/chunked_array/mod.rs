@@ -1,7 +1,10 @@
 //! The typed heart of every Series column.
 use crate::prelude::*;
-use arrow::{array::*, bitmap::Bitmap, buffer::Buffer, datatypes::TimeUnit};
+use arrow::{array::*, bitmap::Bitmap, datatypes::TimeUnit};
 use itertools::Itertools;
+use polars_arrow::bit_util::get_bit;
+use polars_arrow::bit_util::round_upto_power_of_2;
+use polars_arrow::prelude::ValueSize;
 use std::convert::TryFrom;
 use std::iter::{Copied, Map};
 use std::marker::PhantomData;
@@ -576,7 +579,7 @@ where
     pub fn new_from_owned_with_null_bitmap(
         name: &str,
         values: AlignedVec<T::Native>,
-        buffer: Option<Buffer>,
+        buffer: Option<Bitmap>,
     ) -> Self {
         let arr = Arc::new(values.into_primitive_array::<T>(buffer));
         ChunkedArray {

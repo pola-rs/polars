@@ -43,115 +43,61 @@ macro_rules! to_temporal_unit {
         }
     };
 }
-to_temporal_unit!(
-    date32_to_week,
-    week,
-    date32_as_datetime,
-    Date32Type,
-    UInt32Type
-);
+to_temporal_unit!(date32_to_week, week, date32_as_datetime, i32, UInt32Type);
 to_temporal_unit!(
     date32_to_weekday,
     p_weekday,
     date32_as_datetime,
-    Date32Type,
+    i32,
     UInt32Type
 );
-to_temporal_unit!(
-    date32_to_year,
-    year,
-    date32_as_datetime,
-    Date32Type,
-    Int32Type
-);
-to_temporal_unit!(
-    date32_to_month,
-    month,
-    date32_as_datetime,
-    Date32Type,
-    UInt32Type
-);
-to_temporal_unit!(
-    date32_to_day,
-    day,
-    date32_as_datetime,
-    Date32Type,
-    UInt32Type
-);
+to_temporal_unit!(date32_to_year, year, date32_as_datetime, i32, Int32Type);
+to_temporal_unit!(date32_to_month, month, date32_as_datetime, i32, UInt32Type);
+to_temporal_unit!(date32_to_day, day, date32_as_datetime, i32, UInt32Type);
 to_temporal_unit!(
     date32_to_ordinal,
     ordinal,
     date32_as_datetime,
-    Date32Type,
+    i32,
     UInt32Type
 );
-to_temporal_unit!(
-    date64_to_week,
-    week,
-    date64_as_datetime,
-    Date64Type,
-    UInt32Type
-);
+to_temporal_unit!(date64_to_week, week, date64_as_datetime, i64, UInt32Type);
 to_temporal_unit!(
     date64_to_weekday,
     p_weekday,
     date64_as_datetime,
-    Date64Type,
+    i64,
     UInt32Type
 );
-to_temporal_unit!(
-    date64_to_year,
-    year,
-    date64_as_datetime,
-    Date64Type,
-    Int32Type
-);
-to_temporal_unit!(
-    date64_to_month,
-    month,
-    date64_as_datetime,
-    Date64Type,
-    UInt32Type
-);
-to_temporal_unit!(
-    date64_to_day,
-    day,
-    date64_as_datetime,
-    Date64Type,
-    UInt32Type
-);
-to_temporal_unit!(
-    date64_to_hour,
-    hour,
-    date64_as_datetime,
-    Date64Type,
-    UInt32Type
-);
+to_temporal_unit!(date64_to_year, year, date64_as_datetime, i64, Int32Type);
+to_temporal_unit!(date64_to_month, month, date64_as_datetime, i64, UInt32Type);
+to_temporal_unit!(date64_to_day, day, date64_as_datetime, i64, UInt32Type);
+to_temporal_unit!(date64_to_hour, hour, date64_as_datetime, i64, UInt32Type);
 to_temporal_unit!(
     date64_to_minute,
     minute,
     date64_as_datetime,
-    Date64Type,
+    i64,
     UInt32Type
 );
 to_temporal_unit!(
     date64_to_second,
     second,
     date64_as_datetime,
-    Date64Type,
+    i64,
     UInt32Type
 );
 to_temporal_unit!(
     date64_to_nanosecond,
     nanosecond,
     date64_as_datetime,
-    Date64Type,
+    i64,
     UInt32Type
 );
 to_temporal_unit!(
     date64_to_ordinal,
     ordinal,
     date64_as_datetime,
-    Date64Type,
+    i64,
     UInt32Type
 );

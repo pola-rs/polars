@@ -18,7 +18,7 @@ use crate::frame::groupby::*;
 use crate::prelude::*;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
-use arrow::buffer::Buffer;
+use arrow::bitmap::Bitmap;
 use std::borrow::Cow;
 
 impl<T> ChunkedArray<T> {
@@ -528,7 +528,7 @@ macro_rules! impl_dyn_series {
                 cast_and_apply!(self, is_duplicated,)
             }
 
-            fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+            fn null_bits(&self) -> Vec<(usize, Option<Bitmap>)> {
                 self.0.null_bits().collect()
             }
 
