@@ -64,11 +64,29 @@ dtype-u8 = []
 dtype-u16 = []
 dtype-u64 = []
 
+docs-selection = [
+    "ndarray",
+    "pivot",
+    "downsample",
+    "is_in",
+    "sort_multiple",
+    "rows",
+    "docs",
+    "strings",
+    "object",
+    "lazy",
+    "temporal",
+    "random",
+    "zip_with",
+    "round_series",
+    "checked_arithmetic"
+]
+
 [dependencies]
 arrow = {git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1", default-features=false}
-#arrow = {version = "4.2", default-features = false }
+#arrow = {version = "4.3", default-features = false }
 parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1"}
-#parquet = {version = "4.2", default-features = false, optional = true }
+#parquet = {version = "4.3", default-features = false, optional = true }
 polars-arrow = {version = "0.14.2", path = "../polars-arrow"}
 thiserror = "1.0"
 num = "^0.4"
@@ -92,6 +110,8 @@ lazy_static = "1.4"
 hashbrown = {version = "0.11", features = ["rayon"] }
 
 [package.metadata.docs.rs]
-all-features = true
+# not all because arrow 4.3 does not compile with simd
+#all-features = true
+features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

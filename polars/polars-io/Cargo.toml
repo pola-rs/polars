@@ -26,9 +26,9 @@ fmt = ["polars-core/plain_fmt"]
 
 [dependencies]
 arrow = {git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1", default-features=false}
-#arrow = {version = "4.2", default-features = false }
+#arrow = {version = "4.3", default-features = false }
 parquet_lib = {optional = true, package="parquet", git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1"}
-#parquet_lib = {version = "4.2", package="parquet", optional = true}
+#parquet_lib = {version = "4.3", package="parquet", optional = true}
 polars-core = {version = "0.14.2", path = "../polars-core", features = ["private"], default-features=false}
 polars-arrow = {version = "0.14.2", path = "../polars-arrow"}
 csv = {version="1.1", optional=true}
