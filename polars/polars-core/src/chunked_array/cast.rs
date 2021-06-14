@@ -239,11 +239,13 @@ fn cast_inner_list_type(
     let child = list.values();
     let offsets = list.offsets();
     let child = cast::cast(child, child_type)?;
+
+    let data_type = ListArray::<i64>::default_datatype(child_type.clone());
     let list = ListArray::from_data(
-        child_type.clone(),
+        data_type,
         offsets.clone(),
         Arc::new(*child),
-        list.validity.clone(),
+        list.validity().clone(),
     );
     Arc::new(list) as ArrayRef
 }
