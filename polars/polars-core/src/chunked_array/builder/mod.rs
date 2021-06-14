@@ -28,7 +28,7 @@ pub trait ChunkedBuilder<N, T> {
 }
 
 pub struct BooleanChunkedBuilder {
-    array_builder: BooleanArrayBuilder,
+    array_builder: BooleanPrimitive,
     field: Field,
 }
 
@@ -36,17 +36,18 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
     /// Appends a value of type `T` into the builder
     #[inline]
     fn append_value(&mut self, v: bool) {
-        self.array_builder.append_value(v);
+        self.array_builder.push(Some(v));
     }
 
     /// Appends a null slot into the builder
     #[inline]
     fn append_null(&mut self) {
-        self.array_builder.append_null();
+        self.array_builder.push(None);
     }
 
     fn finish(mut self) -> BooleanChunked {
-        let arr = Arc::new(self.array_builder.finish());
+        let arr: BooleanArray = self.array_builder.into();
+        let arr = Arc::new(arr) as ArrayRef;
 
         ChunkedArray {
             field: Arc::new(self.field),
@@ -60,7 +61,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
 impl BooleanChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
         BooleanChunkedBuilder {
-            array_builder: BooleanArrayBuilder::new(capacity),
+            array_builder: BooleanPrimitive::with_capacity(capacity),
             field: Field::new(name, DataType::Boolean),
         }
     }
@@ -83,17 +84,18 @@ where
     /// Appends a value of type `T` into the builder
     #[inline]
     fn append_value(&mut self, v: T::Native) {
-        self.array_builder.append_value(v)
+        self.array_builder.push(Some(v))
     }
 
     /// Appends a null slot into the builder
     #[inline]
     fn append_null(&mut self) {
-        self.array_builder.append_null()
+        self.array_builder.push(None)
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
-        let arr = Arc::new(self.array_builder.finish());
+        let arr: PrimitiveArray<T::Native> = self.array_builder.into();
+        let arr = Arc::new(arr) as ArrayRef;
 
         ChunkedArray {
             field: Arc::new(self.field),
