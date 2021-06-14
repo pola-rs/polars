@@ -10,10 +10,13 @@ use std::sync::Arc;
 
 type LargeStringArray = Utf8Array<u64>;
 
-impl ChunkedArray {
+impl<T> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
     /// First ensure that the chunks of lhs and rhs match and then iterates over the chunks and applies
     /// the comparison operator.
-    fn comparison<T: PolarsNumericType>(
+    fn comparison(
         &self,
         rhs: &ChunkedArray<T>,
         operator: impl Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> arrow::error::Result<BooleanArray>,
@@ -446,13 +449,16 @@ impl NumComp for u16 {}
 impl NumComp for u32 {}
 impl NumComp for u64 {}
 
-impl<T, Rhs> ChunkedArray<T>
+impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: NumCast,
-    Rhs: NumComp + ToPrimitive,
 {
-    fn primitive_compare_scalar(&self, rhs: Rhs, op: comparison::Operator) {
+    fn primitive_compare_scalar<Rhs: NumComp + ToPrimitive>(
+        &self,
+        rhs: Rhs,
+        op: comparison::Operator,
+    ) {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
         self.apply_kernel_cast(|arr| {
             Arc::new(comparison::primitive_compare_scalar(arr, rhs, op).unwrap())
@@ -495,7 +501,7 @@ where
     }
 }
 
-impl<T> Utf8Chunked {
+impl Utf8Chunked {
     fn utf8_compare_scalar(&self, rhs: &str, op: comparison::Operator) {
         self.apply_kernel_cast(|arr| {
             Arc::new(comparison::utf8_compare_scalar(arr, rhs, op).unwrap())

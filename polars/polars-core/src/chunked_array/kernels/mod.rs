@@ -33,7 +33,7 @@ where
 /// Casts a `PrimitiveArray` to a different physical type and logical type.
 /// This operation is `O(N)`
 /// Values that do not fit in the new physical type are converted to nulls.
-pub(crate) fn cast_physical<S, T>(arr: &PrimitiveArray<S>, datatype: &DataType) -> ArrayRef
+pub(crate) fn cast_physical<S, T>(arr: &PrimitiveArray<S::Native>, datatype: &DataType) -> ArrayRef
 where
     S: PolarsNumericType,
     T: PolarsNumericType,
@@ -45,7 +45,7 @@ where
     Arc::new(array)
 }
 
-pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
+pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T::Native>) -> ArrayRef
 where
     T: PolarsFloatType,
     T::Native: Float,
@@ -57,7 +57,7 @@ where
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
 }
 
-pub(crate) fn is_not_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
+pub(crate) fn is_not_nan<T>(arr: &PrimitiveArray<T::Native>) -> ArrayRef
 where
     T: PolarsFloatType,
     T::Native: Float,
@@ -69,7 +69,7 @@ where
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
 }
 
-pub(crate) fn is_finite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
+pub(crate) fn is_finite<T>(arr: &PrimitiveArray<T::Native>) -> ArrayRef
 where
     T: PolarsFloatType,
     T::Native: Float,
@@ -81,7 +81,7 @@ where
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
 }
 
-pub(crate) fn is_infinite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
+pub(crate) fn is_infinite<T>(arr: &PrimitiveArray<T::Native>) -> ArrayRef
 where
     T: PolarsFloatType,
     T::Native: Float,

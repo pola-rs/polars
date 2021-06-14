@@ -64,7 +64,10 @@ where
         + Mul<Output = T::Native>
         + Div<Output = T::Native>
         + num::Zero,
-    Kernel: Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> arrow::error::Result<PrimitiveArray<T>>,
+    Kernel: Fn(
+        &PrimitiveArray<T>,
+        &PrimitiveArray<T>,
+    ) -> arrow::error::Result<PrimitiveArray<T::Native>>,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     let mut ca = match (lhs.len(), rhs.len()) {

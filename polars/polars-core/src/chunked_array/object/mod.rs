@@ -4,7 +4,6 @@ mod iterator;
 pub use crate::prelude::*;
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use arrow::buffer::MutableBuffer;
 use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::sync::Arc;
@@ -14,7 +13,7 @@ pub struct ObjectArray<T>
 where
     T: PolarsObject,
 {
-    pub(crate) values: Arc<MutableBuffer<T>>,
+    pub(crate) values: Arc<Vec<T>>,
     pub(crate) null_bitmap: Option<Arc<Bitmap>>,
     pub(crate) null_count: usize,
     pub(crate) offset: usize,
@@ -30,7 +29,7 @@ where
     T: PolarsObject,
 {
     /// Get a reference to the underlying data
-    pub fn values(&self) -> &Arc<MutableBuffer<T>> {
+    pub fn values(&self) -> &Arc<Vec<T>> {
         &self.values
     }
 
@@ -50,7 +49,7 @@ where
     }
 }
 
-impl<T> Array for ObjectArray<T>
+impl<T> ObjectArray<T>
 where
     T: PolarsObject,
 {

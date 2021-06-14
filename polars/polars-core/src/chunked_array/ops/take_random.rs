@@ -262,7 +262,7 @@ pub struct NumTakeRandomChunked<'a, T>
 where
     T: PolarsNumericType,
 {
-    chunks: Vec<&'a PrimitiveArray<T>>,
+    chunks: Vec<&'a PrimitiveArray<T::Native>>,
     chunk_lens: Vec<u32>,
 }
 
@@ -308,7 +308,7 @@ pub struct NumTakeRandomSingleChunk<'a, T>
 where
     T: PolarsNumericType,
 {
-    arr: &'a PrimitiveArray<T>,
+    arr: &'a PrimitiveArray<T::Native>,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomSingleChunk<'a, T>

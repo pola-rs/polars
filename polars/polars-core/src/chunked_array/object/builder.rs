@@ -2,14 +2,13 @@ use super::*;
 use crate::prelude::*;
 use crate::utils::get_iter_capacity;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::MutableBuffer;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
 pub struct ObjectChunkedBuilder<T> {
     field: Field,
     bitmask_builder: MutableBitmap,
-    values: MutableBuffer<T>,
+    values: Vec<T>,
 }
 
 impl<T> ObjectChunkedBuilder<T>

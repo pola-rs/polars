@@ -4,10 +4,7 @@ use crate::{
     prelude::*,
     utils::{get_iter_capacity, NoNull},
 };
-use arrow::{
-    array::*,
-    buffer::{Buffer, MutableBuffer},
-};
+use arrow::{array::*, bitmap::Bitmap, buffer::MutableBuffer};
 use num::Num;
 use std::borrow::Cow;
 use std::iter::FromIterator;
@@ -72,7 +69,7 @@ where
     T: PolarsPrimitiveType,
     T::Native: Default,
 {
-    array_builder: Primitive<T>,
+    array_builder: Primitive<T::Native>,
     field: Field,
 }
 
@@ -199,7 +196,7 @@ impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
 }
 
 /// Get the null count and the null bitmap of the arrow array
-pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
+pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Bitmap>) {
     let data = arr.data();
     (
         data.null_count(),
@@ -211,11 +208,11 @@ pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
-impl<T> FromIterator<(MutableBuffer<T::Native>, Option<Buffer>)> for ChunkedArray<T>
+impl<T> FromIterator<(MutableBuffer<T::Native>, Option<Bitmap>)> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn from_iter<I: IntoIterator<Item = (MutableBuffer<T::Native>, Option<Buffer>)>>(
+    fn from_iter<I: IntoIterator<Item = (MutableBuffer<T::Native>, Option<Bitmap>)>>(
         iter: I,
     ) -> Self {
         let mut chunks = vec![];
@@ -358,7 +355,7 @@ pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub builder: ListPrimitive<i32, Primitive<T>, T>,
+    pub builder: LargePrimitiveBuilder<T::Native>,
     field: Field,
 }
 
@@ -378,18 +375,19 @@ impl<T> ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub fn new(name: &str, values_builder: Primitive<T>, capacity: usize) -> Self {
-        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
+    pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
+        let builder =
+            LargePrimitiveBuilder::<T::Native>::with_capacities(capacity, values_capacity);
         let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
 
-        ListPrimitiveChunkedBuilder { builder, field }
+        Self { builder, field }
     }
 
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
         match opt_v {
             Some(v) => {
                 self.builder.values().append_slice(v);
-                self.builder.append(true).expect("should not fail");
+                self.builder.push(true);
             }
             None => {
                 self.builder.append(false).expect("should not fail");
@@ -453,8 +451,9 @@ where
     }
 }
 
-type LargeListUtf8Builder = ListPrimitive<i64, Utf8Primitive<i64>, _>;
-type LargeListBooleanBuilder = ListPrimitive<i64, BooleanPrimitive, _>;
+type LargePrimitiveBuilder<T> = ListPrimitive<i64, Primitive<T>, T>;
+type LargeListUtf8Builder = ListPrimitive<i64, Utf8Primitive<i64>, &'static str>;
+type LargeListBooleanBuilder = ListPrimitive<i64, BooleanPrimitive, bool>;
 
 pub struct ListUtf8ChunkedBuilder {
     builder: LargeListUtf8Builder,
@@ -462,8 +461,8 @@ pub struct ListUtf8ChunkedBuilder {
 }
 
 impl ListUtf8ChunkedBuilder {
-    pub fn new(name: &str, capacity: usize) -> Self {
-        let builder = LargeListUtf8Builder::with_capacity(values_builder, capacity);
+    pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
+        let builder = LargeListUtf8Builder::with_capacities(capacity, values_capacity);
         let field = Field::new(name, DataType::List(ArrowDataType::LargeUtf8));
 
         ListUtf8ChunkedBuilder { builder, field }
@@ -506,13 +505,13 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
 }
 
 pub struct ListBooleanChunkedBuilder {
-    builder: LargeListBuilder<BooleanArrayBuilder>,
+    builder: LargeListBooleanBuilder,
     field: Field,
 }
 
 impl ListBooleanChunkedBuilder {
-    pub fn new(name: &str, values_builder: BooleanArrayBuilder, capacity: usize) -> Self {
-        let builder = LargeListBuilder::with_capacity(values_builder, capacity);
+    pub fn new(name: &str, capacity: usize, values_capacacity: usize) -> Self {
+        let builder = LargeListBooleanBuilder::with_capacities(capacity, values_capacacity);
         let field = Field::new(name, DataType::List(ArrowDataType::Boolean));
 
         Self { builder, field }
@@ -562,23 +561,19 @@ pub fn get_list_builder(
 ) -> Box<dyn ListBuilderTrait> {
     macro_rules! get_primitive_builder {
         ($type:ty) => {{
-            let values_builder = PrimitiveArrayBuilder::<$type>::new(value_capacity);
-            let builder = ListPrimitiveChunkedBuilder::new(&name, values_builder, list_capacity);
+            let builder = ListPrimitiveChunkedBuilder::new(&name, value_capacity);
             Box::new(builder)
         }};
     }
     macro_rules! get_bool_builder {
         () => {{
-            let values_builder = BooleanArrayBuilder::new(value_capacity);
-            let builder = ListBooleanChunkedBuilder::new(&name, values_builder, list_capacity);
+            let builder = ListBooleanChunkedBuilder::new(&name, list_capacity, value_capacity);
             Box::new(builder)
         }};
     }
     macro_rules! get_utf8_builder {
         () => {{
-            let values_builder =
-                LargeStringBuilder::with_capacity(value_capacity * 5, value_capacity);
-            let builder = ListUtf8ChunkedBuilder::new(&name, values_builder, list_capacity);
+            let builder = ListUtf8ChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
             Box::new(builder)
         }};
     }
@@ -608,8 +603,7 @@ mod test {
 
     #[test]
     fn test_list_builder() {
-        let values_builder = PrimitiveArrayBuilder::<Int32Type>::new(10);
-        let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
+        let mut builder = ListPrimitiveChunkedBuilder::new("a", 10, 5);
 
         // create a series containing two chunks
         let mut s1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]).into_series();
@@ -638,8 +632,7 @@ mod test {
 
     #[test]
     fn test_list_str_builder() {
-        let mut builder =
-            ListUtf8ChunkedBuilder::new("a", LargeStringBuilder::with_capacity(10, 10), 10);
+        let mut builder = ListUtf8ChunkedBuilder::new("a", 10, 10);
         builder.append_series(&Series::new("", &["foo", "bar"]));
         let ca = builder.finish();
         dbg!(ca);

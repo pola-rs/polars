@@ -29,7 +29,7 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
     I: IntoIterator<Item = usize>,
     F: Fn(T::Native, T::Native) -> T::Native,
 >(
-    arr: &PrimitiveArray<T>,
+    arr: &PrimitiveArray<T::Native>,
     indices: I,
     f: F,
     init: T::Native,
@@ -65,7 +65,7 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
     I: IntoIterator<Item = usize>,
     F: Fn(T::Native, T::Native) -> T::Native,
 >(
-    arr: &PrimitiveArray<T>,
+    arr: &PrimitiveArray<T::Native>,
     indices: I,
     f: F,
     init: T::Native,

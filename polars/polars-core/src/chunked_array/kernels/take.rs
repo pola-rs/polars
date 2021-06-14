@@ -1,10 +1,11 @@
 use crate::prelude::*;
 use arrow::array::*;
 use arrow::buffer::MutableBuffer;
+use arrow::types::NativeType;
 use std::sync::Arc;
 
 /// Take kernel for single chunk without nulls and arrow array as index.
-pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
+pub(crate) unsafe fn take_no_null_primitive<T: NativeType>(
     arr: &PrimitiveArray<T>,
     indices: &UInt32Array,
 ) -> Arc<PrimitiveArray<T>> {
@@ -28,7 +29,7 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
-    T: PolarsNumericType,
+    T: NativeType,
     I: IntoIterator<Item = usize>,
 >(
     arr: &PrimitiveArray<T>,
@@ -48,7 +49,7 @@ pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index that does bound checks.
-pub(crate) fn take_no_null_primitive_iter<T: PolarsNumericType, I: IntoIterator<Item = usize>>(
+pub(crate) fn take_no_null_primitive_iter<T: NativeType, I: IntoIterator<Item = usize>>(
     arr: &PrimitiveArray<T>,
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {
@@ -66,10 +67,7 @@ pub(crate) fn take_no_null_primitive_iter<T: PolarsNumericType, I: IntoIterator<
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index.
-pub(crate) unsafe fn take_primitive_iter_unchecked<
-    T: PolarsNumericType,
-    I: IntoIterator<Item = usize>,
->(
+pub(crate) unsafe fn take_primitive_iter_unchecked<T: NativeType, I: IntoIterator<Item = usize>>(
     arr: &PrimitiveArray<T>,
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {
@@ -88,7 +86,7 @@ pub(crate) unsafe fn take_primitive_iter_unchecked<
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index that does bound checks.
-pub(crate) fn take_primitive_iter<T: PolarsNumericType, I: IntoIterator<Item = usize>>(
+pub(crate) fn take_primitive_iter<T: NativeType, I: IntoIterator<Item = usize>>(
     arr: &PrimitiveArray<T>,
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {
@@ -111,7 +109,7 @@ pub(crate) fn take_primitive_iter<T: PolarsNumericType, I: IntoIterator<Item = u
 /// Take kernel for a single chunk without nulls and an iterator that can produce None values.
 /// This is used in join operations.
 pub(crate) unsafe fn take_no_null_primitive_opt_iter_unchecked<
-    T: PolarsNumericType,
+    T: NativeType,
     I: IntoIterator<Item = Option<usize>>,
 >(
     arr: &PrimitiveArray<T>,
@@ -130,7 +128,7 @@ pub(crate) unsafe fn take_no_null_primitive_opt_iter_unchecked<
 /// Take kernel for a single chunk and an iterator that can produce None values.
 /// This is used in join operations.
 pub(crate) unsafe fn take_primitive_opt_iter_unchecked<
-    T: PolarsNumericType,
+    T: NativeType,
     I: IntoIterator<Item = Option<usize>>,
 >(
     arr: &PrimitiveArray<T>,

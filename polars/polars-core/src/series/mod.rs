@@ -1,7 +1,7 @@
 //! Type agnostic columnar data structure.
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
-use arrow::{array::ArrayRef, buffer::Buffer};
+use arrow::{array::ArrayRef, bitmap::Bitmap};
 pub(crate) mod arithmetic;
 mod comparison;
 pub mod implementations;
@@ -655,7 +655,7 @@ pub trait SeriesTrait:
     }
 
     /// Get the bits that represent the null values of the underlying ChunkedArray
-    fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+    fn null_bits(&self) -> Vec<(usize, Option<Bitmap>)> {
         unimplemented!()
     }
 
