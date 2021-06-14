@@ -19,7 +19,11 @@ where
                     // Safety:
                     // we just check the size of T::Native to be 64 bits
                     let buf = unsafe { std::mem::transmute::<_, Buffer<u64>>(buf) };
-                    PrimitiveArray::from_data(ArrowDataType::UInt64, buf, array.validity().clone())
+                    Arc::new(PrimitiveArray::from_data(
+                        ArrowDataType::UInt64,
+                        buf,
+                        array.validity().clone(),
+                    )) as Arc<dyn Array>
                 })
                 .collect::<Vec<_>>();
             UInt64Chunked::new_from_chunks(self.name(), chunks)
@@ -37,7 +41,11 @@ where
                     // Safety:
                     // we just check the size of T::Native to be 32 bits
                     let buf = unsafe { std::mem::transmute::<_, Buffer<u32>>(buf) };
-                    PrimitiveArray::from_data(ArrowDataType::UInt32, buf, array.validity().clone())
+                    Arc::new(PrimitiveArray::from_data(
+                        ArrowDataType::UInt32,
+                        buf,
+                        array.validity().clone(),
+                    )) as Arc<dyn Array>
                 })
                 .collect::<Vec<_>>();
             UInt32Chunked::new_from_chunks(self.name(), chunks)

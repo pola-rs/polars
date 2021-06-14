@@ -410,16 +410,14 @@ where
         match opt_s {
             Some(s) => self.append_series(s),
             None => {
-                self.builder.append(false).unwrap();
+                self.builder.push(None);
             }
         }
     }
 
     #[inline]
     fn append_null(&mut self) {
-        let builder = self.builder.values();
-        builder.append_null();
-        self.builder.append(true).unwrap();
+        self.builder.push(None);
     }
 
     #[inline]

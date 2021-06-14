@@ -190,7 +190,8 @@ impl<T> ChunkedArray<T> {
         self.chunks = vec![arrow::compute::concat::concatenate(
             &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
         )
-        .unwrap()];
+        .unwrap()
+        .into()];
     }
 
     /// Unpack a Series to the same physical type.
@@ -345,7 +346,7 @@ impl<T> ChunkedArray<T> {
                 take_len = remaining_length;
             }
 
-            new_chunks.push(chunk.slice(remaining_offset, take_len));
+            new_chunks.push(chunk.slice(remaining_offset, take_len).into());
             remaining_length -= take_len;
             remaining_offset = 0;
             if remaining_length == 0 {
@@ -459,7 +460,7 @@ where
             let mut offset = 0;
             let chunks = chunk_id
                 .map(|len| {
-                    let out = array.slice(offset, len);
+                    let out = array.slice(offset, len).into();
                     offset += len;
                     out
                 })

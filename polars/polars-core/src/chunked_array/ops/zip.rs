@@ -66,7 +66,7 @@ where
                 .zip(right.downcast_iter())
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
-                    let arr = if_then_else(mask_c, left_c, right_c)?;
+                    let arr = if_then_else(mask_c, left_c, right_c)?.into();
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;

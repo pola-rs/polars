@@ -27,14 +27,14 @@ where
     #[inline]
     pub fn append_value(&mut self, v: T) {
         self.values.push(v);
-        self.bitmask_builder.append(true);
+        self.bitmask_builder.push(true);
     }
 
     /// Appends a null slot into the builder
     #[inline]
     pub fn append_null(&mut self) {
         self.values.push(T::default());
-        self.bitmask_builder.append(false);
+        self.bitmask_builder.push(false);
     }
 
     #[inline]
@@ -59,7 +59,7 @@ where
     }
 
     pub fn finish(mut self) -> ObjectChunked<T> {
-        let null_bit_buffer = self.bitmask_builder.finish();
+        let null_bit_buffer = self.bitmask_builder.into();
         let null_count = null_bit_buffer.count_set_bits();
 
         let null_bitmap = Bitmap::from(null_bit_buffer);

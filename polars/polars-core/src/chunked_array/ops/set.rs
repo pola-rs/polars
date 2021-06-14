@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 use arrow::array::ArrayRef;
+use polars_arrow::array::ValueSize;
 use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
 use std::sync::Arc;
 
@@ -66,6 +67,7 @@ where
                         self.downcast_iter().next().unwrap(),
                         idx.into_iter(),
                         value,
+                        T::get_dtype().to_arrow(),
                     )?;
                     return Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]));
                 }
@@ -114,7 +116,7 @@ where
                     .into_iter()
                     .zip(mask.downcast_iter())
                     .map(|(arr, mask)| {
-                        let a = set_with_mask(arr, mask, value);
+                        let a = set_with_mask(arr, mask, value, T::get_dtype().to_arrow());
                         Arc::new(a) as ArrayRef
                     })
                     .collect();

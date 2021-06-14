@@ -144,7 +144,7 @@ pub type DurationMillisecondChunked = ChunkedArray<DurationMillisecondType>;
 pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
-pub trait PolarsPrimitiveType: Send + Sync + PolarsDataType {
+pub trait PolarsPrimitiveType: Send + Sync + PolarsDataType + 'static {
     type Native: NativeType;
 }
 impl PolarsPrimitiveType for UInt8Type {
@@ -231,7 +231,7 @@ impl PolarsIntegerType for Time64NanosecondType {}
 impl PolarsIntegerType for DurationNanosecondType {}
 impl PolarsIntegerType for DurationMillisecondType {}
 
-pub trait PolarsFloatType: PolarsPrimitiveType {}
+pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 
