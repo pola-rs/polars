@@ -144,34 +144,62 @@ pub type DurationMillisecondChunked = ChunkedArray<DurationMillisecondType>;
 pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
-pub trait PolarsPrimitiveType: NativeType + Send + Sync + PolarsDataType {}
-impl PolarsPrimitiveType for UInt8Type {}
-impl PolarsPrimitiveType for UInt16Type {}
-impl PolarsPrimitiveType for UInt32Type {}
-impl PolarsPrimitiveType for UInt64Type {}
-impl PolarsPrimitiveType for Int8Type {}
-impl PolarsPrimitiveType for Int16Type {}
-impl PolarsPrimitiveType for Int32Type {}
-impl PolarsPrimitiveType for Int64Type {}
-impl PolarsPrimitiveType for Float32Type {}
-impl PolarsPrimitiveType for Float64Type {}
-impl PolarsPrimitiveType for Date32Type {}
-impl PolarsPrimitiveType for Date64Type {}
-impl PolarsPrimitiveType for Time64NanosecondType {}
-impl PolarsPrimitiveType for DurationNanosecondType {}
-impl PolarsPrimitiveType for DurationMillisecondType {}
+pub trait PolarsPrimitiveType: Send + Sync + PolarsDataType {
+    type Native: NativeType;
+}
+impl PolarsPrimitiveType for UInt8Type {
+    type Native = u8;
+}
+impl PolarsPrimitiveType for UInt16Type {
+    type Native = u16;
+}
+impl PolarsPrimitiveType for UInt32Type {
+    type Native = u32;
+}
+impl PolarsPrimitiveType for UInt64Type {
+    type Native = u64;
+}
+impl PolarsPrimitiveType for Int8Type {
+    type Native = i8;
+}
+impl PolarsPrimitiveType for Int16Type {
+    type Native = i16;
+}
+impl PolarsPrimitiveType for Int32Type {
+    type Native = i32;
+}
+impl PolarsPrimitiveType for Int64Type {
+    type Native = i64;
+}
+impl PolarsPrimitiveType for Float32Type {
+    type Native = f32;
+}
+impl PolarsPrimitiveType for Float64Type {
+    type Native = f64;
+}
+impl PolarsPrimitiveType for Date32Type {
+    type Native = i32;
+}
+impl PolarsPrimitiveType for Date64Type {
+    type Native = i64;
+}
+impl PolarsPrimitiveType for Time64NanosecondType {
+    type Native = i64;
+}
+impl PolarsPrimitiveType for DurationNanosecondType {
+    type Native = i64;
+}
+impl PolarsPrimitiveType for DurationMillisecondType {
+    type Native = i64;
+}
 
 macro_rules! impl_polars_numeric {
     ($ca:ident, $physical:ty) => {
-        impl PolarsNumericType for $ca {
-            type NATIVE = $physical;
-        }
+        impl PolarsNumericType for $ca {}
     };
 }
 
-pub trait PolarsNumericType: PolarsPrimitiveType {
-    type NATIVE;
-}
+pub trait PolarsNumericType: PolarsPrimitiveType {}
 impl_polars_numeric!(UInt8Type, u8);
 impl_polars_numeric!(UInt16Type, u16);
 impl_polars_numeric!(UInt32Type, u32);
