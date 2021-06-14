@@ -7,11 +7,43 @@ pub(crate) mod take_agg;
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
 
-use crate::datatypes::PolarsFloatType;
+use crate::datatypes::{DataType, PolarsFloatType, PolarsNumericType};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
+use arrow::types::NativeType;
 use num::Float;
 use std::sync::Arc;
+
+/// Casts a `PrimitiveArray` from its logical type to a logical type compatible
+/// with its physical type.
+/// This operation is `O(1)`
+/// # Panics
+/// Panics if `data_type` is not supported by type `T`
+pub(crate) fn cast_logical<T: NativeType>(arr: &PrimitiveArray<T>, data_type: &DataType) -> ArrayRef
+where
+    T: NativeType,
+{
+    Arc::new(PrimitiveArray::<T>::from_data(
+        data_type.to_arrow(),
+        arr.values().clone(),
+        arr.validity().clone(),
+    ))
+}
+
+/// Casts a `PrimitiveArray` to a different physical type and logical type.
+/// This operation is `O(N)`
+/// Values that do not fit in the new physical type are converted to nulls.
+pub(crate) fn cast_physical<S, T>(arr: &PrimitiveArray<S>, datatype: &DataType) -> ArrayRef
+where
+    S: PolarsNumericType,
+    T: PolarsNumericType,
+    T::Native: num::NumCast,
+    S::Native: num::NumCast,
+{
+    let array =
+        arrow::compute::cast::primitive_to_primitive::<_, T::Native>(arr, datatype.to_arrow());
+    Arc::new(array)
+}
 
 pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
