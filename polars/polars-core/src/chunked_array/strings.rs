@@ -57,7 +57,7 @@ impl Utf8Chunked {
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> Result<Self> {
         let chunks = self
             .downcast_iter()
-            .map(|c| substring(c, start, &length))
+            .map(|c| Ok(substring(c, start, &length)?.into()))
             .collect::<arrow::error::Result<_>>()?;
 
         Ok(Self::new_from_chunks(self.name(), chunks))

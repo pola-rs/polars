@@ -66,12 +66,13 @@ impl ChunkExplode for Utf8Chunked {
             .map(|t| t.0 as i64)
             .chain(std::iter::once(str_data.len() as i64));
 
-        let offsets = Buffer::from_trusted_len_iter(chars);
+        // char_indices is TrustedLen
+        let offsets = unsafe { Buffer::from_trusted_len_iter_unchecked(chars) };
 
         // the old bitmap doesn't fit on the exploded array, so we need to create a new one.
         let validity = if let Some(validity) = array.validity() {
             let capacity = offsets.len();
-            let mut bitmap = MutableBitmap::with_capacity(offsets - 1);
+            let mut bitmap = MutableBitmap::with_capacity(offsets.len() - 1);
 
             let mut count = 0;
             let mut last_idx = 0;
@@ -91,7 +92,8 @@ impl ChunkExplode for Utf8Chunked {
         } else {
             None
         };
-        let array = unsafe { Utf8Array::<i64>::from_data_unchecked(offsets, values, validity) };
+        let array =
+            unsafe { Utf8Array::<i64>::from_data_unchecked(offsets, values.clone(), validity) };
 
         let new_arr = Arc::new(array) as ArrayRef;
 

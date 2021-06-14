@@ -53,15 +53,11 @@ impl<T> ObjectArray<T>
 where
     T: PolarsObject,
 {
-    fn as_any(&self) -> &dyn Any {
+    pub fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn data_type(&self) -> &ArrowDataType {
-        unimplemented!()
-    }
-
-    fn slice(&self, offset: usize, length: usize) -> ArrayRef {
+    pub fn slice(&self, offset: usize, length: usize) -> Arc<Self> {
         let mut new = self.clone();
         let len = std::cmp::min(new.len - offset, length);
 
@@ -77,29 +73,29 @@ where
         Arc::new(new)
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.len
     }
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    fn is_null(&self, index: usize) -> bool {
+    pub fn is_null(&self, index: usize) -> bool {
         match &self.null_bitmap {
-            Some(b) => !b.is_set(index),
+            Some(b) => !b.get_bit(index),
             None => false,
         }
     }
 
-    fn is_valid(&self, index: usize) -> bool {
+    pub fn is_valid(&self, index: usize) -> bool {
         match &self.null_bitmap {
-            Some(b) => b.is_set(index),
+            Some(b) => b.get_bit(index),
             None => true,
         }
     }
 
-    fn null_count(&self) -> usize {
+    pub fn null_count(&self) -> usize {
         self.null_count
     }
 }

@@ -19,7 +19,10 @@ where
     fn comparison(
         &self,
         rhs: &ChunkedArray<T>,
-        operator: impl Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> arrow::error::Result<BooleanArray>,
+        operator: impl Fn(
+            &PrimitiveArray<T::Native>,
+            &PrimitiveArray<T::Native>,
+        ) -> arrow::error::Result<BooleanArray>,
     ) -> Result<BooleanChunked> {
         let chunks = self
             .downcast_iter()
@@ -77,7 +80,7 @@ where
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             // should not fail if arrays are equal
             self.comparison(rhs, |x, y| {
-                comparison::compare(x, comparison::Operator::Eq, y)
+                comparison::compare(x, y, comparison::Operator::Eq)
             })
             .expect("should not fail.")
         } else {
@@ -97,7 +100,7 @@ where
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, |x, y| {
-                comparison::compare(x, comparison::Operator::Neq, y)
+                comparison::compare(x, y, comparison::Operator::Neq)
             })
             .expect("should not fail.")
         } else {
@@ -117,7 +120,7 @@ where
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, |x, y| {
-                comparison::compare(x, comparison::Operator::Gt, y)
+                comparison::compare(x, y, comparison::Operator::Gt)
             })
             .expect("should not fail.")
         } else {
@@ -137,7 +140,7 @@ where
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, |x, y| {
-                comparison::compare(x, comparison::Operator::GtEq, y)
+                comparison::compare(x, y, comparison::Operator::GtEq)
             })
             .expect("should not fail.")
         } else {
@@ -157,7 +160,7 @@ where
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, |x, y| {
-                comparison::compare(x, comparison::Operator::Lt, y)
+                comparison::compare(x, y, comparison::Operator::Lt)
             })
             .expect("should not fail.")
         } else {
@@ -177,7 +180,7 @@ where
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, |x, y| {
-                comparison::compare(x, comparison::Operator::LtEq, y)
+                comparison::compare(x, y, comparison::Operator::LtEq)
             })
             .expect("should not fail.")
         } else {
@@ -409,7 +412,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
             self.comparison(rhs, |x, y| {
-                comparison::compare(x, comparison::Operator::Lt, y)
+                comparison::compare(x, y, comparison::Operator::Lt)
             })
             .expect("should not fail")
         } else {

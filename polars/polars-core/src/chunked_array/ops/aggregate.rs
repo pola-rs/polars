@@ -4,6 +4,8 @@ use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
+use arrow::compute::aggregate::SimdOrd;
+use arrow::types::NativeType;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use std::cmp::PartialOrd;
 
@@ -81,6 +83,7 @@ impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: PartialOrd + Num + NumCast + Zero,
+    <<T as datatypes::PolarsPrimitiveType>::Native as NativeType>::Simd: SimdOrd<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_iter()

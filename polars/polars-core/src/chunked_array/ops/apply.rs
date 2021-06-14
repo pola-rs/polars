@@ -281,13 +281,13 @@ where
 {
     fn apply_kernel<F>(&self, f: F) -> Self
     where
-        F: Fn(&PrimitiveArray<T>) -> ArrayRef,
+        F: Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
     {
         self.apply_kernel_cast(f)
     }
     fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
     where
-        F: Fn(&PrimitiveArray<T>) -> ArrayRef,
+        F: Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().into_iter().map(f).collect();

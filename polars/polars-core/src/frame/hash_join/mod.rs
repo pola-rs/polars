@@ -435,7 +435,7 @@ pub(crate) trait HashJoin<T> {
     }
 }
 
-impl HashJoin<f32> for Float32Chunked {
+impl HashJoin<Float32Type> for Float32Chunked {
     fn hash_join_inner(&self, other: &Float32Chunked) -> Vec<(u32, u32)> {
         let ca = self.bit_repr_small();
         let other = other.bit_repr_small();

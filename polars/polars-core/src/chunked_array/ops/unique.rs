@@ -126,7 +126,7 @@ where
     T: Hash + Eq,
 {
     let mut set = PlHashSet::new();
-    let mut unique = AlignedVec::with_capacity_aligned(capacity);
+    let mut unique = AlignedVec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
             unique.push(idx as u32)

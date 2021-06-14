@@ -801,7 +801,7 @@ where
 
 impl ChunkReverse<CategoricalType> for CategoricalChunked {
     fn reverse(&self) -> ChunkedArray<CategoricalType> {
-        self.cast::<u32>().unwrap().reverse().cast().unwrap()
+        self.cast::<UInt32Type>().unwrap().reverse().cast().unwrap()
     }
 }
 

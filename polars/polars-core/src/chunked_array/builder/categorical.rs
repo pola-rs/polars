@@ -12,10 +12,10 @@ impl RevMappingBuilder {
     fn insert(&mut self, idx: u32, value: &str) {
         use RevMappingBuilder::*;
         match self {
-            Local(builder) => builder.append_value(value).unwrap(),
+            Local(builder) => builder.push(Some(value)),
             Global(map, builder, _) => {
                 if !map.contains_key(&idx) {
-                    builder.append_value(value).unwrap();
+                    builder.push(Some(value));
                     let new_idx = builder.len() as u32 - 1;
                     map.insert(idx, new_idx);
                 }
@@ -26,10 +26,10 @@ impl RevMappingBuilder {
     fn finish(self) -> RevMapping {
         use RevMappingBuilder::*;
         match self {
-            Local(mut b) => RevMapping::Local(b.finish()),
+            Local(mut b) => RevMapping::Local(b.into()),
             Global(mut map, mut b, uuid) => {
                 map.shrink_to_fit();
-                RevMapping::Global(map, b.finish(), uuid)
+                RevMapping::Global(map, b.into(), uuid)
             }
         }
     }
@@ -112,10 +112,10 @@ impl CategoricalChunkedBuilder {
                         };
                         // we still need to check if the idx is already stored in our map
                         self.reverse_mapping.insert(idx, s);
-                        self.array_builder.append_value(idx);
+                        self.array_builder.push(Some(idx));
                     }
                     None => {
-                        self.array_builder.append_null();
+                        self.array_builder.push(None);
                     }
                 }
             }
@@ -133,10 +133,10 @@ impl CategoricalChunkedBuilder {
                                 idx
                             }
                         };
-                        self.array_builder.append_value(idx);
+                        self.array_builder.push(Some(idx));
                     }
                     None => {
-                        self.array_builder.append_null();
+                        self.array_builder.push(None);
                     }
                 }
             }
