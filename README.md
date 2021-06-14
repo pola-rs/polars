@@ -25,7 +25,7 @@ point to the `master` branch of this repo.
 polars = {git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
 ```
 ## Rust version
-Required Rust version `>=1.51`
+Required Rust version `>=1.52`
 
 # Python users read this!
 Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name. 

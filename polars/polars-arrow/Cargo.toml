@@ -10,6 +10,6 @@ description = "Arrow interfaces for Polars DataFrame library"
 
 [dependencies]
 arrow = {git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1", default-features = false}
-#arrow = {version = "4.2", default-features = false }
+#arrow = {version = "4.3", default-features = false }
 thiserror = "^1.0"
 num = "^0.4"
