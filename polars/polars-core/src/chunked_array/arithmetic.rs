@@ -2,7 +2,7 @@
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 use arrow::array::PrimitiveArray;
-use arrow::{array::ArrayRef, compute::arithmetics::basic};
+use arrow::{array::ArrayRef, compute, compute::arithmetics::basic};
 use num::{Num, NumCast, One, ToPrimitive, Zero};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
@@ -504,13 +504,25 @@ where
     fn pow_f32(&self, exp: f32) -> Float32Chunked {
         self.cast::<Float32Type>()
             .expect("f32 array")
-            .apply_kernel(|arr| Arc::new(compute::powf_scalar(arr, exp).unwrap()))
+            .apply_kernel(|arr| {
+                Arc::new(compute::arity::unary(
+                    arr,
+                    |x| x.powf(exp),
+                    DataType::Float32.to_arrow(),
+                ))
+            })
     }
 
     fn pow_f64(&self, exp: f64) -> Float64Chunked {
         self.cast::<Float64Type>()
             .expect("f64 array")
-            .apply_kernel(|arr| Arc::new(compute::powf_scalar(arr, exp).unwrap()))
+            .apply_kernel(|arr| {
+                Arc::new(compute::arity::unary(
+                    arr,
+                    |x| x.powf(exp),
+                    DataType::Float64.to_arrow(),
+                ))
+            })
     }
 }
 
