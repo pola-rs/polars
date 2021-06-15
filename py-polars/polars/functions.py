@@ -122,7 +122,8 @@ def read_csv(
     batch_size
         Number of lines to read into the buffer at once. Modify this to change performance.
     has_headers
-        If the CSV file has headers or not.
+        Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`,
+        `x` being an enumeration over every column in the dataset.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
     stop_after_n_rows
