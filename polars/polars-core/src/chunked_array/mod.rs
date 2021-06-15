@@ -8,6 +8,7 @@ use polars_arrow::prelude::ValueSize;
 use std::convert::TryFrom;
 use std::iter::{Copied, Map};
 use std::marker::PhantomData;
+use std::ops::Not;
 use std::sync::Arc;
 
 pub mod ops;
@@ -151,35 +152,25 @@ impl<T> ChunkedArray<T> {
 
     /// Get the index of the first non null value in this ChunkedArray.
     pub fn first_non_null(&self) -> Option<usize> {
-        if self.null_count() == self.len() {
-            None
-        } else if self.null_count() == 0 {
-            Some(0)
-        } else {
-            let mut offset = 0;
-            for (idx, validity) in self.null_bits().enumerate() {
-                if let Some(validity) = validity {
-                    if validity.null_count() == 0 {
-                        return Some(offset);
-                    } else {
-                        for (i, is_valid) in validity.iter().enumerate() {
-                            if is_valid {
-                                return Some(offset + i);
-                            }
-                        }
-                        offset += validity.len()
+        let mut offset = 0;
+        for null_bitmap in self.null_bits() {
+            if let Some(null_bitmap) = null_bitmap {
+                for (idx, is_valid) in null_bitmap.iter().enumerate() {
+                    if is_valid {
+                        return Some(offset + idx);
                     }
-                } else {
-                    return Some(offset);
                 }
+                offset += null_bitmap.len()
+            } else {
+                return Some(offset);
             }
-            None
         }
+        None
     }
 
-    /// Get the null count and the buffer of bits representing null values
+    /// Get the buffer of bits representing null values
     pub fn null_bits(&self) -> impl Iterator<Item = &Option<Bitmap>> + '_ {
-        self.chunks.iter().map(|arr| arr.as_ref().validity())
+        self.chunks.iter().map(|arr| arr.validity())
     }
 
     /// Shrink the capacity of this array to fit it's length.
@@ -268,6 +259,7 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Count the null values.
+    #[inline]
     pub fn null_count(&self) -> usize {
         self.chunks.iter().map(|arr| arr.null_count()).sum()
     }
@@ -361,12 +353,18 @@ impl<T> ChunkedArray<T> {
         let chunks = self
             .chunks
             .iter()
-            .map(|arr| Arc::new((&**arr).is_null_mask()) as ArrayRef)
+            .map(|arr| {
+                let bitmap = arr
+                    .validity()
+                    .map(|bitmap| !bitmap)
+                    .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
+                BooleanArray::from_data(bitmap, None)
+            })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_null", chunks)
     }
 
-    /// Get a mask of the null values.
+    /// Get a mask of the valid values.
     pub fn is_not_null(&self) -> BooleanChunked {
         if self.null_count() == 0 {
             return BooleanChunked::full("is_not_null", true, self.len());
@@ -374,7 +372,13 @@ impl<T> ChunkedArray<T> {
         let chunks = self
             .chunks
             .iter()
-            .map(|arr| Arc::new((&**arr).is_not_null_mask()) as ArrayRef)
+            .map(|arr| {
+                let bitmap = arr
+                    .validity()
+                    .clone()
+                    .unwrap_or_else(|| !Bitmap::new_zeroed(arr.len()));
+                BooleanArray::from_data(bitmap, None)
+            })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_not_null", chunks)
     }
@@ -635,7 +639,7 @@ where
     /// NOTE: null values should be taken into account by the user of these slices as they are handled
     /// separately
     pub fn data_views(&self) -> impl Iterator<Item = &[T::Native]> + DoubleEndedIterator {
-        self.downcast_iter().map(|arr| arr.values())
+        self.downcast_iter().map(|arr| arr.values().as_slice())
     }
 
     #[allow(clippy::wrong_self_convention)]
