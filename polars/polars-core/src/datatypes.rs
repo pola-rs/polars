@@ -8,7 +8,6 @@
 //!
 use crate::prelude::*;
 use ahash::RandomState;
-use arrow::array::*;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::types::NativeType;
 #[cfg(feature = "serde")]
@@ -86,7 +85,7 @@ pub struct BooleanType {}
 
 impl PolarsDataType for BooleanType {
     fn get_dtype() -> DataType {
-        DataType::Utf8
+        DataType::Boolean
     }
 }
 

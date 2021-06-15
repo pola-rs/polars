@@ -5,7 +5,7 @@ use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use arrow::array::{ArrayRef, UInt32Array};
+use arrow::array::ArrayRef;
 use std::marker::Sized;
 
 pub(crate) mod aggregate;
@@ -283,7 +283,7 @@ where
     I: Iterator<Item = usize>,
     INulls: Iterator<Item = Option<usize>>,
 {
-    Array(&'a UInt32Array),
+    Array(&'a Int32Array),
     Iter(I),
     // will return a null where None
     IterNulls(INulls),
@@ -293,8 +293,8 @@ pub type Dummy<T> = std::iter::Once<T>;
 pub type TakeIdxIter<'a, I> = TakeIdx<'a, I, Dummy<Option<usize>>>;
 pub type TakeIdxIterNull<'a, INull> = TakeIdx<'a, Dummy<usize>, INull>;
 
-impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
-    fn from(ca: &'a UInt32Chunked) -> Self {
+impl<'a> From<&'a Int32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
+    fn from(ca: &'a Int32Chunked) -> Self {
         if ca.chunks.len() == 1 {
             TakeIdx::Array(ca.downcast_iter().next().unwrap())
         } else {
@@ -924,7 +924,7 @@ pub trait ChunkZip<T> {
 }
 
 /// Apply kernels on the arrow array chunks in a ChunkedArray.
-pub trait ChunkApplyKernel<A> {
+pub trait ChunkApplyKernel<A: Array> {
     /// Apply kernel and return result as a new ChunkedArray.
     fn apply_kernel<F>(&self, f: F) -> Self
     where

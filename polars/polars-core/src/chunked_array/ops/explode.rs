@@ -31,11 +31,8 @@ impl ChunkExplode for ListChunked {
             .downcast_iter()
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
-        let list_data = listarr.data();
-        let values = listarr.values();
-        let offset_ptr = list_data.buffers()[0].as_ptr() as *const i64;
-        // offsets in the list array. These indicate where a new list starts
-        let offsets = unsafe { std::slice::from_raw_parts(offset_ptr, self.len()) };
+        let offsets = listarr.offsets();
+        let values = listarr.values().clone();
 
         let s = Series::try_from((self.name(), values)).unwrap();
         Ok((s, offsets))

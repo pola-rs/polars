@@ -74,7 +74,7 @@ where
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
                     (0, 1) => take_no_null_primitive(chunks.next().unwrap(), array) as ArrayRef,
-                    (_, 1) => take::take(chunks.next().unwrap(), array).unwrap(),
+                    (_, 1) => take::take(chunks.next().unwrap(), array).unwrap().into(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -147,7 +147,7 @@ where
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
+                    1 => take::take(chunks.next().unwrap(), array).unwrap().into(),
                     _ => {
                         let iter = array
                             .into_iter()
@@ -196,7 +196,7 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
+                    1 => take::take(chunks.next().unwrap(), array).unwrap().into(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -206,7 +206,7 @@ impl ChunkTake for BooleanChunked {
                         } else {
                             let iter = array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
                             let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
                             ca.rename(self.name());
                             ca
@@ -266,7 +266,7 @@ impl ChunkTake for BooleanChunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take::take(chunks.next().unwrap(), array).unwrap(),
+                    1 => take::take(chunks.next().unwrap(), array).unwrap().into(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -276,7 +276,7 @@ impl ChunkTake for BooleanChunked {
                         } else {
                             let iter = array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
                             let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
                             ca.rename(self.name());
                             ca
@@ -331,7 +331,7 @@ impl ChunkTake for Utf8Chunked {
                         } else {
                             let iter = array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
                             let mut ca: Utf8Chunked = take_opt_iter_n_chunks_unchecked!(self, iter);
                             ca.rename(self.name());
                             ca

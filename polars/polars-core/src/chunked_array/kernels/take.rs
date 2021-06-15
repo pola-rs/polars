@@ -15,13 +15,13 @@ pub(crate) unsafe fn take_no_null_primitive<T: NativeType>(
     let array_values = arr.values();
     let index_values = indices.values();
 
-    let mut values = MutableBuffer::<T::Native>::with_capacity_aligned(data_len);
+    let mut values = MutableBuffer::<T>::with_capacity(data_len);
     let iter = index_values
         .iter()
         .map(|idx| *array_values.get_unchecked(*idx as usize));
     values.extend(iter);
 
-    let nulls = indices.data_ref().null_buffer().cloned();
+    let nulls = indices.validity().clone();
 
     let arr = values.into_primitive_array::<T>(nulls);
     Arc::new(arr)
@@ -342,7 +342,7 @@ pub(crate) fn take_utf8_iter<I: IntoIterator<Item = usize>>(
 
 pub(crate) unsafe fn take_utf8(
     arr: &LargeStringArray,
-    indices: &UInt32Array,
+    indices: &Int32Array,
 ) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
@@ -364,7 +364,7 @@ pub(crate) unsafe fn take_utf8(
     };
 
     // 16 bytes per string as default alloc
-    let mut values_buf = AlignedVec::<u8>::with_capacity_aligned(values_capacity);
+    let mut values_buf = AlignedVec::<u8>::with_capacity(values_capacity);
 
     // both 0 nulls
     if arr.null_count() == 0 && indices.null_count() == 0 {

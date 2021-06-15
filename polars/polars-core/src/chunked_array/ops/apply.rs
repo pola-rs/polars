@@ -2,6 +2,7 @@
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::bitmap::Bitmap;
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
@@ -29,6 +30,17 @@ macro_rules! apply_enumerate {
     }};
 }
 
+fn to_array<T: PolarsNumericType>(
+    values: AlignedVec<T::Native>,
+    validity: &Option<Bitmap>,
+) -> ArrayRef {
+    Arc::new(PrimitiveArray::from_data(
+        T::get_dtype().to_arrow(),
+        values.into(),
+        validity.clone(),
+    ))
+}
+
 impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -38,32 +50,33 @@ where
         F: Fn(T::Native) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        let mut ca: ChunkedArray<S> = self
+        let mut chunks = self
             .data_views()
             .zip(self.null_bits())
-            .map(|(slice, (_null_count, opt_buffer))| {
-                let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
-                (vec, opt_buffer)
+            .map(|(slice, validity)| {
+                let values = AlignedVec::<_>::from(slice);
+                to_array::<T>(values, validity)
             })
             .collect();
-        ca.rename(self.name());
-        ca
+        ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
     where
-        F: Fn(Option<T::Native>) -> S::Native + Copy,
+        F: Fn(Option<T::Native>) -> S::Native,
         S: PolarsNumericType,
     {
         let chunks = self
             .downcast_iter()
             .map(|array| {
-                let av: AlignedVec<_> = if array.null_count() == 0 {
-                    array.values().iter().map(|&v| f(Some(v))).collect()
+                let values = if array.null_count() == 0 {
+                    let values = array.values().iter().map(|&v| f(Some(v)));
+                    AlignedVec::<_>::from_trusted_len_iter(values)
                 } else {
-                    array.into_iter().map(f).collect()
+                    let values = array.into_iter().map(|v| f(v.copied()));
+                    AlignedVec::<_>::from_trusted_len_iter(values)
                 };
-                Arc::new(av.into_primitive_array::<S>(None)) as ArrayRef
+                to_array::<S>(values, &None)
             })
             .collect();
         ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
@@ -73,17 +86,17 @@ where
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        let mut ca: ChunkedArray<T> = self
+        let chunks = self
             .data_views()
             .into_iter()
             .zip(self.null_bits())
-            .map(|(slice, (_null_count, opt_buffer))| {
-                let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
-                (vec, opt_buffer)
+            .map(|(slice, opt_buffer)| {
+                let values = slice.iter().copied().map(f);
+                let values = AlignedVec::<_>::from_trusted_len_iter(values);
+                to_array::<T>(values, opt_buffer)
             })
             .collect();
-        ca.rename(self.name());
-        ca
+        ChunkedArray::<T>::new_from_chunks(self.name(), chunks)
     }
 
     fn apply_on_opt<F>(&'a self, f: F) -> Self
@@ -93,7 +106,7 @@ where
         self.downcast_iter()
             .flatten()
             .trust_my_length(self.len())
-            .map(f)
+            .map(|v| f(v.copied()))
             .collect()
     }
 
@@ -109,7 +122,7 @@ where
                 .flatten()
                 .trust_my_length(self.len())
                 .enumerate()
-                .map(|(idx, opt_v)| opt_v.map(|v| f((idx, v))))
+                .map(|(idx, opt_v)| opt_v.map(|v| f((idx, *v))))
                 .collect()
         }
     }
@@ -122,7 +135,7 @@ where
             .flatten()
             .trust_my_length(self.len())
             .enumerate()
-            .map(f)
+            .map(|(idx, v)| f((idx, v.copied())))
             .collect()
     }
 }
@@ -134,11 +147,10 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         S: PolarsNumericType,
     {
         self.apply_kernel_cast(|array| {
-            let av: AlignedVec<_> = (0..array.len())
-                .map(|idx| unsafe { f(array.value_unchecked(idx)) })
-                .collect();
-            let null_bit_buffer = array.data_ref().null_buffer().cloned();
-            Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
+            let values = array.values().iter().map(f);
+            let values = AlignedVec::<_>::from_trusted_len_iter(values);
+            let null_bit_buffer = array.validity();
+            to_array::<S>(values, null_bit_buffer)
         })
     }
 
@@ -148,8 +160,8 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         S: PolarsNumericType,
     {
         self.apply_kernel_cast(|array| {
-            let av: AlignedVec<_> = array.into_iter().map(f).collect();
-            Arc::new(av.into_primitive_array::<S>(None)) as ArrayRef
+            let values = AlignedVec::<_>::from_trusted_len_iter(array.into_iter().map(f));
+            to_array::<S>(values, &None)
         })
     }
 
@@ -192,11 +204,9 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let av: AlignedVec<_> = (0..array.len())
-                    .map(|idx| unsafe { f(array.value_unchecked(idx)) })
-                    .collect();
-                let null_bit_buffer = array.data_ref().null_buffer().cloned();
-                Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
+                let values = array.values_iter().map(|x| f(x));
+                let values = AlignedVec::<_>::from_trusted_len_iter(values);
+                to_array::<S>(values, array.validity())
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
@@ -211,9 +221,9 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let av: AlignedVec<_> = array.into_iter().map(f).collect();
-                let null_bit_buffer = array.data_ref().null_buffer().cloned();
-                Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
+                let values = array.into_iter().map(|x| f(x));
+                let values = AlignedVec::<_>::from_trusted_len_iter(values);
+                to_array::<S>(values, array.validity())
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
@@ -323,15 +333,14 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let av: AlignedVec<_> = (0..array.len())
+                let values: AlignedVec<_> = (0..array.len())
                     .map(|idx| {
-                        let arrayref = unsafe { array.value_unchecked(idx) };
+                        let arrayref: ArrayRef = unsafe { array.value_unchecked(idx) }.into();
                         let series = Series::try_from(("", arrayref)).unwrap();
                         f(series)
                     })
                     .collect();
-                let null_bit_buffer = array.data_ref().null_buffer().cloned();
-                Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
+                to_array::<S>(values, array.validity())
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
@@ -346,21 +355,15 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let av: AlignedVec<_> = (0..array.len())
-                    .map(|idx| {
-                        let v = if array.is_valid(idx) {
-                            let arrayref = unsafe { array.value_unchecked(idx) };
-                            let series = Series::try_from(("", arrayref)).unwrap();
-                            Some(series)
-                        } else {
-                            None
-                        };
-
-                        f(v)
-                    })
-                    .collect();
-                let null_bit_buffer = array.data_ref().null_buffer().cloned();
-                Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
+                let values = array.iter().map(|x| {
+                    let x = x.map(|x| {
+                        let x: ArrayRef = x.into();
+                        Series::try_from(("", x)).unwrap()
+                    });
+                    f(x)
+                });
+                let values = AlignedVec::<_>::from_trusted_len_iter(values);
+                to_array::<S>(values, array.validity())
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
