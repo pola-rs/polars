@@ -65,7 +65,7 @@ def get_ffi_func(
         for example
             "call_foo_<>"
     dtype
-        polars dtype str
+        polars dtype str.
     obj
         Optional object to find the method for. If none provided globals are used.
     default
@@ -108,9 +108,9 @@ class Series:
         Parameters
         ----------
         name
-            Name of the series
+            Name of the series.
         values
-            Values of the series
+            Values of the series.
         nullable
             If nullable.
                 None values in a list will be interpreted as missing.
@@ -505,7 +505,7 @@ class Series:
 
     def to_frame(self) -> "DataFrame":
         """
-        Cast this Series to a DataFrame
+        Cast this Series to a DataFrame.
         """
         # implementation is in .frame due to circular imports
         pass
@@ -513,7 +513,7 @@ class Series:
     @property
     def dtype(self):
         """
-        Get the data type of this Series
+        Get the data type of this Series.
         """
         return dtypes[self._s.dtype()]
 
@@ -576,7 +576,7 @@ class Series:
 
     def min(self):
         """
-        Get the minimal value in this Series
+        Get the minimal value in this Series.
         """
         if self.dtype == Boolean:
             return self._s.min_u32()
@@ -587,7 +587,7 @@ class Series:
 
     def max(self):
         """
-        Get the maximum value in this Series
+        Get the maximum value in this Series.
         """
         if self.dtype == Boolean:
             return self._s.max_u32()
@@ -598,7 +598,7 @@ class Series:
 
     def std(self, ddof: int = 1) -> float:
         """
-        Get standard deviation of this Series
+        Get the standard deviation of this Series.
 
         Parameters
         ----------
@@ -611,7 +611,7 @@ class Series:
 
     def var(self, ddof: int = 1) -> float:
         """
-        Get variance of this Series
+        Get variance of this Series.
 
         Parameters
         ----------
@@ -624,32 +624,32 @@ class Series:
 
     def median(self) -> float:
         """
-        Get median of this Series
+        Get the median of this Series.
         """
         return self._s.median()
 
     def quantile(self, quantile: float) -> float:
         """
-        Get quantile value of this Series
+        Get the quantile value of this Series.
         """
         return self._s.quantile(quantile)
 
     def to_dummies(self) -> "DataFrame":
         """
-        Get dummy variables
+        Get dummy variables.
         """
         return polars.frame.wrap_df(self._s.to_dummies())
 
     def value_counts(self) -> "DataFrame":
         """
-        Count the unique values in a Series
+        Count the unique values in a Series.
         """
         return polars.frame.wrap_df(self._s.value_counts())
 
     @property
     def name(self):
         """
-        Get the name of this Series
+        Get the name of this Series.
         """
         return self._s.name()
 
@@ -660,9 +660,9 @@ class Series:
         Parameters
         ----------
         name
-            New name
+            New name.
         in_place
-            Modify the Series in place
+            Modify the Series in-place.
         """
         if in_place:
             self._s.rename(name)
@@ -673,7 +673,7 @@ class Series:
 
     def chunk_lengths(self) -> "List[int]":
         """
-        Get the length of each individual chunk
+        Get the length of each individual chunk.
         """
         return self._s.chunk_lengths()
 
@@ -685,34 +685,34 @@ class Series:
 
     def cum_sum(self, reverse: bool = False):
         """
-        Get an array with the cumulative sum computed at every element
+        Get an array with the cumulative sum computed at every element.
 
         Parameters
         ----------
         reverse
-            reverse the operation
+            reverse the operation.
         """
         return self._s.cum_sum(reverse)
 
     def cum_min(self, reverse: bool = False):
         """
-        Get an array with the cumulative min computed at every element
+        Get an array with the cumulative min computed at every element.
 
         Parameters
         ----------
         reverse
-            reverse the operation
+            reverse the operation.
         """
         return self._s.cum_min(reverse)
 
     def cum_max(self, reverse: bool = False):
         """
-        Get an array with the cumulative max computed at every element
+        Get an array with the cumulative max computed at every element.
 
         Parameters
         ----------
         reverse
-            reverse the operation
+            reverse the operation.
         """
         return self._s.cum_max(reverse)
 
@@ -729,7 +729,7 @@ class Series:
 
     def slice(self, offset: int, length: int) -> "Series":
         """
-        Get a slice of this Series
+        Get a slice of this Series.
 
         Parameters
         ----------
@@ -747,18 +747,18 @@ class Series:
         Parameters
         ----------
         other
-            Series to append
+            Series to append.
         """
         self._s.append(other._s)
 
     def filter(self, predicate: "Series") -> "Series":
         """
-        Filter elements by a boolean mask
+        Filter elements by a boolean mask.
 
         Parameters
         ----------
         predicate
-            Boolean mask
+            Boolean mask.
         """
         if isinstance(predicate, list):
             predicate = Series("", predicate)
@@ -766,23 +766,23 @@ class Series:
 
     def head(self, length: Optional[int] = None) -> "Series":
         """
-        Get first N elements as Series
+        Get first N elements as Series.
 
         Parameters
         ----------
         length
-            Length of the head
+            Length of the head.
         """
         return Series._from_pyseries(self._s.head(length))
 
     def tail(self, length: Optional[int] = None) -> "Series":
         """
-        Get last N elements as Series
+        Get last N elements as Series.
 
         Parameters
         ----------
         length
-            Length of the tail
+            Length of the tail.
         """
         return Series._from_pyseries(self._s.tail(length))
 
@@ -801,7 +801,7 @@ class Series:
         in_place
             Sort in place.
         reverse
-            Reverse sort
+            Reverse sort.
         """
         if in_place:
             self._s.sort_in_place(reverse)
@@ -840,13 +840,13 @@ class Series:
 
     def arg_min(self) -> Optional[int]:
         """
-        Get the index of the minimal value
+        Get the index of the minimal value.
         """
         return self._s.arg_min()
 
     def arg_max(self) -> Optional[int]:
         """
-        Get the index of the maxima value
+        Get the index of the maxima value.
         """
         return self._s.arg_max()
 
@@ -871,13 +871,13 @@ class Series:
 
     def null_count(self) -> int:
         """
-        Count the null values in this Series
+        Count the null values in this Series.
         """
         return self._s.null_count()
 
     def is_null(self) -> "Series":
         """
-        Get mask of null values
+        Get mask of null values.
 
         Returns
         -------
@@ -887,7 +887,7 @@ class Series:
 
     def is_not_null(self) -> "Series":
         """
-        Get mask of non null values
+        Get mask of non null values.
 
         Returns
         -------
@@ -897,7 +897,7 @@ class Series:
 
     def is_finite(self) -> "Series":
         """
-        Get mask of finite values if Series dtype is Float
+        Get mask of finite values if Series dtype is Float.
 
         Returns
         -------
@@ -907,7 +907,7 @@ class Series:
 
     def is_infinite(self) -> "Series":
         """
-        Get mask of infinite values if Series dtype is Float
+        Get mask of infinite values if Series dtype is Float.
 
         Returns
         -------
@@ -917,7 +917,7 @@ class Series:
 
     def is_nan(self) -> "Series":
         """
-        Get mask of NaN values if Series dtype is Float
+        Get mask of NaN values if Series dtype is Float.
 
         Returns
         -------
@@ -927,7 +927,7 @@ class Series:
 
     def is_not_nan(self) -> "Series":
         """
-        Get negated mask of NaN values if Series dtype is_not Float
+        Get negated mask of NaN values if Series dtype is_not Float.
 
         Returns
         -------
@@ -949,7 +949,7 @@ class Series:
 
     def arg_true(self) -> "Series":
         """
-        Get index values where Boolean Series evaluate True
+        Get index values where Boolean Series evaluate True.
 
         Returns
         -------
@@ -959,7 +959,7 @@ class Series:
 
     def is_unique(self) -> "Series":
         """
-        Get mask of all unique values
+        Get mask of all unique values.
 
         Returns
         -------
@@ -969,7 +969,7 @@ class Series:
 
     def is_duplicated(self) -> "Series":
         """
-        Get mask of all duplicated values
+        Get mask of all duplicated values.
 
         Returns
         -------
@@ -989,7 +989,7 @@ class Series:
 
     def series_equal(self, other: "Series", null_equal: bool = False) -> bool:
         """
-        Check if series equal with another Series.
+        Check if series is equal with another Series.
 
         Parameters
         ----------
@@ -1002,14 +1002,14 @@ class Series:
 
     def len(self) -> int:
         """
-        Length of this Series
+        Length of this Series.
         """
         return self._s.len()
 
     @property
     def shape(self) -> Tuple[int]:
         """
-        Shape of this Series
+        Shape of this Series.
         """
         return (self._s.len(),)
 
@@ -1071,7 +1071,7 @@ class Series:
 
     def is_float(self) -> bool:
         """
-        Check if this Series has floating point numbers
+        Check if this Series has floating point numbers.
         """
         return self.dtype in (Float32, Float64)
 
@@ -1115,7 +1115,7 @@ class Series:
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         """
-        Numpy universal functions
+        Numpy universal functions.
         """
         if self._s.n_chunks() > 0:
             self._s.rechunk(in_place=True)
@@ -1150,7 +1150,7 @@ class Series:
         Parameters
         ----------
         args
-            args will be sent to pyarrow.Array.to_numpy
+            args will be sent to pyarrow.Array.to_numpy.
         zero_copy_only
             If True, an exception will be raised if the conversion to a numpy
             array would require copying the underlying data (e.g. in presence
@@ -1174,7 +1174,7 @@ class Series:
         Parameters
         ----------
         filter
-            Boolean mask
+            Boolean mask.
         value
             Value to replace the the masked values with.
         """
@@ -1194,7 +1194,7 @@ class Series:
         idx
             Integers representing the index locations.
         value
-            replacement values
+            replacement values.
 
         Returns
         -------
@@ -1220,7 +1220,7 @@ class Series:
 
     def clone(self) -> "Series":
         """
-        Cheap deep clones
+        Cheap deep clones.
         """
         return wrap_s(self._s.clone())
 
@@ -1267,7 +1267,7 @@ class Series:
         func
             function or lambda.
         return_dtype
-            Output datatype. If none given the same datatype as this Series will be used.
+            Output datatype. If none is given, the same datatype as this Series will be used.
 
         Returns
         -------
@@ -1298,14 +1298,14 @@ class Series:
 
     def zip_with(self, mask: "Series", other: "Series") -> "Series":
         """
-        Where mask evaluates true take values from self. Where mask evaluates false, take values from other.
+        Where mask evaluates true, take values from self. Where mask evaluates false, take values from other.
 
         Parameters
         ----------
         mask
-            Boolean Series
+            Boolean Series.
         other
-            Series of same type
+            Series of same type.
 
         Returns
         -------
@@ -1329,12 +1329,12 @@ class Series:
     ) -> "Series":
         """
         apply a rolling min (moving min) over the values in this array.
-        a window of length `window_size` will traverse the array. the values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
-        values will be aggregated to their sum.                                                     ----------
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
 
         window_size
-            The length of the window
+            The length of the window.
         weight
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
@@ -1344,7 +1344,7 @@ class Series:
               `False` -> Any Null in the window leads to a Null in the aggregation result.
         min_periods
             The number of values in the window that should be non-null before computing a result.
-            If None it will be set equal to window size
+            If None, it will be set equal to window size.
         """
         if min_periods is None:
             min_periods = window_size
@@ -1360,13 +1360,13 @@ class Series:
         min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
-        apply a rolling max (moving max) over the values in this array.
-        a window of length `window_size` will traverse the array. the values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
-        values will be aggregated to their sum.                                                     ----------
+        Apply a rolling max (moving max) over the values in this array.
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
 
         window_size
-            The length of the window
+            The length of the window.
         weight
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
@@ -1376,7 +1376,7 @@ class Series:
               `False` -> Any Null in the window leads to a Null in the aggregation result.
         min_periods
             The number of values in the window that should be non-null before computing a result.
-            If None it will be set equal to window size
+            If None, it will be set equal to window size.
         """
         if min_periods is None:
             min_periods = window_size
@@ -1392,13 +1392,13 @@ class Series:
         min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
-        apply a rolling mean (moving mean) over the values in this array.
-        a window of length `window_size` will traverse the array. the values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
-        values will be aggregated to their sum.                                                     ----------
+        Apply a rolling mean (moving mean) over the values in this array.
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
 
         window_size
-            The length of the window
+            The length of the window.
         weight
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
@@ -1408,7 +1408,7 @@ class Series:
               `False` -> Any Null in the window leads to a Null in the aggregation result.
         min_periods
             The number of values in the window that should be non-null before computing a result.
-            If None it will be set equal to window size
+            If None, it will be set equal to window size.
         """
         if min_periods is None:
             min_periods = window_size
@@ -1424,13 +1424,13 @@ class Series:
         min_periods: "Optional[int]" = None,
     ) -> "Series":
         """
-        apply a rolling sum (moving sum) over the values in this array.
-        a window of length `window_size` will traverse the array. the values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. the resultingParameters
-        values will be aggregated to their sum.                                                     ----------
+        Apply a rolling sum (moving sum) over the values in this array.
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
 
         window_size
-            The length of the window
+            The length of the window.
         weight
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
@@ -1440,7 +1440,7 @@ class Series:
               `False` -> Any Null in the window leads to a Null in the aggregation result.
         min_periods
             The number of values in the window that should be non-null before computing a result.
-            If None it will be set equal to window size
+            If None, it will be set equal to window size.
         """
         if min_periods is None:
             min_periods = window_size
@@ -1467,16 +1467,16 @@ class Series:
         with_replacement: bool = False,
     ) -> "DataFrame":
         """
-        Sample from this Series by setting either `n` or `frac`
+        Sample from this Series by setting either `n` or `frac`.
 
         Parameters
         ----------
         n
-            Number of samples < self.len()
+            Number of samples < self.len().
         frac
-            Fraction between 0.0 and 1.0
+            Fraction between 0.0 and 1.0 .
         with_replacement
-            sample with replacement
+            sample with replacement.
         """
         if n is not None:
             return wrap_s(self._s.sample_n(n, with_replacement))
@@ -1496,7 +1496,7 @@ class Series:
 
     def n_unique(self) -> int:
         """
-        Count the number of unique values in this Series
+        Count the number of unique values in this Series.
         """
         return self._s.n_unique()
 
@@ -1513,21 +1513,21 @@ class Series:
     @property
     def dt(self) -> "DateTimeNameSpace":
         """
-        Create an object namespace of all datetime related methods
+        Create an object namespace of all datetime related methods.
         """
         return DateTimeNameSpace(self)
 
     @property
     def str(self) -> "StringNameSpace":
         """
-        Create an object namespace of all string related methods
+        Create an object namespace of all string related methods.
         """
         return StringNameSpace(self)
 
 
 class StringNameSpace:
     """
-    Series.str namespace
+    Series.str namespace.
     """
 
     def __init__(self, series: "Series"):
@@ -1540,7 +1540,7 @@ class StringNameSpace:
         Parameters
         ----------
         datatype
-            Date32 or Date64
+            Date32 or Date64.
         fmt
             formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
 
@@ -1566,12 +1566,12 @@ class StringNameSpace:
 
     def contains(self, pattern: str) -> "Series":
         """
-        Check if strings in Series contain regex pattern
+        Check if strings in Series contain regex pattern.
 
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A valid regex pattern.
 
         Returns
         -------
@@ -1581,64 +1581,64 @@ class StringNameSpace:
 
     def replace(self, pattern: str, value: str) -> "Series":
         """
-        Replace first regex match with a string value
+        Replace first regex match with a string value.
 
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A valid regex pattern.
         value
-            Substring to replace
+            Substring to replace.
         """
         return wrap_s(self._s.str_replace(pattern, value))
 
     def replace_all(self, pattern: str, value: str) -> "Series":
         """
-        Replace all regex matches with a string value
+        Replace all regex matches with a string value.
 
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A valid regex pattern.
         value
-            Substring to replace
+            Substring to replace.
         """
         return wrap_s(self._s.str_replace_all(pattern, value))
 
     def to_lowercase(self) -> "Series":
         """
-        Modify the strings to their lowercase equivalent
+        Modify the strings to their lowercase equivalent.
         """
         return wrap_s(self._s.str_to_lowercase())
 
     def to_uppercase(self) -> "Series":
         """
-        Modify the strings to their uppercase equivalent
+        Modify the strings to their uppercase equivalent.
         """
         return wrap_s(self._s.str_to_uppercase())
 
     def rstrip(self) -> "Series":
         """
-        Remove trailing whitespace
+        Remove trailing whitespace.
         """
         return self.replace(r"[ \t]+$", "")
 
     def lstrip(self) -> "Series":
         """
-        Remove leading whitespace
+        Remove leading whitespace.
         """
         return self.replace(r"^\s*", "")
 
     def slice(self, start: int, length: "Optional[int]" = None) -> "Series":
         """
-        Create subslices of the string values of a Utf8 Series
+        Create subslices of the string values of a Utf8 Series.
 
         Parameters
         ----------
         start
-            Start of the slice (negative indexing may be used)
+            Start of the slice (negative indexing may be used).
         length
-            Optional length of the slice
+            Optional length of the slice.
 
         Returns
         -------
@@ -1649,7 +1649,7 @@ class StringNameSpace:
 
 class DateTimeNameSpace:
     """
-    Series.dt namespace
+    Series.dt namespace.
     """
 
     def __init__(self, series: "Series"):
@@ -1667,8 +1667,8 @@ class DateTimeNameSpace:
 
     def year(self):
         """
-        Extract year from underlying Date representation.
-        Can be performed on Date32 and Date64
+        Extract the year from the underlying Date representation.
+        Can be performed on Date32 and Date64.
 
         Returns the year number in the calendar date.
 
@@ -1680,7 +1680,7 @@ class DateTimeNameSpace:
 
     def month(self):
         """
-        Extract month from underlying Date representation.
+        Extract the month from the underlying Date representation.
         Can be performed on Date32 and Date64
 
         Returns the month number starting from 1.
@@ -1694,7 +1694,7 @@ class DateTimeNameSpace:
 
     def week(self):
         """
-        Extract the week from underlying Date representation.
+        Extract the week from the underlying Date representation.
         Can be performed on Date32 and Date64
 
         Returns the ISO week number starting from 1.
@@ -1708,8 +1708,8 @@ class DateTimeNameSpace:
 
     def weekday(self):
         """
-        Extract the week day from underlying Date representation.
-        Can be performed on Date32 and Date64
+        Extract the week day from the underlying Date representation.
+        Can be performed on Date32 and Date64.
 
         Returns the weekday number where monday = 0 and sunday = 6
 
@@ -1721,8 +1721,8 @@ class DateTimeNameSpace:
 
     def day(self):
         """
-        Extract day from underlying Date representation.
-        Can be performed on Date32 and Date64
+        Extract the day from the underlying Date representation.
+        Can be performed on Date32 and Date64.
 
         Returns the day of month starting from 1.
         The return value ranges from 1 to 31. (The last day of month differs by months.)
@@ -1736,7 +1736,7 @@ class DateTimeNameSpace:
     def ordinal_day(self):
         """
         Extract ordinal day from underlying Date representation.
-        Can be performed on Date32 and Date64
+        Can be performed on Date32 and Date64.
 
         Returns the day of year starting from 1.
         The return value ranges from 1 to 366. (The last day of year differs by years.)
@@ -1749,8 +1749,8 @@ class DateTimeNameSpace:
 
     def hour(self):
         """
-        Extract day from underlying DateTime representation.
-        Can be performed on Date64
+        Extract the hour from the underlying DateTime representation.
+        Can be performed on Date64.
 
         Returns the hour number from 0 to 23.
 
@@ -1762,8 +1762,8 @@ class DateTimeNameSpace:
 
     def minute(self):
         """
-        Extract minutes from underlying DateTime representation.
-        Can be performed on Date64
+        Extract the minutes from the underlying DateTime representation.
+        Can be performed on Date64.
 
         Returns the minute number from 0 to 59.
 
@@ -1775,8 +1775,8 @@ class DateTimeNameSpace:
 
     def second(self):
         """
-        Extract seconds from underlying DateTime representation.
-        Can be performed on Date64
+        Extract the seconds the from underlying DateTime representation.
+        Can be performed on Date64.
 
         Returns the second number from 0 to 59.
 
@@ -1788,8 +1788,8 @@ class DateTimeNameSpace:
 
     def nanosecond(self):
         """
-        Extract seconds from underlying DateTime representation.
-        Can be performed on Date64
+        Extract the nanoseconds from the underlying DateTime representation.
+        Can be performed on Date64.
 
         Returns the number of nanoseconds since the whole non-leap second.
         The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
@@ -1819,7 +1819,7 @@ class DateTimeNameSpace:
 
 class SeriesIter:
     """
-    Utility class that allows slow iteration over a `Series`
+    Utility class that allows slow iteration over a `Series`.
     """
 
     def __init__(self, length: int, s: "Series"):
