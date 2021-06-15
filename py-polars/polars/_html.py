@@ -86,7 +86,7 @@ class HTMLFormatter:
 
     def write_header(self):
         """
-        Writes the header of an HTML table
+        Writes the header of an HTML table.
         """
         with Tag(self.elements, "thead"):
             with Tag(self.elements, "tr"):
@@ -101,7 +101,7 @@ class HTMLFormatter:
 
     def write_body(self):
         """
-        Writes the body of an HTML table
+        Writes the body of an HTML table.
         """
         with Tag(self.elements, "tbody"):
             for r in self.row_idx:
