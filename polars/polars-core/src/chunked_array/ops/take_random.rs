@@ -153,7 +153,7 @@ where
 }
 
 pub struct Utf8TakeRandom<'a> {
-    chunks: Chunks<'a, ListArray<i64>>,
+    chunks: Chunks<'a, Utf8Array<i64>>,
     chunk_lens: Vec<u32>,
 }
 
@@ -324,7 +324,7 @@ where
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.arr.value_unchecked(index)
+        *self.arr.values().get_unchecked(index)
     }
 }
 
@@ -361,7 +361,7 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.arr.value(index)
+        *self.arr.values().get_unchecked(index)
     }
 }
 
@@ -378,6 +378,7 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
     fn get(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get!(self, index);
         v.map(|v| {
+            let v: Arc<dyn Array> = v.into();
             let s = Series::try_from((self.ca.name(), v));
             s.unwrap()
         })

@@ -302,7 +302,7 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut av = MutableBuffer::<T>::with_capacity_aligned(capacity);
+        let mut av = MutableBuffer::<T>::with_capacity(capacity);
         for v in vectors {
             av.extend_from_slice(&v)
         }

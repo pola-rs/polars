@@ -17,7 +17,7 @@ where
     let chunks = ca
         .chunks
         .iter()
-        .map(|arr| cast::cast(arr, &N::get_dtype().to_arrow()))
+        .map(|arr| cast::cast(arr.as_ref(), &N::get_dtype().to_arrow()))
         .map(|arr| arr.map(|x| x.into()))
         .collect::<arrow::error::Result<Vec<_>>>()?;
 
@@ -29,7 +29,7 @@ macro_rules! cast_from_dtype {
         let chunks = $self
             .downcast_iter()
             .into_iter()
-            .map(|arr| $kernel(arr, $dtype))
+            .map(|arr| $kernel(arr, &$dtype))
             .collect();
 
         Ok(ChunkedArray::new_from_chunks($self.field.name(), chunks))
@@ -235,19 +235,14 @@ impl ChunkCast for BooleanChunked {
 fn cast_inner_list_type(
     list: &ListArray<i64>,
     child_type: &arrow::datatypes::DataType,
-) -> ArrayRef {
+) -> Result<ArrayRef> {
     let child = list.values();
     let offsets = list.offsets();
-    let child = cast::cast(child, child_type)?;
+    let child = cast::cast(child.as_ref(), child_type)?.into();
 
     let data_type = ListArray::<i64>::default_datatype(child_type.clone());
-    let list = ListArray::from_data(
-        data_type,
-        offsets.clone(),
-        Arc::new(*child),
-        list.validity().clone(),
-    );
-    Arc::new(list) as ArrayRef
+    let list = ListArray::from_data(data_type, offsets.clone(), child, list.validity().clone());
+    Ok(Arc::new(list) as ArrayRef)
 }
 
 /// We cannot cast anything to or from List/LargeList
@@ -278,7 +273,7 @@ impl ChunkCast for ListChunked {
             DataType::List(child_type) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|list| cast_inner_list_type(list, data_type))
+                    .map(|list| cast_inner_list_type(list, &data_type.to_arrow()))
                     .collect::<Result<_>>()?;
                 let ca = ListChunked::new_from_chunks(self.name(), chunks);
                 Ok(ca.into_series())

@@ -157,23 +157,20 @@ impl<T> ChunkedArray<T> {
             Some(0)
         } else {
             let mut offset = 0;
-            for (idx, (null_count, null_bit_buffer)) in self.null_bits().enumerate() {
-                if null_count == 0 {
-                    return Some(offset);
-                } else {
-                    let arr = &self.chunks[idx];
-                    let null_bit_buffer = null_bit_buffer.as_ref().unwrap();
-                    let bit_end = arr.offset() + arr.len();
-
-                    let byte_start = std::cmp::min(round_upto_power_of_2(arr.offset(), 8), bit_end);
-                    let data = null_bit_buffer.as_slice();
-
-                    for i in arr.offset()..byte_start {
-                        if get_bit(data, i) {
-                            return Some(offset + i);
+            for (idx, validity) in self.null_bits().enumerate() {
+                if let Some(validity) = validity {
+                    if validity.null_count() == 0 {
+                        return Some(offset);
+                    } else {
+                        for (i, is_valid) in validity.iter().enumerate() {
+                            if is_valid {
+                                return Some(offset + i);
+                            }
                         }
+                        offset += validity.len()
                     }
-                    offset += arr.len()
+                } else {
+                    return Some(offset);
                 }
             }
             None
@@ -512,7 +509,7 @@ where
         macro_rules! downcast_and_pack {
             ($casttype:ident, $variant:ident) => {{
                 let arr = &*(arr as *const dyn Array as *const $casttype);
-                let v = arr.value_unchecked(idx);
+                let v = arr.value(idx);
                 AnyValue::$variant(v)
             }};
         }

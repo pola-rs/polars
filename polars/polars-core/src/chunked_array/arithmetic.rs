@@ -323,7 +323,7 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(basic::div::div_scalar(arr, rhs).unwrap()))
+        self.apply_kernel(|arr| Arc::new(basic::div::div_scalar(arr, &rhs)))
     }
 }
 
@@ -354,7 +354,7 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(basic::rem::rem_scalar(arr, rhs).unwrap()))
+        self.apply_kernel(|arr| Arc::new(basic::rem::rem_scalar(arr, &rhs)))
     }
 }
 

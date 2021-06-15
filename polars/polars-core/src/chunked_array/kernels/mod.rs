@@ -41,7 +41,7 @@ where
     S::Native: num::NumCast,
 {
     let array =
-        arrow::compute::cast::primitive_to_primitive::<_, T::Native>(arr, datatype.to_arrow());
+        arrow::compute::cast::primitive_to_primitive::<_, T::Native>(arr, &datatype.to_arrow());
     Arc::new(array)
 }
 

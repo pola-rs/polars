@@ -26,10 +26,10 @@ impl RevMappingBuilder {
     fn finish(self) -> RevMapping {
         use RevMappingBuilder::*;
         match self {
-            Local(mut b) => RevMapping::Local(b.into()),
+            Local(mut b) => RevMapping::Local(b.to()),
             Global(mut map, mut b, uuid) => {
                 map.shrink_to_fit();
-                RevMapping::Global(map, b.into(), uuid)
+                RevMapping::Global(map, b.to(), uuid)
             }
         }
     }
@@ -148,7 +148,7 @@ impl CategoricalChunkedBuilder {
     }
 
     pub fn finish(mut self) -> ChunkedArray<CategoricalType> {
-        let arr = Arc::new(self.array_builder.finish());
+        let arr = self.array_builder.into_arc();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],

@@ -8,10 +8,10 @@ where
     T::Native: Float,
 {
     pub fn is_nan(&self) -> BooleanChunked {
-        self.apply_kernel_cast(is_nan)
+        self.apply_kernel_cast(is_nan::<T::Native>)
     }
     pub fn is_not_nan(&self) -> BooleanChunked {
-        self.apply_kernel_cast(is_not_nan)
+        self.apply_kernel_cast(is_not_nan::<T::Native>)
     }
     pub fn is_finite(&self) -> BooleanChunked {
         self.apply_kernel_cast(is_finite)

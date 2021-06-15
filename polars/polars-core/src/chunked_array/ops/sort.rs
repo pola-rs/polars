@@ -162,16 +162,8 @@ where
 
         if let Ok(vals) = self.cont_slice() {
             // Copy the values to a new aligned vec. This can be mutably sorted.
-            let n = self.len();
-            let vals_ptr = vals.as_ptr();
-            // allocate aligned
-            let mut new = AlignedVec::<T::Native>::with_capacity(n);
-            let new_ptr = new.as_mut_ptr();
-
-            // memcopy
-            unsafe { std::ptr::copy_nonoverlapping(vals_ptr, new_ptr, n) };
-            // set len to copied bytes
-            unsafe { new.set_len(n) };
+            assert_eq!(vals.len(), self.len());
+            let new = AlignedVec::<T::Native>::from(vals);
 
             sort_branch(
                 new.as_mut_slice(),

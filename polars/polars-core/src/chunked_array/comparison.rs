@@ -411,10 +411,8 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |x, y| {
-                comparison::compare(x, y, comparison::Operator::Lt)
-            })
-            .expect("should not fail")
+            self.comparison(rhs, comparison::Operator::Lt)
+                .expect("should not fail")
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
         }

@@ -1196,7 +1196,7 @@ impl Series {
         T: NumCast,
     {
         self.sum_as_series()
-            .cast::<f64>()
+            .cast::<Float64Type>()
             .ok()
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
@@ -1569,14 +1569,18 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Utf8 => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| cast::cast(arr, &ArrowDataType::LargeUtf8).unwrap().into())
+                    .map(|arr| cast::cast(&arr, &ArrowDataType::LargeUtf8).unwrap().into())
                     .collect_vec();
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::List(fld) => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| cast::cast(arr, &ArrowDataType::LargeList(fld.clone())).unwrap())
+                    .map(|arr| {
+                        cast::cast(&arr, &ArrowDataType::LargeList(fld.clone()))
+                            .unwrap()
+                            .into()
+                    })
                     .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }
@@ -1633,7 +1637,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| cast::cast(arr, &ArrowDataType::Date64).unwrap().into())
+                    .map(|arr| cast::cast(&arr, &ArrowDataType::Date64).unwrap().into())
                     .collect();
                 Ok(Date64Chunked::new_from_chunks(name, chunks).into_series())
             }
