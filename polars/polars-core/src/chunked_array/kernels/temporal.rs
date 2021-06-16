@@ -1,6 +1,9 @@
-use crate::chunked_array::{builder::get_bitmap, temporal::conversions_utils::*};
+use crate::chunked_array::temporal::conversions_utils::*;
 use crate::prelude::*;
-use arrow::array::{ArrayRef, PrimitiveArray};
+use arrow::{
+    array::{ArrayRef, PrimitiveArray},
+    compute::unary,
+};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use std::sync::Arc;
 
@@ -29,17 +32,11 @@ impl PolarsWeekDay for NaiveDate {
 
 macro_rules! to_temporal_unit {
     ($name: ident, $chrono_method:ident, $to_datetime_fn: expr, $dtype_in: ty, $dtype_out:ty) => {
-        pub fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
-            let vals = arr.values();
-            let (_null_count, null_bit_buffer) = get_bitmap(arr);
-            let av = vals
-                .iter()
-                .map(|&v| {
-                    let dt = $to_datetime_fn(v);
-                    dt.$chrono_method()
-                })
-                .collect::<AlignedVec<_>>();
-            Arc::new(av.into_primitive_array::<$dtype_out>(null_bit_buffer))
+        pub(crate) fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
+            Arc::new(unary::<_, _, $dtype_out>(arr, |value| {
+                let dt = $to_datetime_fn(value);
+                dt.$chrono_method()
+            }))
         }
     };
 }

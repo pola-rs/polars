@@ -196,15 +196,9 @@ impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
 }
 
 /// Get the null count and the null bitmap of the arrow array
-pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Buffer>) {
+pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<&Buffer>) {
     let data = arr.data();
-    (
-        data.null_count(),
-        data.null_bitmap().as_ref().map(|bitmap| {
-            let buff = bitmap.buffer_ref();
-            buff.clone()
-        }),
-    )
+    (data.null_count(), data.null_buffer())
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps

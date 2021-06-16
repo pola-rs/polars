@@ -532,7 +532,7 @@ macro_rules! impl_dyn_series {
                 cast_and_apply!(self, is_duplicated,)
             }
 
-            fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+            fn null_bits(&self) -> Vec<(usize, Option<&Buffer>)> {
                 self.0.null_bits().collect()
             }
 

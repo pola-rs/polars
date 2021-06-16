@@ -35,7 +35,7 @@ where
         T::DATA_TYPE,
         arr.len(),
         Some(null_count),
-        null_bit_buffer,
+        null_bit_buffer.cloned(),
         data.offset(),
         buf,
         child_data,
@@ -78,7 +78,7 @@ where
         .iter()
         .map(|v| num::cast::cast::<S::Native, T::Native>(*v).unwrap())
         .collect::<AlignedVec<T::Native>>();
-    Arc::new(av.into_primitive_array::<T>(null_bit_buffer))
+    Arc::new(av.into_primitive_array::<T>(null_bit_buffer.cloned()))
 }
 
 pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
@@ -94,7 +94,7 @@ where
         builder.append_value(v.is_nan());
     });
     let arr = match null_bit_buffer {
-        Some(buf) => builder.finish_with_null_buffer(buf),
+        Some(buf) => builder.finish_with_null_buffer(buf.clone()),
         None => builder.finish(),
     };
     Arc::new(arr)
@@ -113,7 +113,7 @@ where
         builder.append_value(!v.is_nan());
     });
     let arr = match null_bit_buffer {
-        Some(buf) => builder.finish_with_null_buffer(buf),
+        Some(buf) => builder.finish_with_null_buffer(buf.clone()),
         None => builder.finish(),
     };
     Arc::new(arr)
@@ -132,7 +132,7 @@ where
         builder.append_value(v.is_finite());
     });
     let arr = match null_bit_buffer {
-        Some(buf) => builder.finish_with_null_buffer(buf),
+        Some(buf) => builder.finish_with_null_buffer(buf.clone()),
         None => builder.finish(),
     };
     Arc::new(arr)
@@ -151,7 +151,7 @@ where
         builder.append_value(v.is_infinite());
     });
     let arr = match null_bit_buffer {
-        Some(buf) => builder.finish_with_null_buffer(buf),
+        Some(buf) => builder.finish_with_null_buffer(buf.clone()),
         None => builder.finish(),
     };
     Arc::new(arr)

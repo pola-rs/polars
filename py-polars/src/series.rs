@@ -1198,7 +1198,7 @@ macro_rules! impl_unsafe_from_ptr {
                 let ca = ChunkedArray::<$ca_type>::new_from_owned_with_null_bitmap(
                     self.name(),
                     av,
-                    null_bitmap,
+                    null_bitmap.cloned(),
                 );
                 Self::new(ca.into_series())
             }

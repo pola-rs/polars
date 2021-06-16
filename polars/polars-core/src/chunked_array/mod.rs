@@ -178,7 +178,7 @@ impl<T> ChunkedArray<T> {
                     return Some(offset);
                 } else {
                     let arr = &self.chunks[idx];
-                    let null_bit_buffer = null_bit_buffer.as_ref().unwrap();
+                    let null_bit_buffer = null_bit_buffer.unwrap();
                     let bit_end = arr.offset() + arr.len();
 
                     let byte_start = std::cmp::min(round_upto_power_of_2(arr.offset(), 8), bit_end);
@@ -196,8 +196,8 @@ impl<T> ChunkedArray<T> {
         }
     }
 
-    /// Get the null count and the buffer of bits representing null values
-    pub fn null_bits(&self) -> impl Iterator<Item = (usize, Option<Buffer>)> + '_ {
+    /// Get the null count and the buffer of bits representing the validity values
+    pub fn null_bits(&self) -> impl Iterator<Item = (usize, Option<&Buffer>)> + '_ {
         self.chunks.iter().map(|arr| get_bitmap(arr.as_ref()))
     }
 
