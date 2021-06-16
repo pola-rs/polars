@@ -8,7 +8,7 @@ use num::{Num, NumCast, ToPrimitive};
 use std::ops::{BitAnd, BitOr, Not};
 use std::sync::Arc;
 
-type LargeStringArray = Utf8Array<u64>;
+type LargeStringArray = Utf8Array<i64>;
 
 impl<T> ChunkedArray<T>
 where
@@ -453,13 +453,13 @@ impl NumComp for u64 {}
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast,
+    T::Native: NumCast + NumComp,
 {
     fn primitive_compare_scalar<Rhs: NumComp + ToPrimitive>(
         &self,
         rhs: Rhs,
         op: comparison::Operator,
-    ) {
+    ) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
         self.apply_kernel_cast(|arr| {
             Arc::new(comparison::primitive_compare_scalar(arr, rhs, op).unwrap())
@@ -470,7 +470,7 @@ where
 impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast,
+    T::Native: NumCast + NumComp,
     Rhs: NumComp + ToPrimitive,
 {
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
@@ -503,10 +503,8 @@ where
 }
 
 impl Utf8Chunked {
-    fn utf8_compare_scalar(&self, rhs: &str, op: comparison::Operator) {
-        self.apply_kernel_cast(|arr| {
-            Arc::new(comparison::utf8_compare_scalar(arr, rhs, op).unwrap())
-        })
+    fn utf8_compare_scalar(&self, rhs: &str, op: comparison::Operator) -> BooleanChunked {
+        self.apply_kernel_cast(|arr| Arc::new(comparison::utf8_compare_scalar(arr, rhs, op)))
     }
 }
 
@@ -516,26 +514,26 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 
     fn eq(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(comparison::Operator::Eq)
+        self.utf8_compare_scalar(rhs, comparison::Operator::Eq)
     }
     fn neq(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(comparison::Operator::Neq)
+        self.utf8_compare_scalar(rhs, comparison::Operator::Neq)
     }
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(comparison::Operator::Gt)
+        self.utf8_compare_scalar(rhs, comparison::Operator::Gt)
     }
 
     fn gt_eq(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(comparison::Operator::GtEq)
+        self.utf8_compare_scalar(rhs, comparison::Operator::GtEq)
     }
 
     fn lt(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(comparison::Operator::Lt)
+        self.utf8_compare_scalar(rhs, comparison::Operator::Lt)
     }
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(comparison::Operator::LtEq)
+        self.utf8_compare_scalar(rhs, comparison::Operator::LtEq)
     }
 }
 
@@ -686,7 +684,7 @@ impl Not for &BooleanChunked {
         let chunks = self
             .downcast_iter()
             .map(|a| {
-                let arr = compute::boolean::not(a).expect("should not fail");
+                let arr = compute::boolean::not(a);
                 Arc::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();

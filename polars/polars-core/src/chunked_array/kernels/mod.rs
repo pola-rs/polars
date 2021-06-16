@@ -7,7 +7,7 @@ pub(crate) mod take_agg;
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
 
-use crate::datatypes::{DataType, PolarsFloatType, PolarsNumericType};
+use crate::datatypes::{DataType, PolarsNumericType};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
@@ -45,10 +45,9 @@ where
     Arc::new(array)
 }
 
-pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T::Native>) -> ArrayRef
+pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
-    T: PolarsFloatType,
-    T::Native: Float,
+    T: NativeType + Float,
 {
     let validity = arr.validity();
 
@@ -57,10 +56,9 @@ where
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
 }
 
-pub(crate) fn is_not_nan<T>(arr: &PrimitiveArray<T::Native>) -> ArrayRef
+pub(crate) fn is_not_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
-    T: PolarsFloatType,
-    T::Native: Float,
+    T: NativeType + Float,
 {
     let validity = arr.validity();
 
@@ -69,10 +67,9 @@ where
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
 }
 
-pub(crate) fn is_finite<T>(arr: &PrimitiveArray<T::Native>) -> ArrayRef
+pub(crate) fn is_finite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
-    T: PolarsFloatType,
-    T::Native: Float,
+    T: NativeType + Float,
 {
     let validity = arr.validity();
 
@@ -81,10 +78,9 @@ where
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
 }
 
-pub(crate) fn is_infinite<T>(arr: &PrimitiveArray<T::Native>) -> ArrayRef
+pub(crate) fn is_infinite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
-    T: PolarsFloatType,
-    T::Native: Float,
+    T: NativeType + Float,
 {
     let validity = arr.validity();
 

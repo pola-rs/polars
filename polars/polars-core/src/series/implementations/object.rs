@@ -96,7 +96,7 @@ where
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &Int32Chunked) -> Result<Series> {
         let idx = if idx.chunks.len() > 1 {
             Cow::Owned(idx.rechunk())
         } else {

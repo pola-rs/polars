@@ -419,7 +419,7 @@ pub(crate) fn df_rows_to_hashes(
         .collect();
 
     let n_chunks = hashes[0].chunks().len();
-    let mut av = AlignedVec::with_capacity_aligned(keys.height());
+    let mut av = AlignedVec::with_capacity(keys.height());
 
     // two code paths, one has one layer of indirection less.
     if n_chunks == 1 {
@@ -481,6 +481,6 @@ pub(crate) fn df_rows_to_hashes(
         }
     }
 
-    let chunks = vec![Arc::new(av.into_primitive_array::<UInt64Type>(None)) as ArrayRef];
+    let chunks = vec![Arc::new(to_array::<UInt64Type>(av, None)) as ArrayRef];
     (UInt64Chunked::new_from_chunks("", chunks), build_hasher)
 }

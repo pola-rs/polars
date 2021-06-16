@@ -84,7 +84,9 @@ impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: PartialOrd + Num + NumCast + Zero + Simd,
-    <<T as datatypes::PolarsPrimitiveType>::Native as NativeType>::Simd: SimdOrd<T::Native>,
+    <<T as datatypes::PolarsPrimitiveType>::Native as Simd>::Simd: SimdOrd<T::Native>
+        + std::ops::Add<Output = <<T as datatypes::PolarsPrimitiveType>::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T>,
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_iter()

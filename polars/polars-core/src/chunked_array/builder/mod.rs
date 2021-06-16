@@ -4,7 +4,7 @@ use crate::{
     prelude::*,
     utils::{get_iter_capacity, NoNull},
 };
-use arrow::{array::*, bitmap::Bitmap, buffer::MutableBuffer};
+use arrow::{array::*, bitmap::Bitmap};
 use num::Num;
 use std::borrow::Cow;
 use std::iter::FromIterator;
@@ -91,7 +91,7 @@ where
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
-        let arr: PrimitiveArray<T::Native> = self.array_builder.into();
+        let arr: PrimitiveArray<T::Native> = self.array_builder.to(T::get_dtype().to_arrow());
         let arr = Arc::new(arr) as ArrayRef;
 
         ChunkedArray {
@@ -109,7 +109,7 @@ where
 {
     pub fn new(name: &str, capacity: usize) -> Self {
         PrimitiveChunkedBuilder {
-            array_builder: Primitive::<T>::with_capacity(capacity),
+            array_builder: Primitive::<T::Native>::with_capacity(capacity),
             field: Field::new(name, T::get_dtype()),
         }
     }
@@ -130,7 +130,7 @@ impl Utf8ChunkedBuilder {
     /// * `bytes_capacity` - Number of bytes needed to store the string values.
     pub fn new(name: &str, capacity: usize, bytes_capacity: usize) -> Self {
         Utf8ChunkedBuilder {
-            builder: Utf8Primitive::<i32>::with_capacity(bytes_capacity, capacity),
+            builder: Utf8Primitive::<i64>::with_capacities(capacity, bytes_capacity),
             capacity,
             field: Field::new(name, DataType::Utf8),
         }
@@ -139,25 +139,22 @@ impl Utf8ChunkedBuilder {
     /// Appends a value of type `T` into the builder
     #[inline]
     pub fn append_value<S: AsRef<str>>(&mut self, v: S) {
-        self.builder.append_value(v.as_ref()).unwrap();
+        self.builder.push(Some(v.as_ref()));
     }
 
     /// Appends a null slot into the builder
     #[inline]
     pub fn append_null(&mut self) {
-        self.builder.append_null().unwrap();
+        self.builder.push(None);
     }
 
     #[inline]
     pub fn append_option<S: AsRef<str>>(&mut self, opt: Option<S>) {
-        match opt {
-            Some(s) => self.append_value(s.as_ref()),
-            None => self.append_null(),
-        }
+        self.builder.push(opt.map(|x| x.as_ref()));
     }
 
     pub fn finish(mut self) -> Utf8Chunked {
-        let arr = Arc::new(self.builder.finish());
+        let arr = Arc::new(self.builder.to());
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
@@ -208,18 +205,15 @@ pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Bitmap>) {
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
-impl<T> FromIterator<(MutableBuffer<T::Native>, Option<Bitmap>)> for ChunkedArray<T>
+impl<T> FromIterator<(AlignedVec<T::Native>, Option<Bitmap>)> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn from_iter<I: IntoIterator<Item = (MutableBuffer<T::Native>, Option<Bitmap>)>>(
-        iter: I,
-    ) -> Self {
+    fn from_iter<I: IntoIterator<Item = (AlignedVec<T::Native>, Option<Bitmap>)>>(iter: I) -> Self {
         let mut chunks = vec![];
 
         for (values, opt_buffer) in iter {
-            let arr = values.into_primitive_array::<T>(opt_buffer);
-            chunks.push(Arc::new(arr) as ArrayRef)
+            chunks.push(to_array::<T>(values, opt_buffer))
         }
         ChunkedArray::new_from_chunks("from_iter", chunks)
     }

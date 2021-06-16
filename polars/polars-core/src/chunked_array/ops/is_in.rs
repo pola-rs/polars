@@ -17,9 +17,9 @@ where
         iter.into_iter().for_each(|opt_val| {
             // Safety
             // bit sizes are/ should be equal
-            let ptr = &opt_val.copied() as *const Option<T::Native> as *const Option<&P>;
+            let ptr = &opt_val.copied() as *const Option<T::Native> as *const Option<P>;
             let opt_val = *ptr;
-            set.insert(opt_val);
+            set.insert(&opt_val);
         })
     });
 
@@ -29,7 +29,7 @@ where
         .map(|opt_val| {
             // Safety
             // bit sizes are/ should be equal
-            let ptr = &opt_val.copied() as *const Option<T::Native> as *const Option<P>;
+            let ptr = &opt_val as *const Option<T::Native> as *const Option<P>;
             let opt_val = *ptr;
             set.contains(&opt_val)
         })
