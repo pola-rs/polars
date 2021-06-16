@@ -661,7 +661,7 @@ pub trait SeriesTrait:
     }
 
     /// Get the bits that represent the null values of the underlying ChunkedArray
-    fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+    fn null_bits(&self) -> Vec<(usize, Option<&Buffer>)> {
         unimplemented!()
     }
 

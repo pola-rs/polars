@@ -696,7 +696,7 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::is_duplicated(&self.0)
             }
 
-            fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+            fn null_bits(&self) -> Vec<(usize, Option<&Buffer>)> {
                 self.0.null_bits().collect()
             }
 
