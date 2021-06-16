@@ -3,9 +3,6 @@
 /// Note that the bound checks are optimized away.
 ///
 
-#[cfg(feature = "simd")]
-use packed_simd::u8x64;
-
 const BIT_MASK: [u8; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
 
 /// Returns the nearest number that is `>=` than `num` and is a multiple of 64
@@ -81,22 +78,4 @@ pub fn ceil(value: usize, divisor: usize) -> usize {
     } else {
         quot
     }
-}
-
-/// Performs SIMD bitwise binary operations.
-///
-/// # Safety
-///
-/// Note that each slice should be 64 bytes and it is the callers responsibility to ensure
-/// that this is the case.  If passed slices larger than 64 bytes the operation will only
-/// be performed on the first 64 bytes.  Slices less than 64 bytes will panic.
-#[cfg(simd)]
-pub unsafe fn bitwise_bin_op_simd<F>(left: &[u8], right: &[u8], result: &mut [u8], op: F)
-where
-    F: Fn(u8x64, u8x64) -> u8x64,
-{
-    let left_simd = u8x64::from_slice_unaligned_unchecked(left);
-    let right_simd = u8x64::from_slice_unaligned_unchecked(right);
-    let simd_result = op(left_simd, right_simd);
-    simd_result.write_to_slice_unaligned_unchecked(result);
 }
