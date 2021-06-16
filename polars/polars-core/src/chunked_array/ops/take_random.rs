@@ -361,7 +361,7 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        *self.arr.values().get_unchecked(index)
+        *self.arr.values().get_bit_unchecked(index)
     }
 }
 

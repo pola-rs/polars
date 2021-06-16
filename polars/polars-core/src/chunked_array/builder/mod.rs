@@ -192,18 +192,6 @@ impl ChunkedBuilder<Cow<'_, str>, Utf8Type> for Utf8ChunkedBuilderCow {
     }
 }
 
-/// Get the null count and the null bitmap of the arrow array
-pub fn get_bitmap<T: Array + ?Sized>(arr: &T) -> (usize, Option<Bitmap>) {
-    let data = arr.data();
-    (
-        data.null_count(),
-        data.null_bitmap().as_ref().map(|bitmap| {
-            let buff = bitmap.buffer_ref();
-            buff.clone()
-        }),
-    )
-}
-
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
 impl<T> FromIterator<(AlignedVec<T::Native>, Option<Bitmap>)> for ChunkedArray<T>
 where
@@ -295,7 +283,7 @@ where
 
         let mut builder = Utf8Primitive::<i64>::with_capacities(values_size, v.len());
         v.iter().for_each(|val| {
-            builder.append_value(val.as_ref()).unwrap();
+            builder.push(Some(val.as_ref()));
         });
 
         let field = Arc::new(Field::new(name, DataType::Utf8));

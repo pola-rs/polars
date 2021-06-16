@@ -553,7 +553,7 @@ macro_rules! impl_dyn_series {
                 self.0.median()
             }
 
-            fn take(&self, indices: &Int32Chunked) -> Series {
+            fn take(&self, indices: &UInt32Chunked) -> Series {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
                 } else {

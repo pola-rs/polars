@@ -354,9 +354,9 @@ impl<T> ChunkedArray<T> {
             .map(|arr| {
                 let bitmap = arr
                     .validity()
-                    .map(|bitmap| !bitmap)
+                    .map(|bitmap| !(&bitmap))
                     .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-                BooleanArray::from_data(bitmap, None)
+                Arc::new(BooleanArray::from_data(bitmap, None)) as ArrayRef
             })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_null", chunks)
@@ -374,8 +374,8 @@ impl<T> ChunkedArray<T> {
                 let bitmap = arr
                     .validity()
                     .clone()
-                    .unwrap_or_else(|| !Bitmap::new_zeroed(arr.len()));
-                BooleanArray::from_data(bitmap, None)
+                    .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
+                Arc::new(BooleanArray::from_data(bitmap, None)) as ArrayRef
             })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_not_null", chunks)
