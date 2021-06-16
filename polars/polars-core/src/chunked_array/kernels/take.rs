@@ -1,21 +1,20 @@
 use crate::prelude::*;
 use arrow::array::*;
 use arrow::buffer::MutableBuffer;
-use arrow::types::NativeType;
 use std::sync::Arc;
 
 /// Take kernel for single chunk without nulls and arrow array as index.
-pub(crate) unsafe fn take_no_null_primitive<T: NativeType>(
-    arr: &PrimitiveArray<T>,
+pub(crate) unsafe fn take_no_null_primitive<T: PolarsPrimitiveType>(
+    arr: &PrimitiveArray<T::Native>,
     indices: &UInt32Array,
-) -> Arc<PrimitiveArray<T>> {
+) -> Arc<PrimitiveArray<T::Native>> {
     assert_eq!(arr.null_count(), 0);
 
     let data_len = indices.len();
     let array_values = arr.values();
     let index_values = indices.values();
 
-    let mut values = MutableBuffer::<T>::with_capacity(data_len);
+    let mut values = MutableBuffer::<T::Native>::with_capacity(data_len);
     let iter = index_values
         .iter()
         .map(|idx| *array_values.get_unchecked(*idx as usize));
@@ -23,18 +22,17 @@ pub(crate) unsafe fn take_no_null_primitive<T: NativeType>(
 
     let nulls = indices.validity().clone();
 
-    let arr = values.into_primitive_array::<T>(nulls);
-    Arc::new(arr)
+    Arc::new(to_primitive::<T>(values, nulls))
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
-    T: NativeType,
+    T: PolarsPrimitiveType,
     I: IntoIterator<Item = usize>,
 >(
-    arr: &PrimitiveArray<T>,
+    arr: &PrimitiveArray<T::Native>,
     indices: I,
-) -> Arc<PrimitiveArray<T>> {
+) -> Arc<PrimitiveArray<T::Native>> {
     assert_eq!(arr.null_count(), 0);
 
     let array_values = arr.values();
@@ -44,15 +42,15 @@ pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
         .map(|idx| *array_values.get_unchecked(idx))
         .collect::<AlignedVec<_>>();
 
-    let arr = av.into_primitive_array::<T>(None);
+    let arr = to_primitive::<T>(av, None);
     Arc::new(arr)
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index that does bound checks.
-pub(crate) fn take_no_null_primitive_iter<T: NativeType, I: IntoIterator<Item = usize>>(
-    arr: &PrimitiveArray<T>,
+pub(crate) fn take_no_null_primitive_iter<T: PolarsPrimitiveType, I: IntoIterator<Item = usize>>(
+    arr: &PrimitiveArray<T::Native>,
     indices: I,
-) -> Arc<PrimitiveArray<T>> {
+) -> Arc<PrimitiveArray<T::Native>> {
     assert_eq!(arr.null_count(), 0);
 
     let array_values = arr.values();
@@ -61,35 +59,41 @@ pub(crate) fn take_no_null_primitive_iter<T: NativeType, I: IntoIterator<Item = 
         .into_iter()
         .map(|idx| array_values[idx])
         .collect::<AlignedVec<_>>();
-    let arr = av.into_primitive_array(None);
+    let arr = to_primitive::<T>(av, None);
 
     Arc::new(arr)
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index.
-pub(crate) unsafe fn take_primitive_iter_unchecked<T: NativeType, I: IntoIterator<Item = usize>>(
-    arr: &PrimitiveArray<T>,
+pub(crate) unsafe fn take_primitive_iter_unchecked<
+    T: PolarsPrimitiveType,
+    I: IntoIterator<Item = usize>,
+>(
+    arr: &PrimitiveArray<T::Native>,
     indices: I,
-) -> Arc<PrimitiveArray<T>> {
+) -> Arc<PrimitiveArray<T::Native>> {
     let array_values = arr.values();
 
-    let iter = indices.into_iter().map(|idx| {
-        if arr.is_valid(idx) {
-            Some(*array_values.get_unchecked(idx))
-        } else {
-            None
-        }
-    });
-    let arr = PrimitiveArray::from_trusted_len_iter(iter);
+    let arr = indices
+        .into_iter()
+        .map(|idx| {
+            if arr.is_valid(idx) {
+                Some(*array_values.get_unchecked(idx))
+            } else {
+                None
+            }
+        })
+        .collect::<Primitive<T::Native>>()
+        .to(T::get_dtype().to_arrow());
 
     Arc::new(arr)
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index that does bound checks.
-pub(crate) fn take_primitive_iter<T: NativeType, I: IntoIterator<Item = usize>>(
-    arr: &PrimitiveArray<T>,
+pub(crate) fn take_primitive_iter<T: PolarsPrimitiveType, I: IntoIterator<Item = usize>>(
+    arr: &PrimitiveArray<T::Native>,
     indices: I,
-) -> Arc<PrimitiveArray<T>> {
+) -> Arc<PrimitiveArray<T::Native>> {
     let array_values = arr.values();
 
     let arr = indices
@@ -101,7 +105,8 @@ pub(crate) fn take_primitive_iter<T: NativeType, I: IntoIterator<Item = usize>>(
                 None
             }
         })
-        .collect();
+        .collect::<Primitive<T::Native>>()
+        .to(T::get_dtype().to_arrow());
 
     Arc::new(arr)
 }
@@ -109,18 +114,18 @@ pub(crate) fn take_primitive_iter<T: NativeType, I: IntoIterator<Item = usize>>(
 /// Take kernel for a single chunk without nulls and an iterator that can produce None values.
 /// This is used in join operations.
 pub(crate) unsafe fn take_no_null_primitive_opt_iter_unchecked<
-    T: NativeType,
+    T: PolarsPrimitiveType,
     I: IntoIterator<Item = Option<usize>>,
 >(
-    arr: &PrimitiveArray<T>,
+    arr: &PrimitiveArray<T::Native>,
     indices: I,
-) -> Arc<PrimitiveArray<T>> {
+) -> Arc<PrimitiveArray<T::Native>> {
     let array_values = arr.values();
 
     let iter = indices
         .into_iter()
         .map(|opt_idx| opt_idx.map(|idx| *array_values.get_unchecked(idx)));
-    let arr = PrimitiveArray::from_trusted_len_iter(iter);
+    let arr = Primitive::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow());
 
     Arc::new(arr)
 }
@@ -128,12 +133,12 @@ pub(crate) unsafe fn take_no_null_primitive_opt_iter_unchecked<
 /// Take kernel for a single chunk and an iterator that can produce None values.
 /// This is used in join operations.
 pub(crate) unsafe fn take_primitive_opt_iter_unchecked<
-    T: NativeType,
+    T: PolarsPrimitiveType,
     I: IntoIterator<Item = Option<usize>>,
 >(
-    arr: &PrimitiveArray<T>,
+    arr: &PrimitiveArray<T::Native>,
     indices: I,
-) -> Arc<PrimitiveArray<T>> {
+) -> Arc<PrimitiveArray<T::Native>> {
     let array_values = arr.values();
 
     let iter = indices.into_iter().map(|opt_idx| {
@@ -145,7 +150,7 @@ pub(crate) unsafe fn take_primitive_opt_iter_unchecked<
             }
         })
     });
-    let arr = PrimitiveArray::from_trusted_len_iter(iter);
+    let arr = Primitive::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow());
 
     Arc::new(arr)
 }
@@ -195,7 +200,7 @@ pub(crate) unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usi
     debug_assert_eq!(arr.null_count(), 0);
     let iter = indices
         .into_iter()
-        .map(|idx| Some(arr.value_unchecked(idx)));
+        .map(|idx| Some(arr.values().get_bit_unchecked(idx)));
 
     Arc::new(iter.collect())
 }

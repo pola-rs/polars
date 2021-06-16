@@ -488,7 +488,7 @@ pub trait SeriesTrait:
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    fn take(&self, _indices: &UInt32Chunked) -> Series {
+    fn take(&self, _indices: &Int32Chunked) -> Series {
         unimplemented!()
     }
 
@@ -593,7 +593,7 @@ pub trait SeriesTrait:
     }
 
     /// Retrieve the indexes needed for a sort.
-    fn argsort(&self, _reverse: bool) -> UInt32Chunked {
+    fn argsort(&self, _reverse: bool) -> Int32Chunked {
         unimplemented!()
     }
 
@@ -613,7 +613,7 @@ pub trait SeriesTrait:
     }
 
     /// Get first indexes of unique values.
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<Int32Chunked> {
         unimplemented!()
     }
 
@@ -628,7 +628,7 @@ pub trait SeriesTrait:
     }
 
     /// Get indexes that evaluate true
-    fn arg_true(&self) -> Result<UInt32Chunked> {
+    fn arg_true(&self) -> Result<Int32Chunked> {
         Err(PolarsError::InvalidOperation(
             "arg_true can only be called for boolean dtype".into(),
         ))

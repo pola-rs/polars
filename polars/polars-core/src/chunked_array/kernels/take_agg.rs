@@ -39,14 +39,13 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
     }
 
     let array_values = arr.values();
-    let offset = arr.offset();
-    let buf = arr
-        .data_ref()
-        .null_buffer()
+    let validity = arr
+        .validity()
+        .as_ref()
         .expect("null buffer should be there");
 
     let out = indices.into_iter().fold(init, |acc, idx| {
-        if buf.is_valid_unchecked(offset + idx) {
+        if validity.get_bit_unchecked(idx) {
             f(acc, *array_values.get_unchecked(idx))
         } else {
             acc
@@ -75,15 +74,14 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
     }
 
     let array_values = arr.values();
-    let offset = arr.offset();
-    let buf = arr
-        .data_ref()
-        .null_buffer()
+    let validity = arr
+        .validity()
+        .as_ref()
         .expect("null buffer should be there");
 
     let mut null_count = 0;
     let out = indices.into_iter().fold(init, |acc, idx| {
-        if buf.is_valid_unchecked(idx + offset) {
+        if validity.get_bit_unchecked(idx) {
             f(acc, *array_values.get_unchecked(idx))
         } else {
             null_count += 1;

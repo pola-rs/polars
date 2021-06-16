@@ -6,7 +6,7 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::MutableBuffer;
 use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
@@ -37,7 +37,7 @@ where
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let iter = iter.into_iter();
 
-        let arr: PrimitiveArray<T> = match iter.size_hint() {
+        let arr: PrimitiveArray<T::Native> = match iter.size_hint() {
             (a, Some(b)) if a == b => {
                 // 2021-02-07: ~40% faster than builder.
                 // It is unsafe because we cannot be certain that the iterators length can be trusted.
@@ -46,18 +46,15 @@ where
                 // This will not lead to UB, but will panic.
                 #[cfg(feature = "performant")]
                 unsafe {
-                    let arr = PrimitiveArray::from_trusted_len_iter(iter);
+                    let arr = Primitive::from_trusted_len_iter_unchecked(iter)
+                        .to(T::get_dtype().to_arrow());
                     assert_eq!(arr.len(), a);
                     arr
                 }
                 #[cfg(not(feature = "performant"))]
-                PrimitiveArray::from_iter(iter)
+                Primitive::from_iter(iter).to(T::get_dtype().to_arrow())
             }
-            _ => {
-                // 2021-02-07: ~1.5% slower than builder. Will still use this as it is more idiomatic and will
-                // likely improve over time.
-                PrimitiveArray::from_iter(iter)
-            }
+            _ => Primitive::from_iter(iter).to(T::get_dtype().to_arrow()),
         };
         ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
     }
@@ -215,23 +212,19 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
         let values: Vec<T> = iter
             .map(|value| match value {
                 Some(value) => {
-                    null_mask_builder.append(true);
+                    null_mask_builder.push(true);
                     value
                 }
                 None => {
                     null_count += 1;
-                    null_mask_builder.append(false);
+                    null_mask_builder.push(false);
                     T::default()
                 }
             })
             .collect();
 
-        let null_bit_buffer = null_mask_builder.finish();
-        let null_bitmap = arrow::bitmap::Bitmap::from(null_bit_buffer);
-        let null_bitmap = match null_count {
-            0 => None,
-            _ => Some(Arc::new(null_bitmap)),
-        };
+        let null_bit_buffer: Option<Bitmap> = null_mask_builder.into();
+        let null_bitmap = null_bit_buffer.map(Arc::new);
 
         let len = values.len();
 
@@ -302,12 +295,12 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut av = MutableBuffer::<T>::with_capacity(capacity);
+        let mut av = MutableBuffer::<T::Native>::with_capacity(capacity);
         for v in vectors {
             av.extend_from_slice(&v)
         }
-        let arr = av.into_primitive_array::<T>(None);
-        NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
+        let arr = to_array::<T>(av, None);
+        NoNull::new(ChunkedArray::new_from_chunks("", vec![arr]))
     }
 }
 
@@ -322,7 +315,8 @@ where
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
         let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity);
-        let arr: PrimitiveArray<T> = unsafe { PrimitiveArray::from_trusted_len_iter(iter) };
+        let arr: PrimitiveArray<T::Native> =
+            Primitive::from_trusted_len_iter(iter).to(T::get_dtype().to_arrow());
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }

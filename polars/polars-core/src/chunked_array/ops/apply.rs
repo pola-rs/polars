@@ -2,7 +2,6 @@
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
-use arrow::bitmap::Bitmap;
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
@@ -28,17 +27,6 @@ macro_rules! apply_enumerate {
                 .collect()
         }
     }};
-}
-
-fn to_array<T: PolarsNumericType>(
-    values: AlignedVec<T::Native>,
-    validity: &Option<Bitmap>,
-) -> ArrayRef {
-    Arc::new(PrimitiveArray::from_data(
-        T::get_dtype().to_arrow(),
-        values.into(),
-        validity.clone(),
-    ))
 }
 
 impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>

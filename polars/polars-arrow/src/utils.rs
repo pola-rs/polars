@@ -40,3 +40,5 @@ where
         self.iter.next_back()
     }
 }
+
+unsafe impl<I, J> arrow::trusted_len::TrustedLen for TrustMyLength<I, J> where I: Iterator<Item = J> {}
