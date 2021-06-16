@@ -427,7 +427,7 @@ pub(crate) fn df_rows_to_hashes(
             .iter()
             .map(|ca| {
                 ca.downcast_iter()
-                    .map(|arr| arr.values())
+                    .map(|arr| arr.values().as_slice())
                     .collect::<Vec<_>>()[0]
             })
             .collect();
@@ -455,7 +455,7 @@ pub(crate) fn df_rows_to_hashes(
             .iter()
             .map(|ca| {
                 ca.downcast_iter()
-                    .map(|arr| arr.values())
+                    .map(|arr| arr.values().as_slice())
                     .collect::<Vec<_>>()
             })
             .collect();

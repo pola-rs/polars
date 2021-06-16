@@ -43,9 +43,12 @@ where
     pub fn downcast_iter(
         &self,
     ) -> impl Iterator<Item = &PrimitiveArray<T::Native>> + DoubleEndedIterator {
-        self.chunks
-            .iter()
-            .map(|arr| arr.as_any().downcast_ref().unwrap())
+        self.chunks.iter().map(|arr| {
+            // Safety:
+            // This should be the array type in PolarsNumericType
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const PrimitiveArray<T::Native>) }
+        })
     }
     pub fn downcast_chunks(&self) -> Chunks<'_, PrimitiveArray<T::Native>> {
         Chunks::new(&self.chunks)
@@ -64,6 +67,8 @@ where
 impl BooleanChunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &BooleanArray> + DoubleEndedIterator {
         self.chunks.iter().map(|arr| {
+            // Safety:
+            // This should be the array type in BooleanChunked
             let arr = &**arr;
             unsafe { &*(arr as *const dyn Array as *const BooleanArray) }
         })
@@ -84,8 +89,10 @@ impl BooleanChunked {
 impl Utf8Chunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &Utf8Array<i64>> + DoubleEndedIterator {
         // Safety:
-        // This is the array type that must be in a Utf8Chunnked
+        // This is the array type that must be in a Utf8Chunked
         self.chunks.iter().map(|arr| {
+            // Safety:
+            // This should be the array type in Utf8Chunked
             let arr = &**arr;
             unsafe { &*(arr as *const dyn Array as *const Utf8Array<i64>) }
         })
