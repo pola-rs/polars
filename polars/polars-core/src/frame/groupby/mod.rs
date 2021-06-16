@@ -173,13 +173,14 @@ impl IntoGroupTuples for ListChunked {}
 #[cfg(feature = "object")]
 impl<T> IntoGroupTuples for ObjectChunked<T> {}
 
+/// Used to tightly two 32 bit values and null information
+/// Only the bit values matter, not the meaning of the bits
 fn pack_u32_tuples(opt_l: Option<u32>, opt_r: Option<u32>) -> [u8; 9] {
     // 4 bytes for first value
     // 4 bytes for second value
     // last bytes' bits are used to indicate missing values
     let mut val = [0u8; 9];
     let s = &mut val;
-    // let s = val.as_mut_slice();
     match (opt_l, opt_r) {
         (Some(l), Some(r)) => {
             // write to first 4 places
@@ -206,8 +207,108 @@ fn pack_u32_tuples(opt_l: Option<u32>, opt_r: Option<u32>) -> [u8; 9] {
     val
 }
 
+/// Used to tightly two 64 bit values and null information
+/// Only the bit values matter, not the meaning of the bits
+fn pack_u64_tuples(opt_l: Option<u64>, opt_r: Option<u64>) -> [u8; 17] {
+    // 8 bytes for first value
+    // 8 bytes for second value
+    // last bytes' bits are used to indicate missing values
+    let mut val = [0u8; 17];
+    let s = &mut val;
+    match (opt_l, opt_r) {
+        (Some(l), Some(r)) => {
+            // write to first 4 places
+            (&mut s[..8]).copy_from_slice(&l.to_ne_bytes());
+            // write to second chunk of 4 places
+            (&mut s[8..16]).copy_from_slice(&r.to_ne_bytes());
+            // leave last byte as is
+        }
+        (Some(l), None) => {
+            (&mut s[..8]).copy_from_slice(&l.to_ne_bytes());
+            // set right null bit
+            s[16] = 1;
+        }
+        (None, Some(r)) => {
+            (&mut s[8..16]).copy_from_slice(&r.to_ne_bytes());
+            // set left null bit
+            s[16] = 1 << 1;
+        }
+        (None, None) => {
+            // set two null bits
+            s[16] = 3;
+        }
+    }
+    val
+}
+
+/// Used to tightly one 32 bit and a 64 bit valued type and null information
+/// Only the bit values matter, not the meaning of the bits
+fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
+    // 8 bytes for first value
+    // 8 bytes for second value
+    // last bytes' bits are used to indicate missing values
+    let mut val = [0u8; 13];
+    let s = &mut val;
+    match (opt_l, opt_r) {
+        (Some(l), Some(r)) => {
+            // write to first 4 places
+            (&mut s[..4]).copy_from_slice(&l.to_ne_bytes());
+            // write to second chunk of 4 places
+            (&mut s[4..12]).copy_from_slice(&r.to_ne_bytes());
+            // leave last byte as is
+        }
+        (Some(l), None) => {
+            (&mut s[..4]).copy_from_slice(&l.to_ne_bytes());
+            // set right null bit
+            s[12] = 1;
+        }
+        (None, Some(r)) => {
+            (&mut s[4..12]).copy_from_slice(&r.to_ne_bytes());
+            // set left null bit
+            s[12] = 1 << 1;
+        }
+        (None, None) => {
+            // set two null bits
+            s[12] = 3;
+        }
+    }
+    val
+}
+
 impl DataFrame {
     pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
+        macro_rules! finish_packed_bit_path {
+            ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
+                let n_partitions = set_partition_size();
+
+                // we split so that we can prepare the data over multiple threads.
+                // pack the bit values together and add a final byte that will be 0
+                // when there are no null values.
+                // otherwise we use two bits of this byte to represent null values.
+                let split_0 = split_ca(&$ca0, n_partitions).unwrap();
+                let split_1 = split_ca(&$ca1, n_partitions).unwrap();
+                let keys = POOL.install(|| {
+                    split_0
+                        .into_par_iter()
+                        .zip(split_1.into_par_iter())
+                        .map(|(ca0, ca1)| {
+                            ca0.into_iter()
+                                .zip(ca1.into_iter())
+                                .map(|(l, r)| $pack_fn(l, r))
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+                return Ok(GroupBy::new(
+                    self,
+                    by,
+                    groupby_threaded_num(keys, 0, n_partitions as u64),
+                    None,
+                ));
+            }};
+        }
+
         if by.is_empty() || by[0].len() != self.height() {
             return Err(PolarsError::ShapeMisMatch(
                 "the Series used as keys should have the same length as the DataFrame".into(),
@@ -235,42 +336,33 @@ impl DataFrame {
                 let s0 = &keys_df.get_columns()[0];
                 let s1 = &keys_df.get_columns()[1];
 
-                // fast path for 32 bit sized numeric data
-                if by.len() == 2
-                    && s0.is_numeric()
-                    && s1.is_numeric()
-                    && !s0.bit_repr_is_large()
-                    && !s1.bit_repr_is_large()
-                {
-                    let ca0 = s0.bit_repr_small();
-                    let ca1 = s1.bit_repr_small();
-                    let n_partitions = set_partition_size();
-
-                    // we split so that we can prepare the data over multiple threads.
-                    // create pack the 32 bit values together and add a final byte that will be 0
-                    // when there are no null values.
-                    // otherwise we use two bits of this byte to represent null values.
-                    let split_0 = split_ca(&ca0, n_partitions).unwrap();
-                    let split_1 = split_ca(&ca1, n_partitions).unwrap();
-                    let keys = POOL.install(|| {
-                        split_0
-                            .into_par_iter()
-                            .zip(split_1.into_par_iter())
-                            .map(|(ca0, ca1)| {
-                                ca0.into_iter()
-                                    .zip(ca1.into_iter())
-                                    .map(|(l, r)| pack_u32_tuples(l, r))
-                                    .collect::<Vec<_>>()
-                            })
-                            .collect::<Vec<_>>()
-                    });
-
-                    return Ok(GroupBy::new(
-                        self,
-                        by,
-                        groupby_threaded_num(keys, 0, n_partitions as u64),
-                        None,
-                    ));
+                // fast path for numeric data
+                // uses the bit values to tightly pack those into arrays.
+                if by.len() == 2 && s0.is_numeric() && s1.is_numeric() {
+                    match (s0.bit_repr_is_large(), s1.bit_repr_is_large()) {
+                        (false, false) => {
+                            let ca0 = s0.bit_repr_small();
+                            let ca1 = s1.bit_repr_small();
+                            finish_packed_bit_path!(ca0, ca1, pack_u32_tuples)
+                        }
+                        (true, true) => {
+                            let ca0 = s0.bit_repr_large();
+                            let ca1 = s1.bit_repr_large();
+                            finish_packed_bit_path!(ca0, ca1, pack_u64_tuples)
+                        }
+                        (true, false) => {
+                            let ca0 = s0.bit_repr_large();
+                            let ca1 = s1.bit_repr_small();
+                            // small first
+                            finish_packed_bit_path!(ca1, ca0, pack_u32_u64_tuples)
+                        }
+                        (false, true) => {
+                            let ca0 = s0.bit_repr_small();
+                            let ca1 = s1.bit_repr_large();
+                            // small first
+                            finish_packed_bit_path!(ca0, ca1, pack_u32_u64_tuples)
+                        }
+                    }
                 }
 
                 let n_partitions = set_partition_size();
