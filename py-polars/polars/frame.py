@@ -57,7 +57,7 @@ def _prepare_other_arg(other: Any) -> Series:
         if isinstance(other, str):
             pass
         elif isinstance(other, Sequence):
-            raise ValueError("operation not supported")
+            raise ValueError("Operation not supported.")
 
         other = Series("", [other])
     return other
@@ -87,11 +87,11 @@ class DataFrame:
                 for i, c in enumerate(range(shape[1])):
                     columns.append(Series(str(i), data[:, c], nullable=False).inner())
             else:
-                raise ValueError("a numpy array should have 2 dimensions")
+                raise ValueError("A numpy array should have 2 dimensions.")
         elif isinstance(data, list):
             for s in data:
                 if not isinstance(s, Series):
-                    raise ValueError("a list should contain Series")
+                    raise ValueError("A list should contain Series.")
                 columns.append(s.inner())
         else:
             try:
@@ -105,9 +105,9 @@ class DataFrame:
                             s = Series(c, data[c].values, nullable=False).inner()
                         columns.append(s)
                 else:
-                    raise ValueError("a dictionary was expected.")
+                    raise ValueError("A dictionary was expected.")
             except ImportError:
-                raise ValueError("a dictionary was expected.")
+                raise ValueError("A dictionary was expected.")
 
         self._df = PyDataFrame(columns)
 
@@ -130,9 +130,9 @@ class DataFrame:
         Parameters
         ----------
         rows
-            rows
+            rows.
         column_names
-            column names to use for the DataFrame
+            column names to use for the DataFrame.
         column_name_mapping
             map column index to a new name:
             Example:
@@ -176,14 +176,37 @@ class DataFrame:
         ---
         file
             Path to a file or a file like object. Any valid filepath can be used. Example: `file.csv`.
+        infer_schema_length
+            Maximum number of lines to read to infer schema.
+        batch_size
+            Number of lines to read into the buffer at once. Modify this to change performance.
+        has_headers
+            Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`,
+            `x` being an enumeration over every column in the dataset.
+        ignore_errors
+            Try to keep reading lines if some lines yield errors.
+        stop_after_n_rows
+            After n rows are read from the CSV, it stops reading.
+            During multi-threaded parsing, an upper bound of `n` rows
+            cannot be guaranteed.
+        skip_rows
+            Start reading after `skip_rows`.
+        projection
+            Indexes of columns to select. Note that column indexes count from zero.
         sep
             Character to use as delimiter in the file.
-        stop_after_n_rows
-            Only read specified number of rows of the dataset. After `n` stops reading.
-        has_headers
-            Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`, `x` being an enumeration over every column in the dataset.
+        columns
+            Columns to project/ select.
+        rechunk
+            Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
         encoding
             Allowed encodings: `utf8`, `utf8-lossy`. Lossy means that invalid utf8 values are replaced with `�` character.
+        n_threads
+            Number of threads to use in csv parsing. Defaults to the number of physical cpu's of your system.
+        dtype
+            Overwrite the dtypes during inference.
+        low_memory
+            Reduce memory usage in expense of performance.
 
         Example
         ---
@@ -249,7 +272,7 @@ class DataFrame:
         if use_pyarrow:
             if stop_after_n_rows:
                 raise ValueError(
-                    "stop_after_n_rows can not be used with 'use_pyarrow==True'"
+                    "stop_after_n_rows can not be used with 'use_pyarrow==True'."
                 )
             tbl = pa.parquet.read_table(file)
             return DataFrame.from_arrow(tbl)
@@ -267,7 +290,7 @@ class DataFrame:
         file
             Path to a file or a file like object.
         use_pyarrow
-            Use pyarrow or rust arrow backend
+            Use pyarrow or rust arrow backend.
 
         Returns
         -------
@@ -307,7 +330,7 @@ class DataFrame:
         Parameters
         ----------
         table
-            Arrow Table
+            Arrow Table.
         rechunk
             Make sure that all data is contiguous.
         """
@@ -348,16 +371,16 @@ class DataFrame:
         to_string: bool = False,
     ) -> Optional[str]:
         """
-        Serialize to JSON representation
+        Serialize to JSON representation.
 
         Parameters
         ----------
         file
-            write to this file instead of returning an string.
+            Write to this file instead of returning an string.
         pretty
-            pretty serialize json
+            Pretty serialize json.
         to_string
-            ignore file argument and return a string
+            Ignore file argument and return a string.
         """
         if to_string:
             file = BytesIO()
@@ -376,11 +399,11 @@ class DataFrame:
         Parameters
         ----------
         args
-            arguments will be sent to pyarrow.Table.to_pandas
+            Arguments will be sent to pyarrow.Table.to_pandas.
         date_as_object
-            Cast dates to objects. If False, convert to datetime64[ns] dtype
+            Cast dates to objects. If False, convert to datetime64[ns] dtype.
         kwargs
-            arguments will be sent to pyarrow.Table.to_pandas
+            Arguments will be sent to pyarrow.Table.to_pandas.
 
         Example
         ---
@@ -406,7 +429,7 @@ class DataFrame:
         delimiter: str = ",",
     ):
         """
-        Write Dataframe to comma-separated values file (csv)
+        Write Dataframe to comma-separated values file (csv).
 
         Parameters
         ---
@@ -467,10 +490,10 @@ class DataFrame:
         file
             File path to which the file should be written.
         compression
-            Compression method (only supported if `use_pyarrow`)
+            Compression method (only supported if `use_pyarrow`).
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
-            At the moment C++ supports more features
+            At the moment C++ supports more features.
 
         **kwargs are passed to pyarrow.parquet.write_table
         """
@@ -549,7 +572,7 @@ class DataFrame:
 
     def __getattr__(self, item) -> "PySeries":
         """
-        Access columns as attribute
+        Access columns as attribute.
         """
         try:
             return wrap_s(self._df.column(item))
@@ -561,12 +584,12 @@ class DataFrame:
 
     def find_idx_by_name(self, name: str) -> int:
         """
-        Find the index of a column by name
+        Find the index of a column by name.
 
         Parameters
         ----------
         name
-            Name of the column to find
+            Name of the column to find.
         """
         return self._df.find_idx_by_name(name)
 
@@ -659,7 +682,7 @@ class DataFrame:
         # df[:]
         if isinstance(item, slice):
             if getattr(item, "end", False):
-                raise ValueError("a slice with steps larger than 1 is not supported")
+                raise ValueError("A slice with steps larger than 1 is not supported.")
             if item.start is None:
                 start = 0
             else:
@@ -783,7 +806,7 @@ class DataFrame:
         Parameters
         ----------
         predicate
-            Expression that evaluates to a boolean Series
+            Expression that evaluates to a boolean Series.
         """
         return (
             self.lazy()
@@ -794,7 +817,7 @@ class DataFrame:
     @property
     def shape(self) -> Tuple[int, int]:
         """
-        Get shape of the DataFrame.
+        Get the shape of the DataFrame.
 
         Example
         ---
@@ -809,7 +832,7 @@ class DataFrame:
     @property
     def height(self) -> int:
         """
-        Get height of the DataFrame.
+        Get the height of the DataFrame.
 
         Example
         ---
@@ -824,7 +847,7 @@ class DataFrame:
     @property
     def width(self) -> int:
         """
-        Get width of the DataFrame
+        Get the width of the DataFrame.
 
         Example
         ---
@@ -839,7 +862,7 @@ class DataFrame:
     @property
     def columns(self) -> "List[str]":
         """
-        Get or set column names
+        Get or set column names.
 
         Example
         ---
@@ -874,13 +897,13 @@ class DataFrame:
     @columns.setter
     def columns(self, columns: "List[str]"):
         """
-        Change the column names of the `DataFrame`
+        Change the column names of the `DataFrame`.
 
         Parameters
         ----------
         columns
             A list with new names for the `DataFrame`.
-            The length of the list should be equal to the widht of the `DataFrame`
+            The length of the list should be equal to the width of the `DataFrame`.
         """
         self._df.set_column_names(columns)
 
@@ -973,14 +996,14 @@ class DataFrame:
 
     def replace_at_idx(self, index: int, series: Series):
         """
-        Replace a column at an index  location.
+        Replace a column at an index location.
 
         Parameters
         ----------
         index
-            Column index
+            Column index.
         series
-            Series that will replace the column
+            Series that will replace the column.
         """
         self._df.replace_at_idx(index, series._s)
 
@@ -991,7 +1014,7 @@ class DataFrame:
         reverse: "Union[bool, List[bool]]" = False,
     ) -> Optional["DataFrame"]:
         """
-        Sort the DataFrame by column
+        Sort the DataFrame by column.
 
         Parameters
         ----------
@@ -1028,7 +1051,7 @@ class DataFrame:
 
         ### Sort by multiple columns.
 
-        For multiple columns we can also use expression syntax
+        For multiple columns we can also use expression syntax.
 
         ```python
         df.sort([col("foo"), col("bar") ** 2], reverse=[True, False])
@@ -1112,25 +1135,25 @@ class DataFrame:
 
     def limit(self, length: int = 5) -> "DataFrame":
         """
-        Get first N rows as DataFrame
+        Get first N rows as DataFrame.
 
         See Also `DataFrame.head`
 
         Parameters
         ----------
         length
-            amount of rows to take.
+            Amount of rows to take.
         """
         return self.head(length)
 
     def head(self, length: int = 5) -> "DataFrame":
         """
-        Get first N rows as DataFrame
+        Get first N rows as DataFrame.
 
         Parameters
         ----------
         length
-            Length of the head
+            Length of the head.
 
         Example
         ---
@@ -1160,12 +1183,12 @@ class DataFrame:
 
     def tail(self, length: int = 5) -> "DataFrame":
         """
-        Get last N rows as DataFrame
+        Get last N rows as DataFrame.
 
         Parameters
         ----------
         length
-            Length of the tail
+            Length of the tail.
 
         Example
         ---
@@ -1195,7 +1218,7 @@ class DataFrame:
 
     def drop_nulls(self, subset: "Optional[List[str]]" = None) -> "DataFrame":
         """
-        Return a new DataFrame where the null values are dropped
+        Return a new DataFrame where the null values are dropped.
         """
         if subset is not None and isinstance(subset, str):
             subset = [subset]
@@ -1203,22 +1226,22 @@ class DataFrame:
 
     def pipe(self, func: Callable, *args, **kwargs):
         """
-        Apply a function on Self
+        Apply a function on Self.
 
         Parameters
         ----------
         func
-            Callable
+            Callable.
         args
-            Arguments
+            Arguments.
         kwargs
-            Keyword arguments
+            Keyword arguments.
         """
         return func(self, *args, **kwargs)
 
     def groupby(self, by: "Union[str, List[str]]") -> "GroupBy":
         """
-        Start a groupby operation
+        Start a groupby operation.
 
         Parameters
         ----------
@@ -1299,7 +1322,7 @@ class DataFrame:
         ----------
         by
             Column that will be used as key in the groupby operation.
-            This should be a date64/date32 column
+            This should be a date64/date32 column.
         rule
             Units of the downscaling operation.
 
@@ -1312,7 +1335,7 @@ class DataFrame:
                 - "second"
 
         n
-            Number of units (e.g. 5 "day", 15 "minute"
+            Number of units (e.g. 5 "day", 15 "minute".
         """
         return GroupBy(self._df, by, downsample=True, rule=rule, downsample_n=n)
 
@@ -1325,18 +1348,18 @@ class DataFrame:
         how="inner",
     ) -> "DataFrame":
         """
-        SQL like joins
+        SQL like joins.
 
         Parameters
         ----------
         df
-            DataFrame to join with
+            DataFrame to join with.
         left_on
-            Name(s) of the left join column(s)
+            Name(s) of the left join column(s).
         right_on
-            Name(s) of the right join column(s)
+            Name(s) of the right join column(s).
         on
-            Name(s) of the join columns in both DataFrames
+            Name(s) of the join columns in both DataFrames.
         how
             Join strategy
                 - "inner"
@@ -1402,7 +1425,7 @@ class DataFrame:
             left_on = on
             right_on = on
         if left_on is None or right_on is None:
-            raise ValueError("you should pass the column to join on as an argument")
+            raise ValueError("You should pass the column to join on as an argument.")
         if _is_expr(left_on[0]) or _is_expr(right_on[0]):
             return self.lazy().join(df.lazy(), left_on, right_on, how=how)
 
@@ -1423,7 +1446,7 @@ class DataFrame:
         Parameters
         ----------
         f
-            Custom function/ lambda function
+            Custom function/ lambda function.
         return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
         """
@@ -1431,7 +1454,7 @@ class DataFrame:
 
     def with_column(self, column: "Union[Series, Expr]") -> "DataFrame":
         """
-        Return a new DataFrame with the column added or replaced
+        Return a new DataFrame with the column added or replaced.
 
         Parameters
         ----------
@@ -1451,9 +1474,9 @@ class DataFrame:
         Parameters
         ----------
         columns
-            Series to stack
+            Series to stack.
         in_place
-            Modify in place
+            Modify in place.
         """
         if not isinstance(columns, list):
             columns = columns.get_columns()
@@ -1469,7 +1492,7 @@ class DataFrame:
         Parameters
         ----------
         df
-            DataFrame to stack
+            DataFrame to stack.
         in_place
             Modify in place
         """
@@ -1485,7 +1508,7 @@ class DataFrame:
         Parameters
         ----------
         name
-            Column(s) to drop
+            Column(s) to drop.
 
         Example
         ---
@@ -1522,12 +1545,12 @@ class DataFrame:
 
     def drop_in_place(self, name: str) -> Series:
         """
-        Drop in place
+        Drop in place.
 
         Parameters
         ----------
         name
-            Column to drop
+            Column to drop.
         """
         return wrap_s(self._df.drop_in_place(name))
 
@@ -1538,19 +1561,19 @@ class DataFrame:
         Parameters
         ----------
         idx
-            Location of selection
+            Location of selection.
         """
         return wrap_s(self._df.select_at_idx(idx))
 
     def clone(self) -> "DataFrame":
         """
-        Very cheap deep clone
+        Very cheap deep clone.
         """
         return wrap_df(self._df.clone())
 
     def get_columns(self) -> "List[Series]":
         """
-        Get the DataFrame as a List of Series
+        Get the DataFrame as a List of Series.
         """
         return list(map(lambda s: wrap_s(s), self._df.get_columns()))
 
@@ -1590,7 +1613,7 @@ class DataFrame:
         Parameters
         ----------
         columns
-            Column of LargeList type
+            Column of LargeList type.
 
         Returns
         -------
@@ -1609,10 +1632,10 @@ class DataFrame:
         Parameters
         ----------
         id_vars
-            Columns to use as identifier variables
+            Columns to use as identifier variables.
 
         value_vars
-            Values to use as identifier variables
+            Values to use as identifier variables.
 
         Returns
         -------
@@ -1658,13 +1681,13 @@ class DataFrame:
 
     def is_duplicated(self) -> Series:
         """
-        Get a mask of all duplicated rows in this DataFrame
+        Get a mask of all duplicated rows in this DataFrame.
         """
         return wrap_s(self._df.is_duplicated())
 
     def is_unique(self) -> Series:
         """
-        Get a mask of all unique rows in this DataFrame
+        Get a mask of all unique rows in this DataFrame.
         """
         return wrap_s(self._df.is_unique())
 
@@ -1678,7 +1701,7 @@ class DataFrame:
         * `.collect()` (run on all data)
         * `.describe_plan()` (print unoptimized query plan)
         * `.describe_optimized_plan()` (print optimized query plan)
-        * `.show_graph()` (show (un)optimized query plan) as graphiz graph.
+        * `.show_graph()` (show (un)optimized query plan) as graphiz graph)
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
@@ -1688,12 +1711,12 @@ class DataFrame:
 
     def select(self, exprs: "Union[str, Expr, List[str], List[Expr]]") -> "DataFrame":
         """
-        Select columns from this DataFrame
+        Select columns from this DataFrame.
 
         Parameters
         ----------
         exprs
-            Column or columns to select
+            Column or columns to select.
         """
         return (
             self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
@@ -1701,12 +1724,12 @@ class DataFrame:
 
     def with_columns(self, exprs: "List[Expr]") -> "DataFrame":
         """
-        Add or overwrite multiple columns in a DataFrame
+        Add or overwrite multiple columns in a DataFrame.
 
         Parameters
         ----------
         exprs
-            List of Expressions that evaluate to columns
+            List of Expressions that evaluate to columns.
         """
         if not isinstance(exprs, list):
             exprs = [exprs]
@@ -1718,71 +1741,71 @@ class DataFrame:
 
     def n_chunks(self) -> int:
         """
-        Get number of chunks used by the ChunkedArrays of this DataFrame
+        Get number of chunks used by the ChunkedArrays of this DataFrame.
         """
         return self._df.n_chunks()
 
     def max(self, axis: int = 0) -> "DataFrame":
         """
-        Aggregate the columns of this DataFrame to their maximum value
+        Aggregate the columns of this DataFrame to their maximum value.
         """
         if axis == 0:
             return wrap_df(self._df.max())
         if axis == 1:
             return wrap_s(self._df.hmax()).to_frame()
-        raise ValueError("axis should be 0 or 1")
+        raise ValueError("Axis should be 0 or 1.")
 
     def min(self, axis: int = 0) -> "DataFrame":
         """
-        Aggregate the columns of this DataFrame to their minimum value
+        Aggregate the columns of this DataFrame to their minimum value.
         """
         if axis == 0:
             return wrap_df(self._df.min())
         if axis == 1:
             return wrap_s(self._df.hmin()).to_frame()
-        raise ValueError("axis should be 0 or 1")
+        raise ValueError("Axis should be 0 or 1.")
 
     def sum(self, axis: int = 0) -> "DataFrame":
         """
-        Aggregate the columns of this DataFrame to their sum value
+        Aggregate the columns of this DataFrame to their sum value.
         """
         if axis == 0:
             return wrap_df(self._df.sum())
         if axis == 1:
             return wrap_s(self._df.hsum()).to_frame()
-        raise ValueError("axis should be 0 or 1")
+        raise ValueError("Axis should be 0 or 1.")
 
     def mean(self, axis: int = 0) -> "DataFrame":
         """
-        Aggregate the columns of this DataFrame to their mean value
+        Aggregate the columns of this DataFrame to their mean value.
         """
         if axis == 0:
             return wrap_df(self._df.mean())
         if axis == 1:
             return wrap_s(self._df.hmean()).to_frame()
-        raise ValueError("axis should be 0 or 1")
+        raise ValueError("Axis should be 0 or 1.")
 
     def std(self) -> "DataFrame":
         """
-        Aggregate the columns of this DataFrame to their standard deviation value
+        Aggregate the columns of this DataFrame to their standard deviation value.
         """
         return wrap_df(self._df.std())
 
     def var(self) -> "DataFrame":
         """
-        Aggregate the columns of this DataFrame to their variance value
+        Aggregate the columns of this DataFrame to their variance value.
         """
         return wrap_df(self._df.var())
 
     def median(self) -> "DataFrame":
         """
-        Aggregate the columns of this DataFrame to their median value
+        Aggregate the columns of this DataFrame to their median value.
         """
         return wrap_df(self._df.median())
 
     def quantile(self, quantile: float) -> "DataFrame":
         """
-        Aggregate the columns of this DataFrame to their quantile value
+        Aggregate the columns of this DataFrame to their quantile value.
         """
         return wrap_df(self._df.quantile(quantile))
 
@@ -1807,7 +1830,7 @@ class DataFrame:
         """
         Rechunk the data in this DataFrame to a contiguous allocation.
 
-        This will make sure all subsequent operations have optimal and predictable performance
+        This will make sure all subsequent operations have optimal and predictable performance.
         """
         return wrap_df(self._df.rechunk())
 
@@ -1824,16 +1847,16 @@ class DataFrame:
         with_replacement: bool = False,
     ) -> "DataFrame":
         """
-        Sample from this DataFrame by setting either `n` or `frac`
+        Sample from this DataFrame by setting either `n` or `frac`.
 
         Parameters
         ----------
         n
-            Number of samples < self.len()
+            Number of samples < self.len() .
         frac
-            Fraction between 0.0 and 1.0
+            Fraction between 0.0 and 1.0 .
         with_replacement
-            Sample with replacement
+            Sample with replacement.
         """
         if n is not None:
             return wrap_df(self._df.sample_n(n, with_replacement))
@@ -1914,7 +1937,7 @@ class DataFrame:
         Parameters
         ----------
         operation
-            function that takes two `Series` and returns a `Series`
+            function that takes two `Series` and returns a `Series`.
         """
         if self.width == 1:
             return self
@@ -1927,12 +1950,12 @@ class DataFrame:
 
     def row(self, index: int) -> "Tuple[Any]":
         """
-        Get a row as tuple
+        Get a row as tuple.
 
         Parameters
         ----------
         index
-            Row index
+            Row index.
         """
         return self._df.row_tuple(index)
 
@@ -1982,10 +2005,11 @@ class GroupBy:
     def get_group(self, group_value: "Union[Any, Tuple[Any]]") -> DataFrame:
         """
         Select a single group as a new DataFrame.
+
         Parameters
         ----------
         group_value
-            Group to select
+            Group to select.
         """
         groups_df = self.groups()
         groups = groups_df["groups"]
@@ -2030,7 +2054,7 @@ class GroupBy:
         Parameters
         ----------
         f
-            Custom function
+            Custom function.
 
         Returns
         -------
@@ -2048,7 +2072,7 @@ class GroupBy:
         Parameters
         ----------
         column_to_agg
-            map column to aggregation functions
+            map column to aggregation functions.
 
             Examples:
                 ## column name to aggregation with tuples:
@@ -2131,7 +2155,7 @@ class GroupBy:
         Parameters
         ----------
         columns
-            One or multiple columns
+            One or multiple columns.
         """
         if self.downsample:
             raise ValueError("select not supported in downsample operation")
@@ -2156,10 +2180,10 @@ class GroupBy:
         pivot_column
             Column to pivot.
         values_column
-            Column that will be aggregated
+            Column that will be aggregated.
         """
         if self.downsample:
-            raise ValueError("pivot not supported in downsample operation")
+            raise ValueError("Pivot not supported in downsample operation.")
         return PivotOps(self._df, self.by, pivot_column, values_column)
 
     def first(self) -> DataFrame:
@@ -2212,7 +2236,7 @@ class GroupBy:
 
     def quantile(self, quantile: float) -> DataFrame:
         """
-        Count the unique values per group.
+        Compute the quantile per group.
         """
         return self.select_all().quantile(quantile)
 
@@ -2387,7 +2411,7 @@ class GBSelection:
 
     def quantile(self, quantile: float) -> DataFrame:
         """
-        Compute the quantile per group
+        Compute the quantile per group.
         """
         if self.downsample:
             raise ValueError("quantile operation not supported during downsample")
@@ -2415,7 +2439,7 @@ class GBSelection:
         return_dtype: "Optional['DataType']" = None,
     ) -> "DataFrame":
         """
-        Apply a function over the groups
+        Apply a function over the groups.
         """
         df = self.agg_list()
         if isinstance(self.selection, str):
@@ -2449,7 +2473,7 @@ Series.to_frame = _series_to_frame
 
 class StringCache:
     """
-    Context manager that allows to data sources to share the same categorical features.
+    Context manager that allows data sources to share the same categorical features.
     This will temporarily cache the string categories until the context manager is finished.
     """
 
@@ -2467,6 +2491,6 @@ class StringCache:
 def toggle_string_cache(toggle: bool):
     """
     Turn on/off the global string cache. This ensures that casts to Categorical types have the categories when string
-    values are equal
+    values are equal.
     """
     pytoggle_string_cache(toggle)
