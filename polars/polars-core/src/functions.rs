@@ -5,14 +5,20 @@
 #[cfg(feature = "sort_multiple")]
 use crate::chunked_array::ops::sort::prepare_argsort;
 use crate::prelude::*;
+use arrow::compute;
+use arrow::types::simd::Simd;
+use arrow::types::NativeType;
 use num::{Float, NumCast};
-use std::ops::Div;
+use std::ops::{Add, Div};
 
 /// Compute the covariance between two columns.
 pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
-    T::Native: Float + Div + NumCast,
+    T::Native: NativeType + PartialOrd + Float + NumCast + Simd,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
 {
     if a.len() != b.len() {
         None
@@ -27,7 +33,10 @@ where
 pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
-    T::Native: Float,
+    T::Native: NativeType + PartialOrd + Float + NumCast + Simd,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: ChunkVar<T::Native>,
 {
     Some(cov(a, b)? / (a.std()? * b.std()?))

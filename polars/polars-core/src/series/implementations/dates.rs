@@ -528,10 +528,6 @@ macro_rules! impl_dyn_series {
                 cast_and_apply!(self, is_duplicated,)
             }
 
-            fn null_bits(&self) -> Vec<(usize, Option<Bitmap>)> {
-                self.0.null_bits().collect()
-            }
-
             fn reverse(&self) -> Series {
                 physical_dispatch!(self, reverse,)
             }

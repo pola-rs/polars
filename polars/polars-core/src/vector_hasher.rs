@@ -498,6 +498,6 @@ pub(crate) fn df_rows_to_hashes(
         }
     }
 
-    let chunks = vec![Arc::new(to_array::<UInt64Type>(av, None)) as ArrayRef];
+    let chunks = vec![to_array::<UInt64Type>(av, None)];
     (UInt64Chunked::new_from_chunks("", chunks), build_hasher)
 }

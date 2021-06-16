@@ -31,14 +31,14 @@ impl PolarsWeekDay for NaiveDate {
 macro_rules! to_temporal_unit {
     ($name: ident, $chrono_method:ident, $to_datetime_fn: expr, $dtype_in: ty, $dtype_out:expr) => {
         pub(crate) fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
-            unary(
+            Arc::new(unary(
                 arr,
                 |value| {
                     let dt = $to_datetime_fn(value);
                     dt.$chrono_method()
                 },
                 $dtype_out,
-            )
+            )) as ArrayRef
         }
     };
 }
@@ -47,110 +47,110 @@ to_temporal_unit!(
     week,
     date32_as_datetime,
     i32,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date32_to_weekday,
     p_weekday,
     date32_as_datetime,
     i32,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date32_to_year,
     year,
     date32_as_datetime,
     i32,
-    DataType::Int32
+    ArrowDataType::Int32
 );
 to_temporal_unit!(
     date32_to_month,
     month,
     date32_as_datetime,
     i32,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date32_to_day,
     day,
     date32_as_datetime,
     i32,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date32_to_ordinal,
     ordinal,
     date32_as_datetime,
     i32,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_week,
     week,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_weekday,
     p_weekday,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_year,
     year,
     date64_as_datetime,
     i64,
-    DataType::Int32
+    ArrowDataType::Int32
 );
 to_temporal_unit!(
     date64_to_month,
     month,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_day,
     day,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_hour,
     hour,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_minute,
     minute,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_second,
     second,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_nanosecond,
     nanosecond,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );
 to_temporal_unit!(
     date64_to_ordinal,
     ordinal,
     date64_as_datetime,
     i64,
-    DataType::UInt32
+    ArrowDataType::UInt32
 );

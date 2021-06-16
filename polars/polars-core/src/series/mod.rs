@@ -654,11 +654,6 @@ pub trait SeriesTrait:
         unimplemented!()
     }
 
-    /// Get the bits that represent the null values of the underlying ChunkedArray
-    fn null_bits(&self) -> Vec<(usize, Option<Bitmap>)> {
-        unimplemented!()
-    }
-
     /// return a Series in reversed order
     fn reverse(&self) -> Series {
         unimplemented!()

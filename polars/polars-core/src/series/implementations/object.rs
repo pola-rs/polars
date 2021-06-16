@@ -202,10 +202,6 @@ where
         ChunkUnique::is_duplicated(&self.0)
     }
 
-    fn null_bits(&self) -> Vec<(usize, Option<Bitmap>)> {
-        ObjectChunked::null_bits(&self.0).collect()
-    }
-
     fn reverse(&self) -> Series {
         ChunkReverse::reverse(&self.0).into_series()
     }

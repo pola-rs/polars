@@ -487,7 +487,7 @@ impl HashJoin<CategoricalType> for CategoricalChunked {
 fn num_group_join_inner<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> Vec<(u32, u32)>
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + AsU64,
+    T::Native: Hash + Eq + Send + AsU64 + Copy,
     Option<T::Native>: AsU64,
 {
     let n_threads = POOL.current_num_threads();
@@ -527,7 +527,7 @@ where
                 .iter()
                 .map(|ca| {
                     ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.as_u64()))
+                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .flatten()
                         .collect::<Vec<_>>()
                 })
@@ -537,7 +537,7 @@ where
                 .iter()
                 .map(|ca| {
                     ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.as_u64()))
+                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .flatten()
                         .collect::<Vec<_>>()
                 })
@@ -547,11 +547,19 @@ where
         _ => {
             let keys_a = splitted_a
                 .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|v| v.copied().as_u64())
+                        .collect::<Vec<_>>()
+                })
                 .collect::<Vec<_>>();
             let keys_b = splitted_b
                 .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|v| v.copied().as_u64())
+                        .collect::<Vec<_>>()
+                })
                 .collect::<Vec<_>>();
             hash_join_tuples_inner(keys_a, keys_b, swap)
         }
@@ -603,7 +611,7 @@ where
                 .iter()
                 .map(|ca| {
                     ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.as_u64()))
+                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .flatten()
                         .collect::<Vec<_>>()
                 })
@@ -613,7 +621,7 @@ where
                 .iter()
                 .map(|ca| {
                     ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.as_u64()))
+                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .flatten()
                         .collect::<Vec<_>>()
                 })
@@ -623,11 +631,19 @@ where
         _ => {
             let keys_a = splitted_a
                 .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|v| v.copied().as_u64())
+                        .collect::<Vec<_>>()
+                })
                 .collect::<Vec<_>>();
             let keys_b = splitted_b
                 .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|v| v.copied().as_u64())
+                        .collect::<Vec<_>>()
+                })
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
         }

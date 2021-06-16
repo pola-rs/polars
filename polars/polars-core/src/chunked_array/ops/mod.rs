@@ -293,8 +293,8 @@ pub type Dummy<T> = std::iter::Once<T>;
 pub type TakeIdxIter<'a, I> = TakeIdx<'a, I, Dummy<Option<usize>>>;
 pub type TakeIdxIterNull<'a, INull> = TakeIdx<'a, Dummy<usize>, INull>;
 
-impl<'a> From<&'a Int32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
-    fn from(ca: &'a Int32Chunked) -> Self {
+impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
+    fn from(ca: &'a UInt32Chunked) -> Self {
         if ca.chunks.len() == 1 {
             TakeIdx::Array(ca.downcast_iter().next().unwrap())
         } else {
