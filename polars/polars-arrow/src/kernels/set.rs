@@ -1,6 +1,6 @@
-use crate::builder::PrimitiveArrayBuilder;
 use crate::error::{PolarsError, Result};
 use crate::kernels::BinaryMaskedSliceIterator;
+use crate::utils::{buffer_or, combine_null_buffers};
 use crate::vec::AlignedVec;
 use arrow::array::*;
 use arrow::datatypes::{ArrowNativeType, ArrowNumericType, ArrowPrimitiveType};
@@ -15,51 +15,34 @@ where
     T: ArrowNumericType,
     T::Native: ArrowNativeType,
 {
-    debug_assert!(mask.null_count() == 0);
     let values = array.values();
 
-    if array.null_count() == 0 {
-        let mut av = AlignedVec::with_capacity_aligned(array.len());
-        BinaryMaskedSliceIterator::new(mask)
-            .into_iter()
-            .for_each(|(lower, upper, truthy)| {
-                if truthy {
-                    av.extend((lower..upper).map(|_| value))
-                } else {
-                    av.extend_from_slice(&values[lower..upper])
-                }
-            });
-        av.into_primitive_array(None)
-    } else {
-        let mask_values = &mask.data_ref().buffers()[0];
+    let mut av = AlignedVec::with_capacity_aligned(array.len());
+    BinaryMaskedSliceIterator::new(mask)
+        .into_iter()
+        .for_each(|(lower, upper, truthy)| {
+            if truthy {
+                av.extend((lower..upper).map(|_| value))
+            } else {
+                av.extend_from_slice(&values[lower..upper])
+            }
+        });
+    // make sure that where the mask is set to true, the validity buffer is also set to valid
+    // after we have applied the or operation we have new buffer with no offsets
+    let validity = array.data().null_buffer().map(|buf| {
+        let mask_buf = mask.values();
+        buffer_or(mask_buf, mask.offset(), buf, array.offset(), array.len())
+    });
 
-        // this operation is performed before iteration
-        // because it is fast and allows reserving all the needed memory
-        let pop_count = mask_values.count_set_bits_offset(mask.offset(), mask.len());
-
-        let mut builder = PrimitiveArrayBuilder::new(pop_count);
-        BinaryMaskedSliceIterator::new(mask)
-            .into_iter()
-            .for_each(|(lower, upper, truthy)| {
-                if truthy {
-                    for _ in lower..upper {
-                        builder.append_value(value)
-                    }
-                } else {
-                    for idx in lower..upper {
-                        if array.is_valid(idx) {
-                            // Safety
-                            // idx is within bounds
-                            builder.append_value(unsafe { *values.get_unchecked(idx) })
-                        } else {
-                            builder.append_null()
-                        }
-                    }
-                }
-            });
-
-        builder.finish()
-    }
+    // now we also combine it with the null buffer of the mask
+    let validity = combine_null_buffers(
+        validity.as_ref(),
+        0,
+        mask.data().null_buffer(),
+        mask.offset(),
+        array.len(),
+    );
+    av.into_primitive_array(validity)
 }
 
 /// Efficiently sets value at the indices from the iterator to `set_value`.
@@ -113,6 +96,12 @@ mod test {
         let out = set_with_mask(&val, &mask, 1);
         dbg!(&out);
         assert_eq!(out.values(), &[0, 1, 0, 1, 0, 1, 0, 1, 0, 0]);
+
+        let val = UInt32Array::from(vec![None, None, None]);
+        let mask = BooleanArray::from(vec![Some(true), Some(true), None]);
+        let out = set_with_mask(&val, &mask, 1);
+        let out: Vec<_> = out.iter().collect();
+        assert_eq!(out, &[Some(1), Some(1), None])
     }
 
     #[test]
