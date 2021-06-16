@@ -2,6 +2,32 @@
 
 The Rust crate `polars` has its own changelog.
 
+### Polars 0.8.6
+* performance
+  - improve hashing performance for grouping on two keys for 64 bit and 32 and 64 bit data.
+  - improve cache coherence take operation of multiple chunks
+* bug fix
+  - fix replaxing string with None #802
+
+### Polars 0.8.5
+* feature
+  - improve compatibility with pyarrow csv parser
+* performance
+  - improve hashing performance for grouping on two keys for 64 bit and 32 and 64 bit data.
+  - improve cache coherence take operation of multiple chunks
+  - fast path for categorical unique
+  - decrease memory fragmentation and usage of csv-parser
+* bug fix
+  - split utf8 data only at valid char boundaries #789
+  - fix bug in outer join due to new partitioning algorithm
+
+### Polars 0.8.4
+* feature
+  - Series.round
+  - head/ limit aliases
+* performance
+  - partitioned hashing
+  
 ### Polars 0.8.0
 * breaking change
   - `str` namespace Series.str_* methods to Series.str.<method>
