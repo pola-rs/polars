@@ -2,8 +2,6 @@
 use crate::prelude::*;
 use arrow::{array::*, bitmap::Bitmap, datatypes::TimeUnit};
 use itertools::Itertools;
-use polars_arrow::bit_util::get_bit;
-use polars_arrow::bit_util::round_upto_power_of_2;
 use polars_arrow::prelude::ValueSize;
 use std::convert::TryFrom;
 use std::iter::{Copied, Map};
@@ -356,9 +354,9 @@ impl<T> ChunkedArray<T> {
             .map(|arr| {
                 let bitmap = arr
                     .validity()
-                    .map(|bitmap| !bitmap)
+                    .map(|bitmap| !(&bitmap))
                     .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-                BooleanArray::from_data(bitmap, None)
+                Arc::new(BooleanArray::from_data(bitmap, None)) as ArrayRef
             })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_null", chunks)
@@ -376,8 +374,8 @@ impl<T> ChunkedArray<T> {
                 let bitmap = arr
                     .validity()
                     .clone()
-                    .unwrap_or_else(|| !Bitmap::new_zeroed(arr.len()));
-                BooleanArray::from_data(bitmap, None)
+                    .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
+                Arc::new(BooleanArray::from_data(bitmap, None)) as ArrayRef
             })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_not_null", chunks)
@@ -552,7 +550,7 @@ where
                 AnyValue::Duration(v, TimeUnit::Millisecond)
             }
             DataType::List(_) => {
-                let v = downcast!(LargeListArray);
+                let v: ArrayRef = downcast!(LargeListArray).into();
                 let s = Series::try_from(("", v));
                 AnyValue::List(s.unwrap())
             }
@@ -573,8 +571,8 @@ where
 {
     /// Create a new ChunkedArray by taking ownership of the AlignedVec. This operation is zero copy.
     pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
-        let arr = v.into_primitive_array::<T>(None);
-        Self::new_from_chunks(name, vec![Arc::new(arr)])
+        let arr = to_array::<T>(v, None);
+        Self::new_from_chunks(name, vec![arr])
     }
 
     /// Nullify values in slice with an existing null bitmap
@@ -583,7 +581,7 @@ where
         values: AlignedVec<T::Native>,
         buffer: Option<Bitmap>,
     ) -> Self {
-        let arr = Arc::new(values.into_primitive_array::<T>(buffer));
+        let arr = to_array::<T>(values, buffer);
         ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),
             chunks: vec![arr],
@@ -822,6 +820,20 @@ impl ListChunked {
             _ => unreachable!(),
         }
     }
+}
+
+pub(crate) fn to_primitive<T: PolarsPrimitiveType>(
+    values: AlignedVec<T::Native>,
+    validity: Option<Bitmap>,
+) -> PrimitiveArray<T::Native> {
+    PrimitiveArray::from_data(T::get_dtype().to_arrow(), values.into(), validity.clone())
+}
+
+pub(crate) fn to_array<T: PolarsPrimitiveType>(
+    values: AlignedVec<T::Native>,
+    validity: Option<Bitmap>,
+) -> ArrayRef {
+    Arc::new(to_primitive::<T>(values, validity))
 }
 
 #[cfg(test)]

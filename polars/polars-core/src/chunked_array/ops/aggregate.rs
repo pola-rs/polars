@@ -9,6 +9,7 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Num, NumCast, ToPrimitive, Zero};
 use std::cmp::PartialOrd;
+use std::ops::Add;
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -83,8 +84,10 @@ macro_rules! impl_quantile {
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialOrd + Num + NumCast + Zero + Simd,
-    <<T as datatypes::PolarsPrimitiveType>::Native as NativeType>::Simd: SimdOrd<T::Native>,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_iter()
@@ -265,7 +268,10 @@ impl ChunkAgg<String> for Utf8Chunked {}
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialOrd + Num + NumCast,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
     fn sum_as_series(&self) -> Series {
@@ -492,6 +498,7 @@ impl<T> ChunkAggSeries for ObjectChunked<T> {}
 impl<T> ArgAgg for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: PartialOrd,
 {
     fn arg_min(&self) -> Option<usize> {
         self.into_iter()

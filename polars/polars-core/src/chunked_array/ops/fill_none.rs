@@ -1,4 +1,7 @@
 use crate::prelude::*;
+use arrow::compute;
+use arrow::types::simd::Simd;
+use arrow::types::NativeType;
 use num::{Bounded, Num, NumCast, One, Zero};
 use polars_arrow::array::ValueSize;
 use std::ops::{Add, Div};
@@ -81,14 +84,19 @@ macro_rules! impl_fill_backward {
 impl<T> ChunkFillNone for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Add<Output = T::Native>
+    T::Native: NativeType
         + PartialOrd
-        + Div<Output = T::Native>
         + Num
         + NumCast
         + Zero
+        + Simd
         + One
-        + Bounded,
+        + Bounded
+        + Add<Output = T::Native>
+        + Div<Output = T::Native>,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
 {
     fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self> {
         // nothing to fill

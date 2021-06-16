@@ -2,6 +2,7 @@
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use arrow::array::*;
+use arrow::types::NativeType;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -42,23 +43,25 @@ macro_rules! impl_take_random_get_unchecked {
 impl<T> TakeRandom for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: NativeType,
 {
     type Item = T::Native;
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        unsafe { impl_take_random_get!(self, index, PrimitiveArray<T>) }
+        unsafe { impl_take_random_get!(self, index, PrimitiveArray<T::Native>) }
     }
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, PrimitiveArray<T>)
+        impl_take_random_get_unchecked!(self, index, PrimitiveArray<T::Native>)
     }
 }
 
 impl<'a, T> TakeRandom for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: NativeType,
 {
     type Item = T::Native;
 

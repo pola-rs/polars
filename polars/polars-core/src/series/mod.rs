@@ -1657,6 +1657,15 @@ impl TryFrom<(&str, ArrayRef)> for Series {
     }
 }
 
+impl TryFrom<(&str, Box<dyn Array>)> for Series {
+    type Error = PolarsError;
+
+    fn try_from(name_arr: (&str, Box<dyn Array>)) -> Result<Self> {
+        let (name, arr) = name_arr;
+        Series::try_from((name, vec![arr.into()]))
+    }
+}
+
 impl Default for Series {
     fn default() -> Self {
         Int64Chunked::default().into_series()

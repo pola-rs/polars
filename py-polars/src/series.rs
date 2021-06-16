@@ -3,9 +3,6 @@ use std::ops::{BitAnd, BitOr};
 use numpy::PyArray1;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
-
-use polars::chunked_array::builder::get_bitmap;
-
 use crate::apply::series::ApplyLambda;
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
@@ -1194,11 +1191,11 @@ macro_rules! impl_unsafe_from_ptr {
         impl PySeries {
             fn $name(&self, ptr: usize, len: usize) -> Self {
                 let av = unsafe { AlignedVec::from_ptr(ptr, len, len) };
-                let (_null_count, null_bitmap) = get_bitmap(self.series.chunks()[0].as_ref());
+                let validity = self.series.chunks()[0].validity().clone();
                 let ca = ChunkedArray::<$ca_type>::new_from_owned_with_null_bitmap(
                     self.name(),
                     av,
-                    null_bitmap,
+                    validity,
                 );
                 Self::new(ca.into_series())
             }

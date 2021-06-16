@@ -84,7 +84,7 @@ where
                         } else {
                             let iter = array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
                             let mut ca = take_primitive_opt_iter_n_chunks(self, iter);
                             ca.rename(self.name());
                             ca
@@ -401,7 +401,7 @@ impl ChunkTake for Utf8Chunked {
                         } else {
                             let iter = array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
                             let mut ca: Utf8Chunked = take_opt_iter_n_chunks!(self, iter);
                             ca.rename(self.name());
                             ca
