@@ -83,9 +83,9 @@ docs-selection = [
 ]
 
 [dependencies]
-arrow = {git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1", default-features=false}
+arrow = {git = "https://github.com/apache/arrow-rs", rev = "9f56afb2d2347310184706f7d5e46af583557bea", default-features=false}
 #arrow = {version = "4.3", default-features = false }
-parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "0f55b828883b3b3afda43ae404b130d374e6f1a1"}
+parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "9f56afb2d2347310184706f7d5e46af583557bea"}
 #parquet = {version = "4.3", default-features = false, optional = true }
 polars-arrow = {version = "0.14.2", path = "../polars-arrow"}
 thiserror = "1.0"
