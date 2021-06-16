@@ -12,7 +12,6 @@ pub fn set_with_mask<T: NativeType>(
     value: T,
     data_type: DataType,
 ) -> PrimitiveArray<T> {
-    debug_assert!(mask.null_count() == 0);
     let values = array.values();
 
     let mut buf = MutableBuffer::with_capacity(array.len());
@@ -25,12 +24,13 @@ pub fn set_with_mask<T: NativeType>(
                 buf.extend_from_slice(&values[lower..upper])
             }
         });
-    let validity = match (array.validity(), mask.validity()) {
-        (Some(l), Some(r)) => Some(l.bitor(r)),
-        (None, Some(r)) => Some(r.clone()),
-        (Some(l), None) => (Some(l.clone())),
-        (None, None) => None,
-    };
+    // make sure that where the mask is set to true, the validity buffer is also set to valid
+    // after we have applied the or operation we have new buffer with no offsets
+    let validity = array.validity().as_ref().map(|valid| {
+        let mask_bitmap = mask.values();
+        valid.bitor(mask_bitmap)
+    });
+
     PrimitiveArray::from_data(data_type, buf.into(), validity)
 }
 
@@ -92,6 +92,12 @@ mod test {
         let out = set_with_mask(&val, &mask, 1, DataType::UInt32);
         dbg!(&out);
         assert_eq!(out.values().as_slice(), &[0, 1, 0, 1, 0, 1, 0, 1, 0, 0]);
+
+        let val = UInt32Array::from(&[None, None, None]);
+        let mask = BooleanArray::from(&[Some(true), Some(true), None]);
+        let out = set_with_mask(&val, &mask, 1, DataType::UInt32);
+        let out: Vec<_> = out.iter().map(|v| v.copied()).collect();
+        assert_eq!(out, &[Some(1), Some(1), None])
     }
 
     #[test]
