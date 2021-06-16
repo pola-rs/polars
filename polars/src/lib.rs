@@ -1,7 +1,7 @@
 //! # Polars: *<small>DataFrames in Rust</small>*
 //!
-//! Polars is a DataFrame library for Rust. It is based on [Apache Arrows](https://arrow.apache.org/) memory model.
-//! Apache arrow provides very cache efficient columnar data structures, and is becoming the defacto
+//! Polars is a DataFrame library for Rust. It is based on [Apache Arrow](https://arrow.apache.org/)'s memory model.
+//! Apache arrow provides very cache efficient columnar data structures and is becoming the defacto
 //! standard for columnar data.
 //!
 //! This means that Polars data structures can be shared zero copy with processes in many different
@@ -30,13 +30,13 @@
 //!
 //! ## Data Structures
 //! The base data structures provided by polars are `DataFrame`, `Series`, and `ChunkedArray<T>`.
-//! We will provide a short top down view of these data structures.
+//! We will provide a short, top-down view of these data structures.
 //!
 //! ### DataFrame
 //! A `DataFrame` is a 2 dimensional data structure that is backed by a `Series`, and it could be
 //! seen as an abstraction on `Vec<Series>`. Operations that can be executed on `DataFrame`s are very
-//! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc. The closes
-//! arrow equivalent to a `DataFrame` is a [RecordBatch](https://docs.rs/arrow/4.0.0/arrow/record_batch/struct.RecordBatch.html),
+//! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc. The
+//! closest arrow equivalent to a `DataFrame` is a [RecordBatch](https://docs.rs/arrow/4.0.0/arrow/record_batch/struct.RecordBatch.html),
 //! and Polars provides zero copy coercion.
 //!
 //! ### Series
@@ -59,9 +59,9 @@
 //!
 //! ## API
 //! Polars supports an eager and a lazy API, and strives to make them both equally capable.
-//! The eager API is similar to [pandas](https://pandas.pydata.org/), and is easy to get started.
-//! The lazy API is similar to [Spark](https://spark.apache.org/), and builds a query plan that will
-//! be optimized. This may be less intuitive, but you may gain of additional performance.
+//! The eager API is similar to [pandas](https://pandas.pydata.org/) and is easy to get started.
+//! The lazy API is similar to [Spark](https://spark.apache.org/) and builds a query plan that will
+//! be optimized. This may be less intuitive but could improve performance.
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
@@ -84,27 +84,27 @@
 //! * Tons of features
 //! * A lot of datatypes
 //!
-//! Both of these really put large strains on compile times. To keep Polars lean, we make both **opt-in**,
+//! Both of these really put strain on compile times. To keep Polars lean, we make both **opt-in**,
 //! meaning that you only pay the compilation cost, if you need it.
 //!
 //! ## Compile times and opt-in features
 //! The opt-in features are (not including dtype features):
 //!
 //! * `lazy` - Lazy API
-//! * `random` - Generate array's with randomly sampled values
+//! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 //! * `strings` - Extra string utilities for `Utf8Chunked`
-//! * `object` - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`).
-//!              These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
+//! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
+//!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
 //!     - `simd` - SIMD operations _(nightly only)_
-//!     - `performant` - ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
+//!     - `performant` - ~40% faster chunkedarray creation but may lead to unexpected panic if iterator incorrectly sets a size_hint
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
 //!                 Can be used for JSON and more serde supported serialization formats.
 //!     - `parquet` - Read Apache Parquet format
-//!     - `json` - Json serialization
+//!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
 //! * `DataFrame` operations:
 //!     - `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
@@ -174,7 +174,7 @@
 //! ```
 //! ## Config with ENV vars
 //!
-//! * `POLARS_PAR_SORT_BOUND` -> Sets the lower bound of rows at which Polars will use a parallel sorting algorithm.
+//! * `POLARS_PAR_SORT_BOUND` -> sets the lower bound of rows at which Polars will use a parallel sorting algorithm.
 //!                              Default is 1M rows.
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
 //! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
