@@ -1,5 +1,10 @@
-use arrow::array::{Array, ArrayData, ArrayRef, BooleanArray, ListArray, PrimitiveArray};
-use arrow::datatypes::{ArrowPrimitiveType, DataType};
+use crate::utils::CustomIterTools;
+use arrow::array::{
+    Array, ArrayData, ArrayRef, BooleanArray, BooleanBufferBuilder, LargeListArray,
+    LargeStringArray, PrimitiveArray,
+};
+use arrow::buffer::MutableBuffer;
+use arrow::datatypes::{ArrowNumericType, ArrowPrimitiveType, DataType, Field};
 use num::Num;
 
 pub trait GetValues {
@@ -92,7 +97,7 @@ impl ValueSize for ArrayData {
     }
 }
 
-impl ValueSize for ListArray {
+impl ValueSize for LargeListArray {
     fn get_values_size(&self) -> usize {
         self.data_ref().get_values_size()
     }
@@ -137,6 +142,136 @@ impl IsNull for &dyn Array {
         }
     }
 }
+
+fn finish_listarray(
+    field: Field,
+    child_data: ArrayData,
+    offsets: MutableBuffer,
+    null_buf: BooleanBufferBuilder,
+) -> LargeListArray {
+    let data = ArrayData::builder(DataType::LargeList(Box::new(field)))
+        .len(null_buf.len())
+        .add_buffer(offsets.into())
+        .add_child_data(child_data)
+        .null_bit_buffer(null_buf.into())
+        .build();
+    LargeListArray::from(data)
+}
+
+macro_rules! iter_to_values {
+    ($iterator:expr, $null_buf:expr, $offsets:expr, $length_so_far:expr) => {{
+        $iterator
+            .filter_map(|opt_iter| match opt_iter {
+                Some(x) => {
+                    let it = x.into_iter();
+                    $length_so_far += it.size_hint().0 as i64;
+                    $null_buf.append(true);
+                    $offsets.push($length_so_far);
+                    Some(it)
+                }
+                None => {
+                    $null_buf.append(false);
+                    None
+                }
+            })
+            .flatten()
+            .collect()
+    }};
+}
+
+pub trait ListFromIter {
+    /// Create a list-array from an iterator.
+    /// Used in groupby agg-list
+    ///
+    /// # Safety
+    /// Will produce incorrect arrays if size hint is incorrect.
+    unsafe fn from_iter_primitive_trusted_len<T, P, I>(iter: I) -> LargeListArray
+    where
+        T: ArrowNumericType,
+        P: IntoIterator<Item = Option<T::Native>>,
+        I: IntoIterator<Item = Option<P>>,
+    {
+        let iterator = iter.into_iter();
+        let (lower, _) = iterator.size_hint();
+
+        let mut offsets = MutableBuffer::new((lower + 1) * std::mem::size_of::<i64>());
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+
+        let mut null_buf = BooleanBufferBuilder::new(lower);
+
+        let values: PrimitiveArray<T> = iter_to_values!(iterator, null_buf, offsets, length_so_far);
+
+        let field = Field::new("item", T::DATA_TYPE, true);
+        finish_listarray(field, values.data().clone(), offsets, null_buf)
+    }
+
+    /// Create a list-array from an iterator.
+    /// Used in groupby agg-list
+    ///
+    /// # Safety
+    /// Will produce incorrect arrays if size hint is incorrect.
+    unsafe fn from_iter_bool_trusted_len<I, P>(iter: I) -> LargeListArray
+    where
+        I: IntoIterator<Item = Option<P>>,
+        P: IntoIterator<Item = Option<bool>>,
+    {
+        let iterator = iter.into_iter();
+        let (lower, _) = iterator.size_hint();
+
+        let mut offsets = MutableBuffer::new((lower + 1) * std::mem::size_of::<i64>());
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+
+        let mut null_buf = BooleanBufferBuilder::new(lower);
+        let values: BooleanArray = iter_to_values!(iterator, null_buf, offsets, length_so_far);
+
+        let field = Field::new("item", DataType::Boolean, true);
+        finish_listarray(field, values.data().clone(), offsets, null_buf)
+    }
+
+    /// Create a list-array from an iterator.
+    /// Used in groupby agg-list
+    ///
+    /// # Safety
+    /// Will produce incorrect arrays if size hint is incorrect.
+    unsafe fn from_iter_utf8_trusted_len<I, P, Ref>(iter: I, n_elements: usize) -> LargeListArray
+    where
+        I: IntoIterator<Item = Option<P>>,
+        P: IntoIterator<Item = Option<Ref>>,
+        Ref: AsRef<str>,
+    {
+        let iterator = iter.into_iter();
+        let (lower, _) = iterator.size_hint();
+
+        let mut offsets = MutableBuffer::new((lower + 1) * std::mem::size_of::<i64>());
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+
+        let mut null_buf = BooleanBufferBuilder::new(lower);
+        let values: LargeStringArray = iterator
+            .filter_map(|opt_iter| match opt_iter {
+                Some(x) => {
+                    let it = x.into_iter();
+                    length_so_far += it.size_hint().0 as i64;
+                    null_buf.append(true);
+                    offsets.push(length_so_far);
+                    Some(it)
+                }
+                None => {
+                    null_buf.append(false);
+                    None
+                }
+            })
+            .flatten()
+            .trust_my_length(n_elements)
+            .collect();
+
+        let field = Field::new("item", DataType::LargeUtf8, true);
+        finish_listarray(field, values.data().clone(), offsets, null_buf)
+    }
+}
+impl ListFromIter for LargeListArray {}
 
 #[cfg(test)]
 mod test {
