@@ -53,9 +53,8 @@ You have to follow these steps:
 
 * install rust nightly via [rustup](https://www.rust-lang.org/tools/install)
 * run `$ rustup override set nightly` from the root of the repo.
-* `$ pip3 install maturin==0.9.4`
+* from [./py-polars](./py-polars) run `$ pip3 install -r build.requirements.txt`
 * from [./py-polars](./py-polars) run `$ ./tasks.sh build-run-tests`
-
 The last step installs a (slow) development build in your current environment and runs pytest.
 
 ## License
