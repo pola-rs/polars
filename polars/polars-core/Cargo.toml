@@ -51,6 +51,7 @@ is_in = []
 zip_with = []
 round_series = []
 checked_arithmetic = []
+repeat_by = []
 
 # opt-in datatypes for Series
 dtype-time64-ns = []

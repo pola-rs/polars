@@ -830,6 +830,10 @@ macro_rules! impl_dyn_series {
             fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
                 IsIn::is_in(&self.0, other)
             }
+            #[cfg(feature = "repeat_by")]
+            fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+                RepeatBy::repeat_by(&self.0, by)
+            }
 
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> Result<Series> {

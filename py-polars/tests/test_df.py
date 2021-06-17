@@ -688,3 +688,12 @@ def test_from_rows():
         column_name_mapping={1: "foo"},
     )
     assert df.dtypes == [pl.Int64, pl.Date64]
+
+
+def test_repeat_by():
+    df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
+
+    out = df[col("n").repeat_by("n")]
+    s = out["n"]
+    assert s[0] == [2, 2]
+    assert s[1] == [3, 3, 3]
