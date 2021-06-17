@@ -1066,6 +1066,21 @@ impl Expr {
             reverse,
         }
     }
+
+    #[cfg(feature = "repeat_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
+    pub fn repeat_by(self, by: Expr) -> Expr {
+        let function = |s: Series, by: Series| {
+            let by = by.cast_with_dtype(&DataType::UInt32)?;
+            Ok(s.repeat_by(by.u32()?).into_series())
+        };
+        map_binary_lazy_field(self, by, function, |_schema, _ctxt, l, _r| {
+            Some(Field::new(
+                l.name(),
+                DataType::List(l.data_type().to_arrow()),
+            ))
+        })
+    }
 }
 
 /// Create a Column Expression based on a column name.

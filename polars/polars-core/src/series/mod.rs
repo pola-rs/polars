@@ -1019,6 +1019,11 @@ pub trait SeriesTrait:
     fn is_in(&self, _other: &Series) -> Result<BooleanChunked> {
         unimplemented!()
     }
+    #[cfg(feature = "repeat_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
+    fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
+        unimplemented!()
+    }
     #[cfg(feature = "checked_arithmetic")]
     #[cfg_attr(docsrs, doc(cfg(feature = "checked_arithmetic")))]
     fn checked_div(&self, _rhs: &Series) -> Result<Series> {

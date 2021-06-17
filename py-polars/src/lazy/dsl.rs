@@ -234,6 +234,10 @@ impl PyExpr {
         self.clone().inner.is_in(expr.inner).into()
     }
 
+    pub fn repeat_by(&self, by: PyExpr) -> PyExpr {
+        self.clone().inner.repeat_by(by.inner).into()
+    }
+
     pub fn pow(&self, exponent: f64) -> PyExpr {
         self.clone().inner.pow(exponent).into()
     }

@@ -1423,6 +1423,24 @@ class Expr:
             other = lit(Series("", other))
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
+    def repeat_by(self, by: "Expr") -> "Expr":
+        """
+        Repeat the elements in this Series `n` times by dictated by the number given by `by`.
+        The elements are expanded into a `List`
+
+        Parameters
+        ----------
+        by
+            Numeric column that determines how often the values will be repeated.
+            The column will be coerced to UInt32. Give this dtype to make the coercion a no-op.
+
+        Returns
+        -------
+        Series of type List
+        """
+        by = expr_to_lit_or_expr(by, False)
+        return wrap_expr(self._pyexpr.repeat_by(by._pyexpr))
+
     def is_between(
         self, start: "Union[Expr, datetime]", end: "Union[Expr, datetime]"
     ) -> "Expr":
