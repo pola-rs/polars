@@ -1,7 +1,6 @@
 use crate::POOL;
 use ahash::RandomState;
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
-use polars_arrow::array::ListFromIter;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -11,8 +10,10 @@ use crate::chunked_array::kernels::take_agg::{
     take_agg_primitive_iter_unchecked_count_nulls,
 };
 use crate::prelude::*;
-use crate::utils::{CustomIterTools, NoNull};
-use arrow::array::{ArrayRef, LargeListArray};
+use crate::utils::NoNull;
+use arrow::array::{Array, ArrayData, ArrayRef, LargeListArray};
+use arrow::buffer::MutableBuffer;
+use polars_arrow::builder::{BooleanArrayBuilder, LargeStringBuilder, PrimitiveArrayBuilder};
 use std::convert::TryFrom;
 
 pub(crate) trait NumericAggSync {
@@ -502,45 +503,86 @@ pub trait AggList {
 impl<T> AggList for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: Num,
+    ChunkedArray<T>: IntoSeries,
 {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        let taker = self.take_rand();
-        let iter = groups
-            .iter()
-            .map(|(_, idx)| Some(idx.iter().map(|idx| taker.get(*idx as usize))))
-            .trust_my_length(groups.len());
-        // Safety:
-        // The length of the iterator is trusted
-        let arr = unsafe { LargeListArray::from_iter_primitive_trusted_len::<T, _, _>(iter) };
+        let arr = match self.cont_slice() {
+            Ok(values) => {
+                let mut offsets =
+                    MutableBuffer::new((groups.len() + 1) * std::mem::size_of::<i64>());
+                let mut length_so_far = 0i64;
+                offsets.push(length_so_far);
+                let mut av = AlignedVec::with_capacity_aligned(self.len());
+
+                groups.iter().for_each(|(_, idx)| {
+                    length_so_far += idx.len() as i64;
+                    // Safety:
+                    // group tuples are in bounds
+                    unsafe {
+                        av.extend(idx.iter().map(|idx| *values.get_unchecked(*idx as usize)));
+                    }
+                    offsets.push(length_so_far);
+                });
+                let values = av.into_primitive_array::<T>(None);
+
+                let field = Box::new(arrow::datatypes::Field::new("item", T::DATA_TYPE, true));
+                let data_type = ArrowDataType::LargeList(field);
+                let data = ArrayData::builder(data_type)
+                    .len(groups.len())
+                    .add_buffer(offsets.into())
+                    .add_child_data(values.data().clone())
+                    .build();
+                LargeListArray::from(data)
+            }
+            _ => {
+                let values_cap = self.len();
+                let values_builder = PrimitiveArrayBuilder::<T>::new(values_cap);
+                let mut builder =
+                    ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
+                for (_first, idx) in groups {
+                    let s = unsafe {
+                        self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                            .into_series()
+                    };
+                    builder.append_opt_series(Some(&s))
+                }
+                return Some(builder.finish().into_series());
+            }
+        };
         Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).ok()
     }
 }
 
 impl AggList for BooleanChunked {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        let taker = self.take_rand();
-        let iter = groups
-            .iter()
-            .map(|(_, idx)| Some(idx.iter().map(|idx| taker.get(*idx as usize))))
-            .trust_my_length(groups.len());
-        // Safety:
-        // The length of the iterator is trusted
-        let arr = unsafe { LargeListArray::from_iter_bool_trusted_len(iter) };
-        Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).ok()
+        let values_cap = self.len();
+        let values_builder = BooleanArrayBuilder::new(values_cap);
+        let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
+        for (_first, idx) in groups {
+            let s = unsafe {
+                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                    .into_series()
+            };
+            builder.append_series(&s)
+        }
+        Some(builder.finish().into_series())
     }
 }
 
 impl AggList for Utf8Chunked {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        let taker = self.take_rand();
-        let iter = groups
-            .iter()
-            .map(|(_, idx)| Some(idx.iter().map(|idx| taker.get(*idx as usize))))
-            .trust_my_length(groups.len());
-        // Safety:
-        // The length of the iterator is trusted
-        let arr = unsafe { LargeListArray::from_iter_utf8_trusted_len(iter, self.len()) };
-        Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).ok()
+        let values_cap = self.len();
+        let values_builder = LargeStringBuilder::with_capacity(values_cap * 5, values_cap);
+        let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
+        for (_first, idx) in groups {
+            let s = unsafe {
+                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                    .into_series()
+            };
+            builder.append_series(&s)
+        }
+        Some(builder.finish().into_series())
     }
 }
 
