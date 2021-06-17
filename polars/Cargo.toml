@@ -70,8 +70,8 @@ zip_with = ["polars-core/zip_with"]
 round_series = ["polars-core/round_series", "polars-lazy/round_series"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 
-# dont use this
-private = ["polars-core/private", "polars-lazy/private"]
+# don't use this
+private = []
 
 # all opt-in datatypes
 dtype-full = [
@@ -106,9 +106,9 @@ dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
 dtype-u64 = ["polars-core/dtype-u64", "polars-lazy/dtype-u64", "polars-io/dtype-u64"]
 
 [dependencies]
-polars-core = {version = "0.14.1", path = "./polars-core", features= ["docs"], default-features = false}
+polars-core = {version = "0.14.1", path = "./polars-core", features= ["docs", "private"], default-features = false}
 polars-io = {version = "0.14.1", path = "./polars-io", default-features = false, optional=true}
-polars-lazy = {version = "0.14.1", path = "./polars-lazy", default-features = false, optional=true}
+polars-lazy = {version = "0.14.1", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
 
 [dev-dependencies]
 criterion = "0.3"
