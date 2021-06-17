@@ -193,7 +193,8 @@ fn get_outer_agg_exprs(
 fn sample_cardinality(key: &Series, sample_size: usize) -> f32 {
     let offset = (key.len() / 2) as i64;
     let s = key.slice(offset, sample_size);
-    s.n_unique().unwrap() as f32 / s.len() as f32
+    // fast multi-threaded way to get unique.
+    s.group_tuples(true).len() as f32 / s.len() as f32
 }
 
 impl Executor for PartitionGroupByExec {
