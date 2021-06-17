@@ -559,14 +559,7 @@ class Series:
         """
         Reduce this Series to the sum value.
         """
-        if self.dtype == Boolean:
-            return self._s.sum_u32()
-        if self.dtype == UInt8:
-            return self.cast(UInt64).sum()
-        f = get_ffi_func("sum_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return f()
+        return self._s.sum()
 
     def mean(self):
         """
@@ -578,23 +571,13 @@ class Series:
         """
         Get the minimal value in this Series.
         """
-        if self.dtype == Boolean:
-            return self._s.min_u32()
-        f = get_ffi_func("min_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return f()
+        return self._s.min()
 
     def max(self):
         """
         Get the maximum value in this Series.
         """
-        if self.dtype == Boolean:
-            return self._s.max_u32()
-        f = get_ffi_func("max_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return f()
+        return self._s.max()
 
     def std(self, ddof: int = 1) -> float:
         """
