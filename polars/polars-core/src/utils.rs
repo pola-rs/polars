@@ -5,6 +5,7 @@ pub use arrow;
 pub use chrono;
 pub use num_cpus;
 pub use polars_arrow::utils::TrustMyLength;
+pub use polars_arrow::utils::*;
 pub use rayon;
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -682,26 +683,6 @@ where
 
     f(out)
 }
-
-pub trait CustomIterTools: Iterator {
-    fn fold_first_<F>(mut self, f: F) -> Option<Self::Item>
-    where
-        Self: Sized,
-        F: FnMut(Self::Item, Self::Item) -> Self::Item,
-    {
-        let first = self.next()?;
-        Some(self.fold(first, f))
-    }
-
-    fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
-    where
-        Self: Sized,
-    {
-        TrustMyLength::new(self, length)
-    }
-}
-
-impl<T: ?Sized> CustomIterTools for T where T: Iterator {}
 
 pub(crate) fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
