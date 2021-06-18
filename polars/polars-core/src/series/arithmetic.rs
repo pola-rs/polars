@@ -186,7 +186,7 @@ pub mod checked {
                                 if r.is_zero() {
                                     None
                                 } else {
-                                    Some(l / &r)
+                                    Some(l / r)
                                 }
                             }
                             _ => None,
@@ -217,7 +217,7 @@ pub mod checked {
                                 if r.is_zero() {
                                     None
                                 } else {
-                                    Some(l / &r)
+                                    Some(l / r)
                                 }
                             }
                             _ => None,
