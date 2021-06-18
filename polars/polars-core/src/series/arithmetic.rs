@@ -112,7 +112,7 @@ impl NumOpsDispatch for CategoricalChunked {}
 pub mod checked {
     use super::*;
     use crate::utils::align_chunks_binary;
-    use num::{CheckedDiv, ToPrimitive};
+    use num::{CheckedDiv, ToPrimitive, Zero};
 
     pub trait NumOpsDispatchChecked: Debug {
         /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.
@@ -167,9 +167,69 @@ pub mod checked {
         }
     }
 
+    impl NumOpsDispatchChecked for Float32Chunked {
+        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+            let (l, r) = align_chunks_binary(self, rhs);
+
+            Ok((l)
+                .downcast_iter()
+                .zip(r.downcast_iter())
+                .map(|(l_arr, r_arr)| {
+                    l_arr
+                        .into_iter()
+                        .zip(r_arr)
+                        // we don't use a kernel, because the checked div also supplies nulls.
+                        // so the usual bit combining is not enough.
+                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                            (Some(l), Some(r)) => {
+                                if r.is_zero() {
+                                    None
+                                } else {
+                                    Some(l / r)
+                                }
+                            }
+                            _ => None,
+                        })
+                })
+                .flatten()
+                .collect::<Float32Chunked>()
+                .into_series())
+        }
+    }
+
+    impl NumOpsDispatchChecked for Float64Chunked {
+        fn checked_div(&self, rhs: &Series) -> Result<Series> {
+            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+            let (l, r) = align_chunks_binary(self, rhs);
+
+            Ok((l)
+                .downcast_iter()
+                .zip(r.downcast_iter())
+                .map(|(l_arr, r_arr)| {
+                    l_arr
+                        .into_iter()
+                        .zip(r_arr)
+                        // we don't use a kernel, because the checked div also supplies nulls.
+                        // so the usual bit combining is not enough.
+                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
+                            (Some(l), Some(r)) => {
+                                if r.is_zero() {
+                                    None
+                                } else {
+                                    Some(l / r)
+                                }
+                            }
+                            _ => None,
+                        })
+                })
+                .flatten()
+                .collect::<Float64Chunked>()
+                .into_series())
+        }
+    }
+
     impl NumOpsDispatchChecked for BooleanChunked {}
-    impl NumOpsDispatchChecked for Float32Chunked {}
-    impl NumOpsDispatchChecked for Float64Chunked {}
     impl NumOpsDispatchChecked for ListChunked {}
     impl NumOpsDispatchChecked for CategoricalChunked {}
     impl NumOpsDispatchChecked for Utf8Chunked {}
@@ -229,6 +289,34 @@ pub mod checked {
                     .i64()
                     .unwrap()
                     .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i64().unwrap())))
+                    .into_series(),
+                Float32 => s
+                    .f32()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| {
+                        opt_v.and_then(|v| {
+                            let res = rhs.to_f32().unwrap();
+                            if res.is_zero() {
+                                None
+                            } else {
+                                Some(v / res)
+                            }
+                        })
+                    })
+                    .into_series(),
+                Float64 => s
+                    .f64()
+                    .unwrap()
+                    .apply_on_opt(|opt_v| {
+                        opt_v.and_then(|v| {
+                            let res = rhs.to_f64().unwrap();
+                            if res.is_zero() {
+                                None
+                            } else {
+                                Some(v / res)
+                            }
+                        })
+                    })
                     .into_series(),
                 _ => panic!("dtype not yet supported in checked div"),
             };
@@ -670,5 +758,23 @@ mod test {
         assert_eq!(Vec::from(out.i32().unwrap()), &[Some(1), None, Some(1)]);
         let out = s.checked_div_num(0).unwrap();
         assert_eq!(Vec::from(out.i32().unwrap()), &[None, None, None]);
+
+        let s_f32 = Series::new("float32", [1.0f32, 0.0, 1.0]);
+        let out = s_f32.checked_div(&s_f32).unwrap();
+        assert_eq!(
+            Vec::from(out.f32().unwrap()),
+            &[Some(1.0f32), None, Some(1.0f32)]
+        );
+        let out = s_f32.checked_div_num(0.0f32).unwrap();
+        assert_eq!(Vec::from(out.f32().unwrap()), &[None, None, None]);
+
+        let s_f64 = Series::new("float64", [1.0f64, 0.0, 1.0]);
+        let out = s_f64.checked_div(&s_f64).unwrap();
+        assert_eq!(
+            Vec::from(out.f64().unwrap()),
+            &[Some(1.0f64), None, Some(1.0f64)]
+        );
+        let out = s_f64.checked_div_num(0.0f64).unwrap();
+        assert_eq!(Vec::from(out.f64().unwrap()), &[None, None, None]);
     }
 }
