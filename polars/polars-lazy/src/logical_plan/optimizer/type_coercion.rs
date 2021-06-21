@@ -1,8 +1,10 @@
+use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::Context;
 use crate::prelude::*;
+use crate::utils::is_scan;
 
 pub struct TypeCoercionRule {}
 
@@ -23,7 +25,13 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let plan = lp_arena.get(lp_node);
                 let mut inputs = [None, None];
-                plan.copy_inputs(&mut inputs);
+
+                // Used to get the schema of the input.
+                if is_scan(plan) {
+                    inputs[0] = Some(lp_node);
+                } else {
+                    plan.copy_inputs(&mut inputs);
+                };
 
                 if let Some(input) = inputs[0] {
                     let input_schema = lp_arena.get(input).schema(lp_arena);
@@ -65,7 +73,12 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let plan = lp_arena.get(lp_node);
                 let mut inputs = [None, None];
-                plan.copy_inputs(&mut inputs);
+
+                if is_scan(plan) {
+                    inputs[0] = Some(lp_node);
+                } else {
+                    plan.copy_inputs(&mut inputs);
+                };
 
                 if let Some(input) = inputs[0] {
                     let input_schema = lp_arena.get(input).schema(lp_arena);
@@ -79,7 +92,20 @@ impl OptimizationRule for TypeCoercionRule {
                     let type_right = right
                         .get_type(input_schema, Context::Default, expr_arena)
                         .expect("could not get dtype");
-                    if type_left == type_right {
+
+                    let compare_cat_to_string = matches!(
+                        op,
+                        Operator::Eq
+                            | Operator::NotEq
+                            | Operator::Gt
+                            | Operator::Lt
+                            | Operator::GtEq
+                            | Operator::LtEq
+                    ) && ((type_left == DataType::Categorical
+                        && type_right == DataType::Utf8)
+                        || (type_left == DataType::Utf8 && type_right == DataType::Categorical));
+
+                    if type_left == type_right || compare_cat_to_string {
                         None
                     } else {
                         let st = get_supertype(&type_left, &type_right)

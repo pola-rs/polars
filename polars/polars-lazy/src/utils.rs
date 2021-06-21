@@ -61,6 +61,17 @@ impl PushNode for [Option<Node>; 1] {
     }
 }
 
+pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
+    match plan {
+        #[cfg(feature = "csv-file")]
+        ALogicalPlan::CsvScan { .. } => true,
+        ALogicalPlan::DataFrameScan { .. } => true,
+        #[cfg(feature = "parquet")]
+        ALogicalPlan::ParquetScan { .. } => true,
+        _ => false,
+    }
+}
+
 impl PushNode for &mut [Option<Node>] {
     fn push_node(&mut self, value: Node) {
         if self[0].is_some() {
