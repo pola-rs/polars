@@ -75,7 +75,12 @@ macro_rules! cast_with_dtype {
             List(_) => ChunkCast::cast::<ListType>($self).map(|ca| ca.into_series()),
             Categorical => ChunkCast::cast::<CategoricalType>($self).map(|ca| ca.into_series()),
             dt => Err(PolarsError::Other(
-                format!("Casting to {:?} is not supported", dt).into(),
+                format!(
+                    "Casting to {:?} is not supported. \
+                This error may occur because you did not activate a certain dtype feature",
+                    dt
+                )
+                .into(),
             )),
         }
     }};

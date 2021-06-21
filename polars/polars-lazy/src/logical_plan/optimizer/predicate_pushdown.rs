@@ -244,6 +244,8 @@ impl PredicatePushDown {
                 let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
                 // maybe update predicate name if a projection is an alias
+                // aliases change the column names and because we push the predicates downwards
+                // this may be problematic as the aliased column may not yet exist.
                 for node in &expr {
                     let e = expr_arena.get(*node);
 
@@ -251,17 +253,24 @@ impl PredicatePushDown {
                         // if this alias refers to one of the predicates in the upper nodes
                         // we rename the column of the predicate before we push it downwards.
                         if let Some(predicate) = acc_predicates.remove(&*name) {
-                            let new_name = aexpr_to_root_column_name(*e, &*expr_arena)
-                                .expect("more than one root");
-                            rename_aexpr_root_name(predicate, expr_arena, new_name.clone())
-                                .unwrap();
+                            match aexpr_to_root_column_name(*e, &*expr_arena) {
+                                // we were able to rename the alias column with the root column name
+                                // before pushing down the predicate
+                                Ok(new_name) => {
+                                    rename_aexpr_root_name(predicate, expr_arena, new_name.clone())
+                                        .unwrap();
 
-                            insert_and_combine_predicate(
-                                &mut acc_predicates,
-                                new_name,
-                                predicate,
-                                expr_arena,
-                            );
+                                    insert_and_combine_predicate(
+                                        &mut acc_predicates,
+                                        new_name,
+                                        predicate,
+                                        expr_arena,
+                                    );
+                                }
+                                // this may be a complex binary function. The predicate may only be valid
+                                // on this projected column so we do filter locally.
+                                Err(_) => local_predicates.push(predicate),
+                            }
                         }
                     }
 
