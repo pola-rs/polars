@@ -1513,6 +1513,37 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "is_in")]
+    fn test_lazy_query_8() -> Result<()> {
+        // https://github.com/pola-rs/polars/issues/842
+        let df = df![
+            "A" => [1, 2, 3],
+            "B" => [1, 2, 3],
+            "C" => [1, 2, 3],
+            "D" => [1, 2, 3],
+            "E" => [1, 2, 3]
+        ]?;
+
+        let mut selection = vec![];
+
+        for c in &["A", "B", "C", "D", "E"] {
+            let e = when(col(c).is_in(col("E")))
+                .then(col("A"))
+                .otherwise(Null {}.lit())
+                .alias(c);
+            selection.push(e);
+        }
+
+        let out = df
+            .lazy()
+            .select(selection)
+            .filter(col("D").gt(lit(1)))
+            .collect()?;
+        assert_eq!(out.shape(), (2, 5));
+        Ok(())
+    }
+
+    #[test]
     fn test_lazy_shift_and_fill_all() {
         let data = &[1, 2, 3];
         let df = DataFrame::new(vec![Series::new("data", data)]).unwrap();
