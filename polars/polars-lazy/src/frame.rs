@@ -2292,10 +2292,14 @@ mod test {
             .lazy()
             .select(vec![when(col("a").eq(lit("c")))
                 .then(Null {}.lit())
-                .otherwise(col("a"))])
+                .otherwise(col("a"))
+                .alias("foo")])
             .collect()?;
 
-        dbg!(out);
+        assert_eq!(
+            out.column("foo")?.is_null().into_iter().collect::<Vec<_>>(),
+            &[Some(false), Some(false), Some(true)]
+        );
         Ok(())
     }
 }
