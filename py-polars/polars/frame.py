@@ -729,10 +729,9 @@ class DataFrame:
         # df["foo"] = series
         if isinstance(key, str):
             try:
-                self.drop_in_place(key)
+                self.replace(key, Series(key, value))
             except Exception:
-                pass
-            self.hstack([Series(key, value)], in_place=True)
+                self.hstack([Series(key, value)], in_place=True)
         # df[idx] = series
         elif isinstance(key, int):
             assert isinstance(value, Series)

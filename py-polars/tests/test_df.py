@@ -153,6 +153,13 @@ def test_replace():
     assert df.frame_equal(DataFrame({"c": [True, False, True], "b": [1, 2, 3]}))
 
 
+def test_assignment():
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [2, 3, 4]})
+    df["foo"] = df["foo"]
+    # make sure that assignment does not change column order
+    assert df.columns == ["foo", "bar"]
+
+
 def test_slice():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
     df = df.slice(1, 2)
