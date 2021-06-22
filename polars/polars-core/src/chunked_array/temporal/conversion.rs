@@ -403,9 +403,12 @@ impl Date64Chunked {
 
     /// Format Date64 with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
-        self.as_naive_datetime_iter()
+        let mut ca: Utf8Chunked = self
+            .as_naive_datetime_iter()
             .map(|opt_dt| opt_dt.map(|dt| format!("{}", dt.format(fmt))))
-            .collect()
+            .collect();
+        ca.rename(self.name());
+        ca
     }
 }
 
@@ -453,8 +456,11 @@ impl Date32Chunked {
 
     /// Format Date32 with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
-        self.as_naive_datetime_iter()
+        let mut ca: Utf8Chunked = self
+            .as_naive_datetime_iter()
             .map(|opt_dt| opt_dt.map(|dt| format!("{}", dt.format(fmt))))
-            .collect()
+            .collect();
+        ca.rename(self.name());
+        ca
     }
 }
