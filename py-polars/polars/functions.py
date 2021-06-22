@@ -89,7 +89,7 @@ def get_dummies(df: DataFrame) -> DataFrame:
 
 
 def read_csv(
-    file: Union[str, TextIO, Path],
+    file: Union[str, TextIO, Path, BinaryIO],
     infer_schema_length: int = 100,
     batch_size: int = 8192,
     has_headers: bool = True,
@@ -216,23 +216,38 @@ def read_csv(
 
         return from_arrow(tbl, rechunk)
 
-    df = DataFrame.read_csv(
-        file=file,
-        infer_schema_length=infer_schema_length,
-        batch_size=batch_size,
-        has_headers=has_headers,
-        ignore_errors=ignore_errors,
-        stop_after_n_rows=stop_after_n_rows,
-        skip_rows=skip_rows,
-        projection=projection,
-        sep=sep,
-        columns=columns,
-        rechunk=rechunk,
-        encoding=encoding,
-        n_threads=n_threads,
-        dtype=dtype,
-        low_memory=low_memory,
-    )
+    def read_csv_to_df(file):
+        return DataFrame.read_csv(
+            file=file,
+            infer_schema_length=infer_schema_length,
+            batch_size=batch_size,
+            has_headers=has_headers,
+            ignore_errors=ignore_errors,
+            stop_after_n_rows=stop_after_n_rows,
+            skip_rows=skip_rows,
+            projection=projection,
+            sep=sep,
+            columns=columns,
+            rechunk=rechunk,
+            encoding=encoding,
+            n_threads=n_threads,
+            dtype=dtype,
+            low_memory=low_memory,
+        )
+
+    if isinstance(file, str) and file.endswith(".gz"):
+        try:
+            # Try to use python-isal for faster gzip decompresssion.
+            from isal import igzip as gzip_mod
+        except ImportError:
+            # Use normal gzip module, if python-isal is not installed.
+            import gzip as gzip_mod
+
+        with gzip_mod.open(file, "rb") as fh:
+            df = read_csv_to_df(fh)
+    else:
+        df = read_csv_to_df(file)
+
     if new_columns:
         df.columns = new_columns
     return df
