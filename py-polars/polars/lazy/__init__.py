@@ -199,7 +199,11 @@ class LazyFrame:
         """
 
         ldf = self._ldf.optimization_toggle(
-            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            string_cache=False,
         )
 
         return ldf.describe_optimized_plan()
@@ -1483,7 +1487,7 @@ class ExprStringNameSpace:
     def __init__(self, expr: "Expr"):
         self._pyexpr = expr._pyexpr
 
-    def parse_date(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
+    def strptime(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
         """
         Parse utf8 expression as a Date32/Date64 type.
 
@@ -1499,6 +1503,13 @@ class ExprStringNameSpace:
         if datatype == datatypes.Date64:
             return wrap_expr(self._pyexpr.str_parse_date64(fmt))
         raise NotImplementedError
+
+    def parse_date(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
+        """
+        .. deprecated:: 0.8.7
+        use `strptime`
+        """
+        self.strptime(datatype, fmt)
 
     def lengths(self) -> "Expr":
         """
