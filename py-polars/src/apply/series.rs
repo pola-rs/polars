@@ -90,6 +90,16 @@ where
     }
 }
 
+fn call_lambda_series_out<T>(py: Python, lambda: &PyAny, in_val: T) -> PyResult<Series>
+where
+    T: ToPyObject,
+{
+    let arg = PyTuple::new(py, &[in_val]);
+    let out = lambda.call1(arg)?;
+    let py_series = out.getattr("_s")?;
+    Ok(py_series.extract::<PySeries>().unwrap().series)
+}
+
 impl<'a> ApplyLambda<'a> for BooleanChunked {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
         let mut null_count = 0;
@@ -292,10 +302,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| {
-                    let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
-                    pyseries.map(|ps| ps.series)
-                });
+                .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
             Ok(iterator_to_list(
                 dt,
@@ -310,10 +317,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
-                        pyseries.map(|ps| ps.series)
-                    })
+                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
             Ok(iterator_to_list(
                 dt,
@@ -572,10 +576,7 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| {
-                    let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
-                    pyseries.map(|ps| ps.series)
-                });
+                .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
             Ok(iterator_to_list(
                 dt,
@@ -590,10 +591,7 @@ where
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
-                        pyseries.map(|ps| ps.series)
-                    })
+                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
             Ok(iterator_to_list(
                 dt,
@@ -846,10 +844,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| {
-                    let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
-                    pyseries.map(|ps| ps.series)
-                });
+                .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
             Ok(iterator_to_list(
                 dt,
@@ -864,10 +859,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
-                        pyseries.map(|ps| ps.series)
-                    })
+                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
             Ok(iterator_to_list(
                 dt,
@@ -1552,10 +1544,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| {
-                    let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
-                    pyseries.map(|ps| ps.series)
-                });
+                .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
             Ok(iterator_to_list(
                 dt,
@@ -1570,10 +1559,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        let pyseries: Option<PySeries> = call_lambda(py, lambda, val).ok();
-                        pyseries.map(|ps| ps.series)
-                    })
+                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
             Ok(iterator_to_list(
                 dt,

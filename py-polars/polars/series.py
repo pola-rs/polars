@@ -1,3 +1,5 @@
+from datetime import datetime
+
 try:
     from .polars import PySeries
 except ImportError:
@@ -559,14 +561,7 @@ class Series:
         """
         Reduce this Series to the sum value.
         """
-        if self.dtype == Boolean:
-            return self._s.sum_u32()
-        if self.dtype == UInt8:
-            return self.cast(UInt64).sum()
-        f = get_ffi_func("sum_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return f()
+        return self._s.sum()
 
     def mean(self):
         """
@@ -578,23 +573,13 @@ class Series:
         """
         Get the minimal value in this Series.
         """
-        if self.dtype == Boolean:
-            return self._s.min_u32()
-        f = get_ffi_func("min_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return f()
+        return self._s.min()
 
     def max(self):
         """
         Get the maximum value in this Series.
         """
-        if self.dtype == Boolean:
-            return self._s.max_u32()
-        f = get_ffi_func("max_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return f()
+        return self._s.max()
 
     def std(self, ddof: int = 1) -> float:
         """
@@ -1808,13 +1793,53 @@ class DateTimeNameSpace:
 
     def to_python_datetime(self) -> "Series":
         """
-        Go from Date32/Date64 to python DataTime objects
+        Go from Date32/Date64 to python DateTime objects
         """
-        from datetime import datetime
 
         return (self.timestamp() // 1000).apply(
             lambda ts: datetime.utcfromtimestamp(ts), datatypes.Object
         )
+
+    def min(self) -> "datetime":
+        """
+        Return minimum as python DateTime
+        """
+        s = wrap_s(self._s)
+        out = s.min()
+        return _to_python_datetime(out, s.dtype)
+
+    def max(self) -> "datetime":
+        """
+        Return maximum as python DateTime
+        """
+        s = wrap_s(self._s)
+        out = s.max()
+        return _to_python_datetime(out, s.dtype)
+
+    def median(self) -> "datetime":
+        """
+        Return median as python DateTime
+        """
+        s = wrap_s(self._s)
+        out = int(s.median())
+        return _to_python_datetime(out, s.dtype)
+
+    def mean(self) -> "datetime":
+        """
+        Return mean as python DateTime
+        """
+        s = wrap_s(self._s)
+        out = int(s.mean())
+        return _to_python_datetime(out, s.dtype)
+
+
+def _to_python_datetime(value: int, dtype: "DataType") -> "datetime":
+    if dtype == Date32:
+        # days to seconds
+        return datetime.utcfromtimestamp(value * 3600 * 24)
+    if dtype == Date64:
+        # ms to seconds
+        return datetime.utcfromtimestamp(value // 1000)
 
 
 class SeriesIter:

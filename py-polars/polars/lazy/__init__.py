@@ -199,7 +199,11 @@ class LazyFrame:
         """
 
         ldf = self._ldf.optimization_toggle(
-            type_coercion, predicate_pushdown, projection_pushdown, simplify_expression
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            string_cache=False,
         )
 
         return ldf.describe_optimized_plan()
@@ -1423,6 +1427,24 @@ class Expr:
             other = lit(Series("", other))
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
+    def repeat_by(self, by: "Expr") -> "Expr":
+        """
+        Repeat the elements in this Series `n` times by dictated by the number given by `by`.
+        The elements are expanded into a `List`
+
+        Parameters
+        ----------
+        by
+            Numeric column that determines how often the values will be repeated.
+            The column will be coerced to UInt32. Give this dtype to make the coercion a no-op.
+
+        Returns
+        -------
+        Series of type List
+        """
+        by = expr_to_lit_or_expr(by, False)
+        return wrap_expr(self._pyexpr.repeat_by(by._pyexpr))
+
     def is_between(
         self, start: "Union[Expr, datetime]", end: "Union[Expr, datetime]"
     ) -> "Expr":
@@ -1465,7 +1487,7 @@ class ExprStringNameSpace:
     def __init__(self, expr: "Expr"):
         self._pyexpr = expr._pyexpr
 
-    def parse_date(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
+    def strptime(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
         """
         Parse utf8 expression as a Date32/Date64 type.
 
@@ -1481,6 +1503,13 @@ class ExprStringNameSpace:
         if datatype == datatypes.Date64:
             return wrap_expr(self._pyexpr.str_parse_date64(fmt))
         raise NotImplementedError
+
+    def parse_date(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
+        """
+        .. deprecated:: 0.8.7
+        use `strptime`
+        """
+        self.strptime(datatype, fmt)
 
     def lengths(self) -> "Expr":
         """

@@ -355,10 +355,12 @@ def test_timestamp():
 
     a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date64)
     assert a.dt.timestamp() == [10000, 20000, 30000]
-    a = a.dt.to_python_datetime()
-    assert isinstance(a[0], datetime)
+    out = a.dt.to_python_datetime()
+    assert isinstance(out[0], datetime)
+    assert a.dt.min() == out[0]
+    assert a.dt.max() == out[2]
 
-    df = pl.DataFrame([a])
+    df = pl.DataFrame([out])
     # test if rows returns objects
     assert isinstance(df.row(0)[0], datetime)
 
@@ -367,3 +369,11 @@ def test_round():
     a = pl.Series("f", [1.003, 2.003])
     b = a.round(2)
     assert b == [1.00, 2.00]
+
+
+def test_apply_list_out():
+    s = pl.Series("count", [3, 2, 2])
+    out = s.apply(lambda val: pl.repeat(val, val))
+    assert out[0] == [3, 3, 3]
+    assert out[1] == [2, 2]
+    assert out[2] == [2, 2]

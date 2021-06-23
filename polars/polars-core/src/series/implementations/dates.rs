@@ -532,7 +532,7 @@ macro_rules! impl_dyn_series {
                 cast_and_apply!(self, is_duplicated,)
             }
 
-            fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+            fn null_bits(&self) -> Vec<(usize, Option<&Buffer>)> {
                 self.0.null_bits().collect()
             }
 
@@ -675,6 +675,10 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "is_in")]
             fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
                 IsIn::is_in(&self.0, other)
+            }
+            #[cfg(feature = "repeat_by")]
+            fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+                RepeatBy::repeat_by(&self.0, by)
             }
         }
     };
