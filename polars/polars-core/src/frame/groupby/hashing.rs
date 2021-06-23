@@ -1,4 +1,5 @@
 use super::GroupTuples;
+use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::vector_hasher::{df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
 use crate::vector_hasher::{this_partition, AsU64};
@@ -164,6 +165,64 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     }
 }
 
+#[inline]
+pub(crate) unsafe fn compare_keys<'a>(
+    keys_cmp: &'a [Box<dyn PartialEqInner + 'a>],
+    idx_a: usize,
+    idx_b: usize,
+) -> bool {
+    for cmp in keys_cmp {
+        if !cmp.eq_element_unchecked(idx_a, idx_b) {
+            return false;
+        }
+    }
+    true
+}
+
+// Differs in the because this one uses the PartialEqInner trait objects
+// is faster when multiple chunks. Not yet used in join.
+pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
+    hash_tbl: &mut HashMap<IdxHash, V, H>,
+    // row index
+    idx: u32,
+    // hash
+    original_h: u64,
+    // keys of the hash table (will not be inserted, the indexes will be used)
+    // the keys are needed for the equality check
+    keys_cmp: &'a [Box<dyn PartialEqInner + 'a>],
+    // value to insert
+    vacant_fn: G,
+    // function that gets a mutable ref to the occupied value in the hash table
+    occupied_fn: F,
+) where
+    G: Fn() -> V,
+    F: Fn(&mut V),
+    H: BuildHasher,
+{
+    let entry = hash_tbl
+        .raw_entry_mut()
+        // uses the idx to probe rows in the original DataFrame with keys
+        // to check equality to find an entry
+        // this does not invalidate the hashmap as this equality function is not used
+        // during rehashing/resize (then the keys are already known to be unique).
+        // Only during insertion and probing an equality function is needed
+        .from_hash(original_h, |idx_hash| {
+            let key_idx = idx_hash.idx;
+            // Safety:
+            // indices in a groupby operation are always in bounds.
+            unsafe { compare_keys(keys_cmp, key_idx as usize, idx as usize) }
+        });
+    match entry {
+        RawEntryMut::Vacant(entry) => {
+            entry.insert_hashed_nocheck(original_h, IdxHash::new(idx, original_h), vacant_fn());
+        }
+        RawEntryMut::Occupied(mut entry) => {
+            let (_k, v) = entry.get_key_value_mut();
+            occupied_fn(v);
+        }
+    }
+}
+
 pub(crate) fn groupby_threaded_multiple_keys_flat(
     keys: DataFrame,
     n_partitions: usize,
@@ -172,6 +231,12 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let n_partitions = n_partitions as u64;
 
+    // trait object to compare inner types.
+    let keys_cmp = keys
+        .iter()
+        .map(|s| s.into_partial_eq_inner())
+        .collect::<Vec<_>>();
+
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
@@ -179,8 +244,6 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
         (0..n_partitions).into_par_iter().map(|thread_no| {
             let hashes = &hashes;
             let thread_no = thread_no as u64;
-
-            let keys = &keys;
 
             let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
@@ -196,11 +259,11 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
                         // So only a part of the hashes go to this hashmap
                         if this_partition(h, thread_no, n_partitions) {
                             let idx = idx + offset;
-                            populate_multiple_key_hashmap(
+                            populate_multiple_key_hashmap2(
                                 &mut hash_tbl,
                                 idx,
                                 h,
-                                &keys,
+                                &keys_cmp,
                                 || (idx, vec![idx]),
                                 |v| v.1.push(idx),
                             );

@@ -154,8 +154,8 @@ where
 }
 
 pub struct Utf8TakeRandom<'a> {
-    chunks: Chunks<'a, LargeStringArray>,
-    chunk_lens: Vec<u32>,
+    pub(crate) chunks: Chunks<'a, LargeStringArray>,
+    pub(crate) chunk_lens: Vec<u32>,
 }
 
 impl<'a> TakeRandom for Utf8TakeRandom<'a> {
@@ -173,7 +173,7 @@ impl<'a> TakeRandom for Utf8TakeRandom<'a> {
 }
 
 pub struct Utf8TakeRandomSingleChunk<'a> {
-    arr: &'a LargeStringArray,
+    pub(crate) arr: &'a LargeStringArray,
 }
 
 impl<'a> TakeRandom for Utf8TakeRandomSingleChunk<'a> {
@@ -263,8 +263,8 @@ pub struct NumTakeRandomChunked<'a, T>
 where
     T: PolarsNumericType,
 {
-    chunks: Vec<&'a PrimitiveArray<T>>,
-    chunk_lens: Vec<u32>,
+    pub(crate) chunks: Vec<&'a PrimitiveArray<T>>,
+    pub(crate) chunk_lens: Vec<u32>,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomChunked<'a, T>
@@ -285,7 +285,7 @@ where
 }
 
 pub struct NumTakeRandomCont<'a, T> {
-    slice: &'a [T],
+    pub(crate) slice: &'a [T],
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomCont<'a, T>
@@ -309,7 +309,7 @@ pub struct NumTakeRandomSingleChunk<'a, T>
 where
     T: PolarsNumericType,
 {
-    arr: &'a PrimitiveArray<T>,
+    pub(crate) arr: &'a PrimitiveArray<T>,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomSingleChunk<'a, T>
@@ -330,8 +330,8 @@ where
 }
 
 pub struct BoolTakeRandom<'a> {
-    chunks: Chunks<'a, BooleanArray>,
-    chunk_lens: Vec<u32>,
+    pub(crate) chunks: Chunks<'a, BooleanArray>,
+    pub(crate) chunk_lens: Vec<u32>,
 }
 
 impl<'a> TakeRandom for BoolTakeRandom<'a> {
@@ -349,7 +349,7 @@ impl<'a> TakeRandom for BoolTakeRandom<'a> {
 }
 
 pub struct BoolTakeRandomSingleChunk<'a> {
-    arr: &'a BooleanArray,
+    pub(crate) arr: &'a BooleanArray,
 }
 
 impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {

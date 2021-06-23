@@ -14,7 +14,10 @@ use super::IntoSeries;
 use super::SeriesTrait;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::{
-    ops::aggregate::{ChunkAggSeries, VarAggSeries},
+    ops::{
+        aggregate::{ChunkAggSeries, VarAggSeries},
+        compare_inner::{IntoPartialEqInner, PartialEqInner},
+    },
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
@@ -70,6 +73,9 @@ macro_rules! impl_dyn_series {
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
                 ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
                     .map(|ca| ca.into_series())
+            }
+            fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
+                (&self.0).into_partial_eq_inner()
             }
 
             fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
