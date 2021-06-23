@@ -80,7 +80,7 @@ impl<'a> Iterator for BoolIterNoNull<'a> {
         } else {
             let old = self.current;
             self.current += 1;
-            unsafe { Some(self.array.value(old)) }
+            unsafe { Some(self.array.value_unchecked(old)) }
         }
     }
 

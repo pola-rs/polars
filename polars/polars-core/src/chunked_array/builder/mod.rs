@@ -42,7 +42,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
         self.array_builder.push(None);
     }
 
-    fn finish(mut self) -> BooleanChunked {
+    fn finish(self) -> BooleanChunked {
         let arr: BooleanArray = self.array_builder.into();
         let arr = Arc::new(arr) as ArrayRef;
 
@@ -90,12 +90,10 @@ where
         self.array_builder.push(None)
     }
 
-    fn finish(mut self) -> ChunkedArray<T> {
-        let arr = self.array_builder.into_arc();
-
+    fn finish(self) -> ChunkedArray<T> {
         ChunkedArray {
             field: Arc::new(self.field),
-            chunks: vec![arr],
+            chunks: vec![self.array_builder.into_arc()],
             phantom: PhantomData,
             categorical_map: None,
         }
@@ -152,10 +150,10 @@ impl Utf8ChunkedBuilder {
 
     #[inline]
     pub fn append_option<S: AsRef<str>>(&mut self, opt: Option<S>) {
-        self.builder.push(opt.map(|x| x.as_ref()));
+        self.builder.push(opt);
     }
 
-    pub fn finish(mut self) -> Utf8Chunked {
+    pub fn finish(self) -> Utf8Chunked {
         let arr = self.builder.into_arc();
         ChunkedArray {
             field: Arc::new(self.field),
@@ -345,7 +343,7 @@ where
 
 macro_rules! finish_list_builder {
     ($self:ident) => {{
-        let arr = $self.builder.into_arc();
+        let arr = $self.builder.as_arc();
         ListChunked {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
@@ -360,8 +358,8 @@ where
     T: PolarsPrimitiveType,
 {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
-        let builder =
-            LargePrimitiveBuilder::<T::Native>::with_capacities(capacity, values_capacity);
+        let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
+        let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
 
         Self { builder, field }
@@ -369,17 +367,22 @@ where
 
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
         match opt_v {
-            Some(v) => {
-                self.builder.push(v);
+            Some(items) => {
+                let values = self.builder.mut_values();
+                values.reserve(items.len());
+                for item in items {
+                    values.push(Some(*item))
+                }
+                self.builder.try_push_valid().unwrap();
             }
             None => {
-                self.builder.append(false).expect("should not fail");
+                self.builder.push_null();
             }
         }
     }
 
     pub fn append_null(&mut self) {
-        self.builder.append(false).expect("should not fail");
+        self.builder.push_null();
     }
 }
 
@@ -393,38 +396,35 @@ where
         match opt_s {
             Some(s) => self.append_series(s),
             None => {
-                self.builder.push(None);
+                self.builder.push_null();
             }
         }
     }
 
     #[inline]
     fn append_null(&mut self) {
-        self.builder.push(None);
+        self.builder.push_null();
     }
 
     #[inline]
     fn append_series(&mut self, s: &Series) {
-        let builder = self.builder.values();
         let arrays = s.chunks();
-        for a in arrays {
-            let values = a.get_values::<T>();
-            // we would like to check if array has no null values.
-            // however at the time of writing there is a bug in append_slice, because it does not update
-            // the null bitmap
-            if s.null_count() == 0 {
-                builder.append_slice(values);
-            } else {
-                values.iter().enumerate().for_each(|(idx, v)| {
-                    if a.is_valid(idx) {
-                        builder.append_value(*v);
-                    } else {
-                        builder.append_null();
-                    }
-                });
-            }
+
+        let arrays = arrays
+            .iter()
+            .map(|x| {
+                x.as_any()
+                    .downcast_ref::<PrimitiveArray<T::Native>>()
+                    .unwrap()
+            })
+            .map(|x| x.iter())
+            .flatten();
+        let values = self.builder.mut_values();
+        values.reserve(s.len());
+        for v in arrays {
+            values.push(v.copied())
         }
-        self.builder.append(true).unwrap();
+        self.builder.try_push_valid().unwrap();
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -443,7 +443,8 @@ pub struct ListUtf8ChunkedBuilder {
 
 impl ListUtf8ChunkedBuilder {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
-        let builder = LargeListUtf8Builder::with_capacities(capacity, values_capacity);
+        let values = MutableUtf8Array::<i64>::with_capacity(values_capacity);
+        let builder = LargeListUtf8Builder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(ArrowDataType::LargeUtf8));
 
         ListUtf8ChunkedBuilder { builder, field }
@@ -455,29 +456,22 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         match opt_s {
             Some(s) => self.append_series(s),
             None => {
-                self.builder.append(false).unwrap();
+                self.builder.push_null();
             }
         }
     }
 
     #[inline]
     fn append_null(&mut self) {
-        let builder = self.builder.values();
-        builder.append_null().unwrap();
-        self.builder.append(true).unwrap();
+        self.builder.push_null();
     }
 
     #[inline]
     fn append_series(&mut self, s: &Series) {
         let ca = s.utf8().unwrap();
-        let value_builder = self.builder.values();
-        for s in ca {
-            match s {
-                Some(s) => value_builder.append_value(s).unwrap(),
-                None => value_builder.append_null().unwrap(),
-            };
-        }
-        self.builder.append(true).unwrap();
+        let value_builder = self.builder.mut_values();
+        value_builder.try_extend(ca).unwrap();
+        self.builder.try_push_valid().unwrap();
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -491,8 +485,9 @@ pub struct ListBooleanChunkedBuilder {
 }
 
 impl ListBooleanChunkedBuilder {
-    pub fn new(name: &str, capacity: usize, values_capacacity: usize) -> Self {
-        let builder = LargeListBooleanBuilder::with_capacities(capacity, values_capacacity);
+    pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
+        let values = MutableBooleanArray::with_capacity(values_capacity);
+        let builder = LargeListBooleanBuilder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(ArrowDataType::Boolean));
 
         Self { builder, field }
@@ -504,29 +499,22 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
         match opt_s {
             Some(s) => self.append_series(s),
             None => {
-                self.builder.append(false).unwrap();
+                self.builder.push_null();
             }
         }
     }
 
     #[inline]
     fn append_null(&mut self) {
-        let builder = self.builder.values();
-        builder.append_null();
-        self.builder.append(true).unwrap();
+        self.builder.push_null();
     }
 
     #[inline]
     fn append_series(&mut self, s: &Series) {
         let ca = s.bool().unwrap();
-        let value_builder = self.builder.values();
-        for s in ca {
-            match s {
-                Some(s) => value_builder.append_value(s),
-                None => value_builder.append_null(),
-            };
-        }
-        self.builder.append(true).unwrap();
+        let value_builder = self.builder.mut_values();
+        value_builder.extend(ca);
+        self.builder.try_push_valid().unwrap();
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -542,7 +530,8 @@ pub fn get_list_builder(
 ) -> Box<dyn ListBuilderTrait> {
     macro_rules! get_primitive_builder {
         ($type:ty) => {{
-            let builder = ListPrimitiveChunkedBuilder::new(&name, value_capacity);
+            let builder =
+                ListPrimitiveChunkedBuilder::<$type>::new(&name, list_capacity, value_capacity);
             Box::new(builder)
         }};
     }
@@ -584,7 +573,7 @@ mod test {
 
     #[test]
     fn test_list_builder() {
-        let mut builder = ListPrimitiveChunkedBuilder::new("a", 10, 5);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 5);
 
         // create a series containing two chunks
         let mut s1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]).into_series();

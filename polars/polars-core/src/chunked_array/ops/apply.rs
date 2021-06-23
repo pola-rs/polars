@@ -38,12 +38,12 @@ where
         F: Fn(T::Native) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        let mut chunks = self
+        let chunks = self
             .data_views()
             .zip(self.null_bits())
             .map(|(slice, (_, validity))| {
-                let values = AlignedVec::<_>::from(slice);
-                to_array::<T>(values, validity.clone())
+                let values = AlignedVec::<_>::from_trusted_len_iter(slice.iter().map(|&v| f(v)));
+                to_array::<S>(values, validity.clone())
             })
             .collect();
         ChunkedArray::<S>::new_from_chunks(self.name(), chunks)

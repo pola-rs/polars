@@ -19,7 +19,7 @@ pub mod prelude;
 pub(crate) mod utils;
 
 use arrow::{
-    error::Result as ArrowResult, json::Reader as ArrowJsonReader, record_batch::RecordBatch,
+    error::Result as ArrowResult, io::json::Reader as ArrowJsonReader, record_batch::RecordBatch,
 };
 
 use polars_core::prelude::*;

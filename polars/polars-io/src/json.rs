@@ -62,7 +62,7 @@
 //!
 use crate::finish_reader;
 use crate::prelude::*;
-pub use arrow::json::ReaderBuilder;
+pub use arrow::io::json::ReaderBuilder;
 use polars_core::prelude::*;
 use std::io::{Read, Seek};
 use std::sync::Arc;

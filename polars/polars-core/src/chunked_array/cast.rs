@@ -36,6 +36,22 @@ macro_rules! cast_from_dtype {
     }};
 }
 
+fn cast_from_dtype<N, T>(chunked: &ChunkedArray<T>, dtype: DataType) -> Result<ChunkedArray<N>>
+where
+    N: PolarsNumericType,
+    T: PolarsNumericType,
+    N::Native: NumCast,
+    T::Native: NumCast,
+{
+    let chunks = chunked
+        .downcast_iter()
+        .into_iter()
+        .map(|arr| cast_physical::<T, N>(arr, &dtype))
+        .collect();
+
+    Ok(ChunkedArray::new_from_chunks(chunked.field.name(), chunks))
+}
+
 macro_rules! cast_with_dtype {
     ($self:expr, $data_type:expr) => {{
         use DataType::*;
@@ -140,26 +156,25 @@ where
             // the underlying datatype is i64 so we transmute array
             (Duration(_), Int64) => {
                 cast_from_dtype!(self, cast_logical, Int64)
-            },
+            }
             // paths not supported by arrow kernel
             // to float32
-            (Duration(_), Float32) | (Date32, Float32) | (Date64, Float32)
-            // to float64
-            | (Duration(_), Float64) | (Date32, Float64) | (Date64, Float64)
-            // underlying type: i64
-            | (Duration(_), UInt64)
-            => {
-                cast_from_dtype!(self, cast_physical, N::get_dtype())
+            (Duration(_), Float32) | (Date32, Float32) | (Date64, Float32) => {
+                cast_from_dtype::<Float32Type, _>(self, Float32)?.cast::<N>()
             }
+            // to float64
+            (Duration(_), Float64) | (Date32, Float64) | (Date64, Float64) => {
+                cast_from_dtype::<Float64Type, _>(self, Float64)?.cast::<N>()
+            }
+            // to uint64
+            (Duration(_), UInt64) => cast_from_dtype::<UInt64Type, _>(self, UInt64)?.cast::<N>(),
             // to date64
             (Float64, Date64) | (Float32, Date64) => {
-                let out: Result<Int64Chunked> = cast_from_dtype!(self, cast_physical, Int64);
-                out?.cast::<N>()
+                cast_from_dtype::<Date64Type, _>(self, Date64)?.cast::<N>()
             }
-            // to date64
+            // to date32
             (Float64, Date32) | (Float32, Date32) => {
-                let out: Result<Int32Chunked> = cast_from_dtype!(self, cast_physical, Int32);
-                out?.cast::<N>()
+                cast_from_dtype::<Date32Type, _>(self, Date32)?.cast::<N>()
             }
             _ => cast_ca(self),
         };
@@ -273,7 +288,7 @@ impl ChunkCast for ListChunked {
             DataType::List(child_type) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|list| cast_inner_list_type(list, &data_type.to_arrow()))
+                    .map(|list| cast_inner_list_type(list, child_type))
                     .collect::<Result<_>>()?;
                 let ca = ListChunked::new_from_chunks(self.name(), chunks);
                 Ok(ca.into_series())

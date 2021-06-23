@@ -72,8 +72,7 @@ where
     // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         // 2021-02-07: aligned vec was ~2x faster than arrow collect.
-        let iter = iter.into_iter();
-        let mut av = MutableBuffer::<T::Native>::from_iter(iter);
+        let av = iter.into_iter().collect::<AlignedVec<T::Native>>();
         NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
     }
 }

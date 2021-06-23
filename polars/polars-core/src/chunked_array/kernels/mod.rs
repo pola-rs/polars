@@ -23,11 +23,7 @@ pub(crate) fn cast_logical<T: NativeType>(arr: &PrimitiveArray<T>, data_type: &D
 where
     T: NativeType,
 {
-    Arc::new(PrimitiveArray::<T>::from_data(
-        data_type.to_arrow(),
-        arr.values().clone(),
-        arr.validity().clone(),
-    ))
+    Arc::new(arr.clone().to(data_type.to_arrow()))
 }
 
 /// Casts a `PrimitiveArray` to a different physical type and logical type.
@@ -49,8 +45,6 @@ pub(crate) fn is_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
     T: NativeType + Float,
 {
-    let validity = arr.validity();
-
     let values = Bitmap::from_trusted_len_iter(arr.values().iter().map(|v| v.is_nan()));
 
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
@@ -60,8 +54,6 @@ pub(crate) fn is_not_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
     T: NativeType + Float,
 {
-    let validity = arr.validity();
-
     let values = Bitmap::from_trusted_len_iter(arr.values().iter().map(|v| !v.is_nan()));
 
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
@@ -71,8 +63,6 @@ pub(crate) fn is_finite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
     T: NativeType + Float,
 {
-    let validity = arr.validity();
-
     let values = Bitmap::from_trusted_len_iter(arr.values().iter().map(|v| v.is_finite()));
 
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))
@@ -82,8 +72,6 @@ pub(crate) fn is_infinite<T>(arr: &PrimitiveArray<T>) -> ArrayRef
 where
     T: NativeType + Float,
 {
-    let validity = arr.validity();
-
     let values = Bitmap::from_trusted_len_iter(arr.values().iter().map(|v| v.is_infinite()));
 
     Arc::new(BooleanArray::from_data(values, arr.validity().clone()))

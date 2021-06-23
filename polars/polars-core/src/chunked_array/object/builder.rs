@@ -58,7 +58,7 @@ where
         }
     }
 
-    pub fn finish(mut self) -> ObjectChunked<T> {
+    pub fn finish(self) -> ObjectChunked<T> {
         let null_bitmap: Option<Bitmap> = self.bitmask_builder.into();
 
         let len = self.values.len();
