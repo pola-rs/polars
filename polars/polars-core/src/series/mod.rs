@@ -1564,7 +1564,11 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Utf8 => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| cast::cast(&arr, &ArrowDataType::LargeUtf8).unwrap().into())
+                    .map(|arr| {
+                        cast::cast(arr.as_ref(), &ArrowDataType::LargeUtf8)
+                            .unwrap()
+                            .into()
+                    })
                     .collect_vec();
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
@@ -1572,7 +1576,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 let chunks = chunks
                     .iter()
                     .map(|arr| {
-                        cast::cast(&arr, &ArrowDataType::LargeList(fld.clone()))
+                        cast::cast(arr.as_ref(), &ArrowDataType::LargeList(fld.clone()))
                             .unwrap()
                             .into()
                     })
@@ -1632,7 +1636,11 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
                 let chunks = chunks
                     .iter()
-                    .map(|arr| cast::cast(&arr, &ArrowDataType::Date64).unwrap().into())
+                    .map(|arr| {
+                        cast::cast(arr.as_ref(), &ArrowDataType::Date64)
+                            .unwrap()
+                            .into()
+                    })
                     .collect();
                 Ok(Date64Chunked::new_from_chunks(name, chunks).into_series())
             }
@@ -1735,7 +1743,7 @@ mod test {
 
     #[test]
     fn new_series_from_arrow_primitive_array() {
-        let array = UInt32Array::from(vec![1, 2, 3, 4, 5]);
+        let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Arc::new(array);
 
         Series::try_from(("foo", array_ref)).unwrap();

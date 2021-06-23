@@ -3,6 +3,22 @@ pub mod chunked_array;
 pub mod series;
 use crate::prelude::*;
 
+// Serde calls this the definition of the remote type. It is just a copy of the
+// remote data structure. The `remote` attribute gives the path to the actual
+// type we intend to derive code for.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(remote = "TimeUnit")]
+enum TimeUnitDef {
+    /// Time in seconds.
+    Second,
+    /// Time in milliseconds.
+    Millisecond,
+    /// Time in microseconds.
+    Microsecond,
+    /// Time in nanoseconds.
+    Nanosecond,
+}
+
 /// Intermediate enum. Needed because [crate::datatypes::DataType] has
 /// a &static str and thus requires Deserialize<&static>
 #[derive(Serialize, Deserialize, Debug)]
@@ -21,6 +37,7 @@ enum DeDataType<'a> {
     Utf8,
     Date32,
     Date64,
+    #[serde(with = "TimeUnitDef")]
     Time64(TimeUnit),
     List,
     Object(&'a str),

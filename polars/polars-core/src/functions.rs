@@ -9,7 +9,7 @@ use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Float, NumCast};
-use std::ops::{Add, Div};
+use std::ops::Add;
 
 /// Compute the covariance between two columns.
 pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>

@@ -547,19 +547,11 @@ where
         _ => {
             let keys_a = splitted_a
                 .iter()
-                .map(|ca| {
-                    ca.into_iter()
-                        .map(|v| v.copied().as_u64())
-                        .collect::<Vec<_>>()
-                })
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
                 .collect::<Vec<_>>();
             let keys_b = splitted_b
                 .iter()
-                .map(|ca| {
-                    ca.into_iter()
-                        .map(|v| v.copied().as_u64())
-                        .collect::<Vec<_>>()
-                })
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
                 .collect::<Vec<_>>();
             hash_join_tuples_inner(keys_a, keys_b, swap)
         }
@@ -631,19 +623,11 @@ where
         _ => {
             let keys_a = splitted_a
                 .iter()
-                .map(|ca| {
-                    ca.into_iter()
-                        .map(|v| v.copied().as_u64())
-                        .collect::<Vec<_>>()
-                })
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
                 .collect::<Vec<_>>();
             let keys_b = splitted_b
                 .iter()
-                .map(|ca| {
-                    ca.into_iter()
-                        .map(|v| v.copied().as_u64())
-                        .collect::<Vec<_>>()
-                })
+                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
         }

@@ -41,7 +41,7 @@ where
         let mut chunks = self
             .data_views()
             .zip(self.null_bits())
-            .map(|(slice, validity)| {
+            .map(|(slice, (_, validity))| {
                 let values = AlignedVec::<_>::from(slice);
                 to_array::<T>(values, validity.clone())
             })
@@ -78,7 +78,7 @@ where
             .data_views()
             .into_iter()
             .zip(self.null_bits())
-            .map(|(slice, validity)| {
+            .map(|(slice, (_, validity))| {
                 let values = slice.iter().copied().map(f);
                 let values = AlignedVec::<_>::from_trusted_len_iter(values);
                 to_array::<T>(values, validity.clone())

@@ -6,7 +6,6 @@ use polars_arrow::prelude::ValueSize;
 use std::convert::TryFrom;
 use std::iter::{Copied, Map};
 use std::marker::PhantomData;
-use std::ops::Not;
 use std::sync::Arc;
 
 pub mod ops;
@@ -151,7 +150,7 @@ impl<T> ChunkedArray<T> {
     /// Get the index of the first non null value in this ChunkedArray.
     pub fn first_non_null(&self) -> Option<usize> {
         let mut offset = 0;
-        for null_bitmap in self.null_bits() {
+        for (_, null_bitmap) in self.null_bits() {
             if let Some(null_bitmap) = null_bitmap {
                 for (idx, is_valid) in null_bitmap.iter().enumerate() {
                     if is_valid {
@@ -167,8 +166,10 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Get the buffer of bits representing null values
-    pub fn null_bits(&self) -> impl Iterator<Item = &Option<Bitmap>> + '_ {
-        self.chunks.iter().map(|arr| arr.validity())
+    pub fn null_bits(&self) -> impl Iterator<Item = (usize, &Option<Bitmap>)> + '_ {
+        self.chunks
+            .iter()
+            .map(|arr| (arr.null_count(), arr.validity()))
     }
 
     /// Shrink the capacity of this array to fit it's length.
@@ -1035,13 +1036,13 @@ pub(crate) mod test {
         let before = arr
             .chunks()
             .iter()
-            .map(|arr| arr.get_buffer_memory_size())
+            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
             .sum::<usize>();
         arr.shrink_to_fit();
         let after = arr
             .chunks()
             .iter()
-            .map(|arr| arr.get_buffer_memory_size())
+            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
             .sum::<usize>();
         assert!(before > after);
     }

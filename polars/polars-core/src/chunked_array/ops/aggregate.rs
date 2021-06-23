@@ -4,7 +4,6 @@ use crate::chunked_array::ChunkedArray;
 use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
-use arrow::compute::aggregate::SimdOrd;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Num, NumCast, ToPrimitive, Zero};

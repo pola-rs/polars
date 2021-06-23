@@ -27,7 +27,12 @@ where
     type Item = Option<T::Native>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+        Box::new(
+            self.downcast_iter()
+                .flatten()
+                .map(|x| x.copied())
+                .trust_my_length(self.len()),
+        )
     }
 }
 

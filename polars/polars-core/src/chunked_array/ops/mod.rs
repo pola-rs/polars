@@ -283,7 +283,7 @@ where
     I: Iterator<Item = usize>,
     INulls: Iterator<Item = Option<usize>>,
 {
-    Array(&'a Int32Array),
+    Array(&'a UInt32Array),
     Iter(I),
     // will return a null where None
     IterNulls(INulls),
@@ -352,7 +352,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let ca = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
     /// let new = ca.set_at_idx(vec![0, 1], Some(10)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
@@ -371,7 +371,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let ca = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
     /// let new = ca.set_at_idx_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
@@ -401,7 +401,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let ca = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
     /// let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
     /// let new = ca.set_with(&mask, |opt_v| opt_v.map(
     ///     |v| v * 2

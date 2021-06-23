@@ -1744,8 +1744,8 @@ mod test {
         let batch0 = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0])),
-                Arc::new(Int64Array::from(vec![1, 2, 3])),
+                Arc::new(Float64Array::from_slice(&[1.0, 2.0, 3.0])),
+                Arc::new(Int64Array::from_slice(&[1, 2, 3])),
             ],
         )
         .unwrap();
@@ -1753,8 +1753,8 @@ mod test {
         let batch1 = RecordBatch::try_new(
             schema,
             vec![
-                Arc::new(Float64Array::from(vec![4.0, 5.0])),
-                Arc::new(Int64Array::from(vec![4, 5])),
+                Arc::new(Float64Array::from_slice(&[4.0, 5.0])),
+                Arc::new(Int64Array::from_slice(&[4, 5])),
             ],
         )
         .unwrap();

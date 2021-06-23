@@ -59,21 +59,13 @@ where
     }
 
     pub fn finish(mut self) -> ObjectChunked<T> {
-        let null_bit_buffer = self.bitmask_builder.into();
-        let null_count = null_bit_buffer.count_set_bits();
-
-        let null_bitmap = Bitmap::from(null_bit_buffer);
-        let null_bitmap = match null_count {
-            0 => None,
-            _ => Some(Arc::new(null_bitmap)),
-        };
+        let null_bitmap: Option<Bitmap> = self.bitmask_builder.into();
 
         let len = self.values.len();
 
         let arr = Arc::new(ObjectArray {
             values: Arc::new(self.values),
             null_bitmap,
-            null_count,
             offset: 0,
             len,
         });
@@ -137,7 +129,6 @@ where
         let arr = Arc::new(ObjectArray {
             values: Arc::new(v),
             null_bitmap: None,
-            null_count: 0,
             offset: 0,
             len,
         });

@@ -83,7 +83,7 @@ pub(crate) unsafe fn take_primitive_iter_unchecked<
                 None
             }
         })
-        .collect::<Primitive<T::Native>>()
+        .collect::<PrimitiveArray<T::Native>>()
         .to(T::get_dtype().to_arrow());
 
     Arc::new(arr)
@@ -105,7 +105,7 @@ pub(crate) fn take_primitive_iter<T: PolarsPrimitiveType, I: IntoIterator<Item =
                 None
             }
         })
-        .collect::<Primitive<T::Native>>()
+        .collect::<PrimitiveArray<T::Native>>()
         .to(T::get_dtype().to_arrow());
 
     Arc::new(arr)
@@ -125,7 +125,7 @@ pub(crate) unsafe fn take_no_null_primitive_opt_iter_unchecked<
     let iter = indices
         .into_iter()
         .map(|opt_idx| opt_idx.map(|idx| *array_values.get_unchecked(idx)));
-    let arr = Primitive::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow());
+    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow());
 
     Arc::new(arr)
 }
@@ -150,7 +150,7 @@ pub(crate) unsafe fn take_primitive_opt_iter_unchecked<
             }
         })
     });
-    let arr = Primitive::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow());
+    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow());
 
     Arc::new(arr)
 }
@@ -347,7 +347,7 @@ pub(crate) fn take_utf8_iter<I: IntoIterator<Item = usize>>(
 
 pub(crate) unsafe fn take_utf8(
     arr: &LargeStringArray,
-    indices: &Int32Array,
+    indices: &UInt32Array,
 ) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
@@ -363,7 +363,7 @@ pub(crate) unsafe fn take_utf8(
     // Allocate 2.0 times the expected size.
     // where expected size is the length of bytes multiplied by the factor (take_len / current_len)
     let mut values_capacity = if arr.len() > 0 {
-        ((arr.value_data().len() as f32 * 2.0) as usize) / arr.len() * indices.len() as usize
+        ((arr.len() as f32 * 2.0) as usize) / arr.len() * indices.len() as usize
     } else {
         0
     };
@@ -413,17 +413,17 @@ pub(crate) unsafe fn take_utf8(
             });
         validity = indices.validity().clone();
     } else {
-        let mut builder = Utf8Primitive::with_capacities(data_len, length_so_far as usize);
+        let mut builder = MutableUtf8Array::with_capacities(data_len, length_so_far as usize);
 
         if indices.null_count() == 0 {
             (0..data_len).for_each(|idx| {
                 let index = indices.value_unchecked(idx) as usize;
-                if arr.is_valid(index) {
+                builder.push(if arr.is_valid(index) {
                     let s = arr.value_unchecked(index);
-                    builder.push(Some(s));
+                    Some(s)
                 } else {
-                    builder.push(None);
-                }
+                    None
+                });
             });
         } else {
             (0..data_len).for_each(|idx| {
@@ -432,17 +432,18 @@ pub(crate) unsafe fn take_utf8(
 
                     if arr.is_valid(index) {
                         let s = arr.value_unchecked(index);
-                        builder.append_value(s).unwrap();
+                        builder.push(Some(s));
                     } else {
-                        builder.append_null().unwrap();
+                        builder.push_null();
                     }
                 } else {
-                    builder.append_null().unwrap();
+                    builder.push_null();
                 }
             });
         }
 
-        return Arc::new(builder.finish());
+        let array: Utf8Array<i64> = builder.into();
+        return Arc::new(array);
     }
 
     // Safety: all "values" are &str, and thus valid utf8
@@ -461,7 +462,7 @@ mod test {
     fn test_utf8_kernel() {
         let s = LargeStringArray::from(vec![Some("foo"), None, Some("bar")]);
         unsafe {
-            let out = take_utf8(&s, &UInt32Array::from(vec![1, 2]));
+            let out = take_utf8(&s, &UInt32Array::from_slice(&[1, 2]));
             assert!(out.is_null(0));
             assert!(out.is_valid(1));
             let out = take_utf8(&s, &UInt32Array::from(vec![None, Some(2)]));

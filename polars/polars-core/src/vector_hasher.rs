@@ -2,7 +2,6 @@ use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
 use crate::POOL;
 use ahash::RandomState;
-use arrow::array::ArrayRef;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use rayon::prelude::*;

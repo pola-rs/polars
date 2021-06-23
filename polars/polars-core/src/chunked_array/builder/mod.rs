@@ -25,7 +25,7 @@ pub trait ChunkedBuilder<N, T> {
 }
 
 pub struct BooleanChunkedBuilder {
-    array_builder: BooleanPrimitive,
+    array_builder: MutableBooleanArray,
     field: Field,
 }
 
@@ -58,7 +58,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
 impl BooleanChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
         BooleanChunkedBuilder {
-            array_builder: BooleanPrimitive::with_capacity(capacity),
+            array_builder: MutableBooleanArray::with_capacity(capacity),
             field: Field::new(name, DataType::Boolean),
         }
     }
@@ -69,7 +69,7 @@ where
     T: PolarsPrimitiveType,
     T::Native: Default,
 {
-    array_builder: Primitive<T::Native>,
+    array_builder: MutablePrimitiveArray<T::Native>,
     field: Field,
 }
 
@@ -91,8 +91,7 @@ where
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
-        let arr: PrimitiveArray<T::Native> = self.array_builder.to(T::get_dtype().to_arrow());
-        let arr = Arc::new(arr) as ArrayRef;
+        let arr = self.array_builder.into_arc();
 
         ChunkedArray {
             field: Arc::new(self.field),
@@ -108,15 +107,18 @@ where
     T: PolarsPrimitiveType,
 {
     pub fn new(name: &str, capacity: usize) -> Self {
+        let array_builder = MutablePrimitiveArray::<T::Native>::with_capacity(capacity)
+            .to(T::get_dtype().to_arrow());
+
         PrimitiveChunkedBuilder {
-            array_builder: Primitive::<T::Native>::with_capacity(capacity),
+            array_builder,
             field: Field::new(name, T::get_dtype()),
         }
     }
 }
 
 pub struct Utf8ChunkedBuilder {
-    pub builder: Utf8Primitive<i64>,
+    pub builder: MutableUtf8Array<i64>,
     pub capacity: usize,
     field: Field,
 }
@@ -130,7 +132,7 @@ impl Utf8ChunkedBuilder {
     /// * `bytes_capacity` - Number of bytes needed to store the string values.
     pub fn new(name: &str, capacity: usize, bytes_capacity: usize) -> Self {
         Utf8ChunkedBuilder {
-            builder: Utf8Primitive::<i64>::with_capacities(capacity, bytes_capacity),
+            builder: MutableUtf8Array::<i64>::with_capacities(capacity, bytes_capacity),
             capacity,
             field: Field::new(name, DataType::Utf8),
         }
@@ -145,7 +147,7 @@ impl Utf8ChunkedBuilder {
     /// Appends a null slot into the builder
     #[inline]
     pub fn append_null(&mut self) {
-        self.builder.push(None);
+        self.builder.push::<&str>(None);
     }
 
     #[inline]
@@ -154,7 +156,7 @@ impl Utf8ChunkedBuilder {
     }
 
     pub fn finish(mut self) -> Utf8Chunked {
-        let arr = Arc::new(self.builder.to());
+        let arr = self.builder.into_arc();
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
@@ -281,7 +283,7 @@ where
     fn new_from_slice(name: &str, v: &[S]) -> Self {
         let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
 
-        let mut builder = Utf8Primitive::<i64>::with_capacities(values_size, v.len());
+        let mut builder = MutableUtf8Array::<i64>::with_capacities(values_size, v.len());
         v.iter().for_each(|val| {
             builder.push(Some(val.as_ref()));
         });
@@ -343,7 +345,7 @@ where
 
 macro_rules! finish_list_builder {
     ($self:ident) => {{
-        let arr = Arc::new($self.builder.finish());
+        let arr = $self.builder.into_arc();
         ListChunked {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
@@ -368,8 +370,7 @@ where
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
         match opt_v {
             Some(v) => {
-                self.builder.values().append_slice(v);
-                self.builder.push(true);
+                self.builder.push(v);
             }
             None => {
                 self.builder.append(false).expect("should not fail");
@@ -431,9 +432,9 @@ where
     }
 }
 
-type LargePrimitiveBuilder<T> = ListPrimitive<i64, Primitive<T>, T>;
-type LargeListUtf8Builder = ListPrimitive<i64, Utf8Primitive<i64>, &'static str>;
-type LargeListBooleanBuilder = ListPrimitive<i64, BooleanPrimitive, bool>;
+type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
+type LargeListUtf8Builder = MutableListArray<i64, MutableUtf8Array<i64>>;
+type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
 
 pub struct ListUtf8ChunkedBuilder {
     builder: LargeListUtf8Builder,
