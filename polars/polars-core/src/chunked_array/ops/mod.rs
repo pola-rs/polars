@@ -13,6 +13,7 @@ pub(crate) mod any_value;
 pub(crate) mod apply;
 pub(crate) mod bit_repr;
 pub(crate) mod chunkops;
+pub(crate) mod compare_inner;
 pub(crate) mod cum_agg;
 pub(crate) mod downcast;
 pub(crate) mod explode;

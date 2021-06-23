@@ -32,6 +32,7 @@ pub(crate) mod private {
     use crate::frame::groupby::pivot::PivotAgg;
     use crate::frame::groupby::GroupTuples;
 
+    use crate::chunked_array::ops::compare_inner::PartialEqInner;
     use ahash::RandomState;
     use std::borrow::Cow;
 
@@ -54,6 +55,10 @@ pub(crate) mod private {
             _idx_other: usize,
             _other: &Series,
         ) -> bool {
+            unimplemented!()
+        }
+        #[allow(clippy::wrong_self_convention)]
+        fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
             unimplemented!()
         }
         fn vec_hash(&self, _build_hasher: RandomState) -> UInt64Chunked {
