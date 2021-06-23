@@ -18,7 +18,6 @@ use crate::frame::groupby::*;
 use crate::prelude::*;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
-use arrow::bitmap::Bitmap;
 use std::borrow::Cow;
 
 impl<T> ChunkedArray<T> {

@@ -355,7 +355,8 @@ impl<T> ChunkedArray<T> {
             .map(|arr| {
                 let bitmap = arr
                     .validity()
-                    .map(|bitmap| !(&bitmap))
+                    .as_ref()
+                    .map(|bitmap| !bitmap)
                     .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
                 Arc::new(BooleanArray::from_data(bitmap, None)) as ArrayRef
             })
@@ -827,7 +828,7 @@ pub(crate) fn to_primitive<T: PolarsPrimitiveType>(
     values: AlignedVec<T::Native>,
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
-    PrimitiveArray::from_data(T::get_dtype().to_arrow(), values.into(), validity.clone())
+    PrimitiveArray::from_data(T::get_dtype().to_arrow(), values.into(), validity)
 }
 
 pub(crate) fn to_array<T: PolarsPrimitiveType>(

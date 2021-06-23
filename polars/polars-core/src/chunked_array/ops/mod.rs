@@ -6,6 +6,7 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
 use arrow::array::ArrayRef;
+use arrow::buffer::Buffer;
 use std::marker::Sized;
 
 pub(crate) mod aggregate;
@@ -82,7 +83,7 @@ pub trait ChunkExplode {
     fn explode(&self) -> Result<Series> {
         self.explode_and_offsets().map(|t| t.0)
     }
-    fn explode_and_offsets(&self) -> Result<(Series, &[i64])>;
+    fn explode_and_offsets(&self) -> Result<(Series, Buffer<i64>)>;
 }
 
 pub trait ChunkBytes {

@@ -35,8 +35,8 @@
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::utils::to_arrow_compatible_df;
-use arrow::ipc::{
-    reader::FileReader as ArrowIPCFileReader, writer::FileWriter as ArrowIPCFileWriter,
+use arrow::io::ipc::{
+    read::FileReader as ArrowIPCFileReader, write::FileWriter as ArrowIPCFileWriter,
 };
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};

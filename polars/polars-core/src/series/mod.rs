@@ -1,7 +1,7 @@
 //! Type agnostic columnar data structure.
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
-use arrow::{array::ArrayRef, bitmap::Bitmap};
+use arrow::{array::ArrayRef};
 pub(crate) mod arithmetic;
 mod comparison;
 pub mod implementations;

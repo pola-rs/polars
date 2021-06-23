@@ -163,7 +163,7 @@ where
         if let Ok(vals) = self.cont_slice() {
             // Copy the values to a new aligned vec. This can be mutably sorted.
             assert_eq!(vals.len(), self.len());
-            let new = AlignedVec::<T::Native>::from(vals);
+            let mut new = AlignedVec::<T::Native>::from(vals);
 
             sort_branch(
                 new.as_mut_slice(),

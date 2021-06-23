@@ -19,15 +19,6 @@ use crate::prelude::*;
 use crate::utils::to_arrow_compatible_df;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::{compute::cast, record_batch::RecordBatchReader};
-use parquet_lib::file::reader::{FileReader, SerializedFileReader};
-pub use parquet_lib::file::serialized_reader::SliceableCursor;
-use parquet_lib::{
-    arrow::{
-        arrow_reader::ParquetRecordBatchReader, arrow_writer::ArrowWriter as ParquetArrowWriter,
-        ArrowReader as ParquetArrowReader, ParquetFileArrowReader,
-    },
-    file::writer::TryClone,
-};
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
@@ -51,7 +42,7 @@ pub struct ParquetReader<R> {
 
 impl<R> ParquetReader<R>
 where
-    R: 'static + Read + Seek + parquet_lib::file::reader::ChunkReader,
+    R: Read + Seek,
 {
     #[cfg(feature = "lazy")]
     // todo! hoist to lazy crate
@@ -123,7 +114,7 @@ impl<R> ParquetReader<R> {}
 
 impl<R> SerReader<R> for ParquetReader<R>
 where
-    R: 'static + Read + Seek + parquet_lib::file::reader::ChunkReader,
+    R: 'static + Read + Seek,
 {
     fn new(reader: R) -> Self {
         ParquetReader {
@@ -231,7 +222,6 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use parquet_lib::file::writer::InMemoryWriteableCursor;
     use polars_core::{df, prelude::*};
     use std::fs::File;
 

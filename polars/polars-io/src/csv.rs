@@ -57,7 +57,7 @@
 use crate::csv_core::csv::{build_csv_reader, SequentialReader};
 use crate::utils::to_arrow_compatible_df;
 use crate::{SerReader, SerWriter};
-pub use arrow::csv::WriterBuilder;
+pub use arrow::io::csv::write::WriterBuilder;
 use polars_core::prelude::*;
 use std::fs::File;
 use std::io::{Read, Seek, Write};

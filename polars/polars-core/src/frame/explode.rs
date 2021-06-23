@@ -1,9 +1,10 @@
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::frame::select::Selection;
 use crate::prelude::*;
+use arrow::buffer::Buffer;
 use std::collections::VecDeque;
 
-fn get_exploded(series: &Series) -> Result<(Series, &[i64])> {
+fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
@@ -93,7 +94,7 @@ impl DataFrame {
 
                 // expand all the other columns based the exploded first column
                 if i == 0 {
-                    let row_idx = offsets_to_indexes(offsets, exploded.len());
+                    let row_idx = offsets_to_indexes(&offsets, exploded.len());
                     df = unsafe { df.take_iter_unchecked(row_idx.into_iter()) };
                 }
                 if exploded.len() == df.height() {

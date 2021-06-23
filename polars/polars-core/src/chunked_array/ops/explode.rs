@@ -22,7 +22,7 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<usize>
 }
 
 impl ChunkExplode for ListChunked {
-    fn explode_and_offsets(&self) -> Result<(Series, &[i64])> {
+    fn explode_and_offsets(&self) -> Result<(Series, Buffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -35,12 +35,12 @@ impl ChunkExplode for ListChunked {
         let values = listarr.values().clone();
 
         let s = Series::try_from((self.name(), values)).unwrap();
-        Ok((s, offsets))
+        Ok((s, offsets.clone()))
     }
 }
 
 impl ChunkExplode for Utf8Chunked {
-    fn explode_and_offsets(&self) -> Result<(Series, &[i64])> {
+    fn explode_and_offsets(&self) -> Result<(Series, Buffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -50,7 +50,6 @@ impl ChunkExplode for Utf8Chunked {
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
         let values = array.values();
-        let offsets = array.offsets();
 
         // Because the strings are u8 stored but really are utf8 data we need to traverse the utf8 to
         // get the chars indexes
@@ -89,12 +88,13 @@ impl ChunkExplode for Utf8Chunked {
         } else {
             None
         };
-        let array =
-            unsafe { Utf8Array::<i64>::from_data_unchecked(offsets, values.clone(), validity) };
+        let array = unsafe {
+            Utf8Array::<i64>::from_data_unchecked(offsets.clone(), values.clone(), validity)
+        };
 
         let new_arr = Arc::new(array) as ArrayRef;
 
         let s = Series::try_from((self.name(), new_arr)).unwrap();
-        Ok((s, &offsets))
+        Ok((s, offsets))
     }
 }
