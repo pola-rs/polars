@@ -1,10 +1,9 @@
 use crate::utils::CustomIterTools;
-use arrow::array::{Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::MutableBuffer;
 use arrow::datatypes::DataType;
 use arrow::types::{NativeType, NaturalDataType};
-use num::Num;
 use std::sync::Arc;
 
 pub trait ValueSize {

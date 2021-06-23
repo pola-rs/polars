@@ -59,7 +59,7 @@ where
             } else {
                 let keys = ca
                     .downcast_iter()
-                    .map(|arr| arr.into_iter().collect::<Vec<_>>())
+                    .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
                 groupby_threaded_num(keys, group_size_hint, n_partitions)
             }

@@ -266,7 +266,7 @@ fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked 
     let mut av: AlignedVec<_> = (0..len).map(|_| 0u8).collect();
 
     for idx in groups {
-        let elem = unsafe { av.inner.get_unchecked_mut(idx as usize) };
+        let elem = unsafe { av.get_unchecked_mut(idx as usize) };
         *elem = 1;
     }
 

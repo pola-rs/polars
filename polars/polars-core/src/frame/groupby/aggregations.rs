@@ -6,13 +6,15 @@ use rayon::prelude::*;
 use std::collections::HashSet;
 use std::hash::Hash;
 
+use arrow::types::{simd::Simd, NativeType};
+
 use crate::chunked_array::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
     take_agg_primitive_iter_unchecked_count_nulls,
 };
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
-use arrow::array::{ArrayRef, LargeListArray};
+use arrow::array::ArrayRef;
 use std::convert::TryFrom;
 
 pub(crate) trait NumericAggSync {
@@ -72,7 +74,10 @@ impl<T> NumericAggSync for ObjectChunked<T> {}
 impl<T> NumericAggSync for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: std::ops::Add<Output = T::Native> + Num + NumCast + Bounded,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded,
+    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
+        + arrow::compute::aggregate::Sum<T::Native>
+        + arrow::compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -94,7 +99,7 @@ where
                     .to_f64()
                     .map(|sum| sum / idx.len() as f64),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked_count_nulls(
+                        take_agg_primitive_iter_unchecked_count_nulls::<T, _, _>(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| a + b,
@@ -134,7 +139,7 @@ where
                         )
                     }),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked(
+                        take_agg_primitive_iter_unchecked::<T, _, _>(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| if a < b { a } else { b },
@@ -168,7 +173,7 @@ where
                         )
                     }),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked(
+                        take_agg_primitive_iter_unchecked::<T, _, _>(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| if a > b { a } else { b },
@@ -202,7 +207,7 @@ where
                         )
                     }),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked(
+                        take_agg_primitive_iter_unchecked::<T, _, _>(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| a + b,
@@ -512,7 +517,9 @@ where
         // Safety:
         // The length of the iterator is trusted
         let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
-        let arr = unsafe { ListArray::from_iter_primitive_trusted_len::<T::Native, _, _>(iter, data_type)};
+        let arr = unsafe {
+            ListArray::from_iter_primitive_trusted_len::<T::Native, _, _>(iter, data_type)
+        };
         Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).ok()
     }
 }
@@ -562,7 +569,10 @@ pub(crate) trait AggQuantile {
 impl<T> AggQuantile for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: PartialOrd + Num + NumCast + Zero,
+    T::Native: PartialOrd + Num + NumCast + Zero + Simd,
+    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
+        + arrow::compute::aggregate::Sum<T::Native>
+        + arrow::compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {

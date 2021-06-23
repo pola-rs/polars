@@ -73,7 +73,9 @@ where
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_primitive(chunks.next().unwrap(), array) as ArrayRef,
+                    (0, 1) => {
+                        take_no_null_primitive::<T>(chunks.next().unwrap(), array) as ArrayRef
+                    }
                     (_, 1) => take::take(chunks.next().unwrap(), array).unwrap().into(),
                     _ => {
                         return if array.null_count() == 0 {
@@ -98,11 +100,12 @@ where
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_primitive_iter_unchecked(chunks.next().unwrap(), iter)
-                        as ArrayRef,
-                    (_, 1) => {
-                        take_primitive_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
+                    (0, 1) => {
+                        take_no_null_primitive_iter_unchecked::<T, _>(chunks.next().unwrap(), iter)
+                            as ArrayRef
                     }
+                    (_, 1) => take_primitive_iter_unchecked::<T, _>(chunks.next().unwrap(), iter)
+                        as ArrayRef,
                     _ => {
                         let mut ca = take_primitive_iter_n_chunks(self, iter);
                         ca.rename(self.name());
@@ -116,12 +119,13 @@ where
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => {
-                        take_no_null_primitive_opt_iter_unchecked(chunks.next().unwrap(), iter)
-                            as ArrayRef
-                    }
+                    (0, 1) => take_no_null_primitive_opt_iter_unchecked::<T, _>(
+                        chunks.next().unwrap(),
+                        iter,
+                    ) as ArrayRef,
                     (_, 1) => {
-                        take_primitive_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
+                        take_primitive_opt_iter_unchecked::<T, _>(chunks.next().unwrap(), iter)
+                            as ArrayRef
                     }
                     _ => {
                         let mut ca = take_primitive_opt_iter_n_chunks(self, iter);
@@ -151,7 +155,7 @@ where
                     _ => {
                         let iter = array
                             .into_iter()
-                            .filter_map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            .filter_map(|opt_idx| opt_idx.map(|idx| *idx as usize));
 
                         let mut ca = take_primitive_iter_n_chunks(self, iter);
                         ca.rename(self.name());
@@ -165,8 +169,9 @@ where
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_primitive_iter(chunks.next().unwrap(), iter) as ArrayRef,
-                    (_, 1) => take_primitive_iter(chunks.next().unwrap(), iter) as ArrayRef,
+                    (0, 1) => take_no_null_primitive_iter::<T, _>(chunks.next().unwrap(), iter)
+                        as ArrayRef,
+                    (_, 1) => take_primitive_iter::<T, _>(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
                         let mut ca = take_primitive_iter_n_chunks(self, iter);
                         ca.rename(self.name());
@@ -391,7 +396,7 @@ impl ChunkTake for Utf8Chunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks.next().unwrap(), array, None).unwrap() as ArrayRef,
+                    1 => take(chunks.next().unwrap(), array).unwrap().into(),
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -455,17 +460,17 @@ impl ChunkTake for ListChunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take(chunks.next().unwrap(), array, None).unwrap() as ArrayRef,
+                    1 => take(chunks.next().unwrap(), array).unwrap().into(),
                     _ => {
                         return if array.null_count() == 0 {
-                            let iter = array.values().iter().map(|i| *i as usize);
+                            let iter = array.values().iter().map(|&i| i as usize);
                             let mut ca: ListChunked = take_iter_n_chunks!(self, iter);
                             ca.rename(self.name());
                             ca
                         } else {
                             let iter = array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
                             let mut ca: ListChunked = take_opt_iter_n_chunks!(self, iter);
                             ca.rename(self.name());
                             ca
@@ -547,7 +552,7 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
 
                         let mut ca: Self = array
                             .into_iter()
-                            .map(|opt_idx| opt_idx.map(|idx| values[idx as usize].clone()))
+                            .map(|opt_idx| opt_idx.map(|idx| values[*idx as usize].clone()))
                             .collect();
                         ca.rename(self.name());
                         ca
@@ -564,7 +569,7 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
                         } else {
                             let iter = array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                                .map(|opt_idx| opt_idx.map(|&idx| idx as usize));
                             let taker = self.take_rand();
 
                             let mut ca: ObjectChunked<T> = iter

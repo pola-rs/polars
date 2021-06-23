@@ -9,6 +9,6 @@ description = "Arrow interfaces for Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "7401f4e32fdd4f9c4e21fb2782a3996d6a0277b4", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "7461b42b3e9e19ef2ff8b52d85e4915ebc44c1fd", default-features = false }
 thiserror = "^1.0"
 num = "^0.4"

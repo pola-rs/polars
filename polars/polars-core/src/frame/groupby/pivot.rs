@@ -249,7 +249,7 @@ where
 impl<T> ChunkPivot for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Copy + Num + NumCast,
+    T::Native: Copy + Num + NumCast + PartialOrd,
     ChunkedArray<T>: IntoSeries,
 {
     fn pivot<'a>(
@@ -467,6 +467,7 @@ where
 fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
+    T::Native: PartialOrd,
 {
     let mut min = None;
 
@@ -487,6 +488,7 @@ where
 fn pivot_agg_max<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
     T: PolarsNumericType,
+    T::Native: PartialOrd,
 {
     let mut max = None;
 

@@ -46,15 +46,18 @@ where
                 // This will not lead to UB, but will panic.
                 #[cfg(feature = "performant")]
                 unsafe {
-                    let arr = Primitive::from_trusted_len_iter_unchecked(iter)
+                    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter)
                         .to(T::get_dtype().to_arrow());
                     assert_eq!(arr.len(), a);
                     arr
                 }
                 #[cfg(not(feature = "performant"))]
-                Primitive::from_iter(iter).to(T::get_dtype().to_arrow())
+                iter.collect::<PrimitiveArray<T::Native>>()
+                    .to(T::get_dtype().to_arrow())
             }
-            _ => Primitive::from_iter(iter).to(T::get_dtype().to_arrow()),
+            _ => iter
+                .collect::<PrimitiveArray<T::Native>>()
+                .to(T::get_dtype().to_arrow()),
         };
         ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
     }
@@ -208,7 +211,6 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
         let size = iter.size_hint().0;
         let mut null_mask_builder = MutableBitmap::with_capacity(size);
 
-        let mut null_count = 0;
         let values: Vec<T> = iter
             .map(|value| match value {
                 Some(value) => {
@@ -216,7 +218,6 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
                     value
                 }
                 None => {
-                    null_count += 1;
                     null_mask_builder.push(false);
                     T::default()
                 }
@@ -224,14 +225,13 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             .collect();
 
         let null_bit_buffer: Option<Bitmap> = null_mask_builder.into();
-        let null_bitmap = null_bit_buffer.map(Arc::new);
+        let null_bitmap = null_bit_buffer;
 
         let len = values.len();
 
         let arr = Arc::new(ObjectArray {
             values: Arc::new(values),
             null_bitmap,
-            null_count,
             offset: 0,
             len,
         });
@@ -315,8 +315,8 @@ where
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
         let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity);
-        let arr: PrimitiveArray<T::Native> =
-            Primitive::from_trusted_len_iter(iter).to(T::get_dtype().to_arrow());
+        let arr =
+            PrimitiveArray::<T::Native>::from_trusted_len_iter(iter).to(T::get_dtype().to_arrow());
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }

@@ -4,8 +4,8 @@ use arrow::array::*;
 use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
-    Global(PlHashMap<u32, u32>, Utf8Primitive<i64>, u128),
-    Local(Utf8Primitive<i64>),
+    Global(PlHashMap<u32, u32>, MutableUtf8Array<i64>, u128),
+    Local(MutableUtf8Array<i64>),
 }
 
 impl RevMappingBuilder {
@@ -26,10 +26,10 @@ impl RevMappingBuilder {
     fn finish(self) -> RevMapping {
         use RevMappingBuilder::*;
         match self {
-            Local(mut b) => RevMapping::Local(b.to()),
+            Local(mut b) => RevMapping::Local(b.into()),
             Global(mut map, mut b, uuid) => {
                 map.shrink_to_fit();
-                RevMapping::Global(map, b.to(), uuid)
+                RevMapping::Global(map, b.into(), uuid)
             }
         }
     }
@@ -68,14 +68,14 @@ impl RevMapping {
 }
 
 pub struct CategoricalChunkedBuilder {
-    array_builder: Primitive<u32>,
+    array_builder: UInt32Vec,
     field: Field,
     reverse_mapping: RevMappingBuilder,
 }
 
 impl CategoricalChunkedBuilder {
     pub fn new(name: &str, capacity: usize) -> Self {
-        let builder = Utf8Primitive::<i64>::with_capacity(capacity / 10);
+        let builder = MutableUtf8Array::<i64>::with_capacity(capacity / 10);
         let reverse_mapping = if use_string_cache() {
             let uuid = crate::STRING_CACHE.lock_map().uuid;
             RevMappingBuilder::Global(PlHashMap::default(), builder, uuid)
@@ -84,7 +84,7 @@ impl CategoricalChunkedBuilder {
         };
 
         Self {
-            array_builder: Primitive::<u32>::with_capacity(capacity),
+            array_builder: UInt32Vec::with_capacity(capacity),
             field: Field::new(name, DataType::Categorical),
             reverse_mapping,
         }

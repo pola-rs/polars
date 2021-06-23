@@ -27,7 +27,6 @@ use crate::prelude::*;
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
-use arrow::bitmap::Bitmap;
 use std::borrow::Cow;
 use std::ops::Deref;
 
