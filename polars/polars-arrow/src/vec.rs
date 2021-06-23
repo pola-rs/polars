@@ -169,6 +169,10 @@ impl<T> AlignedVec<T> {
         self.inner.as_mut_slice()
     }
 
+    pub fn as_slice(&self) -> &[T] {
+        self.inner.as_slice()
+    }
+
     pub fn capacity(&self) -> usize {
         self.inner.capacity()
     }

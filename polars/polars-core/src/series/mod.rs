@@ -61,7 +61,10 @@ pub(crate) mod private {
         fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
             unimplemented!()
         }
-        fn vec_hash(&self, _build_hasher: RandomState) -> UInt64Chunked {
+        fn vec_hash(&self, _build_hasher: RandomState) -> AlignedVec<u64> {
+            unimplemented!()
+        }
+        fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             unimplemented!()
         }
         fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {

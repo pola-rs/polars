@@ -320,7 +320,18 @@ impl DataFrame {
             by.iter()
                 .map(|s| match s.dtype() {
                     DataType::Categorical => s.cast::<UInt32Type>().unwrap(),
-                    _ => s.clone(),
+                    DataType::Float32 => s.bit_repr_small().into_series(),
+                    // otherwise we use the vec hash for float
+                    #[cfg(feature = "dtype-u64")]
+                    DataType::Float64 => s.bit_repr_large().into_series(),
+                    _ => {
+                        // is date like
+                        if !s.is_numeric() && s.is_numeric_physical() {
+                            s.to_physical_repr()
+                        } else {
+                            s.clone()
+                        }
+                    }
                 })
                 .collect(),
         )?;

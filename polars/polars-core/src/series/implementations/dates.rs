@@ -119,7 +119,7 @@ macro_rules! impl_dyn_series {
                 try_physical_dispatch!(self, zip_with_same_type, mask, other)
             }
 
-            fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+            fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
                 cast_and_apply!(self, vec_hash, random_state)
             }
 
