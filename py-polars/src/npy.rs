@@ -43,7 +43,10 @@ pub unsafe fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArra
     mem::forget(buf);
     (PyArray1::from_owned_ptr(py, ptr), buffer_ptr)
 }
-
+/// TODO: needs more explanation
+/// # Safety
+///
+/// Create a vector from raw parts.
 pub unsafe fn vec_from_ptr<T>(ptr: usize, len: usize) -> Vec<T> {
     let ptr = ptr as *mut T;
     Vec::from_raw_parts(ptr, len, len)

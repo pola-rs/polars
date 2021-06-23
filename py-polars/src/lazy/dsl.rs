@@ -491,7 +491,7 @@ impl WhenThenThen {
         }
     }
     pub fn otherwise(&self, expr: PyExpr) -> PyExpr {
-        self.inner.clone().otherwise(expr.clone().inner).into()
+        self.inner.clone().otherwise(expr.inner).into()
     }
 }
 
@@ -596,7 +596,7 @@ pub fn lit(value: &PyAny) -> PyExpr {
         )
         .into()
     } else if let Ok(series) = value.extract::<PySeries>() {
-        dsl::lit(series.series.clone()).into()
+        dsl::lit(series.series).into()
     } else if value.is_none() {
         dsl::lit(Null {}).into()
     } else {

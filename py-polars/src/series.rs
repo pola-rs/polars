@@ -400,7 +400,7 @@ impl PySeries {
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let take = self.series.take(&idx);
+        let take = self.series.take(idx);
         Ok(PySeries::new(take))
     }
 
