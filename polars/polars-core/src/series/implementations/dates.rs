@@ -123,8 +123,9 @@ macro_rules! impl_dyn_series {
                 cast_and_apply!(self, vec_hash, random_state)
             }
 
-            fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_mean, groups)
+            fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+                // does not make sense on dates
+                None
             }
 
             fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -135,8 +136,9 @@ macro_rules! impl_dyn_series {
                 opt_physical_dispatch!(self, agg_max, groups)
             }
 
-            fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_sum, groups)
+            fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+                // does not make sense on dates
+                None
             }
 
             fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
@@ -147,12 +149,14 @@ macro_rules! impl_dyn_series {
                 physical_dispatch!(self, agg_last, groups)
             }
 
-            fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_std, groups)
+            fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+                // does not make sense on dates
+                None
             }
 
-            fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_var, groups)
+            fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+                // does not make sense on dates
+                None
             }
 
             fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
@@ -217,19 +221,41 @@ macro_rules! impl_dyn_series {
                 physical_dispatch!(self, zip_outer_join_column, &right_column, opt_join_tuples)
             }
             fn subtract(&self, rhs: &Series) -> Result<Series> {
-                try_physical_dispatch!(self, subtract, rhs)
+                match (self.dtype(), rhs.dtype()) {
+                    (DataType::Date32, DataType::Date32) => {
+                        let lhs = self.cast_with_dtype(&DataType::Int32).unwrap();
+                        let rhs = rhs.cast_with_dtype(&DataType::Int32).unwrap();
+                        Ok(lhs.subtract(&rhs)?.into_series())
+                    }
+                    (DataType::Date64, DataType::Date64) => {
+                        let lhs = self.cast_with_dtype(&DataType::Int64).unwrap();
+                        let rhs = rhs.cast_with_dtype(&DataType::Int64).unwrap();
+                        Ok(lhs.subtract(&rhs)?.into_series())
+                    }
+                    (dtl, dtr) => Err(PolarsError::Other(
+                        format!(
+                            "cannot do subtraction on these date types: {:?}, {:?}",
+                            dtl, dtr
+                        )
+                        .into(),
+                    )),
+                }
             }
-            fn add_to(&self, rhs: &Series) -> Result<Series> {
-                try_physical_dispatch!(self, add_to, rhs)
+            fn add_to(&self, _rhs: &Series) -> Result<Series> {
+                Err(PolarsError::Other("cannot do addition on dates".into()))
             }
-            fn multiply(&self, rhs: &Series) -> Result<Series> {
-                try_physical_dispatch!(self, multiply, rhs)
+            fn multiply(&self, _rhs: &Series) -> Result<Series> {
+                Err(PolarsError::Other(
+                    "cannot do multiplication on dates".into(),
+                ))
             }
-            fn divide(&self, rhs: &Series) -> Result<Series> {
-                try_physical_dispatch!(self, divide, rhs)
+            fn divide(&self, _rhs: &Series) -> Result<Series> {
+                Err(PolarsError::Other("cannot do division on dates".into()))
             }
-            fn remainder(&self, rhs: &Series) -> Result<Series> {
-                try_physical_dispatch!(self, remainder, rhs)
+            fn remainder(&self, _rhs: &Series) -> Result<Series> {
+                Err(PolarsError::Other(
+                    "cannot do remainder operation on dates".into(),
+                ))
             }
             fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
                 cast_and_apply!(self, group_tuples, multithreaded)
@@ -259,8 +285,8 @@ macro_rules! impl_dyn_series {
                 physical_dispatch!(self, cum_min, reverse)
             }
 
-            fn cum_sum(&self, reverse: bool) -> Series {
-                physical_dispatch!(self, cum_sum, reverse)
+            fn cum_sum(&self, _reverse: bool) -> Series {
+                panic!("cannot sum dates")
             }
 
             fn rename(&mut self, name: &str) {
@@ -553,7 +579,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn sum_as_series(&self) -> Series {
-                physical_dispatch!(self, sum_as_series,)
+                panic!("cannot compute sum of dates")
             }
             fn max_as_series(&self) -> Series {
                 physical_dispatch!(self, max_as_series,)
@@ -562,13 +588,13 @@ macro_rules! impl_dyn_series {
                 physical_dispatch!(self, min_as_series,)
             }
             fn mean_as_series(&self) -> Series {
-                physical_dispatch!(self, mean_as_series,)
+                panic!("cannot compute mean of dates")
             }
             fn median_as_series(&self) -> Series {
-                physical_dispatch!(self, median_as_series,)
+                panic!("cannot compute median of dates")
             }
             fn var_as_series(&self) -> Series {
-                physical_dispatch!(self, var_as_series,)
+                panic!("cannot compute variance of dates")
             }
             fn std_as_series(&self) -> Series {
                 physical_dispatch!(self, std_as_series,)
@@ -594,19 +620,14 @@ macro_rules! impl_dyn_series {
             }
             fn rolling_sum(
                 &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
+                _window_size: u32,
+                _weight: Option<&[f64]>,
+                _ignore_null: bool,
+                _min_periods: u32,
             ) -> Result<Series> {
-                try_physical_dispatch!(
-                    self,
-                    rolling_sum,
-                    window_size,
-                    weight,
-                    ignore_null,
-                    min_periods
-                )
+                Err(PolarsError::Other(
+                    "cannot compute rolling sum of dates".into(),
+                ))
             }
             fn rolling_min(
                 &self,
@@ -661,8 +682,8 @@ macro_rules! impl_dyn_series {
                 try_physical_dispatch!(self, sample_frac, frac, with_replacement)
             }
 
-            fn pow(&self, exponent: f64) -> Result<Series> {
-                try_physical_dispatch!(self, pow, exponent)
+            fn pow(&self, _exponent: f64) -> Result<Series> {
+                Err(PolarsError::Other("cannot compute power of dates".into()))
             }
 
             fn peak_max(&self) -> BooleanChunked {
@@ -765,13 +786,7 @@ mod test {
         let s = s.cast_with_dtype(&DataType::Date64)?;
 
         let out = s.subtract(&s)?;
-        assert!(matches!(out.dtype(), DataType::Date64));
-        let out = s.add_to(&s)?;
-        assert!(matches!(out.dtype(), DataType::Date64));
-        let out = s.multiply(&s)?;
-        assert!(matches!(out.dtype(), DataType::Date64));
-        let out = s.divide(&s)?;
-        assert!(matches!(out.dtype(), DataType::Date64));
+        assert!(matches!(out.dtype(), DataType::Int64));
         Ok(())
     }
 }

@@ -412,18 +412,13 @@ where
     type Output = Series;
 
     fn sub(self, rhs: T) -> Self::Output {
-        macro_rules! numeric {
+        macro_rules! sub {
             ($ca:expr) => {{
                 $ca.sub(rhs).into_series()
             }};
         }
 
-        macro_rules! noop {
-            ($ca:expr) => {{
-                unimplemented!()
-            }};
-        }
-        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
+        match_arrow_data_type_apply_macro_ca_logical_num!(self, sub)
     }
 }
 
@@ -445,18 +440,12 @@ where
     type Output = Series;
 
     fn add(self, rhs: T) -> Self::Output {
-        macro_rules! numeric {
+        macro_rules! add {
             ($ca:expr) => {{
                 $ca.add(rhs).into_series()
             }};
         }
-
-        macro_rules! noop {
-            ($ca:expr) => {{
-                unimplemented!()
-            }};
-        }
-        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
+        match_arrow_data_type_apply_macro_ca_logical_num!(self, add)
     }
 }
 
@@ -478,18 +467,13 @@ where
     type Output = Series;
 
     fn div(self, rhs: T) -> Self::Output {
-        macro_rules! numeric {
+        macro_rules! div {
             ($ca:expr) => {{
                 $ca.div(rhs).into_series()
             }};
         }
 
-        macro_rules! noop {
-            ($ca:expr) => {{
-                unimplemented!()
-            }};
-        }
-        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
+        match_arrow_data_type_apply_macro_ca_logical_num!(self, div)
     }
 }
 
@@ -511,18 +495,12 @@ where
     type Output = Series;
 
     fn mul(self, rhs: T) -> Self::Output {
-        macro_rules! numeric {
+        macro_rules! mul {
             ($ca:expr) => {{
                 $ca.mul(rhs).into_series()
             }};
         }
-
-        macro_rules! noop {
-            ($ca:expr) => {{
-                unimplemented!()
-            }};
-        }
-        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
+        match_arrow_data_type_apply_macro_ca_logical_num!(self, mul)
     }
 }
 
@@ -544,18 +522,12 @@ where
     type Output = Series;
 
     fn rem(self, rhs: T) -> Self::Output {
-        macro_rules! numeric {
+        macro_rules! rem {
             ($ca:expr) => {{
                 $ca.rem(rhs).into_series()
             }};
         }
-
-        macro_rules! noop {
-            ($ca:expr) => {{
-                unimplemented!()
-            }};
-        }
-        match_arrow_data_type_apply_macro_ca!(self, numeric, noop, noop)
+        match_arrow_data_type_apply_macro_ca_logical_num!(self, rem)
     }
 }
 
@@ -619,50 +591,33 @@ where
         rhs + self
     }
     fn sub(self, rhs: &Series) -> Self::Output {
-        macro_rules! numeric {
+        macro_rules! sub {
             ($rhs:expr) => {{
                 $rhs.lhs_sub(self).into_series()
             }};
         }
-
-        macro_rules! noop {
-            ($ca:expr) => {{
-                unimplemented!()
-            }};
-        }
-        match_arrow_data_type_apply_macro_ca!(rhs, numeric, noop, noop)
+        match_arrow_data_type_apply_macro_ca_logical_num!(rhs, sub)
     }
     fn div(self, rhs: &Series) -> Self::Output {
-        macro_rules! numeric {
+        macro_rules! div {
             ($rhs:expr) => {{
                 $rhs.lhs_div(self).into_series()
             }};
         }
-
-        macro_rules! noop {
-            ($ca:expr) => {{
-                unimplemented!()
-            }};
-        }
-        match_arrow_data_type_apply_macro_ca!(rhs, numeric, noop, noop)
+        match_arrow_data_type_apply_macro_ca_logical_num!(rhs, div)
     }
     fn mul(self, rhs: &Series) -> Self::Output {
         // order doesn't matter, dispatch to rhs * lhs
         rhs * self
     }
     fn rem(self, rhs: &Series) -> Self::Output {
-        macro_rules! numeric {
+        macro_rules! rem {
             ($rhs:expr) => {{
                 $rhs.lhs_rem(self).into_series()
             }};
         }
 
-        macro_rules! noop {
-            ($ca:expr) => {{
-                unimplemented!()
-            }};
-        }
-        match_arrow_data_type_apply_macro_ca!(rhs, numeric, noop, noop)
+        match_arrow_data_type_apply_macro_ca_logical_num!(rhs, rem)
     }
 }
 
@@ -734,20 +689,6 @@ mod test {
         assert_eq!((&s * &s).name(), "foo");
         assert_eq!((&s * 1).name(), "foo");
         assert_eq!((1.div(&s)).name(), "foo");
-    }
-
-    #[test]
-    #[cfg(feature = "dtype-date64")]
-    fn test_arithmetic_series_date() {
-        // Date Series have a different dispatch, so let's test that.
-        let s = Date64Chunked::new_from_slice("foo", &[0, 1, 2, 3]).into_series();
-
-        // test if it runs.
-        let _ = &s * &s;
-
-        let _ = s.minute().map(|m| &m / 5);
-        let _ = s.minute().map(|m| m / 5);
-        let _ = s.minute().map(|m| m.into_series() / 5);
     }
 
     #[test]

@@ -258,6 +258,7 @@ impl<T: Default> Arena<T> {
     }
 }
 
+/// Apply a macro on the Series
 #[macro_export]
 macro_rules! match_arrow_data_type_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
@@ -294,6 +295,7 @@ macro_rules! match_arrow_data_type_apply_macro {
     }};
 }
 
+/// Apply a macro on the Downcasted ChunkedArray's
 #[macro_export]
 macro_rules! match_arrow_data_type_apply_macro_ca {
     ($self:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
@@ -325,6 +327,32 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
             DataType::Duration(TimeUnit::Nanosecond) => $macro!($self.duration_nanosecond().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-duration-ms")]
             DataType::Duration(TimeUnit::Millisecond) => $macro!($self.duration_millisecond().unwrap() $(, $opt_args)*),
+            _ => unimplemented!(),
+        }
+    }};
+}
+
+/// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
+/// So no dates.
+#[macro_export]
+macro_rules! match_arrow_data_type_apply_macro_ca_logical_num {
+    ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
+        match $self.dtype() {
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => $macro!($self.u8().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => $macro!($self.u16().unwrap() $(, $opt_args)*),
+            DataType::UInt32 => $macro!($self.u32().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-u64")]
+            DataType::UInt64 => $macro!($self.u64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => $macro!($self.i8().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => $macro!($self.i16().unwrap() $(, $opt_args)*),
+            DataType::Int32 => $macro!($self.i32().unwrap() $(, $opt_args)*),
+            DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
+            DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
+            DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
             _ => unimplemented!(),
         }
     }};
