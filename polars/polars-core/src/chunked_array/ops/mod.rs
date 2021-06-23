@@ -474,6 +474,12 @@ pub trait ChunkApply<'a, A, B> {
     fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
     where
         F: Fn((usize, Option<A>)) -> Option<B> + Copy;
+
+    /// Apply a closure elementwise and write results to a mutable slice.
+    fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
+    // (value of chunkedarray, value of slice) -> value of slice
+    where
+        F: Fn(Option<A>, &T) -> T;
 }
 
 /// Aggregation operations

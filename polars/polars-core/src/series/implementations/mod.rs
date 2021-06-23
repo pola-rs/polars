@@ -78,8 +78,12 @@ macro_rules! impl_dyn_series {
                 (&self.0).into_partial_eq_inner()
             }
 
-            fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+            fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
                 self.0.vec_hash(random_state)
+            }
+
+            fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
+                self.0.vec_hash_combine(build_hasher, hashes)
             }
 
             fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
