@@ -197,21 +197,21 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn to_csv(&mut self, py_f: PyObject, has_headers: bool, delimiter: u8) -> PyResult<()> {
+    pub fn to_csv(&self, py_f: PyObject, has_headers: bool, delimiter: u8) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         CsvWriter::new(&mut buf)
             .has_headers(has_headers)
             .with_delimiter(delimiter)
-            .finish(&mut self.df)
+            .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
 
     #[cfg(feature = "ipc")]
-    pub fn to_ipc(&mut self, py_f: PyObject) -> PyResult<()> {
+    pub fn to_ipc(&self, py_f: PyObject) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         IpcWriter::new(&mut buf)
-            .finish(&mut self.df)
+            .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
@@ -263,10 +263,10 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    pub fn to_parquet(&mut self, path: &str) -> PyResult<()> {
+    pub fn to_parquet(&self, path: &str) -> PyResult<()> {
         let f = std::fs::File::create(path).expect("to open a new file");
         ParquetWriter::new(f)
-            .finish(&mut self.df)
+            .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
@@ -511,7 +511,7 @@ impl PyDataFrame {
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let df = self.df.take(&idx);
+        let df = self.df.take(idx);
         Ok(PyDataFrame::new(df))
     }
 
