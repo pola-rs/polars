@@ -1,5 +1,22 @@
 //! # (De)serialize JSON files.
 //!
+//! ## Write a DataFrame to a JSON file
+//!
+//! ## Example
+//!
+//! ```
+//! use polars_core::prelude::*;
+//! use polars_io::prelude::*;
+//! use std::fs::File;
+//!
+//! fn example(df: &mut DataFrame) -> Result<()> {
+//!     let mut file = File::create("example.csv").expect("could not create file");
+//!     
+//!     JSONWriter::new(&mut file)
+//!     .finish(df)
+//! }
+//! ```
+//!
 //! ## Read JSON to a DataFrame
 //!
 //! ## Example
@@ -62,10 +79,38 @@
 //!
 use crate::finish_reader;
 use crate::prelude::*;
+use crate::utils::to_arrow_compatible_df;
+pub use arrow::json::LineDelimitedWriter;
 pub use arrow::json::ReaderBuilder;
 use polars_core::prelude::*;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 use std::sync::Arc;
+
+// Write a DataFrame to JSON
+pub struct JSONWriter<'a, W: Write> {
+    /// File or Stream handler
+    buffer: &'a mut W,
+}
+
+impl<'a, W> SerWriter<'a, W> for JSONWriter<'a, W>
+where
+    W: Write,
+{
+    fn new(buffer: &'a mut W) -> Self {
+        JSONWriter { buffer }
+    }
+
+    fn finish(self, df: &DataFrame) -> Result<()> {
+        let df = to_arrow_compatible_df(df);
+        let mut json_writer = LineDelimitedWriter::new(self.buffer);
+
+        let batches = df.as_record_batches()?;
+        json_writer.write_batches(&batches)?;
+        json_writer.finish()?;
+
+        Ok(())
+    }
+}
 
 pub struct JsonReader<R>
 where
@@ -139,6 +184,25 @@ where
 mod test {
     use crate::prelude::*;
     use std::io::Cursor;
+
+    #[test]
+    fn write_json() {
+        let mut buf: Vec<u8> = Vec::new();
+        let mut df = create_df();
+
+        JSONWriter::new(&mut buf).finish(&mut df);
+
+        let json = std::str::from_utf8(&buf).unwrap();
+        assert_eq!(
+            r#"{"days":0,"temp":22.1}
+{"days":1,"temp":19.9}
+{"days":2,"temp":7.0}
+{"days":3,"temp":2.0}
+{"days":4,"temp":3.0}
+"#,
+            json
+        );
+    }
 
     #[test]
     fn read_json() {
