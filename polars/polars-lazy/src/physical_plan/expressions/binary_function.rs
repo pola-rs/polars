@@ -21,9 +21,22 @@ impl PhysicalExpr for BinaryFunctionExpr {
                 || self.input_b.evaluate(df, state),
             )
         });
+        let series_a = series_a?;
+        let series_b = series_b?;
 
-        self.function.call_udf(series_a?, series_b?).map(|mut s| {
-            s.rename("binary_function");
+        let name = self
+            .output_field
+            .get_field(
+                &df.schema(),
+                Context::Default,
+                &Field::new(series_a.name(), series_a.dtype().clone()),
+                &Field::new(series_b.name(), series_b.dtype().clone()),
+            )
+            .map(|fld| fld.name().clone())
+            .unwrap_or_else(|| "binary_function".to_string());
+
+        self.function.call_udf(series_a, series_b).map(|mut s| {
+            s.rename(&name);
             s
         })
     }

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.8.5"
+version = "0.8.6"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 readme = "README.md"
@@ -33,7 +33,7 @@ downsample = ["polars/downsample"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
 
-default = ["pivot", "json", "parquet", "downsample", "ipc", "is_in", "json"]
+default = ["pivot", "json", "parquet", "downsample", "ipc", "is_in", "json", "polars/repeat_by"]
 
 [dependencies.polars]
 path = "../polars"

@@ -86,6 +86,7 @@ impl VecHash for Float64Chunked {
 impl VecHash for ListChunked {}
 
 // Used to to get a u64 from the hashing keys
+// We need to modify the hashing algorithm to use the hash for this and only compute the hash once.
 pub(crate) trait AsU64 {
     #[allow(clippy::wrong_self_convention)]
     fn as_u64(self) -> u64;
@@ -124,6 +125,22 @@ impl AsU64 for [u8; 9] {
         // the last byte includes the null information.
         // that one is skipped. Worst thing that could happen is unbalanced partition.
         u64::from_ne_bytes(self[..8].try_into().unwrap())
+    }
+}
+const BUILD_HASHER: RandomState = RandomState::with_seeds(0, 0, 0, 0);
+impl AsU64 for [u8; 17] {
+    fn as_u64(self) -> u64 {
+        let mut h = BUILD_HASHER.build_hasher();
+        self.hash(&mut h);
+        h.finish()
+    }
+}
+
+impl AsU64 for [u8; 13] {
+    fn as_u64(self) -> u64 {
+        let mut h = BUILD_HASHER.build_hasher();
+        self.hash(&mut h);
+        h.finish()
     }
 }
 

@@ -661,7 +661,7 @@ pub trait SeriesTrait:
     }
 
     /// Get the bits that represent the null values of the underlying ChunkedArray
-    fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+    fn null_bits(&self) -> Vec<(usize, Option<&Buffer>)> {
         unimplemented!()
     }
 
@@ -1017,6 +1017,11 @@ pub trait SeriesTrait:
     #[cfg(feature = "is_in")]
     #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
     fn is_in(&self, _other: &Series) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
+    #[cfg(feature = "repeat_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
+    fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
         unimplemented!()
     }
     #[cfg(feature = "checked_arithmetic")]

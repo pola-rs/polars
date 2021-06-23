@@ -108,3 +108,23 @@ pub fn combine_null_buffers(
         (None, None) => None,
     }
 }
+
+pub trait CustomIterTools: Iterator {
+    fn fold_first_<F>(mut self, f: F) -> Option<Self::Item>
+    where
+        Self: Sized,
+        F: FnMut(Self::Item, Self::Item) -> Self::Item,
+    {
+        let first = self.next()?;
+        Some(self.fold(first, f))
+    }
+
+    fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
+    where
+        Self: Sized,
+    {
+        TrustMyLength::new(self, length)
+    }
+}
+
+impl<T: ?Sized> CustomIterTools for T where T: Iterator {}

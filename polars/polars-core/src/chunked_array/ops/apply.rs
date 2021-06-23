@@ -43,7 +43,7 @@ where
             .zip(self.null_bits())
             .map(|(slice, (_null_count, opt_buffer))| {
                 let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
-                (vec, opt_buffer)
+                (vec, opt_buffer.cloned())
             })
             .collect();
         ca.rename(self.name());
@@ -79,7 +79,7 @@ where
             .zip(self.null_bits())
             .map(|(slice, (_null_count, opt_buffer))| {
                 let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
-                (vec, opt_buffer)
+                (vec, opt_buffer.cloned())
             })
             .collect();
         ca.rename(self.name());

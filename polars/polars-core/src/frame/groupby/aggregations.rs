@@ -1,7 +1,6 @@
 use crate::POOL;
 use ahash::RandomState;
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
-use polars_arrow::prelude::*;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -12,6 +11,10 @@ use crate::chunked_array::kernels::take_agg::{
 };
 use crate::prelude::*;
 use crate::utils::NoNull;
+use arrow::array::{Array, ArrayData, ArrayRef, LargeListArray};
+use arrow::buffer::MutableBuffer;
+use polars_arrow::builder::{BooleanArrayBuilder, LargeStringBuilder, PrimitiveArrayBuilder};
+use std::convert::TryFrom;
 
 pub(crate) trait NumericAggSync {
     fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -491,78 +494,101 @@ impl AggNUnique for Utf8Chunked {
     }
 }
 
-pub(crate) trait AggList {
+pub trait AggList {
     fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         None
     }
 }
+
 impl<T> AggList for ChunkedArray<T>
 where
-    T: PolarsDataType,
-    ChunkedArray<T>: IntoSeries + ChunkCast,
+    T: PolarsNumericType,
+    T::Native: Num,
+    ChunkedArray<T>: IntoSeries,
 {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        let s = match self.dtype() {
-            DataType::Categorical => self.cast::<Utf8Type>().unwrap().into_series(),
-            _ => self.clone().into_series(),
-        };
+        let arr = match self.cont_slice() {
+            Ok(values) => {
+                let mut offsets =
+                    MutableBuffer::new((groups.len() + 1) * std::mem::size_of::<i64>());
+                let mut length_so_far = 0i64;
+                offsets.push(length_so_far);
+                let mut av = AlignedVec::with_capacity_aligned(self.len());
 
-        // TODO! use collect, can be faster
-        // needed capacity for the list
-        let values_cap = self.len();
+                groups.iter().for_each(|(_, idx)| {
+                    length_so_far += idx.len() as i64;
+                    // Safety:
+                    // group tuples are in bounds
+                    unsafe {
+                        av.extend(idx.iter().map(|idx| *values.get_unchecked(*idx as usize)));
+                    }
+                    offsets.push(length_so_far);
+                });
+                let values = av.into_primitive_array::<T>(None);
 
-        macro_rules! impl_gb {
-            ($type:ty, $agg_col:expr) => {{
-                let values_builder = PrimitiveArrayBuilder::<$type>::new(values_cap);
+                let field = Box::new(arrow::datatypes::Field::new("item", T::DATA_TYPE, true));
+                let data_type = ArrowDataType::LargeList(field);
+                let data = ArrayData::builder(data_type)
+                    .len(groups.len())
+                    .add_buffer(offsets.into())
+                    .add_child_data(values.data().clone())
+                    .build();
+                LargeListArray::from(data)
+            }
+            _ => {
+                let values_cap = self.len();
+                let values_builder = PrimitiveArrayBuilder::<T>::new(values_cap);
                 let mut builder =
                     ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))
+                        self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                            .into_series()
                     };
                     builder.append_opt_series(Some(&s))
                 }
-                builder.finish().into_series()
-            }};
-        }
-
-        macro_rules! impl_gb_utf8 {
-            ($agg_col:expr) => {{
-                let values_builder = LargeStringBuilder::with_capacity(values_cap * 5, values_cap);
-                let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
-                for (_first, idx) in groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))
-                    };
-                    builder.append_series(&s)
-                }
-                builder.finish().into_series()
-            }};
-        }
-
-        macro_rules! impl_gb_bool {
-            ($agg_col:expr) => {{
-                let values_builder = BooleanArrayBuilder::new(values_cap);
-                let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
-                for (_first, idx) in groups {
-                    let s = unsafe {
-                        $agg_col.take_iter_unchecked(&mut idx.into_iter().map(|i| *i as usize))
-                    };
-                    builder.append_series(&s)
-                }
-                builder.finish().into_series()
-            }};
-        }
-
-        Some(match_arrow_data_type_apply_macro!(
-            s.dtype(),
-            impl_gb,
-            impl_gb_utf8,
-            impl_gb_bool,
-            s
-        ))
+                return Some(builder.finish().into_series());
+            }
+        };
+        Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).ok()
     }
 }
+
+impl AggList for BooleanChunked {
+    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        let values_cap = self.len();
+        let values_builder = BooleanArrayBuilder::new(values_cap);
+        let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
+        for (_first, idx) in groups {
+            let s = unsafe {
+                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                    .into_series()
+            };
+            builder.append_series(&s)
+        }
+        Some(builder.finish().into_series())
+    }
+}
+
+impl AggList for Utf8Chunked {
+    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        let values_cap = self.len();
+        let values_builder = LargeStringBuilder::with_capacity(values_cap * 5, values_cap);
+        let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
+        for (_first, idx) in groups {
+            let s = unsafe {
+                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                    .into_series()
+            };
+            builder.append_series(&s)
+        }
+        Some(builder.finish().into_series())
+    }
+}
+
+impl AggList for ListChunked {}
+#[cfg(feature = "object")]
+impl<T> AggList for ObjectChunked<T> {}
 
 pub(crate) trait AggQuantile {
     fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {

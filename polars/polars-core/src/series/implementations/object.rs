@@ -206,7 +206,7 @@ where
         ChunkUnique::is_duplicated(&self.0)
     }
 
-    fn null_bits(&self) -> Vec<(usize, Option<Buffer>)> {
+    fn null_bits(&self) -> Vec<(usize, Option<&Buffer>)> {
         ObjectChunked::null_bits(&self.0).collect()
     }
 
