@@ -18,23 +18,14 @@ use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::utils::to_arrow_compatible_df;
 use crate::{PhysicalIoExpr, ScanAggregation};
-use arrow::{compute::cast, record_batch::RecordBatchReader};
+use arrow::compute::cast;
+use arrow::io::parquet::{read, write};
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
-fn set_batch_size(max_rows: usize, stop_after_n_rows: Option<usize>) -> usize {
-    let mut batch_size = max_rows;
-    if let Some(n) = stop_after_n_rows {
-        // set batch size exactly to n_rows
-        batch_size = std::cmp::min(batch_size, n);
-        batch_size = std::cmp::max(batch_size, n);
-    }
-    batch_size
-}
-
 /// Read Apache parquet format into a DataFrame.
-pub struct ParquetReader<R> {
+pub struct ParquetReader<R: Read + Seek> {
     reader: R,
     rechunk: bool,
     stop_after_n_rows: Option<usize>,
@@ -54,30 +45,16 @@ where
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
 
-        let file_reader = Arc::new(SerializedFileReader::new(self.reader)?);
-        let rows_in_file = file_reader.metadata().file_metadata().num_rows() as usize;
+        let reader = read::RecordReader::try_new(
+            &mut self.reader,
+            None,
+            projection.map(|x| x.to_vec()),
+            self.stop_after_n_rows,
+            Arc::new(|_, _| true),
+        )?;
 
-        if let Some(stop_after_n_rows) = self.stop_after_n_rows {
-            if stop_after_n_rows > rows_in_file {
-                self.stop_after_n_rows = Some(rows_in_file)
-            }
-        }
-
-        let batch_size = match predicate {
-            Some(_) => 512 * 1024,
-            None => rows_in_file,
-        };
-        let batch_size = set_batch_size(batch_size, self.stop_after_n_rows);
-
-        let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
-        let record_reader = match projection {
-            Some(projection) => {
-                arrow_reader.get_record_reader_by_columns(projection.iter().copied(), batch_size)
-            }
-            None => arrow_reader.get_record_reader(batch_size),
-        }?;
         finish_reader(
-            record_reader,
+            reader,
             rechunk,
             self.stop_after_n_rows,
             predicate,
@@ -92,29 +69,27 @@ where
         self
     }
 
-    pub fn schema(self) -> Result<Schema> {
-        let file_reader = Arc::new(SerializedFileReader::new(self.reader)?);
-        let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
-        let schema = arrow_reader.get_schema()?;
+    pub fn schema(mut self) -> Result<Schema> {
+        let metadata = read::read_metadata(&mut self.reader)?;
+
+        let schema = read::get_schema(&metadata)?;
         Ok(schema.into())
     }
 }
 
-impl ArrowReader for ParquetRecordBatchReader {
+impl<R: Read + Seek> ArrowReader for read::RecordReader<R> {
     fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
     }
 
     fn schema(&self) -> Arc<Schema> {
-        Arc::new((&*<Self as RecordBatchReader>::schema(self)).into())
+        Arc::new((&*self.schema().clone()).into())
     }
 }
 
-impl<R> ParquetReader<R> {}
-
 impl<R> SerReader<R> for ParquetReader<R>
 where
-    R: 'static + Read + Seek,
+    R: Read + Seek,
 {
     fn new(reader: R) -> Self {
         ParquetReader {
@@ -129,14 +104,17 @@ where
         self
     }
 
-    fn finish(self) -> Result<DataFrame> {
+    fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        let file_reader = Arc::new(SerializedFileReader::new(self.reader)?);
-        let n_rows = file_reader.metadata().file_metadata().num_rows() as usize;
-        let batch_size = set_batch_size(n_rows, self.stop_after_n_rows);
-        let mut arrow_reader = ParquetFileArrowReader::new(file_reader);
-        let record_reader = arrow_reader.get_record_reader(batch_size)?;
-        finish_reader(record_reader, rechunk, self.stop_after_n_rows, None, None)
+
+        let reader = read::RecordReader::try_new(
+            &mut self.reader,
+            None,
+            None,
+            self.stop_after_n_rows,
+            Arc::new(|_, _| true),
+        )?;
+        finish_reader(reader, rechunk, self.stop_after_n_rows, None, None)
     }
 }
 
@@ -151,18 +129,18 @@ pub struct ParquetWriter<W> {
 
 impl<W> ParquetWriter<W>
 where
-    W: 'static + Write + Seek + TryClone,
+    W: Write + Seek,
 {
     /// Create a new writer
     pub fn new(writer: W) -> Self
     where
-        W: 'static + Write + Seek + TryClone,
+        W: Write + Seek,
     {
         ParquetWriter { writer }
     }
 
     /// Write the given DataFrame in the the writer `W`.
-    pub fn finish(self, df: &DataFrame) -> Result<()> {
+    pub fn finish(mut self, df: &DataFrame) -> Result<()> {
         let df = to_arrow_compatible_df(df);
         let mut fields = df.schema().to_arrow().fields().clone();
 
@@ -194,12 +172,13 @@ where
             if !date64_columns.is_empty() {
                 let mut columns = rb.columns().to_vec();
                 for i in &date64_columns {
-                    let array = cast(&columns[*i], &ArrowDataType::Int64).unwrap();
-                    let array = cast(
-                        &array,
+                    let array = cast::cast(columns[*i].as_ref(), &ArrowDataType::Int64).unwrap();
+                    let array = cast::cast(
+                        array.as_ref(),
                         &ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
                     )
-                    .unwrap();
+                    .unwrap()
+                    .into();
                     columns[*i] = array;
                 }
                 RecordBatch::try_from_iter(column_names.iter().zip(columns)).unwrap()
@@ -208,13 +187,41 @@ where
             }
         });
 
-        let mut parquet_writer =
-            ParquetArrowWriter::try_new(self.writer, Arc::new(ArrowSchema::new(fields)), None)?;
+        let options = write::WriteOptions {
+            write_statistics: false,
+            compression: write::CompressionCodec::Uncompressed,
+        };
+        let schema = ArrowSchema::new(fields);
+        let parquet_schema = write::to_parquet_schema(&schema)?;
 
-        for batch in iter {
-            parquet_writer.write(&batch)?
-        }
-        let _ = parquet_writer.close()?;
+        let parquet_schema_iter = parquet_schema.clone();
+        let iter = iter.map(|batch| {
+            let columns = batch.columns().to_vec();
+            Ok(write::DynIter::new(
+                columns
+                    .into_iter()
+                    .zip(parquet_schema_iter.columns().to_vec().into_iter())
+                    .map(|(array, type_)| {
+                        // one parquet page per array.
+                        // we could use `array.slice()` to split it based on some number of rows.
+                        Ok(write::DynIter::new(std::iter::once(write::array_to_page(
+                            array.as_ref(),
+                            type_,
+                            options,
+                        ))))
+                    }),
+            ))
+        });
+
+        write::write_file(
+            &mut self.writer,
+            iter,
+            &schema,
+            parquet_schema,
+            options,
+            None,
+        )?;
+
         Ok(())
     }
 }
@@ -239,7 +246,9 @@ mod test {
     #[test]
     #[cfg(all(feature = "dtype-date64", feature = "parquet"))]
     fn test_parquet_date64_round_trip() -> Result<()> {
-        let f: InMemoryWriteableCursor = Default::default();
+        use std::io::{Cursor, Seek, SeekFrom};
+
+        let mut f = Cursor::new(vec![]);
 
         let mut df = df![
             "date64" => [Some(191845729i64), Some(89107598), None, Some(3158971092)]
@@ -247,10 +256,9 @@ mod test {
 
         df.may_apply("date64", |s| s.cast::<Date64Type>())?;
 
-        ParquetWriter::new(f.clone()).finish(&df)?;
-        let data = f.data();
+        ParquetWriter::new(&mut f).finish(&df)?;
 
-        let f = SliceableCursor::new(data);
+        f.seek(SeekFrom::Start(0))?;
 
         let read = ParquetReader::new(f).finish()?;
         assert!(read.frame_equal_missing(&df));

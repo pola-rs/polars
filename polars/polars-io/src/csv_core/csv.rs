@@ -4,6 +4,7 @@ use crate::csv_core::{buffer::*, parser::*};
 use crate::PhysicalIoExpr;
 use crate::ScanAggregation;
 use csv::ByteRecordsIntoIter;
+use polars_arrow::array::ValueSize;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;

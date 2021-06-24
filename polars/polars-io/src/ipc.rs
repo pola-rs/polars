@@ -35,9 +35,7 @@
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::utils::to_arrow_compatible_df;
-use arrow::io::ipc::{
-    read::FileReader as ArrowIPCFileReader, write::FileWriter as ArrowIPCFileWriter,
-};
+use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
@@ -65,7 +63,7 @@ pub struct IpcReader<R> {
     rechunk: bool,
 }
 
-impl<R> ArrowReader for ArrowIPCFileReader<R>
+impl<'a, R> ArrowReader for read::FileReader<'a, R>
 where
     R: Read + Seek,
 {
@@ -74,7 +72,7 @@ where
     }
 
     fn schema(&self) -> Arc<Schema> {
-        Arc::new((&*self.schema()).into())
+        Arc::new((&**self.schema()).into())
     }
 }
 
@@ -93,9 +91,10 @@ where
         self
     }
 
-    fn finish(self) -> Result<DataFrame> {
+    fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        let ipc_reader = ArrowIPCFileReader::try_new(self.reader)?;
+        let metadata = read::read_file_metadata(&mut self.reader)?;
+        let ipc_reader = read::FileReader::new(&mut self.reader, metadata);
         finish_reader(ipc_reader, rechunk, None, None, None)
     }
 }
@@ -132,7 +131,7 @@ where
 
     fn finish(self, df: &DataFrame) -> Result<()> {
         let df = to_arrow_compatible_df(df);
-        let mut ipc_writer = ArrowIPCFileWriter::try_new(self.writer, &df.schema().to_arrow())?;
+        let mut ipc_writer = write::FileWriter::try_new(self.writer, &df.schema().to_arrow())?;
 
         let iter = df.iter_record_batches();
 
@@ -156,9 +155,7 @@ mod test {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let mut df = create_df();
 
-        IpcWriter::new(&mut buf)
-            .finish(&mut df)
-            .expect("ipc writer");
+        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
 
         buf.set_position(0);
 

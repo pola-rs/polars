@@ -57,7 +57,7 @@
 use crate::csv_core::csv::{build_csv_reader, SequentialReader};
 use crate::utils::to_arrow_compatible_df;
 use crate::{SerReader, SerWriter};
-pub use arrow::io::csv::write::WriterBuilder;
+pub use arrow::io::csv::write;
 use polars_core::prelude::*;
 use std::fs::File;
 use std::io::{Read, Seek, Write};
@@ -69,7 +69,9 @@ pub struct CsvWriter<'a, W: Write> {
     /// File or Stream handler
     buffer: &'a mut W,
     /// Builds an Arrow CSV Writer
-    writer_builder: WriterBuilder,
+    writer_builder: write::WriterBuilder,
+    /// arrow specific options
+    options: write::SerializeOptions,
 }
 
 impl<'a, W> SerWriter<'a, W> for CsvWriter<'a, W>
@@ -79,17 +81,19 @@ where
     fn new(buffer: &'a mut W) -> Self {
         CsvWriter {
             buffer,
-            writer_builder: WriterBuilder::new(),
+            writer_builder: write::WriterBuilder::new(),
+            options: write::SerializeOptions::default(),
         }
     }
 
     fn finish(self, df: &DataFrame) -> Result<()> {
         let df = to_arrow_compatible_df(df);
-        let mut csv_writer = self.writer_builder.build(self.buffer);
+        let mut writer = self.writer_builder.from_writer(self.buffer);
 
         let iter = df.iter_record_batches();
+        write::write_header(&mut writer, &df.schema().to_arrow())?;
         for batch in iter {
-            csv_writer.write(&batch)?
+            write::write_batch(&mut writer, &batch, &self.options)?;
         }
         Ok(())
     }
@@ -101,31 +105,31 @@ where
 {
     /// Set whether to write headers
     pub fn has_headers(mut self, has_headers: bool) -> Self {
-        self.writer_builder = self.writer_builder.has_headers(has_headers);
+        self.writer_builder.has_headers(has_headers);
         self
     }
 
     /// Set the CSV file's column delimiter as a byte character
     pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.writer_builder = self.writer_builder.with_delimiter(delimiter);
+        self.writer_builder.delimiter(delimiter);
         self
     }
 
     /// Set the CSV file's date format
     pub fn with_date_format(mut self, format: String) -> Self {
-        self.writer_builder = self.writer_builder.with_date_format(format);
+        self.options.date_format = format;
         self
     }
 
     /// Set the CSV file's time format
     pub fn with_time_format(mut self, format: String) -> Self {
-        self.writer_builder = self.writer_builder.with_time_format(format);
+        self.options.time_format = format;
         self
     }
 
     /// Set the CSV file's timestamp format array in
     pub fn with_timestamp_format(mut self, format: String) -> Self {
-        self.writer_builder = self.writer_builder.with_timestamp_format(format);
+        self.options.timestamp_format = format;
         self
     }
 

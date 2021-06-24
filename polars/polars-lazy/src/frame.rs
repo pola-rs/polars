@@ -2292,12 +2292,6 @@ mod test {
             .lazy()
             .select(vec![when(col("a").eq(lit("c")))
                 .then(Null {}.lit())
-<<<<<<< HEAD
-                .otherwise(col("a"))])
-            .collect()?;
-
-        dbg!(out);
-=======
                 .otherwise(col("a"))
                 .alias("foo")])
             .collect()?;
@@ -2306,7 +2300,6 @@ mod test {
             out.column("foo")?.is_null().into_iter().collect::<Vec<_>>(),
             &[Some(false), Some(false), Some(true)]
         );
->>>>>>> master
         Ok(())
     }
 }

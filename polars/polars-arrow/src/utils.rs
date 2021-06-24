@@ -7,8 +7,8 @@ pub struct TrustMyLength<I: Iterator<Item = J>, J> {
 }
 
 impl<I, J> TrustMyLength<I, J>
-    where
-        I: Iterator<Item = J>,
+where
+    I: Iterator<Item = J>,
 {
     #[inline]
     pub fn new(iter: I, len: usize) -> Self {
@@ -17,8 +17,8 @@ impl<I, J> TrustMyLength<I, J>
 }
 
 impl<I, J> Iterator for TrustMyLength<I, J>
-    where
-        I: Iterator<Item = J>,
+where
+    I: Iterator<Item = J>,
 {
     type Item = J;
 
@@ -35,8 +35,8 @@ impl<I, J> Iterator for TrustMyLength<I, J>
 impl<I, J> ExactSizeIterator for TrustMyLength<I, J> where I: Iterator<Item = J> {}
 
 impl<I, J> DoubleEndedIterator for TrustMyLength<I, J>
-    where
-        I: Iterator<Item = J> + DoubleEndedIterator,
+where
+    I: Iterator<Item = J> + DoubleEndedIterator,
 {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
@@ -56,17 +56,17 @@ unsafe impl<I, J> arrow::trusted_len::TrustedLen for TrustMyLength<I, J> where I
 
 pub trait CustomIterTools: Iterator {
     fn fold_first_<F>(mut self, f: F) -> Option<Self::Item>
-        where
-            Self: Sized,
-            F: FnMut(Self::Item, Self::Item) -> Self::Item,
+    where
+        Self: Sized,
+        F: FnMut(Self::Item, Self::Item) -> Self::Item,
     {
         let first = self.next()?;
         Some(self.fold(first, f))
     }
 
     fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         TrustMyLength::new(self, length)
     }
