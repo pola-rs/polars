@@ -12,7 +12,7 @@
 //! fn example(df: &mut DataFrame) -> Result<()> {
 //!     let mut file = File::create("example.csv").expect("could not create file");
 //!     
-//!     JSONWriter::new(&mut file)
+//!     JsonWriter::new(&mut file)
 //!     .finish(df)
 //! }
 //! ```
@@ -87,17 +87,17 @@ use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 // Write a DataFrame to JSON
-pub struct JSONWriter<'a, W: Write> {
+pub struct JsonWriter<'a, W: Write> {
     /// File or Stream handler
     buffer: &'a mut W,
 }
 
-impl<'a, W> SerWriter<'a, W> for JSONWriter<'a, W>
+impl<'a, W> SerWriter<'a, W> for JsonWriter<'a, W>
 where
     W: Write,
 {
     fn new(buffer: &'a mut W) -> Self {
-        JSONWriter { buffer }
+        JsonWriter { buffer }
     }
 
     fn finish(self, df: &DataFrame) -> Result<()> {
@@ -190,7 +190,7 @@ mod test {
         let mut buf: Vec<u8> = Vec::new();
         let mut df = create_df();
 
-        JSONWriter::new(&mut buf).finish(&mut df);
+        JsonWriter::new(&mut buf).finish(&mut df);
 
         let json = std::str::from_utf8(&buf).unwrap();
         assert_eq!(
