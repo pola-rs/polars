@@ -573,3 +573,44 @@ def from_rows(
         ```
     """
     return DataFrame.from_rows(rows, column_names, column_name_mapping)
+
+
+def read_sql(sql: str, engine) -> "DataFrame":
+    """
+    # Preface
+    Deprecated by design. Will not have a long future support and no guarantees given whatsoever.
+    Want backwards compatibility?
+
+    Use:
+
+    ```python
+    df = pl.from_pandas(pd.read_sql(sql, engine))
+    ```
+
+    The support is limited because I want something better.
+
+    # Docstring
+    Load a DataFrame from a database by sending a raw sql query.
+    Make sure to install sqlalchemy ^1.4
+
+    Parameters
+    ----------
+    sql
+        raw sql query
+    engine : sqlalchemy engine
+        make sure to install sqlalchemy ^1.4
+    """
+    try:
+        # pandas sql loading is faster.
+        # conversion from pandas to arrow is very cheap compared to db driver
+        import pandas as pd
+
+        return from_pandas(pd.read_sql(sql, engine))
+    except ImportError:
+        from sqlalchemy import text
+
+        with engine.connect() as con:
+            result = con.execute(text(sql))
+
+        rows = result.fetchall()
+        return from_rows(rows, list(result.keys()))
