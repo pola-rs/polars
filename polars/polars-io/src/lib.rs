@@ -68,7 +68,7 @@ impl<R: Read> ArrowReader for ArrowJsonReader<R> {
     }
 
     fn schema(&self) -> Arc<Schema> {
-        Arc::new((&*self.schema()).into())
+        Arc::new((&**self.schema()).into())
     }
 }
 

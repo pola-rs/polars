@@ -21,7 +21,7 @@ trait ToPolarsError: Debug {
 impl ToPolarsError for lexical::Error {}
 impl ToPolarsError for fast_float::Error {}
 
-pub(crate) trait PrimitiveParser: ArrowPrimitiveType {
+pub(crate) trait PrimitiveParser: PolarsPrimitiveType {
     fn parse(bytes: &[u8]) -> Result<Self::Native>;
 }
 

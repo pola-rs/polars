@@ -1,7 +1,9 @@
 use super::RepeatBy;
 use crate::prelude::*;
-use arrow::array::LargeListArray;
+use arrow::array::ListArray;
 use polars_arrow::array::ListFromIter;
+
+type LargeListArray = ListArray<i64>;
 
 impl<T> RepeatBy for ChunkedArray<T>
 where
@@ -18,7 +20,10 @@ where
         ListChunked::new_from_chunks(
             self.name(),
             vec![Arc::new(unsafe {
-                LargeListArray::from_iter_primitive_trusted_len::<T, _, _>(iter)
+                LargeListArray::from_iter_primitive_trusted_len::<T::Native, _, _>(
+                    iter,
+                    T::get_dtype().to_arrow(),
+                )
             })],
         )
     }

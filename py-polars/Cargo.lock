@@ -62,15 +62,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
-<<<<<<< HEAD
 name = "arrow2"
 version = "0.1.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=d5bf08d52294688869e1e594c5cacd99663fd94b#d5bf08d52294688869e1e594c5cacd99663fd94b"
-=======
-name = "arrow"
-version = "5.0.0-SNAPSHOT"
-source = "git+https://github.com/apache/arrow-rs?rev=9f56afb2d2347310184706f7d5e46af583557bea#9f56afb2d2347310184706f7d5e46af583557bea"
->>>>>>> master
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=7f2c3c1b8eab991be8b2bf37288036b8010fa02c#d5bf08d52294688869e1e594c5cacd99663fd94b"
+
 dependencies = [
  "ahash",
  "base64",
@@ -87,13 +82,9 @@ dependencies = [
  "multiversion",
  "num 0.3.1",
  "packed_simd_2",
-<<<<<<< HEAD
  "parquet2",
  "prettytable-rs",
  "rand",
-=======
- "rand 0.7.3",
->>>>>>> master
  "regex",
  "serde",
  "serde_derive",
@@ -1083,16 +1074,10 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
 name = "parquet-format"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5bc6b23543b5dedc8f6cce50758a35e5582e148e0cfa26bd0cacd569cda5b71"
-=======
-name = "parquet"
-version = "5.0.0-SNAPSHOT"
-source = "git+https://github.com/apache/arrow-rs?rev=9f56afb2d2347310184706f7d5e46af583557bea#9f56afb2d2347310184706f7d5e46af583557bea"
->>>>>>> master
 dependencies = [
  "thrift",
 ]

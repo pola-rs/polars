@@ -6,7 +6,6 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
-use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::MutableBuffer;
 use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
@@ -206,6 +205,9 @@ where
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
+        use arrow::bitmap::Bitmap;
+        use arrow::bitmap::MutableBitmap;
+
         let iter = iter.into_iter();
         let size = iter.size_hint().0;
         let mut null_mask_builder = MutableBitmap::with_capacity(size);

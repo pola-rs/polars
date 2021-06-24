@@ -169,29 +169,3 @@ pub trait ListFromIter {
     }
 }
 impl ListFromIter for ListArray<i64> {}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use arrow::array::{Array, Int32Array};
-
-    #[test]
-    fn test_is_null() {
-        let arr = Int32Array::from(vec![Some(0), None, Some(2)]);
-        let a: &dyn Array = &arr;
-        assert_eq!(
-            a.is_null_mask()
-                .iter()
-                .map(|v| v.unwrap())
-                .collect::<Vec<_>>(),
-            &[false, true, false]
-        );
-        assert_eq!(
-            a.is_not_null_mask()
-                .iter()
-                .map(|v| v.unwrap())
-                .collect::<Vec<_>>(),
-            &[true, false, true]
-        );
-    }
-}
