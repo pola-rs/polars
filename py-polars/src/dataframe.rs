@@ -23,7 +23,7 @@ use crate::{
     file::{get_either_file, get_file_like, EitherRustPythonFile},
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
-use polars::frame::row::Row;
+use polars::frame::row::{rows_to_schema, Row};
 
 #[pyclass]
 #[repr(transparent)]
@@ -193,7 +193,20 @@ impl PyDataFrame {
         // safety:
         // wrap is transparent
         let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
-        let df = DataFrame::from_rows(&rows).map_err(PyPolarsEr::from)?;
+
+        // replace inferred nulls with boolean
+        let schema = rows_to_schema(&rows);
+        let fields = schema
+            .fields()
+            .iter()
+            .map(|fld| match fld.data_type() {
+                DataType::Null => Field::new(fld.name(), DataType::Boolean),
+                _ => fld.clone(),
+            })
+            .collect();
+        let schema = Schema::new(fields);
+
+        let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
