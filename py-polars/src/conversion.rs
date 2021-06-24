@@ -136,6 +136,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             // s to ms
             let v = res.extract::<f64>()? as i64;
             Ok(AnyValue::Date64(v * 1000).into())
+        } else if ob.is_none() {
+            Ok(AnyValue::Null.into())
         } else {
             Err(PyErr::from(PyPolarsEr::Other(format!(
                 "row type not supported {:?}",
