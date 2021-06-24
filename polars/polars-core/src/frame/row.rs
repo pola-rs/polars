@@ -79,36 +79,11 @@ impl DataFrame {
     /// as this is a lot slower than creating the `Series` in a columnar fashion
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows(rows: &[Row]) -> Result<Self> {
-        // no of rows to use to infer dtype
-        let max_infer = std::cmp::min(rows.len(), 50);
-        let mut schema: Schema = (&rows[0]).into();
-        let mut has_nulls = true;
-
-        for row in rows.iter().take(max_infer).skip(1) {
-            // for i in 1..max_infer {
-            let nulls: Vec<_> = schema
-                .fields()
-                .iter()
-                .enumerate()
-                .filter_map(|(i, f)| {
-                    if matches!(f.data_type(), DataType::Null) {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if nulls.is_empty() {
-                has_nulls = false;
-                break;
-            } else {
-                let fields = schema.fields_mut();
-                let local_schema: Schema = row.into();
-                for i in nulls {
-                    fields[i] = local_schema.fields()[i].clone()
-                }
-            }
-        }
+        let schema = rows_to_schema(rows);
+        let has_nulls = schema
+            .fields()
+            .iter()
+            .any(|fld| matches!(fld.data_type(), DataType::Null));
         if has_nulls {
             return Err(PolarsError::HasNullValues(
                 "Could not infer row types, because of the null values".into(),
@@ -116,6 +91,41 @@ impl DataFrame {
         }
         Self::from_rows_and_schema(rows, &schema)
     }
+}
+
+/// Infer schema from rows.
+pub fn rows_to_schema(rows: &[Row]) -> Schema {
+    // no of rows to use to infer dtype
+    let max_infer = std::cmp::min(rows.len(), 50);
+    let mut schema: Schema = (&rows[0]).into();
+    // the first row that has no nulls will be used to infer the schema.
+    // if there is a null, we check the next row and see if we can update the schema
+
+    for row in rows.iter().take(max_infer).skip(1) {
+        // for i in 1..max_infer {
+        let nulls: Vec<_> = schema
+            .fields()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, f)| {
+                if matches!(f.data_type(), DataType::Null) {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if nulls.is_empty() {
+            break;
+        } else {
+            let fields = schema.fields_mut();
+            let local_schema: Schema = row.into();
+            for i in nulls {
+                fields[i] = local_schema.fields()[i].clone()
+            }
+        }
+    }
+    schema
 }
 
 impl<'a> From<&AnyValue<'a>> for Field {
