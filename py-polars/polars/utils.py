@@ -29,6 +29,10 @@ def coerce_arrow(array: "pa.Array") -> "pa.Array":
             )
 
     if hasattr(array, "num_chunks") and array.num_chunks > 1:
+        if pa.types.is_string(array.type):
+            array = pa.compute.cast(array, pa.large_utf8())
+        elif pa.types.is_list(array.type):
+            array = pa.compute.cast(array, pa.large_list())
         array = array.combine_chunks()
     return array
 
