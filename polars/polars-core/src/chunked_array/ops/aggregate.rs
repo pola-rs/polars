@@ -159,27 +159,25 @@ where
     }
 }
 
-macro_rules! impl_var {
-    ($self:expr, $ty: ty) => {{
-        let ca = $self - $self.mean()?;
-        let squared = &ca * &ca;
+impl<T> ChunkVar<f64> for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
+{
+    fn var(&self) -> Option<f64> {
+        let mean = self.mean()?;
+        let squared = self.apply_cast_numeric::<_, Float64Type>(|value| {
+            (value.to_f64().unwrap() - mean).powf(2.0)
+        });
         // Note, this is similar behavior to numpy if DDOF=1.
         // in statistics DDOF often = 1.
         // this last step is similar to mean, only now instead of 1/n it is 1/(n-1)
         squared
             .sum()
-            .map(|sum| sum / (ca.len() - ca.null_count() - 1) as $ty)
-    }};
-}
-
-impl<T> ChunkVar<f64> for ChunkedArray<T>
-where
-    T: PolarsIntegerType,
-    T::Native: PartialOrd + Num + NumCast,
-{
-    fn var(&self) -> Option<f64> {
-        let ca = self.cast::<Float64Type>().ok()?;
-        impl_var!(&ca, f64)
+            .map(|sum| sum / (self.len() - self.null_count() - 1) as f64)
     }
     fn std(&self) -> Option<f64> {
         self.var().map(|var| var.sqrt())
@@ -188,7 +186,11 @@ where
 
 impl ChunkVar<f32> for Float32Chunked {
     fn var(&self) -> Option<f32> {
-        impl_var!(self, f32).map(|v| v as f32)
+        let mean = self.mean()? as f32;
+        let squared = self.apply(|value| (value - mean).powf(2.0));
+        squared
+            .sum()
+            .map(|sum| sum / (self.len() - self.null_count() - 1) as f32)
     }
     fn std(&self) -> Option<f32> {
         self.var().map(|var| var.sqrt())
@@ -197,7 +199,11 @@ impl ChunkVar<f32> for Float32Chunked {
 
 impl ChunkVar<f64> for Float64Chunked {
     fn var(&self) -> Option<f64> {
-        impl_var!(self, f64)
+        let mean = self.mean()?;
+        let squared = self.apply(|value| (value - mean).powf(2.0));
+        squared
+            .sum()
+            .map(|sum| sum / (self.len() - self.null_count() - 1) as f64)
     }
     fn std(&self) -> Option<f64> {
         self.var().map(|var| var.sqrt())
@@ -323,7 +329,10 @@ macro_rules! impl_as_series {
 impl<T> VarAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: PartialOrd + Num + NumCast,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
 {
     fn var_as_series(&self) -> Series {
         impl_as_series!(self, var, Float64Chunked)

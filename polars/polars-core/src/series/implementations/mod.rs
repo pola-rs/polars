@@ -14,7 +14,10 @@ use super::IntoSeries;
 use super::SeriesTrait;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::{
-    ops::aggregate::{ChunkAggSeries, VarAggSeries},
+    ops::{
+        aggregate::{ChunkAggSeries, VarAggSeries},
+        compare_inner::{IntoPartialEqInner, PartialEqInner},
+    },
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
@@ -70,9 +73,16 @@ macro_rules! impl_dyn_series {
                 ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
                     .map(|ca| ca.into_series())
             }
+            fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
+                (&self.0).into_partial_eq_inner()
+            }
 
-            fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+            fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
                 self.0.vec_hash(random_state)
+            }
+
+            fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
+                self.0.vec_hash_combine(build_hasher, hashes)
             }
 
             fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -820,6 +830,10 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "is_in")]
             fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
                 IsIn::is_in(&self.0, other)
+            }
+            #[cfg(feature = "repeat_by")]
+            fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+                RepeatBy::repeat_by(&self.0, by)
             }
 
             #[cfg(feature = "checked_arithmetic")]

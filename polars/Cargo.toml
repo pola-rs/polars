@@ -69,6 +69,7 @@ is_in = ["polars-core/is_in", "polars-lazy/is_in"]
 zip_with = ["polars-core/zip_with"]
 round_series = ["polars-core/round_series", "polars-lazy/round_series"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
+repeat_by = ["polars-core/repeat_by", "polars-lazy/repeat_by"]
 
 # don't use this
 private = []
@@ -105,6 +106,29 @@ dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
 dtype-u64 = ["polars-core/dtype-u64", "polars-lazy/dtype-u64", "polars-io/dtype-u64"]
 
+docs-selection = [
+    "csv-file",
+    "json",
+    "parquet",
+    "ipc",
+    "dtype-full",
+    "pivot",
+    "is_in",
+    "sort_multiple",
+    "rows",
+    "docs",
+    "strings",
+    "object",
+    "lazy",
+    "temporal",
+    "random",
+    "zip_with",
+    "round_series",
+    "checked_arithmetic",
+    "ndarray",
+    "downsample",
+]
+
 [dependencies]
 polars-core = {version = "0.14.1", path = "./polars-core", features= ["docs", "private"], default-features = false}
 polars-io = {version = "0.14.1", path = "./polars-io", default-features = false, optional=true}
@@ -137,6 +161,8 @@ name = "take"
 harness = false
 
 [package.metadata.docs.rs]
-all-features = true
+# not all because arrow 4.3 does not compile with simd
+#all-features = true
+features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

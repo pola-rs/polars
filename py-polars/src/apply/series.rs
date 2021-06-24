@@ -1038,10 +1038,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             DataType::List(dt) => {
                 let mut builder =
                     get_list_builder(&dt.into(), self.len() * 5, self.len(), self.name());
-
                 let ca = if self.null_count() == 0 {
                     let mut it = self.into_no_null_iter();
-
                     // use first value to get dtype and replace default builder
                     if let Some(series) = it.next() {
                         let out_series = call_series_lambda(pypolars, lambda, series)
@@ -1054,7 +1052,6 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         let ca = builder.finish();
                         return Ok(PySeries::new(ca.into_series()));
                     }
-
                     for series in it {
                         append_series(pypolars, &mut *builder, lambda, series)?;
                     }
@@ -1065,7 +1062,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
                     // use first values to get dtype and replace default builders
                     // continue until no null is found
-                    while let Some(opt_series) = it.next() {
+                    for opt_series in &mut it {
                         if let Some(series) = opt_series {
                             let out_series = call_series_lambda(pypolars, lambda, series)
                                 .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
@@ -1080,7 +1077,6 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     for _ in 0..nulls {
                         builder.append_opt_series(None);
                     }
-
                     for opt_series in it {
                         if let Some(series) = opt_series {
                             append_series(pypolars, &mut *builder, lambda, series)?;

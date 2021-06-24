@@ -16,7 +16,11 @@ pub trait VecHash {
     /// Compute the hash for all values in the array.
     ///
     /// This currently only works with the AHash RandomState hasher builder.
-    fn vec_hash(&self, _random_state: RandomState) -> UInt64Chunked {
+    fn vec_hash(&self, _random_state: RandomState) -> AlignedVec<u64> {
+        unimplemented!()
+    }
+
+    fn vec_hash_combine(&self, _random_state: RandomState, _hashes: &mut [u64]) {
         unimplemented!()
     }
 }
@@ -26,59 +30,117 @@ where
     T: PolarsIntegerType,
     T::Native: Hash,
 {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
+    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
         // Note that we don't use the no null branch! This can break in unexpected ways.
         // for instance with threading we split an array in n_threads, this may lead to
         // splits that have no nulls and splits that have nulls. Then one array is hashed with
         // Option<T> and the other array with T.
         // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
         // the only deterministic seed.
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
+        let mut av = AlignedVec::with_capacity(self.len());
+
+        self.downcast_iter().for_each(|arr| {
+            av.extend(arr.into_iter().map(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            }))
+        });
+        av
+    }
+
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        self.apply_to_slice(
+            |opt_v, h| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                boost_hash_combine(hasher.finish(), *h)
+            },
+            hashes,
+        )
     }
 }
 
 impl VecHash for Utf8Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
+    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+        let mut av = AlignedVec::with_capacity(self.len());
+        self.downcast_iter().for_each(|arr| {
+            av.extend(arr.into_iter().map(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            }))
+        });
+        av
+    }
+
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        self.apply_to_slice(
+            |opt_v, h| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                boost_hash_combine(hasher.finish(), *h)
+            },
+            hashes,
+        )
     }
 }
 
 impl VecHash for BooleanChunked {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
+    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+        let mut av = AlignedVec::with_capacity(self.len());
+        self.downcast_iter().for_each(|arr| {
+            av.extend(arr.into_iter().map(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            }))
+        });
+        av
+    }
+
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        self.apply_to_slice(
+            |opt_v, h| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                boost_hash_combine(hasher.finish(), *h)
+            },
+            hashes,
+        )
     }
 }
 
 impl VecHash for Float32Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let opt_v = opt_v.map(|v| v.to_bits());
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
+    fn vec_hash(&self, _random_state: RandomState) -> AlignedVec<u64> {
+        panic!("should already be coerced to u32")
+    }
+
+    fn vec_hash_combine(&self, _random_state: RandomState, _hashes: &mut [u64]) {
+        panic!("should already be coerced to u32")
     }
 }
 impl VecHash for Float64Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> UInt64Chunked {
-        self.branch_apply_cast_numeric_no_null(|opt_v| {
-            let opt_v = opt_v.map(|v| v.to_bits());
-            let mut hasher = random_state.build_hasher();
-            opt_v.hash(&mut hasher);
-            hasher.finish()
-        })
+    fn vec_hash(&self, _random_state: RandomState) -> AlignedVec<u64> {
+        #[cfg(not(feature = "dtype-u64"))]
+        {
+            let mut av = AlignedVec::with_capacity(self.len());
+            self.downcast_iter().for_each(|arr| {
+                av.extend(arr.into_iter().map(|opt_v| {
+                    let mut hasher = _random_state.build_hasher();
+                    opt_v.map(|v| v.to_bits()).hash(&mut hasher);
+                    hasher.finish()
+                }))
+            });
+            av
+        }
+        #[cfg(feature = "dtype-u64")]
+        {
+            panic!("should already be coerced to u64")
+        }
+    }
+    fn vec_hash_combine(&self, _random_state: RandomState, _hashes: &mut [u64]) {
+        panic!("should already be coerced to u64")
     }
 }
 
@@ -396,6 +458,7 @@ where
 }
 
 // hash combine from c++' boost lib
+#[inline]
 fn boost_hash_combine(l: u64, r: u64) -> u64 {
     l ^ r.wrapping_add(0x9e3779b9u64.wrapping_add(l << 6).wrapping_add(r >> 2))
 }
@@ -423,80 +486,20 @@ pub(crate) fn df_rows_to_hashes(
     build_hasher: Option<RandomState>,
 ) -> (UInt64Chunked, RandomState) {
     let build_hasher = build_hasher.unwrap_or_default();
-    let hashes: Vec<_> = keys
-        .columns
-        .iter()
-        .map(|s| {
-            let h = s.vec_hash(build_hasher.clone());
-            // if this fails we have unexpected groupby results.
-            debug_assert_eq!(h.null_count(), 0);
-            h
-        })
-        .collect();
 
-    let n_chunks = hashes[0].chunks().len();
-    let mut av = AlignedVec::with_capacity(keys.height());
+    let mut iter = keys.iter();
+    let first = iter.next().expect("at least one key");
+    let mut hashes = first.vec_hash(build_hasher.clone());
+    let hslice = hashes.as_mut_slice();
 
-    // two code paths, one has one layer of indirection less.
-    if n_chunks == 1 {
-        let chunks: Vec<&[u64]> = hashes
-            .iter()
-            .map(|ca| {
-                ca.downcast_iter()
-                    .map(|arr| arr.values().as_slice())
-                    .collect::<Vec<_>>()[0]
-            })
-            .collect();
-        unsafe {
-            let chunk_len = chunks.get_unchecked(0).len();
-
-            // over chunk length in column direction
-            for idx in 0..chunk_len {
-                let hslice = chunks.get_unchecked(0);
-                let mut h = *hslice.get_unchecked(idx);
-
-                // in row direction
-                for column_i in 1..hashes.len() {
-                    let hslice = chunks.get_unchecked(column_i);
-                    let h_ = *hslice.get_unchecked(idx);
-                    h = boost_hash_combine(h, h_)
-                }
-
-                av.push(h);
-            }
-        }
-    // path with more indirection
-    } else {
-        let chunks: Vec<Vec<&[u64]>> = hashes
-            .iter()
-            .map(|ca| {
-                ca.downcast_iter()
-                    .map(|arr| arr.values().as_slice())
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        unsafe {
-            for chunk_i in 0..n_chunks {
-                let chunk_len = chunks.get_unchecked(0).get_unchecked(chunk_i).len();
-
-                // over chunk length in column direction
-                for idx in 0..chunk_len {
-                    let hslice = chunks.get_unchecked(0).get_unchecked(chunk_i);
-                    let mut h = *hslice.get_unchecked(idx);
-
-                    // in row direction
-                    for column_i in 1..hashes.len() {
-                        let hslice = chunks.get_unchecked(column_i).get_unchecked(chunk_i);
-                        let h_ = *hslice.get_unchecked(idx);
-                        h = boost_hash_combine(h, h_)
-                    }
-
-                    av.push(h);
-                }
-            }
-        }
+    for keys in iter {
+        keys.vec_hash_combine(build_hasher.clone(), hslice);
     }
 
-    let chunks = vec![to_array::<UInt64Type>(av, None)];
+    let chunks = vec![Arc::new(PrimitiveArray::from_data(
+        ArrowDataType::UInt64,
+        hashes.into(),
+        None,
+    )) as ArrayRef];
     (UInt64Chunked::new_from_chunks("", chunks), build_hasher)
 }

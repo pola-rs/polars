@@ -92,7 +92,12 @@ macro_rules! cast_with_dtype {
             List(_) => ChunkCast::cast::<ListType>($self).map(|ca| ca.into_series()),
             Categorical => ChunkCast::cast::<CategoricalType>($self).map(|ca| ca.into_series()),
             dt => Err(PolarsError::Other(
-                format!("Casting to {:?} is not supported", dt).into(),
+                format!(
+                    "Casting to {:?} is not supported. \
+                This error may occur because you did not activate a certain dtype feature",
+                    dt
+                )
+                .into(),
             )),
         }
     }};
@@ -128,6 +133,11 @@ impl ChunkCast for CategoricalChunked {
                 let mut ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
                 ca.field = Arc::new(Field::new(ca.name(), DataType::UInt32));
                 Ok(ca)
+            }
+            DataType::Categorical => {
+                let mut out = ChunkedArray::new_from_chunks(self.name(), self.chunks.clone());
+                out.categorical_map = self.categorical_map.clone();
+                Ok(out)
             }
             _ => cast_ca(self),
         }
@@ -313,5 +323,14 @@ mod test {
 
         assert_eq!(new.dtype(), &DataType::List(ArrowDataType::Float64));
         Ok(())
+    }
+
+    #[test]
+    fn test_cast_noop() {
+        // check if we can cast categorical twice without panic
+        let ca = Utf8Chunked::new_from_slice("foo", &["bar", "ham"]);
+        let out = ca.cast::<CategoricalType>().unwrap();
+        let out = out.cast::<CategoricalType>().unwrap();
+        assert_eq!(out.dtype(), &DataType::Categorical)
     }
 }

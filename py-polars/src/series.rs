@@ -261,7 +261,43 @@ impl PySeries {
     }
 
     pub fn mean(&self) -> Option<f64> {
-        self.series.mean()
+        match self.series.dtype() {
+            DataType::Boolean => {
+                let s = self.series.cast_with_dtype(&DataType::UInt8).unwrap();
+                s.mean()
+            }
+            _ => self.series.mean(),
+        }
+    }
+
+    pub fn max(&self) -> PyObject {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        match self.series.dtype() {
+            DataType::Float32 | DataType::Float64 => self.series.max::<f64>().to_object(py),
+            DataType::Boolean => self.series.max::<u32>().map(|v| v == 1).to_object(py),
+            _ => self.series.max::<i64>().to_object(py),
+        }
+    }
+
+    pub fn min(&self) -> PyObject {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        match self.series.dtype() {
+            DataType::Float32 | DataType::Float64 => self.series.min::<f64>().to_object(py),
+            DataType::Boolean => self.series.min::<u32>().map(|v| v == 1).to_object(py),
+            _ => self.series.min::<i64>().to_object(py),
+        }
+    }
+
+    pub fn sum(&self) -> PyObject {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        match self.series.dtype() {
+            DataType::Float32 | DataType::Float64 => self.series.sum::<f64>().to_object(py),
+            DataType::Boolean => self.series.sum::<u64>().to_object(py),
+            _ => self.series.sum::<i64>().to_object(py),
+        }
     }
 
     pub fn n_chunks(&self) -> usize {
@@ -361,7 +397,7 @@ impl PySeries {
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let take = self.series.take(&idx);
+        let take = self.series.take(idx);
         Ok(PySeries::new(take))
     }
 
@@ -531,7 +567,13 @@ impl PySeries {
     }
 
     pub fn median(&self) -> Option<f64> {
-        self.series.median()
+        match self.series.dtype() {
+            DataType::Boolean => {
+                let s = self.series.cast_with_dtype(&DataType::UInt8).unwrap();
+                s.median()
+            }
+            _ => self.series.median(),
+        }
     }
 
     pub fn quantile(&self, quantile: f64) -> PyObject {
@@ -1195,7 +1237,11 @@ macro_rules! impl_unsafe_from_ptr {
                 let ca = ChunkedArray::<$ca_type>::new_from_owned_with_null_bitmap(
                     self.name(),
                     av,
+<<<<<<< HEAD
                     validity,
+=======
+                    null_bitmap.cloned(),
+>>>>>>> master
                 );
                 Self::new(ca.into_series())
             }
@@ -1346,72 +1392,6 @@ impl_rhs_arithmetic!(mul_i32_rhs, i32, mul);
 impl_rhs_arithmetic!(mul_i64_rhs, i64, mul);
 impl_rhs_arithmetic!(mul_f32_rhs, f32, mul);
 impl_rhs_arithmetic!(mul_f64_rhs, f64, mul);
-
-macro_rules! impl_sum {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            pub fn $name(&self) -> PyResult<Option<$type>> {
-                Ok(self.series.sum())
-            }
-        }
-    };
-}
-
-impl_sum!(sum_u8, u8);
-impl_sum!(sum_u16, u16);
-impl_sum!(sum_u32, u32);
-impl_sum!(sum_u64, u64);
-impl_sum!(sum_i8, i8);
-impl_sum!(sum_i16, i16);
-impl_sum!(sum_i32, i32);
-impl_sum!(sum_i64, i64);
-impl_sum!(sum_f32, f32);
-impl_sum!(sum_f64, f64);
-
-macro_rules! impl_min {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            pub fn $name(&self) -> PyResult<Option<$type>> {
-                Ok(self.series.min())
-            }
-        }
-    };
-}
-
-impl_min!(min_u8, u8);
-impl_min!(min_u16, u16);
-impl_min!(min_u32, u32);
-impl_min!(min_u64, u64);
-impl_min!(min_i8, i8);
-impl_min!(min_i16, i16);
-impl_min!(min_i32, i32);
-impl_min!(min_i64, i64);
-impl_min!(min_f32, f32);
-impl_min!(min_f64, f64);
-
-macro_rules! impl_max {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            pub fn $name(&self) -> PyResult<Option<$type>> {
-                Ok(self.series.max())
-            }
-        }
-    };
-}
-
-impl_max!(max_u8, u8);
-impl_max!(max_u16, u16);
-impl_max!(max_u32, u32);
-impl_max!(max_u64, u64);
-impl_max!(max_i8, i8);
-impl_max!(max_i16, i16);
-impl_max!(max_i32, i32);
-impl_max!(max_i64, i64);
-impl_max!(max_f32, f32);
-impl_max!(max_f64, f64);
 
 macro_rules! impl_eq_num {
     ($name:ident, $type:ty) => {

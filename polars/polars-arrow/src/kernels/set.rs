@@ -42,9 +42,9 @@ pub fn set_at_idx_no_null<T, I>(
     set_value: T,
     data_type: DataType,
 ) -> Result<PrimitiveArray<T>>
-where
-    T: NativeType,
-    I: IntoIterator<Item = usize>,
+    where
+        T: NativeType,
+        I: IntoIterator<Item = usize>,
 {
     let mut buf = MutableBuffer::with_capacity(array.len());
     buf.extend_from_slice(array.values().as_slice());

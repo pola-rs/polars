@@ -49,6 +49,7 @@ impl RevMapping {
         }
     }
 
+    /// Categorical to str
     pub fn get(&self, idx: u32) -> &str {
         match self {
             Self::Global(map, a, _) => {
@@ -63,6 +64,24 @@ impl RevMapping {
         match (self, other) {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
             _ => false,
+        }
+    }
+
+    /// str to Categorical
+    pub fn find(&self, value: &str) -> Option<u32> {
+        match self {
+            Self::Global(map, a, _) => {
+                map.iter()
+                    // Safety:
+                    // value is always within bounds
+                    .find(|(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
+                    .map(|(k, _v)| *k)
+            }
+            Self::Local(a) => {
+                // Safety: within bounds
+                unsafe { (0..a.len()).find(|idx| a.value_unchecked(*idx) == value) }
+                    .map(|idx| idx as u32)
+            }
         }
     }
 }

@@ -234,6 +234,10 @@ impl PyExpr {
         self.clone().inner.is_in(expr.inner).into()
     }
 
+    pub fn repeat_by(&self, by: PyExpr) -> PyExpr {
+        self.clone().inner.repeat_by(by.inner).into()
+    }
+
     pub fn pow(&self, exponent: f64) -> PyExpr {
         self.clone().inner.pow(exponent).into()
     }
@@ -487,7 +491,7 @@ impl WhenThenThen {
         }
     }
     pub fn otherwise(&self, expr: PyExpr) -> PyExpr {
-        self.inner.clone().otherwise(expr.clone().inner).into()
+        self.inner.clone().otherwise(expr.inner).into()
     }
 }
 
@@ -592,7 +596,7 @@ pub fn lit(value: &PyAny) -> PyExpr {
         )
         .into()
     } else if let Ok(series) = value.extract::<PySeries>() {
-        dsl::lit(series.series.clone()).into()
+        dsl::lit(series.series).into()
     } else if value.is_none() {
         dsl::lit(Null {}).into()
     } else {

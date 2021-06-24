@@ -14,15 +14,17 @@ pub(crate) mod any_value;
 pub(crate) mod apply;
 pub(crate) mod bit_repr;
 pub(crate) mod chunkops;
+pub(crate) mod compare_inner;
 pub(crate) mod cum_agg;
 pub(crate) mod downcast;
 pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
 #[cfg(feature = "is_in")]
-#[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
 pub(crate) mod is_in;
 pub(crate) mod peaks;
+#[cfg(feature = "repeat_by")]
+pub(crate) mod repeat_by;
 pub(crate) mod set;
 pub(crate) mod shift;
 pub(crate) mod sort;
@@ -32,7 +34,6 @@ pub(crate) mod take_single;
 pub(crate) mod unique;
 pub(crate) mod window;
 #[cfg(feature = "zip_with")]
-#[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
 pub(crate) mod zip;
 
 /// Transmute ChunkedArray to bit representation.
@@ -474,6 +475,12 @@ pub trait ChunkApply<'a, A, B> {
     fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
     where
         F: Fn((usize, Option<A>)) -> Option<B> + Copy;
+
+    /// Apply a closure elementwise and write results to a mutable slice.
+    fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
+    // (value of chunkedarray, value of slice) -> value of slice
+    where
+        F: Fn(Option<A>, &T) -> T;
 }
 
 /// Aggregation operations
@@ -970,5 +977,15 @@ pub trait ArgAgg {
     /// Get the index of the maximal value
     fn arg_max(&self) -> Option<usize> {
         None
+    }
+}
+
+/// Repeat the values `n` times.
+#[cfg(feature = "repeat_by")]
+#[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
+pub trait RepeatBy {
+    /// Repeat the values `n` times, where `n` is determined by the values in `by`.
+    fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
+        unimplemented!()
     }
 }

@@ -91,6 +91,8 @@ impl DataFrame {
         let second_c = "__POLARS_TEMP_SECOND";
         let temp_key = "__POLAR_TEMP_NAME";
 
+        let key_dtype = key.dtype();
+        let mut key_phys = key.to_physical_repr();
         let mut key = key.clone();
         let key_name = key.name().to_string();
         let wrong_key_dtype = || Err(PolarsError::Other("key should be date32 || date64".into()));
@@ -185,18 +187,23 @@ impl DataFrame {
 
                 df.hstack_mut(&[year, day])?;
 
-                match key.dtype() {
+                match key_dtype {
                     DataType::Date32 => {
-                        key = key / n;
-                        key = key * n;
+                        // round to lower bucket
+                        key_phys = key_phys / n;
+                        key_phys = key_phys * n;
                     }
                     DataType::Date64 => {
                         let fact = 1000 * 3600 * 24 * n;
-                        key = key / fact;
-                        key = key * fact;
+                        // round to lower bucket
+                        key_phys = key_phys / fact;
+                        key_phys = key_phys * fact;
                     }
                     _ => return wrong_key_dtype(),
                 }
+                key = key_phys
+                    .cast_with_dtype(key_dtype)
+                    .expect("back to original type");
 
                 df.groupby_stable(&[year_c, day_c])?
             }
@@ -209,14 +216,18 @@ impl DataFrame {
                 hour.rename(hour_c);
                 df.hstack_mut(&[year, day, hour])?;
 
-                match key.dtype() {
+                match key_dtype {
                     DataType::Date64 => {
                         let fact = 1000 * 3600 * n;
-                        key = key / fact;
-                        key = key * fact;
+                        // round to lower bucket
+                        key_phys = key_phys / fact;
+                        key_phys = key_phys * fact;
                     }
                     _ => return wrong_key_dtype(),
                 }
+                key = key_phys
+                    .cast_with_dtype(key_dtype)
+                    .expect("back to original type");
                 df.groupby_stable(&[year_c, day_c, hour_c])?
             }
             Minute(n) => {
@@ -231,14 +242,18 @@ impl DataFrame {
 
                 df.hstack_mut(&[year, day, hour, minute])?;
 
-                match key.dtype() {
+                match key_dtype {
                     DataType::Date64 => {
                         let fact = 1000 * 60 * n;
-                        key = key / fact;
-                        key = key * fact;
+                        // round to lower bucket
+                        key_phys = key_phys / fact;
+                        key_phys = key_phys * fact;
                     }
                     _ => return wrong_key_dtype_date64(),
                 }
+                key = key_phys
+                    .cast_with_dtype(key_dtype)
+                    .expect("back to original type");
 
                 df.groupby_stable(&[year_c, day_c, hour_c, minute_c])?
             }
@@ -256,14 +271,18 @@ impl DataFrame {
 
                 df.hstack_mut(&[year, day, hour, minute, second])?;
 
-                match key.dtype() {
+                match key_dtype {
                     DataType::Date64 => {
                         let fact = 1000 * n;
-                        key = key / fact;
-                        key = key * fact;
+                        // round to lower bucket
+                        key_phys = key_phys / fact;
+                        key_phys = key_phys * fact;
                     }
                     _ => return wrong_key_dtype_date64(),
                 }
+                key = key_phys
+                    .cast_with_dtype(key_dtype)
+                    .expect("back to original type");
 
                 df.groupby_stable(&[day_c, hour_c, minute_c, second_c])?
             }

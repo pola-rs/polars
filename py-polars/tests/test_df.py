@@ -153,6 +153,13 @@ def test_replace():
     assert df.frame_equal(DataFrame({"c": [True, False, True], "b": [1, 2, 3]}))
 
 
+def test_assignment():
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [2, 3, 4]})
+    df["foo"] = df["foo"]
+    # make sure that assignment does not change column order
+    assert df.columns == ["foo", "bar"]
+
+
 def test_slice():
     df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
     df = df.slice(1, 2)
@@ -688,3 +695,12 @@ def test_from_rows():
         column_name_mapping={1: "foo"},
     )
     assert df.dtypes == [pl.Int64, pl.Date64]
+
+
+def test_repeat_by():
+    df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
+
+    out = df[col("n").repeat_by("n")]
+    s = out["n"]
+    assert s[0] == [2, 2]
+    assert s[1] == [3, 3, 3]

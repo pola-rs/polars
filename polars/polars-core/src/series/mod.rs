@@ -1,7 +1,7 @@
 //! Type agnostic columnar data structure.
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
-use arrow::{array::ArrayRef};
+use arrow::array::ArrayRef;
 pub(crate) mod arithmetic;
 mod comparison;
 pub mod implementations;
@@ -31,6 +31,7 @@ pub(crate) mod private {
     use crate::frame::groupby::pivot::PivotAgg;
     use crate::frame::groupby::GroupTuples;
 
+    use crate::chunked_array::ops::compare_inner::PartialEqInner;
     use ahash::RandomState;
     use std::borrow::Cow;
 
@@ -55,7 +56,14 @@ pub(crate) mod private {
         ) -> bool {
             unimplemented!()
         }
-        fn vec_hash(&self, _build_hasher: RandomState) -> UInt64Chunked {
+        #[allow(clippy::wrong_self_convention)]
+        fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
+            unimplemented!()
+        }
+        fn vec_hash(&self, _build_hasher: RandomState) -> AlignedVec<u64> {
+            unimplemented!()
+        }
+        fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             unimplemented!()
         }
         fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -1006,6 +1014,11 @@ pub trait SeriesTrait:
     #[cfg(feature = "is_in")]
     #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
     fn is_in(&self, _other: &Series) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
+    #[cfg(feature = "repeat_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
+    fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
         unimplemented!()
     }
     #[cfg(feature = "checked_arithmetic")]

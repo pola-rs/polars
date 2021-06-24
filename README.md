@@ -17,6 +17,10 @@ Polars is a blazingly fast DataFrames library implemented in Rust using Apache A
 
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
+## Performance
+Polars is very fast, and in fact is one of the best performing solutions available. 
+See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
+
 # Rust setup
 You can take latest release from `crates.io`, or if you want to use the latest features/ performance improvements
 point to the `master` branch of this repo.
@@ -25,7 +29,7 @@ point to the `master` branch of this repo.
 polars = {git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
 ```
 ## Rust version
-Required Rust version `>=1.51`
+Required Rust version `>=1.52`
 
 # Python users read this!
 Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name. 
@@ -52,42 +56,6 @@ Want to know about all the features Polars support? Read the docs!
 * installation guide: `$ pip3 install polars`
 * [User Guide](https://pola-rs.github.io/polars-book/)
 * [Reference guide](https://pola-rs.github.io/polars-book/api-python/)
-
-## Performance
-Polars is written to be performant, and it is! But don't take my word for it, take a look at the results in 
-[h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
-
-## Cargo Features
-
-Additional cargo features:
-
-* `temporal (default)`
-    - Conversions between Chrono and Polars for temporal data
-* `simd (nightly)`
-    - SIMD operations
-* `parquet`
-    - Read Apache Parquet format
-* `json`
-    - Json serialization
-* `ipc`
-    - Arrow's IPC format serialization
-* `random`
-    - Generate array's with randomly sampled values
-* `ndarray`
-    - Convert from `DataFrame` to `ndarray`
-* `lazy`
-    - Lazy api
-* `strings`
-    - String utilities for `Utf8Chunked`
-* `object`
-    - Support for generic ChunkedArray's called `ObjectChunked<T>` (generic over `T`). 
-      These will downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
-* `[plain_fmt | pretty_fmt]` (mutually exclusive)
-  - one of them should be chosen to fmt DataFrames. 
-    `pretty_fmt` can deal with overflowing cells and looks nicer but has more dependencies.
-    `plain_fmt (default)` is plain formatting.
-  
-
 
 ## Contribution
 Want to contribute? Read our [contribution guideline](https://github.com/ritchie46/polars/blob/master/CONTRIBUTING.md).

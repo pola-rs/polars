@@ -126,6 +126,23 @@ where
             .map(|(idx, v)| f((idx, v.copied())))
             .collect()
     }
+    fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])
+    where
+        F: Fn(Option<T::Native>, &V) -> V,
+    {
+        assert!(slice.len() >= self.len());
+
+        let mut idx = 0;
+        self.downcast_iter().for_each(|arr| {
+            arr.into_iter().for_each(|opt_val| {
+                // Safety:
+                // length asserted above
+                let item = unsafe { slice.get_unchecked_mut(idx) };
+                *item = f(opt_val.copied(), item);
+                idx += 1;
+            })
+        });
+    }
 }
 
 impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
@@ -179,6 +196,24 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         F: Fn((usize, Option<bool>)) -> Option<bool> + Copy,
     {
         self.into_iter().enumerate().map(f).collect()
+    }
+
+    fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
+    where
+        F: Fn(Option<bool>, &T) -> T,
+    {
+        assert!(slice.len() >= self.len());
+
+        let mut idx = 0;
+        self.downcast_iter().for_each(|arr| {
+            arr.into_iter().for_each(|opt_val| {
+                // Safety:
+                // length asserted above
+                let item = unsafe { slice.get_unchecked_mut(idx) };
+                *item = f(opt_val, item);
+                idx += 1;
+            })
+        });
     }
 }
 
@@ -243,6 +278,24 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
         F: Fn((usize, Option<&'a str>)) -> Option<Cow<'a, str>> + Copy,
     {
         self.into_iter().enumerate().map(f).collect()
+    }
+
+    fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
+    where
+        F: Fn(Option<&'a str>, &T) -> T,
+    {
+        assert!(slice.len() >= self.len());
+
+        let mut idx = 0;
+        self.downcast_iter().for_each(|arr| {
+            arr.into_iter().for_each(|opt_val| {
+                // Safety:
+                // length asserted above
+                let item = unsafe { slice.get_unchecked_mut(idx) };
+                *item = f(opt_val, item);
+                idx += 1;
+            })
+        });
     }
 }
 
@@ -386,5 +439,25 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         F: Fn((usize, Option<Series>)) -> Option<Series> + Copy,
     {
         self.into_iter().enumerate().map(f).collect()
+    }
+
+    fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
+    where
+        F: Fn(Option<Series>, &T) -> T,
+    {
+        assert!(slice.len() >= self.len());
+
+        let mut idx = 0;
+        self.downcast_iter().for_each(|arr| {
+            arr.iter().for_each(|opt_val| {
+                let opt_val = opt_val.map(|arrayref| Series::try_from(("", arrayref)).unwrap());
+
+                // Safety:
+                // length asserted above
+                let item = unsafe { slice.get_unchecked_mut(idx) };
+                *item = f(opt_val, item);
+                idx += 1;
+            })
+        });
     }
 }

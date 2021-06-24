@@ -189,3 +189,7 @@ def test_when_then_flatten():
         .then(10)
         .otherwise(30)
     ]["bar"] == [30, 4, 5]
+
+
+def test_describe_plan():
+    pl.DataFrame({"a": [1]}).lazy().describe_optimized_plan()
