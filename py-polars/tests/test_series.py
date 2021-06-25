@@ -213,6 +213,12 @@ def test_apply():
     b = a.apply(lambda x: len(x))
     assert b == [3, 3, None]
 
+    # just check that it runs (somehow problem with conditional compilation)
+    a = pl.Series("a", [2, 2, 3]).cast(pl.Date64)
+    a.apply(lambda x: x)
+    a = pl.Series("a", [2, 2, 3]).cast(pl.Date32)
+    a.apply(lambda x: x)
+
 
 def test_shift():
     a = Series("a", [1, 2, 3])

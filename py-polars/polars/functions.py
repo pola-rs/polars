@@ -3,7 +3,10 @@ from io import StringIO, BytesIO
 import numpy as np
 from pathlib import Path
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pass
 
 from .frame import DataFrame
 from .series import Series
