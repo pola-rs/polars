@@ -516,9 +516,11 @@ where
             .trust_my_length(groups.len());
         // Safety:
         // The length of the iterator is trusted
-        let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
         let arr = unsafe {
-            ListArray::from_iter_primitive_trusted_len::<T::Native, _, _>(iter, data_type)
+            ListArray::from_iter_primitive_trusted_len::<T::Native, _, _>(
+                iter,
+                T::get_dtype().to_arrow(),
+            )
         };
         Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).ok()
     }
