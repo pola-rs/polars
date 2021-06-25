@@ -264,6 +264,10 @@ where
     }
 
     /// Set the CSV reader to infer the schema of the file
+    ///
+    /// # Arguments
+    /// * `max_records` - Maximum number of rows read for schema inference.
+    ///                   Setting this to `None` will do a full table scan (slow).
     pub fn infer_schema(mut self, max_records: Option<usize>) -> Self {
         // used by error ignore logic
         self.max_records = max_records;
