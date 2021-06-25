@@ -1117,9 +1117,24 @@ class Expr:
         return wrap_expr(self._pyexpr.shift_and_fill(periods, fill_value._pyexpr))
 
     def fill_none(self, fill_value: "Union[str, int, float, Expr]") -> "Expr":
+        """
+        Fill none value with a fill value
+        """
         if not isinstance(fill_value, Expr):
             fill_value = lit(fill_value)
         return wrap_expr(self._pyexpr.fill_none(fill_value._pyexpr))
+
+    def forward_fill(self):
+        """
+        Fill missing values with the latest seen values
+        """
+        self.map(lambda s: s.fill_none("forward"), None)
+
+    def backward_fill(self):
+        """
+        Fill missing values with the next to be seen values
+        """
+        self.map(lambda s: s.fill_none("backward"), None)
 
     def reverse(self) -> "Expr":
         """
