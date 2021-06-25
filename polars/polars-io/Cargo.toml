@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.14.2"
+version = "0.14.3"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -26,8 +26,8 @@ fmt = ["polars-core/plain_fmt"]
 
 [dependencies]
 arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "4eed0d0acd88155632dbe9073fe1a0a0fd041b02" }
-polars-core = {version = "0.14.2", path = "../polars-core", features = ["private"], default-features=false}
-polars-arrow = {version = "0.14.2", path = "../polars-arrow"}
+polars-core = {version = "0.14.3", path = "../polars-core", features = ["private"], default-features=false}
+polars-arrow = {version = "0.14.3", path = "../polars-arrow"}
 csv = {version="1.1", optional=true}
 lexical = {version = "5.2", optional = true}
 num_cpus = "1.13.0"
