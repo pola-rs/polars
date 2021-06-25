@@ -27,6 +27,7 @@ from typing import (
     BinaryIO,
     Callable,
     Any,
+    Type
 )
 from .series import Series, wrap_s
 from . import datatypes
@@ -907,7 +908,7 @@ class DataFrame:
         self._df.set_column_names(columns)
 
     @property
-    def dtypes(self) -> "List[type]":
+    def dtypes(self) -> List[Type[DataType]]:
         """
         Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
 
