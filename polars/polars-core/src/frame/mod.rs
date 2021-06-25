@@ -1366,7 +1366,6 @@ impl DataFrame {
                     .try_fold(first, |acc, s| {
                         let mask = acc.lt(s) & acc.is_not_null() | s.is_null();
                         let min = acc.zip_with(&mask, s)?;
-
                         Ok(Cow::Owned(min))
                     })
                     .map(|s| Some(s.into_owned()))

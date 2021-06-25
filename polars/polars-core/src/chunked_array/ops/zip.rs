@@ -10,6 +10,20 @@ fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
     }
 }
 
+fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
+    // make sure that zip works same as master branch
+    // that is that null are ignored from mask and that we take from the left array
+
+    match mask.validity() {
+        // nulls are set to true meaning we take from the left in the zip/ if_then_else kernel
+        Some(validity) => {
+            let mask = mask.values() & &(!validity);
+            BooleanArray::from_data(mask, None)
+        }
+        None => mask.clone(),
+    }
+}
+
 macro_rules! impl_ternary_broadcast {
     ($self:ident, $self_len:expr, $other_len:expr, $other:expr, $mask:expr, $ty:ty) => {{
         match ($self_len, $other_len) {
@@ -66,7 +80,8 @@ where
                 .zip(right.downcast_iter())
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
-                    let arr = if_then_else(mask_c, left_c, right_c)?.into();
+                    let mask_c = prepare_mask(mask_c);
+                    let arr = if_then_else(&mask_c, left_c, right_c)?.into();
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -87,7 +102,8 @@ impl ChunkZip<BooleanType> for BooleanChunked {
                 .zip(right.downcast_iter())
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
-                    let arr = if_then_else(mask_c, left_c, right_c)?.into();
+                    let mask_c = prepare_mask(mask_c);
+                    let arr = if_then_else(&mask_c, left_c, right_c)?.into();
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -107,7 +123,8 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
                 .zip(right.downcast_iter())
                 .zip(mask.downcast_iter())
                 .map(|((left_c, right_c), mask_c)| {
-                    let arr = if_then_else(mask_c, left_c, right_c)?.into();
+                    let mask_c = prepare_mask(mask_c);
+                    let arr = if_then_else(&mask_c, left_c, right_c)?.into();
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -127,7 +144,8 @@ impl ChunkZip<ListType> for ListChunked {
             .zip(right.downcast_iter())
             .zip(mask.downcast_iter())
             .map(|((left_c, right_c), mask_c)| {
-                let arr = if_then_else(mask_c, left_c, right_c)?.into();
+                let mask_c = prepare_mask(mask_c);
+                let arr = if_then_else(&mask_c, left_c, right_c)?.into();
                 Ok(arr)
             })
             .collect::<Result<Vec<_>>>()?;
