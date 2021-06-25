@@ -179,7 +179,7 @@ where
             // to uint64
             (Duration(_), UInt64) => cast_from_dtype::<UInt64Type, _>(self, UInt64)?.cast::<N>(),
             // to date64
-            (Float64, Date64) | (Float32, Date64) => {
+            (Int32, Date64) | (Float64, Date64) | (Float32, Date64) => {
                 cast_from_dtype::<Date64Type, _>(self, Date64)?.cast::<N>()
             }
             // to date32
