@@ -2,6 +2,18 @@
 
 The Rust crate `polars` has its own changelog.
 
+### Polars 0.8.7
+* feature
+  - from_pandas accept series and date range #875
+  - expr: forward_fill, backward_fill #874
+  - gzipped file support in csv parser
+* performance
+  - reduce memory usage of multi-key groupby
+  - improve variance and std-dev aggregation
+* bug fix
+  - cast to large-utf8 before collecting chunks #870
+  - various
+
 ### Polars 0.8.6
 * performance
   - improve hashing performance for grouping on two keys for 64 bit and 32 and 64 bit data.
