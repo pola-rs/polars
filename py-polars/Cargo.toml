@@ -68,9 +68,9 @@ name = "polars"
 requires-dist = ["numpy", "pyarrow==4.0.*"]
 
 [profile.release]
-codegen-units = 1
+#codegen-units = 1
 
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
 # target-cpu = "native"
-lto = "fat"
+#lto = "fat"
