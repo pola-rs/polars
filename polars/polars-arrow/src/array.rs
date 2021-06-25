@@ -89,9 +89,9 @@ pub trait ListFromIter {
         let values: PrimitiveArray<T> = iter_to_values!(iterator, validity, offsets, length_so_far);
 
         ListArray::from_data(
-            data_type,
+            ListArray::<i64>::default_datatype(data_type.clone()),
             offsets.into(),
-            Arc::new(values),
+            Arc::new(values.to(data_type)),
             Some(validity.into()),
         )
     }
