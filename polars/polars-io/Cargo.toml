@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.14.2"
+version = "0.14.3"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -29,8 +29,8 @@ arrow = {git = "https://github.com/apache/arrow-rs", rev = "9f56afb2d23473101847
 #arrow = {version = "4.3", default-features = false }
 parquet_lib = {optional = true, package="parquet", git = "https://github.com/apache/arrow-rs", rev = "9f56afb2d2347310184706f7d5e46af583557bea"}
 #parquet_lib = {version = "4.3", package="parquet", optional = true}
-polars-core = {version = "0.14.2", path = "../polars-core", features = ["private"], default-features=false}
-polars-arrow = {version = "0.14.2", path = "../polars-arrow"}
+polars-core = {version = "0.14.3", path = "../polars-core", features = ["private"], default-features=false}
+polars-arrow = {version = "0.14.3", path = "../polars-arrow"}
 csv = {version="1.1", optional=true}
 lexical = {version = "5.2", optional = true}
 num_cpus = "1.13.0"
