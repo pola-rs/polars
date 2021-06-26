@@ -359,7 +359,6 @@ pub(crate) unsafe fn take_utf8(
 
     let mut length_so_far = 0;
     offset_typed[0] = length_so_far;
-    let mut null_count = 0;
 
     let nulls;
 
@@ -419,7 +418,6 @@ pub(crate) unsafe fn take_utf8(
                 *offset = length_so_far;
             });
         nulls = indices.data_ref().null_buffer().cloned();
-        null_count = indices.null_count();
     } else {
         let mut builder = LargeStringBuilder::with_capacity(data_len, length_so_far as usize);
 
@@ -459,7 +457,6 @@ pub(crate) unsafe fn take_utf8(
         .add_buffer(values_buf.into_arrow_buffer());
     if let Some(null_buffer) = nulls {
         data = data.null_bit_buffer(null_buffer);
-        data = data.null_count(null_count);
     }
     Arc::new(LargeStringArray::from(data.build()))
 }
