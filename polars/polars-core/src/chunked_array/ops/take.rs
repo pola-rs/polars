@@ -69,7 +69,7 @@ where
         let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
-                if self.is_empty() {
+                if self.is_empty() || array.null_count() == array.len() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
@@ -143,7 +143,7 @@ where
         let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
-                if self.is_empty() {
+                if self.is_empty() || array.null_count() == array.len() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
@@ -192,7 +192,7 @@ impl ChunkTake for BooleanChunked {
         let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
-                if self.is_empty() {
+                if self.is_empty() || array.null_count() == array.len() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
@@ -262,7 +262,7 @@ impl ChunkTake for BooleanChunked {
         let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
-                if self.is_empty() {
+                if self.is_empty() || array.null_count() == array.len() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
@@ -317,7 +317,7 @@ impl ChunkTake for Utf8Chunked {
         let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
-                if self.is_empty() {
+                if self.is_empty() || array.null_count() == array.len() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
