@@ -704,3 +704,24 @@ def test_repeat_by():
     s = out["n"]
     assert s[0] == [2, 2]
     assert s[1] == [3, 3, 3]
+
+
+def test_join_dates():
+    date_times = pd.date_range(
+        "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", closed="left"
+    )
+    dts = (
+        pl.from_pandas(date_times)
+        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
+        .cast(pl.Date64)
+    )
+
+    # some df with sensor id, (randomish) datetime and some value
+    df = pl.DataFrame(
+        {
+            "sensor": ["a"] * 5 + ["b"] * 5,
+            "datetime": dts,
+            "value": [2, 3, 4, 1, 2, 3, 5, 1, 2, 3],
+        }
+    )
+    df.join(df, on="datetime")
