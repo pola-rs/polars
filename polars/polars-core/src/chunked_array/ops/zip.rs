@@ -17,7 +17,7 @@ fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
     match mask.validity() {
         // nulls are set to true meaning we take from the left in the zip/ if_then_else kernel
         Some(validity) => {
-            let mask = mask.values() & &(!validity);
+            let mask = mask.values() | &(!validity);
             BooleanArray::from_data(mask, None)
         }
         None => mask.clone(),

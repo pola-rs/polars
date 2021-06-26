@@ -64,8 +64,7 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.1.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=7f2c3c1b8eab991be8b2bf37288036b8010fa02c#d5bf08d52294688869e1e594c5cacd99663fd94b"
-
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=4eed0d0acd88155632dbe9073fe1a0a0fd041b02#4eed0d0acd88155632dbe9073fe1a0a0fd041b02"
 dependencies = [
  "ahash",
  "base64",
@@ -1093,7 +1092,6 @@ dependencies = [
  "futures",
  "lz4",
  "parquet-format",
- "rand 0.8.4",
  "snap",
  "streaming-iterator",
  "thrift",
@@ -1165,7 +1163,7 @@ dependencies = [
  "num_cpus",
  "polars-arrow",
  "prettytable-rs",
- "rand 0.7.3",
+ "rand",
  "rand_distr",
  "rayon",
  "regex",
@@ -1190,6 +1188,7 @@ dependencies = [
  "memmap2",
  "num 0.4.0",
  "num_cpus",
+ "polars-arrow",
  "polars-core",
  "rayon",
  "regex",
@@ -1201,6 +1200,7 @@ version = "0.14.2"
 dependencies = [
  "ahash",
  "itertools",
+ "polars-arrow",
  "polars-core",
  "polars-io",
  "rayon",
@@ -1318,21 +1318,9 @@ checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
 dependencies = [
  "getrandom 0.1.16",
  "libc",
- "rand_chacha 0.2.2",
- "rand_core 0.5.1",
- "rand_hc 0.2.0",
-]
-
-[[package]]
-name = "rand"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e7573632e6454cf6b99d7aac4ccca54be06da05aca2ef7423d22d27d4d4bcd8"
-dependencies = [
- "libc",
- "rand_chacha 0.3.1",
- "rand_core 0.6.3",
- "rand_hc 0.3.1",
+ "rand_chacha",
+ "rand_core",
+ "rand_hc",
 ]
 
 [[package]]
@@ -1342,17 +1330,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c8ed856279c9737206bf725bf36935d8666ead7aa69b52be55af369d193402"
 dependencies = [
  "ppv-lite86",
- "rand_core 0.5.1",
-]
-
-[[package]]
-name = "rand_chacha"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
-dependencies = [
- "ppv-lite86",
- "rand_core 0.6.3",
+ "rand_core",
 ]
 
 [[package]]
@@ -1365,22 +1343,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_core"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d34f1408f55294453790c48b2f1ebbb1c5b4b7563eb1f418bcfcfdbb06ebb4e7"
-dependencies = [
- "getrandom 0.2.3",
-]
-
-[[package]]
 name = "rand_distr"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9e9532ada3929fb8b2e9dbe28d1e06c9b2cc65813f074fcb6bd5fbefeff9d56"
 dependencies = [
  "num-traits",
- "rand 0.7.3",
+ "rand",
 ]
 
 [[package]]
@@ -1389,16 +1358,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
- "rand_core 0.5.1",
-]
-
-[[package]]
-name = "rand_hc"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d51e9f596de227fda2ea6c84607f5558e196eeaf43c986b724ba4fb8fdf497e7"
-dependencies = [
- "rand_core 0.6.3",
+ "rand_core",
 ]
 
 [[package]]

@@ -138,7 +138,7 @@ impl PyDataFrame {
 
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
-                let buf = f.as_slicable_buffer();
+                let buf = f.as_buffer();
                 ParquetReader::new(buf)
                     .with_stop_after_n_rows(stop_after_n_rows)
                     .finish()
