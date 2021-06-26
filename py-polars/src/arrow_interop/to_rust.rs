@@ -2,7 +2,7 @@ use crate::error::PyPolarsEr;
 use libc::uintptr_t;
 use polars_core::prelude::Arc;
 use polars_core::utils::arrow::{
-    array::{make_array_from_raw, ArrayRef},
+    array::ArrayRef,
     datatypes::{Field, Schema},
     ffi,
     record_batch::RecordBatch,
@@ -11,7 +11,10 @@ use pyo3::prelude::*;
 
 pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
-    let (array_ptr, schema_ptr) = ffi::ArrowArray::into_raw(unsafe { ffi::ArrowArray::empty() });
+    let array = Arc::new(ffi::create_empty());
+
+    // non-owned mutable pointers.
+    let (array_ptr, schema_ptr) = array.references();
 
     // make the conversion through PyArrow's private API
     // this changes the pointer's memory and is thus unsafe. In particular, `_export_to_c` can go out of bounds
@@ -19,7 +22,9 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
         "_export_to_c",
         (array_ptr as uintptr_t, schema_ptr as uintptr_t),
     )?;
-    let array = unsafe { make_array_from_raw(array_ptr, schema_ptr) }.expect("arrow array");
+
+    // consume it to a `Box<dyn Array>`
+    let array = ffi::try_from(array).expect("arrow array").into();
     Ok(array)
 }
 

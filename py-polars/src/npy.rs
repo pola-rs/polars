@@ -4,7 +4,8 @@ use numpy::{
     ToNpyDims, PY_ARRAY_API,
 };
 use numpy::{Element, PyArray1};
-use polars::chunked_array::builder::alloc;
+use polars::prelude::AlignedVec;
+use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
 use std::{mem, ptr};
 
@@ -14,12 +15,12 @@ use std::{mem, ptr};
 /// All elements in the array are non initialized
 ///
 /// The array is also writable from Python.
-pub unsafe fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArray1<T>, *mut T) {
-    let t_size = std::mem::size_of::<T>();
-    let capacity = size * t_size;
-    let ptr = alloc::allocate_aligned::<u8>(capacity).as_ptr() as *mut T;
-    let mut buf = Vec::from_raw_parts(ptr, 0, capacity);
-    buf.set_len(size);
+pub unsafe fn aligned_array<T: Element + NativeType>(
+    py: Python<'_>,
+    size: usize,
+) -> (&PyArray1<T>, AlignedVec<T>) {
+    let mut buf = AlignedVec::<T>::from_len_zeroed(size);
+
     // modified from
     // numpy-0.10.0/src/array.rs:375
 
@@ -40,8 +41,7 @@ pub unsafe fn aligned_array<T: Element>(py: Python<'_>, size: usize) -> (&PyArra
         flags::NPY_ARRAY_OUT_ARRAY, // flag
         ptr::null_mut(),            //obj
     );
-    mem::forget(buf);
-    (PyArray1::from_owned_ptr(py, ptr), buffer_ptr)
+    (PyArray1::from_owned_ptr(py, ptr), buf)
 }
 /// TODO: needs more explanation
 /// # Safety

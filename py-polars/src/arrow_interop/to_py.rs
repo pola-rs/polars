@@ -1,10 +1,11 @@
 use libc::uintptr_t;
-use polars_core::utils::arrow::{array::ArrayRef, record_batch::RecordBatch};
+use polars_core::utils::arrow::{array::ArrayRef, ffi, record_batch::RecordBatch};
 use pyo3::prelude::*;
 
 /// Arrow array to Python.
 pub fn to_py_array(array: &ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
-    let (array_ptr, schema_ptr) = array.to_raw().expect("c ptr");
+    let ffi_array = ffi::export_to_c(array.clone()).expect("c ptr");
+    let (array_ptr, schema_ptr) = ffi_array.references();
     let array = pyarrow.getattr("Array")?.call_method1(
         "_import_from_c",
         (array_ptr as uintptr_t, schema_ptr as uintptr_t),

@@ -183,7 +183,7 @@ where
                 cast_from_dtype::<Date64Type, _>(self, Date64)?.cast::<N>()
             }
             // to date32
-            (Float64, Date32) | (Float32, Date32) => {
+            (Int64, Date32) | (Float64, Date32) | (Float32, Date32) => {
                 cast_from_dtype::<Date32Type, _>(self, Date32)?.cast::<N>()
             }
             _ => cast_ca(self),

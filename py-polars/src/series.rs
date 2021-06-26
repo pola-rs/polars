@@ -1,8 +1,5 @@
 use std::ops::{BitAnd, BitOr};
 
-use numpy::PyArray1;
-use pyo3::types::{PyList, PyTuple};
-use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 use crate::apply::series::ApplyLambda;
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
@@ -10,6 +7,9 @@ use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::utils::str_to_polarstype;
 use crate::{arrow_interop, npy::aligned_array, prelude::*};
+use numpy::PyArray1;
+use pyo3::types::{PyList, PyTuple};
+use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
 #[pyclass]
 #[repr(transparent)]
@@ -1078,7 +1078,7 @@ impl PySeries {
 }
 
 macro_rules! impl_ufuncs {
-    ($name:ident, $type:ty, $unsafe_from_ptr_method:ident) => {
+    ($name:ident, $type:ident, $unsafe_from_ptr_method:ident) => {
         #[pymethods]
         impl PySeries {
             // applies a ufunc by accepting a lambda out: ufunc(*args, out=out)
@@ -1090,7 +1090,8 @@ macro_rules! impl_ufuncs {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
                 let size = self.len();
-                let (out_array, ptr) = unsafe { aligned_array::<$type>(py, size) };
+                let (out_array, av) =
+                    unsafe { aligned_array::<<$type as PolarsPrimitiveType>::Native>(py, size) };
 
                 debug_assert_eq!(out_array.get_refcnt(), 1);
                 // inserting it in a tuple increase the reference count by 1.
@@ -1103,12 +1104,16 @@ macro_rules! impl_ufuncs {
                         // if this assert fails, the lambda has taken a reference to the object, so we must panic
                         // args and the lambda return have a reference, making a total of 3
                         assert_eq!(out_array.get_refcnt(), 3);
-                        self.$unsafe_from_ptr_method(ptr as usize, size)
+
+                        let validity = self.series.chunks()[0].validity().clone();
+                        let ca = ChunkedArray::<$type>::new_from_owned_with_null_bitmap(
+                            self.name(),
+                            av,
+                            validity,
+                        );
+                        PySeries::new(ca.into_series())
                     }
                     Err(e) => {
-                        // first take ownership from the leaked memory
-                        // so the destructor gets called when we go out of scope
-                        self.$unsafe_from_ptr_method(ptr as usize, size);
                         // return error information
                         return Err(e);
                     }
@@ -1119,16 +1124,16 @@ macro_rules! impl_ufuncs {
         }
     };
 }
-impl_ufuncs!(apply_ufunc_f32, f32, unsafe_from_ptr_f32);
-impl_ufuncs!(apply_ufunc_f64, f64, unsafe_from_ptr_f64);
-impl_ufuncs!(apply_ufunc_u8, u8, unsafe_from_ptr_u8);
-impl_ufuncs!(apply_ufunc_u16, u16, unsafe_from_ptr_u16);
-impl_ufuncs!(apply_ufunc_u32, u32, unsafe_from_ptr_u32);
-impl_ufuncs!(apply_ufunc_u64, u64, unsafe_from_ptr_u64);
-impl_ufuncs!(apply_ufunc_i8, i8, unsafe_from_ptr_i8);
-impl_ufuncs!(apply_ufunc_i16, i16, unsafe_from_ptr_i16);
-impl_ufuncs!(apply_ufunc_i32, i32, unsafe_from_ptr_i32);
-impl_ufuncs!(apply_ufunc_i64, i64, unsafe_from_ptr_i64);
+impl_ufuncs!(apply_ufunc_f32, Float32Type, unsafe_from_ptr_f32);
+impl_ufuncs!(apply_ufunc_f64, Float64Type, unsafe_from_ptr_f64);
+impl_ufuncs!(apply_ufunc_u8, UInt8Type, unsafe_from_ptr_u8);
+impl_ufuncs!(apply_ufunc_u16, UInt16Type, unsafe_from_ptr_u16);
+impl_ufuncs!(apply_ufunc_u32, UInt32Type, unsafe_from_ptr_u32);
+impl_ufuncs!(apply_ufunc_u64, UInt64Type, unsafe_from_ptr_u64);
+impl_ufuncs!(apply_ufunc_i8, Int8Type, unsafe_from_ptr_i8);
+impl_ufuncs!(apply_ufunc_i16, Int16Type, unsafe_from_ptr_i16);
+impl_ufuncs!(apply_ufunc_i32, Int32Type, unsafe_from_ptr_i32);
+impl_ufuncs!(apply_ufunc_i64, Int64Type, unsafe_from_ptr_i64);
 
 macro_rules! impl_set_with_mask {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
@@ -1226,39 +1231,6 @@ impl_get!(get_i64, i64, i64);
 impl_get!(get_str, utf8, &str);
 impl_get!(get_date32, date32, i32);
 impl_get!(get_date64, date64, i64);
-
-// Not public methods.
-macro_rules! impl_unsafe_from_ptr {
-    ($name:ident, $ca_type:ident) => {
-        impl PySeries {
-            fn $name(&self, ptr: usize, len: usize) -> Self {
-                let av = unsafe { AlignedVec::from_ptr(ptr, len, len) };
-                let validity = self.series.chunks()[0].validity().clone();
-                let ca = ChunkedArray::<$ca_type>::new_from_owned_with_null_bitmap(
-                    self.name(),
-                    av,
-<<<<<<< HEAD
-                    validity,
-=======
-                    null_bitmap.cloned(),
->>>>>>> master
-                );
-                Self::new(ca.into_series())
-            }
-        }
-    };
-}
-
-impl_unsafe_from_ptr!(unsafe_from_ptr_f32, Float32Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_f64, Float64Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_u8, UInt8Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_u16, UInt16Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_u32, UInt32Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_u64, UInt64Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_i8, Int8Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_i16, Int16Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_i32, Int32Type);
-impl_unsafe_from_ptr!(unsafe_from_ptr_i64, Int64Type);
 
 macro_rules! impl_cast {
     ($name:ident, $type:ty) => {
