@@ -395,7 +395,10 @@ pub(crate) unsafe fn take_utf8(
                 values_buf.extend_from_slice(s.as_bytes())
             });
         nulls = None;
-    } else if arr.null_count() == 0 {
+    // THIS BRANCH LEAD TO UB if offset was non zero.
+    // also happens with take kernel in arrow
+    // offsets in null buffer seem to be the problem.
+    } else if arr.null_count() == 0 && indices.offset() == 0 {
         offset_typed
             .iter_mut()
             .skip(1)
