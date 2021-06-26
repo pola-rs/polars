@@ -123,6 +123,10 @@ macro_rules! impl_dyn_series {
                 cast_and_apply!(self, vec_hash, random_state)
             }
 
+            fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
+                cast_and_apply!(self, vec_hash_combine, build_hasher, hashes)
+            }
+
             fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 // does not make sense on dates
                 None
