@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.14.3"
+version = "0.14.4"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -87,7 +87,7 @@ docs-selection = [
 
 [dependencies]
 arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "4eed0d0acd88155632dbe9073fe1a0a0fd041b02", default-features = false }
-polars-arrow = {version = "0.14.3", path = "../polars-arrow"}
+polars-arrow = {version = "0.14.4", path = "../polars-arrow"}
 thiserror = "1.0"
 num = "^0.4"
 itertools = "0.10"
