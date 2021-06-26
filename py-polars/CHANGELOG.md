@@ -2,6 +2,11 @@
 
 The Rust crate `polars` has its own changelog.
 
+### Polars 0.8.8
+* bug fix
+  - fix UB due to slice in take kernel
+  - fix join for dates
+  
 ### Polars 0.8.7
 * feature
   - from_pandas accept series and date range #875
