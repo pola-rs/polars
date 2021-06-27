@@ -1,8 +1,9 @@
 import pyarrow as pa
+from typing import Any
 import warnings
 
 
-def coerce_arrow(array: "pa.Array") -> "pa.Array":
+def coerce_arrow(array: pa.Array) -> pa.Array:
     # also coerces timezone to naive representation
     # units are accounted for by pyarrow
     if "timestamp" in str(array.type):
@@ -37,5 +38,5 @@ def coerce_arrow(array: "pa.Array") -> "pa.Array":
     return array
 
 
-def _is_expr(arg) -> bool:
+def _is_expr(arg: Any) -> bool:
     return hasattr(arg, "_pyexpr")
