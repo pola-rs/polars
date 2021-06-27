@@ -2302,4 +2302,26 @@ mod test {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_fill_forward() -> Result<()> {
+        let df = df![
+            "a" => ["a", "b", "a"],
+            "b" => [Some(1), None, None]
+        ]?;
+
+        let out = df
+            .lazy()
+            .select(vec![col("b").forward_fill().over(vec![col("a")])])
+            .collect()?;
+        let agg = out.column("b")?.list()?;
+
+        let a: Series = agg.get(0).unwrap();
+        assert!(a.series_equal(&Series::new("b", &[1, 1])));
+        let a: Series = agg.get(2).unwrap();
+        assert!(a.series_equal(&Series::new("b", &[1, 1])));
+        let a: Series = agg.get(1).unwrap();
+        assert_eq!(a.null_count(), 1);
+        Ok(())
+    }
 }

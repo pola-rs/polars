@@ -14,6 +14,7 @@ pub struct WindowExpr {
     pub(crate) out_name: Option<Arc<String>>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
+    pub(crate) phys_function: Arc<dyn PhysicalExpr>,
 }
 
 impl PhysicalExpr for WindowExpr {
@@ -83,10 +84,19 @@ impl PhysicalExpr for WindowExpr {
         );
 
         let out = match &self.function {
-            Expr::Function { function, .. } => {
-                let mut df = gb.agg_list()?;
-                df.may_apply_at_idx(1, |s| function.call_udf(&mut [s.clone()]))?;
-                Ok(df)
+            Expr::Function { .. } => {
+                let agg_expr = self.phys_function.as_agg_expr()?;
+                match agg_expr.aggregate(df, gb.get_groups(), state)? {
+                    Some(mut s) => {
+                        s.rename(&self.apply_column);
+                        let mut cols = gb.keys();
+                        cols.push(s);
+                        Ok(DataFrame::new_no_checks(cols))
+                    }
+                    None => Err(PolarsError::Other(
+                        "aggregation did not return a column".into(),
+                    )),
+                }
             }
             Expr::Agg(agg) => match agg {
                 AggExpr::Median(_) => gb.median(),
