@@ -185,15 +185,23 @@
 //! }
 //! ```
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#[cfg(feature = "datafusion")]
+#[cfg(all(feature = "datafusion", feature = "compile"))]
 mod datafusion;
+#[cfg(feature = "compile")]
 pub mod dsl;
+#[cfg(feature = "compile")]
 mod dummies;
+#[cfg(feature = "compile")]
 pub mod frame;
+#[cfg(feature = "compile")]
 pub mod functions;
+#[cfg(feature = "compile")]
 pub mod logical_plan;
+#[cfg(feature = "compile")]
 pub mod physical_plan;
+#[cfg(feature = "compile")]
 pub mod prelude;
+#[cfg(feature = "compile")]
 pub(crate) mod utils;
 
 #[cfg(test)]
