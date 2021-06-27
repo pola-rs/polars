@@ -89,9 +89,8 @@ impl ChunkExplode for Utf8Chunked {
         } else {
             None
         };
-        let array = unsafe {
-            Utf8Array::<i64>::from_data_unchecked(offsets.clone(), values.clone(), validity)
-        };
+        let array =
+            unsafe { Utf8Array::<i64>::from_data_unchecked(offsets, values.clone(), validity) };
 
         let new_arr = Arc::new(array) as ArrayRef;
 

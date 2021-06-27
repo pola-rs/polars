@@ -373,7 +373,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
     /// let new = ca.set_at_idx_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
