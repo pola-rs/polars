@@ -39,7 +39,7 @@ def _process_http_file(path: str) -> io.BytesIO:
         return io.BytesIO(f.read())
 
 
-def _is_url(url: str) -> bool:
+def _is_url(url: Any) -> bool:
     """Check to see if a URL has a valid protocol.
 
     Parameters
@@ -220,7 +220,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        return from_arrow(tbl, rechunk)
+        return from_arrow(tbl, rechunk)  # type: ignore
 
     def read_csv_to_df(file):
         return DataFrame.read_csv(
@@ -247,7 +247,7 @@ def read_csv(
             from isal import igzip as gzip_mod
         except ImportError:
             # Use normal gzip module, if python-isal is not installed.
-            import gzip as gzip_mod
+            import gzip as gzip_mod  # type: ignore
 
         with gzip_mod.open(file, "rb") as fh:
             df = read_csv_to_df(fh)
@@ -341,7 +341,7 @@ def scan_parquet(
     )
 
 
-def read_ipc(file: Union[str, BinaryIO, Path], use_pyarrow: bool = True) -> "DataFrame":
+def read_ipc(file: Union[str, BinaryIO, Path], use_pyarrow: bool = True) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -356,13 +356,13 @@ def read_ipc(file: Union[str, BinaryIO, Path], use_pyarrow: bool = True) -> "Dat
     -------
     DataFrame
     """
-    file = _prepare_file_arg(file)
-    return DataFrame.read_ipc(file, use_pyarrow)
+    file_prep = _prepare_file_arg(file)
+    return DataFrame.read_ipc(file_prep, use_pyarrow)  # type: ignore
 
 
 def read_parquet(
-    source: "Union[str, BinaryIO, Path, List[str]]",
-    stop_after_n_rows: "Optional[int]" = None,
+    source: Union[str, BinaryIO, Path, List[str]],
+    stop_after_n_rows: Optional[int] = None,
     memory_map=True,
     columns: Optional[List[str]] = None,
     **kwargs,
@@ -389,13 +389,13 @@ def read_parquet(
     -------
     DataFrame
     """
-    source = _prepare_file_arg(source)
+    source_prep = _prepare_file_arg(source)  # type: ignore
     if stop_after_n_rows is not None:
-        return DataFrame.read_parquet(source, stop_after_n_rows=stop_after_n_rows)
+        return DataFrame.read_parquet(source_prep, stop_after_n_rows=stop_after_n_rows)  # type: ignore
     else:
-        return from_arrow(
+        return from_arrow(  # type: ignore
             pa.parquet.read_table(
-                source, memory_map=memory_map, columns=columns, **kwargs
+                source_prep, memory_map=memory_map, columns=columns, **kwargs
             )
         )
 
@@ -433,7 +433,7 @@ def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "DataFrame":
     return DataFrame.from_arrow(table, rechunk)
 
 
-def from_arrow(a: "Union[pa.Table, pa.Array]", rechunk: bool = True) -> "DataFrame":
+def from_arrow(a: Union[pa.Table, pa.Array], rechunk: bool = True) -> Union[DataFrame, Series]:
     """
     Create a DataFrame from an arrow Table.
 
@@ -446,12 +446,13 @@ def from_arrow(a: "Union[pa.Table, pa.Array]", rechunk: bool = True) -> "DataFra
     """
     if isinstance(a, pa.Table):
         return DataFrame.from_arrow(a, rechunk)
-    if isinstance(a, pa.Array):
+    elif isinstance(a, pa.Array):
         return Series.from_arrow("", a)
-    raise ValueError(f"expected arrow table / array, got {a}")
+    else:
+        raise ValueError(f"expected arrow table / array, got {a}")
 
 
-def _from_pandas_helper(a: "pandas.Series") -> "pa.Array":  # noqa: F821
+def _from_pandas_helper(a: pd.Series) -> pa.Array:  # noqa: F821
     dtype = a.dtype
     if dtype == "datetime64[ns]":
         # We first cast to ms because that's the unit of Date64,
@@ -467,7 +468,7 @@ def _from_pandas_helper(a: "pandas.Series") -> "pa.Array":  # noqa: F821
 
 
 def from_pandas(
-    df: "[pandas.DataFrame, pandas.DateTimeIndex]", rechunk: bool = True  # noqa: F821
+    df: Union[pd.DataFrame, pd.Series, pd.DateTimeIndex], rechunk: bool = True  # noqa: F821
 ) -> "DataFrame":
     """
     Convert from a pandas DataFrame to a polars DataFrame.
@@ -483,8 +484,8 @@ def from_pandas(
     -------
     A Polars DataFrame
     """
-    if type(df) == pd.Series or type(df) == pd.DatetimeIndex:
-        return from_arrow(_from_pandas_helper(df))
+    if isinstance(df, pd.Series) or isinstance(df, pd.DatetimeIndex):
+        return from_arrow(_from_pandas_helper(df))  # type: ignore
 
     # Note: we first tried to infer the schema via pyarrow and then modify the schema if needed.
     # However arrow 3.0 determines the type of a string like this:
@@ -497,10 +498,10 @@ def from_pandas(
         data[name] = _from_pandas_helper(s)
 
     table = pa.table(data)
-    return from_arrow(table, rechunk)
+    return from_arrow(table, rechunk)  # type: ignore
 
 
-def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
+def concat(dfs: List[DataFrame], rechunk: bool = True) -> DataFrame:
     """
     Aggregate all the Dataframes in a List of DataFrames to a single DataFrame.
 
@@ -515,7 +516,7 @@ def concat(dfs: "List[DataFrame]", rechunk=True) -> "DataFrame":
     df = dfs[0]
     for i in builtins.range(1, len(dfs)):
         try:
-            df = df.vstack(dfs[i], in_place=False)
+            df = df.vstack(dfs[i], in_place=False)  # type: ignore
         # could have a double borrow (one mutable one ref)
         except RuntimeError:
             df.vstack(dfs[i].clone(), in_place=True)
@@ -551,8 +552,8 @@ def repeat(
 
 
 def read_json(
-    source: "Union[str, StringIO, Path]",
-) -> "DataFrame":
+    source: Union[str, StringIO, Path],
+) -> DataFrame:
     """
     Read into a DataFrame from JSON format.
 
@@ -561,14 +562,14 @@ def read_json(
     source
         Path to a file or a file like object.
     """
-    return DataFrame.read_json(source)
+    return DataFrame.read_json(source)  # type: ignore
 
 
 def from_rows(
-    rows: "Sequence[Sequence[Any]]",
-    column_names: "Optional[List[str]]" = None,
-    column_name_mapping: "Optional[Dict[int, str]]" = None,
-) -> "DataFrame":
+    rows: Sequence[Sequence[Any]],
+    column_names: Optional[List[str]] = None,
+    column_name_mapping: Optional[Dict[int, str]] = None,
+) -> DataFrame:
     """
     Create a DataFrame from rows. This should only be used as a last resort, as this is more expensive than
     creating from columnar data.
@@ -589,7 +590,7 @@ def from_rows(
     return DataFrame.from_rows(rows, column_names, column_name_mapping)
 
 
-def read_sql(sql: str, engine) -> "DataFrame":
+def read_sql(sql: str, engine) -> DataFrame:
     """
     # Preface
     Deprecated by design. Will not have a long future support and no guarantees given whatsoever.
