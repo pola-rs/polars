@@ -1,4 +1,4 @@
-from typing import Union, TextIO, Optional, List, BinaryIO, Sequence, Any
+from typing import Union, TextIO, Optional, List, BinaryIO, Sequence, Any, Type
 from io import StringIO, BytesIO
 import numpy as np
 from pathlib import Path
@@ -267,7 +267,7 @@ def scan_csv(
     skip_rows: int = 0,
     stop_after_n_rows: "Optional[int]" = None,
     cache: bool = True,
-    dtype: "Optional[Dict[str, DataType]]" = None,
+    dtype: Optional[Dict[str, Type[DataType]]] = None,
     low_memory: bool = False,
 ) -> "LazyFrame":
     """
@@ -468,7 +468,7 @@ def _from_pandas_helper(a: pd.Series) -> pa.Array:  # noqa: F821
 
 
 def from_pandas(
-    df: Union[pd.DataFrame, pd.Series, pd.DateTimeIndex], rechunk: bool = True  # noqa: F821
+    df: Union[pd.DataFrame, pd.Series, pd.DatetimeIndex], rechunk: bool = True  # noqa: F821
 ) -> "DataFrame":
     """
     Convert from a pandas DataFrame to a polars DataFrame.
