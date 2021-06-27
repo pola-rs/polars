@@ -10,6 +10,10 @@ repository = "https://github.com/ritchie46/polars"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+# make sure we don't compile unneeded things even though
+# this dependency gets activated
+compile = []
+default = ["compile"]
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 csv-file = ["polars-io/csv-file"]
 temporal = ["polars-core/temporal"]
