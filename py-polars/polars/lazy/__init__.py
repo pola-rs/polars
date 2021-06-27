@@ -2,7 +2,7 @@
 This module contains all expressions and classes needed for lazy computation/ query execution.
 """
 
-from typing import Union, List, Callable, Optional, Dict, Any
+from typing import Union, List, Callable, Optional, Dict, Any, Type
 
 from polars import Series
 from polars.frame import DataFrame, wrap_df
@@ -2105,8 +2105,8 @@ def lit_date(dt: "datetime") -> Expr:
 
 
 def lit(
-    value: "Optional[Union[float, int, str, datetime, Series]]",
-    dtype: "Optional[DataType]" = None,
+    value: Optional[Union[float, int, str, datetime, Series]],
+    dtype: Optional[Type[DataType]] = None,
 ) -> "Expr":
     """
     A literal value.
