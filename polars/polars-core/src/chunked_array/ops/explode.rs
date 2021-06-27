@@ -50,6 +50,7 @@ impl ChunkExplode for Utf8Chunked {
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
         let values = array.values();
+        let old_offsets = array.offsets().clone();
 
         // Because the strings are u8 stored but really are utf8 data we need to traverse the utf8 to
         // get the chars indexes
@@ -95,6 +96,6 @@ impl ChunkExplode for Utf8Chunked {
         let new_arr = Arc::new(array) as ArrayRef;
 
         let s = Series::try_from((self.name(), new_arr)).unwrap();
-        Ok((s, offsets))
+        Ok((s, old_offsets))
     }
 }
