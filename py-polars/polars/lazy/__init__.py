@@ -2,7 +2,7 @@
 This module contains all expressions and classes needed for lazy computation/ query execution.
 """
 
-from typing import Union, List, Callable, Optional, Dict, Any, Type
+from typing import Union, List, Tuple, Callable, Optional, Dict, Any, Type
 
 from polars import Series
 from polars.frame import DataFrame, wrap_df
@@ -126,19 +126,19 @@ class LazyFrame:
         ignore_errors: bool = False,
         sep: str = ",",
         skip_rows: int = 0,
-        stop_after_n_rows: "Optional[int]" = None,
+        stop_after_n_rows: Optional[int] = None,
         cache: bool = True,
-        dtype: "Optional[Dict[str, DataType]]" = None,
+        dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
     ):
         """
         See Also: `pl.scan_csv`
         """
+        dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
         if dtype is not None:
-            new_dtype = []
+            dtype_list = []
             for k, v in dtype.items():
-                new_dtype.append((k, datatypes.pytype_to_polars_type(v)))
-            dtype = new_dtype
+                dtype_list.append((k, datatypes.pytype_to_polars_type(v)))
 
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = PyLazyFrame.new_from_csv(
@@ -149,7 +149,7 @@ class LazyFrame:
             skip_rows,
             stop_after_n_rows,
             cache,
-            dtype,
+            dtype_list,
             low_memory,
         )
         return self
@@ -212,10 +212,10 @@ class LazyFrame:
         self,
         optimized: bool = True,
         show: bool = True,
-        output_path: "Optional[str]" = None,
+        output_path: Optional[str] = None,
         raw_output: bool = False,
         figsize=(16, 12),
-    ) -> "Optional[str]":
+    ) -> Optional[str]:
         """
         Show a plot of the query plan. Note that you should have graphviz installed.
 
@@ -258,6 +258,7 @@ class LazyFrame:
                 img = mpimg.imread(out_path)
                 plt.imshow(img)
                 plt.show()
+        return None
 
     def sort(
         self,
@@ -448,10 +449,10 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: "Optional[Union[Expr, str, List[Expr], List[str]]]" = None,
-        right_on: "Optional[Union[Expr, str, List[Expr], List[str]]]" = None,
-        on: "Optional[Union[Expr, str, List[Expr], List[str]]]" = None,
-        how="inner",
+        left_on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
+        right_on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
+        on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
+        how: str = "inner",
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> "LazyFrame":
@@ -492,12 +493,12 @@ class LazyFrame:
             raise ValueError("You should pass the column to join on as an argument.")
 
         new_left_on = []
-        for column in left_on:
+        for column in left_on:  # type: ignore
             if isinstance(column, str):
                 column = col(column)
             new_left_on.append(column._pyexpr)
         new_right_on = []
-        for column in right_on:
+        for column in right_on:  # type: ignore
             if isinstance(column, str):
                 column = col(column)
             new_right_on.append(column._pyexpr)
@@ -508,7 +509,7 @@ class LazyFrame:
 
         return wrap_ldf(out)
 
-    def with_columns(self, exprs: "Union[List[Expr], Expr]") -> "LazyFrame":
+    def with_columns(self, exprs: Union[List["Expr"], "Expr"]) -> "LazyFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -518,11 +519,11 @@ class LazyFrame:
             List of Expressions that evaluate to columns.
         """
         if _is_expr(exprs):
-            return self.with_column(exprs)
+            return self.with_column(exprs)  # type: ignore
 
         pyexprs = []
 
-        for e in exprs:
+        for e in exprs:  # type: ignore
             if isinstance(e, Expr):
                 pyexprs.append(e._pyexpr)
             elif isinstance(e, Series):
@@ -541,7 +542,7 @@ class LazyFrame:
         """
         return self.with_columns([expr])
 
-    def drop_columns(self, columns: "List[str]") -> "LazyFrame":
+    def drop_columns(self, columns: List[str]) -> "LazyFrame":
         """
         Remove multiple columns from a DataFrame.
 
@@ -751,8 +752,8 @@ class LazyFrame:
         return wrap_ldf(self._ldf.drop_nulls(subset))
 
     def melt(
-        self, id_vars: "Union[List[str], str]", value_vars: "Union[List[str], str]"
-    ) -> "DataFrame":
+        self, id_vars: Union[str, List[str]], value_vars: Union[str, List[str]]
+    ) -> "LazyFrame":
         """
         Unpivot DataFrame to long format.
 
@@ -1005,9 +1006,9 @@ class Expr:
         decimals
             Number of decimals to round by.
         """
-        return wrap_expr(self._pyexpr.round(decimals))
+        return wrap_expr(self._pyexpr.round(decimals))  # type: ignore
 
-    def cast(self, dtype: "DataType") -> "Expr":
+    def cast(self, dtype: Type[Any]) -> "Expr":
         """
         Cast an expression to a different data types.
 
@@ -1309,8 +1310,8 @@ class Expr:
 
     def map(
         self,
-        f: "Union[UDF, Callable[[Series], Series]]",
-        return_dtype: Optional["DataType"] = None,
+        f: Union["UDF", Callable[[Series], Series]],
+        return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
         Apply a custom UDF. It is important that the UDF returns a Polars Series.
@@ -1339,8 +1340,8 @@ class Expr:
 
     def apply(
         self,
-        f: "Union[UDF, Callable[[Series], Series]]",
-        return_dtype: Optional["DataType"] = None,
+        f: Union["UDF", Callable[[Series], Series]],
+        return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
         Apply a custom UDF in a GroupBy context. This is syntactic sugar for the `apply` method which operates on all
@@ -1387,7 +1388,7 @@ class Expr:
 
         # input x: Series of type list containing the group values
         def wrap_f(x: "Series") -> "Series":
-            return x.apply(f, return_dtype=return_dtype)
+            return x.apply(f, return_dtype=return_dtype)  # type: ignore
 
         return self.map(wrap_f)
 
@@ -1502,7 +1503,11 @@ class ExprStringNameSpace:
     def __init__(self, expr: "Expr"):
         self._pyexpr = expr._pyexpr
 
-    def strptime(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
+    def strptime(
+        self,
+        datatype: Union[datatypes.Date32, datatypes.Date64],
+        fmt: Optional[str] = None,
+    ) -> "Expr":
         """
         Parse utf8 expression as a Date32/Date64 type.
 
@@ -1515,16 +1520,21 @@ class ExprStringNameSpace:
         """
         if datatype == datatypes.Date32:
             return wrap_expr(self._pyexpr.str_parse_date32(fmt))
-        if datatype == datatypes.Date64:
+        elif datatype == datatypes.Date64:
             return wrap_expr(self._pyexpr.str_parse_date64(fmt))
-        raise NotImplementedError
+        else:
+            raise NotImplementedError
 
-    def parse_date(self, datatype: "DataType", fmt: Optional[str] = None) -> "Expr":
+    def parse_date(
+        self,
+        datatype: Union[datatypes.Date32, datatypes.Date64],
+        fmt: Optional[str] = None,
+    ) -> "Expr":
         """
         .. deprecated:: 0.8.7
         use `strptime`
         """
-        self.strptime(datatype, fmt)
+        return self.strptime(datatype, fmt)
 
     def lengths(self) -> "Expr":
         """
@@ -1723,7 +1733,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: "Union[Expr, int, float, str, List[Expr]]", str_to_lit: bool = True
+    expr: Union["Expr", int, float, str, List["Expr"]], str_to_lit: bool = True
 ) -> "Expr":
     """
     Helper function that converts args to expressions.
@@ -1742,11 +1752,12 @@ def expr_to_lit_or_expr(
     """
     if isinstance(expr, str) and not str_to_lit:
         return col(expr)
-    if isinstance(expr, (int, float, str)):
+    elif isinstance(expr, (int, float, str)):
         return lit(expr)
-    if isinstance(expr, list):
-        return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]
-    return expr
+    elif isinstance(expr, list):
+        return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore
+    else:
+        return expr
 
 
 class WhenThenThen:
@@ -1763,14 +1774,14 @@ class WhenThenThen:
         """
         return WhenThenThen(self.pywenthenthen.when(predicate._pyexpr))
 
-    def then(self, expr: "Union[Expr, int, float, str]") -> "WhenThenThen":
+    def then(self, expr: Union["Expr", int, float, str]) -> "WhenThenThen":
         """
         Values to return in case of the predicate being `True`.
 
         See Also: the `when` function.
         """
-        expr = expr_to_lit_or_expr(expr)
-        return WhenThenThen(self.pywenthenthen.then(expr._pyexpr))
+        expr_ = expr_to_lit_or_expr(expr)
+        return WhenThenThen(self.pywenthenthen.then(expr_._pyexpr))
 
     def otherwise(self, expr: "Union[Expr, int, float, str]") -> "Expr":
         """
@@ -1787,7 +1798,7 @@ class WhenThen:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhenthen: "PyWhenThen"):  # noqa F821
+    def __init__(self, pywhenthen: "PyWhenThen"):  # type: ignore # noqa F821
         self._pywhenthen = pywhenthen
 
     def when(self, predicate: "Expr"):
@@ -1903,11 +1914,11 @@ def except_(name: str) -> "Expr":
     return wrap_expr(pyexcept(name))
 
 
-def count(column: "Union[str, Series]" = "") -> "Union[Expr, int]":
+def count(column: Union[str, Series] = "") -> Union["Expr", int]:
     """
     Count the number of values in this column.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.len()
     return col(column).count()
 
@@ -1919,25 +1930,25 @@ def to_list(name: str) -> "Expr":
     return col(name).list()
 
 
-def std(column: "Union[str, Series]") -> "Union[Expr, float]":
+def std(column: Union[str, Series]) -> Union["Expr", float]:
     """
     Get the standard deviation.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.std()
     return col(column).std()
 
 
-def var(column: "Union[str, Series]") -> "Union[Expr, float]":
+def var(column: Union[str, Series]) -> Union["Expr", float]:
     """
     Get the variance.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.var()
     return col(column).var()
 
 
-def max(column: "Union[str, List[Expr], Series]") -> "Union[Expr, Any]":
+def max(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -1949,19 +1960,20 @@ def max(column: "Union[str, List[Expr], Series]") -> "Union[Expr, Any]":
             - Union[str, Series] -> aggregate the maximum value of that column.
             - List[Expr] -> aggregate the maximum value horizontally.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.max()
-    if isinstance(column, list):
+    elif isinstance(column, list):
 
         def max_(acc: Series, val: Series) -> Series:
             mask = acc < val
             return acc.zip_with(mask, val)
 
         return fold(lit(0), max_, column).alias("max")
-    return col(column).max()
+    else:
+        return col(column).max()
 
 
-def min(column: "Union[str, List[Expr], Series]") -> "Union[Expr, Any]":
+def min(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
     """
     Get the minimum value.
 
@@ -1971,19 +1983,20 @@ def min(column: "Union[str, List[Expr], Series]") -> "Union[Expr, Any]":
             - Union[str, Series] -> aggregate the sum value of that column.
             - List[Expr] -> aggregate the sum value horizontally.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.min()
-    if isinstance(column, list):
+    elif isinstance(column, list):
 
         def min_(acc: Series, val: Series) -> Series:
             mask = acc > val
             return acc.zip_with(mask, val)
 
         return fold(lit(0), min_, column).alias("min")
-    return col(column).min()
+    else:
+        return col(column).min()
 
 
-def sum(column: "Union[str, List[Expr], Series]") -> "Union[Expr, Any]":
+def sum(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
     """
     Get the sum value.
 
@@ -1993,50 +2006,51 @@ def sum(column: "Union[str, List[Expr], Series]") -> "Union[Expr, Any]":
             - Union[str, Series] -> aggregate the sum value of that column.
             - List[Expr] -> aggregate the sum value horizontally.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.sum()
-    if isinstance(column, list):
+    elif isinstance(column, list):
         return fold(lit(0), lambda a, b: a + b, column).alias("sum")
-    return col(column).sum()
+    else:
+        return col(column).sum()
 
 
-def mean(column: "Union[str, Series]") -> "Union[Expr, float]":
+def mean(column: Union[str, Series]) -> Union["Expr", float]:
     """
     Get the mean value.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.mean()
     return col(column).mean()
 
 
-def avg(column: "Union[str, Series]") -> "Union[Expr, float]":
+def avg(column: Union[str, Series]) -> Union["Expr", float]:
     """
     Alias for mean.
     """
     return mean(column)
 
 
-def median(column: "Union[str, Series]") -> "Union[Expr, float, int]":
+def median(column: Union[str, Series]) -> Union["Expr", float, int]:
     """
     Get the median value.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.median()
     return col(column).median()
 
 
-def n_unique(column: "Union[str, Series]") -> "Union[Expr, int]":
+def n_unique(column: Union[str, Series]) -> Union["Expr", int]:
     """Count unique values."""
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.n_unique()
     return col(column).n_unique()
 
 
-def first(column: "Union[str, Series]") -> "Union[Expr, Any]":
+def first(column: Union[str, Series]) -> Union["Expr", Any]:
     """
-    Getthe first value.
+    Get the first value.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         if column.len() > 0:
             return column[0]
         else:
@@ -2044,11 +2058,11 @@ def first(column: "Union[str, Series]") -> "Union[Expr, Any]":
     return col(column).first()
 
 
-def last(column: str) -> "Expr":
+def last(column: Union[str, Series]) -> "Expr":
     """
     Get the last value.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         if column.len() > 0:
             return column[-1]
         else:
@@ -2057,8 +2071,8 @@ def last(column: str) -> "Expr":
 
 
 def head(
-    column: "Union[str, Series]", n: "Optional[int]" = None
-) -> "Union[Expr, Series]":
+    column: Union[str, Series], n: Optional[int] = None
+) -> Union["Expr", Series]:
     """
     Get the first n rows of an Expression.
 
@@ -2069,7 +2083,7 @@ def head(
     n
         Number of rows to take.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.head(n)
     return col(column).head(n)
 
@@ -2087,7 +2101,7 @@ def tail(
     n
         Number of rows to take.
     """
-    if type(column) is Series:
+    if isinstance(column, Series):
         return column.tail(n)
     return col(column).tail(n)
 
@@ -2196,10 +2210,10 @@ def cov(
 
 
 def map_binary(
-    a: "Union[str, Expr]",
-    b: "Union[str, Expr]",
+    a: Union[str, "Expr"],
+    b: Union[str, "Expr"],
     f: Callable[[Series, Series], Series],
-    return_dtype: "Optional[DataType]" = None,
+    return_dtype: Optional[Type[DataType]] = None,
 ) -> "Expr":
     """
     Map a custom function over two columns and produce a single Series result.
@@ -2252,7 +2266,7 @@ def any(name: "Union[str, List[Expr]]") -> "Expr":
     return col(name).sum() > 0
 
 
-def all(name: "Union[str, List[Expr]]") -> "Expr":
+def all(name: Union[str, List["Expr"]]) -> "Expr":
     """
     Evaluate columnwise or elementwise with a bitwise AND operation.
     """
@@ -2280,19 +2294,19 @@ class UDF:
     Deprecated: don't use me
     """
 
-    def __init__(self, f: Callable[[Series], Series], return_dtype: "DataType"):
+    def __init__(self, f: Callable[[Series], Series], return_dtype: Type[DataType]):
         self.f = f
         self.return_dtype = return_dtype
 
 
-def udf(f: Callable[[Series], Series], return_dtype: "DataType"):
+def udf(f: Callable[[Series], Series], return_dtype: Type[DataType]):
     """
     Deprecated: don't use me
     """
     return UDF(f, return_dtype)
 
 
-def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
+def arange(low: int, high: int, dtype: Optional[Type[DataType]] = None) -> "Expr":
     """
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
@@ -2318,10 +2332,10 @@ def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
             * UInt32
     """
     if type(low) is Expr or type(high) is Expr:
-        if type(low) is int:
-            low = lit(low)
-        if type(high) is int:
-            high = lit(high)
+        if isinstance(low, int):
+            low = lit(low)  # type: ignore
+        if isinstance(high, int):
+            high = lit(high)  # type: ignore
 
         if dtype is None:
             dtype = datatypes.Int64
@@ -2333,7 +2347,7 @@ def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
             assert s2.len() == 1
             return Series._from_pyseries(_series_from_range(s1[0], s2[0], dtype))
 
-        return map_binary(low, high, create_range, return_dtype=dtype)
+        return map_binary(low, high, create_range, return_dtype=dtype)  # type: ignore
 
     if dtype is None:
         dtype = datatypes.Int64
@@ -2341,7 +2355,7 @@ def arange(low: int, high: int, dtype: "Optional[DataType]" = None) -> "Expr":
 
 
 def argsort_by(
-    exprs: "List[Expr]", reverse: "Union[List[bool], bool]" = False
+    exprs: List["Expr"], reverse: Union[List[bool], bool] = False
 ) -> "Expr":
     """
     Find the indexes that would sort the columns.
