@@ -2070,9 +2070,7 @@ def last(column: Union[str, Series]) -> "Expr":
     return col(column).last()
 
 
-def head(
-    column: Union[str, Series], n: Optional[int] = None
-) -> Union["Expr", Series]:
+def head(column: Union[str, Series], n: Optional[int] = None) -> Union["Expr", Series]:
     """
     Get the first n rows of an Expression.
 
@@ -2354,9 +2352,7 @@ def arange(low: int, high: int, dtype: Optional[Type[DataType]] = None) -> "Expr
     return wrap_expr(pyrange(low, high, dtype))
 
 
-def argsort_by(
-    exprs: List["Expr"], reverse: Union[List[bool], bool] = False
-) -> "Expr":
+def argsort_by(exprs: List["Expr"], reverse: Union[List[bool], bool] = False) -> "Expr":
     """
     Find the indexes that would sort the columns.
 

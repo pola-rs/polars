@@ -27,7 +27,7 @@ from typing import (
     BinaryIO,
     Callable,
     Any,
-    Type
+    Type,
 )
 from .series import Series, wrap_s
 from . import datatypes
@@ -1824,7 +1824,9 @@ class DataFrame:
         return wrap_df(self._df.to_dummies())
 
     def drop_duplicates(
-        self, maintain_order: bool = True, subset: Optional[Union[str, List[str]]] = None
+        self,
+        maintain_order: bool = True,
+        subset: Optional[Union[str, List[str]]] = None,
     ) -> "DataFrame":
         """
         Drop duplicate rows from this DataFrame.
@@ -2072,7 +2074,12 @@ class GroupBy:
 
     def agg(
         self,
-        column_to_agg: Union[List[Tuple[str, List[str]]], Dict[str, Union[str, List[str]]], List["Expr"], "Expr"],
+        column_to_agg: Union[
+            List[Tuple[str, List[str]]],
+            Dict[str, Union[str, List[str]]],
+            List["Expr"],
+            "Expr",
+        ],
     ) -> DataFrame:
         """
         Use multiple aggregations on columns. This can be combined with complete lazy API.
@@ -2267,7 +2274,11 @@ class PivotOps:
     """
 
     def __init__(
-        self, df: DataFrame, by: Union[str, List[str]], pivot_column: str, values_column: str
+        self,
+        df: DataFrame,
+        by: Union[str, List[str]],
+        pivot_column: str,
+        values_column: str,
     ):
         self._df = df
         self.by = by
@@ -2443,7 +2454,7 @@ class GBSelection:
 
     def apply(
         self,
-        func: Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']],
+        func: Union[Callable[["Any"], "Any"], Callable[["Any"], "Any"]],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "DataFrame":
         """

@@ -433,7 +433,9 @@ def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "DataFrame":
     return DataFrame.from_arrow(table, rechunk)
 
 
-def from_arrow(a: Union[pa.Table, pa.Array], rechunk: bool = True) -> Union[DataFrame, Series]:
+def from_arrow(
+    a: Union[pa.Table, pa.Array], rechunk: bool = True
+) -> Union[DataFrame, Series]:
     """
     Create a DataFrame from an arrow Table.
 
@@ -468,7 +470,8 @@ def _from_pandas_helper(a: pd.Series) -> pa.Array:  # noqa: F821
 
 
 def from_pandas(
-    df: Union[pd.DataFrame, pd.Series, pd.DatetimeIndex], rechunk: bool = True  # noqa: F821
+    df: Union[pd.DataFrame, pd.Series, pd.DatetimeIndex],
+    rechunk: bool = True,  # noqa: F821
 ) -> "DataFrame":
     """
     Convert from a pandas DataFrame to a polars DataFrame.
