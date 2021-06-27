@@ -11,13 +11,12 @@ where
     T: PolarsNumericType,
 {
     ca.into_iter()
-        .scan(None, |previous, opt_v| {
-            let val = match opt_v {
-                Some(_) => Some(opt_v),
-                None => Some(*previous),
-            };
-            *previous = opt_v;
-            val
+        .scan(None, |previous, opt_v| match opt_v {
+            Some(value) => {
+                *previous = Some(value);
+                Some(Some(value))
+            }
+            None => Some(*previous),
         })
         .collect()
 }
@@ -26,13 +25,12 @@ macro_rules! impl_fill_forward {
     ($ca:ident) => {{
         let ca = $ca
             .into_iter()
-            .scan(None, |previous, opt_v| {
-                let val = match opt_v {
-                    Some(_) => Some(opt_v),
-                    None => Some(*previous),
-                };
-                *previous = opt_v;
-                val
+            .scan(None, |previous, opt_v| match opt_v {
+                Some(value) => {
+                    *previous = Some(value);
+                    Some(Some(value))
+                }
+                None => Some(*previous),
             })
             .collect();
         Ok(ca)
@@ -43,41 +41,35 @@ fn fill_backward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    let mut iter = ca.into_iter().peekable();
-
-    let mut builder = PrimitiveChunkedBuilder::<T>::new(ca.name(), ca.len());
-    while let Some(opt_v) = iter.next() {
-        match opt_v {
-            Some(v) => builder.append_value(v),
-            None => {
-                match iter.peek() {
-                    // end of iterator
-                    None => builder.append_null(),
-                    Some(opt_v) => builder.append_option(*opt_v),
-                }
+    // TODO! improve performance. This is a double scan
+    let ca: ChunkedArray<T> = ca
+        .into_iter()
+        .rev()
+        .scan(None, |previous, opt_v| match opt_v {
+            Some(value) => {
+                *previous = Some(value);
+                Some(Some(value))
             }
-        }
-    }
-    builder.finish()
+            None => Some(*previous),
+        })
+        .collect();
+    ca.into_iter().rev().collect()
 }
 
 macro_rules! impl_fill_backward {
-    ($ca:ident, $builder:ident) => {{
-        let mut iter = $ca.into_iter().peekable();
-
-        while let Some(opt_v) = iter.next() {
-            match opt_v {
-                Some(v) => $builder.append_value(v),
-                None => {
-                    match iter.peek() {
-                        // end of iterator
-                        None => $builder.append_null(),
-                        Some(opt_v) => $builder.append_option(*opt_v),
-                    }
+    ($ca:ident, $ChunkedArray:ty) => {{
+        let ca: $ChunkedArray = $ca
+            .into_iter()
+            .rev()
+            .scan(None, |previous, opt_v| match opt_v {
+                Some(value) => {
+                    *previous = Some(value);
+                    Some(Some(value))
                 }
-            }
-        }
-        Ok($builder.finish())
+                None => Some(*previous),
+            })
+            .collect();
+        Ok(ca.into_iter().rev().collect())
     }};
 }
 
@@ -144,10 +136,9 @@ impl ChunkFillNone for BooleanChunked {
         if self.null_count() == 0 {
             return Ok(self.clone());
         }
-        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
         match strategy {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
-            FillNoneStrategy::Backward => impl_fill_backward!(self, builder),
+            FillNoneStrategy::Backward => impl_fill_backward!(self, BooleanChunked),
             FillNoneStrategy::Min => self.fill_none_with_value(
                 1 == self
                     .min()
@@ -179,12 +170,9 @@ impl ChunkFillNone for Utf8Chunked {
         if self.null_count() == 0 {
             return Ok(self.clone());
         }
-        let factor = self.len() as f32 / (self.len() - self.null_count()) as f32;
-        let value_cap = (self.get_values_size() as f32 * 1.25 * factor) as usize;
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), value_cap);
         match strategy {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
-            FillNoneStrategy::Backward => impl_fill_backward!(self, builder),
+            FillNoneStrategy::Backward => impl_fill_backward!(self, Utf8Chunked),
             strat => Err(PolarsError::InvalidOperation(
                 format!("Strategy {:?} not supported", strat).into(),
             )),
@@ -272,6 +260,11 @@ mod test {
             Vec::from(&filled),
             &[Some(3), Some(2), Some(3), Some(3), Some(4), Some(3)]
         );
-        println!("{:?}", filled);
+        let ca = Int32Chunked::new_from_opt_slice("", &[None, None, None, None, Some(4), None]);
+        let filled = ca.fill_none(FillNoneStrategy::Backward).unwrap();
+        assert_eq!(
+            Vec::from(&filled),
+            &[Some(4), Some(4), Some(4), Some(4), Some(4), None]
+        );
     }
 }

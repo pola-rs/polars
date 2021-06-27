@@ -1128,13 +1128,13 @@ class Expr:
         """
         Fill missing values with the latest seen values
         """
-        return self.map(lambda s: s.fill_none("forward"), None)
+        return wrap_expr(self._pyexpr.forward_fill())
 
     def backward_fill(self):
         """
         Fill missing values with the next to be seen values
         """
-        return self.map(lambda s: s.fill_none("backward"), None)
+        return wrap_expr(self._pyexpr.backward_fill())
 
     def reverse(self) -> "Expr":
         """
