@@ -157,6 +157,14 @@ impl PyExpr {
         self.clone().inner.sort_by(by.inner, reverse).into()
     }
 
+    pub fn backward_fill(&self) -> PyExpr {
+        self.clone().inner.backward_fill().into()
+    }
+
+    pub fn forward_fill(&self) -> PyExpr {
+        self.clone().inner.forward_fill().into()
+    }
+
     pub fn shift(&self, periods: i64) -> PyExpr {
         self.clone().inner.shift(periods).into()
     }
