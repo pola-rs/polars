@@ -310,12 +310,12 @@ impl ChunkCast for ListChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use polars_arrow::builder::PrimitiveArrayBuilder;
+    use arrow::array::PrimitiveBuilder;
 
     #[test]
     fn test_cast_list() -> Result<()> {
         let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", PrimitiveArrayBuilder::new(10), 10);
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", PrimitiveBuilder::new(10), 10);
         builder.append_slice(Some(&[1i32, 2, 3]));
         builder.append_slice(Some(&[1i32, 2, 3]));
         let ca = builder.finish();
