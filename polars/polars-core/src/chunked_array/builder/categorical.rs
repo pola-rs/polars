@@ -4,8 +4,7 @@ use crate::{
     use_string_cache,
     utils::arrow::array::{Array, ArrayBuilder},
 };
-use arrow::array::{LargeStringArray, LargeStringBuilder};
-use polars_arrow::builder::PrimitiveArrayBuilder;
+use arrow::array::{LargeStringArray, LargeStringBuilder, PrimitiveBuilder};
 use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
@@ -92,7 +91,7 @@ impl RevMapping {
 }
 
 pub struct CategoricalChunkedBuilder {
-    array_builder: PrimitiveArrayBuilder<UInt32Type>,
+    array_builder: PrimitiveBuilder<UInt32Type>,
     field: Field,
     reverse_mapping: RevMappingBuilder,
 }
@@ -108,7 +107,7 @@ impl CategoricalChunkedBuilder {
         };
 
         CategoricalChunkedBuilder {
-            array_builder: PrimitiveArrayBuilder::<UInt32Type>::new(capacity),
+            array_builder: PrimitiveBuilder::<UInt32Type>::new(capacity),
             field: Field::new(name, DataType::Categorical),
             reverse_mapping,
         }
@@ -136,10 +135,10 @@ impl CategoricalChunkedBuilder {
                         };
                         // we still need to check if the idx is already stored in our map
                         self.reverse_mapping.insert(idx, s);
-                        self.array_builder.append_value(idx);
+                        self.array_builder.append_value(idx).unwrap();
                     }
                     None => {
-                        self.array_builder.append_null();
+                        self.array_builder.append_null().unwrap();
                     }
                 }
             }
@@ -157,10 +156,10 @@ impl CategoricalChunkedBuilder {
                                 idx
                             }
                         };
-                        self.array_builder.append_value(idx);
+                        self.array_builder.append_value(idx).unwrap();
                     }
                     None => {
-                        self.array_builder.append_null();
+                        self.array_builder.append_null().unwrap();
                     }
                 }
             }

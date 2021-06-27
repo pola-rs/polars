@@ -11,9 +11,9 @@ use crate::chunked_array::kernels::take_agg::{
 };
 use crate::prelude::*;
 use crate::utils::NoNull;
-use arrow::array::{Array, ArrayData, ArrayRef, LargeListArray};
+use arrow::array::{Array, ArrayData, ArrayRef, LargeListArray, PrimitiveBuilder};
 use arrow::buffer::MutableBuffer;
-use polars_arrow::builder::{BooleanArrayBuilder, LargeStringBuilder, PrimitiveArrayBuilder};
+use polars_arrow::builder::{BooleanArrayBuilder, LargeStringBuilder};
 use std::convert::TryFrom;
 
 pub(crate) trait NumericAggSync {
@@ -537,7 +537,7 @@ where
             }
             _ => {
                 let values_cap = self.len();
-                let values_builder = PrimitiveArrayBuilder::<T>::new(values_cap);
+                let values_builder = PrimitiveBuilder::<T>::new(values_cap);
                 let mut builder =
                     ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
                 for (_first, idx) in groups {
@@ -545,7 +545,7 @@ where
                         self.take_unchecked(idx.iter().map(|i| *i as usize).into())
                             .into_series()
                     };
-                    builder.append_opt_series(Some(&s))
+                    builder.append_opt_series(Some(&s));
                 }
                 return Some(builder.finish().into_series());
             }

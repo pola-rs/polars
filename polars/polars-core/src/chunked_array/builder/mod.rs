@@ -5,6 +5,7 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 pub use arrow::alloc;
+use arrow::array::PrimitiveBuilder;
 use arrow::array::{ArrayRef, LargeListBuilder};
 use arrow::{array::Array, buffer::Buffer};
 use num::Num;
@@ -70,7 +71,7 @@ where
     T: PolarsPrimitiveType,
     T::Native: Default,
 {
-    array_builder: PrimitiveArrayBuilder<T>,
+    array_builder: PrimitiveBuilder<T>,
     field: Field,
 }
 
@@ -82,13 +83,13 @@ where
     /// Appends a value of type `T` into the builder
     #[inline]
     fn append_value(&mut self, v: T::Native) {
-        self.array_builder.append_value(v)
+        self.array_builder.append_value(v).unwrap()
     }
 
     /// Appends a null slot into the builder
     #[inline]
     fn append_null(&mut self) {
-        self.array_builder.append_null()
+        self.array_builder.append_null().unwrap()
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
@@ -109,7 +110,7 @@ where
 {
     pub fn new(name: &str, capacity: usize) -> Self {
         PrimitiveChunkedBuilder {
-            array_builder: PrimitiveArrayBuilder::<T>::new(capacity),
+            array_builder: PrimitiveBuilder::<T>::new(capacity),
             field: Field::new(name, T::get_dtype()),
         }
     }
@@ -347,7 +348,7 @@ pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub builder: LargeListBuilder<PrimitiveArrayBuilder<T>>,
+    pub builder: LargeListBuilder<PrimitiveBuilder<T>>,
     field: Field,
 }
 
@@ -367,7 +368,7 @@ impl<T> ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
 {
-    pub fn new(name: &str, values_builder: PrimitiveArrayBuilder<T>, capacity: usize) -> Self {
+    pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
         let builder = LargeListBuilder::with_capacity(values_builder, capacity);
         let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
 
@@ -377,7 +378,7 @@ where
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
         match opt_v {
             Some(v) => {
-                self.builder.values().append_slice(v);
+                self.builder.values().append_slice(v).unwrap();
                 self.builder.append(true).expect("should not fail");
             }
             None => {
@@ -409,7 +410,7 @@ where
     #[inline]
     fn append_null(&mut self) {
         let builder = self.builder.values();
-        builder.append_null();
+        builder.append_null().unwrap();
         self.builder.append(true).unwrap();
     }
 
@@ -417,21 +418,29 @@ where
     fn append_series(&mut self, s: &Series) {
         let builder = self.builder.values();
         let arrays = s.chunks();
-        for a in arrays {
-            let values = a.get_values::<T>();
-            // we would like to check if array has no null values.
-            // however at the time of writing there is a bug in append_slice, because it does not update
-            // the null bitmap
-            if s.null_count() == 0 {
-                builder.append_slice(values);
-            } else {
-                values.iter().enumerate().for_each(|(idx, v)| {
-                    if a.is_valid(idx) {
-                        builder.append_value(*v);
-                    } else {
-                        builder.append_null();
-                    }
-                });
+        if s.null_count() == s.len() {
+            for _ in 0..s.len() {
+                builder.append_null().unwrap();
+            }
+        } else if s.is_empty() {
+            return;
+        } else {
+            for a in arrays {
+                let values = a.get_values::<T>();
+                // we would like to check if array has no null values.
+                // however at the time of writing there is a bug in append_slice, because it does not update
+                // the null bitmap
+                if s.null_count() == 0 {
+                    builder.append_slice(values).unwrap();
+                } else {
+                    values.iter().enumerate().for_each(|(idx, v)| {
+                        if a.is_valid(idx) {
+                            builder.append_value(*v).unwrap();
+                        } else {
+                            builder.append_null().unwrap();
+                        }
+                    });
+                }
             }
         }
         self.builder.append(true).unwrap();
@@ -548,7 +557,7 @@ pub fn get_list_builder(
 ) -> Box<dyn ListBuilderTrait> {
     macro_rules! get_primitive_builder {
         ($type:ty) => {{
-            let values_builder = PrimitiveArrayBuilder::<$type>::new(value_capacity);
+            let values_builder = PrimitiveBuilder::<$type>::new(value_capacity);
             let builder = ListPrimitiveChunkedBuilder::new(&name, values_builder, list_capacity);
             Box::new(builder)
         }};
@@ -594,7 +603,7 @@ mod test {
 
     #[test]
     fn test_list_builder() {
-        let values_builder = PrimitiveArrayBuilder::<Int32Type>::new(10);
+        let values_builder = PrimitiveBuilder::<Int32Type>::new(10);
         let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
 
         // create a series containing two chunks
