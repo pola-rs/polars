@@ -848,6 +848,22 @@ impl Expr {
         self.apply(move |s: Series| Ok(s.cum_max(reverse)), None)
     }
 
+    /// Fill missing value with next non-null.
+    pub fn backward_fill(self) -> Self {
+        self.apply(
+            move |s: Series| s.fill_none(FillNoneStrategy::Backward),
+            None,
+        )
+    }
+
+    /// Fill missing value with previous non-null.
+    pub fn forward_fill(self) -> Self {
+        self.apply(
+            move |s: Series| s.fill_none(FillNoneStrategy::Forward),
+            None,
+        )
+    }
+
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
