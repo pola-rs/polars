@@ -3,7 +3,6 @@ use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, Num, NumCast, One, Zero};
-use polars_arrow::array::ValueSize;
 use std::ops::{Add, Div};
 
 fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
