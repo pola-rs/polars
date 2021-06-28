@@ -5,7 +5,6 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 use arrow::{array::*, bitmap::Bitmap};
-use num::Num;
 use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
@@ -335,7 +334,7 @@ pub trait ListBuilderTrait {
 
 pub struct ListPrimitiveChunkedBuilder<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     pub builder: LargePrimitiveBuilder<T::Native>,
     field: Field,
@@ -355,7 +354,7 @@ macro_rules! finish_list_builder {
 
 impl<T> ListPrimitiveChunkedBuilder<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
@@ -388,8 +387,7 @@ where
 
 impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
 where
-    T: PolarsPrimitiveType,
-    T::Native: Num,
+    T: PolarsNumericType,
 {
     #[inline]
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
