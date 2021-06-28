@@ -539,7 +539,7 @@ where
                 let values_cap = self.len();
                 let values_builder = PrimitiveBuilder::<T>::new(values_cap);
                 let mut builder =
-                    ListPrimitiveChunkedBuilder::new("", values_builder, groups.len());
+                    ListPrimitiveChunkedBuilder::new(self.name(), values_builder, groups.len());
                 for (_first, idx) in groups {
                     let s = unsafe {
                         self.take_unchecked(idx.iter().map(|i| *i as usize).into())
@@ -558,7 +558,7 @@ impl AggList for BooleanChunked {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         let values_cap = self.len();
         let values_builder = BooleanArrayBuilder::new(values_cap);
-        let mut builder = ListBooleanChunkedBuilder::new("", values_builder, groups.len());
+        let mut builder = ListBooleanChunkedBuilder::new(self.name(), values_builder, groups.len());
         for (_first, idx) in groups {
             let s = unsafe {
                 self.take_unchecked(idx.iter().map(|i| *i as usize).into())
@@ -574,7 +574,7 @@ impl AggList for Utf8Chunked {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         let values_cap = self.len();
         let values_builder = LargeStringBuilder::with_capacity(values_cap * 5, values_cap);
-        let mut builder = ListUtf8ChunkedBuilder::new("", values_builder, groups.len());
+        let mut builder = ListUtf8ChunkedBuilder::new(self.name(), values_builder, groups.len());
         for (_first, idx) in groups {
             let s = unsafe {
                 self.take_unchecked(idx.iter().map(|i| *i as usize).into())
