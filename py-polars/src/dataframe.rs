@@ -587,7 +587,7 @@ impl PyDataFrame {
     }
 
     pub fn is_duplicated(&self) -> PyResult<PySeries> {
-        let mask = self.df.is_unique().map_err(PyPolarsEr::from)?;
+        let mask = self.df.is_duplicated().map_err(PyPolarsEr::from)?;
         Ok(mask.into_series().into())
     }
 
