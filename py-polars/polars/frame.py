@@ -27,6 +27,7 @@ from typing import (
     BinaryIO,
     Callable,
     Any,
+    Type,
 )
 from .series import Series, wrap_s
 from . import datatypes
@@ -34,6 +35,7 @@ from .datatypes import DataType, pytype_to_polars_type
 from ._html import NotebookFormatter
 from .utils import coerce_arrow, _is_expr
 import polars
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet
 import pyarrow.feather
@@ -47,7 +49,7 @@ if TYPE_CHECKING:
     from .lazy import LazyFrame, Expr
 
 
-def wrap_df(df: "PyDataFrame") -> "DataFrame":
+def wrap_df(df: PyDataFrame) -> "DataFrame":
     return DataFrame._from_pydf(df)
 
 
@@ -70,9 +72,9 @@ class DataFrame:
 
     def __init__(
         self,
-        data: "Union[Dict[str, Sequence], List[Series], np.ndarray]",
+        data: Union[Dict[str, Sequence], List[Series], np.ndarray],
         nullable: bool = True,
-    ):
+    ) -> None:
         """
         A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
         """
@@ -98,11 +100,11 @@ class DataFrame:
                 import pandas as pd
 
                 if isinstance(data, pd.DataFrame):
-                    for c in data.columns:
+                    for col in data.columns:
                         if nullable:
-                            s = Series(c, data[c].to_list(), nullable=True).inner()
+                            s = Series(col, data[col].to_list(), nullable=True).inner()
                         else:
-                            s = Series(c, data[c].values, nullable=False).inner()
+                            s = Series(col, data[col].values, nullable=False).inner()
                         columns.append(s)
                 else:
                     raise ValueError("A dictionary was expected.")
@@ -160,13 +162,13 @@ class DataFrame:
         ignore_errors: bool = False,
         stop_after_n_rows: Optional[int] = None,
         skip_rows: int = 0,
-        projection: "Optional[List[int]]" = None,
+        projection: Optional[List[int]] = None,
         sep: str = ",",
-        columns: "Optional[List[str]]" = None,
+        columns: Optional[List[str]] = None,
         rechunk: bool = True,
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
-        dtype: "Optional[Dict[str, DataType]]" = None,
+        dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
     ) -> "DataFrame":
         """
@@ -220,16 +222,17 @@ class DataFrame:
         """
         self = DataFrame.__new__(DataFrame)
 
+        path: Optional[str]
         if isinstance(file, str):
             path = file
         else:
             path = None
 
+        dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
         if dtype is not None:
-            new_dtype = []
+            dtype_list = []
             for k, v in dtype.items():
-                new_dtype.append((k, pytype_to_polars_type(v)))
-            dtype = new_dtype
+                dtype_list.append((k, pytype_to_polars_type(v)))
 
         self._df = PyDataFrame.read_csv(
             file,
@@ -246,7 +249,7 @@ class DataFrame:
             encoding,
             n_threads,
             path,
-            dtype,
+            dtype_list,
             low_memory,
         )
         return self
@@ -366,7 +369,7 @@ class DataFrame:
 
     def to_json(
         self,
-        file: "Optional[Union[BytesIO, str, Path]]" = None,
+        file: Optional[Union[BytesIO, str, Path]] = None,
         pretty: bool = False,
         to_string: bool = False,
     ) -> Optional[str]:
@@ -387,11 +390,13 @@ class DataFrame:
             self._df.to_json(file, pretty)
             file.seek(0)
             return file.read().decode("utf8")
-        self._df.to_json(file, pretty)
+        else:
+            self._df.to_json(file, pretty)
+            return None
 
     def to_pandas(
         self, *args, date_as_object=False, **kwargs
-    ) -> "pd.DataFrame":  # noqa: F821
+    ) -> pd.DataFrame:  # noqa: F821
         """
         Cast to a Pandas DataFrame. This requires that Pandas is installed.
         This operation clones data.
@@ -907,7 +912,7 @@ class DataFrame:
         self._df.set_column_names(columns)
 
     @property
-    def dtypes(self) -> "List[type]":
+    def dtypes(self) -> List[Type[DataType]]:
         """
         Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
 
@@ -1008,9 +1013,9 @@ class DataFrame:
 
     def sort(
         self,
-        by: "Union[str, Expr, List[Expr]]",
+        by: Union[str, "Expr", List["Expr"]],
         in_place: bool = False,
-        reverse: "Union[bool, List[bool]]" = False,
+        reverse: Union[bool, List[bool]] = False,
     ) -> Optional["DataFrame"]:
         """
         Sort the DataFrame by column.
@@ -1064,10 +1069,11 @@ class DataFrame:
             )
             if in_place:
                 self._df = df._df
-                return
+                return None
             return df
         if in_place:
             self._df.sort_in_place(by, reverse)
+            return None
         else:
             return wrap_df(self._df.sort(by, reverse))
 
@@ -1238,7 +1244,7 @@ class DataFrame:
         """
         return func(self, *args, **kwargs)
 
-    def groupby(self, by: "Union[str, List[str]]") -> "GroupBy":
+    def groupby(self, by: Union[str, List[str]]) -> "GroupBy":
         """
         Start a groupby operation.
 
@@ -1313,7 +1319,7 @@ class DataFrame:
             by = [by]
         return GroupBy(self._df, by, downsample=False)
 
-    def downsample(self, by: str, rule: str, n: int) -> "GroupBy":
+    def downsample(self, by: Union[str, List[str]], rule: str, n: int) -> "GroupBy":
         """
         Start a downsampling groupby operation.
 
@@ -1341,11 +1347,11 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: "Optional[Union[str, List[str]], Expr, List[Expr]]" = None,
-        right_on: "Optional[Union[str, List[str]], Expr, List[Expr]]" = None,
-        on: "Optional[Union[str, List[str]]]" = None,
-        how="inner",
-    ) -> "DataFrame":
+        left_on: Optional[Union[str, List[str], "Expr", List["Expr"]]] = None,
+        right_on: Optional[Union[str, List[str], "Expr", List["Expr"]]] = None,
+        on: Optional[Union[str, List[str]]] = None,
+        how: str = "inner",
+    ) -> Union["DataFrame", "LazyFrame"]:
         """
         SQL like joins.
 
@@ -1425,7 +1431,7 @@ class DataFrame:
             right_on = on
         if left_on is None or right_on is None:
             raise ValueError("You should pass the column to join on as an argument.")
-        if _is_expr(left_on[0]) or _is_expr(right_on[0]):
+        if _is_expr(left_on[0]) or _is_expr(right_on[0]):  # type: ignore
             return self.lazy().join(df.lazy(), left_on, right_on, how=how)
 
         out = self._df.join(df._df, left_on, right_on, how)
@@ -1451,7 +1457,7 @@ class DataFrame:
         """
         return wrap_s(self._df.apply(f, return_dtype))
 
-    def with_column(self, column: "Union[Series, Expr]") -> "DataFrame":
+    def with_column(self, column: Union[Series, "Expr"]) -> "DataFrame":
         """
         Return a new DataFrame with the column added or replaced.
 
@@ -1461,11 +1467,12 @@ class DataFrame:
             Series, where the name of the Series refers to the column in the DataFrame.
         """
         if _is_expr(column):
-            return self.with_columns([column])
-        return wrap_df(self._df.with_column(column._s))
+            return self.with_columns([column])  # type: ignore
+        else:
+            return wrap_df(self._df.with_column(column._s))  # type: ignore
 
     def hstack(
-        self, columns: "Union[List[Series], DataFrame]", in_place=False
+        self, columns: Union[List[Series], "DataFrame"], in_place: bool = False
     ) -> Optional["DataFrame"]:
         """
         Return a new DataFrame grown horizontally by stacking multiple Series to it.
@@ -1481,6 +1488,7 @@ class DataFrame:
             columns = columns.get_columns()
         if in_place:
             self._df.hstack_mut([s.inner() for s in columns])
+            return None
         else:
             return wrap_df(self._df.hstack([s.inner() for s in columns]))
 
@@ -1497,6 +1505,7 @@ class DataFrame:
         """
         if in_place:
             self._df.vstack_mut(df._df)
+            return None
         else:
             return wrap_df(self._df.vstack(df._df))
 
@@ -1576,7 +1585,7 @@ class DataFrame:
         """
         return list(map(lambda s: wrap_s(s), self._df.get_columns()))
 
-    def fill_none(self, strategy: "Union[str, Expr]") -> "DataFrame":
+    def fill_none(self, strategy: Union[str, "Expr"]) -> "DataFrame":
         """
         Fill None values by a filling strategy or an Expression evaluation.
 
@@ -1602,7 +1611,7 @@ class DataFrame:
         if not isinstance(strategy, str):
             from .lazy import lit
 
-            return self.fill_none(lit(strategy))
+            return self.fill_none(lit(strategy))  # type: ignore
         return wrap_df(self._df.fill_none(strategy))
 
     def explode(self, columns: "Union[str, List[str]]") -> "DataFrame":
@@ -1721,7 +1730,7 @@ class DataFrame:
             self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
         )
 
-    def with_columns(self, exprs: "List[Expr]") -> "DataFrame":
+    def with_columns(self, exprs: Union["Expr", List["Expr"]]) -> "DataFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -1815,7 +1824,9 @@ class DataFrame:
         return wrap_df(self._df.to_dummies())
 
     def drop_duplicates(
-        self, maintain_order=True, subset: "Optional[List[str]]" = None
+        self,
+        maintain_order: bool = True,
+        subset: Optional[Union[str, List[str]]] = None,
     ) -> "DataFrame":
         """
         Drop duplicate rows from this DataFrame.
@@ -1939,7 +1950,7 @@ class DataFrame:
             function that takes two `Series` and returns a `Series`.
         """
         if self.width == 1:
-            return self
+            return self  # type: ignore
         df = self
         acc = operation(df.select_at_idx(0), df.select_at_idx(1))
 
@@ -1979,8 +1990,8 @@ class GroupBy:
 
     def __init__(
         self,
-        df: "PyDataFrame",
-        by: "List[str]",
+        df: PyDataFrame,
+        by: Union[str, List[str]],
         downsample: bool = False,
         rule=None,
         downsample_n: int = 0,
@@ -2063,7 +2074,12 @@ class GroupBy:
 
     def agg(
         self,
-        column_to_agg: "Union[List[Tuple[str, List[str]]], Dict[str, List[str]]], List[Expr]",
+        column_to_agg: Union[
+            List[Tuple[str, List[str]]],
+            Dict[str, Union[str, List[str]]],
+            List["Expr"],
+            "Expr",
+        ],
     ) -> DataFrame:
         """
         Use multiple aggregations on columns. This can be combined with complete lazy API.
@@ -2104,7 +2120,7 @@ class GroupBy:
         ```
         """
         if _is_expr(column_to_agg):
-            column_to_agg = [column_to_agg]
+            column_to_agg = [column_to_agg]  # type: ignore
         if isinstance(column_to_agg, dict):
             column_to_agg = [
                 (column, [agg] if isinstance(agg, str) else agg)
@@ -2115,7 +2131,7 @@ class GroupBy:
 
             if isinstance(column_to_agg[0], tuple):
                 column_to_agg = [
-                    (column, [agg] if isinstance(agg, str) else agg)
+                    (column, [agg] if isinstance(agg, str) else agg)  # type: ignore
                     for (column, agg) in column_to_agg
                 ]
 
@@ -2124,7 +2140,7 @@ class GroupBy:
                     wrap_df(self._df)
                     .lazy()
                     .groupby(self.by)
-                    .agg(column_to_agg)
+                    .agg(column_to_agg)  # type: ignore
                     .collect(no_optimization=True, string_cache=False)
                 )
 
@@ -2258,7 +2274,11 @@ class PivotOps:
     """
 
     def __init__(
-        self, df: DataFrame, by: "List[str]", pivot_column: str, values_column: str
+        self,
+        df: DataFrame,
+        by: Union[str, List[str]],
+        pivot_column: str,
+        values_column: str,
     ):
         self._df = df
         self.by = by
@@ -2330,8 +2350,8 @@ class GBSelection:
     def __init__(
         self,
         df: DataFrame,
-        by: "List[str]",
-        selection: "Optional[List[str]]",
+        by: Union[str, List[str]],
+        selection: Optional[List[str]],
         downsample: bool = False,
         rule=None,
         downsample_n: int = 0,
@@ -2348,65 +2368,65 @@ class GBSelection:
         Aggregate the first values in the group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "first"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "first"))  # type: ignore
 
-        return wrap_df(self._df.groupby(self.by, self.selection, "first"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "first"))  # type: ignore
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "last"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "last"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "last"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "last"))  # type: ignore
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "sum"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "sum"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "sum"))  # type: ignore
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "min"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "min"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "min"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "min"))  # type: ignore
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "max"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "max"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "max"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "max"))  # type: ignore
 
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "count"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "count"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "count"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "count"))  # type: ignore
 
     def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "mean"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "mean"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "mean"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "mean"))  # type: ignore
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "n_unique"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "n_unique"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))  # type: ignore
 
     def quantile(self, quantile: float) -> DataFrame:
         """
@@ -2421,21 +2441,21 @@ class GBSelection:
         Return the median per group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "median"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "median"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "median"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "median"))  # type: ignore
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "agg_list"))
-        return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "agg_list"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))  # type: ignore
 
     def apply(
         self,
-        func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",
-        return_dtype: "Optional['DataType']" = None,
+        func: Union[Callable[["Any"], "Any"], Callable[["Any"], "Any"]],
+        return_dtype: Optional[Type[DataType]] = None,
     ) -> "DataFrame":
         """
         Apply a function over the groups.
@@ -2445,29 +2465,31 @@ class GBSelection:
             selection = [self.selection]
         else:
             selection = self.selection
-        for name in selection:
+        for name in selection:  # type: ignore
             s = df.drop_in_place(name + "_agg_list").apply(func, return_dtype)
             s.rename(name, in_place=True)
             df[name] = s
 
         return df
 
-    def shrink_to_fit(self, in_place: bool = False) -> "Optional[DataFrame]":
+    def shrink_to_fit(self, in_place: bool = False) -> Optional["DataFrame"]:
         """
         Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
         """
         if in_place:
-            df = self.clone()
+            self._df.shrink_to_fit()
+            return None
+        else:
+            df = self.clone()  # type: ignore
             df._df.shrink_to_fit()
             return df
-        self._df.shrink_to_fit()
 
 
 def _series_to_frame(self: "Series") -> "DataFrame":
     return wrap_df(PyDataFrame([self._s]))
 
 
-Series.to_frame = _series_to_frame
+Series.to_frame = _series_to_frame  # type: ignore
 
 
 class StringCache:

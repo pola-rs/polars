@@ -3,10 +3,13 @@ Module for formatting output data in HTML.
 """
 
 from textwrap import dedent
+from types import TracebackType
 from typing import (
     Dict,
+    Iterable,
     List,
     Optional,
+    Type,
 )
 import polars as pl
 
@@ -14,12 +17,12 @@ import polars as pl
 class Tag:
     def __init__(
         self, elements: List[str], tag: str, attributes: Optional[Dict[str, str]] = None
-    ):
+    ) -> None:
         self.tag = tag
         self.elements = elements
         self.attributes = attributes
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         if self.attributes is not None:
             s = f"<{self.tag} "
             for k, v in self.attributes.items():
@@ -29,7 +32,12 @@ class Tag:
         else:
             self.elements.append(f"<{self.tag}>")
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         self.elements.append(f"</{self.tag}>")
 
 
@@ -62,11 +70,13 @@ def div(inner: str) -> str:
 
 
 class HTMLFormatter:
-    def __init__(self, df: "pl.DataFrame", max_cols=75, max_rows=40):
+    def __init__(self, df: "pl.DataFrame", max_cols: int = 75, max_rows: int = 40):
         self.df = df
-        self.elements = []
+        self.elements: List[str] = []
         self.max_cols = max_cols
         self.max_rows = max_rows
+        self.row_idx: Iterable[int]
+        self.col_idx: Iterable[int]
         if max_rows < df.height:
             self.row_idx = (
                 list(range(0, max_rows // 2))
@@ -84,7 +94,7 @@ class HTMLFormatter:
         else:
             self.col_idx = range(0, df.width)
 
-    def write_header(self):
+    def write_header(self) -> None:
         """
         Writes the header of an HTML table.
         """
@@ -95,11 +105,11 @@ class HTMLFormatter:
                         self.elements.append(col)
             with Tag(self.elements, "tr"):
                 for dtype in self.df.dtypes:
-                    dtype = pl.datatypes.DTYPE_TO_FFINAME[dtype]
+                    ffi_name = pl.datatypes.DTYPE_TO_FFINAME[dtype]
                     with Tag(self.elements, "td"):
-                        self.elements.append(dtype)
+                        self.elements.append(ffi_name)
 
-    def write_body(self):
+    def write_body(self) -> None:
         """
         Writes the body of an HTML table.
         """
@@ -119,10 +129,10 @@ class HTMLFormatter:
                                 else:
                                     self.elements.append(f"{series._s.get_fmt(r)}")
 
-    def write(self, inner: str):
+    def write(self, inner: str) -> None:
         self.elements.append(inner)
 
-    def render(self):
+    def render(self) -> None:
         with Tag(self.elements, "table", {"border": "1", "class": "dataframe"}):
             self.write_header()
             self.write_body()
@@ -158,7 +168,7 @@ class NotebookFormatter(HTMLFormatter):
         template = dedent("\n".join((template_first, template_mid, template_last)))
         self.write(template)
 
-    def render(self) -> List[str]:
+    def render(self) -> List[str]:  # type: ignore
         """
         Return the lines needed to render a HTML table.
         """

@@ -14,7 +14,7 @@ except ImportError:
         "SeriesIter": False,
     }
 import numpy as np
-from typing import Optional, List, Sequence, Union, Any, Callable, Tuple
+from typing import Optional, List, Sequence, Union, Any, Callable, Tuple, Type
 from .ffi import _ptr_to_numpy
 from .datatypes import (
     Utf8,
@@ -50,12 +50,12 @@ if TYPE_CHECKING:
 
 
 class IdentityDict(dict):
-    def __missing__(self, key):
+    def __missing__(self, key: Any) -> Any:
         return key
 
 
 def get_ffi_func(
-    name: str, dtype: str, obj: Optional["Series"] = None, default: Optional = None
+    name: str, dtype: Type[DataType], obj: Optional["Series"] = None, default: Optional = None  # type: ignore
 ):
     """
     Dynamically obtain the proper ffi function/ method.
@@ -67,7 +67,7 @@ def get_ffi_func(
         for example
             "call_foo_<>"
     dtype
-        polars dtype str.
+        polars dtype.
     obj
         Optional object to find the method for. If none provided globals are used.
     default
@@ -85,11 +85,11 @@ def get_ffi_func(
         return globals().get(fname, default)
 
 
-def wrap_s(s: "PySeries") -> "Series":
+def wrap_s(s: PySeries) -> "Series":
     return Series._from_pyseries(s)
 
 
-def _find_first_non_none(a: "List[Optional[Any]]") -> Any:
+def _find_first_non_none(a: List[Optional[Any]]) -> Any:
     v = a[0]
     if v is None:
         return _find_first_non_none(a[1:])
@@ -101,9 +101,9 @@ class Series:
     def __init__(
         self,
         name: str,
-        values: "Union[np.array, List[Optional[Any]]]" = None,
+        values: Union["Series", np.ndarray, List[Any], None] = None,
         nullable: bool = True,
-        dtype: "Optional[DataType]" = None,
+        dtype: Optional[Type[DataType]] = None,
     ):
         """
 
@@ -125,11 +125,11 @@ class Series:
             values = name
             name = ""
         if values.__class__ == self.__class__:
-            values.rename(name, in_place=True)
-            self._s = values._s
+            values.rename(name, in_place=True)  # type: ignore
+            self._s = values._s  # type: ignore
             return
 
-        self._s: PySeries
+        self._s: PySeries  # type: ignore
         # series path
         if isinstance(values, Series):
             self._from_pyseries(values)
@@ -257,7 +257,7 @@ class Series:
                     self._s = PySeries.new_object(name, values)
 
     @staticmethod
-    def _from_pyseries(s: "PySeries") -> "Series":
+    def _from_pyseries(s: PySeries) -> "Series":
         self = Series.__new__(Series)
         self._s = s
         return self
@@ -270,7 +270,7 @@ class Series:
         return Series._from_pyseries(PySeries.repeat(name, val, n))
 
     @staticmethod
-    def from_arrow(name: str, array: "pa.Array"):
+    def from_arrow(name: str, array: pa.Array) -> "Series":
         """
         Create a Series from an arrow array.
 
@@ -293,13 +293,13 @@ class Series:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __and__(self, other):
+    def __and__(self, other: "Series") -> "Series":
         return wrap_s(self._s.bitand(other._s))
 
-    def __or__(self, other):
+    def __or__(self, other: "Series") -> "Series":
         return wrap_s(self._s.bitor(other._s))
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> "Series":  # type: ignore
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -309,7 +309,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __ne__(self, other):
+    def __ne__(self, other: Any) -> "Series":  # type: ignore
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -319,7 +319,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __gt__(self, other):
+    def __gt__(self, other: Any) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -329,7 +329,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -339,7 +339,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __ge__(self, other) -> "Series":
+    def __ge__(self, other: Any) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -349,7 +349,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __le__(self, other) -> "Series":
+    def __le__(self, other: Any) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -359,7 +359,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __add__(self, other) -> "Series":
+    def __add__(self, other: Any) -> "Series":
         if isinstance(other, str):
             other = Series("", [other])
         if isinstance(other, Series):
@@ -370,7 +370,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __sub__(self, other) -> "Series":
+    def __sub__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.sub(other._s))
         dtype = dtype_to_primitive(self.dtype)
@@ -379,7 +379,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __truediv__(self, other) -> "Series":
+    def __truediv__(self, other: Any) -> "Series":
         primitive = dtype_to_primitive(self.dtype)
         if self.dtype != primitive:
             return self.__floordiv__(other)
@@ -390,14 +390,14 @@ class Series:
             out_dtype = self.dtype
         return np.true_divide(self, other, dtype=out_dtype)
 
-    def __floordiv__(self, other) -> "Series":
+    def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.div(other._s))
         dtype = dtype_to_primitive(self.dtype)
         f = get_ffi_func("div_<>", dtype, self._s)
         return wrap_s(f(other))
 
-    def __mul__(self, other) -> "Series":
+    def __mul__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
         dtype = dtype_to_primitive(self.dtype)
@@ -406,7 +406,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __radd__(self, other):
+    def __radd__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
         dtype = dtype_to_primitive(self.dtype)
@@ -415,7 +415,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __rsub__(self, other):
+    def __rsub__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.sub(self._s))
         dtype = dtype_to_primitive(self.dtype)
@@ -424,7 +424,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __invert__(self):
+    def __invert__(self) -> "Series":
         if self.dtype == Boolean:
             return wrap_s(self._s._not())
         return NotImplemented
@@ -632,13 +632,13 @@ class Series:
         return polars.frame.wrap_df(self._s.value_counts())
 
     @property
-    def name(self):
+    def name(self) -> str:
         """
         Get the name of this Series.
         """
         return self._s.name()
 
-    def rename(self, name: str, in_place=False) -> "Optional[Series]":
+    def rename(self, name: str, in_place: bool = False) -> Optional["Series"]:
         """
         Rename this Series.
 
@@ -651,6 +651,7 @@ class Series:
         """
         if in_place:
             self._s.rename(name)
+            return None
         else:
             s = self.clone()
             s._s.rename(name)
@@ -790,6 +791,7 @@ class Series:
         """
         if in_place:
             self._s.sort_in_place(reverse)
+            return None
         else:
             return wrap_s(self._s.sort(reverse))
 
@@ -1001,7 +1003,7 @@ class Series:
     def __len__(self):
         return self.len()
 
-    def cast(self, data_type: "DataType"):
+    def cast(self, data_type: Type[DataType]) -> "Series":
         if data_type == int:
             data_type = Int64
         elif data_type == str:
@@ -1034,7 +1036,9 @@ class Series:
             In place or not.
         """
         opt_s = self._s.rechunk(in_place)
-        if not in_place:
+        if in_place:
+            return None
+        else:
             return wrap_s(opt_s)
 
     def is_numeric(self) -> bool:
@@ -1239,9 +1243,9 @@ class Series:
 
     def apply(
         self,
-        func: "Union[Callable[['Any'], 'Any'], Callable[['Any'], 'Any']]",
-        return_dtype: "Optional['DataType']" = None,
-    ):
+        func: Callable[[Any], Any],
+        return_dtype: Optional[Type[DataType]] = None,
+    ) -> "Series":
         """
         Apply a function over elements in this Series and return a new Series.
 
@@ -1435,7 +1439,7 @@ class Series:
 
     @staticmethod
     def parse_date(
-        name: str, values: Sequence[str], dtype: "DataType", fmt: str
+        name: str, values: Sequence[str], dtype: Type[DataType], fmt: str
     ) -> "Series":
         """
         .. deprecated::
@@ -1450,7 +1454,7 @@ class Series:
         n: "Optional[int]" = None,
         frac: "Optional[float]" = None,
         with_replacement: bool = False,
-    ) -> "DataFrame":
+    ) -> "Series":
         """
         Sample from this Series by setting either `n` or `frac`.
 
@@ -1485,15 +1489,17 @@ class Series:
         """
         return self._s.n_unique()
 
-    def shrink_to_fit(self, in_place: bool = False) -> "Optional[Series]":
+    def shrink_to_fit(self, in_place: bool = False) -> Optional["Series"]:
         """
         Shrink memory usage of this Series to fit the exact capacity needed to hold the data.
         """
         if in_place:
+            self._s.shrink_to_fit()
+            return None
+        else:
             series = self.clone()
             series._s.shrink_to_fit()
             return series
-        self._s.shrink_to_fit()
 
     @property
     def dt(self) -> "DateTimeNameSpace":
@@ -1833,13 +1839,15 @@ class DateTimeNameSpace:
         return _to_python_datetime(out, s.dtype)
 
 
-def _to_python_datetime(value: int, dtype: "DataType") -> "datetime":
+def _to_python_datetime(value: int, dtype: Type[DataType]) -> datetime:
     if dtype == Date32:
         # days to seconds
         return datetime.utcfromtimestamp(value * 3600 * 24)
-    if dtype == Date64:
+    elif dtype == Date64:
         # ms to seconds
         return datetime.utcfromtimestamp(value // 1000)
+    else:
+        raise NotImplementedError
 
 
 class SeriesIter:
