@@ -84,6 +84,9 @@ jobs:
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
+      - name: Run type checking
+        run: |
+          cd py-polars && mypy && cd ..
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"

@@ -6,3 +6,4 @@ numpy
 ghp-import
 pandas
 flake8
+mypy~=0.910
