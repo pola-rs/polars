@@ -14,7 +14,7 @@ except ImportError:
         "SeriesIter": False,
     }
 import numpy as np
-from typing import Optional, List, Sequence, Union, Any, Callable, Tuple, Type
+from typing import Optional, List, Sequence, Union, Any, Callable, Tuple, Type, Dict
 from .ffi import _ptr_to_numpy
 from .datatypes import (
     Utf8,
@@ -56,7 +56,7 @@ class IdentityDict(dict):
 
 def get_ffi_func(
     name: str, dtype: Type[DataType], obj: Optional["Series"] = None, default: Optional = None  # type: ignore
-):
+) -> Callable[..., Any]:
     """
     Dynamically obtain the proper ffi function/ method.
 
@@ -384,6 +384,7 @@ class Series:
         if self.dtype != primitive:
             return self.__floordiv__(other)
 
+        out_dtype: Type[DataType]
         if not self.is_float():
             out_dtype = Float64
         else:
@@ -429,19 +430,20 @@ class Series:
             return wrap_s(self._s._not())
         return NotImplemented
 
-    def __rtruediv__(self, other):
+    def __rtruediv__(self, other: Any) -> np.ndarray:
 
         primitive = dtype_to_primitive(self.dtype)
         if self.dtype != primitive:
             self.__rfloordiv__(other)
 
+        out_dtype: Union[Type[Float64], str]
         if not self.is_float():
             out_dtype = Float64
         else:
             out_dtype = DTYPE_TO_FFINAME[self.dtype]
         return np.true_divide(other, self, dtype=out_dtype)
 
-    def __rfloordiv__(self, other):
+    def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.div(self._s))
         dtype = dtype_to_primitive(self.dtype)
@@ -450,7 +452,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __rmul__(self, other):
+    def __rmul__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
         dtype = dtype_to_primitive(self.dtype)
@@ -459,7 +461,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: Any) -> Any:
         if isinstance(item, int):
             if item >= self.len():
                 raise IndexError
@@ -482,14 +484,14 @@ class Series:
             return wrap_s(out)
         return out
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Any, value: Any) -> None:
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
             elif key.dtype == UInt64:
                 self._s = self.set_at_idx(key, value)._s
             elif key.dtype == UInt32:
-                self._s = self.set_at_idx(key.cast_u64(), value)._s
+                self._s = self.set_at_idx(key.cast_u64(), value)._s  # type: ignore
         # TODO: implement for these types without casting to series
         elif isinstance(key, (np.ndarray, list, tuple)):
             s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
@@ -513,13 +515,13 @@ class Series:
         pass
 
     @property
-    def dtype(self):
+    def dtype(self) -> Type[DataType]:
         """
         Get the data type of this Series.
         """
         return dtypes[self._s.dtype()]
 
-    def describe(self):
+    def describe(self) -> Dict[str, Union[int, float]]:
         """
         Quick summary statistics of a series. Series with mixed datatypes will return summary statistics for the datatype of the first value.
 
@@ -557,25 +559,25 @@ class Series:
         else:
             raise TypeError("This type is not supported")
 
-    def sum(self):
+    def sum(self) -> Union[int, float]:
         """
         Reduce this Series to the sum value.
         """
         return self._s.sum()
 
-    def mean(self):
+    def mean(self) -> Union[int, float]:
         """
         Reduce this Series to the mean value.
         """
         return self._s.mean()
 
-    def min(self):
+    def min(self) -> Union[int, float]:
         """
         Get the minimal value in this Series.
         """
         return self._s.min()
 
-    def max(self):
+    def max(self) -> Union[int, float]:
         """
         Get the maximum value in this Series.
         """
@@ -669,7 +671,7 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cum_sum(self, reverse: bool = False):
+    def cum_sum(self, reverse: bool = False) -> Union[int, float]:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -680,7 +682,7 @@ class Series:
         """
         return self._s.cum_sum(reverse)
 
-    def cum_min(self, reverse: bool = False):
+    def cum_min(self, reverse: bool = False) -> Union[int, float]:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -691,7 +693,7 @@ class Series:
         """
         return self._s.cum_min(reverse)
 
-    def cum_max(self, reverse: bool = False):
+    def cum_max(self, reverse: bool = False) -> Union[int, float]:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -726,7 +728,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.slice(offset, length))
 
-    def append(self, other: "Series"):
+    def append(self, other: "Series") -> None:
         """
         Append a Series to this one.
 
@@ -1000,7 +1002,7 @@ class Series:
         """
         return (self._s.len(),)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.len()
 
     def cast(self, data_type: Type[DataType]) -> "Series":
@@ -1015,7 +1017,7 @@ class Series:
             return NotImplemented
         return wrap_s(f())
 
-    def to_list(self) -> "List[Optional[Any]]":
+    def to_list(self) -> List[Optional[Any]]:
         """
         Convert this Series to a Python List. This operation clones data.
         """
@@ -1023,7 +1025,7 @@ class Series:
             return self.to_arrow().to_pylist()
         return self._s.to_list()
 
-    def __iter__(self):
+    def __iter__(self) -> "SeriesIter":
         return SeriesIter(self.len(), self)
 
     def rechunk(self, in_place: bool = False) -> Optional["Series"]:
@@ -1102,7 +1104,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+    def __array_ufunc__(self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any) -> "Series":
         """
         Numpy universal functions.
         """
@@ -1130,7 +1132,7 @@ class Series:
         else:
             return NotImplemented
 
-    def to_numpy(self, *args, zero_copy_only=False, **kwargs) -> np.ndarray:
+    def to_numpy(self, *args: Any, zero_copy_only: bool = False, **kwargs: Any) -> np.ndarray:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
@@ -1643,10 +1645,10 @@ class DateTimeNameSpace:
     Series.dt namespace.
     """
 
-    def __init__(self, series: "Series"):
+    def __init__(self, series: Series) -> None:
         self._s = series._s
 
-    def strftime(self, fmt: str):
+    def strftime(self, fmt: str) -> Series:
         """
         Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
 
@@ -1656,7 +1658,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.strftime(fmt))
 
-    def year(self):
+    def year(self) -> Series:
         """
         Extract the year from the underlying Date representation.
         Can be performed on Date32 and Date64.
@@ -1669,7 +1671,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.year())
 
-    def month(self):
+    def month(self) -> Series:
         """
         Extract the month from the underlying Date representation.
         Can be performed on Date32 and Date64
@@ -1683,7 +1685,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.month())
 
-    def week(self):
+    def week(self) -> Series:
         """
         Extract the week from the underlying Date representation.
         Can be performed on Date32 and Date64
@@ -1697,7 +1699,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.week())
 
-    def weekday(self):
+    def weekday(self) -> Series:
         """
         Extract the week day from the underlying Date representation.
         Can be performed on Date32 and Date64.
@@ -1710,7 +1712,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.week())
 
-    def day(self):
+    def day(self) -> Series:
         """
         Extract the day from the underlying Date representation.
         Can be performed on Date32 and Date64.
@@ -1724,7 +1726,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.day())
 
-    def ordinal_day(self):
+    def ordinal_day(self) -> Series:
         """
         Extract ordinal day from underlying Date representation.
         Can be performed on Date32 and Date64.
@@ -1738,7 +1740,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.ordinal_day())
 
-    def hour(self):
+    def hour(self) -> Series:
         """
         Extract the hour from the underlying DateTime representation.
         Can be performed on Date64.
@@ -1751,7 +1753,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.hour())
 
-    def minute(self):
+    def minute(self) -> Series:
         """
         Extract the minutes from the underlying DateTime representation.
         Can be performed on Date64.
@@ -1764,7 +1766,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.minute())
 
-    def second(self):
+    def second(self) -> Series:
         """
         Extract the seconds the from underlying DateTime representation.
         Can be performed on Date64.
@@ -1777,7 +1779,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.second())
 
-    def nanosecond(self):
+    def nanosecond(self) -> Series:
         """
         Extract the nanoseconds from the underlying DateTime representation.
         Can be performed on Date64.
@@ -1791,13 +1793,13 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.nanosecond())
 
-    def timestamp(self) -> "Series":
+    def timestamp(self) -> Series:
         """
         Return timestamp in ms as Int64 type.
         """
         return wrap_s(self._s.timestamp())
 
-    def to_python_datetime(self) -> "Series":
+    def to_python_datetime(self) -> Series:
         """
         Go from Date32/Date64 to python DateTime objects
         """
@@ -1806,7 +1808,7 @@ class DateTimeNameSpace:
             lambda ts: datetime.utcfromtimestamp(ts), datatypes.Object
         )
 
-    def min(self) -> "datetime":
+    def min(self) -> datetime:
         """
         Return minimum as python DateTime
         """
@@ -1814,7 +1816,7 @@ class DateTimeNameSpace:
         out = s.min()
         return _to_python_datetime(out, s.dtype)
 
-    def max(self) -> "datetime":
+    def max(self) -> datetime:
         """
         Return maximum as python DateTime
         """
@@ -1822,7 +1824,7 @@ class DateTimeNameSpace:
         out = s.max()
         return _to_python_datetime(out, s.dtype)
 
-    def median(self) -> "datetime":
+    def median(self) -> datetime:
         """
         Return median as python DateTime
         """
@@ -1830,7 +1832,7 @@ class DateTimeNameSpace:
         out = int(s.median())
         return _to_python_datetime(out, s.dtype)
 
-    def mean(self) -> "datetime":
+    def mean(self) -> datetime:
         """
         Return mean as python DateTime
         """
@@ -1839,7 +1841,7 @@ class DateTimeNameSpace:
         return _to_python_datetime(out, s.dtype)
 
 
-def _to_python_datetime(value: int, dtype: Type[DataType]) -> datetime:
+def _to_python_datetime(value: Union[int, float], dtype: Type[DataType]) -> datetime:
     if dtype == Date32:
         # days to seconds
         return datetime.utcfromtimestamp(value * 3600 * 24)
@@ -1855,15 +1857,15 @@ class SeriesIter:
     Utility class that allows slow iteration over a `Series`.
     """
 
-    def __init__(self, length: int, s: "Series"):
+    def __init__(self, length: int, s: Series) -> None:
         self.len = length
         self.i = 0
         self.s = s
 
-    def __iter__(self):
+    def __iter__(self) -> "SeriesIter":
         return self
 
-    def __next__(self):
+    def __next__(self) -> Any:
         if self.i < self.len:
             i = self.i
             self.i += 1
