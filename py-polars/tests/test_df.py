@@ -273,6 +273,17 @@ def test_groupby():
     # test if it accepts a single expression
     assert df.groupby("a").agg(pl.sum("b")).shape == (3, 2)
 
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": ["a", "a", "b", "b", "b"],
+            "c": [None, 1, None, 1, None],
+        }
+    )
+
+    # check if this query runs and thus column names propagate
+    df.groupby("b").agg(col("c").forward_fill()).explode("c")
+
 
 def test_join():
     df_left = DataFrame(

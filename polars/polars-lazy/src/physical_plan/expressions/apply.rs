@@ -92,8 +92,9 @@ impl PhysicalAggregation for ApplyExpr {
                 match (s.list(), self.collect_groups) {
                     (Ok(ca), true) => {
                         let mut container = vec![Default::default()];
+                        let name = s.name();
 
-                        let ca: ListChunked = ca
+                        let mut ca: ListChunked = ca
                             .into_iter()
                             .map(|opt_s| {
                                 opt_s.and_then(|s| {
@@ -102,6 +103,7 @@ impl PhysicalAggregation for ApplyExpr {
                                 })
                             })
                             .collect();
+                        ca.rename(name);
                         Ok(Some(ca.into_series()))
                     }
                     _ => self.function.call_udf(&mut [s]).map(Some),
@@ -115,7 +117,7 @@ impl PhysicalAggregation for ApplyExpr {
                             .iter()
                             .map(|s| s.list().unwrap().take_rand())
                             .collect();
-                        let ca: ListChunked = (0..inputs[0].len())
+                        let mut ca: ListChunked = (0..inputs[0].len())
                             .map(|i| {
                                 args.clear();
 
@@ -131,6 +133,7 @@ impl PhysicalAggregation for ApplyExpr {
                                 }
                             })
                             .collect();
+                        ca.rename(inputs[0].name());
                         Ok(Some(ca.into_series()))
                     }
                     _ => self.function.call_udf(&mut inputs).map(Some),
