@@ -284,7 +284,7 @@ class Series:
         array = coerce_arrow(array)
         return Series._from_pyseries(PySeries.from_arrow(name, array))
 
-    def inner(self) -> "PySeries":
+    def inner(self) -> PySeries:
         return self._s
 
     def __str__(self) -> str:
@@ -659,7 +659,7 @@ class Series:
             s._s.rename(name)
             return s
 
-    def chunk_lengths(self) -> "List[int]":
+    def chunk_lengths(self) -> List[int]:
         """
         Get the length of each individual chunk.
         """
@@ -845,7 +845,7 @@ class Series:
         """
         return wrap_s(self._s.unique())
 
-    def take(self, indices: "Union[np.ndarray, List[int]]") -> "Series":
+    def take(self, indices: Union[np.ndarray, List[int]]) -> "Series":
         """
         Take values by index.
 
@@ -1104,7 +1104,9 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array_ufunc__(self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any) -> "Series":
+    def __array_ufunc__(
+        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+    ) -> "Series":
         """
         Numpy universal functions.
         """
@@ -1132,7 +1134,9 @@ class Series:
         else:
             return NotImplemented
 
-    def to_numpy(self, *args: Any, zero_copy_only: bool = False, **kwargs: Any) -> np.ndarray:
+    def to_numpy(
+        self, *args: Any, zero_copy_only: bool = False, **kwargs: Any
+    ) -> np.ndarray:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
 
@@ -1314,9 +1318,9 @@ class Series:
     def rolling_min(
         self,
         window_size: int,
-        weight: "Optional[List[float]]" = None,
+        weight: Optional[List[float]] = None,
         ignore_null: bool = True,
-        min_periods: "Optional[int]" = None,
+        min_periods: Optional[int] = None,
     ) -> "Series":
         """
         apply a rolling min (moving min) over the values in this array.
@@ -1346,9 +1350,9 @@ class Series:
     def rolling_max(
         self,
         window_size: int,
-        weight: "Optional[List[float]]" = None,
+        weight: Optional[List[float]] = None,
         ignore_null: bool = True,
-        min_periods: "Optional[int]" = None,
+        min_periods: Optional[int] = None,
     ) -> "Series":
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -1378,9 +1382,9 @@ class Series:
     def rolling_mean(
         self,
         window_size: int,
-        weight: "Optional[List[float]]" = None,
+        weight: Optional[List[float]] = None,
         ignore_null: bool = True,
-        min_periods: "Optional[int]" = None,
+        min_periods: Optional[int] = None,
     ) -> "Series":
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -1410,9 +1414,9 @@ class Series:
     def rolling_sum(
         self,
         window_size: int,
-        weight: "Optional[List[float]]" = None,
+        weight: Optional[List[float]] = None,
         ignore_null: bool = True,
-        min_periods: "Optional[int]" = None,
+        min_periods: Optional[int] = None,
     ) -> "Series":
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -1453,8 +1457,8 @@ class Series:
 
     def sample(
         self,
-        n: "Optional[int]" = None,
-        frac: "Optional[float]" = None,
+        n: Optional[int] = None,
+        frac: Optional[float] = None,
         with_replacement: bool = False,
     ) -> "Series":
         """
@@ -1526,7 +1530,7 @@ class StringNameSpace:
     def __init__(self, series: "Series"):
         self._s = series._s
 
-    def strptime(self, datatype: "DataType", fmt: Optional[str] = None) -> "Series":
+    def strptime(self, datatype: DataType, fmt: Optional[str] = None) -> Series:
         """
         Parse a Series of dtype Utf8 to a Date32/Date64 Series.
 
@@ -1547,7 +1551,7 @@ class StringNameSpace:
             return wrap_s(self._s.str_parse_date64(fmt))
         raise NotImplementedError
 
-    def lengths(self) -> "Series":
+    def lengths(self) -> Series:
         """
         Get length of the string values in the Series.
 
@@ -1557,7 +1561,7 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_lengths())
 
-    def contains(self, pattern: str) -> "Series":
+    def contains(self, pattern: str) -> Series:
         """
         Check if strings in Series contain regex pattern.
 
@@ -1572,7 +1576,7 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_contains(pattern))
 
-    def replace(self, pattern: str, value: str) -> "Series":
+    def replace(self, pattern: str, value: str) -> Series:
         """
         Replace first regex match with a string value.
 
@@ -1585,7 +1589,7 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_replace(pattern, value))
 
-    def replace_all(self, pattern: str, value: str) -> "Series":
+    def replace_all(self, pattern: str, value: str) -> Series:
         """
         Replace all regex matches with a string value.
 
@@ -1598,31 +1602,31 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_replace_all(pattern, value))
 
-    def to_lowercase(self) -> "Series":
+    def to_lowercase(self) -> Series:
         """
         Modify the strings to their lowercase equivalent.
         """
         return wrap_s(self._s.str_to_lowercase())
 
-    def to_uppercase(self) -> "Series":
+    def to_uppercase(self) -> Series:
         """
         Modify the strings to their uppercase equivalent.
         """
         return wrap_s(self._s.str_to_uppercase())
 
-    def rstrip(self) -> "Series":
+    def rstrip(self) -> Series:
         """
         Remove trailing whitespace.
         """
         return self.replace(r"[ \t]+$", "")
 
-    def lstrip(self) -> "Series":
+    def lstrip(self) -> Series:
         """
         Remove leading whitespace.
         """
         return self.replace(r"^\s*", "")
 
-    def slice(self, start: int, length: "Optional[int]" = None) -> "Series":
+    def slice(self, start: int, length: Optional[int] = None) -> Series:
         """
         Create subslices of the string values of a Utf8 Series.
 
@@ -1874,15 +1878,15 @@ class SeriesIter:
             raise StopIteration
 
 
-def out_to_dtype(out: Any) -> "Union[datatypes.DataType, np.ndarray]":
+def out_to_dtype(out: Any) -> Union[DataType, np.ndarray]:
     if isinstance(out, float):
-        return datatypes.Float64
+        return Float64
     if isinstance(out, int):
-        return datatypes.Int64
+        return Int64
     if isinstance(out, str):
-        return datatypes.Utf8
+        return Utf8
     if isinstance(out, bool):
-        return datatypes.Boolean
+        return Boolean
     if isinstance(out, Series):
         return datatypes.List
     if isinstance(out, np.ndarray):

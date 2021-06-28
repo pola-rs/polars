@@ -112,7 +112,7 @@ def read_csv(
     new_columns: Optional[List[str]] = None,
     use_pyarrow: bool = True,
     low_memory: bool = False,
-) -> "DataFrame":
+) -> DataFrame:
     """
     Read into a DataFrame from a csv file.
 
@@ -472,7 +472,7 @@ def _from_pandas_helper(a: pd.Series) -> pa.Array:  # noqa: F821
 def from_pandas(
     df: Union[pd.DataFrame, pd.Series, pd.DatetimeIndex],
     rechunk: bool = True,  # noqa: F821
-) -> "DataFrame":
+) -> DataFrame:
     """
     Convert from a pandas DataFrame to a polars DataFrame.
 
@@ -529,9 +529,7 @@ def concat(dfs: List[DataFrame], rechunk: bool = True) -> DataFrame:
     return df
 
 
-def repeat(
-    val: Union[int, float, str], n: int, name: Optional[str] = None
-) -> "Series":
+def repeat(val: Union[int, float, str], n: int, name: Optional[str] = None) -> Series:
     """
     Repeat a single value n times and collect into a Series.
 
