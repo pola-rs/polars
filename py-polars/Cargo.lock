@@ -64,7 +64,7 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.1.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=4eed0d0acd88155632dbe9073fe1a0a0fd041b02#4eed0d0acd88155632dbe9073fe1a0a0fd041b02"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=fb3d29fe5b982be6c68cf7ce1a6c96fe0a9d1571#fb3d29fe5b982be6c68cf7ce1a6c96fe0a9d1571"
 dependencies = [
  "ahash",
  "base64",
@@ -78,6 +78,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "lexical-core",
+ "lz4",
  "multiversion",
  "num 0.3.1",
  "packed_simd_2",
@@ -88,6 +89,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "zstd",
 ]
 
 [[package]]
