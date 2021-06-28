@@ -2179,7 +2179,7 @@ mod test {
             .collect()?;
 
         assert_eq!(
-            Vec::from(out.column("collected")?.explode()?.i32()?),
+            Vec::from(out.column("vals")?.explode()?.i32()?),
             [1, 5, 11, 3, 12, 20]
                 .iter()
                 .copied()
