@@ -1,4 +1,7 @@
+from _ctypes import _SimpleCData
 import ctypes
+import typing
+from typing import Any, Dict, Type
 
 __pdoc__ = {
     "dtype_to_ctype": False,
@@ -129,7 +132,7 @@ class Categorical(DataType):
 
 
 # Don't change the order of these!
-dtypes = [
+dtypes: typing.List[Type[DataType]] = [
     Int8,
     Int16,
     Int32,
@@ -151,7 +154,7 @@ dtypes = [
     Object,
     Categorical,
 ]
-DTYPE_TO_FFINAME = {
+DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Int8: "i8",
     Int16: "i16",
     Int32: "i32",
@@ -175,7 +178,7 @@ DTYPE_TO_FFINAME = {
 }
 
 
-def dtype_to_primitive(dtype: "DataType") -> "DataType":
+def dtype_to_primitive(dtype: Type[DataType]) -> Type[DataType]:
     #  TODO: add more
     if dtype == Date32:
         return Int32
@@ -187,7 +190,8 @@ def dtype_to_primitive(dtype: "DataType") -> "DataType":
     return dtype
 
 
-def dtype_to_ctype(dtype: "DataType") -> "ctype":  # noqa: F821
+def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:  # noqa: F821
+    ptr_type: Type[_SimpleCData]
     if dtype == UInt8:
         ptr_type = ctypes.c_uint8
     elif dtype == UInt16:
@@ -217,21 +221,24 @@ def dtype_to_ctype(dtype: "DataType") -> "ctype":  # noqa: F821
     return ptr_type
 
 
-def dtype_to_int(dtype: "DataType") -> int:
+def dtype_to_int(dtype: Type[DataType]) -> int:
     i = 0
     for dt in dtypes:
         if dt == dtype:
             return i
         i += 1
-
-
-def pytype_to_polars_type(data_type):
-    if data_type == int:
-        data_type = Int64
-    elif data_type == str:
-        data_type = Utf8
-    elif data_type == float:
-        data_type = Float64
     else:
-        pass
-    return data_type
+        raise NotImplementedError
+
+
+def pytype_to_polars_type(data_type: Type[Any]) -> Type[DataType]:
+    polars_type: Type[DataType]
+    if data_type == int:
+        polars_type = Int64
+    elif data_type == str:
+        polars_type = Utf8
+    elif data_type == float:
+        polars_type = Float64
+    else:
+        polars_type = data_type
+    return polars_type
