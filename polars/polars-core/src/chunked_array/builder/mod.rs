@@ -368,10 +368,9 @@ where
         match opt_v {
             Some(items) => {
                 let values = self.builder.mut_values();
-                values.reserve(items.len());
-                for item in items {
-                    values.push(Some(*item))
-                }
+                // Safety:
+                // A slice is a trusted length iterator
+                unsafe { values.extend_trusted_len_unchecked(items.iter().map(Some)) }
                 self.builder.try_push_valid().unwrap();
             }
             None => {
@@ -407,21 +406,17 @@ where
     #[inline]
     fn append_series(&mut self, s: &Series) {
         let arrays = s.chunks();
-
-        let arrays = arrays
-            .iter()
-            .map(|x| {
-                x.as_any()
-                    .downcast_ref::<PrimitiveArray<T::Native>>()
-                    .unwrap()
-            })
-            .map(|x| x.iter())
-            .flatten();
         let values = self.builder.mut_values();
-        values.reserve(s.len());
-        for v in arrays {
-            values.push(v.copied())
-        }
+
+        arrays.iter().for_each(|x| {
+            let arr = x
+                .as_any()
+                .downcast_ref::<PrimitiveArray<T::Native>>()
+                .unwrap();
+            // Safety:
+            // Arrow arrays are trusted length iterators.
+            unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
+        });
         self.builder.try_push_valid().unwrap();
     }
 
