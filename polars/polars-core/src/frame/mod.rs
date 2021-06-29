@@ -716,11 +716,7 @@ impl DataFrame {
             .par_iter()
             .map(|s| {
                 let mut i = iter.clone();
-                if s.null_count() == 0 {
-                    s.take_iter_unchecked(&mut i)
-                } else {
-                    s.take_iter(&mut i)
-                }
+                s.take_iter_unchecked(&mut i)
             })
             .collect();
         DataFrame::new_no_checks(new_col)
@@ -761,11 +757,7 @@ impl DataFrame {
             .par_iter()
             .map(|s| {
                 let mut i = iter.clone();
-                if s.null_count() == 0 {
-                    s.take_opt_iter_unchecked(&mut i)
-                } else {
-                    s.take_opt_iter(&mut i)
-                }
+                s.take_opt_iter_unchecked(&mut i)
             })
             .collect::<Vec<_>>();
         DataFrame::new_no_checks(new_col)
