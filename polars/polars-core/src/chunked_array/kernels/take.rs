@@ -3,7 +3,7 @@ use arrow::array::{
     Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray,
     UInt32Array,
 };
-use arrow::buffer::MutableBuffer;
+use arrow::buffer::{Buffer, MutableBuffer};
 use polars_arrow::buffer::IsValid;
 use std::mem;
 use std::sync::Arc;
@@ -15,23 +15,34 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
 ) -> Arc<PrimitiveArray<T>> {
     assert_eq!(arr.null_count(), 0);
 
-    let data_len = indices.len();
     let array_values = arr.values();
     let index_values = indices.values();
 
-    let mut values = AlignedVec::<T::Native>::with_capacity_aligned(data_len);
     let iter = index_values
         .iter()
         .map(|idx| *array_values.get_unchecked(*idx as usize));
-    values.extend(iter);
 
+    // Safety:
+    // indices is trusted length
+    let buffer = Buffer::from_trusted_len_iter(iter);
     let nulls = indices.data_ref().null_buffer().cloned();
 
-    let arr = values.into_primitive_array::<T>(nulls);
-    Arc::new(arr)
+    let data = ArrayData::new(
+        T::DATA_TYPE,
+        indices.len(),
+        nulls.as_ref().map(|_| indices.null_count()),
+        nulls,
+        0,
+        vec![buffer],
+        vec![],
+    );
+    Arc::new(PrimitiveArray::<T>::from(data))
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index.
+///
+/// # Panics
+/// if iterator is not trusted len
 pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
     T: PolarsNumericType,
     I: IntoIterator<Item = usize>,
@@ -43,13 +54,15 @@ pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
 
     let array_values = arr.values();
 
-    let av = indices
+    let iter = indices
         .into_iter()
-        .map(|idx| *array_values.get_unchecked(idx))
-        .collect::<AlignedVec<_>>();
+        .map(|idx| *array_values.get_unchecked(idx));
 
-    let arr = av.into_primitive_array::<T>(None);
-    Arc::new(arr)
+    let len = iter.size_hint().0;
+    let buffer = Buffer::from_trusted_len_iter(iter);
+
+    let data = ArrayData::new(T::DATA_TYPE, len, None, None, 0, vec![buffer], vec![]);
+    Arc::new(PrimitiveArray::<T>::from(data))
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index that does bound checks.
