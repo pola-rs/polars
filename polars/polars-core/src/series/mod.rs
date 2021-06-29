@@ -454,7 +454,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// Out of bounds access doesn't Error but will return a Null value
+    /// Out of bounds access doesn't Error but will return a Null value for that element.
     fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
         unimplemented!()
     }
@@ -463,7 +463,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// This doesn't check any bounds or null validity.
+    /// This doesn't check any bounds.
     unsafe fn take_iter_unchecked(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
         unimplemented!()
     }
@@ -471,7 +471,7 @@ pub trait SeriesTrait:
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
+    /// This doesn't check any bounds.
     unsafe fn take_unchecked(&self, _idx: &UInt32Chunked) -> Result<Series> {
         unimplemented!()
     }
@@ -480,7 +480,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// This doesn't check any bounds or null validity.
+    /// This doesn't check any bounds.
     unsafe fn take_opt_iter_unchecked(
         &self,
         _iter: &mut dyn Iterator<Item = Option<usize>>,
@@ -492,7 +492,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// Out of bounds access doesn't Error but will return a Null value
+    /// Out of bounds access doesn't Error but will return a Null value for that element
     fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
         unimplemented!()
     }
@@ -501,7 +501,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// Out of bounds access doesn't Error but will return a Null value
+    /// Out of bounds access doesn't Error but will return a Null value for that element.
     fn take(&self, _indices: &UInt32Chunked) -> Series {
         unimplemented!()
     }
