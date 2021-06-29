@@ -3,8 +3,8 @@ use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
 use std::convert::TryFrom;
 
 /// Convert Arrow array offsets to indexes of the original list
-pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<usize> {
-    let mut idx = Vec::with_capacity(capacity);
+pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> AlignedVec<u32> {
+    let mut idx = AlignedVec::with_capacity(capacity);
 
     let mut count = 0;
     let mut last_idx = 0;
