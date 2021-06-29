@@ -108,11 +108,11 @@ def read_csv(
     rechunk: bool = True,
     encoding: str = "utf8",
     n_threads: Optional[int] = None,
-    dtype: "Optional[Dict[str, DataType]]" = None,
-    new_columns: "Optional[List[str]]" = None,
+    dtype: Optional[Dict[str, Type[DataType]]] = None,
+    new_columns: Optional[List[str]] = None,
     use_pyarrow: bool = True,
     low_memory: bool = False,
-) -> "DataFrame":
+) -> DataFrame:
     """
     Read into a DataFrame from a csv file.
 
@@ -222,7 +222,7 @@ def read_csv(
 
         return from_arrow(tbl, rechunk)  # type: ignore
 
-    def read_csv_to_df(file):
+    def read_csv_to_df(file: Union[str, TextIO]) -> DataFrame:
         return DataFrame.read_csv(
             file=file,
             infer_schema_length=infer_schema_length,
@@ -252,7 +252,7 @@ def read_csv(
         with gzip_mod.open(file, "rb") as fh:
             df = read_csv_to_df(fh)
     else:
-        df = read_csv_to_df(file)
+        df = read_csv_to_df(file)  # type: ignore
 
     if new_columns:
         df.columns = new_columns
@@ -265,11 +265,11 @@ def scan_csv(
     ignore_errors: bool = False,
     sep: str = ",",
     skip_rows: int = 0,
-    stop_after_n_rows: "Optional[int]" = None,
+    stop_after_n_rows: Optional[int] = None,
     cache: bool = True,
     dtype: Optional[Dict[str, Type[DataType]]] = None,
     low_memory: bool = False,
-) -> "LazyFrame":
+) -> LazyFrame:
     """
     Lazily read from a csv file.
 
@@ -316,9 +316,9 @@ def scan_csv(
 
 def scan_parquet(
     file: Union[str, Path],
-    stop_after_n_rows: "Optional[int]" = None,
+    stop_after_n_rows: Optional[int] = None,
     cache: bool = True,
-) -> "LazyFrame":
+) -> LazyFrame:
     """
     Lazily read from a parquet file.
 
@@ -363,10 +363,10 @@ def read_ipc(file: Union[str, BinaryIO, Path], use_pyarrow: bool = True) -> Data
 def read_parquet(
     source: Union[str, BinaryIO, Path, List[str]],
     stop_after_n_rows: Optional[int] = None,
-    memory_map=True,
+    memory_map: bool = True,
     columns: Optional[List[str]] = None,
-    **kwargs,
-) -> "DataFrame":
+    **kwargs: Any,
+) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
 
@@ -400,7 +400,7 @@ def read_parquet(
         )
 
 
-def arg_where(mask: "Series"):
+def arg_where(mask: Series) -> Series:
     """
     Get index values where Boolean mask evaluate True.
 
@@ -416,7 +416,7 @@ def arg_where(mask: "Series"):
     return mask.arg_true()
 
 
-def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "DataFrame":
+def from_arrow_table(table: pa.Table, rechunk: bool = True) -> DataFrame:
     """
     .. deprecated:: 7.3
         use `from_arrow`
@@ -472,7 +472,7 @@ def _from_pandas_helper(a: pd.Series) -> pa.Array:  # noqa: F821
 def from_pandas(
     df: Union[pd.DataFrame, pd.Series, pd.DatetimeIndex],
     rechunk: bool = True,  # noqa: F821
-) -> "DataFrame":
+) -> DataFrame:
     """
     Convert from a pandas DataFrame to a polars DataFrame.
 
@@ -529,9 +529,7 @@ def concat(dfs: List[DataFrame], rechunk: bool = True) -> DataFrame:
     return df
 
 
-def repeat(
-    val: "Union[int, float, str]", n: int, name: Optional[str] = None
-) -> "Series":
+def repeat(val: Union[int, float, str], n: int, name: Optional[str] = None) -> Series:
     """
     Repeat a single value n times and collect into a Series.
 
@@ -593,7 +591,7 @@ def from_rows(
     return DataFrame.from_rows(rows, column_names, column_name_mapping)
 
 
-def read_sql(sql: str, engine) -> DataFrame:
+def read_sql(sql: str, engine: Any) -> DataFrame:
     """
     # Preface
     Deprecated by design. Will not have a long future support and no guarantees given whatsoever.

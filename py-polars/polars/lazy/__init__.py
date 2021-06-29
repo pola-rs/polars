@@ -41,22 +41,24 @@ except ImportError:
     __pdoc__ = {"wrap_ldf": False, "wrap_expr": False}
 
 
-def _selection_to_pyexpr_list(exprs) -> "List[PyExpr]":
+def _selection_to_pyexpr_list(
+    exprs: Union[str, List[str], "Expr", List["Expr"]]
+) -> List[PyExpr]:
+    pyexpr_list: List[PyExpr]
     if not isinstance(exprs, List):
         if isinstance(exprs, str):
             exprs = col(exprs)
-        exprs = [exprs._pyexpr]
+        pyexpr_list = [exprs._pyexpr]
     else:
-        new = []
+        pyexpr_list = []
         for expr in exprs:
             if isinstance(expr, str):
                 expr = col(expr)
-            new.append(expr._pyexpr)
-        exprs = new
-    return exprs
+            pyexpr_list.append(expr._pyexpr)
+    return pyexpr_list
 
 
-def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
+def wrap_ldf(ldf: PyLazyFrame) -> "LazyFrame":
     return LazyFrame._from_pyldf(ldf)
 
 
@@ -65,10 +67,10 @@ class LazyGroupBy:
     Created by `df.lazy().groupby("foo)"`
     """
 
-    def __init__(self, lgb: "PyLazyGroupBy"):
+    def __init__(self, lgb: PyLazyGroupBy):
         self.lgb = lgb
 
-    def agg(self, aggs: "Union[List[Expr], Expr]") -> "LazyFrame":
+    def agg(self, aggs: Union[List["Expr"], "Expr"]) -> "LazyFrame":
         """
         Describe the aggregation that need to be done on a group.
 
@@ -92,7 +94,7 @@ class LazyGroupBy:
         aggs = _selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
 
-    def apply(self, f: "Callable[[DataFrame], DataFrame]") -> "LazyFrame":
+    def apply(self, f: Callable[[DataFrame], DataFrame]) -> "LazyFrame":
         """
         Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
         this as materializing the `DataFrame` is quite expensive.
@@ -110,11 +112,11 @@ class LazyFrame:
     Representation of a Lazy computation graph/ query.
     """
 
-    def __init__(self):
-        self._ldf = None
+    def __init__(self) -> None:
+        self._ldf: PyLazyFrame
 
     @staticmethod
-    def _from_pyldf(ldf: "PyLazyFrame") -> "LazyFrame":
+    def _from_pyldf(ldf: PyLazyFrame) -> "LazyFrame":
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = ldf
         return self
@@ -130,7 +132,7 @@ class LazyFrame:
         cache: bool = True,
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
-    ):
+    ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
         """
@@ -156,8 +158,8 @@ class LazyFrame:
 
     @staticmethod
     def scan_parquet(
-        file: str, stop_after_n_rows: "Optional[int]" = None, cache: bool = True
-    ):
+        file: str, stop_after_n_rows: Optional[int] = None, cache: bool = True
+    ) -> "LazyFrame":
         """
         See Also: `pl.scan_parquet`
         """
@@ -166,7 +168,7 @@ class LazyFrame:
         self._ldf = PyLazyFrame.new_from_parquet(file, stop_after_n_rows, cache)
         return self
 
-    def pipe(self, func: Callable, *args, **kwargs):
+    def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.
 
@@ -214,7 +216,7 @@ class LazyFrame:
         show: bool = True,
         output_path: Optional[str] = None,
         raw_output: bool = False,
-        figsize=(16, 12),
+        figsize: Tuple[float, float] = (16.0, 12.0),
     ) -> Optional[str]:
         """
         Show a plot of the query plan. Note that you should have graphviz installed.
@@ -262,8 +264,8 @@ class LazyFrame:
 
     def sort(
         self,
-        by_columns: "Union[str, Expr, List[Expr]]",
-        reverse: "Union[bool, List[bool]]" = False,
+        by_columns: Union[str, "Expr", List["Expr"]],
+        reverse: Union[bool, List[bool]] = False,
     ) -> "LazyFrame":
         """
         Sort the DataFrame by:
@@ -411,7 +413,7 @@ class LazyFrame:
             predicate = col(predicate)
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
-    def select(self, exprs: "Union[str, Expr, List[str], List[Expr]]") -> "LazyFrame":
+    def select(self, exprs: Union[str, "Expr", List[str], List["Expr"]]) -> "LazyFrame":
         """
         Select columns from this DataFrame.
 
@@ -423,7 +425,7 @@ class LazyFrame:
         exprs = _selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 
-    def groupby(self, by: "Union[str, List[str], Expr, List[Expr]]") -> LazyGroupBy:
+    def groupby(self, by: Union[str, List[str], "Expr", List["Expr"]]) -> LazyGroupBy:
         """
         Start a groupby operation.
 
@@ -432,18 +434,18 @@ class LazyFrame:
         by
             Column(s) to group by.
         """
+        new_by: List[PyExpr]
         if isinstance(by, list):
             new_by = []
             for e in by:
                 if isinstance(e, str):
                     e = col(e)
                 new_by.append(e._pyexpr)
-            by = new_by
         elif isinstance(by, str):
-            by = [col(by)._pyexpr]
+            new_by = [col(by)._pyexpr]
         elif isinstance(by, Expr):
-            by = [by._pyexpr]
-        lgb = self._ldf.groupby(by)
+            new_by = [by._pyexpr]
+        lgb = self._ldf.groupby(new_by)
         return LazyGroupBy(lgb)
 
     def join(
@@ -553,7 +555,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.drop_columns(columns))
 
-    def drop_column(self, column: "str") -> "LazyFrame":
+    def drop_column(self, column: str) -> "LazyFrame":
         """
         Remove a column from the DataFrame.
 
@@ -589,7 +591,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: "Union[Expr, int, str, float]"
+        self, periods: int, fill_value: Union["Expr", int, str, float]
     ) -> "LazyFrame":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -606,7 +608,7 @@ class LazyFrame:
             fill_value = lit(fill_value)
         return wrap_ldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
 
-    def slice(self, offset: int, length: int):
+    def slice(self, offset: int, length: int) -> "LazyFrame":
         """
         Slice the DataFrame.
 
@@ -619,7 +621,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.slice(offset, length))
 
-    def limit(self, n: int):
+    def limit(self, n: int) -> "LazyFrame":
         """
         Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
         use the `fetch` operation.
@@ -631,7 +633,7 @@ class LazyFrame:
         """
         return self.slice(0, n)
 
-    def head(self, n: int):
+    def head(self, n: int) -> "LazyFrame":
         """
         Get the first `n` rows of the DataFrame
         Note if you don't want the rows to be scanned,
@@ -644,7 +646,7 @@ class LazyFrame:
         """
         return self.limit(n)
 
-    def tail(self, n: int):
+    def tail(self, n: int) -> "LazyFrame":
         """
         Get the last `n` rows of the DataFrame.
 
@@ -655,19 +657,19 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.tail(n))
 
-    def last(self):
+    def last(self) -> "LazyFrame":
         """
         Get the last row of the DataFrame.
         """
         return self.tail(1)
 
-    def first(self):
+    def first(self) -> "LazyFrame":
         """
         Get the first row of the DataFrame.
         """
         return self.slice(0, 1)
 
-    def fill_none(self, fill_value: "Union[int, str, Expr]"):
+    def fill_none(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
         if not isinstance(fill_value, Expr):
             fill_value = lit(fill_value)
         return wrap_ldf(self._ldf.fill_none(fill_value._pyexpr))
@@ -720,7 +722,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.quantile(quantile))
 
-    def explode(self, columns: "Union[str, List[str]]") -> "LazyFrame":
+    def explode(self, columns: Union[str, List[str]]) -> "LazyFrame":
         """
         Explode lists to long format.
         """
@@ -731,7 +733,7 @@ class LazyFrame:
     def drop_duplicates(
         self,
         maintain_order: bool = False,
-        subset: "Optional[Union[List[str], str]]" = None,
+        subset: Optional[Union[List[str], str]] = None,
     ) -> "LazyFrame":
         """
         Drop duplicate rows from this DataFrame.
@@ -741,9 +743,7 @@ class LazyFrame:
             subset = [subset]
         return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
 
-    def drop_nulls(
-        self, subset: "Optional[Union[List[str], str]]" = None
-    ) -> "LazyFrame":
+    def drop_nulls(self, subset: Optional[Union[List[str], str]] = None) -> "LazyFrame":
         """
         Drop rows with null values from this DataFrame.
         """
@@ -772,7 +772,7 @@ class LazyFrame:
 
     def map(
         self,
-        f: "Union[UDF, Callable[[DataFrame], DataFrame]]",
+        f: Union["UDF", Callable[[DataFrame], DataFrame]],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         no_optimizations: bool = False,
@@ -797,7 +797,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.map(f, predicate_pushdown, projection_pushdown))
 
 
-def wrap_expr(pyexpr: "PyExpr") -> "Expr":
+def wrap_expr(pyexpr: PyExpr) -> "Expr":
     return Expr._from_pyexpr(pyexpr)
 
 
@@ -806,23 +806,24 @@ class Expr:
     Expressions that can be used in various contexts.
     """
 
-    def __init__(self):
-        self._pyexpr = None
+    def __init__(self) -> None:
+        self._pyexpr: PyExpr
 
     @staticmethod
-    def _from_pyexpr(pyexpr: "PyExpr") -> "Expr":
+    def _from_pyexpr(pyexpr: PyExpr) -> "Expr":
         self = Expr.__new__(Expr)
         self._pyexpr = pyexpr
         return self
 
-    def __to_pyexpr(self, other):
+    def __to_pyexpr(self, other: Any) -> PyExpr:
         if isinstance(other, PyExpr):
             return other
-        if isinstance(other, Expr):
+        elif isinstance(other, Expr):
             return other._pyexpr
-        return lit(other)._pyexpr
+        else:
+            return lit(other)._pyexpr
 
-    def __to_expr(self, other):
+    def __to_expr(self, other: Any) -> "Expr":
         if isinstance(other, Expr):
             return other
         return lit(other)
@@ -830,43 +831,43 @@ class Expr:
     def __invert__(self) -> "Expr":
         return self.is_not()
 
-    def __and__(self, other):
+    def __and__(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr._and(other._pyexpr))
 
-    def __or__(self, other):
+    def __or__(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr._or(other._pyexpr))
 
-    def __add__(self, other):
+    def __add__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr + self.__to_pyexpr(other))
 
-    def __sub__(self, other):
+    def __sub__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr - self.__to_pyexpr(other))
 
-    def __mul__(self, other):
+    def __mul__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr * self.__to_pyexpr(other))
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr / self.__to_pyexpr(other))
 
-    def __pow__(self, power, modulo=None):
+    def __pow__(self, power: float, modulo: None = None) -> "Expr":
         return self.pow(power)
 
-    def __ge__(self, other):
+    def __ge__(self, other: Any) -> "Expr":
         return self.gt_eq(self.__to_expr(other))
 
-    def __le__(self, other):
+    def __le__(self, other: Any) -> "Expr":
         return self.lt_eq(self.__to_expr(other))
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> "Expr":  # type: ignore
         return self.eq(self.__to_expr(other))
 
-    def __ne__(self, other):
+    def __ne__(self, other: Any) -> "Expr":  # type: ignore
         return self.neq(self.__to_expr(other))
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> "Expr":
         return self.lt(self.__to_expr(other))
 
-    def __gt__(self, other):
+    def __gt__(self, other: Any) -> "Expr":
         return self.gt(self.__to_expr(other))
 
     def eq(self, other: "Expr") -> "Expr":
@@ -951,7 +952,7 @@ class Expr:
         """Count the number of values in this expression"""
         return wrap_expr(self._pyexpr.count())
 
-    def slice(self, offset: int, length: int):
+    def slice(self, offset: int, length: int) -> "Expr":
         """
         Slice the Series.
 
@@ -964,7 +965,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.slice(offset, length))
 
-    def cum_sum(self, reverse: bool = False):
+    def cum_sum(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -975,7 +976,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cum_sum(reverse))
 
-    def cum_min(self, reverse: bool = False):
+    def cum_min(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative min computed at every element.
 
@@ -986,7 +987,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cum_min(reverse))
 
-    def cum_max(self, reverse: bool = False):
+    def cum_max(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative max computed at every element.
 
@@ -997,7 +998,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cum_max(reverse))
 
-    def round(self, decimals: int) -> "Series":
+    def round(self, decimals: int) -> "Expr":
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -1006,7 +1007,7 @@ class Expr:
         decimals
             Number of decimals to round by.
         """
-        return wrap_expr(self._pyexpr.round(decimals))  # type: ignore
+        return wrap_expr(self._pyexpr.round(decimals))
 
     def cast(self, dtype: Type[Any]) -> "Expr":
         """
@@ -1057,7 +1058,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_sort(reverse))
 
-    def sort_by(self, by: "Union[Expr, str]", reverse: bool = False) -> "Expr":
+    def sort_by(self, by: Union["Expr", str], reverse: bool = False) -> "Expr":
         """
         Sort this column by the ordering of another column.
         In projection/ selection context the whole column is sorted.
@@ -1117,7 +1118,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shift_and_fill(periods, fill_value._pyexpr))
 
-    def fill_none(self, fill_value: "Union[str, int, float, Expr]") -> "Expr":
+    def fill_none(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
         """
         Fill none value with a fill value
         """
@@ -1125,13 +1126,13 @@ class Expr:
             fill_value = lit(fill_value)
         return wrap_expr(self._pyexpr.fill_none(fill_value._pyexpr))
 
-    def forward_fill(self):
+    def forward_fill(self) -> "Expr":
         """
         Fill missing values with the latest seen values
         """
         return wrap_expr(self._pyexpr.forward_fill())
 
-    def backward_fill(self):
+    def backward_fill(self) -> "Expr":
         """
         Fill missing values with the next to be seen values
         """
@@ -1215,7 +1216,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: "Union[str, Expr, List[Expr]]") -> "Expr":
+    def over(self, expr: Union[str, "Expr", List["Expr"]]) -> "Expr":
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -1392,7 +1393,7 @@ class Expr:
 
         return self.map(wrap_f)
 
-    def explode(self):
+    def explode(self) -> "Expr":
         """
         Explode a list or utf8 Series. This means that every item is expanded to a new row.
 
@@ -1408,13 +1409,13 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.take_every(n))
 
-    def head(self, n: "Optional[int]" = None):
+    def head(self, n: Optional[int] = None) -> "Expr":
         """
         Take the first n values.
         """
         return wrap_expr(self._pyexpr.head(n))
 
-    def tail(self, n: "Optional[int]" = None):
+    def tail(self, n: Optional[int] = None) -> "Expr":
         """
         Take the last n values.
         """
@@ -1462,7 +1463,7 @@ class Expr:
         return wrap_expr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
-        self, start: "Union[Expr, datetime]", end: "Union[Expr, datetime]"
+        self, start: Union["Expr", datetime], end: Union["Expr", datetime]
     ) -> "Expr":
         """
         Check if this expression is between start and end.
@@ -1500,14 +1501,14 @@ class ExprStringNameSpace:
     Namespace for string related expressions
     """
 
-    def __init__(self, expr: "Expr"):
+    def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
     def strptime(
         self,
         datatype: Union[datatypes.Date32, datatypes.Date64],
         fmt: Optional[str] = None,
-    ) -> "Expr":
+    ) -> Expr:
         """
         Parse utf8 expression as a Date32/Date64 type.
 
@@ -1529,32 +1530,32 @@ class ExprStringNameSpace:
         self,
         datatype: Union[datatypes.Date32, datatypes.Date64],
         fmt: Optional[str] = None,
-    ) -> "Expr":
+    ) -> Expr:
         """
         .. deprecated:: 0.8.7
         use `strptime`
         """
         return self.strptime(datatype, fmt)
 
-    def lengths(self) -> "Expr":
+    def lengths(self) -> Expr:
         """
         Get the length of the Strings as UInt32.
         """
         return wrap_expr(self._pyexpr.str_lengths())
 
-    def to_uppercase(self) -> "Expr":
+    def to_uppercase(self) -> Expr:
         """
         Transform to uppercase variant.
         """
         return wrap_expr(self._pyexpr.str_to_uppercase())
 
-    def to_lowercase(self) -> "Expr":
+    def to_lowercase(self) -> Expr:
         """
         Transform to lowercase variant.
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
 
-    def contains(self, pattern: str) -> "Expr":
+    def contains(self, pattern: str) -> Expr:
         """
         Check if string contains regex.
 
@@ -1565,7 +1566,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_contains(pattern))
 
-    def replace(self, pattern: str, value: str) -> "Expr":
+    def replace(self, pattern: str, value: str) -> Expr:
         """
         Replace first regex match with a string value.
 
@@ -1578,7 +1579,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_replace(pattern, value))
 
-    def replace_all(self, pattern: str, value: str) -> "Expr":
+    def replace_all(self, pattern: str, value: str) -> Expr:
         """
         Replace substring on all regex pattern matches.
 
@@ -1591,7 +1592,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
-    def slice(self, start: int, length: "Optional[int]" = None) -> "Expr":
+    def slice(self, start: int, length: Optional[int] = None) -> Expr:
         """
         Create subslices of the string values of a Utf8 Series.
 
@@ -1614,16 +1615,16 @@ class ExprDateTimeNameSpace:
     Namespace for datetime related expressions.
     """
 
-    def __init__(self, expr: "Expr"):
+    def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def strftime(self, fmt: str) -> "Expr":
+    def strftime(self, fmt: str) -> Expr:
         """
         Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
         """
         return wrap_expr(self._pyexpr.strftime(fmt))
 
-    def year(self):
+    def year(self) -> Expr:
         """
         Extract year from underlying Date representation.
         Can be performed on Date32 and Date64.
@@ -1636,7 +1637,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.year())
 
-    def month(self):
+    def month(self) -> Expr:
         """
         Extract month from underlying Date representation.
         Can be performed on Date32 and Date64.
@@ -1650,7 +1651,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.month())
 
-    def day(self):
+    def day(self) -> Expr:
         """
         Extract day from underlying Date representation.
         Can be performed on Date32 and Date64.
@@ -1664,7 +1665,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.day())
 
-    def ordinal_day(self):
+    def ordinal_day(self) -> Expr:
         """
         Extract ordinal day from underlying Date representation.
         Can be performed on Date32 and Date64.
@@ -1678,7 +1679,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.ordinal_day())
 
-    def hour(self):
+    def hour(self) -> Expr:
         """
         Extract hour from underlying DateTime representation.
         Can be performed on Date64.
@@ -1691,7 +1692,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.hour())
 
-    def minute(self):
+    def minute(self) -> Expr:
         """
         Extract minutes from underlying DateTime representation.
         Can be performed on Date64.
@@ -1704,7 +1705,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.minute())
 
-    def second(self):
+    def second(self) -> Expr:
         """
         Extract seconds from underlying DateTime representation.
         Can be performed on Date64.
@@ -1717,7 +1718,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.second())
 
-    def nanosecond(self):
+    def nanosecond(self) -> Expr:
         """
         Extract seconds from underlying DateTime representation.
         Can be performed on Date64.
@@ -1733,8 +1734,8 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union["Expr", int, float, str, List["Expr"]], str_to_lit: bool = True
-) -> "Expr":
+    expr: Union[Expr, int, float, str, List[Expr]], str_to_lit: bool = True
+) -> Expr:
     """
     Helper function that converts args to expressions.
 
@@ -1765,16 +1766,16 @@ class WhenThenThen:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhenthenthen):
+    def __init__(self, pywhenthenthen: "PyWhenThenThen") -> None:  # type: ignore # noqa F821
         self.pywenthenthen = pywhenthenthen
 
-    def when(self, predicate: "Expr") -> "WhenThenThen":
+    def when(self, predicate: Expr) -> "WhenThenThen":
         """
         Start another when, then, otherwise layer.
         """
         return WhenThenThen(self.pywenthenthen.when(predicate._pyexpr))
 
-    def then(self, expr: Union["Expr", int, float, str]) -> "WhenThenThen":
+    def then(self, expr: Union[Expr, int, float, str]) -> "WhenThenThen":
         """
         Values to return in case of the predicate being `True`.
 
@@ -1783,7 +1784,7 @@ class WhenThenThen:
         expr_ = expr_to_lit_or_expr(expr)
         return WhenThenThen(self.pywenthenthen.then(expr_._pyexpr))
 
-    def otherwise(self, expr: "Union[Expr, int, float, str]") -> "Expr":
+    def otherwise(self, expr: Union[Expr, int, float, str]) -> Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -1801,13 +1802,13 @@ class WhenThen:
     def __init__(self, pywhenthen: "PyWhenThen"):  # type: ignore # noqa F821
         self._pywhenthen = pywhenthen
 
-    def when(self, predicate: "Expr"):
+    def when(self, predicate: Expr) -> WhenThenThen:
         """
         Start another when, then, otherwise layer.
         """
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
-    def otherwise(self, expr: "Union[Expr, int, float, str]") -> "Expr":
+    def otherwise(self, expr: Union[Expr, int, float, str]) -> Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -1822,10 +1823,10 @@ class When:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhen: "pywhen"):  # noqa F821
+    def __init__(self, pywhen: pywhen):
         self._pywhen = pywhen
 
-    def then(self, expr: "Union[Expr, int, float, str]") -> WhenThen:
+    def then(self, expr: Union[Expr, int, float, str]) -> WhenThen:
         """
         Values to return in case of the predicate being `True`.
 
@@ -1836,7 +1837,7 @@ class When:
         return WhenThen(whenthen)
 
 
-def when(expr: "Expr") -> When:
+def when(expr: Expr) -> When:
     """
     Start a when, then, otherwise expression.
 
@@ -1868,14 +1869,14 @@ def when(expr: "Expr") -> When:
     return When(pw)
 
 
-def col(name: str) -> "Expr":
+def col(name: str) -> Expr:
     """
     A column in a DataFrame.
     """
     return wrap_expr(pycol(name))
 
 
-def except_(name: str) -> "Expr":
+def except_(name: str) -> Expr:
     """
     Exclude a column from a selection.
 
@@ -1914,7 +1915,7 @@ def except_(name: str) -> "Expr":
     return wrap_expr(pyexcept(name))
 
 
-def count(column: Union[str, Series] = "") -> Union["Expr", int]:
+def count(column: Union[str, Series] = "") -> Union[Expr, int]:
     """
     Count the number of values in this column.
     """
@@ -1923,14 +1924,14 @@ def count(column: Union[str, Series] = "") -> Union["Expr", int]:
     return col(column).count()
 
 
-def to_list(name: str) -> "Expr":
+def to_list(name: str) -> Expr:
     """
     Aggregate to list.
     """
     return col(name).list()
 
 
-def std(column: Union[str, Series]) -> Union["Expr", float]:
+def std(column: Union[str, Series]) -> Union[Expr, float]:
     """
     Get the standard deviation.
     """
@@ -1939,7 +1940,7 @@ def std(column: Union[str, Series]) -> Union["Expr", float]:
     return col(column).std()
 
 
-def var(column: Union[str, Series]) -> Union["Expr", float]:
+def var(column: Union[str, Series]) -> Union[Expr, float]:
     """
     Get the variance.
     """
@@ -1948,7 +1949,7 @@ def var(column: Union[str, Series]) -> Union["Expr", float]:
     return col(column).var()
 
 
-def max(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
+def max(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -1973,7 +1974,7 @@ def max(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
         return col(column).max()
 
 
-def min(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
+def min(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the minimum value.
 
@@ -1996,7 +1997,7 @@ def min(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
         return col(column).min()
 
 
-def sum(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
+def sum(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the sum value.
 
@@ -2014,7 +2015,7 @@ def sum(column: Union[str, List["Expr"], Series]) -> Union["Expr", Any]:
         return col(column).sum()
 
 
-def mean(column: Union[str, Series]) -> Union["Expr", float]:
+def mean(column: Union[str, Series]) -> Union[Expr, float]:
     """
     Get the mean value.
     """
@@ -2023,14 +2024,14 @@ def mean(column: Union[str, Series]) -> Union["Expr", float]:
     return col(column).mean()
 
 
-def avg(column: Union[str, Series]) -> Union["Expr", float]:
+def avg(column: Union[str, Series]) -> Union[Expr, float]:
     """
     Alias for mean.
     """
     return mean(column)
 
 
-def median(column: Union[str, Series]) -> Union["Expr", float, int]:
+def median(column: Union[str, Series]) -> Union[Expr, float, int]:
     """
     Get the median value.
     """
@@ -2039,14 +2040,14 @@ def median(column: Union[str, Series]) -> Union["Expr", float, int]:
     return col(column).median()
 
 
-def n_unique(column: Union[str, Series]) -> Union["Expr", int]:
+def n_unique(column: Union[str, Series]) -> Union[Expr, int]:
     """Count unique values."""
     if isinstance(column, Series):
         return column.n_unique()
     return col(column).n_unique()
 
 
-def first(column: Union[str, Series]) -> Union["Expr", Any]:
+def first(column: Union[str, Series]) -> Union[Expr, Any]:
     """
     Get the first value.
     """
@@ -2058,7 +2059,7 @@ def first(column: Union[str, Series]) -> Union["Expr", Any]:
     return col(column).first()
 
 
-def last(column: Union[str, Series]) -> "Expr":
+def last(column: Union[str, Series]) -> Expr:
     """
     Get the last value.
     """
@@ -2070,7 +2071,7 @@ def last(column: Union[str, Series]) -> "Expr":
     return col(column).last()
 
 
-def head(column: Union[str, Series], n: Optional[int] = None) -> Union["Expr", Series]:
+def head(column: Union[str, Series], n: Optional[int] = None) -> Union[Expr, Series]:
     """
     Get the first n rows of an Expression.
 
@@ -2086,9 +2087,7 @@ def head(column: Union[str, Series], n: Optional[int] = None) -> Union["Expr", S
     return col(column).head(n)
 
 
-def tail(
-    column: "Union[str, Series]", n: "Optional[int]" = None
-) -> "Union[Expr, Series]":
+def tail(column: Union[str, Series], n: Optional[int] = None) -> Union[Expr, Series]:
     """
     Get the last n rows of an Expression.
 
@@ -2104,7 +2103,7 @@ def tail(
     return col(column).tail(n)
 
 
-def lit_date(dt: "datetime") -> Expr:
+def lit_date(dt: datetime) -> Expr:
     """
     Converts a Python DateTime to a literal Expression.
 
@@ -2119,7 +2118,7 @@ def lit_date(dt: "datetime") -> Expr:
 def lit(
     value: Optional[Union[float, int, str, datetime, Series]],
     dtype: Optional[Type[DataType]] = None,
-) -> "Expr":
+) -> Expr:
     """
     A literal value.
 
@@ -2166,9 +2165,9 @@ def lit(
 
 
 def pearson_corr(
-    a: "Union[str, Expr]",
-    b: "Union[str, Expr]",
-) -> "Expr":
+    a: Union[str, Expr],
+    b: Union[str, Expr],
+) -> Expr:
     """
     Compute the pearson's correlation between two columns.
 
@@ -2187,9 +2186,9 @@ def pearson_corr(
 
 
 def cov(
-    a: "Union[str, Expr]",
-    b: "Union[str, Expr]",
-) -> "Expr":
+    a: Union[str, Expr],
+    b: Union[str, Expr],
+) -> Expr:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -2208,11 +2207,11 @@ def cov(
 
 
 def map_binary(
-    a: Union[str, "Expr"],
-    b: Union[str, "Expr"],
+    a: Union[str, Expr],
+    b: Union[str, Expr],
     f: Callable[[Series, Series], Series],
     return_dtype: Optional[Type[DataType]] = None,
-) -> "Expr":
+) -> Expr:
     """
     Map a custom function over two columns and produce a single Series result.
 
@@ -2255,7 +2254,7 @@ def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) ->
     return acc
 
 
-def any(name: "Union[str, List[Expr]]") -> "Expr":
+def any(name: Union[str, List[Expr]]) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
     """
@@ -2264,7 +2263,7 @@ def any(name: "Union[str, List[Expr]]") -> "Expr":
     return col(name).sum() > 0
 
 
-def all(name: Union[str, List["Expr"]]) -> "Expr":
+def all(name: Union[str, List[Expr]]) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise AND operation.
     """
@@ -2273,14 +2272,14 @@ def all(name: Union[str, List["Expr"]]) -> "Expr":
     return col(name).cast(bool).sum() == col(name).count()
 
 
-def groups(column: str) -> "Expr":
+def groups(column: str) -> Expr:
     """
     Syntactic sugar for `column("foo").agg_groups()`.
     """
     return col(column).agg_groups()
 
 
-def quantile(column: str, quantile: float) -> "Expr":
+def quantile(column: str, quantile: float) -> Expr:
     """
     Syntactic sugar for `column("foo").quantile(..)`.
     """
@@ -2292,19 +2291,21 @@ class UDF:
     Deprecated: don't use me
     """
 
-    def __init__(self, f: Callable[[Series], Series], return_dtype: Type[DataType]):
+    def __init__(
+        self, f: Callable[[Series], Series], return_dtype: Type[DataType]
+    ) -> None:
         self.f = f
         self.return_dtype = return_dtype
 
 
-def udf(f: Callable[[Series], Series], return_dtype: Type[DataType]):
+def udf(f: Callable[[Series], Series], return_dtype: Type[DataType]) -> UDF:
     """
     Deprecated: don't use me
     """
     return UDF(f, return_dtype)
 
 
-def arange(low: int, high: int, dtype: Optional[Type[DataType]] = None) -> "Expr":
+def arange(low: int, high: int, dtype: Optional[Type[DataType]] = None) -> Expr:
     """
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
@@ -2338,7 +2339,7 @@ def arange(low: int, high: int, dtype: Optional[Type[DataType]] = None) -> "Expr
         if dtype is None:
             dtype = datatypes.Int64
 
-        def create_range(s1: "Series", s2: "Series"):
+        def create_range(s1: Series, s2: Series) -> Series:
             from .. import Series
 
             assert s1.len() == 1
@@ -2352,7 +2353,7 @@ def arange(low: int, high: int, dtype: Optional[Type[DataType]] = None) -> "Expr
     return wrap_expr(pyrange(low, high, dtype))
 
 
-def argsort_by(exprs: List["Expr"], reverse: Union[List[bool], bool] = False) -> "Expr":
+def argsort_by(exprs: List[Expr], reverse: Union[List[bool], bool] = False) -> Expr:
     """
     Find the indexes that would sort the columns.
 

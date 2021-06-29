@@ -16,6 +16,7 @@ except ImportError:
     warnings.warn("binary files missing")
     __pdoc__ = {"wrap_df": False}
 
+from types import TracebackType
 from typing import (
     Dict,
     Sequence,
@@ -28,6 +29,8 @@ from typing import (
     Callable,
     Any,
     Type,
+    Iterable,
+    Iterator,
 )
 from .series import Series, wrap_s
 from . import datatypes
@@ -114,16 +117,16 @@ class DataFrame:
         self._df = PyDataFrame(columns)
 
     @staticmethod
-    def _from_pydf(df: "PyDataFrame") -> "DataFrame":
+    def _from_pydf(df: PyDataFrame) -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
         self._df = df
         return self
 
     @staticmethod
     def from_rows(
-        rows: "Sequence[Sequence[Any]]",
-        column_names: "Optional[List[str]]" = None,
-        column_name_mapping: "Optional[Dict[int, str]]" = None,
+        rows: Sequence[Sequence[Any]],
+        column_names: Optional[List[str]] = None,
+        column_name_mapping: Optional[Dict[int, str]] = None,
     ) -> "DataFrame":
         """
         Create a DataFrame from rows. This should only be used as a last resort, as this is more expensive than
@@ -257,8 +260,8 @@ class DataFrame:
     @staticmethod
     def read_parquet(
         file: Union[str, BinaryIO],
-        stop_after_n_rows: "Optional[int]" = None,
-        use_pyarrow=False,
+        stop_after_n_rows: Optional[int] = None,
+        use_pyarrow: bool = False,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -308,7 +311,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_json(file: "Union[str, BytesIO]") -> "DataFrame":
+    def read_json(file: Union[str, BytesIO]) -> "DataFrame":
         """
         Read into a DataFrame from JSON format.
 
@@ -395,7 +398,7 @@ class DataFrame:
             return None
 
     def to_pandas(
-        self, *args, date_as_object=False, **kwargs
+        self, *args: Any, date_as_object: bool = False, **kwargs: Any
     ) -> pd.DataFrame:  # noqa: F821
         """
         Cast to a Pandas DataFrame. This requires that Pandas is installed.
@@ -429,10 +432,10 @@ class DataFrame:
 
     def to_csv(
         self,
-        file: "Optional[Union[TextIO, str, Path]]" = None,
+        file: Optional[Union[TextIO, str, Path]] = None,
         has_headers: bool = True,
         delimiter: str = ",",
-    ):
+    ) -> Optional[str]:
         """
         Write Dataframe to comma-separated values file (csv).
 
@@ -465,8 +468,9 @@ class DataFrame:
             file = str(file)
 
         self._df.to_csv(file, has_headers, ord(delimiter))
+        return None
 
-    def to_ipc(self, file: Union[BinaryIO, str, Path]):
+    def to_ipc(self, file: Union[BinaryIO, str, Path]) -> None:
         """
         Write to Arrow IPC binary stream, or a feather file.
 
@@ -485,8 +489,8 @@ class DataFrame:
         file: Union[str, Path],
         compression: str = "snappy",
         use_pyarrow: bool = True,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """
         Write the DataFrame disk in parquet format.
 
@@ -553,19 +557,19 @@ class DataFrame:
             [self.select_at_idx(i).to_numpy() for i in range(self.width)]
         ).T
 
-    def __mul__(self, other):
+    def __mul__(self, other: Any) -> "DataFrame":
         other = _prepare_other_arg(other)
         return wrap_df(self._df.mul(other._s))
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: Any) -> "DataFrame":
         other = _prepare_other_arg(other)
         return wrap_df(self._df.div(other._s))
 
-    def __add__(self, other):
+    def __add__(self, other: Any) -> "DataFrame":
         other = _prepare_other_arg(other)
         return wrap_df(self._df.add(other._s))
 
-    def __sub__(self, other):
+    def __sub__(self, other: Any) -> "DataFrame":
         other = _prepare_other_arg(other)
         return wrap_df(self._df.sub(other._s))
 
@@ -575,7 +579,7 @@ class DataFrame:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __getattr__(self, item) -> "PySeries":
+    def __getattr__(self, item: Any) -> PySeries:
         """
         Access columns as attribute.
         """
@@ -584,7 +588,7 @@ class DataFrame:
         except RuntimeError:
             raise AttributeError(f"{item} not found")
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return self.get_columns().__iter__()
 
     def find_idx_by_name(self, name: str) -> int:
@@ -598,13 +602,13 @@ class DataFrame:
         """
         return self._df.find_idx_by_name(name)
 
-    def _pos_idx(self, idx, dim):
+    def _pos_idx(self, idx: int, dim: int) -> int:
         if idx >= 0:
             return idx
         else:
             return self.shape[dim] + idx
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: Any) -> Any:
         """
         Does quite a lot. Read the comments.
         """
@@ -705,7 +709,7 @@ class DataFrame:
             if isinstance(item[0], str):
                 return wrap_df(self._df.select(item))
             if hasattr(item[0], "_pyexpr"):
-                return self.select(item)
+                return self.select(item)  # type: ignore
 
         # select rows by mask or index
         # df[[1, 2, 3]]
@@ -730,7 +734,7 @@ class DataFrame:
             if dtype == datatypes.UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: Union[str, int, Tuple[Any, Any]], value: Any) -> None:
         # df["foo"] = series
         if isinstance(key, str):
             try:
@@ -760,7 +764,7 @@ class DataFrame:
         else:
             return NotImplemented
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.height
 
     def _repr_html_(self) -> str:
@@ -776,7 +780,7 @@ class DataFrame:
         max_rows = int(os.environ.get("POLARS_FMT_MAX_rows", 25))
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
-    def rename(self, mapping: "Dict[str, str]") -> "DataFrame":
+    def rename(self, mapping: Dict[str, str]) -> "DataFrame":
         """
         Rename column names.
 
@@ -790,7 +794,7 @@ class DataFrame:
             df._df.rename(k, v)
         return df
 
-    def insert_at_idx(self, index: int, series: Series):
+    def insert_at_idx(self, index: int, series: Series) -> None:
         """
         Insert a Series at a certain column index. This operation is in place.
 
@@ -864,7 +868,7 @@ class DataFrame:
         return self._df.width()
 
     @property
-    def columns(self) -> "List[str]":
+    def columns(self) -> List[str]:
         """
         Get or set column names.
 
@@ -899,7 +903,7 @@ class DataFrame:
         return self._df.columns()
 
     @columns.setter
-    def columns(self, columns: "List[str]"):
+    def columns(self, columns: List[str]) -> None:
         """
         Change the column names of the `DataFrame`.
 
@@ -944,7 +948,7 @@ class DataFrame:
         """
         return [datatypes.dtypes[idx] for idx in self._df.dtypes()]
 
-    def describe(self):
+    def describe(self) -> "DataFrame":
         """
         Summary statistics for a DataFrame. Only summarizes numeric datatypes at the moment and returns nulls for non numeric datatypes.
 
@@ -975,7 +979,7 @@ class DataFrame:
         ╰──────────┴───────┴─────┴──────╯
         """
 
-        def describe_cast(self):
+        def describe_cast(self: "DataFrame") -> "DataFrame":
             columns = []
             for s in self:
                 if s.is_numeric() or s.is_boolean():
@@ -998,7 +1002,7 @@ class DataFrame:
         )
         return summary
 
-    def replace_at_idx(self, index: int, series: Series):
+    def replace_at_idx(self, index: int, series: Series) -> None:
         """
         Replace a column at an index location.
 
@@ -1112,7 +1116,7 @@ class DataFrame:
         """
         return self._df.frame_equal(other._df, null_equal)
 
-    def replace(self, column: str, new_col: Series):
+    def replace(self, column: str, new_col: Series) -> None:
         """
         Replace a column by a new Series.
 
@@ -1221,7 +1225,7 @@ class DataFrame:
         """
         return wrap_df(self._df.tail(length))
 
-    def drop_nulls(self, subset: "Optional[List[str]]" = None) -> "DataFrame":
+    def drop_nulls(self, subset: Optional[List[str]] = None) -> "DataFrame":
         """
         Return a new DataFrame where the null values are dropped.
         """
@@ -1229,7 +1233,7 @@ class DataFrame:
             subset = [subset]
         return wrap_df(self._df.drop_nulls(subset))
 
-    def pipe(self, func: Callable, *args, **kwargs):
+    def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.
 
@@ -1440,8 +1444,8 @@ class DataFrame:
 
     def apply(
         self,
-        f: "Callable[[Tuple[Any]], Any]",
-        return_dtype: "Optional[DataType]" = None,
+        f: Callable[[Tuple[Any]], Any],
+        return_dtype: Optional[Type[DataType]] = None,
     ) -> "Series":
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
@@ -1509,7 +1513,7 @@ class DataFrame:
         else:
             return wrap_df(self._df.vstack(df._df))
 
-    def drop(self, name: "Union[str, List[str]]") -> "DataFrame":
+    def drop(self, name: Union[str, List[str]]) -> "DataFrame":
         """
         Remove column from DataFrame and return as new.
 
@@ -1579,7 +1583,7 @@ class DataFrame:
         """
         return wrap_df(self._df.clone())
 
-    def get_columns(self) -> "List[Series]":
+    def get_columns(self) -> List[Series]:
         """
         Get the DataFrame as a List of Series.
         """
@@ -1614,7 +1618,7 @@ class DataFrame:
             return self.fill_none(lit(strategy))  # type: ignore
         return wrap_df(self._df.fill_none(strategy))
 
-    def explode(self, columns: "Union[str, List[str]]") -> "DataFrame":
+    def explode(self, columns: Union[str, List[str]]) -> "DataFrame":
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
 
@@ -1632,7 +1636,7 @@ class DataFrame:
         return wrap_df(self._df.explode(columns))
 
     def melt(
-        self, id_vars: "Union[List[str], str]", value_vars: "Union[List[str], str]"
+        self, id_vars: Union[List[str], str], value_vars: Union[List[str], str]
     ) -> "DataFrame":
         """
         Unpivot DataFrame to long format.
@@ -1717,7 +1721,7 @@ class DataFrame:
 
         return wrap_ldf(self._df.lazy())
 
-    def select(self, exprs: "Union[str, Expr, List[str], List[Expr]]") -> "DataFrame":
+    def select(self, exprs: Union[str, "Expr", List[str], List["Expr"]]) -> "DataFrame":
         """
         Select columns from this DataFrame.
 
@@ -1852,8 +1856,8 @@ class DataFrame:
 
     def sample(
         self,
-        n: "Optional[int]" = None,
-        frac: "Optional[float]" = None,
+        n: Optional[int] = None,
+        frac: Optional[float] = None,
         with_replacement: bool = False,
     ) -> "DataFrame":
         """
@@ -1872,7 +1876,7 @@ class DataFrame:
             return wrap_df(self._df.sample_n(n, with_replacement))
         return wrap_df(self._df.sample_frac(frac, with_replacement))
 
-    def fold(self, operation: "Callable[['Series', 'Series'], 'Series']") -> "Series":
+    def fold(self, operation: Callable[[Series, Series], Series]) -> Series:
         """
         Apply a horizontal reduction on a DataFrame. This can be used to effectively
         determine aggregations on a row level, and can be applied to any DataType that
@@ -1958,7 +1962,7 @@ class DataFrame:
             acc = operation(acc, df.select_at_idx(i))
         return acc
 
-    def row(self, index: int) -> "Tuple[Any]":
+    def row(self, index: int) -> Tuple[Any]:
         """
         Get a row as tuple.
 
@@ -1969,7 +1973,7 @@ class DataFrame:
         """
         return self._df.row_tuple(index)
 
-    def rows(self) -> "List[Tuple[Any]]":
+    def rows(self) -> List[Tuple[Any]]:
         """
         Convert columnar data to rows as python tuples.
         """
@@ -1993,26 +1997,26 @@ class GroupBy:
         df: PyDataFrame,
         by: Union[str, List[str]],
         downsample: bool = False,
-        rule=None,
+        rule: Optional[str] = None,
         downsample_n: int = 0,
-    ):
+    ) -> None:
         self._df = df
         self.by = by
         self.downsample = downsample
         self.rule = rule
         self.downsample_n = downsample_n
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: Any) -> "GBSelection":
         return self.select(item)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable[Any]:
         groups_df = self.groups()
         groups = groups_df["groups"]
         df = wrap_df(self._df)
         for i in range(groups_df.height):
             yield df[groups[i]]
 
-    def get_group(self, group_value: "Union[Any, Tuple[Any]]") -> DataFrame:
+    def get_group(self, group_value: Union[Any, Tuple[Any]]) -> DataFrame:
         """
         Select a single group as a new DataFrame.
 
@@ -2057,7 +2061,7 @@ class GroupBy:
         """
         return wrap_df(self._df.groupby(self.by, None, "groups"))
 
-    def apply(self, f: "Callable[[DataFrame], DataFrame]"):
+    def apply(self, f: Callable[[DataFrame], DataFrame]) -> DataFrame:
         """
         Apply a function over the groups as a sub-DataFrame.
 
@@ -2163,7 +2167,7 @@ class GroupBy:
 
         return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
 
-    def select(self, columns: "Union[str, List[str]]") -> "GBSelection":
+    def select(self, columns: Union[str, List[str]]) -> "GBSelection":
         """
         Select the columns that will be aggregated.
 
@@ -2178,7 +2182,7 @@ class GroupBy:
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
 
-    def select_all(self):
+    def select_all(self) -> "GBSelection":
         """
         Select all columns for aggregation.
         """
@@ -2279,13 +2283,13 @@ class PivotOps:
         by: Union[str, List[str]],
         pivot_column: str,
         values_column: str,
-    ):
+    ) -> None:
         self._df = df
         self.by = by
         self.pivot_column = pivot_column
         self.values_column = values_column
 
-    def first(self):
+    def first(self) -> DataFrame:
         """
         Get the first value per group.
         """
@@ -2293,7 +2297,7 @@ class PivotOps:
             self._df.pivot(self.by, self.pivot_column, self.values_column, "first")
         )
 
-    def sum(self):
+    def sum(self) -> DataFrame:
         """
         Get the sum per group.
         """
@@ -2301,7 +2305,7 @@ class PivotOps:
             self._df.pivot(self.by, self.pivot_column, self.values_column, "sum")
         )
 
-    def min(self):
+    def min(self) -> DataFrame:
         """
         Get the minimal value per group.
         """
@@ -2309,7 +2313,7 @@ class PivotOps:
             self._df.pivot(self.by, self.pivot_column, self.values_column, "min")
         )
 
-    def max(self):
+    def max(self) -> DataFrame:
         """
         Get the maximal value per group.
         """
@@ -2317,7 +2321,7 @@ class PivotOps:
             self._df.pivot(self.by, self.pivot_column, self.values_column, "max")
         )
 
-    def mean(self):
+    def mean(self) -> DataFrame:
         """
         Get the mean value per group.
         """
@@ -2325,7 +2329,7 @@ class PivotOps:
             self._df.pivot(self.by, self.pivot_column, self.values_column, "mean")
         )
 
-    def count(self):
+    def count(self) -> DataFrame:
         """
         Count the values per group.
         """
@@ -2333,7 +2337,7 @@ class PivotOps:
             self._df.pivot(self.by, self.pivot_column, self.values_column, "count")
         )
 
-    def median(self):
+    def median(self) -> DataFrame:
         """
         Get the median value per group.
         """
@@ -2353,9 +2357,9 @@ class GBSelection:
         by: Union[str, List[str]],
         selection: Optional[List[str]],
         downsample: bool = False,
-        rule=None,
+        rule: Optional[str] = None,
         downsample_n: int = 0,
-    ):
+    ) -> None:
         self._df = df
         self.by = by
         self.selection = selection
@@ -2454,9 +2458,9 @@ class GBSelection:
 
     def apply(
         self,
-        func: Union[Callable[["Any"], "Any"], Callable[["Any"], "Any"]],
+        func: Union[Callable[[Any], Any], Callable[[Any], Any]],
         return_dtype: Optional[Type[DataType]] = None,
-    ) -> "DataFrame":
+    ) -> DataFrame:
         """
         Apply a function over the groups.
         """
@@ -2472,7 +2476,7 @@ class GBSelection:
 
         return df
 
-    def shrink_to_fit(self, in_place: bool = False) -> Optional["DataFrame"]:
+    def shrink_to_fit(self, in_place: bool = False) -> Optional[DataFrame]:
         """
         Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
         """
@@ -2485,7 +2489,7 @@ class GBSelection:
             return df
 
 
-def _series_to_frame(self: "Series") -> "DataFrame":
+def _series_to_frame(self: Series) -> DataFrame:
     return wrap_df(PyDataFrame([self._s]))
 
 
@@ -2498,18 +2502,23 @@ class StringCache:
     This will temporarily cache the string categories until the context manager is finished.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
-    def __enter__(self):
+    def __enter__(self) -> "StringCache":
         pytoggle_string_cache(True)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         pytoggle_string_cache(False)
 
 
-def toggle_string_cache(toggle: bool):
+def toggle_string_cache(toggle: bool) -> None:
     """
     Turn on/off the global string cache. This ensures that casts to Categorical types have the categories when string
     values are equal.
