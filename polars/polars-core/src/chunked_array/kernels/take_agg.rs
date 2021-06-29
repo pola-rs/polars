@@ -24,6 +24,9 @@ pub(crate) unsafe fn take_agg_no_null_primitive_iter_unchecked<
 }
 
 /// Take kernel for single chunk and an iterator as index.
+///
+/// # Panics
+/// panics if the array does not have nulls
 pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
     T: PolarsNumericType,
     I: IntoIterator<Item = usize>,
@@ -60,6 +63,9 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
 }
 
 /// Take kernel for single chunk and an iterator as index.
+///
+/// # Panics
+/// panics if the array does not have nulls
 pub(crate) unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
     T: PolarsNumericType,
     I: IntoIterator<Item = usize>,
