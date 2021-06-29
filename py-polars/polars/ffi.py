@@ -29,7 +29,7 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     return ctypeslib.as_array(ptr_ctype, (len,))
 
 
-def _as_float_ndarray(ptr, size):
+def _as_float_ndarray(ptr: int, size: int) -> np.ndarray:
     """
     https://github.com/maciejkula/python-rustlearn
 
