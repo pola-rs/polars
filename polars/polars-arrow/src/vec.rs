@@ -95,6 +95,7 @@ impl<T> AlignedVec<T> {
         self.inner.is_empty()
     }
 
+    #[inline]
     pub fn reserve(&mut self, additional: usize) {
         let mut me = ManuallyDrop::new(mem::take(&mut self.inner));
         let ptr = me.as_mut_ptr() as *mut u8;
@@ -173,6 +174,7 @@ impl<T> AlignedVec<T> {
         self.inner.as_slice()
     }
 
+    #[inline]
     pub fn capacity(&self) -> usize {
         self.inner.capacity()
     }
