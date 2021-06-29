@@ -891,7 +891,9 @@ impl DataFrame {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
             return Ok(unsafe { self.take_unchecked_vectical(&take) });
         }
-        Ok(self.take(&take))
+        // Safety:
+        // the created indices are in bounds
+        Ok(unsafe { self.take_unchecked(&take) })
     }
 
     /// Return a sorted clone of this DataFrame.

@@ -94,7 +94,10 @@ impl DataFrame {
                 // expand all the other columns based the exploded first column
                 if i == 0 {
                     let row_idx = offsets_to_indexes(offsets, exploded.len());
-                    df = unsafe { df.take_iter_unchecked(row_idx.into_iter()) };
+                    let row_idx = UInt32Chunked::new_from_aligned_vec("", row_idx);
+                    // Safety
+                    // We just created indices that are in bounds.
+                    df = unsafe { df.take_unchecked(&row_idx) };
                 }
                 if exploded.len() == df.height() {
                     df.columns.insert(col_idx, exploded);
