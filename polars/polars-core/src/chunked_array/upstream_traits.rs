@@ -5,7 +5,8 @@ use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
-use arrow::array::{BooleanArray, LargeStringArray, PrimitiveArray};
+use arrow::array::{ArrayData, BooleanArray, LargeStringArray, PrimitiveArray};
+use arrow::buffer::Buffer;
 #[cfg(feature = "object")]
 use polars_arrow::prelude::BooleanBufferBuilder;
 use polars_arrow::utils::TrustMyLength;
@@ -71,11 +72,25 @@ where
     // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
-        // 2021-02-07: aligned vec was ~2x faster than arrow collect.
         let iter = iter.into_iter();
-        let mut av = AlignedVec::with_capacity_aligned(0);
-        av.extend(iter);
-        NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
+        #[cfg(feature = "performant")]
+        {
+            let len = iter.size_hint().0;
+            let buffer = unsafe { Buffer::from_trusted_len_iter(iter) };
+
+            let data = ArrayData::new(T::DATA_TYPE, len, None, None, 0, vec![buffer], vec![]);
+            NoNull::new(ChunkedArray::new_from_chunks(
+                "",
+                vec![Arc::new(PrimitiveArray::<T>::from(data))],
+            ))
+        }
+        #[cfg(not(feature = "performant"))]
+        {
+            // 2021-02-07: aligned vec was ~2x faster than arrow collect.
+            let mut av = AlignedVec::with_capacity_aligned(0);
+            av.extend(iter);
+            NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
+        }
     }
 }
 
