@@ -5,5 +5,6 @@ pub mod builder;
 pub mod error;
 pub mod kernels;
 pub mod prelude;
+pub mod trusted_length;
 pub mod utils;
 pub mod vec;

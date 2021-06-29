@@ -19,7 +19,6 @@ default = ["docs",
     "zip_with",
     "csv-file",
     "temporal",
-    "performant",
     "plain_fmt",
     "dtype-slim",
 ]
@@ -45,10 +44,6 @@ ipc = ["polars-io", "polars-io/ipc"]
 
 # support for arrows csv file parsing
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
-
-# ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
-# that fits a TrustedLen iterator.
-performant = ["polars-core/performant"]
 
 # Choose one of those features for dataframe formatting.
 #   - plain_fmt: less compile times, simpler formatting

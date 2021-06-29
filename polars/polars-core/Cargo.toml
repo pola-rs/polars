@@ -15,14 +15,11 @@ avx512 = ["arrow/avx512"]
 docs = []
 temporal = ["chrono", "regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "performant", "private"]
+default = ["docs", "temporal", "private"]
 lazy = ["sort_multiple"]
 
 # commented out until UB is fixed
 #parallel = []
-
-# ~40% faster collect, needed until trustedlength iter stabilizes
-performant = []
 
 # extra utilities for Utf8Chunked
 strings = ["regex"]

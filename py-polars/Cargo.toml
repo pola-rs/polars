@@ -47,7 +47,6 @@ features = [
     "object",
     "csv-file",
     "pretty_fmt",
-    "performant",
     "dtype-full",
     "rows",
     "private",

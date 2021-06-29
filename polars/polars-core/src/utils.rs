@@ -4,7 +4,7 @@ pub use arrow;
 #[cfg(feature = "temporal")]
 pub use chrono;
 pub use num_cpus;
-pub use polars_arrow::utils::TrustMyLength;
+pub use polars_arrow::trusted_length::TrustMyLength;
 pub use polars_arrow::utils::*;
 pub use rayon;
 use rayon::prelude::*;

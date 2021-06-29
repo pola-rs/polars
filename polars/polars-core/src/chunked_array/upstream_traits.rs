@@ -9,7 +9,8 @@ use arrow::array::{ArrayData, BooleanArray, LargeStringArray, PrimitiveArray};
 use arrow::buffer::Buffer;
 #[cfg(feature = "object")]
 use polars_arrow::prelude::BooleanBufferBuilder;
-use polars_arrow::utils::TrustMyLength;
+use polars_arrow::trusted_length::CheckIsTrusted;
+use polars_arrow::trusted_length::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::{Borrow, Cow};
@@ -38,27 +39,18 @@ where
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let iter = iter.into_iter();
 
-        let arr: PrimitiveArray<T> = match iter.size_hint() {
-            (a, Some(b)) if a == b => {
-                // 2021-02-07: ~40% faster than builder.
-                // It is unsafe because we cannot be certain that the iterators length can be trusted.
-                // For most iterators that report the same upper bound as lower bound it is, but still
-                // somebody can create an iterator that incorrectly gives those bounds.
-                // This will not lead to UB, but will panic.
-                #[cfg(feature = "performant")]
-                unsafe {
-                    let arr = PrimitiveArray::from_trusted_len_iter(iter);
-                    assert_eq!(arr.len(), a);
-                    arr
-                }
-                #[cfg(not(feature = "performant"))]
-                PrimitiveArray::from_iter(iter)
-            }
-            _ => {
-                // 2021-02-07: ~1.5% slower than builder. Will still use this as it is more idiomatic and will
-                // likely improve over time.
-                PrimitiveArray::from_iter(iter)
-            }
+        let trusted_length_check = CheckIsTrusted(iter);
+        let arr: PrimitiveArray<T> = if trusted_length_check.is_trusted_len() {
+            let iter = trusted_length_check.0;
+            // 2021-02-07: ~40% faster than builder.
+            // Safety:
+            // we just checked trusted length
+            unsafe { PrimitiveArray::from_trusted_len_iter(iter) }
+        } else {
+            let iter = trusted_length_check.0;
+            // 2021-02-07: ~1.5% slower than builder. Will still use this as it is more idiomatic and will
+            // likely improve over time.
+            PrimitiveArray::from_iter(iter)
         };
         ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
     }
@@ -73,8 +65,10 @@ where
     // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        #[cfg(feature = "performant")]
-        {
+        let trusted_length_check = CheckIsTrusted(iter);
+
+        if trusted_length_check.is_trusted_len() {
+            let iter = trusted_length_check.0;
             let len = iter.size_hint().0;
             let buffer = unsafe { Buffer::from_trusted_len_iter(iter) };
 
@@ -83,9 +77,8 @@ where
                 "",
                 vec![Arc::new(PrimitiveArray::<T>::from(data))],
             ))
-        }
-        #[cfg(not(feature = "performant"))]
-        {
+        } else {
+            let iter = trusted_length_check.0;
             // 2021-02-07: aligned vec was ~2x faster than arrow collect.
             let mut av = AlignedVec::with_capacity_aligned(0);
             av.extend(iter);
