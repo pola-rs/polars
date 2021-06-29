@@ -223,5 +223,9 @@ out = (
 print(time.time() - t0)
 print("easy took:", easy_time, "s")
 print("advanced took:", time.time() - t0advanced, "s")
-print("total took:", time.time() - t00, "s")
+total_time = time.time() - t00
+print("total took:", total_time, "s")
 assert out.shape == (9999995, 8)
+if total_time > 10:
+    print("query took longer than 10s, may be noise")
+    exit(1)
