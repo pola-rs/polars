@@ -4,6 +4,7 @@ use arrow::array::{
     UInt32Array,
 };
 use arrow::buffer::MutableBuffer;
+use polars_arrow::buffer::IsValid;
 use std::mem;
 use std::sync::Arc;
 
@@ -70,6 +71,9 @@ pub(crate) fn take_no_null_primitive_iter<T: PolarsNumericType, I: IntoIterator<
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index.
+///
+/// # Panics
+/// panics if the array does not have nulls
 pub(crate) unsafe fn take_primitive_iter_unchecked<
     T: PolarsNumericType,
     I: IntoIterator<Item = usize>,
@@ -78,9 +82,14 @@ pub(crate) unsafe fn take_primitive_iter_unchecked<
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {
     let array_values = arr.values();
+    let offset = arr.offset();
+    let buf = arr
+        .data_ref()
+        .null_buffer()
+        .expect("null buffer should be there");
 
     let iter = indices.into_iter().map(|idx| {
-        if arr.is_valid(idx) {
+        if buf.is_valid_unchecked(idx + offset) {
             Some(*array_values.get_unchecked(idx))
         } else {
             None
@@ -92,17 +101,26 @@ pub(crate) unsafe fn take_primitive_iter_unchecked<
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index that does bound checks.
+///
+/// # Panics
+/// panics if the array does not have nulls
 pub(crate) fn take_primitive_iter<T: PolarsNumericType, I: IntoIterator<Item = usize>>(
     arr: &PrimitiveArray<T>,
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {
     let array_values = arr.values();
+    let validity = arr
+        .data_ref()
+        .null_bitmap()
+        .as_ref()
+        .expect("bitmap should be set");
+    let offset = arr.offset();
 
     let arr = indices
         .into_iter()
         .map(|idx| {
-            if arr.is_valid(idx) {
-                Some(array_values[idx])
+            if validity.is_set(idx + offset) {
+                array_values.get(idx).copied()
             } else {
                 None
             }
@@ -141,10 +159,15 @@ pub(crate) unsafe fn take_primitive_opt_iter_unchecked<
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {
     let array_values = arr.values();
+    let offset = arr.offset();
+    let buf = arr
+        .data_ref()
+        .null_buffer()
+        .expect("null buffer should be there");
 
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
-            if arr.is_valid(idx) {
+            if buf.is_valid_unchecked(idx + offset) {
                 Some(*array_values.get_unchecked(idx))
             } else {
                 None
@@ -211,15 +234,22 @@ pub(crate) fn take_bool_iter<I: IntoIterator<Item = usize>>(
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
-    let iter = indices.into_iter().map(|idx| {
-        if arr.is_null(idx) {
-            None
-        } else {
-            Some(arr.value(idx))
-        }
-    });
+    if let Some(validity) = arr.data_ref().null_bitmap() {
+        let offset = arr.offset();
+        let iter = indices.into_iter().map(|idx| {
+            if validity.is_set(idx + offset) {
+                Some(arr.value(idx))
+            } else {
+                None
+            }
+        });
 
-    Arc::new(iter.collect())
+        Arc::new(iter.collect())
+    } else {
+        let iter = indices.into_iter().map(|idx| Some(arr.value(idx)));
+
+        Arc::new(iter.collect())
+    }
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -227,15 +257,24 @@ pub(crate) unsafe fn take_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
-    let iter = indices.into_iter().map(|idx| {
-        if arr.is_null(idx) {
-            None
-        } else {
-            Some(arr.value_unchecked(idx))
-        }
-    });
+    if let Some(buf) = arr.data_ref().null_buffer() {
+        let offset = arr.offset();
+        let iter = indices.into_iter().map(|idx| {
+            if buf.is_valid_unchecked(idx + offset) {
+                Some(arr.value_unchecked(idx))
+            } else {
+                None
+            }
+        });
 
-    Arc::new(iter.collect())
+        Arc::new(iter.collect())
+    } else {
+        let iter = indices
+            .into_iter()
+            .map(|idx| Some(arr.value_unchecked(idx)));
+
+        Arc::new(iter.collect())
+    }
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -243,17 +282,27 @@ pub(crate) unsafe fn take_bool_opt_iter_unchecked<I: IntoIterator<Item = Option<
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
-    let iter = indices.into_iter().map(|opt_idx| {
-        opt_idx.and_then(|idx| {
-            if arr.is_null(idx) {
-                None
-            } else {
-                Some(arr.value_unchecked(idx))
-            }
-        })
-    });
+    if let Some(buf) = arr.data_ref().null_buffer() {
+        let offset = arr.offset();
 
-    Arc::new(iter.collect())
+        let iter = indices.into_iter().map(|opt_idx| {
+            opt_idx.and_then(|idx| {
+                if buf.is_valid_unchecked(idx + offset) {
+                    Some(arr.value_unchecked(idx))
+                } else {
+                    None
+                }
+            })
+        });
+
+        Arc::new(iter.collect())
+    } else {
+        let iter = indices
+            .into_iter()
+            .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
+
+        Arc::new(iter.collect())
+    }
 }
 
 /// Take kernel for single chunk without null values and an iterator as index that may produce None values.
@@ -279,12 +328,21 @@ pub(crate) unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usi
     Arc::new(iter.collect())
 }
 
+/// # Panics
+///
+/// panics if array has no null data
 pub(crate) unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
+    let offset = arr.offset();
+    let buf = arr
+        .data_ref()
+        .null_buffer()
+        .expect("null buffer should be there");
+
     let iter = indices.into_iter().map(|idx| {
-        if arr.is_null(idx) {
+        if buf.is_null_unchecked(idx + offset) {
             None
         } else {
             Some(arr.value_unchecked(idx))
@@ -305,13 +363,22 @@ pub(crate) unsafe fn take_no_null_utf8_opt_iter_unchecked<I: IntoIterator<Item =
     Arc::new(iter.collect())
 }
 
+/// # Panics
+///
+/// panics if array has no null data
 pub(crate) unsafe fn take_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
+    let offset = arr.offset();
+    let buf = arr
+        .data_ref()
+        .null_buffer()
+        .expect("null buffer should be there");
+
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
-            if arr.is_null(idx) {
+            if buf.is_null_unchecked(idx + offset) {
                 None
             } else {
                 Some(arr.value_unchecked(idx))
@@ -331,15 +398,25 @@ pub(crate) fn take_no_null_utf8_iter<I: IntoIterator<Item = usize>>(
     Arc::new(iter.collect())
 }
 
+/// # Panics
+///
+/// panics if array has no null data
 pub(crate) fn take_utf8_iter<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
+    let offset = arr.offset();
+    let validity = arr
+        .data_ref()
+        .null_bitmap()
+        .as_ref()
+        .expect("null buffer should be there");
+
     let iter = indices.into_iter().map(|idx| {
-        if arr.is_null(idx) {
-            None
-        } else {
+        if validity.is_set(idx + offset) {
             Some(arr.value(idx))
+        } else {
+            None
         }
     });
 
@@ -398,12 +475,18 @@ pub(crate) unsafe fn take_utf8(
     // also happens with take kernel in arrow
     // offsets in null buffer seem to be the problem.
     } else if arr.null_count() == 0 && indices.offset() == 0 {
+        let indices_offset = indices.offset();
+        let indices_null_buf = indices
+            .data_ref()
+            .null_buffer()
+            .expect("null buffer should be there");
+
         offset_typed
             .iter_mut()
             .skip(1)
             .enumerate()
             .for_each(|(idx, offset)| {
-                if indices.is_valid(idx) {
+                if indices_null_buf.is_valid_unchecked(idx + indices_offset) {
                     let index = indices.value_unchecked(idx) as usize;
                     let s = arr.value_unchecked(index);
                     length_so_far += s.len() as i64;
@@ -421,10 +504,16 @@ pub(crate) unsafe fn take_utf8(
     } else {
         let mut builder = LargeStringBuilder::with_capacity(data_len, length_so_far as usize);
 
+        let arr_offset = arr.offset();
+        let arr_null_buf = arr
+            .data_ref()
+            .null_buffer()
+            .expect("null buffer should be there");
+
         if indices.null_count() == 0 {
             (0..data_len).for_each(|idx| {
                 let index = indices.value_unchecked(idx) as usize;
-                if arr.is_valid(index) {
+                if arr_null_buf.is_valid_unchecked(index + arr_offset) {
                     let s = arr.value_unchecked(index);
                     builder.append_value(s).unwrap();
                 } else {
@@ -432,11 +521,17 @@ pub(crate) unsafe fn take_utf8(
                 }
             });
         } else {
+            let indices_offset = indices.offset();
+            let indices_null_buf = indices
+                .data_ref()
+                .null_buffer()
+                .expect("null buffer should be there");
+
             (0..data_len).for_each(|idx| {
-                if indices.is_valid(idx) {
+                if indices_null_buf.is_valid_unchecked(idx + indices_offset) {
                     let index = indices.value_unchecked(idx) as usize;
 
-                    if arr.is_valid(index) {
+                    if arr_null_buf.is_valid_unchecked(index + arr_offset) {
                         let s = arr.value_unchecked(index);
                         builder.append_value(s).unwrap();
                     } else {
