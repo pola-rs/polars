@@ -1979,6 +1979,18 @@ class DataFrame:
         """
         return self._df.row_tuples()
 
+    def shrink_to_fit(self, in_place: bool = False) -> Optional["DataFrame"]:
+        """
+        Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
+        """
+        if in_place:
+            self._df.shrink_to_fit()
+            return None
+        else:
+            df = self.clone()
+            df._df.shrink_to_fit()
+            return df
+
 
 class GroupBy:
     """
@@ -2353,7 +2365,7 @@ class GBSelection:
 
     def __init__(
         self,
-        df: DataFrame,
+        df: PyDataFrame,
         by: Union[str, List[str]],
         selection: Optional[List[str]],
         downsample: bool = False,
@@ -2372,65 +2384,65 @@ class GBSelection:
         Aggregate the first values in the group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "first"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "first"))
 
-        return wrap_df(self._df.groupby(self.by, self.selection, "first"))  # type: ignore
+        return wrap_df(self._df.groupby(self.by, self.selection, "first"))
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "last"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "last"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "last"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "last"))
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "sum"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "sum"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "sum"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "min"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "min"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "min"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "min"))
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "max"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "max"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "max"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "max"))
 
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "count"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "count"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "count"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "count"))
 
     def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "mean"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "mean"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "mean"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "mean"))
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "n_unique"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "n_unique"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))
 
     def quantile(self, quantile: float) -> DataFrame:
         """
@@ -2445,16 +2457,16 @@ class GBSelection:
         Return the median per group.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "median"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "median"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "median"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "median"))
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
         if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "agg_list"))  # type: ignore
-        return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))  # type: ignore
+            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "agg_list"))
+        return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))
 
     def apply(
         self,
@@ -2475,18 +2487,6 @@ class GBSelection:
             df[name] = s
 
         return df
-
-    def shrink_to_fit(self, in_place: bool = False) -> Optional[DataFrame]:
-        """
-        Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
-        """
-        if in_place:
-            self._df.shrink_to_fit()
-            return None
-        else:
-            df = self.clone()  # type: ignore
-            df._df.shrink_to_fit()
-            return df
 
 
 def _series_to_frame(self: Series) -> DataFrame:
