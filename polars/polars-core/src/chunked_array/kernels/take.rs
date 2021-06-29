@@ -25,7 +25,10 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
     // Safety:
     // indices is trusted length
     let buffer = Buffer::from_trusted_len_iter(iter);
-    let nulls = indices.data_ref().null_buffer().cloned();
+    let nulls = indices
+        .data_ref()
+        .null_buffer()
+        .map(|buf| buf.bit_slice(indices.offset(), indices.len()));
 
     let data = ArrayData::new(
         T::DATA_TYPE,
@@ -487,7 +490,7 @@ pub(crate) unsafe fn take_utf8(
     // THIS BRANCH LEAD TO UB if offset was non zero.
     // also happens with take kernel in arrow
     // offsets in null buffer seem to be the problem.
-    } else if arr.null_count() == 0 && indices.offset() == 0 {
+    } else if arr.null_count() == 0 {
         let indices_offset = indices.offset();
         let indices_null_buf = indices
             .data_ref()
@@ -513,7 +516,10 @@ pub(crate) unsafe fn take_utf8(
                 }
                 *offset = length_so_far;
             });
-        nulls = indices.data_ref().null_buffer().cloned();
+        nulls = indices
+            .data_ref()
+            .null_buffer()
+            .map(|buf| buf.bit_slice(indices.offset(), indices.len()));
     } else {
         let mut builder = LargeStringBuilder::with_capacity(data_len, length_so_far as usize);
 
