@@ -4,7 +4,7 @@
 use chrono::{NaiveDateTime, NaiveTime, Timelike};
 
 /// Number of seconds in a day
-const SECONDS_IN_DAY: i64 = 86_400;
+pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
 /// Number of milliseconds in a second
 const MILLISECONDS_IN_SECOND: i64 = 1_000;
 /// Number of microseconds in a second
