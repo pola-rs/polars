@@ -5,7 +5,7 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
-use crate::utils::str_to_polarstype;
+use crate::utils::{str_to_polarstype, downsample_str_to_rule};
 use crate::{arrow_interop, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use pyo3::types::{PyList, PyTuple};
@@ -1052,6 +1052,19 @@ impl PySeries {
     pub fn nanosecond(&self) -> PyResult<Self> {
         let s = self.series.nanosecond().map_err(PyPolarsEr::from)?;
         Ok(s.into_series().into())
+    }
+
+    pub fn round_datetime(&self, rule: &str, n: u32) -> PyResult<Self> {
+        let rule = downsample_str_to_rule(rule, n)?;
+        match self.series.dtype() {
+            DataType::Date32 => {
+                Ok(self.series.date32().unwrap().round(rule).into_series().into())
+            }
+            DataType::Date64 => {
+                Ok(self.series.date64().unwrap().round(rule).into_series().into())
+            },
+            dt => Err(PyPolarsEr::Other(format!("type: {:?} is not a date. Please use Date32 or Date64", dt)).into())
+        }
     }
 
     pub fn peak_max(&self) -> Self {
