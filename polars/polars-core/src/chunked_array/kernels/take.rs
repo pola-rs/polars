@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use arrow::array::*;
-use arrow::buffer::MutableBuffer;
+use arrow::buffer::{Buffer, MutableBuffer};
 use std::sync::Arc;
 
 /// Take kernel for single chunk without nulls and arrow array as index.
@@ -10,22 +10,27 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsPrimitiveType>(
 ) -> Arc<PrimitiveArray<T::Native>> {
     assert_eq!(arr.null_count(), 0);
 
-    let data_len = indices.len();
-    let array_values = arr.values();
-    let index_values = indices.values();
+    let array_values = arr.values().as_slice();
+    let index_values = indices.values().as_slice();
 
-    let mut values = MutableBuffer::<T::Native>::with_capacity(data_len);
     let iter = index_values
         .iter()
         .map(|idx| *array_values.get_unchecked(*idx as usize));
-    values.extend(iter);
 
-    let nulls = indices.validity().clone();
-
-    Arc::new(to_primitive::<T>(values, nulls))
+    let values = Buffer::from_trusted_len_iter(iter);
+    let validity = indices.validity().clone();
+    Arc::new(PrimitiveArray::from_data(
+        T::get_dtype().to_arrow(),
+        values,
+        validity,
+    ))
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index.
+///
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
     T: PolarsPrimitiveType,
     I: IntoIterator<Item = usize>,
@@ -35,15 +40,18 @@ pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
 ) -> Arc<PrimitiveArray<T::Native>> {
     assert_eq!(arr.null_count(), 0);
 
-    let array_values = arr.values();
+    let array_values = arr.values().as_slice();
 
-    let av = indices
+    let iter = indices
         .into_iter()
-        .map(|idx| *array_values.get_unchecked(idx))
-        .collect::<AlignedVec<_>>();
+        .map(|idx| *array_values.get_unchecked(idx));
 
-    let arr = to_primitive::<T>(av, None);
-    Arc::new(arr)
+    let values = Buffer::from_trusted_len_iter_unchecked(iter);
+    Arc::new(PrimitiveArray::from_data(
+        T::get_dtype().to_arrow(),
+        values,
+        None,
+    ))
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index that does bound checks.
@@ -53,7 +61,7 @@ pub(crate) fn take_no_null_primitive_iter<T: PolarsPrimitiveType, I: IntoIterato
 ) -> Arc<PrimitiveArray<T::Native>> {
     assert_eq!(arr.null_count(), 0);
 
-    let array_values = arr.values();
+    let array_values = arr.values().as_slice();
 
     let av = indices
         .into_iter()
@@ -65,6 +73,10 @@ pub(crate) fn take_no_null_primitive_iter<T: PolarsPrimitiveType, I: IntoIterato
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index.
+///
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_primitive_iter_unchecked<
     T: PolarsPrimitiveType,
     I: IntoIterator<Item = usize>,
@@ -72,20 +84,18 @@ pub(crate) unsafe fn take_primitive_iter_unchecked<
     arr: &PrimitiveArray<T::Native>,
     indices: I,
 ) -> Arc<PrimitiveArray<T::Native>> {
-    let array_values = arr.values();
+    let array_values = arr.values().as_slice();
+    let validity = arr.validity().as_ref().expect("should have nulls");
 
-    let arr = indices
-        .into_iter()
-        .map(|idx| {
-            if arr.is_valid(idx) {
-                Some(*array_values.get_unchecked(idx))
-            } else {
-                None
-            }
-        })
-        .collect::<PrimitiveArray<T::Native>>()
-        .to(T::get_dtype().to_arrow());
+    let iter = indices.into_iter().map(|idx| {
+        if validity.get_bit_unchecked(idx) {
+            Some(*array_values.get_unchecked(idx))
+        } else {
+            None
+        }
+    });
 
+    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter);
     Arc::new(arr)
 }
 
@@ -113,6 +123,10 @@ pub(crate) fn take_primitive_iter<T: PolarsPrimitiveType, I: IntoIterator<Item =
 
 /// Take kernel for a single chunk without nulls and an iterator that can produce None values.
 /// This is used in join operations.
+///
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_no_null_primitive_opt_iter_unchecked<
     T: PolarsPrimitiveType,
     I: IntoIterator<Item = Option<usize>>,
@@ -120,7 +134,7 @@ pub(crate) unsafe fn take_no_null_primitive_opt_iter_unchecked<
     arr: &PrimitiveArray<T::Native>,
     indices: I,
 ) -> Arc<PrimitiveArray<T::Native>> {
-    let array_values = arr.values();
+    let array_values = arr.values().as_slice();
 
     let iter = indices
         .into_iter()
@@ -132,6 +146,10 @@ pub(crate) unsafe fn take_no_null_primitive_opt_iter_unchecked<
 
 /// Take kernel for a single chunk and an iterator that can produce None values.
 /// This is used in join operations.
+///
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_primitive_opt_iter_unchecked<
     T: PolarsPrimitiveType,
     I: IntoIterator<Item = Option<usize>>,
@@ -139,11 +157,12 @@ pub(crate) unsafe fn take_primitive_opt_iter_unchecked<
     arr: &PrimitiveArray<T::Native>,
     indices: I,
 ) -> Arc<PrimitiveArray<T::Native>> {
-    let array_values = arr.values();
+    let array_values = arr.values().as_slice();
+    let validity = arr.validity().as_ref().expect("should have nulls");
 
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
-            if arr.is_valid(idx) {
+            if validity.get_bit_unchecked(idx) {
                 Some(*array_values.get_unchecked(idx))
             } else {
                 None
@@ -193,6 +212,10 @@ pub(crate) fn take_no_null_bool_iter<I: IntoIterator<Item = usize>>(
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index.
+///
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &BooleanArray,
     indices: I,
@@ -202,7 +225,7 @@ pub(crate) unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usi
         .into_iter()
         .map(|idx| Some(arr.values().get_bit_unchecked(idx)));
 
-    Arc::new(iter.collect())
+    Arc::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
 }
 
 /// Take kernel for single chunk and an iterator as index that does bound checks.
@@ -210,11 +233,12 @@ pub(crate) fn take_bool_iter<I: IntoIterator<Item = usize>>(
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
+    let validity = arr.validity().as_ref().expect("should have nulls");
     let iter = indices.into_iter().map(|idx| {
-        if arr.is_null(idx) {
-            None
-        } else {
+        if validity.get_bit(idx) {
             Some(arr.value(idx))
+        } else {
+            None
         }
     });
 
@@ -222,40 +246,52 @@ pub(crate) fn take_bool_iter<I: IntoIterator<Item = usize>>(
 }
 
 /// Take kernel for single chunk and an iterator as index.
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
+    let validity = arr.validity().as_ref().expect("should have nulls");
+
     let iter = indices.into_iter().map(|idx| {
-        if arr.is_null(idx) {
-            None
-        } else {
+        if validity.get_bit_unchecked(idx) {
             Some(arr.value_unchecked(idx))
+        } else {
+            None
         }
     });
 
-    Arc::new(iter.collect())
+    Arc::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
 }
 
 /// Take kernel for single chunk and an iterator as index.
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_bool_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
+    let validity = arr.validity().as_ref().expect("should have nulls");
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
-            if arr.is_null(idx) {
-                None
-            } else {
+            if validity.get_bit_unchecked(idx) {
                 Some(arr.value_unchecked(idx))
+            } else {
+                None
             }
         })
     });
 
-    Arc::new(iter.collect())
+    Arc::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
 }
 
 /// Take kernel for single chunk without null values and an iterator as index that may produce None values.
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_no_null_bool_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
     arr: &BooleanArray,
     indices: I,
@@ -264,9 +300,12 @@ pub(crate) unsafe fn take_no_null_bool_opt_iter_unchecked<I: IntoIterator<Item =
         .into_iter()
         .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
 
-    Arc::new(iter.collect())
+    Arc::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
 }
 
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
     indices: I,
@@ -275,24 +314,31 @@ pub(crate) unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usi
         .into_iter()
         .map(|idx| Some(arr.value_unchecked(idx)));
 
-    Arc::new(iter.collect())
+    Arc::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
 }
 
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
+    let validity = arr.validity().as_ref().expect("should have nulls");
     let iter = indices.into_iter().map(|idx| {
-        if arr.is_null(idx) {
-            None
-        } else {
+        if validity.get_bit_unchecked(idx) {
             Some(arr.value_unchecked(idx))
+        } else {
+            None
         }
     });
 
-    Arc::new(iter.collect())
+    Arc::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
 }
 
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_no_null_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
     arr: &LargeStringArray,
     indices: I,
@@ -301,24 +347,27 @@ pub(crate) unsafe fn take_no_null_utf8_opt_iter_unchecked<I: IntoIterator<Item =
         .into_iter()
         .map(|opt_idx| opt_idx.map(|idx| arr.value_unchecked(idx)));
 
-    Arc::new(iter.collect())
+    Arc::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
 }
 
+/// # Safety
+/// - no bounds checks
+/// - iterator must be TrustedLen
 pub(crate) unsafe fn take_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>>(
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
+    let validity = arr.validity().as_ref().expect("should have nulls");
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
-            if arr.is_null(idx) {
-                None
-            } else {
+            if validity.get_bit_unchecked(idx) {
                 Some(arr.value_unchecked(idx))
+            } else {
+                None
             }
         })
     });
-
-    Arc::new(iter.collect())
+    Arc::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
 }
 
 pub(crate) fn take_no_null_utf8_iter<I: IntoIterator<Item = usize>>(
@@ -414,11 +463,12 @@ pub(crate) unsafe fn take_utf8(
         validity = indices.validity().clone();
     } else {
         let mut builder = MutableUtf8Array::with_capacities(data_len, length_so_far as usize);
+        let validity_arr = arr.validity().as_ref().expect("should have nulls");
 
         if indices.null_count() == 0 {
             (0..data_len).for_each(|idx| {
                 let index = indices.value_unchecked(idx) as usize;
-                builder.push(if arr.is_valid(index) {
+                builder.push(if validity_arr.get_bit_unchecked(index) {
                     let s = arr.value_unchecked(index);
                     Some(s)
                 } else {
@@ -426,11 +476,12 @@ pub(crate) unsafe fn take_utf8(
                 });
             });
         } else {
+            let validity_indices = indices.validity().as_ref().expect("should have nulls");
             (0..data_len).for_each(|idx| {
-                if indices.is_valid(idx) {
+                if validity_indices.get_bit_unchecked(idx) {
                     let index = indices.value_unchecked(idx) as usize;
 
-                    if arr.is_valid(index) {
+                    if validity_arr.get_bit_unchecked(index) {
                         let s = arr.value_unchecked(index);
                         builder.push(Some(s));
                     } else {
