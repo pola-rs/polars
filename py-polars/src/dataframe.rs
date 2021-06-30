@@ -16,7 +16,7 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::utils::str_to_polarstype;
+use crate::utils::{str_to_polarstype, downsample_str_to_rule};
 use crate::{
     arrow_interop,
     error::PyPolarsEr,
@@ -607,17 +607,7 @@ impl PyDataFrame {
         n: u32,
         column_to_agg: Vec<(&str, Vec<&str>)>,
     ) -> PyResult<Self> {
-        let rule = match rule {
-            "month" => SampleRule::Month(n),
-            "week" => SampleRule::Week(n),
-            "day" => SampleRule::Day(n),
-            "hour" => SampleRule::Hour(n),
-            "minute" => SampleRule::Minute(n),
-            "second" => SampleRule::Second(n),
-            a => {
-                return Err(PyPolarsEr::Other(format!("rule {} not supported", a)).into());
-            }
-        };
+        let rule = downsample_str_to_rule(rule, n)?;
         let gb = self.df.downsample(by, rule).map_err(PyPolarsEr::from)?;
         let df = gb.agg(&column_to_agg).map_err(PyPolarsEr::from)?;
         let out = df.sort(by, false).map_err(PyPolarsEr::from)?;
