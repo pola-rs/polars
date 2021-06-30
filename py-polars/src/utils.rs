@@ -1,4 +1,7 @@
 use polars::prelude::*;
+use polars::frame::groupby::resample::SampleRule;
+use crate::error::PyPolarsEr;
+use pyo3::PyResult;
 
 pub fn str_to_polarstype(s: &str) -> DataType {
     match s {
@@ -21,4 +24,19 @@ pub fn str_to_polarstype(s: &str) -> DataType {
         "<class 'polars.datatypes.Object'>" => DataType::Object("object"),
         tp => panic!("Type {} not implemented in str_to_polarstype", tp),
     }
+}
+
+pub fn downsample_str_to_rule(rule: &str, n: u32) -> PyResult<SampleRule>{
+    let rule = match rule {
+        "month" => SampleRule::Month(n),
+        "week" => SampleRule::Week(n),
+        "day" => SampleRule::Day(n),
+        "hour" => SampleRule::Hour(n),
+        "minute" => SampleRule::Minute(n),
+        "second" => SampleRule::Second(n),
+        a => {
+            return Err(PyPolarsEr::Other(format!("rule {} not supported", a)).into());
+        }
+    };
+    Ok(rule)
 }

@@ -11,6 +11,127 @@ pub enum SampleRule {
     Second(u32),
 }
 
+impl Date32Chunked {
+    pub fn round(&self, rule: SampleRule) -> Date32Chunked {
+        use SampleRule::*;
+        let mut out = match rule {
+            Month(n) => {
+                let year = self.year();
+                let month = &self.month() / n;
+                year.into_iter()
+                    .zip(month.into_iter())
+                    .map(|(yr, month)| match (yr, month) {
+                        (Some(yr), Some(month)) => NaiveDate::from_ymd_opt(yr, month, 1)
+                            .map(|nd| (nd.and_hms(0, 0, 0).timestamp() / SECONDS_IN_DAY) as i32),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            Week(n) => {
+                let year = self.year();
+                // We floor divide to create a bucket.
+                let week = self.week() / n;
+                year.into_iter()
+                    // convert to ordinal days by multiplying the week no. by 7
+                    // the week number starts with 1 so we translate the week numbers by 1
+                    .zip((&(&week - 1) * 7).into_iter())
+                    .map(|(yr, od)| match (yr, od) {
+                        (Some(yr), Some(od)) => {
+                            // the calendar week doesn't start on a monday, so we must offset
+                            let offset = 8 - NaiveDate::from_ymd(yr, 1, 1)
+                                .weekday()
+                                .num_days_from_monday();
+
+                            NaiveDate::from_yo_opt(yr, od + offset)
+                                .map(|nd| (nd.and_hms(0, 0, 0).timestamp() / SECONDS_IN_DAY) as i32)
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            }
+            Day(n) => {
+                // just floor divide to create a bucket
+                self / n * n
+            }
+            Hour(_) => {
+                // date32 does not have hours
+                self.clone()
+            }
+            Minute(_) => {
+                // date32 does not have minutes
+                self.clone()
+            }
+            Second(_) => {
+                // date32 does not have minutes
+                self.clone()
+            }
+        };
+        out.rename(self.name());
+        out
+    }
+}
+
+impl Date64Chunked {
+    pub fn round(&self, rule: SampleRule) -> Date64Chunked {
+        use SampleRule::*;
+        let mut out = match rule {
+            Month(n) => {
+                let year = self.year();
+                let month = &self.month() / n;
+                year.into_iter()
+                    .zip(month.into_iter())
+                    .map(|(yr, month)| match (yr, month) {
+                        (Some(yr), Some(month)) => NaiveDate::from_ymd_opt(yr, month, 1)
+                            .map(|nd| nd.and_hms(0, 0, 0).timestamp_millis()),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            Week(n) => {
+                let year = self.year();
+                // We floor divide to create a bucket.
+                let week = self.week() / n;
+                year.into_iter()
+                    // convert to ordinal days by multiplying the week no. by 7
+                    // the week number starts with 1 so we translate the week numbers by 1
+                    .zip((&(&week - 1) * 7).into_iter())
+                    .map(|(yr, od)| match (yr, od) {
+                        (Some(yr), Some(od)) => {
+                            // the calendar week doesn't start on a monday, so we must offset
+                            let offset = 8 - NaiveDate::from_ymd(yr, 1, 1)
+                                .weekday()
+                                .num_days_from_monday();
+
+                            NaiveDate::from_yo_opt(yr, od + offset)
+                                .map(|nd| nd.and_hms(0, 0, 0).timestamp_millis())
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            }
+            Day(n) => {
+                // just floor divide to create a bucket
+                let fact = 1000 * 3600 * 24 * n;
+                self / fact * fact
+            }
+            Hour(n) => {
+                let fact = 1000 * 3600 * n;
+                self / fact * fact
+            }
+            Minute(n) => {
+                let fact = 1000 * 60 * n;
+                self / fact * fact
+            }
+            Second(n) => {
+                let fact = 1000 * n;
+                self / fact * fact
+            }
+        };
+        out.rename(self.name());
+        out
+    }
+}
+
 impl DataFrame {
     /// Downsample a temporal column by some frequency/ rule
     ///

@@ -17,3 +17,9 @@ def test_from_pandas_datetime():
     s = pl.from_pandas(date_times)
     assert s[0] == 1624492800000
     assert s[-1] == 1624525200000
+    # checks dispatch
+    s.dt.round("hour", 2)
+    s.dt.round("day", 5)
+
+    # checks lazy dispatch
+    pl.DataFrame([s.rename("foo")])[pl.col("foo").dt.round("hour", 2)]

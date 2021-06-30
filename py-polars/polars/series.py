@@ -1844,6 +1844,28 @@ class DateTimeNameSpace:
         out = int(s.mean())
         return _to_python_datetime(out, s.dtype)
 
+    def round(self, rule: str, n: int) -> Series:
+        """
+        Round the datetime.
+
+        Parameters
+        ----------
+        rule
+            Units of the downscaling operation.
+
+            Any of:
+                - "month"
+                - "week"
+                - "day"
+                - "hour"
+                - "minute"
+                - "second"
+
+        n
+            Number of units (e.g. 5 "day", 15 "minute".
+        """
+        return wrap_s(self._s.round_datetime(rule, n))
+
 
 def _to_python_datetime(value: Union[int, float], dtype: Type[DataType]) -> datetime:
     if dtype == Date32:
