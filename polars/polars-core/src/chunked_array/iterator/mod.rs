@@ -12,10 +12,17 @@ pub mod par;
 
 /// A `PolarsIterator` is an iterator over a `ChunkedArray` which contains polars types. A `PolarsIterator`
 /// must implement `ExactSizeIterator` and `DoubleEndedIterator`.
-pub trait PolarsIterator: ExactSizeIterator + DoubleEndedIterator + Send + Sync {}
+pub trait PolarsIterator:
+    ExactSizeIterator + DoubleEndedIterator + Send + Sync + TrustedLen
+{
+}
+unsafe impl<'a, I> TrustedLen for Box<dyn PolarsIterator<Item = I> + 'a> {}
 
 /// Implement PolarsIterator for every iterator that implements the needed traits.
-impl<T: ?Sized> PolarsIterator for T where T: ExactSizeIterator + DoubleEndedIterator + Send + Sync {}
+impl<T: ?Sized> PolarsIterator for T where
+    T: ExactSizeIterator + DoubleEndedIterator + Send + Sync + TrustedLen
+{
+}
 
 impl<'a, T> IntoIterator for &'a ChunkedArray<T>
 where
@@ -102,8 +109,13 @@ impl BooleanChunked {
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = bool> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
-    {
+    ) -> impl Iterator<Item = bool>
+           + '_
+           + Send
+           + Sync
+           + ExactSizeIterator
+           + DoubleEndedIterator
+           + TrustedLen {
         self.downcast_iter()
             .map(|bool_arr| BoolIterNoNull::new(bool_arr))
             .flatten()
@@ -175,8 +187,13 @@ impl Utf8Chunked {
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter<'a>(
         &'a self,
-    ) -> impl Iterator<Item = &'a str> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
-    {
+    ) -> impl Iterator<Item = &'a str>
+           + '_
+           + Send
+           + Sync
+           + ExactSizeIterator
+           + DoubleEndedIterator
+           + TrustedLen {
         self.downcast_iter()
             .map(|arr| Utf8IterNoNull::new(arr))
             .flatten()
@@ -256,8 +273,13 @@ impl ListChunked {
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = Series> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
-    {
+    ) -> impl Iterator<Item = Series>
+           + '_
+           + Send
+           + Sync
+           + ExactSizeIterator
+           + DoubleEndedIterator
+           + TrustedLen {
         self.downcast_iter()
             .map(|arr| ListIterNoNull::new(arr))
             .flatten()
@@ -282,7 +304,8 @@ impl<T: PolarsObject> ObjectChunked<T> {
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = &T> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator {
+    ) -> impl Iterator<Item = &T> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator + TrustedLen
+    {
         self.downcast_iter()
             .map(|arr| arr.values().iter())
             .flatten()
@@ -335,8 +358,13 @@ impl CategoricalChunked {
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = u32> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
-    {
+    ) -> impl Iterator<Item = u32>
+           + '_
+           + Send
+           + Sync
+           + ExactSizeIterator
+           + DoubleEndedIterator
+           + TrustedLen {
         self.deref().into_no_null_iter()
     }
 }
