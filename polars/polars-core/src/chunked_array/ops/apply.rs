@@ -8,9 +8,12 @@ use std::convert::TryFrom;
 macro_rules! apply {
     ($self:expr, $f:expr) => {{
         if $self.null_count() == 0 {
-            $self.into_no_null_iter().map($f).collect()
+            $self.into_no_null_iter().map($f).collect_trusted()
         } else {
-            $self.into_iter().map(|opt_v| opt_v.map($f)).collect()
+            $self
+                .into_iter()
+                .map(|opt_v| opt_v.map($f))
+                .collect_trusted()
         }
     }};
 }
@@ -18,13 +21,17 @@ macro_rules! apply {
 macro_rules! apply_enumerate {
     ($self:expr, $f:expr) => {{
         if $self.null_count() == 0 {
-            $self.into_no_null_iter().enumerate().map($f).collect()
+            $self
+                .into_no_null_iter()
+                .enumerate()
+                .map($f)
+                .collect_trusted()
         } else {
             $self
                 .into_iter()
                 .enumerate()
                 .map(|(idx, opt_v)| opt_v.map(|v| $f((idx, v))))
-                .collect()
+                .collect_trusted()
         }
     }};
 }
@@ -95,7 +102,7 @@ where
             .flatten()
             .trust_my_length(self.len())
             .map(|v| f(v.copied()))
-            .collect()
+            .collect_trusted()
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
@@ -111,7 +118,7 @@ where
                 .trust_my_length(self.len())
                 .enumerate()
                 .map(|(idx, opt_v)| opt_v.map(|v| f((idx, *v))))
-                .collect()
+                .collect_trusted()
         }
     }
 
@@ -124,7 +131,7 @@ where
             .trust_my_length(self.len())
             .enumerate()
             .map(|(idx, v)| f((idx, v.copied())))
-            .collect()
+            .collect_trusted()
     }
     fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])
     where
@@ -181,7 +188,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     where
         F: Fn(Option<bool>) -> Option<bool> + Copy,
     {
-        self.into_iter().map(f).collect()
+        self.into_iter().map(f).collect_trusted()
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
@@ -195,7 +202,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     where
         F: Fn((usize, Option<bool>)) -> Option<bool> + Copy,
     {
-        self.into_iter().enumerate().map(f).collect()
+        self.into_iter().enumerate().map(f).collect_trusted()
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -263,7 +270,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
     {
-        self.into_iter().map(f).collect()
+        self.into_iter().map(f).collect_trusted()
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
@@ -277,7 +284,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     where
         F: Fn((usize, Option<&'a str>)) -> Option<Cow<'a, str>> + Copy,
     {
-        self.into_iter().enumerate().map(f).collect()
+        self.into_iter().enumerate().map(f).collect_trusted()
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -422,7 +429,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
     where
         F: Fn(Option<Series>) -> Option<Series> + Copy,
     {
-        self.into_iter().map(f).collect()
+        self.into_iter().map(f).collect_trusted()
     }
 
     /// Apply a closure elementwise. The closure gets the index of the element as first argument.
@@ -438,7 +445,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
     where
         F: Fn((usize, Option<Series>)) -> Option<Series> + Copy,
     {
-        self.into_iter().enumerate().map(f).collect()
+        self.into_iter().enumerate().map(f).collect_trusted()
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
