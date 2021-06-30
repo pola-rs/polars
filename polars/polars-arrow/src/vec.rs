@@ -1,6 +1,8 @@
+use crate::trusted_len::TrustedLen;
+use crate::utils::FromTrustedLenIterator;
 use arrow::alloc;
 use arrow::array::{ArrayData, PrimitiveArray};
-use arrow::buffer::Buffer;
+use arrow::buffer::{Buffer, MutableBuffer};
 use arrow::datatypes::*;
 use std::iter::FromIterator;
 use std::mem;
@@ -261,6 +263,20 @@ impl<T> Default for AlignedVec<T> {
     }
 }
 
+impl<T: ArrowNativeType> FromTrustedLenIterator<T> for AlignedVec<T> {
+    fn from_iter_trusted_length<I: IntoIterator<Item = T> + TrustedLen>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let len = iter.size_hint().0;
+        // Safety:
+        // trait trustedlen
+        let buf = unsafe { MutableBuffer::from_trusted_len_iter(iter) };
+        let ptr = buf.as_ptr() as usize;
+        let capacity = buf.capacity() / std::mem::size_of::<T>();
+        std::mem::forget(buf);
+        unsafe { AlignedVec::from_ptr(ptr, len, capacity) }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -291,5 +307,12 @@ mod test {
 
         let a = v.into_primitive_array::<Int32Type>(None);
         assert_eq!(&a.values()[..2], &[1, 2])
+    }
+
+    #[test]
+    fn test_trusted_len() {
+        let av = AlignedVec::from_iter_trusted_length([1, 2, 3, 4, 5].iter().copied());
+        let v: Vec<_> = av.inner.iter().copied().collect();
+        assert_eq!(v, &[1, 2, 3, 4, 5]);
     }
 }
