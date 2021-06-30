@@ -222,7 +222,8 @@ where
     T: PolarsPrimitiveType,
 {
     fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
-        Self::new_from_iter(name, v.iter().copied())
+        let arr = PrimitiveArray::<T::Native>::from_slice(v).to(T::get_dtype().to_arrow());
+        ChunkedArray::new_from_chunks(name, vec![Arc::new(arr)])
     }
 
     fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
