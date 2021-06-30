@@ -41,6 +41,7 @@ pub mod strings;
 #[cfg(feature = "temporal")]
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
+mod trusted_len;
 pub mod upstream_traits;
 
 use arrow::array::{
@@ -659,8 +660,13 @@ where
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
         &self,
-    ) -> impl Iterator<Item = T::Native> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator
-    {
+    ) -> impl Iterator<Item = T::Native>
+           + '_
+           + Send
+           + Sync
+           + ExactSizeIterator
+           + DoubleEndedIterator
+           + TrustedLen {
         // .copied was significantly slower in benchmark, next call did not inline?
         #[allow(clippy::map_clone)]
         self.data_views()

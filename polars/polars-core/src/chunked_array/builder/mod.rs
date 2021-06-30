@@ -5,7 +5,7 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 pub use arrow::alloc;
-use arrow::array::PrimitiveBuilder;
+use arrow::array::{ArrayData, PrimitiveArray, PrimitiveBuilder};
 use arrow::array::{ArrayRef, LargeListBuilder};
 use arrow::{array::Array, buffer::Buffer};
 use num::Num;
@@ -234,7 +234,11 @@ where
     T: PolarsPrimitiveType,
 {
     fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
-        Self::new_from_iter(name, v.iter().copied())
+        let array_data = ArrayData::builder(T::DATA_TYPE)
+            .len(v.len())
+            .add_buffer(Buffer::from_slice_ref(&v))
+            .build();
+        ChunkedArray::new_from_chunks(name, vec![Arc::new(PrimitiveArray::<T>::from(array_data))])
     }
 
     fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {

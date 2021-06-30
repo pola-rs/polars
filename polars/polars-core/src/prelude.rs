@@ -33,8 +33,8 @@ pub use crate::{
     vector_hasher::VecHash,
 };
 pub use arrow::datatypes::{ArrowPrimitiveType, Field as ArrowField, Schema as ArrowSchema};
-pub(crate) use polars_arrow::array::*;
 pub use polars_arrow::vec::AlignedVec;
+pub(crate) use polars_arrow::{array::*, trusted_len::TrustedLen};
 pub use std::sync::Arc;
 
 #[cfg(feature = "object")]

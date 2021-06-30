@@ -1,3 +1,4 @@
+use crate::trusted_len::TrustedLen;
 use arrow::array::{Array, ArrayData, BooleanArray};
 use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
@@ -125,6 +126,19 @@ pub trait CustomIterTools: Iterator {
     {
         TrustMyLength::new(self, length)
     }
+
+    fn collect_trusted<T: FromTrustedLenIterator<Self::Item>>(self) -> T
+    where
+        Self: Sized + TrustedLen,
+    {
+        FromTrustedLenIterator::from_iter_trusted_length(self)
+    }
 }
 
+pub trait CustomIterToolsSized: Iterator + Sized {}
+
 impl<T: ?Sized> CustomIterTools for T where T: Iterator {}
+
+pub trait FromTrustedLenIterator<A>: Sized {
+    fn from_iter_trusted_length<T: IntoIterator<Item = A> + TrustedLen>(iter: T) -> Self;
+}
