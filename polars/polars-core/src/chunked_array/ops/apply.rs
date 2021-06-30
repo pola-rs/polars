@@ -49,7 +49,7 @@ where
             .data_views()
             .zip(self.null_bits())
             .map(|(slice, (_null_count, opt_buffer))| {
-                let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
+                let vec: AlignedVec<_> = slice.iter().copied().map(f).collect_trusted();
                 (vec, opt_buffer.cloned())
             })
             .collect();
@@ -66,9 +66,18 @@ where
             .downcast_iter()
             .map(|array| {
                 let av: AlignedVec<_> = if array.null_count() == 0 {
-                    array.values().iter().map(|&v| f(Some(v))).collect()
+                    array
+                        .values()
+                        .iter()
+                        .map(|&v| f(Some(v)))
+                        .trust_my_length(array.len())
+                        .collect_trusted()
                 } else {
-                    array.into_iter().map(f).collect()
+                    array
+                        .into_iter()
+                        .map(f)
+                        .trust_my_length(array.len())
+                        .collect_trusted()
                 };
                 Arc::new(av.into_primitive_array::<S>(None)) as ArrayRef
             })
@@ -85,7 +94,7 @@ where
             .into_iter()
             .zip(self.null_bits())
             .map(|(slice, (_null_count, opt_buffer))| {
-                let vec: AlignedVec<_> = slice.iter().copied().map(f).collect();
+                let vec: AlignedVec<_> = slice.iter().copied().map(f).collect_trusted();
                 (vec, opt_buffer.cloned())
             })
             .collect();
@@ -109,7 +118,11 @@ where
         F: Fn((usize, T::Native)) -> T::Native + Copy,
     {
         if self.null_count() == 0 {
-            let ca: NoNull<_> = self.into_no_null_iter().enumerate().map(f).collect();
+            let ca: NoNull<_> = self
+                .into_no_null_iter()
+                .enumerate()
+                .map(f)
+                .collect_trusted();
             ca.into_inner()
         } else {
             self.downcast_iter()
@@ -160,7 +173,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         self.apply_kernel_cast(|array| {
             let av: AlignedVec<_> = (0..array.len())
                 .map(|idx| unsafe { f(array.value_unchecked(idx)) })
-                .collect();
+                .collect_trusted();
             let null_bit_buffer = array.data_ref().null_buffer().cloned();
             Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
         })
@@ -172,7 +185,11 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         S: PolarsNumericType,
     {
         self.apply_kernel_cast(|array| {
-            let av: AlignedVec<_> = array.into_iter().map(f).collect();
+            let av: AlignedVec<_> = array
+                .into_iter()
+                .map(f)
+                .trust_my_length(array.len())
+                .collect_trusted();
             Arc::new(av.into_primitive_array::<S>(None)) as ArrayRef
         })
     }
@@ -236,7 +253,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .map(|array| {
                 let av: AlignedVec<_> = (0..array.len())
                     .map(|idx| unsafe { f(array.value_unchecked(idx)) })
-                    .collect();
+                    .collect_trusted();
                 let null_bit_buffer = array.data_ref().null_buffer().cloned();
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
             })
@@ -253,7 +270,11 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let av: AlignedVec<_> = array.into_iter().map(f).collect();
+                let av: AlignedVec<_> = array
+                    .into_iter()
+                    .map(f)
+                    .trust_my_length(array.len())
+                    .collect_trusted();
                 let null_bit_buffer = array.data_ref().null_buffer().cloned();
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
             })
@@ -389,7 +410,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                         let series = Series::try_from(("", arrayref)).unwrap();
                         f(series)
                     })
-                    .collect();
+                    .collect_trusted();
                 let null_bit_buffer = array.data_ref().null_buffer().cloned();
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
             })
@@ -418,7 +439,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
 
                         f(v)
                     })
-                    .collect();
+                    .collect_trusted();
                 let null_bit_buffer = array.data_ref().null_buffer().cloned();
                 Arc::new(av.into_primitive_array::<S>(null_bit_buffer)) as ArrayRef
             })
