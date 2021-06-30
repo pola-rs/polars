@@ -16,7 +16,7 @@ pub(crate) unsafe fn take_agg_no_null_primitive_iter_unchecked<
 ) -> T {
     debug_assert_eq!(arr.null_count(), 0);
 
-    let array_values = arr.values();
+    let array_values = arr.values().as_slice();
 
     indices
         .into_iter()
@@ -38,7 +38,7 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
         return None;
     }
 
-    let array_values = arr.values();
+    let array_values = arr.values().as_slice();
     let validity = arr
         .validity()
         .as_ref()
@@ -73,7 +73,7 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
         return None;
     }
 
-    let array_values = arr.values();
+    let array_values = arr.values().as_slice();
     let validity = arr
         .validity()
         .as_ref()
