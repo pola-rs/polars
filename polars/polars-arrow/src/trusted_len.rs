@@ -1,4 +1,5 @@
-use crate::utils::TrustMyLength;
+use crate::utils::{FromTrustedLenIterator, TrustMyLength};
+use arrow::buffer::MutableBuffer;
 use std::slice::Iter;
 
 /// An iterator of known, fixed size.
@@ -48,3 +49,13 @@ unsafe impl<A: TrustedLen> TrustedLen for std::iter::Take<A> {}
 unsafe impl<I: TrustedLen + DoubleEndedIterator> TrustedLen for std::iter::Rev<I> {}
 
 unsafe impl<I: Iterator<Item = J>, J> TrustedLen for TrustMyLength<I, J> {}
+unsafe impl<T> TrustedLen for std::ops::Range<T> where std::ops::Range<T>: Iterator {}
+
+impl<T: arrow::types::NativeType> FromTrustedLenIterator<T> for MutableBuffer<T> {
+    fn from_iter_trusted_length<I: IntoIterator<Item = T> + TrustedLen>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        // Safety:
+        // Guarded by trait system
+        unsafe { MutableBuffer::from_trusted_len_iter_unchecked(iter) }
+    }
+}

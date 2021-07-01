@@ -110,7 +110,11 @@ where
         F: Fn((usize, T::Native)) -> T::Native + Copy,
     {
         if self.null_count() == 0 {
-            let ca: NoNull<_> = self.into_no_null_iter().enumerate().map(f).collect();
+            let ca: NoNull<_> = self
+                .into_no_null_iter()
+                .enumerate()
+                .map(f)
+                .collect_trusted();
             ca.into_inner()
         } else {
             self.downcast_iter()
@@ -387,7 +391,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                         let series = Series::try_from(("", arrayref)).unwrap();
                         f(series)
                     })
-                    .collect();
+                    .collect_trusted();
                 to_array::<S>(values, array.validity().clone())
             })
             .collect();
