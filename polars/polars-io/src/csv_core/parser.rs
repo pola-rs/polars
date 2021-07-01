@@ -223,10 +223,6 @@ impl<'a> Iterator for SplitLines<'a> {
 
 /// An adapted version of std::iter::Split.
 /// This exists solely because we cannot split the lines naively as
-///
-/// ```text
-///    lines.split(b',').for_each(do_stuff)
-/// ```
 struct SplitFields<'a> {
     v: &'a [u8],
     delimiter: u8,
@@ -323,6 +319,7 @@ pub(crate) fn parse_lines(
     bytes: &[u8],
     offset: usize,
     delimiter: u8,
+    comment_char: Option<u8>,
     projection: &[usize],
     buffers: &mut [Buffer],
     ignore_parser_errors: bool,
@@ -355,11 +352,18 @@ pub(crate) fn parse_lines(
         if trailing_byte == b'\r' {
             line = &line[..len - 1];
         }
-
         // read at start of the line
         let read_sol = read;
         // // +1 is the split character
         // read += 1;
+
+        if let Some(c) = comment_char {
+            // line is a comment -> skip
+            if line[0] == c {
+                read = read_sol + line_length;
+                continue;
+            }
+        }
 
         // Every line we only need to parse the columns that are projected.
         // Therefore we check if the idx of the field is in our projected columns.

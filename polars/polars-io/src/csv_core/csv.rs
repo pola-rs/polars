@@ -36,6 +36,7 @@ pub struct SequentialReader<R: Read> {
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
+    comment_char: Option<u8>,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -112,49 +113,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 Arc::new(Schema::new(projected_fields))
             }
             None => self.schema.clone(),
-        }
-    }
-
-    /// Create a new CsvReader from a `BufReader<R: Read>
-    ///
-    /// This constructor allows you more flexibility in what records are processed by the
-    /// csv reader.
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_reader(
-        reader: R,
-        schema: SchemaRef,
-        has_header: bool,
-        delimiter: u8,
-        projection: Option<Vec<usize>>,
-        ignore_parser_errors: bool,
-        n_rows: Option<usize>,
-        skip_rows: usize,
-        encoding: CsvEncoding,
-        n_threads: Option<usize>,
-        path: Option<PathBuf>,
-        sample_size: usize,
-        chunk_size: usize,
-        low_memory: bool,
-    ) -> Self {
-        let csv_reader = init_csv_reader(reader, has_header, delimiter);
-        let record_iter = Some(csv_reader.into_byte_records());
-
-        Self {
-            schema,
-            projection,
-            record_iter,
-            line_number: if has_header { 1 } else { 0 },
-            ignore_parser_errors,
-            skip_rows,
-            n_rows,
-            encoding,
-            n_threads,
-            path,
-            has_header,
-            delimiter,
-            sample_size,
-            chunk_size,
-            low_memory,
         }
     }
 
@@ -348,6 +306,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                 local_bytes,
                                 read,
                                 delimiter,
+                                self.comment_char,
                                 projection,
                                 &mut buffers,
                                 ignore_parser_errors,
@@ -436,6 +395,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                                 local_bytes,
                                 read,
                                 delimiter,
+                                self.comment_char,
                                 projection,
                                 &mut buffers,
                                 ignore_parser_errors,
@@ -522,6 +482,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
+    comment_char: Option<u8>,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -535,6 +496,7 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
                 has_header,
                 schema_overwrite,
                 skip_rows,
+                comment_char,
             )?;
             Arc::new(inferred_schema)
         }
@@ -549,20 +511,25 @@ pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
         projection = Some(prj);
     }
 
-    Ok(SequentialReader::from_reader(
-        reader,
+    let csv_reader = init_csv_reader(reader, has_header, delimiter, comment_char);
+    let record_iter = Some(csv_reader.into_byte_records());
+
+    Ok(SequentialReader {
         schema,
-        has_header,
-        delimiter,
         projection,
+        record_iter,
+        line_number: if has_header { 1 } else { 0 },
         ignore_parser_errors,
-        n_rows,
         skip_rows,
+        n_rows,
         encoding,
         n_threads,
         path,
+        has_header,
+        delimiter,
         sample_size,
         chunk_size,
         low_memory,
-    ))
+        comment_char,
+    })
 }

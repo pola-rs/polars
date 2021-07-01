@@ -113,42 +113,30 @@ fn combine_lp_nodes(
         }
         #[cfg(feature = "csv-file")]
         (CsvScan {path: path_l,
-            with_columns: with_columns_l,
             schema,
-            has_header,
-            delimiter,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
+            options: options_l,
             predicate,
             aggregate,
-            cache,
-            low_memory
         },
-            CsvScan {path: path_r, with_columns: with_columns_r, ..})
+            CsvScan {path: path_r, options: options_r, ..})
         if canonicalize(path_l).unwrap() == canonicalize(path_r).unwrap()
         => {
+            let mut options_l = options_l.clone();
             let path = path_l.clone();
-            let with_columns = match (with_columns_l, with_columns_r) {
+            let with_columns = match (&options_l.with_columns, &options_r.with_columns) {
                 (Some(l), Some(r)) => Some(l.iter().cloned().chain(r.iter().cloned()).collect()),
                 (Some(l), None) => Some(l.clone()),
                 (None, Some(r)) => Some(r.clone()),
                 _ => None
             };
+            options_l.with_columns = with_columns;
 
             Some(CsvScan {
                 path,
                 schema: schema.clone(),
-                has_header: *has_header,
-                delimiter: *delimiter,
-                ignore_errors: *ignore_errors,
-                skip_rows: *skip_rows,
-                stop_after_n_rows: *stop_after_n_rows,
+                options: options_l,
                 predicate: *predicate,
-                with_columns,
                 aggregate: aggregate.clone(),
-                cache: *cache,
-                low_memory: *low_memory
             })
 
 
