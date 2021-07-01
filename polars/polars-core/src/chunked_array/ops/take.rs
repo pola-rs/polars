@@ -10,8 +10,8 @@ use crate::chunked_array::kernels::take::{
     take_no_null_primitive_opt_iter_unchecked, take_no_null_utf8_iter,
     take_no_null_utf8_iter_unchecked, take_no_null_utf8_opt_iter_unchecked, take_primitive_iter,
     take_primitive_iter_n_chunks, take_primitive_iter_unchecked, take_primitive_opt_iter_n_chunks,
-    take_primitive_opt_iter_unchecked, take_utf8, take_utf8_iter, take_utf8_iter_unchecked,
-    take_utf8_opt_iter_unchecked,
+    take_primitive_opt_iter_unchecked, take_primitive_unchecked, take_utf8, take_utf8_iter,
+    take_utf8_iter_unchecked, take_utf8_opt_iter_unchecked,
 };
 use crate::prelude::*;
 use crate::utils::NoNull;
@@ -76,7 +76,9 @@ where
                     (0, 1) => {
                         take_no_null_primitive::<T>(chunks.next().unwrap(), array) as ArrayRef
                     }
-                    (_, 1) => take::take(chunks.next().unwrap(), array).unwrap().into(),
+                    (_, 1) => {
+                        take_primitive_unchecked::<T>(chunks.next().unwrap(), array) as ArrayRef
+                    }
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);

@@ -25,7 +25,7 @@ csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical", "arrow/io_csv"
 fmt = ["polars-core/plain_fmt"]
 
 [dependencies]
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "596bdda4d3c8fa45c112598832fcf88901ab95bc" }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "1e54fd43ce9ce78958f9243a137acf15b3b57f5e" }
 polars-core = {version = "0.14.4", path = "../polars-core", features = ["private"], default-features=false}
 polars-arrow = {version = "0.14.4", path = "../polars-arrow"}
 csv = {version="1.1", optional=true}
