@@ -283,6 +283,7 @@ def read_csv(
             n_threads=n_threads,
             dtype=dtype,
             low_memory=low_memory,
+            comment_char=comment_char,
         )
 
     if new_columns:
@@ -300,6 +301,7 @@ def scan_csv(
     cache: bool = True,
     dtype: Optional[Dict[str, Type[DataType]]] = None,
     low_memory: bool = False,
+    comment_char: Optional[str] = None,
 ) -> LazyFrame:
     """
     Lazily read from a csv file.
@@ -342,6 +344,7 @@ def scan_csv(
         cache=cache,
         dtype=dtype,
         low_memory=low_memory,
+        comment_char=comment_char,
     )
 
 

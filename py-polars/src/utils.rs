@@ -1,6 +1,6 @@
-use polars::prelude::*;
-use polars::frame::groupby::resample::SampleRule;
 use crate::error::PyPolarsEr;
+use polars::frame::groupby::resample::SampleRule;
+use polars::prelude::*;
 use pyo3::PyResult;
 
 pub fn str_to_polarstype(s: &str) -> DataType {
@@ -26,7 +26,7 @@ pub fn str_to_polarstype(s: &str) -> DataType {
     }
 }
 
-pub fn downsample_str_to_rule(rule: &str, n: u32) -> PyResult<SampleRule>{
+pub fn downsample_str_to_rule(rule: &str, n: u32) -> PyResult<SampleRule> {
     let rule = match rule {
         "month" => SampleRule::Month(n),
         "week" => SampleRule::Week(n),
