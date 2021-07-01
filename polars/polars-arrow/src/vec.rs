@@ -11,13 +11,13 @@ use std::mem::ManuallyDrop;
 /// A `Vec` wrapper with a memory alignment equal to Arrow's primitive arrays.
 /// Can be useful in creating a new ChunkedArray or Arrow Primitive array without copying.
 #[derive(Debug)]
-pub struct AlignedVec<T> {
+pub struct AlignedVec<T: ArrowNativeType> {
     pub inner: Vec<T>,
     // if into_inner is called, this will be true and we can use the default Vec's destructor
     taken: bool,
 }
 
-impl<T> Drop for AlignedVec<T> {
+impl<T: ArrowNativeType> Drop for AlignedVec<T> {
     fn drop(&mut self) {
         if !self.taken {
             let inner = mem::take(&mut self.inner);
@@ -30,7 +30,7 @@ impl<T> Drop for AlignedVec<T> {
     }
 }
 
-impl<T> FromIterator<T> for AlignedVec<T> {
+impl<T: ArrowNativeType> FromIterator<T> for AlignedVec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let sh = iter.size_hint();
@@ -45,7 +45,7 @@ impl<T> FromIterator<T> for AlignedVec<T> {
     }
 }
 
-impl<T: Copy> AlignedVec<T> {
+impl<T: Copy + ArrowNativeType> AlignedVec<T> {
     /// Uses a memcpy to initialize this AlignedVec
     pub fn new_from_slice(other: &[T]) -> Self {
         let len = other.len();
@@ -60,7 +60,7 @@ impl<T: Copy> AlignedVec<T> {
     }
 }
 
-impl<T: Clone> AlignedVec<T> {
+impl<T: Clone + ArrowNativeType> AlignedVec<T> {
     pub fn resize(&mut self, new_len: usize, value: T) {
         self.inner.resize(new_len, value)
     }
@@ -76,7 +76,7 @@ impl<T: Clone> AlignedVec<T> {
     }
 }
 
-impl<T> AlignedVec<T> {
+impl<T: ArrowNativeType> AlignedVec<T> {
     /// Create a new Vec where first bytes memory address has an alignment of 64 bytes, as described
     /// by arrow spec.
     /// Read more:
@@ -133,7 +133,13 @@ impl<T> AlignedVec<T> {
 
     /// Take ownership of the Vec. This is UB because the destructor of Vec<T> probably has a different
     /// alignment than what we allocated.
+    ///
+    /// Only used for inner workings
     unsafe fn into_inner(mut self) -> Vec<T> {
+        if self.taken {
+            eprintln!("inner vec was already taken: UB");
+            std::process::abort()
+        }
         self.taken = true;
         mem::take(&mut self.inner)
     }
@@ -181,13 +187,8 @@ impl<T> AlignedVec<T> {
         self.inner.capacity()
     }
 
-    pub fn into_raw_parts(self) -> (*mut T, usize, usize) {
-        let mut me = ManuallyDrop::new(self);
-        (me.as_mut_ptr(), me.len(), me.capacity())
-    }
-
     pub fn shrink_to_fit(&mut self) {
-        if self.capacity() > self.len() {
+        if self.capacity() > self.len() && !self.is_empty() {
             let mut me = ManuallyDrop::new(mem::take(&mut self.inner));
             let ptr = me.as_mut_ptr() as *mut u8;
             let ptr = std::ptr::NonNull::new(ptr).unwrap();
@@ -255,7 +256,10 @@ impl<T> AlignedVec<T> {
         let len_before = self.len();
         self.inner.extend(iter);
         let added = self.len() - len_before;
-        assert_eq!(added, cap)
+        if added != cap {
+            eprintln!("size hint was incorrect, this is UB. aborting");
+            std::process::abort()
+        }
     }
 
     /// Extend this Vector with an iterator whose length can be trusted.
@@ -288,7 +292,7 @@ impl<T> AlignedVec<T> {
     }
 }
 
-impl<T> Default for AlignedVec<T> {
+impl<T: ArrowNativeType> Default for AlignedVec<T> {
     fn default() -> Self {
         // Be careful here. Don't initialize with a normal Vec as this will cause the wrong deallocator
         // to run and SIGSEGV
