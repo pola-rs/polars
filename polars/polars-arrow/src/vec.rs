@@ -239,19 +239,52 @@ impl<T> AlignedVec<T> {
         PrimitiveArray::<A>::from(data)
     }
 
+    fn reserve_from_size_hint(&mut self, size: usize) {
+        let (extra_cap, overflow) = size.overflowing_sub(self.capacity());
+        if extra_cap > 0 && !overflow {
+            self.reserve(extra_cap);
+        }
+    }
+
     /// # Panic
     /// Must be a trusted len iterator or else it will panic
     pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         let iter = iter.into_iter();
         let cap = iter.size_hint().1.expect("a trusted length iterator");
-        let (extra_cap, overflow) = cap.overflowing_sub(self.capacity());
-        if extra_cap > 0 && !overflow {
-            self.reserve(extra_cap);
-        }
+        self.reserve_from_size_hint(cap);
         let len_before = self.len();
         self.inner.extend(iter);
         let added = self.len() - len_before;
         assert_eq!(added, cap)
+    }
+
+    /// Extend this Vector with an iterator whose length can be trusted.
+    ///
+    /// # Safety
+    /// - iterator must be TrustedLen
+    pub unsafe fn extend_trusted_len_unchecked<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        let iter = iter.into_iter();
+        let iter_len = iter.size_hint().1.expect("a trusted length iterator");
+        self.reserve_from_size_hint(iter_len);
+
+        let mut dst = self.inner.as_ptr() as *mut T;
+        dst = dst.add(self.len());
+        let start = dst;
+        for item in iter {
+            // note how there is no reserve here
+            std::ptr::write(dst, item);
+            dst = dst.add(1);
+        }
+        assert_eq!(
+            dst.offset_from(start) as usize,
+            iter_len,
+            "Trusted iterator length was not accurately reported"
+        );
+        self.inner.set_len(self.len() + iter_len)
+    }
+
+    pub fn extend_trusted_len<I: IntoIterator<Item = T> + TrustedLen>(&mut self, iter: I) {
+        unsafe { self.extend_trusted_len_unchecked(iter) }
     }
 }
 

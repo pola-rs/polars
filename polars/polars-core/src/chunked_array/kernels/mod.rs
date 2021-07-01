@@ -14,6 +14,7 @@ use crate::datatypes::{
     ArrowDataType, Float64Type, PolarsFloatType, PolarsNumericType, PolarsPrimitiveType,
 };
 use crate::prelude::AlignedVec;
+use crate::utils::CustomIterTools;
 use arrow::array::{Array, ArrayData, ArrayRef, PrimitiveArray};
 use arrow::datatypes::{
     Float32Type, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type, UInt32Type, UInt64Type,
@@ -77,7 +78,7 @@ where
     let av = vals
         .iter()
         .map(|v| num::cast::cast::<S::Native, T::Native>(*v).unwrap())
-        .collect::<AlignedVec<T::Native>>();
+        .collect_trusted::<AlignedVec<T::Native>>();
     Arc::new(av.into_primitive_array::<T>(null_bit_buffer.cloned()))
 }
 

@@ -6,6 +6,7 @@ use crate::chunked_array::kernels::temporal::{
     date64_to_year,
 };
 use crate::prelude::*;
+use crate::utils::CustomIterTools;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
 pub use conversions_utils::*;
 use regex::Regex;
@@ -24,7 +25,7 @@ macro_rules! impl_from_naive_time {
     ($arrowtype:ident, $chunkedtype:ident, $func:ident) => {
         impl FromNaiveTime<$arrowtype, NaiveTime> for $chunkedtype {
             fn new_from_naive_time(name: &str, v: &[NaiveTime]) -> Self {
-                let unit = v.iter().map($func).collect::<AlignedVec<_>>();
+                let unit = v.iter().map($func).collect_trusted::<AlignedVec<_>>();
                 ChunkedArray::new_from_aligned_vec(name, unit)
             }
 
@@ -63,7 +64,7 @@ macro_rules! impl_from_naive_datetime {
     ($arrowtype:ident, $chunkedtype:ident, $func:ident) => {
         impl FromNaiveDateTime<$arrowtype, NaiveDateTime> for $chunkedtype {
             fn new_from_naive_datetime(name: &str, v: &[NaiveDateTime]) -> Self {
-                let unit = v.iter().map($func).collect::<AlignedVec<_>>();
+                let unit = v.iter().map($func).collect_trusted::<AlignedVec<_>>();
                 ChunkedArray::new_from_aligned_vec(name, unit)
             }
 
