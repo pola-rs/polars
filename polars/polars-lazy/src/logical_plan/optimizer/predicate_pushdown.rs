@@ -380,32 +380,18 @@ impl PredicatePushDown {
             CsvScan {
                 path,
                 schema,
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                stop_after_n_rows,
-                with_columns,
+                options,
                 predicate,
                 aggregate,
-                cache,
-                low_memory,
             } => {
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                 let lp = CsvScan {
                     path,
                     schema,
-                    has_header,
-                    delimiter,
-                    ignore_errors,
-                    skip_rows,
-                    stop_after_n_rows,
-                    with_columns,
+                    options,
                     predicate,
                     aggregate,
-                    cache,
-                    low_memory,
                 };
                 Ok(lp)
             }

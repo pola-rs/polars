@@ -171,32 +171,18 @@ pub(crate) fn to_alp(
         LogicalPlan::CsvScan {
             path,
             schema,
-            has_header,
-            delimiter,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
-            with_columns,
+            options,
             predicate,
             aggregate,
-            cache,
-            low_memory,
         } => ALogicalPlan::CsvScan {
             path,
             schema,
-            has_header,
-            delimiter,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
-            with_columns,
+            options,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             aggregate: aggregate
                 .into_iter()
                 .map(|expr| to_aexpr(expr, expr_arena))
                 .collect(),
-            cache,
-            low_memory,
         },
         #[cfg(feature = "parquet")]
         LogicalPlan::ParquetScan {
@@ -623,29 +609,15 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::CsvScan {
             path,
             schema,
-            has_header,
-            delimiter,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
-            with_columns,
+            options,
             predicate,
             aggregate,
-            cache,
-            low_memory,
         } => LogicalPlan::CsvScan {
             path,
             schema,
-            has_header,
-            delimiter,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
-            with_columns,
+            options,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
             aggregate: nodes_to_exprs(&aggregate, expr_arena),
-            cache,
-            low_memory,
         },
         #[cfg(feature = "parquet")]
         ALogicalPlan::ParquetScan {
