@@ -1,7 +1,62 @@
 use crate::prelude::*;
+use crate::utils::CustomIterTools;
 use arrow::array::*;
+use arrow::bitmap::MutableBitmap;
 use arrow::buffer::{Buffer, MutableBuffer};
 use std::sync::Arc;
+
+/// Take kernel for single chunk with nulls and arrow array as index that may have nulls.
+pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
+    arr: &PrimitiveArray<T::Native>,
+    indices: &UInt32Array,
+) -> Arc<PrimitiveArray<T::Native>> {
+    let array_values = arr.values();
+    let index_values = indices.values();
+    let validity_values = arr.validity().as_ref().expect("should have nulls");
+
+    // first take the values, these are always needed
+    let values: AlignedVec<T::Native> = index_values
+        .iter()
+        .map(|idx| *array_values.get_unchecked(*idx as usize))
+        .collect_trusted();
+
+    // the validity buffer we will fill with all valid. And we unset the ones that are null
+    // in later checks
+    // this is in the assumption that most values will be valid.
+    // Maybe we could add another branch based on the null count
+    let mut validity = MutableBitmap::with_capacity(indices.len());
+    validity.extend_constant(indices.len(), true);
+
+    let arr = if let Some(validity_indices) = indices.validity().as_ref() {
+        index_values.iter().enumerate().for_each(|(i, idx)| {
+            // i is iteration count
+            // idx is the index that we take from the values array.
+            let idx = *idx as usize;
+            if !validity_indices.get_bit_unchecked(i) || !validity_values.get_bit_unchecked(idx) {
+                validity.set(i, false);
+            }
+        });
+        PrimitiveArray::from_data(
+            T::get_dtype().to_arrow(),
+            values.into(),
+            Some(validity.into()),
+        )
+    } else {
+        index_values.iter().enumerate().for_each(|(i, idx)| {
+            let idx = *idx as usize;
+            if !validity_values.get_bit_unchecked(idx) {
+                validity.set(i, false);
+            }
+        });
+        PrimitiveArray::from_data(
+            T::get_dtype().to_arrow(),
+            values.into(),
+            Some(validity.into()),
+        )
+    };
+
+    Arc::new(arr)
+}
 
 /// Take kernel for single chunk without nulls and arrow array as index.
 pub(crate) unsafe fn take_no_null_primitive<T: PolarsPrimitiveType>(
