@@ -27,10 +27,8 @@ pub(crate) fn agg_projection(
     use ALogicalPlan::*;
     match lp_arena.get(root) {
         #[cfg(feature = "csv-file")]
-        CsvScan {
-            path, with_columns, ..
-        } => {
-            process_with_columns(&path, &with_columns, columns);
+        CsvScan { path, options, .. } => {
+            process_with_columns(&path, &options.with_columns, columns);
         }
         #[cfg(feature = "parquet")]
         ParquetScan {
@@ -144,55 +142,35 @@ impl OptimizationRule for AggScanProjection {
                 if let ALogicalPlan::CsvScan {
                     path,
                     schema,
-                    has_header,
-                    delimiter,
-                    ignore_errors,
-                    skip_rows,
-                    stop_after_n_rows,
+                    mut options,
                     predicate,
                     aggregate,
-                    with_columns,
-                    cache,
-                    low_memory,
                 } = lp
                 {
                     let new_with_columns = self
                         .columns
                         .get(&path)
                         .map(|agg| agg.iter().cloned().collect());
-                    if with_columns == new_with_columns {
+                    if options.with_columns == new_with_columns {
                         let lp = ALogicalPlan::CsvScan {
                             path,
                             schema,
-                            has_header,
-                            delimiter,
-                            ignore_errors,
-                            skip_rows,
-                            stop_after_n_rows,
+                            options,
                             predicate,
                             aggregate,
-                            with_columns,
-                            cache,
-                            low_memory,
                         };
                         lp_arena.replace(node, lp);
                         return None;
                     }
+                    options.with_columns = new_with_columns;
                     let lp = ALogicalPlan::CsvScan {
                         path: path.clone(),
                         schema,
-                        has_header,
-                        delimiter,
-                        ignore_errors,
-                        skip_rows,
-                        stop_after_n_rows,
-                        with_columns: new_with_columns,
+                        options: options.clone(),
                         predicate,
                         aggregate,
-                        cache,
-                        low_memory,
                     };
-                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))
+                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, options.with_columns))
                 } else {
                     unreachable!()
                 }

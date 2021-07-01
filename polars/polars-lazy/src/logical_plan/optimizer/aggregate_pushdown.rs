@@ -116,16 +116,9 @@ impl OptimizationRule for AggregatePushdown {
             CsvScan {
                 path,
                 schema,
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                stop_after_n_rows,
-                with_columns,
+                options,
                 predicate,
                 aggregate,
-                cache,
-                low_memory,
             } => match self.accumulated_projections.is_empty() {
                 true => {
                     lp_arena.replace(
@@ -133,16 +126,9 @@ impl OptimizationRule for AggregatePushdown {
                         CsvScan {
                             path,
                             schema,
-                            has_header,
-                            delimiter,
-                            ignore_errors,
-                            skip_rows,
-                            stop_after_n_rows,
-                            with_columns,
+                            options,
                             predicate,
                             aggregate,
-                            cache,
-                            low_memory,
                         },
                     );
                     None
@@ -152,16 +138,9 @@ impl OptimizationRule for AggregatePushdown {
                     Some(ALogicalPlan::CsvScan {
                         path,
                         schema,
-                        has_header,
-                        delimiter,
-                        ignore_errors,
-                        skip_rows,
-                        stop_after_n_rows,
-                        with_columns,
+                        options,
                         predicate,
                         aggregate,
-                        cache,
-                        low_memory,
                     })
                 }
             },

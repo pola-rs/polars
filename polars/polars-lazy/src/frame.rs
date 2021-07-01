@@ -34,6 +34,7 @@ pub struct LazyCsvReader<'a> {
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
     low_memory: bool,
+    comment_char: Option<u8>,
 }
 
 #[cfg(feature = "csv-file")]
@@ -50,6 +51,7 @@ impl<'a> LazyCsvReader<'a> {
             schema: None,
             schema_overwrite: None,
             low_memory: false,
+            comment_char: None,
         }
     }
 
@@ -97,6 +99,12 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Set the comment character. Lines starting with this character will be ignored.
+    pub fn with_comment_char(mut self, comment_char: Option<u8>) -> Self {
+        self.comment_char = comment_char;
+        self
+    }
+
     /// Cache the DataFrame after reading.
     pub fn with_cache(mut self, cache: bool) -> Self {
         self.cache = cache;
@@ -121,6 +129,7 @@ impl<'a> LazyCsvReader<'a> {
             self.schema,
             self.schema_overwrite,
             self.low_memory,
+            self.comment_char,
         )
         .build()
         .into();

@@ -1,4 +1,4 @@
-use crate::logical_plan::{det_melt_schema, Context};
+use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 use ahash::RandomState;
@@ -32,16 +32,9 @@ pub enum ALogicalPlan {
     CsvScan {
         path: PathBuf,
         schema: SchemaRef,
-        has_header: bool,
-        delimiter: u8,
-        ignore_errors: bool,
-        skip_rows: usize,
-        stop_after_n_rows: Option<usize>,
-        with_columns: Option<Vec<String>>,
+        options: CsvParserOptions,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
-        cache: bool,
-        low_memory: bool,
     },
     #[cfg(feature = "parquet")]
     ParquetScan {
@@ -350,15 +343,8 @@ impl ALogicalPlan {
             CsvScan {
                 path,
                 schema,
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                stop_after_n_rows,
-                with_columns,
                 predicate,
-                cache,
-                low_memory,
+                options,
                 ..
             } => {
                 let mut new_predicate = None;
@@ -368,16 +354,9 @@ impl ALogicalPlan {
                 CsvScan {
                     path: path.clone(),
                     schema: schema.clone(),
-                    has_header: *has_header,
-                    delimiter: *delimiter,
-                    ignore_errors: *ignore_errors,
-                    skip_rows: *skip_rows,
-                    stop_after_n_rows: *stop_after_n_rows,
-                    with_columns: with_columns.clone(),
+                    options: options.clone(),
                     predicate: new_predicate,
                     aggregate: exprs,
-                    cache: *cache,
-                    low_memory: *low_memory,
                 }
             }
             DataFrameScan {

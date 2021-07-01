@@ -11,10 +11,12 @@ pub(crate) fn init_csv_reader<R: Read>(
     reader: R,
     has_header: bool,
     delimiter: u8,
+    comment_char: Option<u8>,
 ) -> csv::Reader<R> {
     let mut reader_builder = csv::ReaderBuilder::new();
     reader_builder.has_headers(has_header);
     reader_builder.delimiter(delimiter);
+    reader_builder.comment(comment_char);
     // don't error on shorter fields.
     reader_builder.flexible(true);
     reader_builder.from_reader(reader)
@@ -102,6 +104,7 @@ pub fn infer_file_schema<R: Read + Seek>(
     has_header: bool,
     schema_overwrite: Option<&Schema>,
     skip_rows: usize,
+    comment_char: Option<u8>,
 ) -> Result<(Schema, usize)> {
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
@@ -114,7 +117,7 @@ pub fn infer_file_schema<R: Read + Seek>(
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
     // set headers to false otherwise the csv crate, skips them.
-    let csv_reader = init_csv_reader(reader, false, delimiter);
+    let csv_reader = init_csv_reader(reader, false, delimiter, comment_char);
 
     let mut records = csv_reader.into_byte_records();
     let header_length;
