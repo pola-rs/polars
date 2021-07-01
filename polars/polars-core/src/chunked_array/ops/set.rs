@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::align_chunks_binary;
+use crate::utils::{align_chunks_binary, CustomIterTools};
 use arrow::array::ArrayRef;
 use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
 use std::sync::Arc;
@@ -71,7 +71,7 @@ where
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy
                 else {
-                    let mut av = self.into_no_null_iter().collect::<AlignedVec<_>>();
+                    let mut av = self.into_no_null_iter().collect_trusted::<AlignedVec<_>>();
                     let data = av.as_mut_slice();
 
                     idx.into_iter().try_for_each::<_, Result<_>>(|idx| {

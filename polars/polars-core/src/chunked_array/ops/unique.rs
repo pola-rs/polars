@@ -4,7 +4,7 @@ use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
 use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
-use crate::utils::NoNull;
+use crate::utils::{CustomIterTools, NoNull};
 use arrow::array::Array;
 use itertools::Itertools;
 use num::NumCast;
@@ -263,7 +263,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
 fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();
 
-    let mut av: AlignedVec<_> = (0..len).map(|_| 0u8).collect();
+    let mut av: AlignedVec<_> = (0..len).map(|_| 0u8).collect_trusted();
 
     for idx in groups {
         let elem = unsafe { av.inner.get_unchecked_mut(idx as usize) };
@@ -278,7 +278,7 @@ fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> Int32Chunked 
     groups.sort_unstable();
 
     // let mut group_member_iter = groups.into_iter();
-    let mut av: AlignedVec<_> = (0..len).map(|_| 0i32).collect();
+    let mut av: AlignedVec<_> = (0..len).map(|_| 0i32).collect_trusted();
 
     for idx in groups {
         let elem = unsafe { av.inner.get_unchecked_mut(idx as usize) };

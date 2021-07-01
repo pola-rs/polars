@@ -3,13 +3,14 @@ use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
+use crate::utils::arrow::buffer::MutableBuffer;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
 use arrow::array::{ArrayData, BooleanArray, LargeStringArray, PrimitiveArray};
 use arrow::buffer::Buffer;
 #[cfg(feature = "object")]
 use polars_arrow::prelude::BooleanBufferBuilder;
-use polars_arrow::utils::TrustMyLength;
+use polars_arrow::trusted_len::trusted_len_unzip_extend;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 use std::borrow::{Borrow, Cow};
@@ -337,9 +338,16 @@ where
         let vectors = collect_into_linked_list(iter);
 
         let capacity: usize = get_capacity_from_par_results(&vectors);
+        // zeroed immediately correct for nulls
+        let mut validity = MutableBuffer::from_len_zeroed(capacity.saturating_add(7) / 8);
+        let mut values = AlignedVec::with_capacity_aligned(capacity);
 
-        let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity);
-        let arr: PrimitiveArray<T> = unsafe { PrimitiveArray::from_trusted_len_iter(iter) };
+        for vec in vectors {
+            // Safety:
+            // vec's length can be trusted
+            unsafe { trusted_len_unzip_extend(vec.into_iter(), &mut values, &mut validity) }
+        }
+        let arr: PrimitiveArray<T> = values.into_primitive_array(Some(validity.into()));
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }

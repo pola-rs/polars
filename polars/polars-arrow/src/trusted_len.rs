@@ -1,4 +1,8 @@
 use crate::utils::TrustMyLength;
+use crate::vec::AlignedVec;
+use arrow::buffer::MutableBuffer;
+use arrow::datatypes::ArrowNativeType;
+use arrow::util::bit_util;
 use std::slice::Iter;
 
 /// An iterator of known, fixed size.
@@ -49,3 +53,46 @@ unsafe impl<I: TrustedLen + DoubleEndedIterator> TrustedLen for std::iter::Rev<I
 
 unsafe impl<I: Iterator<Item = J>, J> TrustedLen for TrustMyLength<I, J> {}
 unsafe impl<T> TrustedLen for std::ops::Range<T> where std::ops::Range<T>: Iterator {}
+
+///
+/// unzips an iterator over an Option<T> into a given validity buffer and value buffer
+///
+/// # Safety
+/// - iterator must be TrustedLen
+/// - values length must have additional capacity to fit the iterators length
+/// - validity length must have additional capacity to fit the iterators length
+#[inline]
+pub unsafe fn trusted_len_unzip_extend<I, P, T>(
+    iterator: I,
+    values: &mut AlignedVec<T>,
+    validity: &mut MutableBuffer,
+) where
+    T: ArrowNativeType,
+    P: std::borrow::Borrow<Option<T>>,
+    I: Iterator<Item = P>,
+{
+    let (_, upper) = iterator.size_hint();
+    let upper = upper.expect("trusted_len_unzip requires an upper limit");
+    let offset = values.len();
+
+    let dst_validity = validity.as_mut_ptr();
+    let mut dst = values.as_mut_ptr() as *mut T;
+    dst = dst.add(offset);
+    let start = dst;
+    for (i, item) in iterator.enumerate() {
+        let item = item.borrow();
+        if let Some(item) = item {
+            std::ptr::write(dst, *item);
+            bit_util::set_bit_raw(dst_validity, i + offset);
+        } else {
+            std::ptr::write(dst, T::default());
+        }
+        dst = dst.add(1);
+    }
+    assert_eq!(
+        dst.offset_from(start) as usize,
+        upper,
+        "Trusted iterator length was not accurately reported"
+    );
+    values.set_len(values.len() + upper)
+}
