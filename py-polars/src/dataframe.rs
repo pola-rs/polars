@@ -16,7 +16,7 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
 use crate::file::FileLike;
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::utils::{str_to_polarstype, downsample_str_to_rule};
+use crate::utils::{downsample_str_to_rule, str_to_polarstype};
 use crate::{
     arrow_interop,
     error::PyPolarsEr,
@@ -77,7 +77,9 @@ impl PyDataFrame {
         path: Option<String>,
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
         low_memory: bool,
+        comment_char: Option<&str>,
     ) -> PyResult<Self> {
+        let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
             "utf8-lossy" => CsvEncoding::LossyUtf8,
@@ -126,6 +128,7 @@ impl PyDataFrame {
             .with_path(path)
             .with_dtypes(overwrite_dtype.as_ref())
             .low_memory(low_memory)
+            .with_comment_char(comment_char)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())

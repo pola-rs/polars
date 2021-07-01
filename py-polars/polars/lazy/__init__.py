@@ -132,6 +132,7 @@ class LazyFrame:
         cache: bool = True,
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
+        comment_char: Optional[str] = None,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -153,6 +154,7 @@ class LazyFrame:
             cache,
             dtype_list,
             low_memory,
+            comment_char,
         )
         return self
 
