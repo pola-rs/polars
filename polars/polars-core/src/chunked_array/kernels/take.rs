@@ -1,4 +1,6 @@
 use crate::prelude::*;
+use crate::utils::arrow::util::bit_util::unset_bit;
+use crate::utils::CustomIterTools;
 use arrow::array::{
     Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray,
     UInt32Array,
@@ -19,33 +21,43 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
         .data_ref()
         .null_buffer()
         .expect("null buffer should be there");
-    let array_offset = arr.offset();
+    let values_offset = arr.offset();
     let indices_offset = indices.offset();
 
+    // first take the values, these are always needed
+    let values: AlignedVec<T::Native> = index_values
+        .iter()
+        .map(|idx| *array_values.get_unchecked(*idx as usize))
+        .collect_trusted();
+
+    // the validity buffer we will fill with all valid. And we unset the ones that are null
+    // in later checks
+    // this is in the assumption that most values will be valid.
+    // Maybe we could add another branch based on the null count
+    let num_bytes = indices.len() * std::mem::size_of::<i32>() / 8;
+    let mut validity = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
+    let validity_slice = validity.as_slice_mut();
+
     let arr = if let Some(validity_indices) = indices.data_ref().null_buffer() {
-        let iter = index_values.iter().enumerate().map(|(i, idx)| {
+        index_values.iter().enumerate().for_each(|(i, idx)| {
+            // i is iteration count
+            // idx is the index that we take from the values array.
             let idx = *idx as usize;
-            if validity_indices.is_valid_unchecked(i + indices_offset)
-                && validity_values.is_valid_unchecked(idx + array_offset)
+            if validity_indices.is_null_unchecked(i + indices_offset)
+                || validity_values.is_null_unchecked(idx + values_offset)
             {
-                Some(*array_values.get_unchecked(idx))
-            } else {
-                None
+                unset_bit(validity_slice, i)
             }
         });
-
-        PrimitiveArray::<T>::from_trusted_len_iter(iter)
+        values.into_primitive_array(Some(validity.into()))
     } else {
-        let iter = index_values.iter().map(|idx| {
+        index_values.iter().enumerate().for_each(|(i, idx)| {
             let idx = *idx as usize;
-            if validity_values.is_valid_unchecked(idx + array_offset) {
-                Some(*array_values.get_unchecked(idx))
-            } else {
-                None
+            if validity_values.is_null_unchecked(idx + values_offset) {
+                unset_bit(validity_slice, i)
             }
         });
-
-        PrimitiveArray::<T>::from_trusted_len_iter(iter)
+        values.into_primitive_array(Some(validity.into()))
     };
 
     Arc::new(arr)
