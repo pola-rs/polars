@@ -320,31 +320,18 @@ impl ProjectionPushDown {
             CsvScan {
                 path,
                 schema,
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                stop_after_n_rows,
+                mut options,
                 predicate,
                 aggregate,
-                cache,
-                low_memory,
                 ..
             } => {
-                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
                 let lp = CsvScan {
                     path,
                     schema,
-                    has_header,
-                    delimiter,
-                    ignore_errors,
-                    with_columns,
-                    skip_rows,
-                    stop_after_n_rows,
+                    options,
                     predicate,
                     aggregate,
-                    cache,
-                    low_memory,
                 };
                 Ok(lp)
             }

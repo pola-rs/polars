@@ -121,16 +121,9 @@ impl DefaultPlanner {
             CsvScan {
                 path,
                 schema,
-                has_header,
-                delimiter,
-                ignore_errors,
-                skip_rows,
-                stop_after_n_rows,
-                with_columns,
+                options,
                 predicate,
                 aggregate,
-                cache,
-                low_memory,
             } => {
                 let predicate = predicate
                     .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
@@ -139,16 +132,9 @@ impl DefaultPlanner {
                 Ok(Box::new(CsvExec {
                     path,
                     schema,
-                    has_header,
-                    delimiter,
-                    ignore_errors,
-                    skip_rows,
-                    stop_after_n_rows,
-                    with_columns,
+                    options,
                     predicate,
                     aggregate,
-                    cache,
-                    low_memory,
                 }))
             }
             #[cfg(feature = "parquet")]

@@ -192,6 +192,7 @@ where
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
+    comment_char: Option<u8>,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -253,6 +254,12 @@ where
     /// Set the CSV file's column delimiter as a byte character
     pub fn with_delimiter(mut self, delimiter: u8) -> Self {
         self.delimiter = Some(delimiter);
+        self
+    }
+
+    /// Set the comment character. Lines starting with this character will be ignored.
+    pub fn with_comment_char(mut self, comment_char: Option<u8>) -> Self {
+        self.comment_char = comment_char;
         self
     }
 
@@ -337,6 +344,7 @@ where
             self.sample_size,
             self.chunk_size,
             self.low_memory,
+            self.comment_char,
         )
     }
 }
@@ -375,6 +383,7 @@ where
             sample_size: 1024,
             chunk_size: 8192,
             low_memory: false,
+            comment_char: None,
         }
     }
 
@@ -429,6 +438,7 @@ where
                 self.sample_size,
                 self.chunk_size,
                 self.low_memory,
+                self.comment_char,
             )?;
             let mut df = csv_reader.as_df(None, None)?;
 
@@ -894,6 +904,23 @@ AUDCAD,1616455921,0.96212,0.95666,1"#;
             "column_5" => [Some(5), None, Some(5), None]
         ]?;
         assert!(df.frame_equal_missing(&expect));
+        Ok(())
+    }
+
+    #[test]
+    fn test_comment_lines() -> Result<()> {
+        let csv = r"1,2,3,4,5
+# this is a comment
+1,2,3,4,5
+1,2,3,4,5";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(false)
+            .with_comment_char(Some(b'#'))
+            .finish()?;
+        use polars_core::df;
+        assert_eq!(df.shape(), (3, 5));
         Ok(())
     }
 }

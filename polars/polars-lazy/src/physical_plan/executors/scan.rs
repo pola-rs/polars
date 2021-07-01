@@ -1,4 +1,5 @@
 use super::*;
+use crate::logical_plan::CsvParserOptions;
 use crate::utils::try_path_to_str;
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
@@ -124,16 +125,9 @@ impl Executor for ParquetExec {
 pub struct CsvExec {
     pub path: PathBuf,
     pub schema: SchemaRef,
-    pub has_header: bool,
-    pub delimiter: u8,
-    pub ignore_errors: bool,
-    pub skip_rows: usize,
-    pub stop_after_n_rows: Option<usize>,
-    pub with_columns: Option<Vec<String>>,
+    pub options: CsvParserOptions,
     pub predicate: Option<Arc<dyn PhysicalExpr>>,
     pub aggregate: Vec<ScanAggregation>,
-    pub cache: bool,
-    pub low_memory: bool,
 }
 
 #[cfg(feature = "csv-file")]
@@ -144,7 +138,7 @@ impl Executor for CsvExec {
             Some(predicate) => format!("{}{:?}", path_str, predicate.as_expression()),
             None => path_str.to_string(),
         };
-        if self.cache {
+        if self.options.cache {
             if let Some(df) = state.cache_hit(&state_key) {
                 return Ok(df);
             }
@@ -152,7 +146,7 @@ impl Executor for CsvExec {
 
         // cache miss
 
-        let mut with_columns = mem::take(&mut self.with_columns);
+        let mut with_columns = mem::take(&mut self.options.with_columns);
         let mut projected_len = 0;
         with_columns.as_ref().map(|columns| {
             projected_len = columns.len();
@@ -162,18 +156,18 @@ impl Executor for CsvExec {
         if projected_len == 0 {
             with_columns = None;
         }
-        let stop_after_n_rows = set_n_rows(self.stop_after_n_rows);
+        let stop_after_n_rows = set_n_rows(self.options.stop_after_n_rows);
 
         let reader = CsvReader::from_path(&self.path)
             .unwrap()
-            .has_header(self.has_header)
+            .has_header(self.options.has_header)
             .with_schema(self.schema.clone())
-            .with_delimiter(self.delimiter)
-            .with_ignore_parser_errors(self.ignore_errors)
-            .with_skip_rows(self.skip_rows)
+            .with_delimiter(self.options.delimiter)
+            .with_ignore_parser_errors(self.options.ignore_errors)
+            .with_skip_rows(self.options.skip_rows)
             .with_stop_after_n_rows(stop_after_n_rows)
             .with_columns(with_columns)
-            .low_memory(self.low_memory)
+            .low_memory(self.options.low_memory)
             .with_encoding(CsvEncoding::LossyUtf8);
 
         let aggregate = if self.aggregate.is_empty() {
@@ -184,7 +178,7 @@ impl Executor for CsvExec {
 
         let df = reader.finish_with_scan_ops(self.predicate.clone(), aggregate)?;
 
-        if self.cache {
+        if self.options.cache {
             state.store_cache(state_key, df.clone());
         }
         if std::env::var(POLARS_VERBOSE).is_ok() {

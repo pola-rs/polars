@@ -135,6 +135,19 @@ impl LiteralValue {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct CsvParserOptions {
+    pub(crate) delimiter: u8,
+    pub(crate) comment_char: Option<u8>,
+    pub(crate) has_header: bool,
+    pub(crate) skip_rows: usize,
+    pub(crate) stop_after_n_rows: Option<usize>,
+    pub(crate) with_columns: Option<Vec<String>>,
+    pub(crate) low_memory: bool,
+    pub(crate) ignore_errors: bool,
+    pub(crate) cache: bool,
+}
+
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 pub enum LogicalPlan {
@@ -150,18 +163,11 @@ pub enum LogicalPlan {
     CsvScan {
         path: PathBuf,
         schema: SchemaRef,
-        has_header: bool,
-        delimiter: u8,
-        ignore_errors: bool,
-        skip_rows: usize,
-        stop_after_n_rows: Option<usize>,
-        with_columns: Option<Vec<String>>,
+        options: CsvParserOptions,
         /// Filters at the scan level
         predicate: Option<Expr>,
         /// Aggregations at the scan level
         aggregate: Vec<Expr>,
-        cache: bool,
-        low_memory: bool,
     },
     #[cfg(feature = "parquet")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
@@ -312,14 +318,14 @@ impl fmt::Debug for LogicalPlan {
             #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
-                with_columns,
+                options,
                 schema,
                 predicate,
                 ..
             } => {
                 let total_columns = schema.fields().len();
                 let mut n_columns = "*".to_string();
-                if let Some(columns) = with_columns {
+                if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
                 write!(
@@ -460,14 +466,14 @@ impl LogicalPlan {
             #[cfg(feature = "csv-file")]
             CsvScan {
                 path,
-                with_columns,
+                options,
                 schema,
                 predicate,
                 ..
             } => {
                 let total_columns = schema.fields().len();
                 let mut n_columns = "*".to_string();
-                if let Some(columns) = with_columns {
+                if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
                 let pred = fmt_predicate(predicate.as_ref());
@@ -969,6 +975,7 @@ impl LogicalPlanBuilder {
         schema: Option<Arc<Schema>>,
         schema_overwrite: Option<&Schema>,
         low_memory: bool,
+        comment_char: Option<u8>,
     ) -> Self {
         let path = path.into();
         let mut file = std::fs::File::open(&path).expect("could not open file");
@@ -981,6 +988,7 @@ impl LogicalPlanBuilder {
                 has_header,
                 schema_overwrite,
                 skip_rows,
+                comment_char,
             )
             .expect("could not read schema");
             Arc::new(schema)
@@ -988,16 +996,19 @@ impl LogicalPlanBuilder {
         LogicalPlan::CsvScan {
             path,
             schema,
-            has_header,
-            delimiter,
-            ignore_errors,
-            skip_rows,
-            stop_after_n_rows,
-            with_columns: None,
+            options: CsvParserOptions {
+                has_header,
+                delimiter,
+                ignore_errors,
+                skip_rows,
+                stop_after_n_rows,
+                with_columns: None,
+                low_memory,
+                cache,
+                comment_char,
+            },
             predicate: None,
             aggregate: vec![],
-            cache,
-            low_memory,
         }
         .into()
     }
