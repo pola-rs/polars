@@ -173,6 +173,7 @@ class DataFrame:
         n_threads: Optional[int] = None,
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
+        comment_char: Optional[str] = None,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -212,6 +213,8 @@ class DataFrame:
             Overwrite the dtypes during inference.
         low_memory
             Reduce memory usage in expense of performance.
+        comment_char
+            character that indicates the start of a comment line, for instance '#'.
 
         Example
         ---
@@ -254,6 +257,7 @@ class DataFrame:
             path,
             dtype_list,
             low_memory,
+            comment_char,
         )
         return self
 
