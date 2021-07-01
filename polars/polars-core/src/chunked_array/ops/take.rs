@@ -5,13 +5,13 @@
 //!
 use crate::chunked_array::kernels::take::{
     take_bool_iter, take_bool_iter_unchecked, take_bool_opt_iter_unchecked, take_no_null_bool_iter,
-    take_no_null_bool_iter_unchecked, take_no_null_bool_opt_iter_unchecked, take_no_null_primitive,
+    take_no_null_bool_iter_unchecked, take_no_null_bool_opt_iter_unchecked,
     take_no_null_primitive_iter, take_no_null_primitive_iter_unchecked,
-    take_no_null_primitive_opt_iter_unchecked, take_no_null_utf8_iter,
-    take_no_null_utf8_iter_unchecked, take_no_null_utf8_opt_iter_unchecked, take_primitive_iter,
-    take_primitive_iter_n_chunks, take_primitive_iter_unchecked, take_primitive_opt_iter_n_chunks,
-    take_primitive_opt_iter_unchecked, take_utf8, take_utf8_iter, take_utf8_iter_unchecked,
-    take_utf8_opt_iter_unchecked,
+    take_no_null_primitive_opt_iter_unchecked, take_no_null_primitive_unchecked,
+    take_no_null_utf8_iter, take_no_null_utf8_iter_unchecked, take_no_null_utf8_opt_iter_unchecked,
+    take_primitive_iter, take_primitive_iter_n_chunks, take_primitive_iter_unchecked,
+    take_primitive_opt_iter_n_chunks, take_primitive_opt_iter_unchecked, take_primitive_unchecked,
+    take_utf8, take_utf8_iter, take_utf8_iter_unchecked, take_utf8_opt_iter_unchecked,
 };
 use crate::prelude::*;
 use crate::utils::NoNull;
@@ -73,8 +73,10 @@ where
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_primitive(chunks.next().unwrap(), array) as ArrayRef,
-                    (_, 1) => take(chunks.next().unwrap(), array, None).unwrap(),
+                    (0, 1) => {
+                        take_no_null_primitive_unchecked(chunks.next().unwrap(), array) as ArrayRef
+                    }
+                    (_, 1) => take_primitive_unchecked(chunks.next().unwrap(), array) as ArrayRef,
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);

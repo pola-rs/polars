@@ -9,7 +9,50 @@ use std::mem;
 use std::sync::Arc;
 
 /// Take kernel for single chunk without nulls and arrow array as index.
-pub(crate) unsafe fn take_no_null_primitive<T: PolarsNumericType>(
+pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
+    arr: &PrimitiveArray<T>,
+    indices: &UInt32Array,
+) -> Arc<PrimitiveArray<T>> {
+    let array_values = arr.values();
+    let index_values = indices.values();
+    let validity_values = arr
+        .data_ref()
+        .null_buffer()
+        .expect("null buffer should be there");
+    let array_offset = arr.offset();
+    let indices_offset = indices.offset();
+
+    let arr = if let Some(validity_indices) = indices.data_ref().null_buffer() {
+        let iter = index_values.iter().enumerate().map(|(i, idx)| {
+            let idx = *idx as usize;
+            if validity_indices.is_valid_unchecked(i + indices_offset)
+                && validity_values.is_valid_unchecked(idx + array_offset)
+            {
+                Some(*array_values.get_unchecked(idx))
+            } else {
+                None
+            }
+        });
+
+        PrimitiveArray::<T>::from_trusted_len_iter(iter)
+    } else {
+        let iter = index_values.iter().map(|idx| {
+            let idx = *idx as usize;
+            if validity_values.is_valid_unchecked(idx + array_offset) {
+                Some(*array_values.get_unchecked(idx))
+            } else {
+                None
+            }
+        });
+
+        PrimitiveArray::<T>::from_trusted_len_iter(iter)
+    };
+
+    Arc::new(arr)
+}
+
+/// Take kernel for single chunk without nulls and arrow array as index.
+pub(crate) unsafe fn take_no_null_primitive_unchecked<T: PolarsNumericType>(
     arr: &PrimitiveArray<T>,
     indices: &UInt32Array,
 ) -> Arc<PrimitiveArray<T>> {
