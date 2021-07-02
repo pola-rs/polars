@@ -1,8 +1,9 @@
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::*;
-use crate::utils::NoNull;
+use crate::utils::{CustomIterTools, NoNull};
 use itertools::Itertools;
 use polars_arrow::prelude::ValueSize;
+use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::iter::FromIterator;
@@ -106,47 +107,25 @@ macro_rules! argsort {
     ($self:expr, $reverse:expr) => {{
         let sort_parallel = sort_parallel($self);
 
-        let ca: NoNull<UInt32Chunked> = if $self.null_count() == 0 {
-            let mut count: u32 = 0;
-            let mut vals: Vec<_> = $self
-                .into_no_null_iter()
-                .map(|v| {
-                    let i = count;
-                    count += 1;
-                    (i, v)
-                })
-                .collect();
+        let mut vals = Vec::with_capacity($self.len());
+        let mut count: u32 = 0;
+        $self.downcast_iter().for_each(|arr| {
+            let iter = arr.iter().map(|v| {
+                let i = count;
+                count += 1;
+                (i, v)
+            });
+            vals.extend_trusted_len(iter);
+        });
 
-            argsort_branch(
-                vals.as_mut_slice(),
-                sort_parallel,
-                $reverse,
-                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
-            );
-
-            vals.into_iter().map(|(idx, _v)| idx).collect()
-        } else {
-            let mut count: u32 = 0;
-            let mut vals: Vec<_> = $self
-                .into_iter()
-                .map(|v| {
-                    let i = count;
-                    count += 1;
-                    (i, v)
-                })
-                .collect();
-
-            argsort_branch(
-                vals.as_mut_slice(),
-                sort_parallel,
-                $reverse,
-                |(_, a), (_, b)| order_default_null(a, b),
-                |(_, a), (_, b)| order_reverse_null(a, b),
-            );
-
-            vals.into_iter().map(|(idx, _v)| idx).collect()
-        };
+        argsort_branch(
+            vals.as_mut_slice(),
+            sort_parallel,
+            $reverse,
+            |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
+            |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+        );
+        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut ca = ca.into_inner();
         ca.rename($self.name());
         ca
@@ -202,7 +181,54 @@ where
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        argsort!(self, reverse)
+        let sort_parallel = sort_parallel(self);
+
+        let ca: NoNull<UInt32Chunked> = if self.null_count() == 0 {
+            let mut vals = Vec::with_capacity(self.len());
+            let mut count: u32 = 0;
+            self.downcast_iter().for_each(|arr| {
+                let values = arr.values();
+                let iter = values.iter().map(|v| {
+                    let i = count;
+                    count += 1;
+                    (i, v)
+                });
+                vals.extend_trusted_len(iter);
+            });
+
+            argsort_branch(
+                vals.as_mut_slice(),
+                sort_parallel,
+                reverse,
+                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
+                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+            );
+
+            vals.into_iter().map(|(idx, _v)| idx).collect_trusted()
+        } else {
+            let mut vals = Vec::with_capacity(self.len());
+            let mut count: u32 = 0;
+            self.downcast_iter().for_each(|arr| {
+                let iter = arr.iter().map(|v| {
+                    let i = count;
+                    count += 1;
+                    (i, v)
+                });
+                vals.extend_trusted_len(iter);
+            });
+
+            argsort_branch(
+                vals.as_mut_slice(),
+                sort_parallel,
+                reverse,
+                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
+                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+            );
+            vals.into_iter().map(|(idx, _v)| idx).collect_trusted()
+        };
+        let mut ca = ca.into_inner();
+        ca.rename(self.name());
+        ca
     }
 
     #[cfg(feature = "sort_multiple")]
