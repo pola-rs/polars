@@ -16,7 +16,7 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::{
     ops::{
         aggregate::{ChunkAggSeries, VarAggSeries},
-        compare_inner::{IntoPartialEqInner, PartialEqInner},
+        compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
     },
     AsSinglePtr, ChunkIdIter,
 };
@@ -76,6 +76,9 @@ macro_rules! impl_dyn_series {
             }
             fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
                 (&self.0).into_partial_eq_inner()
+            }
+            fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
+                (&self.0).into_partial_ord_inner()
             }
 
             fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
