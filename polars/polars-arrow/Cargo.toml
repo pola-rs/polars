@@ -1,6 +1,6 @@
 [package]
 name = "polars-arrow"
-version = "0.14.4"
+version = "0.14.5"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -10,6 +10,6 @@ description = "Arrow interfaces for Polars DataFrame library"
 
 [dependencies]
 arrow = {git = "https://github.com/apache/arrow-rs", rev = "9f56afb2d2347310184706f7d5e46af583557bea", default-features = false}
-#arrow = {version = "4.3", default-features = false }
+#arrow = {version = "4.4", default-features = false }
 thiserror = "^1.0"
 num = "^0.4"
