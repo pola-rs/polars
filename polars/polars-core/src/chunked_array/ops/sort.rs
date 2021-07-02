@@ -195,7 +195,7 @@ where
             let mut count: u32 = 0;
             self.downcast_iter().for_each(|arr| {
                 let values = arr.values();
-                let iter = values.iter().map(|v| {
+                let iter = values.iter().map(|&v| {
                     let i = count;
                     count += 1;
                     (i, v)
