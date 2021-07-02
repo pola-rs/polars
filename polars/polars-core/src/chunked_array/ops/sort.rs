@@ -1,3 +1,4 @@
+use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::*;
 use crate::utils::NoNull;
 use itertools::Itertools;
@@ -225,6 +226,9 @@ where
         }
 
         assert_eq!(other.len(), reverse.len() - 1);
+
+        let compare_inner: Vec<_> = other.iter().map(|s| s.into_partial_ord_inner()).collect();
+
         let mut count: u32 = 0;
         let mut vals: Vec<_> = self
             .into_iter()
@@ -242,68 +246,7 @@ where
                 (_, Ordering::Equal) => {
                     let idx_a = tpl_a.0 as usize;
                     let idx_b = tpl_b.0 as usize;
-
-                    macro_rules! partial_ord_by_idx {
-                        ($ca: ident, $reverse: expr) => {{
-                            // Safety:
-                            // Indexes are in bounds, we asserted equal lengths above
-                            let a;
-                            let b;
-                            if $reverse {
-                                b = unsafe { $ca.get_unchecked(idx_a) };
-                                a = unsafe { $ca.get_unchecked(idx_b) };
-                            } else {
-                                a = unsafe { $ca.get_unchecked(idx_a) };
-                                b = unsafe { $ca.get_unchecked(idx_b) };
-                            }
-
-                            match (&a).partial_cmp(&b).unwrap() {
-                                // also equal, try next array
-                                Ordering::Equal => continue,
-                                // this array is not equal, return
-                                ord => return ord,
-                            }
-                        }};
-                    }
-
-                    // series should be matching type or utf8
-                    for (s, reverse) in other.iter().zip(&reverse[1..]) {
-                        match s.dtype() {
-                            DataType::Utf8 => {
-                                let ca = s.utf8().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::Float32 => {
-                                let ca = s.f32().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::Float64 => {
-                                let ca = s.f64().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::Int64 => {
-                                let ca = s.i64().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::Int32 => {
-                                let ca = s.i32().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::UInt32 => {
-                                let ca = s.u32().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::UInt64 => {
-                                let ca = s.u64().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            _ => {
-                                unreachable!()
-                            }
-                        }
-                    }
-                    // all arrays exhausted, ordering equal it is.
-                    Ordering::Equal
+                    ordering_other_columns(&compare_inner, &reverse[1..], idx_a, idx_b)
                 }
                 (true, Ordering::Less) => Ordering::Greater,
                 (true, Ordering::Greater) => Ordering::Less,
@@ -314,6 +257,26 @@ where
 
         Ok(ca.into_inner())
     }
+}
+
+fn ordering_other_columns<'a>(
+    compare_inner: &'a [Box<dyn PartialOrdInner + 'a>],
+    reverse: &[bool],
+    idx_a: usize,
+    idx_b: usize,
+) -> Ordering {
+    for (cmp, reverse) in compare_inner.iter().zip(reverse) {
+        // Safety:
+        // indices are in bounds
+        let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b) };
+        match (ordering, reverse) {
+            (Ordering::Equal, _) => continue,
+            (_, true) => return ordering.reverse(),
+            _ => return ordering,
+        }
+    }
+    // all arrays/columns exhausted, ordering equal it is.
+    Ordering::Equal
 }
 
 macro_rules! sort {
@@ -381,6 +344,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 (i, v)
             })
             .collect();
+        let compare_inner: Vec<_> = other.iter().map(|s| s.into_partial_ord_inner()).collect();
 
         vals.sort_by(
             |tpl_a, tpl_b| match (reverse[0], sort_with_nulls(&tpl_a.1, &tpl_b.1)) {
@@ -389,68 +353,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 (_, Ordering::Equal) => {
                     let idx_a = tpl_a.0 as usize;
                     let idx_b = tpl_b.0 as usize;
-
-                    macro_rules! partial_ord_by_idx {
-                        ($ca: ident, $reverse: expr) => {{
-                            // Safety:
-                            // Indexes are in bounds, we asserted equal lengths above
-                            let a;
-                            let b;
-                            if $reverse {
-                                b = unsafe { $ca.get_unchecked(idx_a) };
-                                a = unsafe { $ca.get_unchecked(idx_b) };
-                            } else {
-                                a = unsafe { $ca.get_unchecked(idx_a) };
-                                b = unsafe { $ca.get_unchecked(idx_b) };
-                            }
-
-                            match (&a).partial_cmp(&b).unwrap() {
-                                // also equal, try next array
-                                Ordering::Equal => continue,
-                                // this array is not equal, return
-                                ord => return ord,
-                            }
-                        }};
-                    }
-
-                    // series should be matching type or utf8
-                    for (s, reverse) in other.iter().zip(&reverse[1..]) {
-                        match s.dtype() {
-                            DataType::Utf8 => {
-                                let ca = s.utf8().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::Float32 => {
-                                let ca = s.f32().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::Float64 => {
-                                let ca = s.f64().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::Int64 => {
-                                let ca = s.i64().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::Int32 => {
-                                let ca = s.i32().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::UInt32 => {
-                                let ca = s.u32().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            DataType::UInt64 => {
-                                let ca = s.u64().unwrap();
-                                partial_ord_by_idx!(ca, *reverse)
-                            }
-                            _ => {
-                                unreachable!()
-                            }
-                        }
-                    }
-                    // all arrays exhausted, ordering equal it is.
-                    Ordering::Equal
+                    ordering_other_columns(&compare_inner, &reverse[1..], idx_a, idx_b)
                 }
                 (true, Ordering::Less) => Ordering::Greater,
                 (true, Ordering::Greater) => Ordering::Less,
