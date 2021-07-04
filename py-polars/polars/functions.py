@@ -1,37 +1,40 @@
-from typing import Union, TextIO, Optional, List, BinaryIO, Sequence, Any, Type
+from typing import Union, TextIO, Optional, List, BinaryIO, Sequence, Dict, Any, Type
+import builtins
+import urllib.request
+import io
 from io import StringIO, BytesIO
-import numpy as np
+import contextlib
+from contextlib import contextmanager
 from pathlib import Path
+
+
+import numpy as np
 
 try:
     import pandas as pd
 except ImportError:
     pass
 
-from .frame import DataFrame
-from .series import Series
-from .lazy import LazyFrame
+try:
+    import fsspec
+    from fsspec.implementations.local import make_path_posix
+    from fsspec.utils import infer_compression, infer_storage_options
+
+    WITH_FSSPEC = True
+    fsspec_openfile = fsspec.core.OpenFile
+except ImportError:
+    WITH_FSSPEC = False
+    fsspec_openfile = None
+
 import pyarrow as pa
 import pyarrow.parquet
 import pyarrow.csv
 import pyarrow.compute
-import builtins
-import urllib.request
-import io
 
-from typing import Dict
+from .frame import DataFrame
+from .series import Series
+from .lazy import LazyFrame
 from .datatypes import DataType
-from urllib.parse import (  # noqa
-    urlencode,
-    urljoin,
-    urlparse as parse_url,
-    uses_netloc,
-    uses_params,
-    uses_relative,
-)
-
-_VALID_URLS = set(uses_relative + uses_netloc + uses_params)
-_VALID_URLS.discard("")
 
 
 def _process_http_file(path: str) -> io.BytesIO:
@@ -39,47 +42,44 @@ def _process_http_file(path: str) -> io.BytesIO:
         return io.BytesIO(f.read())
 
 
-def _is_url(url: Any) -> bool:
-    """Check to see if a URL has a valid protocol.
-
-    Parameters
-    ----------
-    url
-        str or unicode.
-
-    Returns
-    -------
-    isurl : bool
-        If `url` has a valid protocol return True otherwise False.
-    """
-    try:
-        return parse_url(url).scheme in _VALID_URLS
-    except Exception:
-        return False
-
-
 def _prepare_file_arg(
-    file: Union[str, TextIO, Path, BinaryIO]
-) -> Union[str, TextIO, Path, BinaryIO]:
+    file: Union[str, TextIO, Path, BinaryIO], **kwargs: Any
+) -> Union[str, BinaryIO, contextlib._GeneratorContextManager, fsspec_openfile]:
     """
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
+    Returned value is always usable as a context.
 
-    Does one of:
-        - A path.Path object is converted to a string.
-        - A raw file on the web is downloaded into a buffer.
+    A `StringIO`, `BytesIO` file is returned as a `BytesIO`
+    A local path is returned as a string
+    An http url is read into a buffer and returned as a `BytesIO`
+
+    When fsspec is installed, except for `StringIO`, `BytesIO` and local
+    uncompressed files, the file is opened with `fsspec.open(file, **kwargs)`,
+    in which case, the compression is inferred.
     """
-    if _is_url(file):
-        if isinstance(file, Path):
-            file = str(file)
 
-        if isinstance(file, str) and file.startswith("http"):
-            file = _process_http_file(file)
-    else:
-        if isinstance(file, StringIO):
-            return io.BytesIO(file.read().encode("utf8"))
-        elif isinstance(file, BytesIO):
-            return file
-    return file
+    # Small helper to use a string as context
+    @contextmanager
+    def managed_file(string):
+        try:
+            yield string
+        finally:
+            pass
+
+    if isinstance(file, StringIO):
+        return io.BytesIO(file.read().encode("utf8"))
+    if isinstance(file, BytesIO):
+        return file
+    if WITH_FSSPEC:
+        compressed = infer_compression(file) is not None
+        local = infer_storage_options(file)["protocol"] == "file"
+        if local and not compressed:
+            return managed_file(make_path_posix(file))
+        compression = kwargs.pop("compression", "infer")
+        return fsspec.open(file, compression=compression, **kwargs)
+    if isinstance(file, str) and file.startswith("http"):
+        return _process_http_file(file)
+    return managed_file(str(file))
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
@@ -113,6 +113,7 @@ def read_csv(
     use_pyarrow: bool = True,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
+    storage_options: Optional[Dict] = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a csv file.
@@ -124,6 +125,7 @@ def read_csv(
         By file-like object, we refer to objects with a ``read()`` method,
         such as a file handler (e.g. via builtin ``open`` function)
         or ``StringIO`` or ``BytesIO``.
+        If ``fsspec`` is installed, it will be used to open non-local or compressed files
     infer_schema_length
         Maximum number of lines to read to infer schema.
     batch_size
@@ -165,12 +167,15 @@ def read_csv(
         Reduce memory usage in expense of performance.
     comment_char
         character that indicates the start of a comment line, for instance '#'.
+    storage_options
+        Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
 
     Returns
     -------
     DataFrame
     """
-    file = _prepare_file_arg(file)
+
+    storage_options = storage_options or {}
 
     if columns and not has_headers:
         for column in columns:
@@ -202,18 +207,19 @@ def read_csv(
             # Convert column indices from projection to 'f0', 'f1', ... column names for pyarrow.
             include_columns = [f"f{column_idx}" for column_idx in projection]
 
-        tbl = pa.csv.read_csv(
-            file,
-            pa.csv.ReadOptions(
-                skip_rows=skip_rows, autogenerate_column_names=not has_headers
-            ),
-            pa.csv.ParseOptions(delimiter=sep),
-            pa.csv.ConvertOptions(
-                column_types=None,
-                include_columns=include_columns,
-                include_missing_columns=ignore_errors,
-            ),
-        )
+        with _prepare_file_arg(file, **storage_options) as data:
+            tbl = pa.csv.read_csv(
+                data,
+                pa.csv.ReadOptions(
+                    skip_rows=skip_rows, autogenerate_column_names=not has_headers
+                ),
+                pa.csv.ParseOptions(delimiter=sep),
+                pa.csv.ConvertOptions(
+                    column_types=None,
+                    include_columns=include_columns,
+                    include_missing_columns=ignore_errors,
+                ),
+            )
 
         if new_columns:
             tbl = tbl.rename_columns(new_columns)
@@ -225,9 +231,9 @@ def read_csv(
 
         return from_arrow(tbl, rechunk)  # type: ignore
 
-    def read_csv_to_df(file: Union[str, TextIO]) -> DataFrame:
-        return DataFrame.read_csv(
-            file=file,
+    with _prepare_file_arg(file, **storage_options) as data:
+        df = DataFrame.read_csv(
+            file=data,
             infer_schema_length=infer_schema_length,
             batch_size=batch_size,
             has_headers=has_headers,
@@ -244,19 +250,6 @@ def read_csv(
             low_memory=low_memory,
             comment_char=comment_char,
         )
-
-    if isinstance(file, str) and file.endswith(".gz"):
-        try:
-            # Try to use python-isal for faster gzip decompresssion.
-            from isal import igzip as gzip_mod
-        except ImportError:
-            # Use normal gzip module, if python-isal is not installed.
-            import gzip as gzip_mod  # type: ignore
-
-        with gzip_mod.open(file, "rb") as fh:
-            df = read_csv_to_df(fh)
-    else:
-        df = read_csv_to_df(file)  # type: ignore
 
     if new_columns:
         df.columns = new_columns
@@ -347,7 +340,11 @@ def scan_parquet(
     )
 
 
-def read_ipc(file: Union[str, BinaryIO, Path], use_pyarrow: bool = True) -> DataFrame:
+def read_ipc(
+    file: Union[str, BinaryIO, Path],
+    use_pyarrow: bool = True,
+    storage_options: Optional[Dict] = None,
+) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -355,15 +352,19 @@ def read_ipc(file: Union[str, BinaryIO, Path], use_pyarrow: bool = True) -> Data
     ----------
     file
         Path to a file or a file like object.
+        If ``fsspec`` is installed, it will be used to open non-local or compressed files
     use_pyarrow
         Use pyarrow or rust arrow backend.
+    storage_options
+        Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
 
     Returns
     -------
     DataFrame
     """
-    file_prep = _prepare_file_arg(file)
-    return DataFrame.read_ipc(file_prep, use_pyarrow)  # type: ignore
+    storage_options = storage_options or {}
+    with _prepare_file_arg(file, **storage_options) as data:
+        return DataFrame.read_ipc(data, use_pyarrow)  # type: ignore
 
 
 def read_parquet(
@@ -371,6 +372,7 @@ def read_parquet(
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
     columns: Optional[List[str]] = None,
+    storage_options: Optional[Dict] = None,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -381,6 +383,7 @@ def read_parquet(
     source
         Path to a file | list of files, or a file like object. If the path is a directory, that directory will be used
         as partition aware scan.
+        If ``fsspec`` is installed, it will be used to open non-local or compressed files
     stop_after_n_rows
         After n rows are read from the parquet, it stops reading. Note: this cannot be used in partition aware parquet
         reads.
@@ -388,6 +391,8 @@ def read_parquet(
         Memory map underlying file. This will likely increase performance.
     columns
         Columns to project/ select.
+    storage_options
+        Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
     **kwargs
         kwargs for [pyarrow.parquet.read_table](https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html)
 
@@ -395,10 +400,10 @@ def read_parquet(
     -------
     DataFrame
     """
-    source_prep = _prepare_file_arg(source)  # type: ignore
-    if stop_after_n_rows is not None:
-        return DataFrame.read_parquet(source_prep, stop_after_n_rows=stop_after_n_rows)  # type: ignore
-    else:
+    storage_options = storage_options or {}
+    with _prepare_file_arg(source, **storage_options) as source_prep:
+        if stop_after_n_rows is not None:
+            return DataFrame.read_parquet(source_prep, stop_after_n_rows=stop_after_n_rows)  # type: ignore
         return from_arrow(  # type: ignore
             pa.parquet.read_table(
                 source_prep, memory_map=memory_map, columns=columns, **kwargs
