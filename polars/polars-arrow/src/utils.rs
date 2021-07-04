@@ -85,5 +85,7 @@ pub trait CustomIterToolsSized: Iterator + Sized {}
 impl<T: ?Sized> CustomIterTools for T where T: Iterator {}
 
 pub trait FromTrustedLenIterator<A>: Sized {
-    fn from_iter_trusted_length<T: IntoIterator<Item = A> + TrustedLen>(iter: T) -> Self;
+    fn from_iter_trusted_length<T: IntoIterator<Item = A>>(iter: T) -> Self
+    where
+        T::IntoIter: TrustedLen;
 }

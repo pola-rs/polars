@@ -1,7 +1,9 @@
+mod boolean;
+
 use crate::utils::{FromTrustedLenIterator, TrustMyLength};
+use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::buffer::MutableBuffer;
 use std::slice::Iter;
-use arrow::bitmap::utils::{ZipValidity, BitmapIter};
 
 /// An iterator of known, fixed size.
 /// A trait denoting Rusts' unstable [TrustedLen](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).
@@ -52,11 +54,11 @@ unsafe impl<I: TrustedLen + DoubleEndedIterator> TrustedLen for std::iter::Rev<I
 unsafe impl<I: Iterator<Item = J>, J> TrustedLen for TrustMyLength<I, J> {}
 unsafe impl<T> TrustedLen for std::ops::Range<T> where std::ops::Range<T>: Iterator {}
 unsafe impl TrustedLen for arrow::array::Utf8ValuesIter<'_, i64> {}
-unsafe impl<T, I: TrustedLen + Iterator<Item=T>> TrustedLen for ZipValidity<'_, T, I> {}
+unsafe impl<T, I: TrustedLen + Iterator<Item = T>> TrustedLen for ZipValidity<'_, T, I> {}
 unsafe impl TrustedLen for BitmapIter<'_> {}
 
 impl<T: arrow::types::NativeType> FromTrustedLenIterator<T> for MutableBuffer<T> {
-    fn from_iter_trusted_length<I: IntoIterator<Item = T> + TrustedLen>(iter: I) -> Self {
+    fn from_iter_trusted_length<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let iter = iter.into_iter();
         // Safety:
         // Guarded by trait system

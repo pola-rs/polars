@@ -98,11 +98,16 @@ where
     where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
     {
-        self.downcast_iter()
-            .flatten()
-            .trust_my_length(self.len())
-            .map(|v| f(v.copied()))
-            .collect_trusted()
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let iter = arr.into_iter().map(|opt_v| f(opt_v.copied()));
+                let arr = PrimitiveArray::<T::Native>::from_trusted_len_iter(iter)
+                    .to(T::get_dtype().to_arrow());
+                Arc::new(arr) as ArrayRef
+            })
+            .collect();
+        Self::new_from_chunks(self.name(), chunks)
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
