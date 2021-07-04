@@ -35,6 +35,7 @@ dtype-date64 = ["polars-core/dtype-date64"]
 is_in = ["polars-core/is_in"]
 repeat_by = ["polars-core/repeat_by"]
 round_series = ["polars-core/round_series"]
+is_first = ["polars-core/is_first"]
 
 # no guarantees whatsoever
 private = []

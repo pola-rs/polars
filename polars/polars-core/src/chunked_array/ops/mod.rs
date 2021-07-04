@@ -421,7 +421,8 @@ pub trait ChunkCast {
     /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
-        N: PolarsDataType;
+        N: PolarsDataType,
+        Self: Sized;
 
     fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series>;
 }
@@ -987,5 +988,25 @@ pub trait RepeatBy {
     /// Repeat the values `n` times, where `n` is determined by the values in `by`.
     fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
         unimplemented!()
+    }
+}
+
+#[cfg(feature = "is_first")]
+#[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
+pub trait IsFirst<T: PolarsDataType> {
+    fn is_first(&self) -> Result<BooleanChunked> {
+        Err(PolarsError::InvalidOperation(
+            format!("operation not supported by {:?}", T::get_dtype()).into(),
+        ))
+    }
+}
+
+#[cfg(feature = "is_first")]
+#[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
+pub trait IsLast<T: PolarsDataType> {
+    fn is_last(&self) -> Result<BooleanChunked> {
+        Err(PolarsError::InvalidOperation(
+            format!("operation not supported by {:?}", T::get_dtype()).into(),
+        ))
     }
 }

@@ -195,6 +195,10 @@ impl PyExpr {
         self.clone().inner.is_unique().into()
     }
 
+    pub fn is_first(&self) -> PyExpr {
+        self.clone().inner.is_first().into()
+    }
+
     pub fn explode(&self) -> PyExpr {
         self.clone().inner.explode().into()
     }
