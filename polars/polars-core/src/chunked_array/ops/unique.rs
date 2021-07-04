@@ -449,6 +449,84 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
     }
 }
 
+#[cfg(feature = "is_first")]
+mod is_first {
+    use super::*;
+    use arrow::array::{ArrayRef, BooleanArray};
+
+    fn is_first<T>(ca: &ChunkedArray<T>) -> BooleanChunked
+    where
+        T: PolarsNumericType,
+        T::Native: Hash + Eq,
+    {
+        let mut unique = PlHashSet::new();
+        let chunks = ca
+            .downcast_iter()
+            .map(|arr| {
+                let mask: BooleanArray = arr
+                    .into_iter()
+                    .map(|opt_v| unique.insert(opt_v))
+                    .collect_trusted();
+                Arc::new(mask) as ArrayRef
+            })
+            .collect();
+
+        BooleanChunked::new_from_chunks(ca.name(), chunks)
+    }
+
+    impl<T> IsFirst<T> for ChunkedArray<T>
+    where
+        T: PolarsNumericType,
+        T::Native: NumCast,
+    {
+        fn is_first(&self) -> Result<BooleanChunked> {
+            use DataType::*;
+            match self.dtype() {
+                Int8 | Int16 | UInt8 | UInt16 => {
+                    let ca = self.cast::<Int32Type>().unwrap();
+                    ca.is_first()
+                }
+                _ => {
+                    if Self::bit_repr_is_large() {
+                        let ca = self.bit_repr_large();
+                        Ok(is_first(&ca))
+                    } else {
+                        let ca = self.bit_repr_small();
+                        Ok(is_first(&ca))
+                    }
+                }
+            }
+        }
+    }
+
+    impl IsFirst<CategoricalType> for CategoricalChunked {
+        fn is_first(&self) -> Result<BooleanChunked> {
+            let ca = self.cast::<UInt32Type>().unwrap();
+            ca.is_first()
+        }
+    }
+
+    impl IsFirst<Utf8Type> for Utf8Chunked {
+        fn is_first(&self) -> Result<BooleanChunked> {
+            let mut unique = PlHashSet::new();
+            let chunks = self
+                .downcast_iter()
+                .map(|arr| {
+                    let mask: BooleanArray = arr
+                        .into_iter()
+                        .map(|opt_v| unique.insert(opt_v))
+                        .collect_trusted();
+                    Arc::new(mask) as ArrayRef
+                })
+                .collect();
+
+            Ok(BooleanChunked::new_from_chunks(self.name(), chunks))
+        }
+    }
+    impl IsFirst<ListType> for ListChunked {}
+    impl IsFirst<BooleanType> for BooleanChunked {}
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -495,6 +573,26 @@ mod test {
                 Some(false),
                 Some(false),
                 Some(true)
+            ]
+        );
+    }
+
+    #[test]
+    fn is_first() {
+        let ca = UInt32Chunked::new_from_opt_slice(
+            "a",
+            &[Some(1), Some(2), Some(1), Some(1), None, Some(3), None],
+        );
+        assert_eq!(
+            Vec::from(&ca.is_first().unwrap()),
+            &[
+                Some(true),
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(true),
+                Some(true),
+                Some(false)
             ]
         );
     }

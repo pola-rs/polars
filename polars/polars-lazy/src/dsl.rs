@@ -1097,6 +1097,17 @@ impl Expr {
             ))
         })
     }
+
+    #[cfg(feature = "is_first")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
+    #[allow(clippy::wrong_self_convention)]
+    /// Get a mask of the first unique value.
+    pub fn is_first(self) -> Expr {
+        self.map(
+            |s| s.is_first().map(|ca| ca.into_series()),
+            Some(DataType::Boolean),
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.
