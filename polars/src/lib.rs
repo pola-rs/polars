@@ -115,6 +115,9 @@
 //!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
 //!     - `round_series` - round underlying float types of `Series`.
+//!     - `repeat_by` - [Repeat element in an Array N times, where N is given by another array.
+//!     - `is_first` - Check if element is first unique value.
+//!     - `is_last` - Check if element is last unique value.
 //!     - `checked_arithmetic` - checked arithmetic/ returning `None` on invalid operations.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)

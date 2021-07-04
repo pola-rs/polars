@@ -259,6 +259,26 @@ impl<T> Default for AlignedVec<T> {
     }
 }
 
+<<<<<<< HEAD
+=======
+impl<T: ArrowNativeType> FromTrustedLenIterator<T> for AlignedVec<T> {
+    fn from_iter_trusted_length<I: IntoIterator<Item = T>>(iter: I) -> Self
+    where
+        I::IntoIter: TrustedLen,
+    {
+        let iter = iter.into_iter();
+        let len = iter.size_hint().0;
+        // Safety:
+        // trait trustedlen
+        let buf = unsafe { MutableBuffer::from_trusted_len_iter(iter) };
+        let ptr = buf.as_ptr() as usize;
+        let capacity = buf.capacity() / std::mem::size_of::<T>();
+        std::mem::forget(buf);
+        unsafe { AlignedVec::from_ptr(ptr, len, capacity) }
+    }
+}
+
+>>>>>>> 48618e09b... improve apply and trusted-len/polars-arrow
 #[cfg(test)]
 mod test {
     use super::*;
