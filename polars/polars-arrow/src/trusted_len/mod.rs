@@ -1,3 +1,5 @@
+pub mod boolean;
+
 use crate::utils::TrustMyLength;
 use crate::vec::AlignedVec;
 use arrow::buffer::MutableBuffer;

@@ -1,7 +1,7 @@
 use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;
-use crate::utils::{FromTrustedLenIterator, NoNull};
-use arrow::array::{ArrayData, PrimitiveArray};
+use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
+use arrow::array::{ArrayData, BooleanArray, PrimitiveArray};
 use arrow::buffer::Buffer;
 use std::borrow::Borrow;
 
@@ -63,16 +63,26 @@ where
 }
 
 impl FromTrustedLenIterator<Option<bool>> for ChunkedArray<BooleanType> {
-    fn from_iter_trusted_length<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
+    fn from_iter_trusted_length<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self
+    where
+        I::IntoIter: TrustedLen,
+    {
         let iter = iter.into_iter();
-        iter.collect()
+        let arr: BooleanArray = iter.collect_trusted();
+
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
 impl FromTrustedLenIterator<bool> for BooleanChunked {
-    fn from_iter_trusted_length<I: IntoIterator<Item = bool>>(iter: I) -> Self {
+    fn from_iter_trusted_length<I: IntoIterator<Item = bool>>(iter: I) -> Self
+    where
+        I::IntoIter: TrustedLen,
+    {
         let iter = iter.into_iter();
-        iter.collect()
+        let arr: BooleanArray = iter.collect_trusted();
+
+        Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
 
