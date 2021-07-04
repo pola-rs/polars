@@ -956,6 +956,16 @@ class Series:
         """
         return wrap_s(self._s.is_unique())
 
+    def is_first(self) -> "Series":
+        """
+        Get a mask of the first unique value.
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return wrap_s(self._s.is_first())
+
     def is_duplicated(self) -> "Series":
         """
         Get mask of all duplicated values.

@@ -843,6 +843,11 @@ macro_rules! impl_dyn_series {
             fn checked_div(&self, rhs: &Series) -> Result<Series> {
                 self.0.checked_div(rhs)
             }
+
+            #[cfg(feature = "is_first")]
+            fn is_first(&self) -> Result<BooleanChunked> {
+                self.0.is_first()
+            }
         }
     };
 }

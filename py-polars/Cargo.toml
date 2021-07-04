@@ -51,7 +51,8 @@ features = [
     "dtype-full",
     "rows",
     "private",
-    "round_series"
+    "round_series",
+    "is_first"
 ]
 
 #[patch.crates-io]
