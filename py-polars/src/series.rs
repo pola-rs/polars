@@ -1095,6 +1095,15 @@ impl PySeries {
         Ok(n)
     }
 
+    pub fn is_first(&self) -> PyResult<Self> {
+        let out = self
+            .series
+            .is_first()
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+        Ok(out.into())
+    }
+
     pub fn round(&self, decimals: u32) -> PyResult<Self> {
         let s = self.series.round(decimals).map_err(PyPolarsEr::from)?;
         Ok(s.into())

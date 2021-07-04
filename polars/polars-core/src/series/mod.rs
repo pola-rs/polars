@@ -1041,6 +1041,13 @@ pub trait SeriesTrait:
     fn checked_div(&self, _rhs: &Series) -> Result<Series> {
         unimplemented!()
     }
+
+    #[cfg(feature = "is_first")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
+    /// Get a mask of the first unique values.
+    fn is_first(&self) -> Result<BooleanChunked> {
+        unimplemented!()
+    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {

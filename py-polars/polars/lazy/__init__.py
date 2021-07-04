@@ -1287,6 +1287,16 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_unique())
 
+    def is_first(self) -> "Expr":
+        """
+        Get a mask of the first unique value.
+
+        Returns
+        -------
+        Boolean Series
+        """
+        return wrap_expr(self._pyexpr.is_first())
+
     def is_duplicated(self) -> "Expr":
         """
         Get mask of duplicated values.

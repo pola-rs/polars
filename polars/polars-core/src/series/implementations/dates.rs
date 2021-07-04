@@ -705,6 +705,10 @@ macro_rules! impl_dyn_series {
             fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
                 RepeatBy::repeat_by(&self.0, by)
             }
+            #[cfg(feature = "is_first")]
+            fn is_first(&self) -> Result<BooleanChunked> {
+                cast_and_apply!(self, is_first,)
+            }
         }
     };
 }

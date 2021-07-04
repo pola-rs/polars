@@ -383,3 +383,8 @@ def test_apply_list_out():
     assert out[0] == [3, 3, 3]
     assert out[1] == [2, 2]
     assert out[2] == [2, 2]
+
+
+def test_is_first():
+    s = pl.Series("", [1, 1, 2])
+    assert s.is_first() == [True, False, True]
