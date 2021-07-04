@@ -301,7 +301,10 @@ impl<T: ArrowNativeType> Default for AlignedVec<T> {
 }
 
 impl<T: ArrowNativeType> FromTrustedLenIterator<T> for AlignedVec<T> {
-    fn from_iter_trusted_length<I: IntoIterator<Item = T> + TrustedLen>(iter: I) -> Self {
+    fn from_iter_trusted_length<I: IntoIterator<Item = T>>(iter: I) -> Self
+    where
+        I::IntoIter: TrustedLen,
+    {
         let iter = iter.into_iter();
         let len = iter.size_hint().0;
         // Safety:

@@ -106,11 +106,17 @@ where
     where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
     {
-        self.downcast_iter()
-            .flatten()
-            .trust_my_length(self.len())
-            .map(f)
-            .collect_trusted()
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let iter = arr.into_iter().map(f);
+                // Safety:
+                // array's length is trusted
+                let arr = unsafe { PrimitiveArray::<T>::from_trusted_len_iter(iter) };
+                Arc::new(arr) as ArrayRef
+            })
+            .collect();
+        Self::new_from_chunks(self.name(), chunks)
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
