@@ -1,9 +1,21 @@
-from typing import Union, TextIO, Optional, List, BinaryIO, Sequence, Dict, Any, Type
+from typing import (
+    Union,
+    TextIO,
+    Optional,
+    List,
+    BinaryIO,
+    Sequence,
+    Dict,
+    Any,
+    Type,
+    Iterator,
+    ContextManager,
+    overload,
+)
 import builtins
 import urllib.request
 import io
 from io import StringIO, BytesIO
-import contextlib
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -21,10 +33,8 @@ try:
     from fsspec.utils import infer_compression, infer_storage_options
 
     WITH_FSSPEC = True
-    fsspec_openfile = fsspec.core.OpenFile
 except ImportError:
     WITH_FSSPEC = False
-    fsspec_openfile = None
 
 import pyarrow as pa
 import pyarrow.parquet
@@ -42,9 +52,23 @@ def _process_http_file(path: str) -> io.BytesIO:
         return io.BytesIO(f.read())
 
 
+@overload
 def _prepare_file_arg(
     file: Union[str, TextIO, Path, BinaryIO], **kwargs: Any
-) -> Union[str, BinaryIO, contextlib._GeneratorContextManager, fsspec_openfile]:
+) -> ContextManager[Union[str, BinaryIO]]:
+    ...
+
+
+@overload
+def _prepare_file_arg(
+    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
+) -> ContextManager[Union[str, BinaryIO, List[str], List[BinaryIO]]]:
+    ...
+
+
+def _prepare_file_arg(
+    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
+) -> ContextManager[Union[str, BinaryIO, List[str], List[BinaryIO]]]:
     """
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
@@ -58,11 +82,13 @@ def _prepare_file_arg(
     in which case, the compression is inferred.
     """
 
+    compression = kwargs.pop("compression", "infer")
+
     # Small helper to use a string as context
     @contextmanager
-    def managed_file(string):
+    def managed_file(file: Union[str, List[str]]) -> Iterator[Union[str, List[str]]]:
         try:
-            yield string
+            yield file
         finally:
             pass
 
@@ -70,16 +96,25 @@ def _prepare_file_arg(
         return io.BytesIO(file.read().encode("utf8"))
     if isinstance(file, BytesIO):
         return file
-    if WITH_FSSPEC:
-        compressed = infer_compression(file) is not None
-        local = infer_storage_options(file)["protocol"] == "file"
-        if local and not compressed:
-            return managed_file(make_path_posix(file))
-        compression = kwargs.pop("compression", "infer")
-        return fsspec.open(file, compression=compression, **kwargs)
-    if isinstance(file, str) and file.startswith("http"):
-        return _process_http_file(file)
-    return managed_file(str(file))
+    if isinstance(file, Path):
+        return managed_file(str(file))
+    if isinstance(file, str):
+        if WITH_FSSPEC:
+            compressed = infer_compression(file) is not None
+            local = infer_storage_options(file)["protocol"] == "file"
+            if local and not compressed:
+                return managed_file(make_path_posix(file))
+            return fsspec.open(file, compression=compression, **kwargs)
+        if file.startswith("http"):
+            return _process_http_file(file)
+    if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
+        if WITH_FSSPEC:
+            compressed = any(infer_compression(f) is not None for f in file)
+            local = all(infer_storage_options(f)["protocol"] == "file" for f in file)
+            if local and not compressed:
+                return managed_file(list(map(make_path_posix, file)))
+            return fsspec.open_files(file, compression=compression, **kwargs)
+    return managed_file(file)
 
 
 def get_dummies(df: DataFrame) -> DataFrame:
