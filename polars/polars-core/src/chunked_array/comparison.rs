@@ -1,3 +1,4 @@
+use crate::utils::align_chunks_binary;
 use crate::{prelude::*, utils::NoNull};
 use arrow::{
     array::{ArrayRef, BooleanArray, PrimitiveArray, Utf8Array},
@@ -600,56 +601,20 @@ impl ChunkCompare<&ListChunked> for ListChunked {
     }
 }
 
-impl BooleanChunked {
-    /// First ensure that the chunks of lhs and rhs match and then iterates over the chunks and applies
-    /// the comparison operator.
-    fn bit_operation(
-        &self,
-        rhs: &BooleanChunked,
-        operator: impl Fn(&BooleanArray, &BooleanArray) -> arrow::error::Result<BooleanArray>,
-    ) -> Result<BooleanChunked> {
-        let chunks = self
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(left, right)| {
-                let arr_res = operator(left, right);
-                let arr = match arr_res {
-                    Ok(arr) => arr,
-                    Err(e) => return Err(PolarsError::ArrowError(e)),
-                };
-                Ok(Arc::new(arr) as ArrayRef)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(ChunkedArray::new_from_chunks("", chunks))
-    }
-}
-
-macro_rules! impl_bitwise_op  {
-    ($self:ident, $rhs:ident, $arrow_method:ident, $op:tt) => {{
-        if $self.chunk_id().zip($rhs.chunk_id()).all(|(l, r)| l == r) {
-            let result = $self.bit_operation($rhs, compute::boolean::$arrow_method);
-            result.unwrap()
-        } else {
-            let ca = $self
-                .into_iter()
-                .zip($rhs.into_iter())
-                .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
-                    (Some(left), Some(right)) => Some(left $op right),
-                    _ => None,
-                })
-                .collect();
-            ca
-        }
-    }}
-
-}
-
 impl BitOr for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        impl_bitwise_op!(self, rhs, or, |)
+        let (lhs, rhs) = align_chunks_binary(self, rhs);
+        let chunks = lhs
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
+            .map(|(lhs, rhs)| {
+                Arc::new(compute::boolean_kleene::or(lhs, rhs).expect("should be same size"))
+                    as ArrayRef
+            })
+            .collect();
+        BooleanChunked::new_from_chunks(self.name(), chunks)
     }
 }
 
@@ -665,7 +630,16 @@ impl BitAnd for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        impl_bitwise_op!(self, rhs, and, &)
+        let (lhs, rhs) = align_chunks_binary(self, rhs);
+        let chunks = lhs
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
+            .map(|(lhs, rhs)| {
+                Arc::new(compute::boolean_kleene::and(lhs, rhs).expect("should be same size"))
+                    as ArrayRef
+            })
+            .collect();
+        BooleanChunked::new_from_chunks(self.name(), chunks)
     }
 }
 
@@ -786,7 +760,7 @@ mod test {
         let a = BooleanChunked::new_from_slice("a", &[true, false, false]);
         let b = BooleanChunked::new_from_opt_slice("b", &[Some(true), Some(true), None]);
         assert_eq!(Vec::from(&a | &b), &[Some(true), Some(true), None]);
-        assert_eq!(Vec::from(&a & &b), &[Some(true), Some(false), None]);
+        assert_eq!(Vec::from(&a & &b), &[Some(true), Some(false), Some(false)]);
         assert_eq!(Vec::from(!b), &[Some(false), Some(false), None]);
     }
 
@@ -986,5 +960,18 @@ mod test {
         assert_eq!(a1.lt(&a2).sum(), a2.lt(&a1).sum());
         assert_eq!(a1.lt_eq(&a2).sum(), a2.lt_eq(&a1).sum());
         assert_eq!(a1.gt_eq(&a2).sum(), a2.gt_eq(&a1).sum());
+    }
+
+    #[test]
+    fn test_kleene() {
+        let a = BooleanChunked::new_from_opt_slice("", &[Some(true), Some(false), None]);
+        let trues = BooleanChunked::new_from_slice("", &[true, true, true]);
+        let falses = BooleanChunked::new_from_slice("", &[false, false, false]);
+
+        let c = &a | &trues;
+        assert_eq!(Vec::from(&c), &[Some(true), Some(true), Some(true)]);
+
+        let c = &a | &falses;
+        assert_eq!(Vec::from(&c), &[Some(true), Some(false), None])
     }
 }
