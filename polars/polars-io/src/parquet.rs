@@ -47,7 +47,6 @@ where
 
         let reader = read::RecordReader::try_new(
             &mut self.reader,
-            None,
             projection.map(|x| x.to_vec()),
             self.stop_after_n_rows,
             Arc::new(|_, _| true),
@@ -109,7 +108,6 @@ where
 
         let reader = read::RecordReader::try_new(
             &mut self.reader,
-            None,
             None,
             self.stop_after_n_rows,
             Arc::new(|_, _| true),
@@ -190,6 +188,7 @@ where
         let options = write::WriteOptions {
             write_statistics: false,
             compression: write::CompressionCodec::Uncompressed,
+            version: write::Version::V2,
         };
         let schema = ArrowSchema::new(fields);
         let parquet_schema = write::to_parquet_schema(&schema)?;

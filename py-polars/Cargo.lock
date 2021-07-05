@@ -64,7 +64,7 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.1.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=1e54fd43ce9ce78958f9243a137acf15b3b57f5e#1e54fd43ce9ce78958f9243a137acf15b3b57f5e"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=4f364c8d0d6203b71179516b77a1aa61432feec3#4f364c8d0d6203b71179516b77a1aa61432feec3"
 dependencies = [
  "ahash",
  "base64",
@@ -1086,7 +1086,7 @@ dependencies = [
 [[package]]
 name = "parquet2"
 version = "0.1.0"
-source = "git+https://github.com/jorgecarleitao/parquet2?rev=17910746cf39f429bbcd6e2b0e033fbf0759f806#17910746cf39f429bbcd6e2b0e033fbf0759f806"
+source = "git+https://github.com/jorgecarleitao/parquet2?rev=a37dfc484df5ca2c0aa12c34515a526ce122c764#a37dfc484df5ca2c0aa12c34515a526ce122c764"
 dependencies = [
  "bitpacking",
  "brotli",
