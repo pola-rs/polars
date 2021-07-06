@@ -736,3 +736,15 @@ def test_join_dates():
         }
     )
     df.join(df, on="datetime")
+
+
+def test_asof_join():
+    left = pl.DataFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]})
+    right = pl.DataFrame({"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]})
+
+    # only test dispatch
+    out = left.join(right, on="a", how="asof")
+    assert out.shape == (3, 4)
+
+    left.lazy().join(right.lazy(), on="a", how="asof").collect()
+    assert out.shape == (3, 4)

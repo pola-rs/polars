@@ -21,6 +21,8 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
+#[cfg(feature = "asof_join")]
+use crate::frame::asof_join::JoinAsof;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
@@ -59,6 +61,11 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            #[cfg(feature = "asof_join")]
+            fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
+                self.0.join_asof(other.as_ref().as_ref())
+            }
+
             fn set_sorted(&mut self, reverse: bool) {
                 self.0.set_sorted(reverse)
             }

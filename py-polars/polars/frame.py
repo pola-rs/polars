@@ -1374,6 +1374,7 @@ class DataFrame:
                 - "inner"
                 - "left"
                 - "outer"
+                - "asof"
 
         Example
         ---
@@ -1417,6 +1418,10 @@ class DataFrame:
         │ 3    ┆ 8    ┆ "c" ┆ null  │
         ╰──────┴──────┴─────┴───────╯
         ```
+
+        # Asof joins
+        This is similar to a left-join except that we match on nearest key rather than equal keys.
+        The keys must be sorted to perform an asof join
 
         Returns
         -------

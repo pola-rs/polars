@@ -52,7 +52,8 @@ features = [
     "rows",
     "private",
     "round_series",
-    "is_first"
+    "is_first",
+    "asof_join"
 ]
 
 #[patch.crates-io]
