@@ -60,6 +60,10 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            fn set_sorted(&mut self, reverse: bool) {
+                self.0.set_sorted(reverse)
+            }
+
             unsafe fn equal_element(
                 &self,
                 idx_self: usize,
