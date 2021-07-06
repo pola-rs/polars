@@ -62,6 +62,8 @@ pub enum JoinType {
     Left,
     Inner,
     Outer,
+    #[cfg(feature = "asof_join")]
+    AsOf,
 }
 
 unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
@@ -947,7 +949,11 @@ impl_zip_outer_join!(Utf8Chunked);
 
 impl DataFrame {
     /// Utility method to finish a join.
-    fn finish_join(&self, mut df_left: DataFrame, mut df_right: DataFrame) -> Result<DataFrame> {
+    pub(crate) fn finish_join(
+        &self,
+        mut df_left: DataFrame,
+        mut df_right: DataFrame,
+    ) -> Result<DataFrame> {
         let mut left_names = HashSet::with_capacity_and_hasher(df_left.width(), RandomState::new());
 
         df_left.columns.iter().for_each(|series| {
@@ -1006,6 +1012,10 @@ impl DataFrame {
                 }
                 JoinType::Outer => {
                     self.outer_join(other, selected_left[0].name(), selected_right[0].name())
+                }
+                #[cfg(feature = "asof_join")]
+                JoinType::AsOf => {
+                    self.join_asof(other, selected_left[0].name(), selected_right[0].name())
                 }
             };
         }
@@ -1096,6 +1106,10 @@ impl DataFrame {
                 }
                 self.finish_join(df_left, df_right)
             }
+            #[cfg(feature = "asof_join")]
+            JoinType::AsOf => Err(PolarsError::ValueError(
+                "asof join not supported for join on multiple keys".into(),
+            )),
         }
     }
 
