@@ -48,6 +48,10 @@ pub(crate) mod private {
     }
 
     pub trait PrivateSeries {
+        fn set_sorted(&mut self, _reverse: bool) {
+            unimplemented!()
+        }
+
         unsafe fn equal_element(
             &self,
             _idx_self: usize,
@@ -1155,7 +1159,7 @@ impl<'a> (dyn SeriesTrait + 'a) {
 pub struct Series(pub Arc<dyn SeriesTrait>);
 
 impl Series {
-    fn get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
+    pub(crate) fn get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();
         }

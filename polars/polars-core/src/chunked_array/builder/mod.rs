@@ -50,6 +50,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
+            ..Default::default()
         }
     }
 }
@@ -95,6 +96,7 @@ where
             chunks: vec![self.array_builder.into_arc()],
             phantom: PhantomData,
             categorical_map: None,
+            ..Default::default()
         }
     }
 }
@@ -159,6 +161,7 @@ impl Utf8ChunkedBuilder {
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
+            ..Default::default()
         }
     }
 }
@@ -293,6 +296,7 @@ where
             chunks: vec![builder.into_arc()],
             phantom: PhantomData,
             categorical_map: None,
+            ..Default::default()
         }
     }
 
@@ -349,6 +353,7 @@ macro_rules! finish_list_builder {
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
+            ..Default::default()
         }
     }};
 }
