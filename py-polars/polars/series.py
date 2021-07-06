@@ -229,6 +229,12 @@ class Series:
                     self._s = PySeries.new_opt_f64(name, values)
                 elif isinstance(dtype, str):
                     self._s = PySeries.new_str(name, values)
+                elif isinstance(dtype, datetime):
+                    arrow_array = pa.array(values)
+                    from .functions import from_arrow
+
+                    s = from_arrow(arrow_array)
+                    self._s = s._s
                 # make list array
                 elif isinstance(dtype, (list, tuple)):
                     value_dtype = _find_first_non_none(dtype)
