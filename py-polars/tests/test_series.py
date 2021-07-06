@@ -4,6 +4,7 @@ import polars as pl
 import numpy as np
 import pytest
 import pyarrow as pa
+from datetime import datetime
 
 
 def create_series() -> "Series":
@@ -369,6 +370,18 @@ def test_timestamp():
     df = pl.DataFrame([out])
     # test if rows returns objects
     assert isinstance(df.row(0)[0], datetime)
+
+
+def test_from_pydatetime():
+    dates = [
+        datetime(2021, 1, 1),
+        datetime(2021, 1, 2),
+        datetime(2021, 1, 3),
+        datetime(2021, 1, 4, 12, 12),
+        None,
+    ]
+    s = pl.Series("", dates)
+    assert s.dtype == pl.Date64
 
 
 def test_round():
