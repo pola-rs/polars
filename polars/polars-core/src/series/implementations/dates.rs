@@ -105,6 +105,11 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            #[cfg(feature = "asof_join")]
+            fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
+                cast_and_apply!(self, join_asof, other)
+            }
+
             fn set_sorted(&mut self, reverse: bool) {
                 self.0.set_sorted(reverse)
             }

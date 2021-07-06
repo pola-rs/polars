@@ -18,6 +18,8 @@ use crate::utils::{
 };
 
 mod arithmetic;
+#[cfg(feature = "asof_join")]
+pub(crate) mod asof_join;
 pub mod explode;
 pub mod groupby;
 pub mod hash_join;
@@ -25,6 +27,7 @@ pub mod hash_join;
 pub mod row;
 pub mod select;
 mod upstream_traits;
+
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
 use crate::POOL;

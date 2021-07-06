@@ -478,10 +478,17 @@ class LazyFrame:
                 "inner"
                 "left"
                 "outer"
+                "join"
+
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+
+        # Asof joins
+        This is similar to a left-join except that we match on nearest key rather than equal keys.
+        The keys must be sorted to perform an asof join
+
         """
         if isinstance(left_on, str):
             left_on = [left_on]
