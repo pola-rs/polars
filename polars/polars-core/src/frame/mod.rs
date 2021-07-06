@@ -869,6 +869,8 @@ impl DataFrame {
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
     fn sort_impl(&self, by_column: Vec<&str>, reverse: Vec<bool>) -> Result<Self> {
+        let first_reverse = reverse[0];
+        let first_by_column = by_column[0];
         let take = match by_column.len() {
             1 => {
                 let s = self.column(by_column[0])?;
@@ -893,7 +895,16 @@ impl DataFrame {
         }
         // Safety:
         // the created indices are in bounds
-        Ok(unsafe { self.take_unchecked(&take) })
+        let mut df = unsafe { self.take_unchecked(&take) };
+        // Mark the first sort column as sorted
+        df.apply(first_by_column, |s| {
+            let mut s = s.clone();
+            let inner = s.get_inner_mut();
+            inner.set_sorted(first_reverse);
+            s
+        })
+        .expect("column is present");
+        Ok(df)
     }
 
     /// Return a sorted clone of this DataFrame.

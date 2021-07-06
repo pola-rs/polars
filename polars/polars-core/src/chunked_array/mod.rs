@@ -140,9 +140,27 @@ pub struct ChunkedArray<T> {
     phantom: PhantomData<T>,
     /// maps categorical u32 indexes to String values
     pub(crate) categorical_map: Option<Arc<RevMapping>>,
+    // first bit: sorted
+    // second_bit: sorted reverse
+    pub(crate) bit_settings: u8,
 }
 
 impl<T> ChunkedArray<T> {
+    pub fn is_sorted(&self) -> bool {
+        self.bit_settings & 1 != 0
+    }
+
+    pub fn is_sorted_reverse(&self) -> bool {
+        self.bit_settings & 1 << 1 != 0
+    }
+
+    pub(crate) fn set_sorted(&mut self, reverse: bool) {
+        if reverse {
+            self.bit_settings |= 1 << 1
+        } else {
+            self.bit_settings |= 1
+        }
+    }
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_categorical_map(&self) -> Option<&Arc<RevMapping>> {
         self.categorical_map.as_ref()
@@ -307,6 +325,7 @@ impl<T> ChunkedArray<T> {
             chunks,
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
+            ..Default::default()
         }
     }
 
@@ -502,6 +521,7 @@ where
             chunks,
             phantom: PhantomData,
             categorical_map: None,
+            bit_settings: 0,
         }
     }
 
@@ -590,6 +610,7 @@ where
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
+            ..Default::default()
         }
     }
 }
@@ -763,6 +784,7 @@ impl<T> Clone for ChunkedArray<T> {
             chunks: self.chunks.clone(),
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
+            ..Default::default()
         }
     }
 }

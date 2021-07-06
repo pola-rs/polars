@@ -172,6 +172,7 @@ impl CategoricalChunkedBuilder {
             chunks: vec![self.array_builder.into_arc()],
             phantom: PhantomData,
             categorical_map: Some(Arc::new(self.reverse_mapping.finish())),
+            ..Default::default()
         }
     }
 }

@@ -171,6 +171,7 @@ where
             );
             let mut ca: Self = v.into_iter().collect();
             ca.rename(self.name());
+            ca.set_sorted(reverse);
             ca
         }
     }
@@ -280,8 +281,9 @@ where
             },
         );
         let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect();
-
-        Ok(ca.into_inner())
+        let mut ca = ca.into_inner();
+        ca.set_sorted(reverse[0]);
+        Ok(ca)
     }
 }
 
@@ -331,7 +333,9 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         // We don't collect from an iterator because we know the total value size
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
         v.into_iter().for_each(|opt_v| builder.append_option(opt_v));
-        builder.finish()
+        let mut ca = builder.finish();
+        ca.set_sorted(reverse);
+        ca
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
@@ -387,8 +391,9 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
             },
         );
         let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect();
-
-        Ok(ca.into_inner())
+        let mut ca = ca.into_inner();
+        ca.set_sorted(reverse[0]);
+        Ok(ca)
     }
 }
 
