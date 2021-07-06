@@ -72,6 +72,7 @@ checked_arithmetic = ["polars-core/checked_arithmetic"]
 repeat_by = ["polars-core/repeat_by", "polars-lazy/repeat_by"]
 is_first = ["polars-core/is_first", "polars-lazy/is_first"]
 is_last = ["polars-core/is_last"]
+asof_join = ["polars-core/asof_join", "polars-lazy/asof_join"]
 
 # don't use this
 private = []
@@ -131,7 +132,8 @@ docs-selection = [
     "downsample",
     "repeat_by",
     "is_first",
-    "is_last"
+    "is_last",
+    "asof_join"
 ]
 
 [dependencies]
