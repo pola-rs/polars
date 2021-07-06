@@ -84,9 +84,9 @@ def _prepare_file_arg(
 
     compression = kwargs.pop("compression", "infer")
 
-    # Small helper to use a string as context
+    # Small helper to use a variable as context
     @contextmanager
-    def managed_file(file: Union[str, List[str]]) -> Iterator[Union[str, List[str]]]:
+    def managed_file(file: Any) -> Iterator[Any]:
         try:
             yield file
         finally:
