@@ -31,6 +31,7 @@ mod tests {
     use super::resolve_homedir;
     use std::path::PathBuf;
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn test_resolve_homedir() {
         let paths: Vec<PathBuf> = vec![
@@ -49,5 +50,22 @@ mod tests {
         assert_eq!(resolved[2], paths[2]);
         assert_eq!(resolved[3], paths[3]);
         assert!(resolved[4].is_absolute());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_resolve_homedir_windows() {
+        let paths: Vec<PathBuf> = vec![
+            r#"c:\Users\user1\test.csv"#.into(),
+            r#"~\user1\test.csv"#.into(),
+            "~".into(),
+        ];
+
+        let resolved: Vec<PathBuf> = paths.iter().map(|x| resolve_homedir(x)).collect();
+
+        assert_eq!(resolved[0], paths[0]);
+        assert_eq!(resolved[1].file_name(), paths[1].file_name());
+        assert!(resolved[1].is_absolute());
+        assert!(resolved[2].is_absolute());
     }
 }
