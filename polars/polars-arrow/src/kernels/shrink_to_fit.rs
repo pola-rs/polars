@@ -1,10 +1,9 @@
-use arrow::array::{Array, ArrayRef, MutableArrayData, Capacities, make_array, StringOffsetSizeTrait, ArrayData};
+use arrow::array::{
+    make_array, Array, ArrayData, ArrayRef, Capacities, MutableArrayData, StringOffsetSizeTrait,
+};
 use arrow::datatypes::DataType;
 
-fn compute_str_values_length<Offset: StringOffsetSizeTrait>(
-    data: &ArrayData,
-) -> usize {
-
+fn compute_str_values_length<Offset: StringOffsetSizeTrait>(data: &ArrayData) -> usize {
     // get the length of the value buffer
     let buf_len = data.buffers()[1].len();
     // find the offset of the buffer
@@ -24,7 +23,7 @@ pub fn shrink_to_fit(array: &dyn Array) -> ArrayRef {
 
     let mut mutable = match array.data().data_type() {
         DataType::Utf8 => {
-            let str_values_size = compute_str_values_length::<i32>(&data);
+            let str_values_size = compute_str_values_length::<i32>(data);
             MutableArrayData::with_capacities(
                 vec![data],
                 false,
@@ -32,7 +31,7 @@ pub fn shrink_to_fit(array: &dyn Array) -> ArrayRef {
             )
         }
         DataType::LargeUtf8 => {
-            let str_values_size = compute_str_values_length::<i64>(&data);
+            let str_values_size = compute_str_values_length::<i64>(data);
             MutableArrayData::with_capacities(
                 vec![data],
                 false,
