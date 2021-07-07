@@ -2,6 +2,7 @@ use arrow::array::{Array, BooleanArray};
 use arrow::util::bit_chunk_iterator::BitChunkIterator;
 use std::iter::Enumerate;
 pub mod set;
+pub mod shrink_to_fit;
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]
