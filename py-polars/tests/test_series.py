@@ -349,6 +349,10 @@ def test_arange_expr():
     assert out.shape == (20, 1)
     assert out.select_at_idx(0)[-1] == 19
 
+    # eager arange
+    out = pl.arange(0, 10, 2, eager=True)
+    assert out == [0, 2, 4, 8, 8]
+
 
 def test_strftime():
     a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date32)

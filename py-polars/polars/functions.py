@@ -331,6 +331,8 @@ def scan_csv(
         Overwrite the dtypes during inference.
     low_memory
         Reduce memory usage in expense of performance.
+    comment_char
+        character that indicates the start of a comment line, for instance '#'.
     """
     if isinstance(file, Path):
         file = str(file)
