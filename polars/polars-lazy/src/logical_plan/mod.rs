@@ -1021,7 +1021,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
-        let (exprs, schema) = prepare_projection(exprs, &self.0.schema());
+        let (exprs, schema) = prepare_projection(exprs, self.0.schema());
 
         // if len == 0, no projection has to be done. This is a select all operation.
         if !exprs.is_empty() {
@@ -1037,7 +1037,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project_local(self, exprs: Vec<Expr>) -> Self {
-        let (exprs, schema) = prepare_projection(exprs, &self.0.schema());
+        let (exprs, schema) = prepare_projection(exprs, self.0.schema());
         if !exprs.is_empty() {
             LogicalPlan::LocalProjection {
                 expr: exprs,

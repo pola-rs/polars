@@ -68,7 +68,7 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
 pub fn argsort_by(by: Vec<Expr>, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
-        polars_core::functions::argsort_by(&s, &reverse).map(|ca| ca.into_series())
+        polars_core::functions::argsort_by(s, &reverse).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
 
     Expr::Function {

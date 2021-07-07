@@ -19,7 +19,7 @@ impl PhysicalExpr for TernaryExpr {
         let mask = mask_series.bool()?;
         let truthy = self.truthy.evaluate(df, state)?;
         let falsy = self.falsy.evaluate(df, state)?;
-        truthy.zip_with(&mask, &falsy)
+        truthy.zip_with(mask, &falsy)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.truthy.to_field(input_schema)
