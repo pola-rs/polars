@@ -30,28 +30,15 @@
 //! ```
 //! use polars_core::prelude::*;
 //! use polars_io::prelude::*;
-//! use std::io::Cursor;
+//! use std::fs::File;
 //!
-//! let s = r#"
-//! "sepal.length","sepal.width","petal.length","petal.width","variety"
-//! 5.1,3.5,1.4,.2,"Setosa"
-//! 4.9,3,1.4,.2,"Setosa"
-//! 4.7,3.2,1.3,.2,"Setosa"
-//! 4.6,3.1,1.5,.2,"Setosa"
-//! 5,3.6,1.4,.2,"Setosa"
-//! 5.4,3.9,1.7,.4,"Setosa"
-//! 4.6,3.4,1.4,.3,"Setosa"
-//! "#;
-//!
-//! let file = Cursor::new(s);
-//! let df = CsvReader::new(file)
-//! .infer_schema(Some(100))
-//! .has_header(true)
-//! .finish()
-//! .unwrap();
-//!
-//! assert_eq!("sepal.length", df.get_columns()[0].name());
-//! # assert_eq!(1, df.column("sepal.length").unwrap().chunks().len());
+//! fn example() -> Result<DataFrame> {
+//!     // always prefer `from_path` as that is fastest.
+//!     CsvReader::from_path("iris_csv")?
+//!             .infer_schema(None)
+//!             .has_header(true)
+//!             .finish()
+//! }
 //! ```
 //!
 use crate::csv_core::csv::{build_csv_reader, SequentialReader};
