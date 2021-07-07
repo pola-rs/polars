@@ -158,7 +158,7 @@ class DataFrame:
 
     @staticmethod
     def read_csv(
-        file: Union[str, TextIO],
+        file: Union[str, BinaryIO],
         infer_schema_length: int = 100,
         batch_size: int = 64,
         has_headers: bool = True,
