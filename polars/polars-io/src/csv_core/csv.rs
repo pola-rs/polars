@@ -293,7 +293,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                             }
 
                             let mut buffers = init_buffers(
-                                &projection,
+                                projection,
                                 chunk_size,
                                 &schema,
                                 &str_capacities,
@@ -378,7 +378,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 
                         let mut read = bytes_offset_thread;
                         let mut buffers = init_buffers(
-                            &projection,
+                            projection,
                             chunk_size,
                             &schema,
                             &str_capacities,
