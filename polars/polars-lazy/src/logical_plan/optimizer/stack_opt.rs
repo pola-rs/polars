@@ -48,7 +48,7 @@ impl StackOptimizer {
                         while let Some(x) = rule.optimize_expr(
                             expr_arena,
                             current_expr_node,
-                            &lp_arena,
+                            lp_arena,
                             current_node,
                         ) {
                             expr_arena.replace(current_expr_node, x);

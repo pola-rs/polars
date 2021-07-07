@@ -128,15 +128,15 @@ impl AExpr {
         match self {
             Window { function, .. } => arena.get(*function).to_field(schema, ctxt, arena),
             IsUnique(expr) => {
-                let field = arena.get(*expr).to_field(&schema, ctxt, arena)?;
+                let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                 Ok(Field::new(field.name(), DataType::Boolean))
             }
             Duplicated(expr) => {
-                let field = arena.get(*expr).to_field(&schema, ctxt, arena)?;
+                let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                 Ok(Field::new(field.name(), DataType::Boolean))
             }
-            Reverse(expr) => arena.get(*expr).to_field(&schema, ctxt, arena),
-            Explode(expr) => arena.get(*expr).to_field(&schema, ctxt, arena),
+            Reverse(expr) => arena.get(*expr).to_field(schema, ctxt, arena),
+            Explode(expr) => arena.get(*expr).to_field(schema, ctxt, arena),
             Alias(expr, name) => Ok(Field::new(
                 name,
                 arena.get(*expr).get_type(schema, ctxt, arena)?,
