@@ -230,10 +230,11 @@ impl<T> ChunkedArray<T> {
                 &*self.chunks[0],
             )]
         }
-        self.chunks = vec![arrow::compute::concat(
-            &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
-        )
-        .unwrap()];
+        self.chunks =
+            vec![
+                arrow::compute::concat(self.chunks.iter().map(|a| &**a).collect_vec().as_slice())
+                    .unwrap(),
+            ];
     }
 
     /// Unpack a Series to the same physical type.
@@ -600,10 +601,10 @@ where
                 AnyValue::List(s.unwrap())
             }
             #[cfg(feature = "object")]
-            DataType::Object(_) => AnyValue::Object(&"object"),
+            DataType::Object(_) => AnyValue::Object("object"),
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
-                AnyValue::Utf8(&self.categorical_map.as_ref().expect("should be set").get(v))
+                AnyValue::Utf8(self.categorical_map.as_ref().expect("should be set").get(v))
             }
             _ => unimplemented!(),
         }

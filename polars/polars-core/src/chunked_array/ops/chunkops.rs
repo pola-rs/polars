@@ -24,7 +24,7 @@ where
             self.clone()
         } else {
             let chunks =
-                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+                vec![concat(self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
@@ -36,7 +36,7 @@ impl ChunkOps for BooleanChunked {
             self.clone()
         } else {
             let chunks =
-                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+                vec![concat(self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
@@ -48,7 +48,7 @@ impl ChunkOps for Utf8Chunked {
             self.clone()
         } else {
             let chunks =
-                vec![concat(&self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+                vec![concat(self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }

@@ -47,7 +47,7 @@ where
     /// This does not any bound checks. The caller needs to ensure the index is within
     /// the size of the array.
     pub unsafe fn value_unchecked(&self, index: usize) -> &T {
-        &self.values.get_unchecked(index)
+        self.values.get_unchecked(index)
     }
 }
 

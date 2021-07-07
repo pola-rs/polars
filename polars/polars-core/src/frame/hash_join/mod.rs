@@ -341,7 +341,7 @@ fn probe_outer<T, F, G, H>(
 
             let entry = current_probe_table
                 .raw_entry_mut()
-                .from_key_hashed_nocheck(h, &key);
+                .from_key_hashed_nocheck(h, key);
 
             match entry {
                 // match and remove
@@ -651,7 +651,7 @@ where
                 let other: &UInt64Chunked = unsafe {
                     &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
                 };
-                num_group_join_inner(&ca, &other)
+                num_group_join_inner(ca, other)
             }
             DataType::UInt32 => {
                 // convince the compiler that we are this type.
@@ -661,7 +661,7 @@ where
                 let other: &UInt32Chunked = unsafe {
                     &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
                 };
-                num_group_join_inner(&ca, &other)
+                num_group_join_inner(ca, other)
             }
             DataType::Int64 | DataType::Float64 => {
                 let ca = self.bit_repr_large();
@@ -691,7 +691,7 @@ where
                 let other: &UInt64Chunked = unsafe {
                     &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
                 };
-                num_group_join_left(&ca, &other)
+                num_group_join_left(ca, other)
             }
             DataType::UInt32 => {
                 // convince the compiler that we are this type.
@@ -701,7 +701,7 @@ where
                 let other: &UInt32Chunked = unsafe {
                     &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
                 };
-                num_group_join_left(&ca, &other)
+                num_group_join_left(ca, other)
             }
             DataType::Int64 | DataType::Float64 => {
                 let ca = self.bit_repr_large();

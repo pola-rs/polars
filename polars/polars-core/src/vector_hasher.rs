@@ -409,7 +409,7 @@ where
                             let entry = hash_tbl
                                 .raw_entry_mut()
                                 // uses the key to check equality to find and entry
-                                .from_key_hashed_nocheck(*h, &k);
+                                .from_key_hashed_nocheck(*h, k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
