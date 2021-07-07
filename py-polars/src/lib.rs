@@ -51,11 +51,6 @@ fn lit(value: &PyAny) -> dsl::PyExpr {
 }
 
 #[pyfunction]
-fn range(low: i64, high: i64, dtype: &PyAny) -> dsl::PyExpr {
-    dsl::range(low, high, dtype)
-}
-
-#[pyfunction]
 fn binary_expr(l: dsl::PyExpr, op: u8, r: dsl::PyExpr) -> dsl::PyExpr {
     dsl::binary_expr(l, op, r)
 }
@@ -103,15 +98,30 @@ fn toggle_string_cache(toggle: bool) {
 }
 
 #[pyfunction]
-fn series_from_range(low: i64, high: i64, dtype: &PyAny) -> PySeries {
+fn series_from_range(low: i64, high: i64, step_by: usize, dtype: &PyAny) -> PySeries {
     let str_repr = dtype.str().unwrap().to_str().unwrap();
     let dtype = str_to_polarstype(str_repr);
 
-    match dtype {
-        DataType::UInt32 => Series::from_iter((low as u32)..(high as u32)).into(),
-        DataType::Int32 => Series::from_iter((low as i32)..(high as i32)).into(),
-        DataType::Int64 => Series::from_iter((low as i64)..(high as i64)).into(),
-        _ => unimplemented!(),
+    if step_by == 1 {
+        match dtype {
+            DataType::UInt32 => Series::from_iter((low as u32)..(high as u32)).into(),
+            DataType::Int32 => Series::from_iter((low as i32)..(high as i32)).into(),
+            DataType::Int64 => Series::from_iter((low as i64)..(high as i64)).into(),
+            _ => unimplemented!(),
+        }
+    } else {
+        match dtype {
+            DataType::UInt32 => {
+                Series::from_iter(((low as u32)..(high as u32)).step_by(step_by)).into()
+            }
+            DataType::Int32 => {
+                Series::from_iter(((low as i32)..(high as i32)).step_by(step_by)).into()
+            }
+            DataType::Int64 => {
+                Series::from_iter(((low as i64)..(high as i64)).step_by(step_by)).into()
+            }
+            _ => unimplemented!(),
+        }
     }
 }
 
@@ -134,7 +144,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(except_)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(range)).unwrap();
     m.add_wrapped(wrap_pyfunction!(series_from_range)).unwrap();
     Ok(())
 }

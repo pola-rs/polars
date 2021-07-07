@@ -355,7 +355,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fd78930633bd1c6e35c4b42b1df7b0cbc6bc191146e512bb3bedf243fcc3901"
 dependencies = [
  "libc",
- "redox_users",
+ "redox_users 0.3.5",
+ "winapi",
+]
+
+[[package]]
+name = "dirs"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30baa043103c9d0c2a57cf537cc2f35623889dc0d405e6c3cccfadbc81c71309"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03d86534ed367a67548dc68113a0f5db55432fdfbb6e6f9d77704397d95d5780"
+dependencies = [
+ "libc",
+ "redox_users 0.4.0",
  "winapi",
 ]
 
@@ -1184,6 +1204,7 @@ dependencies = [
  "arrow2",
  "csv",
  "csv-core",
+ "dirs 3.0.2",
  "fast-float",
  "lazy_static",
  "lexical",
@@ -1421,6 +1442,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_users"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "528532f3d801c87aec9def2add9ca802fe569e44a544afe633765267840abe64"
+dependencies = [
+ "getrandom 0.2.3",
+ "redox_syscall 0.2.8",
+]
+
+[[package]]
 name = "regex"
 version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1588,7 +1619,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd106a334b7657c10b7c540a0106114feadeb4dc314513e97df481d5d966f42"
 dependencies = [
  "byteorder",
- "dirs",
+ "dirs 1.0.5",
  "winapi",
 ]
 
