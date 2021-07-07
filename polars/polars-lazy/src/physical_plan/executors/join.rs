@@ -55,7 +55,7 @@ impl Executor for JoinExec {
                 },
             )
         } else {
-            (input_left.execute(&state), input_right.execute(&state))
+            (input_left.execute(state), input_right.execute(state))
         };
 
         let df_left = df_left?;

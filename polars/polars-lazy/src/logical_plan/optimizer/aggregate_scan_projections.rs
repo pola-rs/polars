@@ -28,13 +28,13 @@ pub(crate) fn agg_projection(
     match lp_arena.get(root) {
         #[cfg(feature = "csv-file")]
         CsvScan { path, options, .. } => {
-            process_with_columns(&path, &options.with_columns, columns);
+            process_with_columns(path, &options.with_columns, columns);
         }
         #[cfg(feature = "parquet")]
         ParquetScan {
             path, with_columns, ..
         } => {
-            process_with_columns(&path, &with_columns, columns);
+            process_with_columns(path, with_columns, columns);
         }
         DataFrameScan { .. } => (),
         lp => {
