@@ -55,7 +55,7 @@
 //! ```
 //!
 use crate::csv_core::csv::{build_csv_reader, SequentialReader};
-use crate::utils::to_arrow_compatible_df;
+use crate::utils::{resolve_homedir, to_arrow_compatible_df};
 use crate::{SerReader, SerWriter};
 pub use arrow::csv::WriterBuilder;
 use polars_core::prelude::*;
@@ -348,7 +348,7 @@ where
 impl<'a> CsvReader<'a, File> {
     /// This is the recommended way to create a csv reader as this allows for fastest parsing.
     pub fn from_path<P: Into<PathBuf>>(path: P) -> Result<Self> {
-        let path = path.into();
+        let path = resolve_homedir(&path.into());
         let f = std::fs::File::open(&path)?;
         Ok(Self::new(f).with_path(Some(path)))
     }
