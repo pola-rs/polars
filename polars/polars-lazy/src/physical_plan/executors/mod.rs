@@ -15,6 +15,7 @@ pub mod various;
 use super::*;
 use crate::logical_plan::FETCH_ROWS;
 use itertools::Itertools;
+use polars_core::POOL;
 use rayon::prelude::*;
 use std::io::{Read, Seek};
 use std::path::PathBuf;
@@ -35,10 +36,12 @@ pub(crate) fn evaluate_physical_expressions(
     state: &ExecutionState,
 ) -> Result<DataFrame> {
     let height = df.height();
-    let mut selected_columns = exprs
-        .par_iter()
-        .map(|expr| expr.evaluate(df, state))
-        .collect::<Result<Vec<Series>>>()?;
+    let mut selected_columns = POOL.install(|| {
+        exprs
+            .par_iter()
+            .map(|expr| expr.evaluate(df, state))
+            .collect::<Result<Vec<Series>>>()
+    })?;
 
     // If all series are the same length it is ok. If not we can broadcast Series of length one.
     if selected_columns.len() > 1 {

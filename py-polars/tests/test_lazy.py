@@ -193,3 +193,24 @@ def test_when_then_flatten():
 
 def test_describe_plan():
     pl.DataFrame({"a": [1]}).lazy().describe_optimized_plan()
+
+
+def test_window_deadlock():
+    np.random.seed(12)
+
+    df = pl.DataFrame(
+        {
+            "nrs": [1, 2, 3, None, 5],
+            "names": ["foo", "ham", "spam", "egg", None],
+            "random": np.random.rand(5),
+            "groups": ["A", "A", "B", "C", "B"],
+        }
+    )
+
+    df = df[
+        [
+            col("*"),  # select all
+            col("random").sum().over("groups").alias("sum[random]/groups"),
+            col("random").list().over("names").alias("random/name"),
+        ]
+    ]
