@@ -804,8 +804,8 @@ impl DataFrame {
             self.columns
                 .par_iter()
                 .map(|s| match s.dtype() {
-                    DataType::Utf8 => s.take_unchecked_threaded(&idx, true).unwrap(),
-                    _ => s.take_unchecked(&idx).unwrap(),
+                    DataType::Utf8 => s.take_unchecked_threaded(idx, true).unwrap(),
+                    _ => s.take_unchecked(idx).unwrap(),
                 })
                 .collect()
         });
@@ -814,7 +814,7 @@ impl DataFrame {
 
     unsafe fn take_unchecked_vectical(&self, indices: &UInt32Chunked) -> Self {
         let n_threads = POOL.current_num_threads();
-        let idxs = split_ca(&indices, n_threads).unwrap();
+        let idxs = split_ca(indices, n_threads).unwrap();
 
         let dfs: Vec<_> = POOL.install(|| {
             idxs.par_iter()

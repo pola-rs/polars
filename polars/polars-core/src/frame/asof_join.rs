@@ -55,13 +55,12 @@ where
                                     tuples.push(Some(rhs_idx - 1));
                                     rhs_idx += 1;
                                     previous_rhs_val = rhs_val;
-                                    break;
                                 } else {
                                     rhs_idx += 1;
                                     previous_rhs_val = rhs_val;
                                     tuples.push(None);
-                                    break;
                                 }
+                                break;
                             }
                             previous_rhs_val = rhs_val;
                             rhs_idx += 1;

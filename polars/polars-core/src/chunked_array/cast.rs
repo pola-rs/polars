@@ -287,7 +287,7 @@ impl ChunkCast for ListChunked {
                         let ad = list.data().clone();
                         let child = ad.child_data()[0].clone();
                         let child = make_array(child);
-                        let child = cast(&child, &child_type)?;
+                        let child = cast(&child, child_type)?;
 
                         let new = ArrayDataBuilder::new(ArrowDataType::LargeList(Box::new(
                             ArrowField::new("", child.data_type().clone(), true),
