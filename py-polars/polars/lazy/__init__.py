@@ -30,7 +30,6 @@ try:
         PyLazyGroupBy,
         when as pywhen,
         except_ as pyexcept,
-        range as pyrange,
         series_from_range as _series_from_range,
     )
 except ImportError:
@@ -2346,7 +2345,13 @@ def udf(f: Callable[[Series], Series], return_dtype: Type[DataType]) -> UDF:
     return UDF(f, return_dtype)
 
 
-def arange(low: int, high: int, dtype: Optional[Type[DataType]] = None) -> Expr:
+def arange(
+    low: Union[int, Expr],
+    high: Union[int, Expr],
+    step: int = 1,
+    dtype: Optional[Type[DataType]] = None,
+    eager: bool = False,
+) -> Union[Expr, Series]:
     """
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
@@ -2365,33 +2370,40 @@ def arange(low: int, high: int, dtype: Optional[Type[DataType]] = None) -> Expr:
         Lower bound of range.
     high
         Upper bound of range.
+    step
+        Step size of the range
     dtype
         DataType of the range. Valid dtypes:
             * Int32
             * Int64
             * UInt32
+    eager
+        If eager evaluation is `True`, a Series is returned instead of an Expr
     """
-    if type(low) is Expr or type(high) is Expr:
-        if isinstance(low, int):
-            low = lit(low)  # type: ignore
-        if isinstance(high, int):
-            high = lit(high)  # type: ignore
-
-        if dtype is None:
-            dtype = datatypes.Int64
-
-        def create_range(s1: Series, s2: Series) -> Series:
-            from .. import Series
-
-            assert s1.len() == 1
-            assert s2.len() == 1
-            return Series._from_pyseries(_series_from_range(s1[0], s2[0], dtype))
-
-        return map_binary(low, high, create_range, return_dtype=dtype)  # type: ignore
-
     if dtype is None:
         dtype = datatypes.Int64
-    return wrap_expr(pyrange(low, high, dtype))
+
+    def create_range(s1: Series, s2: Series) -> Series:
+        from .. import Series
+
+        assert s1.len() == 1
+        assert s2.len() == 1
+        return Series._from_pyseries(_series_from_range(s1[0], s2[0], step, dtype))
+
+    # eager execution can only work if low and high are literals
+    if eager:
+        if not (isinstance(low, int) and isinstance(high, int)):
+            raise ValueError(
+                "arguments low and high must be integers in eager execution"
+            )
+        return Series._from_pyseries(_series_from_range(low, high, step, dtype))
+
+    if isinstance(low, int):
+        low = lit(low)  # type: ignore
+    if isinstance(high, int):
+        high = lit(high)  # type: ignore
+
+    return map_binary(low, high, create_range, return_dtype=dtype)  # type: ignore
 
 
 def argsort_by(exprs: List[Expr], reverse: Union[List[bool], bool] = False) -> Expr:
