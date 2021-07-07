@@ -12,7 +12,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2021-03-25
+          toolchain: nightly-2021-07-04
           override: true
           components: rustfmt, clippy
       - name: Cache Cargo
@@ -61,7 +61,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2021-03-05
+          toolchain: nightly-2021-07-04
           override: true
           components: rustfmt, clippy
       - name: Set up Python
@@ -84,4 +84,4 @@ jobs:
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2021-03-05 && ./tasks.sh build-run-tests && cd ..
+          cd py-polars && rustup override set nightly-2021-07-04 && ./tasks.sh build-run-tests && cd ..
