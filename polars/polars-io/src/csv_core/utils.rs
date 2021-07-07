@@ -188,7 +188,7 @@ pub fn infer_file_schema<R: Read + Seek>(
         match possibilities.len() {
             1 => {
                 for dtype in possibilities.iter() {
-                    fields.push(Field::new(&field_name, dtype.clone()));
+                    fields.push(Field::new(field_name, dtype.clone()));
                 }
             }
             2 => {
@@ -196,13 +196,13 @@ pub fn infer_file_schema<R: Read + Seek>(
                     && possibilities.contains(&DataType::Float64)
                 {
                     // we have an integer and double, fall down to double
-                    fields.push(Field::new(&field_name, DataType::Float64));
+                    fields.push(Field::new(field_name, DataType::Float64));
                 } else {
                     // default to Utf8 for conflicting datatypes (e.g bool and int)
-                    fields.push(Field::new(&field_name, DataType::Utf8));
+                    fields.push(Field::new(field_name, DataType::Utf8));
                 }
             }
-            _ => fields.push(Field::new(&field_name, DataType::Utf8)),
+            _ => fields.push(Field::new(field_name, DataType::Utf8)),
         }
     }
     let csv_reader = records.into_reader();
