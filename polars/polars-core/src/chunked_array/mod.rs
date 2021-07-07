@@ -225,6 +225,11 @@ impl<T> ChunkedArray<T> {
 
     /// Shrink the capacity of this array to fit it's length.
     pub fn shrink_to_fit(&mut self) {
+        if self.chunks.len() == 1 {
+            self.chunks = vec![polars_arrow::kernels::shrink_to_fit::shrink_to_fit(
+                &*self.chunks[0],
+            )]
+        }
         self.chunks = vec![arrow::compute::concat(
             &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
         )
@@ -1076,6 +1081,7 @@ pub(crate) mod test {
             .iter()
             .map(|arr| arr.get_buffer_memory_size())
             .sum::<usize>();
+        dbg!(before, after);
         assert!(before > after);
     }
 }
