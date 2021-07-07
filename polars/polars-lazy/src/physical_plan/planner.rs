@@ -289,9 +289,10 @@ impl DefaultPlanner {
                 }
                 let mut phys_keys =
                     self.create_physical_expressions(&keys, Context::Default, expr_arena)?;
+
+                let phys_aggs =
+                    self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
                 if partitionable {
-                    let phys_aggs =
-                        self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
                     Ok(Box::new(PartitionGroupByExec::new(
                         input,
                         phys_keys.pop().unwrap(),
@@ -301,8 +302,6 @@ impl DefaultPlanner {
                             .collect(),
                     )))
                 } else {
-                    let phys_aggs =
-                        self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
                     Ok(Box::new(GroupByExec::new(
                         input, phys_keys, phys_aggs, apply,
                     )))

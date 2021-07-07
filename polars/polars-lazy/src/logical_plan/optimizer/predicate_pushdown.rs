@@ -121,9 +121,9 @@ fn no_pushdown_preds<F>(
     F: Fn(&AExpr) -> bool,
 {
     // matching expr are typically explode, shift, etc. expressions that mess up predicates when pushed down
-    if has_aexpr(node, &arena, matches) {
+    if has_aexpr(node, arena, matches) {
         // columns that are projected. We check if we can push down the predicates past this projection
-        let columns = aexpr_to_root_names(node, &arena);
+        let columns = aexpr_to_root_names(node, arena);
 
         let condition = |name: Arc<String>| columns.contains(&name);
         local_predicates.extend(transfer_to_local(arena, acc_predicates, condition));
@@ -277,7 +277,7 @@ impl PredicatePushDown {
                     // remove predicates that are based on an exploded column
                     no_pushdown_preds(
                         *node,
-                        &expr_arena,
+                        expr_arena,
                         |e| {
                             matches!(e, AExpr::Explode(_))
                                 || matches!(e, AExpr::Shift { .. })
