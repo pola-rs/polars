@@ -189,7 +189,7 @@ where
         }
 
         // now the first non None
-        builder.append_series(&v);
+        builder.append_series(v);
 
         // now we have added all Nones, we can consume the rest of the iterator.
         for opt_s in it {

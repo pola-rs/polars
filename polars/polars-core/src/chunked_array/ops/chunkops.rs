@@ -24,7 +24,7 @@ where
             self.clone()
         } else {
             let chunks = vec![concat::concatenate(
-                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
             )
             .unwrap()
             .into()];
@@ -39,7 +39,7 @@ impl ChunkOps for BooleanChunked {
             self.clone()
         } else {
             let chunks = vec![concat::concatenate(
-                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
             )
             .unwrap()
             .into()];
@@ -54,7 +54,7 @@ impl ChunkOps for Utf8Chunked {
             self.clone()
         } else {
             let chunks = vec![concat::concatenate(
-                &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
             )
             .unwrap()
             .into()];

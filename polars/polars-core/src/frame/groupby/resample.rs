@@ -262,7 +262,7 @@ impl DataFrame {
                 key.rename(&key_name);
 
                 let mut tempkey = key.clone();
-                tempkey.rename(&temp_key);
+                tempkey.rename(temp_key);
 
                 df.hstack_mut(&[tempkey])?;
                 df.groupby_stable(&[temp_key])?
@@ -296,7 +296,7 @@ impl DataFrame {
                 key.rename(&key_name);
 
                 let mut tempkey = key.clone();
-                tempkey.rename(&temp_key);
+                tempkey.rename(temp_key);
 
                 df.hstack_mut(&[tempkey])?;
                 df.groupby_stable(&[temp_key])?
