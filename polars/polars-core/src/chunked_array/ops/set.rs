@@ -224,7 +224,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
                     .into(),
                 ));
             }
-            while let Some((cnt_idx, opt_val_self)) = ca_iter.next() {
+            for (cnt_idx, opt_val_self) in &mut ca_iter {
                 if cnt_idx == current_idx {
                     builder.append_option(opt_value);
                     break;

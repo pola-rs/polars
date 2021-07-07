@@ -131,8 +131,8 @@ pub(crate) fn inner_join_multiple_keys(
     // b will be used for the build phase.
 
     let n_threads = POOL.current_num_threads();
-    let dfs_a = split_df(&a, n_threads).unwrap();
-    let dfs_b = split_df(&b, n_threads).unwrap();
+    let dfs_a = split_df(a, n_threads).unwrap();
+    let dfs_b = split_df(b, n_threads).unwrap();
 
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
     let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
@@ -197,8 +197,8 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32,
     // b will be used for the build phase.
 
     let n_threads = POOL.current_num_threads();
-    let dfs_a = split_df(&a, n_threads).unwrap();
-    let dfs_b = split_df(&b, n_threads).unwrap();
+    let dfs_a = split_df(a, n_threads).unwrap();
+    let dfs_b = split_df(b, n_threads).unwrap();
 
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
     let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
@@ -335,8 +335,8 @@ pub(crate) fn outer_join_multiple_keys(
     let mut results = Vec::with_capacity(size);
 
     let n_threads = POOL.current_num_threads();
-    let dfs_a = split_df(&a, n_threads).unwrap();
-    let dfs_b = split_df(&b, n_threads).unwrap();
+    let dfs_a = split_df(a, n_threads).unwrap();
+    let dfs_b = split_df(b, n_threads).unwrap();
 
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
     let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));

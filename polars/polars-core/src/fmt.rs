@@ -75,14 +75,14 @@ use temporal::*;
 
 macro_rules! format_array {
     ($limit:expr, $f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
-        write![
+        write!(
             $f,
             "shape: ({},)\n{}: '{}' [{}]\n[\n",
             $a.len(),
             $array_type,
             $name,
             $dtype
-        ]?;
+        )?;
         let truncate = matches!($a.dtype(), DataType::Utf8);
         let limit = std::cmp::min($limit, $a.len());
 
@@ -123,7 +123,7 @@ macro_rules! format_array {
             }
         }
 
-        write![$f, "]"]
+        write!($f, "]")
     }};
 }
 
@@ -137,21 +137,21 @@ fn format_object_array(
 ) -> fmt::Result {
     match object.dtype() {
         DataType::Object(inner_type) => {
-            write![
+            write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
                 object.len(),
                 array_type,
                 name,
                 inner_type
-            ]?;
+            )?;
 
             for i in 0..limit {
                 let v = object.str_value(i);
                 writeln!(f, "\t{}", v)?;
             }
 
-            write![f, "]"]
+            write!(f, "]")
         }
         _ => unreachable!(),
     }
@@ -211,12 +211,12 @@ where
 
         let taker = self.take_rand();
         let inner_type = T::type_name();
-        write![
+        write!(
             f,
             "ChunkedArray: '{}' [o][{}]\n[\n",
             self.name(),
             inner_type
-        ]?;
+        )?;
 
         if limit < self.len() {
             for i in 0..limit / 2 {

@@ -157,7 +157,7 @@ pub mod checked {
                         // we don't use a kernel, because the checked div also supplies nulls.
                         // so the usual bit combining is not enough.
                         .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                            (Some(l), Some(r)) => l.checked_div(&r),
+                            (Some(l), Some(r)) => l.checked_div(r),
                             _ => None,
                         })
                 })

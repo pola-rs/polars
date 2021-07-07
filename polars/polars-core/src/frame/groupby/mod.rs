@@ -1022,7 +1022,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
         macro_rules! finish_agg_opt {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
-                let new_name = format![$name_fmt, $agg_col.name()];
+                let new_name = format!($name_fmt, $agg_col.name());
                 let opt_agg = $agg_col.$agg_fn(&$self.groups);
                 if let Some(mut agg) = opt_agg {
                     agg.rename(&new_name);
@@ -1032,7 +1032,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         }
         macro_rules! finish_agg {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
-                let new_name = format![$name_fmt, $agg_col.name()];
+                let new_name = format!($name_fmt, $agg_col.name());
                 let mut agg = $agg_col.$agg_fn(&$self.groups);
                 agg.rename(&new_name);
                 $cols.push(agg.into_series());
@@ -1057,7 +1057,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                         "std" => finish_agg_opt!(self, "{}_std", agg_std, agg_col, cols),
                         "var" => finish_agg_opt!(self, "{}_var", agg_var, agg_col, cols),
                         "count" => {
-                            let new_name = format!["{}_count", agg_col.name()];
+                            let new_name = format!("{}_count", agg_col.name());
                             let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new(
                                 &new_name,
                                 self.groups.len(),
@@ -1170,20 +1170,20 @@ pub enum GroupByMethod {
 pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
     use GroupByMethod::*;
     match method {
-        Min => format!["{}_min", name],
-        Max => format!["{}_max", name],
-        Median => format!["{}_median", name],
-        Mean => format!["{}_mean", name],
-        First => format!["{}_first", name],
-        Last => format!["{}_last", name],
-        Sum => format!["{}_sum", name],
+        Min => format!("{}_min", name),
+        Max => format!("{}_max", name),
+        Median => format!("{}_median", name),
+        Mean => format!("{}_mean", name),
+        First => format!("{}_first", name),
+        Last => format!("{}_last", name),
+        Sum => format!("{}_sum", name),
         Groups => "groups".to_string(),
-        NUnique => format!["{}_n_unique", name],
-        Count => format!["{}_count", name],
-        List => format!["{}_agg_list", name],
-        Quantile(quantile) => format!["{}_quantile_{:.2}", name, quantile],
-        Std => format!["{}_agg_std", name],
-        Var => format!["{}_agg_var", name],
+        NUnique => format!("{}_n_unique", name),
+        Count => format!("{}_count", name),
+        List => format!("{}_agg_list", name),
+        Quantile(quantile) => format!("{}_quantile_{:.2}", name, quantile),
+        Std => format!("{}_agg_std", name),
+        Var => format!("{}_agg_var", name),
     }
 }
 

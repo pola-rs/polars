@@ -196,7 +196,7 @@ impl<T> ChunkedArray<T> {
     /// Shrink the capacity of this array to fit it's length.
     pub fn shrink_to_fit(&mut self) {
         self.chunks = vec![arrow::compute::concat::concatenate(
-            &self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+            self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
         )
         .unwrap()
         .into()];
@@ -580,10 +580,10 @@ where
                 AnyValue::List(s.unwrap())
             }
             #[cfg(feature = "object")]
-            DataType::Object(_) => AnyValue::Object(&"object"),
+            DataType::Object(_) => AnyValue::Object("object"),
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
-                AnyValue::Utf8(&self.categorical_map.as_ref().expect("should be set").get(v))
+                AnyValue::Utf8(self.categorical_map.as_ref().expect("should be set").get(v))
             }
             _ => unimplemented!(),
         }
