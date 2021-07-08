@@ -42,6 +42,7 @@
 //! ```
 //!
 use crate::csv_core::csv::{build_csv_reader, SequentialReader};
+use crate::mmap::MmapBytesReader;
 use crate::utils::{resolve_homedir, to_arrow_compatible_df};
 use crate::{SerReader, SerWriter};
 pub use arrow::csv::WriterBuilder;
@@ -149,7 +150,7 @@ pub enum CsvEncoding {
 /// ```
 pub struct CsvReader<'a, R>
 where
-    R: Read + Seek,
+    R: Read + Seek + MmapBytesReader,
 {
     /// File or Stream object
     reader: R,
@@ -180,7 +181,7 @@ where
 
 impl<'a, R> CsvReader<'a, R>
 where
-    R: 'static + Read + Seek + Sync + Send,
+    R: Read + Seek + Sync + Send + MmapBytesReader,
 {
     /// Sets the chunk size used by the parser. This influences performance
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
@@ -343,7 +344,7 @@ impl<'a> CsvReader<'a, File> {
 
 impl<'a, R> SerReader<R> for CsvReader<'a, R>
 where
-    R: 'static + Read + Seek + Sync + Send,
+    R: Read + Seek + Sync + Send + MmapBytesReader,
 {
     /// Create a new CsvReader from a file/ stream
     fn new(reader: R) -> Self {

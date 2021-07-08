@@ -3,6 +3,8 @@ Module containing logic related to eager DataFrames
 """
 from io import BytesIO
 
+import io
+
 try:
     from .polars import (  # noqa: F401
         PyDataFrame,
@@ -158,7 +160,7 @@ class DataFrame:
 
     @staticmethod
     def read_csv(
-        file: Union[str, BinaryIO],
+        file: Union[str, BinaryIO, bytes],
         infer_schema_length: int = 100,
         batch_size: int = 64,
         has_headers: bool = True,
@@ -233,6 +235,10 @@ class DataFrame:
             path = file
         else:
             path = None
+            if isinstance(file, io.BytesIO):
+                file = file.getvalue()
+            if isinstance(file, io.StringIO):
+                file = file.getvalue().encode()
 
         dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
         if dtype is not None:
