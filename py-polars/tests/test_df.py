@@ -753,3 +753,15 @@ def test_asof_join():
 
     left.lazy().join(right.lazy(), on="a", how="asof").collect()
     assert out.shape == (3, 4)
+
+
+def test_str_concat():
+    df = pl.DataFrame(
+        {
+            "nrs": [1, 2, 3, 4],
+            "name": ["ham", "spam", "foo", None],
+        }
+    )
+    out = df.with_column((pl.lit("Dr. ") + pl.col("name")).alias("graduated_name"))
+    assert out["graduated_name"][0] == "Dr. ham"
+    assert out["graduated_name"][1] == "Dr. spam"
