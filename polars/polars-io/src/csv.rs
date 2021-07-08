@@ -490,7 +490,8 @@ mod test {
  4.6,3.1,1.5,.2,"Setosa"
  5,3.6,1.4,.2,"Setosa"
  5.4,3.9,1.7,.4,"Setosa"
- 4.6,3.4,1.4,.3,"Setosa""#;
+ 4.6,3.4,1.4,.3,"Setosa"
+"#;
 
         let file = Cursor::new(s);
         let df = CsvReader::new(file)
@@ -504,7 +505,8 @@ mod test {
         let s = r#"
          "sepal.length","sepal.width","petal.length","petal.width","variety"
          5.1,3.5,1.4,.2,"Setosa"
-         5.1,3.5,1.4,.2,"Setosa""#;
+         5.1,3.5,1.4,.2,"Setosa"
+ "#;
 
         let file = Cursor::new(s);
 
@@ -524,7 +526,8 @@ mod test {
         4.6,3.1,1.5,.2,"Setosa"
         5,3.6,1.4,.2,"Setosa"
         5.4,3.9,1.7,.4,"Setosa"
-        4.6,3.4,1.4,.3,"Setosa""#;
+        4.6,3.4,1.4,.3,"Setosa"
+"#;
 
         let file = Cursor::new(s);
         let df = CsvReader::new(file)
@@ -565,7 +568,8 @@ mod test {
 1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99222	Initial hospital inpatient care, typically 50 minutes per day	N	17	17	17	138.04588235	625	108.22529412	109.22
 1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99223	Initial hospital inpatient care, typically 70 minutes per day	N	86	82	86	204.85395349	1093.5	159.25906977	161.78093023
 1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99232	Subsequent hospital inpatient care, typically 25 minutes per day	N	360	206	360	73.565666667	360.57222222	57.670305556	58.038833333
-1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99233	Subsequent hospital inpatient care, typically 35 minutes per day	N	284	148	284	105.34971831	576.98943662	82.512992958	82.805774648"#.as_ref();
+1003000126	ENKESHAFI	ARDALAN		M.D.	M	I	900 SETON DR		CUMBERLAND	21502	MD	US	Internal Medicine	Y	F	99233	Subsequent hospital inpatient care, typically 35 minutes per day	N	284	148	284	105.34971831	576.98943662	82.512992958	82.805774648
+"#.as_ref();
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
@@ -597,7 +601,8 @@ mod test {
         // missing data should not lead to parser error.
         let csv = r#"column_1,column_2,column_3
         1,2,3
-        1,,3"#;
+        1,,3
+"#;
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).finish().unwrap();
@@ -619,7 +624,8 @@ mod test {
     fn test_escape_comma() {
         let csv = r#"column_1,column_2,column_3
 -86.64408227,"Autauga, Alabama, US",11
--86.64408227,"Autauga, Alabama, US",12"#;
+-86.64408227,"Autauga, Alabama, US",12
+"#;
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).finish().unwrap();
         assert_eq!(df.shape(), (2, 3));
@@ -633,7 +639,8 @@ mod test {
     fn test_escape_double_quotes() {
         let csv = r#"column_1,column_2,column_3
 -86.64408227,"with ""double quotes"" US",11
--86.64408227,"with ""double quotes followed"", by comma",12"#;
+-86.64408227,"with ""double quotes followed"", by comma",12
+"#;
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).finish().unwrap();
         assert_eq!(df.shape(), (2, 3));
@@ -658,7 +665,8 @@ mod test {
         let csv = r#"hello,","," ",world,"!"
 hello,","," ",world,"!"
 hello,","," ",world,"!"
-hello,","," ",world,"!""#;
+hello,","," ",world,"!"
+"#;
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
             .has_header(false)
@@ -690,7 +698,8 @@ a type specimen book. It has survived not only five centuries, but also the leap
 into electronic typesetting, remaining essentially unchanged. It was popularised
 in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages,
 and more recently with desktop publishing software like Aldus PageMaker including
-versions of Lorem Ipsum.",11"#;
+versions of Lorem Ipsum.",11
+"#;
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).finish().unwrap();
 
@@ -715,7 +724,8 @@ versions of Lorem Ipsum."#,
         let csv = r#"id1,id2,id3,id4,id5,id6,v1,v2,v3
 id047,id023,id0000084849,90,96,35790,2,9,93.348148
 ,id022,id0000031441,50,44,71525,3,11,81.013682
-id090,id048,id0000067778,24,2,51862,4,9,"#;
+id090,id048,id0000067778,24,2,51862,4,9,
+"#;
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
@@ -732,7 +742,8 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
  "sepal.length","sepal.width","petal.length","petal.width","variety"
  5.1,3.5,1.4,.2,"Setosa
  texts after new line character"
- 4.9,3,1.4,.2,"Setosa""#;
+ 4.9,3,1.4,.2,"Setosa"
+ "#;
 
         let file = Cursor::new(s);
         let _df = CsvReader::new(file).has_header(true).finish().unwrap();
@@ -743,7 +754,8 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
         // CSV fields may be quoted
         let s = r#""foo","bar"
 "4.9","3"
-"1.4","2""#;
+"1.4","2"
+"#;
 
         let file = Cursor::new(s);
         let df = CsvReader::new(file).has_header(true).finish().unwrap();
@@ -786,7 +798,8 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
         let csv = r#"foo,bar,ham
 1,2,3
 1,2,3
-1,2"#;
+1,2
+"#;
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
@@ -807,7 +820,8 @@ id090,id048,id0000067778,24,2,51862,4,9,"#;
         let csv = r#"a,b,c,d,e
 AUDCAD,1616455919,0.91212,0.95556,1
 AUDCAD,1616455920,0.92212,0.95556,1
-AUDCAD,1616455921,0.96212,0.95666,1"#;
+AUDCAD,1616455921,0.96212,0.95666,1
+"#;
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
             .has_header(true)
@@ -834,7 +848,8 @@ AUDCAD,1616455921,0.96212,0.95666,1"#;
 #beta : 0.1
 0 NA 0 0 57 0
 0 NA 0 0 57 0
-0 NA 5 5 513 0";
+0 NA 5 5 513 0
+";
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
@@ -851,7 +866,8 @@ AUDCAD,1616455921,0.96212,0.95666,1"#;
     fn test_projection_idx() -> Result<()> {
         let csv = r"#0 NA 0 0 57 0
 0 NA 0 0 57 0
-0 NA 5 5 513 0";
+0 NA 5 5 513 0
+";
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
@@ -879,7 +895,8 @@ AUDCAD,1616455921,0.96212,0.95666,1"#;
         let csv = r"1,2,3,4,5
 1,2,3
 1,2,3,4,5
-1,3,5";
+1,3,5
+";
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).has_header(false).finish()?;
@@ -900,7 +917,8 @@ AUDCAD,1616455921,0.96212,0.95666,1"#;
         let csv = r"1,2,3,4,5
 # this is a comment
 1,2,3,4,5
-1,2,3,4,5";
+1,2,3,4,5
+";
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
