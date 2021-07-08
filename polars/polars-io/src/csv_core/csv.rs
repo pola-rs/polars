@@ -1,6 +1,7 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
+use crate::mmap::MmapBytesReader;
 use crate::PhysicalIoExpr;
 use crate::ScanAggregation;
 use csv::ByteRecordsIntoIter;
@@ -9,6 +10,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use std::borrow::Cow;
 use std::fmt;
 use std::io::{Read, Seek};
 use std::path::PathBuf;
@@ -16,7 +18,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
 /// CSV file reader
-pub struct SequentialReader<R: Read> {
+pub struct SequentialReader<R: Read + MmapBytesReader> {
     /// Explicit schema for the CSV file
     schema: SchemaRef,
     /// Optional projection for which columns to load (zero-based column indices)
@@ -41,7 +43,7 @@ pub struct SequentialReader<R: Read> {
 
 impl<R> fmt::Debug for SequentialReader<R>
 where
-    R: Read,
+    R: Read + MmapBytesReader,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reader")
@@ -100,7 +102,7 @@ impl RunningSize {
     }
 }
 
-impl<R: Read + Sync + Send> SequentialReader<R> {
+impl<R: Read + Sync + Send + MmapBytesReader> SequentialReader<R> {
     /// Returns the schema of the reader, useful for getting the schema without reading
     /// record batches
     pub fn schema(&self) -> SchemaRef {
@@ -273,7 +275,6 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         // all the buffers returned from the threads
         // Structure:
         //      the inner vec has got buffers from all the columns.
-
         if predicate.is_some() {
             let dfs = pool.install(|| {
                 file_chunks
@@ -424,6 +425,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
         let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
 
         let mut df = match (&self.path, self.record_iter.is_some()) {
+            // we have a path so we can mmap
             (Some(p), _) => {
                 let file = std::fs::File::open(p)?;
                 let mmap = unsafe { memmap::Mmap::map(&file)? };
@@ -431,15 +433,35 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
                 self.parse_csv(n_threads, bytes, predicate.as_ref())?
             }
             (None, true) => {
-                let mut r = std::mem::take(&mut self.record_iter).unwrap().into_reader();
-                let mut bytes = Vec::with_capacity(1024 * 128);
-                r.get_mut().read_to_end(&mut bytes)?;
-                if !bytes.is_empty()
-                    && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
-                {
-                    bytes.push(b'\n')
+                // get a hold of the reader + mmapreader
+                let mut r = std::mem::take(&mut self.record_iter)
+                    .unwrap()
+                    .into_reader()
+                    .into_inner();
+
+                // we have a file so we can mmap
+                if let Some(file) = r.to_file() {
+                    let mmap = unsafe { memmap::Mmap::map(file)? };
+                    let bytes = mmap[..].as_ref();
+                    self.parse_csv(n_threads, bytes, predicate.as_ref())?
+                } else {
+                    // we can get the bytes for free
+                    let bytes = if let Some(bytes) = r.to_bytes() {
+                        Cow::Borrowed(bytes)
+                    } else {
+                        // we have to read to an owned buffer to get the bytes.
+                        let mut bytes = Vec::with_capacity(1024 * 128);
+                        r.read_to_end(&mut bytes)?;
+                        if !bytes.is_empty()
+                            && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
+                        {
+                            bytes.push(b'\n')
+                        }
+                        Cow::Owned(bytes)
+                    };
+
+                    self.parse_csv(n_threads, &bytes, predicate.as_ref())?
                 }
-                self.parse_csv(n_threads, &bytes, predicate.as_ref())?
             }
             _ => return Err(PolarsError::Other("file or reader must be set".into())),
         };
@@ -464,7 +486,7 @@ impl<R: Read + Sync + Send> SequentialReader<R> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_csv_reader<R: 'static + Read + Seek + Sync + Send>(
+pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
     mut reader: R,
     n_rows: Option<usize>,
     skip_rows: usize,

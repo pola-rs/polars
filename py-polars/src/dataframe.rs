@@ -14,7 +14,7 @@ use crate::apply::dataframe::{
 };
 use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
-use crate::file::FileLike;
+use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::utils::{downsample_str_to_rule, str_to_polarstype};
 use crate::{
@@ -61,7 +61,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     pub fn read_csv(
-        py_f: PyObject,
+        py_f: &PyAny,
         infer_schema_length: usize,
         chunk_size: usize,
         has_header: bool,
@@ -73,7 +73,7 @@ impl PyDataFrame {
         rechunk: bool,
         columns: Option<Vec<String>>,
         encoding: &str,
-        mut n_threads: Option<usize>,
+        n_threads: Option<usize>,
         path: Option<String>,
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
         low_memory: bool,
@@ -102,17 +102,8 @@ impl PyDataFrame {
             Schema::new(fields)
         });
 
-        let file = get_either_file(py_f, false)?;
-        // Python files cannot be send to another thread.
-        let file: Box<dyn FileLike> = match file {
-            EitherRustPythonFile::Py(f) => {
-                n_threads = Some(1);
-                Box::new(f)
-            }
-            EitherRustPythonFile::Rust(f) => Box::new(f),
-        };
-
-        let df = CsvReader::new(file)
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
+        let df = CsvReader::new(mmap_bytes_r)
             .infer_schema(Some(infer_schema_length))
             .has_header(has_header)
             .with_stop_after_n_rows(stop_after_n_rows)

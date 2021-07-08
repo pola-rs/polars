@@ -1,4 +1,5 @@
 // Credits to https://github.com/omerbenamram/pyo3-file
+use polars::io::mmap::MmapBytesReader;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
@@ -187,6 +188,7 @@ pub trait FileLike: Read + Write + Seek + Sync + Send {}
 
 impl FileLike for File {}
 impl FileLike for PyFileLikeObject {}
+impl MmapBytesReader for PyFileLikeObject {}
 
 pub enum EitherRustPythonFile {
     Py(PyFileLikeObject),
@@ -220,5 +222,44 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
     match get_either_file(f, truncate)? {
         Py(f) => Ok(Box::new(f)),
         Rust(f) => Ok(Box::new(f)),
+    }
+}
+
+pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesReader + 'a>> {
+    let gil = Python::acquire_gil();
+    let py = gil.python();
+
+    // string so read file
+    if let Ok(pstring) = py_f.downcast::<PyString>() {
+        let rstring = pstring.to_string();
+        let str_slice: &str = rstring.borrow();
+        let f = File::open(str_slice)?;
+        Ok(Box::new(f))
+    }
+    // bytes object
+    else if let Ok(bytes) = py_f.downcast::<PyBytes>() {
+        Ok(Box::new(Cursor::new(bytes.as_bytes())))
+    }
+    // a normal python file: with open(...) as f:.
+    else if py_f.getattr("read").is_ok() {
+        if let Ok(filename) = py_f.getattr("name") {
+            let filename = filename.downcast::<PyString>()?;
+            let f = File::open(filename.to_str()?)?;
+            Ok(Box::new(f))
+        }
+        // don't really know what we got here, just read.
+        else {
+            let f = PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)?;
+            Ok(Box::new(f))
+        }
+    // a bytesIO
+    } else if let Ok(bytes) = py_f.call_method0("getvalue") {
+        let bytes = bytes.downcast::<PyBytes>()?;
+        Ok(Box::new(Cursor::new(bytes.as_bytes())))
+    }
+    // don't really know what we got here, just read.
+    else {
+        let f = PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)?;
+        Ok(Box::new(f))
     }
 }
