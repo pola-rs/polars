@@ -1,6 +1,7 @@
 use super::*;
 use crate::logical_plan::CsvParserOptions;
 use crate::utils::try_path_to_str;
+use polars_io::mmap::MmapBytesReader;
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
 use std::mem;
@@ -14,7 +15,7 @@ trait FinishScanOps {
     ) -> Result<DataFrame>;
 }
 
-impl<'a, R: 'static + Read + Seek + Sync + Send> FinishScanOps for CsvReader<'a, R> {
+impl<'a, R: 'static + Seek + Sync + Send + MmapBytesReader> FinishScanOps for CsvReader<'a, R> {
     fn finish_with_scan_ops(
         self,
         predicate: Option<Arc<dyn PhysicalExpr>>,
