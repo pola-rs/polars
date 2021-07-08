@@ -12,6 +12,8 @@ pub mod ipc;
 #[cfg(feature = "json")]
 #[cfg_attr(docsrs, doc(cfg(feature = "json")))]
 pub mod json;
+#[cfg(feature = "csv-file")]
+pub mod mmap;
 #[cfg(feature = "parquet")]
 #[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
