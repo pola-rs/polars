@@ -435,6 +435,11 @@ def test_concat():
 
     assert functions.concat([df, df]).shape == (6, 3)
 
+    # check if a remains unchanged
+    a = pl.from_rows(((1, 2), (1, 2)))
+    _ = pl.concat([a, a, a])
+    assert a.shape == (2, 2)
+
 
 def test_to_pandas():
     df = get_complete_df()
