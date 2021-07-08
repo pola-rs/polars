@@ -5,6 +5,7 @@ use arrow::array::PrimitiveArray;
 use arrow::compute::divide_scalar;
 use arrow::{array::ArrayRef, compute};
 use num::{Num, NumCast, One, ToPrimitive, Zero};
+use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
@@ -443,12 +444,20 @@ impl Add for &Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        // broadcasting path
+        // broadcasting path rhs
         if rhs.len() == 1 {
             let rhs = rhs.get(0);
             return match rhs {
                 Some(rhs) => self.add(rhs),
                 None => Utf8Chunked::full_null(self.name(), self.len()),
+            };
+        }
+        // broadcasting path lhs
+        if self.len() == 1 {
+            let lhs = self.get(0);
+            return match lhs {
+                Some(lhs) => rhs.apply(|s| Cow::Owned(concat_strings(lhs, s))),
+                None => Utf8Chunked::full_null(self.name(), rhs.len()),
             };
         }
 
