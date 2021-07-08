@@ -564,7 +564,7 @@ def concat(dfs: List[DataFrame], rechunk: bool = True) -> DataFrame:
         rechunk the final DataFrame.
     """
     assert len(dfs) > 0
-    df = dfs[0]
+    df = dfs[0].clone()
     for i in builtins.range(1, len(dfs)):
         try:
             df = df.vstack(dfs[i], in_place=False)  # type: ignore
