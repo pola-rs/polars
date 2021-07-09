@@ -2172,7 +2172,7 @@ class GroupBy:
 
             if isinstance(column_to_agg[0], tuple):
                 column_to_agg = [  # type: ignore
-                    (column, [agg] if isinstance(agg, str) else agg)
+                    (column, [agg] if isinstance(agg, str) else agg)  # type: ignore
                     for (column, agg) in column_to_agg
                 ]
 
