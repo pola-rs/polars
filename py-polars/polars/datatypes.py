@@ -1,11 +1,8 @@
-from _ctypes import _SimpleCData
 import ctypes
 import typing as tp
-from typing import (
-    Any,
-    Dict,
-    Type,
-)
+from typing import Any, Dict, Type
+
+from _ctypes import _SimpleCData
 
 __pdoc__ = {
     "dtype_to_ctype": False,

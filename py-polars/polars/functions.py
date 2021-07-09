@@ -1,28 +1,27 @@
-import builtins
-from contextlib import contextmanager
-from io import StringIO, BytesIO
-from pathlib import Path
 import typing as tp
+from contextlib import contextmanager
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import (
-    Union,
-    TextIO,
-    Optional,
-    BinaryIO,
-    Sequence,
-    Dict,
     Any,
-    Type,
-    Iterator,
+    BinaryIO,
     ContextManager,
+    Dict,
+    Iterator,
+    Optional,
+    Sequence,
+    TextIO,
+    Type,
+    Union,
     overload,
 )
-import urllib.request
+from urllib.request import urlopen
 
 import numpy as np
 import pyarrow as pa
-import pyarrow.parquet
-import pyarrow.csv
 import pyarrow.compute
+import pyarrow.csv
+import pyarrow.parquet
 
 try:
     import pandas as pd
@@ -45,7 +44,7 @@ from .series import Series
 
 
 def _process_http_file(path: str) -> BytesIO:
-    with urllib.request.urlopen(path) as f:
+    with urlopen(path) as f:
         return BytesIO(f.read())
 
 
@@ -579,7 +578,7 @@ def concat(dfs: tp.List[DataFrame], rechunk: bool = True) -> DataFrame:
     """
     assert len(dfs) > 0
     df = dfs[0].clone()
-    for i in builtins.range(1, len(dfs)):
+    for i in range(1, len(dfs)):
         try:
             df = df.vstack(dfs[i], in_place=False)  # type: ignore
         # could have a double borrow (one mutable one ref)

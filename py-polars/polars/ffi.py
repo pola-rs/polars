@@ -3,7 +3,6 @@ from typing import Any
 
 import numpy as np
 
-
 # https://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy
 
 
