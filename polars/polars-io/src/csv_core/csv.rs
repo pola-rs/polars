@@ -1,4 +1,4 @@
-use crate::csv::CsvEncoding;
+use crate::csv::{CsvEncoding, NullValues};
 use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::mmap::MmapBytesReader;
@@ -39,6 +39,7 @@ pub struct SequentialReader<R: Read + MmapBytesReader> {
     chunk_size: usize,
     low_memory: bool,
     comment_char: Option<u8>,
+    null_values: Option<Vec<String>>,
 }
 
 impl<R> fmt::Debug for SequentialReader<R>
@@ -308,6 +309,7 @@ impl<R: Read + Sync + Send + MmapBytesReader> SequentialReader<R> {
                                 read,
                                 delimiter,
                                 self.comment_char,
+                                self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
                                 ignore_parser_errors,
@@ -397,6 +399,7 @@ impl<R: Read + Sync + Send + MmapBytesReader> SequentialReader<R> {
                                 read,
                                 delimiter,
                                 self.comment_char,
+                                self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
                                 ignore_parser_errors,
@@ -505,6 +508,7 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
     chunk_size: usize,
     low_memory: bool,
     comment_char: Option<u8>,
+    null_values: Option<NullValues>,
 ) -> Result<SequentialReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
@@ -523,6 +527,8 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
             Arc::new(inferred_schema)
         }
     };
+
+    let null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
 
     if let Some(cols) = columns {
         let mut prj = Vec::with_capacity(cols.len());
@@ -553,5 +559,6 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
         chunk_size,
         low_memory,
         comment_char,
+        null_values,
     })
 }

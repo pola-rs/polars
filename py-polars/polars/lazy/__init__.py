@@ -14,7 +14,7 @@ import subprocess
 import shutil
 from datetime import datetime
 import numpy as np
-from polars.utils import _is_expr
+from ..utils import _is_expr, _process_null_values
 
 try:
     from ..polars import (
@@ -132,6 +132,7 @@ class LazyFrame:
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
+        null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -141,6 +142,7 @@ class LazyFrame:
             dtype_list = []
             for k, v in dtype.items():
                 dtype_list.append((k, datatypes.pytype_to_polars_type(v)))
+        null_values = _process_null_values(null_values)  # type: ignore
 
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = PyLazyFrame.new_from_csv(
@@ -154,6 +156,7 @@ class LazyFrame:
             dtype_list,
             low_memory,
             comment_char,
+            null_values,
         )
         return self
 

@@ -132,6 +132,35 @@ pub enum CsvEncoding {
     LossyUtf8,
 }
 
+#[derive(Clone, Debug)]
+pub enum NullValues {
+    /// A single value that's used for all columns
+    AllColumns(String),
+    /// A different null value per column
+    Columns(Vec<String>),
+    /// Tuples that map column names to null value of that column
+    Named(Vec<(String, String)>),
+}
+
+impl NullValues {
+    /// Use the schema and the null values to produce a null value for every column.
+    pub(crate) fn process(self, schema: &Schema) -> Result<Vec<String>> {
+        let out = match self {
+            NullValues::Columns(v) => v,
+            NullValues::AllColumns(v) => (0..schema.len()).map(|_| v.clone()).collect(),
+            NullValues::Named(v) => {
+                let mut null_values = vec!["".to_string(); schema.len()];
+                for (name, null_value) in v {
+                    let i = schema.index_of(&name)?;
+                    null_values[i] = null_value;
+                }
+                null_values
+            }
+        };
+        Ok(out)
+    }
+}
+
 /// Create a new DataFrame by reading a csv file.
 ///
 /// # Example
@@ -177,6 +206,7 @@ where
     chunk_size: usize,
     low_memory: bool,
     comment_char: Option<u8>,
+    null_values: Option<NullValues>,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -244,6 +274,12 @@ where
     /// Set the comment character. Lines starting with this character will be ignored.
     pub fn with_comment_char(mut self, comment_char: Option<u8>) -> Self {
         self.comment_char = comment_char;
+        self
+    }
+
+    /// Set values that will be interpreted as missing/ null.
+    pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
+        self.null_values = null_values;
         self
     }
 
@@ -329,6 +365,7 @@ where
             self.chunk_size,
             self.low_memory,
             self.comment_char,
+            self.null_values,
         )
     }
 }
@@ -368,6 +405,7 @@ where
             chunk_size: 8192,
             low_memory: false,
             comment_char: None,
+            null_values: None,
         }
     }
 
@@ -423,6 +461,7 @@ where
                 self.chunk_size,
                 self.low_memory,
                 self.comment_char,
+                self.null_values,
             )?;
             let mut df = csv_reader.as_df(None, None)?;
 
@@ -923,6 +962,24 @@ AUDCAD,1616455921,0.96212,0.95666,1
             .finish()?;
         use polars_core::df;
         assert_eq!(df.shape(), (3, 5));
+        Ok(())
+    }
+
+    #[test]
+    fn test_null_values_argument() -> Result<()> {
+        let csv = r"1,a,foo
+null-value,b,bar,
+3,null-value,ham
+";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(false)
+            .with_null_values(NullValues::AllColumns("null-value".to_string()).into())
+            .finish()?;
+        use polars_core::df;
+        dbg!(df);
+        // assert_eq!(df.shape(), (3, 5));
         Ok(())
     }
 }

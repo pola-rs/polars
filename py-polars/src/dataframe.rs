@@ -78,7 +78,9 @@ impl PyDataFrame {
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
         low_memory: bool,
         comment_char: Option<&str>,
+        null_values: Option<Wrap<NullValues>>,
     ) -> PyResult<Self> {
+        let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
@@ -120,6 +122,7 @@ impl PyDataFrame {
             .with_dtypes(overwrite_dtype.as_ref())
             .low_memory(low_memory)
             .with_comment_char(comment_char)
+            .with_null_values(null_values)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())

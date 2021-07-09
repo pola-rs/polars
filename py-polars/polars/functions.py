@@ -149,6 +149,7 @@ def read_csv(
     low_memory: bool = False,
     comment_char: Optional[str] = None,
     storage_options: Optional[Dict] = None,
+    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a csv file.
@@ -204,6 +205,12 @@ def read_csv(
         character that indicates the start of a comment line, for instance '#'.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
+    null_values
+        Values to interpret as null values. You can provide a:
+
+        - str -> all values encountered equal to this string will be null
+        - List[str] -> A null value per column.
+        - Dict[str, str] -> A dictionary that maps column name to a null value string.
 
     Returns
     -------
@@ -227,6 +234,7 @@ def read_csv(
         and n_threads is None
         and encoding == "utf8"
         and not low_memory
+        and null_values is None
     ):
         include_columns = None
 
@@ -284,6 +292,7 @@ def read_csv(
             dtype=dtype,
             low_memory=low_memory,
             comment_char=comment_char,
+            null_values=null_values,
         )
 
     if new_columns:
@@ -302,6 +311,7 @@ def scan_csv(
     dtype: Optional[Dict[str, Type[DataType]]] = None,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
+    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
 ) -> LazyFrame:
     """
     Lazily read from a csv file.
@@ -333,6 +343,12 @@ def scan_csv(
         Reduce memory usage in expense of performance.
     comment_char
         character that indicates the start of a comment line, for instance '#'.
+    null_values
+        Values to interpret as null values. You can provide a:
+
+        - str -> all values encountered equal to this string will be null
+        - List[str] -> A null value per column.
+        - Dict[str, str] -> A dictionary that maps column name to a null value string.
     """
     if isinstance(file, Path):
         file = str(file)
@@ -347,6 +363,7 @@ def scan_csv(
         dtype=dtype,
         low_memory=low_memory,
         comment_char=comment_char,
+        null_values=null_values,
     )
 
 
