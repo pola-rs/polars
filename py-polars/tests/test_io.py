@@ -77,3 +77,33 @@ def test_parquet_datetime():
     f.seek(0)
     read = pl.read_parquet(f)
     assert read.frame_equal(df)
+
+
+def test_csv_null_values():
+    csv = """
+a,b,c
+na,b,c
+a,na,c"""
+    f = io.StringIO(csv)
+
+    df = pl.read_csv(f, null_values="na")
+    assert df[0, "a"] is None
+    assert df[1, "b"] is None
+
+    csv = """
+a,b,c
+na,b,c
+a,n/a,c"""
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, null_values=["na", "n/a"])
+    assert df[0, "a"] is None
+    assert df[1, "b"] is None
+
+    csv = """
+a,b,c
+na,b,c
+a,n/a,c"""
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, null_values={"a": "na", "b": "n/a"})
+    assert df[0, "a"] is None
+    assert df[1, "b"] is None

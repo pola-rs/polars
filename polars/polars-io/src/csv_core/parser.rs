@@ -320,6 +320,7 @@ pub(crate) fn parse_lines(
     offset: usize,
     delimiter: u8,
     comment_char: Option<u8>,
+    null_values: Option<&Vec<String>>,
     projection: &[usize],
     buffers: &mut [Buffer],
     ignore_parser_errors: bool,
@@ -383,19 +384,32 @@ pub(crate) fn parse_lines(
                     // SAFETY: processed fields index can never exceed the projection indices.
                     buffers.get_unchecked_mut(processed_fields)
                 };
-                // let buf = &mut buffers[processed_fields];
-                buf.add(field, ignore_parser_errors, read, encoding)
-                    .map_err(|e| {
-                        PolarsError::Other(
-                            format!(
-                                "{:?} on thread line {}; on input: {}",
-                                e,
-                                idx,
-                                String::from_utf8_lossy(field)
+                let mut add_null = false;
+
+                // if we have null values argument, check if this field equal null value
+                if let Some(null_values) = &null_values {
+                    if let Some(null_value) = null_values.get(processed_fields) {
+                        if field == null_value.as_bytes() {
+                            add_null = true;
+                        }
+                    }
+                }
+                if add_null {
+                    buf.add_null()
+                } else {
+                    buf.add(field, ignore_parser_errors, read, encoding)
+                        .map_err(|e| {
+                            PolarsError::Other(
+                                format!(
+                                    "{:?} on thread line {}; on input: {}",
+                                    e,
+                                    idx,
+                                    String::from_utf8_lossy(field)
+                                )
+                                .into(),
                             )
-                            .into(),
-                        )
-                    })?;
+                        })?;
+                }
 
                 processed_fields += 1;
 
@@ -421,7 +435,7 @@ pub(crate) fn parse_lines(
                 buffers.get_unchecked_mut(processed_fields)
             };
 
-            buf.add(&[], true, read, encoding)?;
+            buf.add_null();
             processed_fields += 1;
         }
 

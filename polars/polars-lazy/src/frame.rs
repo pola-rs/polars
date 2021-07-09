@@ -20,6 +20,7 @@ use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::combine_predicates_expr;
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
+use polars_io::csv::NullValues;
 
 #[derive(Clone)]
 #[cfg(feature = "csv-file")]
@@ -35,6 +36,7 @@ pub struct LazyCsvReader<'a> {
     schema_overwrite: Option<&'a Schema>,
     low_memory: bool,
     comment_char: Option<u8>,
+    null_values: Option<NullValues>,
 }
 
 #[cfg(feature = "csv-file")]
@@ -52,6 +54,7 @@ impl<'a> LazyCsvReader<'a> {
             schema_overwrite: None,
             low_memory: false,
             comment_char: None,
+            null_values: None,
         }
     }
 
@@ -105,6 +108,12 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Set values that will be interpreted as missing/ null.
+    pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
+        self.null_values = null_values;
+        self
+    }
+
     /// Cache the DataFrame after reading.
     pub fn with_cache(mut self, cache: bool) -> Self {
         self.cache = cache;
@@ -130,6 +139,7 @@ impl<'a> LazyCsvReader<'a> {
             self.schema_overwrite,
             self.low_memory,
             self.comment_char,
+            self.null_values,
         )
         .build()
         .into();

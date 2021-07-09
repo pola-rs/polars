@@ -294,6 +294,20 @@ impl Buffer {
         }
     }
 
+    pub(crate) fn add_null(&mut self) {
+        match self {
+            Buffer::Boolean(v) => v.append_null(),
+            Buffer::Int32(v) => v.append_null(),
+            Buffer::Int64(v) => v.append_null(),
+            Buffer::UInt32(v) => v.append_null(),
+            #[cfg(feature = "dtype-u64")]
+            Buffer::UInt64(v) => v.append_null(),
+            Buffer::Float32(v) => v.append_null(),
+            Buffer::Float64(v) => v.append_null(),
+            Buffer::Utf8(v) => v.builder.append_null(),
+        };
+    }
+
     #[inline]
     pub(crate) fn add(
         &mut self,
