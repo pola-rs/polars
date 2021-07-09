@@ -1390,6 +1390,7 @@ class DataFrame:
                 - "left"
                 - "outer"
                 - "asof"
+                - "cross"
 
         Example
         ---
@@ -1442,6 +1443,9 @@ class DataFrame:
         -------
             Joined DataFrame
         """
+        if how == "cross":
+            return wrap_df(self._df.join(df._df, [], [], how))
+
         if isinstance(left_on, str):
             left_on = [left_on]
         if isinstance(right_on, str):
@@ -1458,9 +1462,7 @@ class DataFrame:
         if isinstance(left_on[0], pl.Expr) or isinstance(right_on[0], pl.Expr):  # type: ignore
             return self.lazy().join(df.lazy(), left_on, right_on, how=how)
 
-        out = self._df.join(df._df, left_on, right_on, how)
-
-        return wrap_df(out)
+        return wrap_df(self._df.join(df._df, left_on, right_on, how))
 
     def apply(
         self,

@@ -112,6 +112,7 @@
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
 //!     - `downsample` - [downsample operation](crate::frame::DataFrame::downsample) on `DataFrame`s
 //!     - `asof_join` - Join as of, to join on nearest keys instead of exact equality match.
+//!     - `cross_join` - Create the cartesian product of two DataFrames.
 //! * `Series` operations:
 //!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)

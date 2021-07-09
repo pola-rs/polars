@@ -64,6 +64,8 @@ pub enum JoinType {
     Outer,
     #[cfg(feature = "asof_join")]
     AsOf,
+    #[cfg(feature = "cross_join")]
+    Cross,
 }
 
 unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
@@ -994,6 +996,11 @@ impl DataFrame {
         right_on: S2,
         how: JoinType,
     ) -> Result<DataFrame> {
+        #[cfg(feature = "cross_join")]
+        if let JoinType::Cross = how {
+            return self.cross_join(other);
+        }
+
         let selected_left = self.select_series(left_on)?;
         let selected_right = other.select_series(right_on)?;
         assert_eq!(selected_right.len(), selected_left.len());
@@ -1016,6 +1023,10 @@ impl DataFrame {
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf => {
                     self.join_asof(other, selected_left[0].name(), selected_right[0].name())
+                }
+                #[cfg(feature = "cross_join")]
+                JoinType::Cross => {
+                    unreachable!()
                 }
             };
         }
@@ -1110,6 +1121,10 @@ impl DataFrame {
             JoinType::AsOf => Err(PolarsError::ValueError(
                 "asof join not supported for join on multiple keys".into(),
             )),
+            #[cfg(feature = "cross_join")]
+            JoinType::Cross => {
+                unreachable!()
+            }
         }
     }
 

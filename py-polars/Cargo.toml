@@ -53,7 +53,8 @@ features = [
     "private",
     "round_series",
     "is_first",
-    "asof_join"
+    "asof_join",
+    "cross_join"
 ]
 
 #[patch.crates-io]
