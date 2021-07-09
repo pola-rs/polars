@@ -579,6 +579,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "is_first")]
     fn is_first() {
         let ca = UInt32Chunked::new_from_opt_slice(
             "a",

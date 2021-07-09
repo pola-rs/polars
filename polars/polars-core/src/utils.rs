@@ -665,6 +665,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     }
 }
 
+/// This takes ownership of the DataFrame so that drop is called earlier.
 pub fn accumulate_dataframes_vertical<I>(dfs: I) -> Result<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
@@ -673,6 +674,19 @@ where
     let mut acc_df = iter.next().unwrap();
     for df in iter {
         acc_df.vstack_mut(&df)?;
+    }
+    Ok(acc_df)
+}
+
+/// Concat the DataFrames to a single DataFrame.
+pub fn concat_df<'a, I>(dfs: I) -> Result<DataFrame>
+where
+    I: IntoIterator<Item = &'a DataFrame>,
+{
+    let mut iter = dfs.into_iter();
+    let mut acc_df = iter.next().unwrap().clone();
+    for df in iter {
+        acc_df.vstack_mut(df)?;
     }
     Ok(acc_df)
 }
