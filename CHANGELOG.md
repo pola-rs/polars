@@ -1,8 +1,32 @@
 # Changelog Polars (Rust crate)
 
-The Python bindings `polars` have their own changelog.
+The Python bindings of `polars` have their own changelog.
 
-## \[future\] Polars v0.13
+### Polars 0.14.6
+* feature
+  - is_first expr/method
+  - asof join added
+  - resolve `~` to homedir
+* performance
+  - use fast csv-parser for more input types
+* bug fix
+  - kleene or and and operations
+  - maybe fix rayon deadlock
+  - string addition lhs broadcast
+
+### Polars 0.14.5
+* feature
+  - csv-parser option to ignore comment lines
+* performance
+  - improve take on DataFrame
+  - remove bound checks in buffer creation
+  - improve performance of sorting by multiple columns
+  - improve argsort performance
+* bug fix
+  - fix backward/forward fill
+  - window groupby context
+
+## Polars v0.13
 
 * performance
   - Vast reduction of compile times by making compilation dtypes of Series opt-in.
