@@ -2,6 +2,6 @@
 # just stop shouting as black decides line lengths.
 max-line-length = 180
 # E203, W504: due to black fmt
-ignore = E203,W503
+ignore = E203,W503,F405
 exclude = tests, legacy
 

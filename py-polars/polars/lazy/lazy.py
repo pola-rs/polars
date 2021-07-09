@@ -1,22 +1,13 @@
 """
 This module contains all expressions and classes needed for lazy computation/ query execution.
 """
-
-from datetime import datetime
 import os
-import tempfile
-import subprocess
 import shutil
+import subprocess
+import tempfile
 import typing as tp
-from typing import (
-    Union,
-    Tuple,
-    Callable,
-    Optional,
-    Dict,
-    Any,
-    Type,
-)
+from datetime import datetime
+from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
 
 import numpy as np
 
@@ -35,20 +26,16 @@ from ..series import Series
 from ..utils import _is_expr, _process_null_values
 
 try:
-    from ..polars import (
-        PyExpr,
-        PyLazyFrame,
-        PyLazyGroupBy,
-        col as pycol,
-        lit as pylit,
-        binary_function as pybinary_function,
-        cov as pycov,
-        argsort_by as pyargsort_by,
-        when as pywhen,
-        except_ as pyexcept,
-        pearson_corr as pypearson_corr,
-        series_from_range as _series_from_range,
-    )
+    from ..polars import PyExpr, PyLazyFrame, PyLazyGroupBy
+    from ..polars import argsort_by as pyargsort_by
+    from ..polars import binary_function as pybinary_function
+    from ..polars import col as pycol
+    from ..polars import cov as pycov
+    from ..polars import except_ as pyexcept
+    from ..polars import lit as pylit
+    from ..polars import pearson_corr as pypearson_corr
+    from ..polars import series_from_range as _series_from_range
+    from ..polars import when as pywhen
 except ImportError:
     import warnings
 
@@ -255,8 +242,8 @@ class LazyFrame:
             Passed to matlotlib if `show` == True.
         """
         try:
-            import matplotlib.pyplot as plt
             import matplotlib.image as mpimg
+            import matplotlib.pyplot as plt
         except ImportError:
             raise ImportError(
                 "Graphviz dot binary should be on your PATH and matplotlib should be installed to show graph."

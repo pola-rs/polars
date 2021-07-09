@@ -1,7 +1,9 @@
+import time
+
+import numpy as np
+
 import polars as pl
 from polars import col
-import numpy as np
-import time
 
 print(pl.__version__)
 

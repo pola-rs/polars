@@ -1,16 +1,17 @@
+from builtins import range
+from datetime import datetime
+from io import BytesIO
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pytest
+from utils import get_complete_df
+
+import polars as pl
+from polars import functions
 from polars.datatypes import *
 from polars.lazy import *
-from polars import functions
-import pytest
-from io import BytesIO
-import numpy as np
-from builtins import range
-import pyarrow as pa
-import polars as pl
-import pandas as pd
-from datetime import datetime
-
-from utils import get_complete_df
 
 
 def test_version():

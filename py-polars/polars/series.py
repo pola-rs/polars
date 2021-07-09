@@ -1,24 +1,25 @@
+import typing as tp
 from datetime import datetime
 from numbers import Number
-import typing as tp
 from typing import (
-    Optional,
-    Sequence,
-    Union,
+    TYPE_CHECKING,
     Any,
     Callable,
+    Dict,
+    Optional,
+    Sequence,
     Tuple,
     Type,
-    Dict,
-    TYPE_CHECKING,
+    Union,
 )
 
 import numpy as np
 import pyarrow as pa
 
 import polars as pl
-from .ffi import _ptr_to_numpy
+
 from .datatypes import *  # noqa: F403
+from .ffi import _ptr_to_numpy
 from .utils import coerce_arrow
 
 try:

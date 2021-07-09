@@ -1,10 +1,12 @@
+from datetime import datetime
+
+import numpy as np
+import pyarrow as pa
+import pytest
+
+import polars as pl
 from polars import Series
 from polars.datatypes import *
-import polars as pl
-import numpy as np
-import pytest
-import pyarrow as pa
-from datetime import datetime
 
 
 def create_series() -> "Series":

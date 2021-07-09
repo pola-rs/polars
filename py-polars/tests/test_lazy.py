@@ -1,8 +1,9 @@
-from polars import DataFrame, Series
-from polars.lazy import *
-from polars.datatypes import *
-import polars as pl
 import pytest
+
+import polars as pl
+from polars import DataFrame, Series
+from polars.datatypes import *
+from polars.lazy import *
 
 
 def test_lazy():

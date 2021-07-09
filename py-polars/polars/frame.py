@@ -1,25 +1,25 @@
 """
 Module containing logic related to eager DataFrames
 """
-from io import BytesIO, StringIO
 import os
+import typing as tp
+from io import BytesIO, StringIO
 from pathlib import Path
 from types import TracebackType
-import typing as tp
 from typing import (
-    Dict,
-    Sequence,
-    Tuple,
-    Optional,
-    Union,
-    TextIO,
+    TYPE_CHECKING,
+    Any,
     BinaryIO,
     Callable,
-    Any,
-    Type,
+    Dict,
     Iterable,
     Iterator,
-    TYPE_CHECKING,
+    Optional,
+    Sequence,
+    TextIO,
+    Tuple,
+    Type,
+    Union,
 )
 
 import numpy as np
@@ -29,19 +29,16 @@ import pyarrow.feather
 import pyarrow.parquet
 
 import polars as pl
-from . import datatypes
-from .datatypes import DataType, pytype_to_polars_type
+
 from ._html import NotebookFormatter
+from .datatypes import Boolean, DataType, UInt32, dtypes, pytype_to_polars_type
 from .series import Series, wrap_s
-from .utils import coerce_arrow, _is_expr, _process_null_values
+from .utils import _is_expr, _process_null_values, coerce_arrow
 
 try:
-    from .polars import (  # noqa: F401
-        PyDataFrame,
-        PySeries,
-        toggle_string_cache as pytoggle_string_cache,
-        version,
-    )
+    from .polars import version  # noqa: F401
+    from .polars import PyDataFrame, PySeries
+    from .polars import toggle_string_cache as pytoggle_string_cache
 except ImportError:
     import warnings
 
@@ -49,7 +46,7 @@ except ImportError:
     __pdoc__ = {"wrap_df": False}
 
 if TYPE_CHECKING:
-    from .lazy import LazyFrame, Expr
+    from .lazy import Expr, LazyFrame
 
 
 def wrap_df(df: PyDataFrame) -> "DataFrame":
@@ -747,9 +744,9 @@ class DataFrame:
                         self._df.take([self._pos_idx(i, dim=0) for i in item])
                     )
             dtype = item.dtype
-            if dtype == datatypes.Boolean:
+            if dtype == Boolean:
                 return wrap_df(self._df.filter(item.inner()))
-            if dtype == datatypes.UInt32:
+            if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
 
     def __setitem__(self, key: Union[str, int, Tuple[Any, Any]], value: Any) -> None:
@@ -964,7 +961,7 @@ class DataFrame:
         ╰─────┴─────┴─────╯
         ```
         """
-        return [datatypes.dtypes[idx] for idx in self._df.dtypes()]
+        return [dtypes[idx] for idx in self._df.dtypes()]
 
     def describe(self) -> "DataFrame":
         """
