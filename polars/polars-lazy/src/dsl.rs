@@ -398,7 +398,7 @@ pub struct WhenThen {
 
 /// Intermediate state of chain when then exprs.
 ///
-/// ```ignore
+/// ```text,ignore
 /// when(..).then(..)
 /// when(..).then(..)
 /// when(..).then(..)
