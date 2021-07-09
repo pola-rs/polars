@@ -1,3 +1,7 @@
+import builtins
+from contextlib import contextmanager
+from io import StringIO, BytesIO
+from pathlib import Path
 from typing import (
     Union,
     TextIO,
@@ -12,15 +16,13 @@ from typing import (
     ContextManager,
     overload,
 )
-import builtins
 import urllib.request
-import io
-from io import StringIO, BytesIO
-from contextlib import contextmanager
-from pathlib import Path
-
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.parquet
+import pyarrow.csv
+import pyarrow.compute
 
 try:
     import pandas as pd
@@ -36,20 +38,15 @@ try:
 except ImportError:
     WITH_FSSPEC = False
 
-import pyarrow as pa
-import pyarrow.parquet
-import pyarrow.csv
-import pyarrow.compute
-
-from .frame import DataFrame
-from .series import Series
-from .lazy import LazyFrame
 from .datatypes import DataType
+from .frame import DataFrame
+from .lazy import LazyFrame
+from .series import Series
 
 
-def _process_http_file(path: str) -> io.BytesIO:
+def _process_http_file(path: str) -> BytesIO:
     with urllib.request.urlopen(path) as f:
-        return io.BytesIO(f.read())
+        return BytesIO(f.read())
 
 
 @overload
@@ -93,7 +90,7 @@ def _prepare_file_arg(
             pass
 
     if isinstance(file, StringIO):
-        return io.BytesIO(file.read().encode("utf8"))
+        return BytesIO(file.read().encode("utf8"))
     if isinstance(file, BytesIO):
         return file
     if isinstance(file, Path):

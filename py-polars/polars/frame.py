@@ -1,23 +1,10 @@
 """
 Module containing logic related to eager DataFrames
 """
-from io import BytesIO
-
 import io
-
-try:
-    from .polars import (  # noqa: F401
-        PyDataFrame,
-        PySeries,
-        toggle_string_cache as pytoggle_string_cache,
-        version,
-    )
-except ImportError:
-    import warnings
-
-    warnings.warn("binary files missing")
-    __pdoc__ = {"wrap_df": False}
-
+from io import BytesIO
+import os
+from pathlib import Path
 from types import TracebackType
 from typing import (
     Dict,
@@ -33,22 +20,34 @@ from typing import (
     Type,
     Iterable,
     Iterator,
+    TYPE_CHECKING,
 )
-from .series import Series, wrap_s
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.feather
+import pyarrow.parquet
+
+import polars
 from . import datatypes
 from .datatypes import DataType, pytype_to_polars_type
 from ._html import NotebookFormatter
+from .series import Series, wrap_s
 from .utils import coerce_arrow, _is_expr, _process_null_values
-import polars
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet
-import pyarrow.feather
-import numpy as np
-import os
-from pathlib import Path
 
-from typing import TYPE_CHECKING
+try:
+    from .polars import (  # noqa: F401
+        PyDataFrame,
+        PySeries,
+        toggle_string_cache as pytoggle_string_cache,
+        version,
+    )
+except ImportError:
+    import warnings
+
+    warnings.warn("binary files missing")
+    __pdoc__ = {"wrap_df": False}
 
 if TYPE_CHECKING:
     from .lazy import LazyFrame, Expr

@@ -11,6 +11,7 @@ from typing import (
     Optional,
     Type,
 )
+
 import polars as pl
 
 

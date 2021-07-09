@@ -1,6 +1,7 @@
-import pyarrow as pa
 from typing import Any, Optional, List, Union, Dict, Tuple
 import warnings
+
+import pyarrow as pa
 
 
 def coerce_arrow(array: pa.Array) -> pa.Array:

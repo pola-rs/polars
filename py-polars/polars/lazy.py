@@ -2,18 +2,19 @@
 This module contains all expressions and classes needed for lazy computation/ query execution.
 """
 
-from typing import Union, List, Tuple, Callable, Optional, Dict, Any, Type
-
-from polars import Series
-from polars.frame import DataFrame, wrap_df
-from polars import datatypes
-from polars.datatypes import DataType
 import os
 import tempfile
 import subprocess
 import shutil
 from datetime import datetime
+from typing import Union, List, Tuple, Callable, Optional, Dict, Any, Type
+
 import numpy as np
+
+from polars import Series
+from polars.frame import DataFrame, wrap_df
+from polars import datatypes
+from polars.datatypes import DataType
 from .utils import _is_expr, _process_null_values
 
 try:
@@ -36,7 +37,6 @@ except ImportError:
     import warnings
 
     warnings.warn("Binary files missing.")
-
     __pdoc__ = {"wrap_ldf": False, "wrap_expr": False}
 
 

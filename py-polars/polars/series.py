@@ -1,21 +1,24 @@
 from datetime import datetime
+from numbers import Number
+from typing import (
+    Optional,
+    List,
+    Sequence,
+    Union,
+    Any,
+    Callable,
+    Tuple,
+    Type,
+    Dict,
+    TYPE_CHECKING,
+)
 
-try:
-    from .polars import PySeries
-except ImportError:
-    import warnings
-
-    warnings.warn("binary files missing")
-    __pdoc__ = {
-        "wrap_s": False,
-        "find_first_non_none": False,
-        "out_to_dtype": False,
-        "get_ffi_func": False,
-        "SeriesIter": False,
-    }
 import numpy as np
-from typing import Optional, List, Sequence, Union, Any, Callable, Tuple, Type, Dict
+import pyarrow as pa
+
+import polars
 from .ffi import _ptr_to_numpy
+from . import datatypes
 from .datatypes import (
     Utf8,
     Int64,
@@ -37,13 +40,21 @@ from .datatypes import (
     Int8,
     UInt16,
 )
-from . import datatypes
-from numbers import Number
-import polars
-import pyarrow as pa
 from .utils import coerce_arrow
 
-from typing import TYPE_CHECKING
+try:
+    from .polars import PySeries
+except ImportError:
+    import warnings
+
+    warnings.warn("binary files missing")
+    __pdoc__ = {
+        "wrap_s": False,
+        "find_first_non_none": False,
+        "out_to_dtype": False,
+        "get_ffi_func": False,
+        "SeriesIter": False,
+    }
 
 if TYPE_CHECKING:
     from .frame import DataFrame
