@@ -38,7 +38,7 @@ from .series import Series, wrap_s
 from . import datatypes
 from .datatypes import DataType, pytype_to_polars_type
 from ._html import NotebookFormatter
-from .utils import coerce_arrow, _is_expr
+from .utils import coerce_arrow, _is_expr, _process_null_values
 import polars
 import pandas as pd
 import pyarrow as pa
@@ -176,6 +176,7 @@ class DataFrame:
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
+        null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -217,6 +218,12 @@ class DataFrame:
             Reduce memory usage in expense of performance.
         comment_char
             character that indicates the start of a comment line, for instance '#'.
+        null_values
+            Values to interpret as null values. You can provide a:
+
+            - str -> all values encountered equal to this string will be null
+            - List[str] -> A null value per column.
+            - Dict[str, str] -> A dictionary that maps column name to a null value string.
 
         Example
         ---
@@ -246,6 +253,8 @@ class DataFrame:
             for k, v in dtype.items():
                 dtype_list.append((k, pytype_to_polars_type(v)))
 
+        null_values = _process_null_values(null_values)  # type: ignore
+
         self._df = PyDataFrame.read_csv(
             file,
             infer_schema_length,
@@ -264,6 +273,7 @@ class DataFrame:
             dtype_list,
             low_memory,
             comment_char,
+            null_values,
         )
         return self
 

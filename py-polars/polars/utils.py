@@ -1,5 +1,5 @@
 import pyarrow as pa
-from typing import Any
+from typing import Any, Optional, List, Union, Dict, Tuple
 import warnings
 
 
@@ -40,3 +40,14 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
 
 def _is_expr(arg: Any) -> bool:
     return hasattr(arg, "_pyexpr")
+
+
+def _process_null_values(
+    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+) -> Optional[Union[str, List[str], List[Tuple[str, str]]]]:  # type: ignore
+    processed_null_values = null_values  # type: ignore
+    if null_values is not None and isinstance(null_values, dict):
+        processed_null_values = []
+        for k, v in null_values.items():
+            processed_null_values.append((k, v))  # type: ignore
+    return processed_null_values  # type: ignore

@@ -169,6 +169,7 @@ impl Executor for CsvExec {
             .with_stop_after_n_rows(stop_after_n_rows)
             .with_columns(with_columns)
             .low_memory(self.options.low_memory)
+            .with_null_values(self.options.null_values.clone())
             .with_encoding(CsvEncoding::LossyUtf8);
 
         let aggregate = if self.aggregate.is_empty() {
