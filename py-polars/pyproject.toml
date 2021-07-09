@@ -10,3 +10,8 @@ dependencies = [
     # (which the Rust libraries use to take advantage of Rust API changes).
     "pyarrow==4.0.*"
 ]
+
+[tool.mypy]
+ignore_missing_imports = true
+disallow_untyped_defs = true
+files = "polars"
