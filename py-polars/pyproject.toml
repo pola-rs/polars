@@ -13,6 +13,7 @@ dependencies = [
 
 [tool.isort]
 profile = "black"
+skip = ["polars/__init__.py"]
 
 [tool.mypy]
 ignore_missing_imports = true
