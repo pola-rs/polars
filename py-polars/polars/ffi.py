@@ -35,5 +35,4 @@ def _as_float_ndarray(ptr: int, size: int) -> np.ndarray:
 
     Turn a float* to a numpy array.
     """
-
-    return np.core.multiarray.int_asbuffer(ptr, size * np.float32.itemsize)
+    return np.core.multiarray.int_asbuffer(ptr, size * np.float32.itemsize)  # type: ignore
