@@ -1,6 +1,6 @@
 [package]
 name = "polars-arrow"
-version = "0.14.5"
+version = "0.14.6"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
