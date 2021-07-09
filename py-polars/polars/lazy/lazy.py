@@ -7,7 +7,16 @@ import os
 import tempfile
 import subprocess
 import shutil
-from typing import Union, List, Tuple, Callable, Optional, Dict, Any, Type
+import typing as tp
+from typing import (
+    Union,
+    Tuple,
+    Callable,
+    Optional,
+    Dict,
+    Any,
+    Type,
+)
 
 import numpy as np
 
@@ -48,10 +57,10 @@ except ImportError:
 
 
 def _selection_to_pyexpr_list(
-    exprs: Union[str, List[str], "Expr", List["Expr"]]
-) -> List[PyExpr]:
-    pyexpr_list: List[PyExpr]
-    if not isinstance(exprs, List):
+    exprs: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+) -> tp.List[PyExpr]:
+    pyexpr_list: tp.List[PyExpr]
+    if not isinstance(exprs, list):
         if isinstance(exprs, str):
             exprs = col(exprs)
         pyexpr_list = [exprs._pyexpr]
@@ -76,7 +85,7 @@ class LazyGroupBy:
     def __init__(self, lgb: PyLazyGroupBy):
         self.lgb = lgb
 
-    def agg(self, aggs: Union[List["Expr"], "Expr"]) -> "LazyFrame":
+    def agg(self, aggs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
         """
         Describe the aggregation that need to be done on a group.
 
@@ -139,12 +148,12 @@ class LazyFrame:
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
-        null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+        null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
         """
-        dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
+        dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
         if dtype is not None:
             dtype_list = []
             for k, v in dtype.items():
@@ -275,8 +284,8 @@ class LazyFrame:
 
     def sort(
         self,
-        by_columns: Union[str, "Expr", List["Expr"]],
-        reverse: Union[bool, List[bool]] = False,
+        by_columns: Union[str, "Expr", tp.List["Expr"]],
+        reverse: Union[bool, tp.List[bool]] = False,
     ) -> "LazyFrame":
         """
         Sort the DataFrame by:
@@ -424,7 +433,9 @@ class LazyFrame:
             predicate = col(predicate)
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
-    def select(self, exprs: Union[str, "Expr", List[str], List["Expr"]]) -> "LazyFrame":
+    def select(
+        self, exprs: Union[str, "Expr", tp.List[str], tp.List["Expr"]]
+    ) -> "LazyFrame":
         """
         Select columns from this DataFrame.
 
@@ -436,7 +447,9 @@ class LazyFrame:
         exprs = _selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 
-    def groupby(self, by: Union[str, List[str], "Expr", List["Expr"]]) -> LazyGroupBy:
+    def groupby(
+        self, by: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+    ) -> LazyGroupBy:
         """
         Start a groupby operation.
 
@@ -445,7 +458,7 @@ class LazyFrame:
         by
             Column(s) to group by.
         """
-        new_by: List[PyExpr]
+        new_by: tp.List[PyExpr]
         if isinstance(by, list):
             new_by = []
             for e in by:
@@ -462,9 +475,9 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
-        right_on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
-        on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
+        left_on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
+        right_on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
+        on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
         how: str = "inner",
         allow_parallel: bool = True,
         force_parallel: bool = False,
@@ -506,7 +519,7 @@ class LazyFrame:
         if isinstance(on, str):
             left_on = [on]
             right_on = [on]
-        elif isinstance(on, List):
+        elif isinstance(on, list):
             left_on = on
             right_on = on
         if left_on is None or right_on is None:
@@ -529,7 +542,7 @@ class LazyFrame:
 
         return wrap_ldf(out)
 
-    def with_columns(self, exprs: Union[List["Expr"], "Expr"]) -> "LazyFrame":
+    def with_columns(self, exprs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -562,7 +575,7 @@ class LazyFrame:
         """
         return self.with_columns([expr])
 
-    def drop_columns(self, columns: List[str]) -> "LazyFrame":
+    def drop_columns(self, columns: tp.List[str]) -> "LazyFrame":
         """
         Remove multiple columns from a DataFrame.
 
@@ -740,7 +753,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.quantile(quantile))
 
-    def explode(self, columns: Union[str, List[str]]) -> "LazyFrame":
+    def explode(self, columns: Union[str, tp.List[str]]) -> "LazyFrame":
         """
         Explode lists to long format.
         """
@@ -751,26 +764,28 @@ class LazyFrame:
     def drop_duplicates(
         self,
         maintain_order: bool = False,
-        subset: Optional[Union[List[str], str]] = None,
+        subset: Optional[Union[tp.List[str], str]] = None,
     ) -> "LazyFrame":
         """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
-        if subset is not None and not isinstance(subset, List):
+        if subset is not None and not isinstance(subset, list):
             subset = [subset]
         return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
 
-    def drop_nulls(self, subset: Optional[Union[List[str], str]] = None) -> "LazyFrame":
+    def drop_nulls(
+        self, subset: Optional[Union[tp.List[str], str]] = None
+    ) -> "LazyFrame":
         """
         Drop rows with null values from this DataFrame.
         """
-        if subset is not None and not isinstance(subset, List):
+        if subset is not None and not isinstance(subset, list):
             subset = [subset]
         return wrap_ldf(self._ldf.drop_nulls(subset))
 
     def melt(
-        self, id_vars: Union[str, List[str]], value_vars: Union[str, List[str]]
+        self, id_vars: Union[str, tp.List[str]], value_vars: Union[str, tp.List[str]]
     ) -> "LazyFrame":
         """
         Unpivot DataFrame to long format.
@@ -1234,7 +1249,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: Union[str, "Expr", List["Expr"]]) -> "Expr":
+    def over(self, expr: Union[str, "Expr", tp.List["Expr"]]) -> "Expr":
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -1455,7 +1470,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pow(exponent))
 
-    def is_in(self, other: Union["Expr", List[Any]]) -> "Expr":
+    def is_in(self, other: Union["Expr", tp.List[Any]]) -> "Expr":
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -1784,7 +1799,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, int, float, str, List[Expr]], str_to_lit: bool = True
+    expr: Union[Expr, int, float, str, tp.List[Expr]], str_to_lit: bool = True
 ) -> Expr:
     """
     Helper function that converts args to expressions.
@@ -1999,7 +2014,7 @@ def var(column: Union[str, Series]) -> Union[Expr, float]:
     return col(column).var()
 
 
-def max(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
+def max(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -2009,7 +2024,7 @@ def max(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
             - Union[str, Series] -> aggregate the maximum value of that column.
-            - List[Expr] -> aggregate the maximum value horizontally.
+            - tp.List[Expr] -> aggregate the maximum value horizontally.
     """
     if isinstance(column, Series):
         return column.max()
@@ -2024,7 +2039,7 @@ def max(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         return col(column).max()
 
 
-def min(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
+def min(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the minimum value.
 
@@ -2032,7 +2047,7 @@ def min(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
             - Union[str, Series] -> aggregate the sum value of that column.
-            - List[Expr] -> aggregate the sum value horizontally.
+            - tp.List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, Series):
         return column.min()
@@ -2047,7 +2062,7 @@ def min(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         return col(column).min()
 
 
-def sum(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
+def sum(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the sum value.
 
@@ -2055,7 +2070,7 @@ def sum(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
             - Union[str, Series] -> aggregate the sum value of that column.
-            - List[Expr] -> aggregate the sum value horizontally.
+            - tp.List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, Series):
         return column.sum()
@@ -2283,7 +2298,9 @@ def map_binary(
     return wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, return_dtype))
 
 
-def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) -> Expr:
+def fold(
+    acc: Expr, f: Callable[[Series, Series], Series], exprs: tp.List[Expr]
+) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
 
@@ -2304,7 +2321,7 @@ def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) ->
     return acc
 
 
-def any(name: Union[str, List[Expr]]) -> Expr:
+def any(name: Union[str, tp.List[Expr]]) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
     """
@@ -2313,7 +2330,7 @@ def any(name: Union[str, List[Expr]]) -> Expr:
     return col(name).sum() > 0
 
 
-def all(name: Union[str, List[Expr]]) -> Expr:
+def all(name: Union[str, tp.List[Expr]]) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise AND operation.
     """
@@ -2416,7 +2433,9 @@ def arange(
     return map_binary(low, high, create_range, return_dtype=dtype)  # type: ignore
 
 
-def argsort_by(exprs: List[Expr], reverse: Union[List[bool], bool] = False) -> Expr:
+def argsort_by(
+    exprs: tp.List[Expr], reverse: Union[tp.List[bool], bool] = False
+) -> Expr:
     """
     Find the indexes that would sort the columns.
 

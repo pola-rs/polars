@@ -1,8 +1,8 @@
 from datetime import datetime
 from numbers import Number
+import typing as tp
 from typing import (
     Optional,
-    List,
     Sequence,
     Union,
     Any,
@@ -16,30 +16,9 @@ from typing import (
 import numpy as np
 import pyarrow as pa
 
-import polars
+import polars as pl
 from .ffi import _ptr_to_numpy
-from . import datatypes
-from .datatypes import (
-    Utf8,
-    Int64,
-    UInt64,
-    UInt32,
-    dtypes,
-    Boolean,
-    Float32,
-    Float64,
-    DTYPE_TO_FFINAME,
-    dtype_to_primitive,
-    UInt8,
-    dtype_to_ctype,
-    DataType,
-    Date32,
-    Date64,
-    Int32,
-    Int16,
-    Int8,
-    UInt16,
-)
+from .datatypes import *  # noqa: F403
 from .utils import coerce_arrow
 
 try:
@@ -100,7 +79,7 @@ def wrap_s(s: PySeries) -> "Series":
     return Series._from_pyseries(s)
 
 
-def _find_first_non_none(a: List[Optional[Any]]) -> Any:
+def _find_first_non_none(a: tp.List[Optional[Any]]) -> Any:
     v = a[0]
     if v is None:
         return _find_first_non_none(a[1:])
@@ -225,7 +204,7 @@ class Series:
                     self._s = PySeries.new_opt_u32(name, values)
                 elif dtype == UInt64:
                     self._s = PySeries.new_opt_u64(name, values)
-                elif dtype == datatypes.Object:
+                elif dtype == Object:
                     self._s = PySeries.new_object(name, values)
                 else:
                     raise ValueError(f"{dtype} not yet implemented")
@@ -497,7 +476,7 @@ class Series:
         if f is None:
             return NotImplemented
         out = f(item)
-        if self.dtype == polars.datatypes.List:
+        if self.dtype == List:
             return wrap_s(out)
         return out
 
@@ -642,13 +621,13 @@ class Series:
         """
         Get dummy variables.
         """
-        return polars.frame.wrap_df(self._s.to_dummies())
+        return pl.frame.wrap_df(self._s.to_dummies())
 
     def value_counts(self) -> "DataFrame":
         """
         Count the unique values in a Series.
         """
-        return polars.frame.wrap_df(self._s.value_counts())
+        return pl.frame.wrap_df(self._s.value_counts())
 
     @property
     def name(self) -> str:
@@ -676,7 +655,7 @@ class Series:
             s._s.rename(name)
             return s
 
-    def chunk_lengths(self) -> List[int]:
+    def chunk_lengths(self) -> tp.List[int]:
         """
         Get the length of each individual chunk.
         """
@@ -862,7 +841,7 @@ class Series:
         """
         return wrap_s(self._s.unique())
 
-    def take(self, indices: Union[np.ndarray, List[int]]) -> "Series":
+    def take(self, indices: Union[np.ndarray, tp.List[int]]) -> "Series":
         """
         Take values by index.
 
@@ -1044,11 +1023,11 @@ class Series:
             return NotImplemented
         return wrap_s(f())
 
-    def to_list(self) -> List[Optional[Any]]:
+    def to_list(self) -> tp.List[Optional[Any]]:
         """
         Convert this Series to a Python List. This operation clones data.
         """
-        if self.dtype != datatypes.Object:
+        if self.dtype != Object:
             return self.to_arrow().to_pylist()
         return self._s.to_list()
 
@@ -1141,7 +1120,7 @@ class Series:
             self._s.rechunk(in_place=True)
 
         if method == "__call__":
-            args: List[Union[Number, np.ndarray]] = []
+            args: tp.List[Union[Number, np.ndarray]] = []
             for arg in inputs:
                 if isinstance(arg, Number):
                     args.append(arg)
@@ -1345,7 +1324,7 @@ class Series:
     def rolling_min(
         self,
         window_size: int,
-        weight: Optional[List[float]] = None,
+        weight: Optional[tp.List[float]] = None,
         ignore_null: bool = True,
         min_periods: Optional[int] = None,
     ) -> "Series":
@@ -1377,7 +1356,7 @@ class Series:
     def rolling_max(
         self,
         window_size: int,
-        weight: Optional[List[float]] = None,
+        weight: Optional[tp.List[float]] = None,
         ignore_null: bool = True,
         min_periods: Optional[int] = None,
     ) -> "Series":
@@ -1409,7 +1388,7 @@ class Series:
     def rolling_mean(
         self,
         window_size: int,
-        weight: Optional[List[float]] = None,
+        weight: Optional[tp.List[float]] = None,
         ignore_null: bool = True,
         min_periods: Optional[int] = None,
     ) -> "Series":
@@ -1441,7 +1420,7 @@ class Series:
     def rolling_sum(
         self,
         window_size: int,
-        weight: Optional[List[float]] = None,
+        weight: Optional[tp.List[float]] = None,
         ignore_null: bool = True,
         min_periods: Optional[int] = None,
     ) -> "Series":
@@ -1836,7 +1815,7 @@ class DateTimeNameSpace:
         """
 
         return (self.timestamp() // 1000).apply(
-            lambda ts: datetime.utcfromtimestamp(ts), datatypes.Object
+            lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
     def min(self) -> datetime:
@@ -1937,7 +1916,7 @@ def out_to_dtype(out: Any) -> Union[Type[DataType], Type[np.ndarray]]:
     if isinstance(out, bool):
         return Boolean
     if isinstance(out, Series):
-        return datatypes.List
+        return List
     if isinstance(out, np.ndarray):
         return np.ndarray
     raise NotImplementedError

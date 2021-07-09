@@ -1,4 +1,11 @@
-from typing import Any, Optional, List, Union, Dict, Tuple
+import typing as tp
+from typing import (
+    Any,
+    Dict,
+    Optional,
+    Union,
+    Tuple,
+)
 import warnings
 
 import pyarrow as pa
@@ -44,8 +51,8 @@ def _is_expr(arg: Any) -> bool:
 
 
 def _process_null_values(
-    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
-) -> Optional[Union[str, List[str], List[Tuple[str, str]]]]:  # type: ignore
+    null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
+) -> Optional[Union[str, tp.List[str], tp.List[Tuple[str, str]]]]:  # type: ignore
     processed_null_values = null_values  # type: ignore
     if null_values is not None and isinstance(null_values, dict):
         processed_null_values = []

@@ -177,11 +177,3 @@ class NotebookFormatter(HTMLFormatter):
             self.write_style()
             super().render()
         return self.elements
-
-
-if __name__ == "__main__":
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
-
-    fmt = NotebookFormatter(df)
-
-    print("\n".join(fmt.render()))
