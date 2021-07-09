@@ -14,10 +14,10 @@ import subprocess
 import shutil
 from datetime import datetime
 import numpy as np
-from ..utils import _is_expr, _process_null_values
+from .utils import _is_expr, _process_null_values
 
 try:
-    from ..polars import (
+    from .polars import (
         PyLazyFrame,
         col as pycol,
         lit as pylit,
@@ -2387,7 +2387,7 @@ def arange(
         dtype = datatypes.Int64
 
     def create_range(s1: Series, s2: Series) -> Series:
-        from .. import Series
+        from . import Series
 
         assert s1.len() == 1
         assert s2.len() == 1
