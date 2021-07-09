@@ -1448,7 +1448,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pow(exponent))
 
-    def is_in(self, other: "Expr") -> "Expr":
+    def is_in(self, other: Union["Expr", List[Any]]) -> "Expr":
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -1461,7 +1461,7 @@ class Expr:
         -------
         Expr that evaluates to a Boolean Series.
         """
-        if type(other) is list:
+        if isinstance(other, list):
             other = lit(Series("", other))
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
