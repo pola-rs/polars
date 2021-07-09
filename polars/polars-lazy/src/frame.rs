@@ -742,6 +742,12 @@ impl LazyFrame {
         self.join(other, vec![left_on], vec![right_on], JoinType::Inner)
     }
 
+    /// Creates the cartesian product from both frames, preserves the order of the left keys.
+    #[cfg(feature = "cross_join")]
+    pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
+        self.join(other, vec![], vec![], JoinType::Cross)
+    }
+
     /// Generic join function that can join on multiple columns.
     ///
     /// # Example
@@ -2341,6 +2347,24 @@ mod test {
         assert!(a.series_equal(&Series::new("b", &[1, 1])));
         let a: Series = agg.get(1).unwrap();
         assert_eq!(a.null_count(), 1);
+        Ok(())
+    }
+
+    #[cfg(feature = "cross_join")]
+    #[test]
+    fn test_cross_join() -> Result<()> {
+        let df1 = df![
+            "a" => ["a", "b", "a"],
+            "b" => [Some(1), None, None]
+        ]?;
+
+        let df2 = df![
+            "a" => [1, 2],
+            "b" => [None, Some(12)]
+        ]?;
+
+        let out = df1.lazy().cross_join(df2.lazy()).collect()?;
+        assert_eq!(out.shape(), (6, 4));
         Ok(())
     }
 }

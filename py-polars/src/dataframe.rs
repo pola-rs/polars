@@ -382,6 +382,7 @@ impl PyDataFrame {
             "inner" => JoinType::Inner,
             "outer" => JoinType::Outer,
             "asof" => JoinType::AsOf,
+            "cross" => JoinType::Cross,
             _ => panic!("not supported"),
         };
 

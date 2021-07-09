@@ -55,6 +55,7 @@ repeat_by = []
 is_first = []
 is_last = []
 asof_join = []
+cross_join = []
 
 
 # opt-in datatypes for Series
@@ -88,7 +89,8 @@ docs-selection = [
     "repeat_by",
     "is_first",
     "is_last",
-    "asof_join"
+    "asof_join",
+    "cross_join"
 ]
 
 [dependencies]

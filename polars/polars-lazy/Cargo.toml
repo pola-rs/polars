@@ -36,7 +36,7 @@ is_in = ["polars-core/is_in"]
 repeat_by = ["polars-core/repeat_by"]
 round_series = ["polars-core/round_series"]
 is_first = ["polars-core/is_first"]
-asof_join = ["polars-core/asof_join"]
+cross_join = ["polars-core/cross_join"]
 
 # no guarantees whatsoever
 private = []

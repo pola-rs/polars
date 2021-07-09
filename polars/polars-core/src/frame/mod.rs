@@ -20,6 +20,8 @@ use crate::utils::{
 mod arithmetic;
 #[cfg(feature = "asof_join")]
 pub(crate) mod asof_join;
+#[cfg(feature = "cross_join")]
+pub(crate) mod cross_join;
 pub mod explode;
 pub mod groupby;
 pub mod hash_join;

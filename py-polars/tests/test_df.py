@@ -736,16 +736,23 @@ def test_join_dates():
     df.join(df, on="datetime")
 
 
-def test_asof_join():
+def test_asof_cross_join():
     left = pl.DataFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]})
     right = pl.DataFrame({"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]})
 
-    # only test dispatch
+    # only test dispatch of asof join
     out = left.join(right, on="a", how="asof")
     assert out.shape == (3, 4)
 
     left.lazy().join(right.lazy(), on="a", how="asof").collect()
     assert out.shape == (3, 4)
+
+    # only test dispatch of cross join
+    out = left.join(right, how="cross")
+    assert out.shape == (15, 4)
+
+    left.lazy().join(right.lazy(), how="cross").collect()
+    assert out.shape == (15, 4)
 
 
 def test_str_concat():
