@@ -1,23 +1,20 @@
 """
 Module for formatting output data in HTML.
 """
-
+import typing as tp
 from textwrap import dedent
 from types import TracebackType
-from typing import (
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Type,
-)
+from typing import Dict, Iterable, Optional, Type
 
 import polars as pl
 
 
 class Tag:
     def __init__(
-        self, elements: List[str], tag: str, attributes: Optional[Dict[str, str]] = None
+        self,
+        elements: tp.List[str],
+        tag: str,
+        attributes: Optional[Dict[str, str]] = None,
     ) -> None:
         self.tag = tag
         self.elements = elements
@@ -73,7 +70,7 @@ def div(inner: str) -> str:
 class HTMLFormatter:
     def __init__(self, df: "pl.DataFrame", max_cols: int = 75, max_rows: int = 40):
         self.df = df
-        self.elements: List[str] = []
+        self.elements: tp.List[str] = []
         self.max_cols = max_cols
         self.max_rows = max_rows
         self.row_idx: Iterable[int]
@@ -169,7 +166,7 @@ class NotebookFormatter(HTMLFormatter):
         template = dedent("\n".join((template_first, template_mid, template_last)))
         self.write(template)
 
-    def render(self) -> List[str]:  # type: ignore
+    def render(self) -> tp.List[str]:  # type: ignore
         """
         Return the lines needed to render a HTML table.
         """
