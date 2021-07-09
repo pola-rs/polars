@@ -2,35 +2,42 @@
 This module contains all expressions and classes needed for lazy computation/ query execution.
 """
 
+from datetime import datetime
 import os
 import tempfile
 import subprocess
 import shutil
-from datetime import datetime
 from typing import Union, List, Tuple, Callable, Optional, Dict, Any, Type
 
 import numpy as np
 
-from polars import Series
-from polars.frame import DataFrame, wrap_df
-from polars import datatypes
-from polars.datatypes import DataType
-from .utils import _is_expr, _process_null_values
+from ..datatypes import (
+    Boolean,
+    DataType,
+    Date32,
+    Date64,
+    Float64,
+    Int64,
+    Utf8,
+    pytype_to_polars_type,
+)
+from ..frame import DataFrame, wrap_df
+from ..series import Series
+from ..utils import _is_expr, _process_null_values
 
 try:
-    from .polars import (
+    from ..polars import (
+        PyExpr,
         PyLazyFrame,
+        PyLazyGroupBy,
         col as pycol,
         lit as pylit,
-        # binary_expr,
         binary_function as pybinary_function,
-        pearson_corr as pypearson_corr,
         cov as pycov,
         argsort_by as pyargsort_by,
-        PyExpr,
-        PyLazyGroupBy,
         when as pywhen,
         except_ as pyexcept,
+        pearson_corr as pypearson_corr,
         series_from_range as _series_from_range,
     )
 except ImportError:
@@ -141,7 +148,7 @@ class LazyFrame:
         if dtype is not None:
             dtype_list = []
             for k, v in dtype.items():
-                dtype_list.append((k, datatypes.pytype_to_polars_type(v)))
+                dtype_list.append((k, pytype_to_polars_type(v)))
         null_values = _process_null_values(null_values)  # type: ignore
 
         self = LazyFrame.__new__(LazyFrame)
@@ -1030,13 +1037,13 @@ class Expr:
             Output data type.
         """
         if dtype == str:
-            dtype = datatypes.Utf8
+            dtype = Utf8
         elif dtype == bool:
-            dtype = datatypes.Boolean
+            dtype = Boolean
         elif dtype == float:
-            dtype = datatypes.Float64
+            dtype = Float64
         elif dtype == int:
-            dtype = datatypes.Int64
+            dtype = Int64
         return wrap_expr(self._pyexpr.cast(dtype))
 
     def sort(self, reverse: bool = False) -> "Expr":
@@ -1351,13 +1358,13 @@ class Expr:
             return_dtype = f.return_dtype
             f = f.f
         if return_dtype == str:
-            return_dtype = datatypes.Utf8
+            return_dtype = Utf8
         elif return_dtype == int:
-            return_dtype = datatypes.Int64
+            return_dtype = Int64
         elif return_dtype == float:
-            return_dtype = datatypes.Float64
+            return_dtype = Float64
         elif return_dtype == bool:
-            return_dtype = datatypes.Boolean
+            return_dtype = Boolean
         return wrap_expr(self._pyexpr.map(f, return_dtype))
 
     def apply(
@@ -1497,7 +1504,7 @@ class Expr:
             end = lit(end)
             cast_to_date64 = True
         if cast_to_date64:
-            expr = self.cast(datatypes.Date64)
+            expr = self.cast(Date64)
         else:
             expr = self
         return ((expr > start) & (expr < end)).alias("is_between")
@@ -1527,7 +1534,7 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[datatypes.Date32, datatypes.Date64],
+        datatype: Union[Date32, Date64],
         fmt: Optional[str] = None,
     ) -> Expr:
         """
@@ -1540,16 +1547,16 @@ class ExprStringNameSpace:
         fmt
             "yyyy-mm-dd".
         """
-        if datatype == datatypes.Date32:
+        if datatype == Date32:
             return wrap_expr(self._pyexpr.str_parse_date32(fmt))
-        elif datatype == datatypes.Date64:
+        elif datatype == Date64:
             return wrap_expr(self._pyexpr.str_parse_date64(fmt))
         else:
             raise NotImplementedError
 
     def parse_date(
         self,
-        datatype: Union[datatypes.Date32, datatypes.Date64],
+        datatype: Union[Date32, Date64],
         fmt: Optional[str] = None,
     ) -> Expr:
         """
@@ -2192,7 +2199,7 @@ def lit(
     ```
     """
     if isinstance(value, datetime):
-        return lit(int(value.timestamp() * 1e3)).cast(datatypes.Date64)
+        return lit(int(value.timestamp() * 1e3)).cast(Date64)
 
     if isinstance(value, Series):
         name = value.name
@@ -2384,10 +2391,10 @@ def arange(
         If eager evaluation is `True`, a Series is returned instead of an Expr
     """
     if dtype is None:
-        dtype = datatypes.Int64
+        dtype = Int64
 
     def create_range(s1: Series, s2: Series) -> Series:
-        from . import Series
+        from .. import Series
 
         assert s1.len() == 1
         assert s2.len() == 1
