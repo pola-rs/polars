@@ -2,6 +2,35 @@
 
 The Rust crate `polars` has its own changelog.
 
+### Polars 0.8.10
+* feature
+  - is_first expr/method
+  - asof join added
+  - eager io can open multiple sources with ffspec
+  - resolve `~` to homedir
+  - python arange add step and run eager
+* performance
+  - use fast csv-parser for more python memory buffers/streams
+* bug fix
+  - kleene or and and operations
+  - maybe fix rayon deadlock
+  - concat is a pure function
+  - string addition lhs broadcast
+
+### Polars 0.8.9
+* feature
+  - correct type hints for python 3.6
+  - csv-parser option to ignore comment lines
+* performance
+  - improve take on DataFrame
+  - remove bound checks in buffer creation
+  - improve performance of sorting by multiple columns
+  - improve argsort performance
+* bug fix
+  - fix backward/forward fill
+  - window groupby context
+  - fix is_duplicated dispatch
+
 ### Polars 0.8.8
 * bug fix
   - fix UB due to slice in take kernel
