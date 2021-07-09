@@ -101,7 +101,7 @@ class Series:
     def __init__(
         self,
         name: str,
-        values: Union["Series", np.ndarray, List[Any], None] = None,
+        values: Union["Series", np.ndarray, Sequence[Any], None] = None,
         nullable: bool = True,
         dtype: Optional[Type[DataType]] = None,
     ):
@@ -124,9 +124,9 @@ class Series:
         if values is None and not isinstance(name, str):
             values = name
             name = ""
-        if values.__class__ == self.__class__:
-            values.rename(name, in_place=True)  # type: ignore
-            self._s = values._s  # type: ignore
+        if isinstance(values, Series):
+            values.rename(name, in_place=True)
+            self._s: PySeries = values._s
             return
 
         self._s: PySeries  # type: ignore
@@ -219,7 +219,7 @@ class Series:
                 else:
                     raise ValueError(f"{dtype} not yet implemented")
             else:
-                dtype = _find_first_non_none(values)
+                dtype = _find_first_non_none(values)  # type: ignore
                 # order is important as booleans are instance of int in python.
                 if isinstance(dtype, bool):
                     self._s = PySeries.new_opt_bool(name, values)
@@ -395,7 +395,7 @@ class Series:
             out_dtype = Float64
         else:
             out_dtype = self.dtype
-        return np.true_divide(self, other, dtype=out_dtype)
+        return np.true_divide(self, other, dtype=out_dtype)  # type: ignore
 
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
@@ -447,7 +447,7 @@ class Series:
             out_dtype = Float64
         else:
             out_dtype = DTYPE_TO_FFINAME[self.dtype]
-        return np.true_divide(other, self, dtype=out_dtype)
+        return np.true_divide(other, self, dtype=out_dtype)  # type: ignore
 
     def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
@@ -1130,11 +1130,11 @@ class Series:
             self._s.rechunk(in_place=True)
 
         if method == "__call__":
-            args = []
+            args: List[Union[Number, np.ndarray]] = []
             for arg in inputs:
                 if isinstance(arg, Number):
                     args.append(arg)
-                elif isinstance(arg, self.__class__):
+                elif isinstance(arg, Series):
                     args.append(arg.view(ignore_nulls=True))
                 else:
                     return NotImplemented
@@ -1916,7 +1916,7 @@ class SeriesIter:
             raise StopIteration
 
 
-def out_to_dtype(out: Any) -> Union[DataType, np.ndarray]:
+def out_to_dtype(out: Any) -> Union[Type[DataType], Type[np.ndarray]]:
     if isinstance(out, float):
         return Float64
     if isinstance(out, int):
