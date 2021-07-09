@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin>=0.11,<0.12"]
+build-backend = "maturin"
+
+[project]
+name = "polars"
+dependencies = [
+    "numpy",
+    # the Arrow memory format is stable between 4.0 and 5.0-SNAPSHOTS
+    # (which the Rust libraries use to take advantage of Rust API changes).
+    "pyarrow==4.0.*"
+]
