@@ -18,7 +18,29 @@ import pyarrow as pa
 
 import polars as pl
 
-from .datatypes import *  # noqa: F403
+from .datatypes import (
+    DTYPE_TO_FFINAME,
+    Boolean,
+    DataType,
+    Date32,
+    Date64,
+    Float32,
+    Float64,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    List,
+    Object,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Utf8,
+    dtype_to_ctype,
+    dtype_to_primitive,
+    dtypes,
+)
 from .ffi import _ptr_to_numpy
 from .utils import coerce_arrow
 
