@@ -1451,6 +1451,7 @@ impl_eq_num!(eq_str, &str);
 
 macro_rules! impl_neq_num {
     ($name:ident, $type:ty) => {
+        #[allow(clippy::nonstandard_macro_braces)]
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
@@ -1520,6 +1521,7 @@ impl_gt_eq_num!(gt_eq_str, &str);
 
 macro_rules! impl_lt_num {
     ($name:ident, $type:ty) => {
+        #[allow(clippy::nonstandard_macro_braces)]
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {

@@ -1038,7 +1038,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             DataType::List(dt) => {
                 let mut builder =
                     get_list_builder(&dt.into(), self.len() * 5, self.len(), self.name());
-                let ca = if self.null_count() == 0 {
+                if self.null_count() == 0 {
                     let mut it = self.into_no_null_iter();
                     // use first value to get dtype and replace default builder
                     if let Some(series) = it.next() {
@@ -1055,7 +1055,6 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     for series in it {
                         append_series(pypolars, &mut *builder, lambda, series)?;
                     }
-                    builder.finish()
                 } else {
                     let mut it = self.into_iter();
                     let mut nulls = 0;
@@ -1084,8 +1083,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                             builder.append_opt_series(None)
                         }
                     }
-                    builder.finish()
                 };
+                let ca = builder.finish();
                 Ok(PySeries::new(ca.into_series()))
             }
             _ => unimplemented!(),
