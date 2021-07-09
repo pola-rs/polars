@@ -11,6 +11,9 @@ dependencies = [
     "pyarrow==4.0.*"
 ]
 
+[tool.isort]
+profile = "black"
+
 [tool.mypy]
 ignore_missing_imports = true
 disallow_untyped_defs = true

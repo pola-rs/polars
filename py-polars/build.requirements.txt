@@ -1,8 +1,9 @@
 maturin==0.11.0
 pytest==5.3.1
 black==20.8b1
+isort~=5.9.2
+mypy~=0.910
 numpy
 ghp-import
 pandas
 flake8
-mypy~=0.910
