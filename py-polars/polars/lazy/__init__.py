@@ -487,7 +487,8 @@ class LazyFrame:
                 "inner"
                 "left"
                 "outer"
-                "join"
+                "asof",
+                "cross"
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
@@ -499,6 +500,11 @@ class LazyFrame:
         The keys must be sorted to perform an asof join
 
         """
+        if how == "cross":
+            return wrap_ldf(
+                self._ldf.join(ldf._ldf, [], [], allow_parallel, force_parallel, how)
+            )
+
         if isinstance(left_on, str):
             left_on = [left_on]
         if isinstance(right_on, str):
@@ -523,11 +529,11 @@ class LazyFrame:
                 column = col(column)
             new_right_on.append(column._pyexpr)
 
-        out = self._ldf.join(
-            ldf._ldf, new_left_on, new_right_on, allow_parallel, force_parallel, how
+        return wrap_ldf(
+            self._ldf.join(
+                ldf._ldf, new_left_on, new_right_on, allow_parallel, force_parallel, how
+            )
         )
-
-        return wrap_ldf(out)
 
     def with_columns(self, exprs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
         """
