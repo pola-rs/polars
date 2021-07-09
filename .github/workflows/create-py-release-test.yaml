@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install maturin==0.9.4 pytest pandas
+          pip install maturin==0.11.0 pytest pandas
       - name: Run tests
         run: |
           cd py-polars
@@ -58,7 +58,7 @@ jobs:
         - name: Install dependencies
           run: |
             python -m pip install --upgrade pip
-            pip install maturin
+            pip install maturin==0.11.0
         - name: Publish wheel
           shell: bash
           env:
@@ -70,6 +70,7 @@ jobs:
             rustup override set nightly-2021-07-04
             export RUSTFLAGS='-C target-feature=+fxsr,+sse,+sse2,+sse3'
             maturin publish \
+            --skip-existing \
             -o wheels \
             -i python \
             --username ritchie46 \

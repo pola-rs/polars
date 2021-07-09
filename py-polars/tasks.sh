@@ -6,7 +6,7 @@ function test-build {
 
 function test-install {
   test-build
-  cd wheels && pip install --force-reinstall -U polars-* && cd ..
+  cd wheels && pip install --force-reinstall -U polars-*.whl && cd ..
 }
 
 function release-build {
@@ -15,7 +15,7 @@ function release-build {
 
 function release-install {
   release-build
-  cd wheels && pip install --force-reinstall -U polars-* && cd ..
+  cd wheels && pip install --force-reinstall -U polars-*.whl && cd ..
 }
 
 function build-run-tests {
