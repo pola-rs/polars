@@ -26,6 +26,7 @@ use crate::utils::{
     rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
+use polars_io::csv::NullValues;
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;
@@ -146,6 +147,7 @@ pub struct CsvParserOptions {
     pub(crate) low_memory: bool,
     pub(crate) ignore_errors: bool,
     pub(crate) cache: bool,
+    pub(crate) null_values: Option<NullValues>,
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -976,6 +978,7 @@ impl LogicalPlanBuilder {
         schema_overwrite: Option<&Schema>,
         low_memory: bool,
         comment_char: Option<u8>,
+        null_values: Option<NullValues>,
     ) -> Self {
         let path = path.into();
         let mut file = std::fs::File::open(&path).expect("could not open file");
@@ -1006,6 +1009,7 @@ impl LogicalPlanBuilder {
                 low_memory,
                 cache,
                 comment_char,
+                null_values,
             },
             predicate: None,
             aggregate: vec![],

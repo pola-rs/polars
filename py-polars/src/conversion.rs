@@ -85,6 +85,23 @@ impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
     }
 }
 
+impl<'a> FromPyObject<'a> for Wrap<NullValues> {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        if let Ok(s) = ob.extract::<String>() {
+            Ok(Wrap(NullValues::AllColumns(s)))
+        } else if let Ok(s) = ob.extract::<Vec<String>>() {
+            Ok(Wrap(NullValues::Columns(s)))
+        } else if let Ok(s) = ob.extract::<Vec<(String, String)>>() {
+            Ok(Wrap(NullValues::Named(s)))
+        } else {
+            Err(
+                PyPolarsEr::Other("could not extract value from null_values argument".into())
+                    .into(),
+            )
+        }
+    }
+}
+
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
         match self.0 {
