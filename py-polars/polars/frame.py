@@ -248,7 +248,7 @@ class DataFrame:
             for k, v in dtype.items():
                 dtype_list.append((k, pytype_to_polars_type(v)))
 
-        null_values = _process_null_values(null_values)  # type: ignore
+        processed_null_values = _process_null_values(null_values)
 
         self._df = PyDataFrame.read_csv(
             file,
@@ -268,7 +268,7 @@ class DataFrame:
             dtype_list,
             low_memory,
             comment_char,
-            null_values,
+            processed_null_values,
         )
         return self
 

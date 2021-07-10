@@ -41,11 +41,11 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
 
 
 def _process_null_values(
-    null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
-) -> Optional[Union[str, tp.List[str], tp.List[Tuple[str, str]]]]:  # type: ignore
-    processed_null_values = null_values  # type: ignore
-    if null_values is not None and isinstance(null_values, dict):
-        processed_null_values = []
-        for k, v in null_values.items():
-            processed_null_values.append((k, v))  # type: ignore
-    return processed_null_values  # type: ignore
+    null_values: Union[None, str, tp.List[str], Dict[str, str]] = None,
+) -> Union[None, str, tp.List[str], tp.List[Tuple[str, str]]]:
+    processed_null_values: Union[None, str, tp.List[str], tp.List[Tuple[str, str]]]
+    if isinstance(null_values, dict):
+        processed_null_values = list(null_values.items())
+    else:
+        processed_null_values = null_values
+    return processed_null_values
