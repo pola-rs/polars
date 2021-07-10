@@ -1,12 +1,10 @@
-from polars import DataFrame, Series
-from polars.lazy import *
-from polars.datatypes import *
 import polars as pl
-import pytest
+from polars.datatypes import *
+from polars.lazy import *
 
 
 def test_lazy():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
 
     print(ldf.collect())
@@ -21,18 +19,18 @@ def test_lazy():
 
 
 def test_apply():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
 
 def test_add_eager_column():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.lazy().with_column(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
     assert out["c"].sum() == 6
 
 
 def test_set_null():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = (
         df.lazy()
         .with_column(when(col("a") > 1).then(lit(None)).otherwise(100).alias("foo"))
@@ -45,31 +43,31 @@ def test_set_null():
 
 
 def test_agg():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()
     assert ldf.collect().shape == (1, 2)
 
 
 def test_fold():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.lazy().select(pl.sum(["a", "b"])).collect()
-    assert out["sum"].series_equal(Series("sum", [2, 4, 6]))
+    assert out["sum"].series_equal(pl.Series("sum", [2, 4, 6]))
 
 
 def test_or():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.lazy().filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()
     assert out.shape[0] == 2
 
 
 def test_groupby_apply():
-    df = DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().groupby("a").apply(lambda df: df)
     assert ldf.collect().sort("b").frame_equal(df)
 
 
 def test_binary_function():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = (
         df.lazy()
         .with_column(map_binary(col("a"), col("b"), lambda a, b: a + b))

@@ -1,7 +1,8 @@
-from _ctypes import _SimpleCData
 import ctypes
-import typing
+import typing as tp
 from typing import Any, Dict, Type
+
+from _ctypes import _SimpleCData
 
 __pdoc__ = {
     "dtype_to_ctype": False,
@@ -132,7 +133,7 @@ class Categorical(DataType):
 
 
 # Don't change the order of these!
-dtypes: typing.List[Type[DataType]] = [
+dtypes: tp.List[Type[DataType]] = [
     Int8,
     Int16,
     Int32,
