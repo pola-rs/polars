@@ -3,7 +3,8 @@ import pytest
 import polars as pl
 
 
-def get_complete_df() -> pl.DataFrame:
+@pytest.fixture
+def df() -> pl.DataFrame:
     return pl.DataFrame(
         {
             "bools": [False, True, False],

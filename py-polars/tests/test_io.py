@@ -2,13 +2,11 @@ import io
 
 import numpy as np
 import pandas as pd
-from utils import get_complete_df
 
 import polars as pl
 
 
-def test_to_from_buffer():
-    df = get_complete_df()
+def test_to_from_buffer(df):
     df = df.drop("strings_nulls")
 
     for to_fn, from_fn in zip(

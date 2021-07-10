@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from utils import get_complete_df
 
 import polars as pl
 from polars.datatypes import *
@@ -441,8 +440,7 @@ def test_concat():
     assert a.shape == (2, 2)
 
 
-def test_to_pandas():
-    df = get_complete_df()
+def test_to_pandas(df):
     df.to_arrow()
     df.to_pandas()
     # test shifted df
@@ -459,8 +457,7 @@ def test_from_arrow_table():
     df.frame_equal(pl.DataFrame(data))
 
 
-def test_df_stats():
-    df = get_complete_df()
+def test_df_stats(df):
     df.var()
     df.std()
     df.min()
@@ -652,8 +649,7 @@ def test_to_numpy():
     assert df.to_numpy().shape == (3, 2)
 
 
-def test_argsort_by():
-    df = get_complete_df()
+def test_argsort_by(df):
     a = df[pl.argsort_by(["int_nulls", "floats"], reverse=[False, True])]["int_nulls"]
     assert a == [1, 0, 3]
 
@@ -675,8 +671,7 @@ def test_literal_series():
     assert out["e"] == [2, 1, 3]
 
 
-def test_to_html():
-    df = get_complete_df()
+def test_to_html(df):
     # check if it does not panic/ error
     df._repr_html_()
 
@@ -686,15 +681,13 @@ def test_rows():
     assert df.rows() == [(1, 1), (2, 2)]
 
 
-def test_rename():
-    df = get_complete_df()
+def test_rename(df):
     out = df.rename({"strings": "bars", "int": "foos"})
     # check if wel can select these new columns
     _ = out[["foos", "bars"]]
 
 
-def test_to_json():
-    df = get_complete_df()
+def test_to_json(df):
     s = df.to_json(to_string=True)
     out = pl.read_json(s)
     assert df.frame_equal(out, null_equal=True)
