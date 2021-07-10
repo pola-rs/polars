@@ -15,7 +15,7 @@ class Tag:
         elements: tp.List[str],
         tag: str,
         attributes: Optional[Dict[str, str]] = None,
-    ) -> None:
+    ):
         self.tag = tag
         self.elements = elements
         self.attributes = attributes

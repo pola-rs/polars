@@ -1692,7 +1692,7 @@ class DateTimeNameSpace:
     Series.dt namespace.
     """
 
-    def __init__(self, series: Series) -> None:
+    def __init__(self, series: Series):
         self._s = series._s
 
     def strftime(self, fmt: str) -> Series:
@@ -1926,7 +1926,7 @@ class SeriesIter:
     Utility class that allows slow iteration over a `Series`.
     """
 
-    def __init__(self, length: int, s: Series) -> None:
+    def __init__(self, length: int, s: Series):
         self.len = length
         self.i = 0
         self.s = s

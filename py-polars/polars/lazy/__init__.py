@@ -1836,7 +1836,7 @@ class WhenThenThen:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhenthenthen: "PyWhenThenThen") -> None:  # type: ignore # noqa F821
+    def __init__(self, pywhenthenthen: "PyWhenThenThen"):  # type: ignore # noqa F821
         self.pywenthenthen = pywhenthenthen
 
     def when(self, predicate: Expr) -> "WhenThenThen":
@@ -2363,9 +2363,7 @@ class UDF:
     Deprecated: don't use me
     """
 
-    def __init__(
-        self, f: Callable[[Series], Series], return_dtype: Type[DataType]
-    ) -> None:
+    def __init__(self, f: Callable[[Series], Series], return_dtype: Type[DataType]):
         self.f = f
         self.return_dtype = return_dtype
 

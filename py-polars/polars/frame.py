@@ -74,7 +74,7 @@ class DataFrame:
         self,
         data: Union[Dict[str, Sequence], tp.List[Series], np.ndarray],
         nullable: bool = True,
-    ) -> None:
+    ):
         """
         A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
         """
@@ -1366,8 +1366,8 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: Optional[Union[str, tp.List[str], "Expr", tp.List["Expr"]]] = None,
-        right_on: Optional[Union[str, tp.List[str], "Expr", tp.List["Expr"]]] = None,
+        left_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        right_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
         on: Optional[Union[str, tp.List[str]]] = None,
         how: str = "inner",
     ) -> Union["DataFrame", "LazyFrame"]:
@@ -2033,7 +2033,7 @@ class GroupBy:
         downsample: bool = False,
         rule: Optional[str] = None,
         downsample_n: int = 0,
-    ) -> None:
+    ):
         self._df = df
         self.by = by
         self.downsample = downsample
@@ -2316,7 +2316,7 @@ class PivotOps:
         by: Union[str, tp.List[str]],
         pivot_column: str,
         values_column: str,
-    ) -> None:
+    ):
         self._df = df
         self.by = by
         self.pivot_column = pivot_column
@@ -2392,7 +2392,7 @@ class GBSelection:
         downsample: bool = False,
         rule: Optional[str] = None,
         downsample_n: int = 0,
-    ) -> None:
+    ):
         self._df = df
         self.by = by
         self.selection = selection
