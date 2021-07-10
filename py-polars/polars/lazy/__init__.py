@@ -1389,7 +1389,7 @@ class Expr:
 
     def apply(
         self,
-        f: Union["UDF", Callable[[Series], Series]],
+        f: Callable[[Series], Series],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
@@ -1437,7 +1437,7 @@ class Expr:
 
         # input x: Series of type list containing the group values
         def wrap_f(x: "Series") -> "Series":
-            return x.apply(f, return_dtype=return_dtype)  # type: ignore
+            return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f)
 
