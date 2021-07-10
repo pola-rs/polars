@@ -39,7 +39,7 @@ We use GitHub issues to track public bugs. Report a bug by [opening a new issue]
 We test the code formatting in the CI pipelines. If you don't want these to fail, you need to format:
 
 * **Rust** code with `$ cargo fmt`
-* **Python** code with [black (version 20.8b1)](https://github.com/psf/black), running `$ black .`
+* **Python** code with [black](https://github.com/psf/black) (version 21.6b0) and [isort](https://github.com/PyCQA/isort) (version 5.9.2). Run both from the `py-polars` directory with `$ black . && isort .`
 
 ## Linting
 We use linters to enforce code quality. This will be checked in CI.
