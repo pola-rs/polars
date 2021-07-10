@@ -1,57 +1,52 @@
 """
 Module containing logic related to eager DataFrames
 """
-from io import BytesIO
+import os
+import typing as tp
+from io import BytesIO, StringIO
+from pathlib import Path
+from types import TracebackType
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    Iterable,
+    Iterator,
+    Optional,
+    Sequence,
+    TextIO,
+    Tuple,
+    Type,
+    Union,
+)
 
-import io
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.feather
+import pyarrow.parquet
+
+import polars as pl
+
+from ._html import NotebookFormatter
+from .datatypes import Boolean, DataType, UInt32, dtypes, pytype_to_polars_type
+from .series import Series, wrap_s
+from .utils import _process_null_values, coerce_arrow
 
 try:
-    from .polars import (  # noqa: F401
-        PyDataFrame,
-        PySeries,
-        toggle_string_cache as pytoggle_string_cache,
-        version,
-    )
+    from .polars import version  # noqa: F401
+    from .polars import PyDataFrame, PySeries
+    from .polars import toggle_string_cache as pytoggle_string_cache
 except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
     __pdoc__ = {"wrap_df": False}
 
-from types import TracebackType
-from typing import (
-    Dict,
-    Sequence,
-    List,
-    Tuple,
-    Optional,
-    Union,
-    TextIO,
-    BinaryIO,
-    Callable,
-    Any,
-    Type,
-    Iterable,
-    Iterator,
-)
-from .series import Series, wrap_s
-from . import datatypes
-from .datatypes import DataType, pytype_to_polars_type
-from ._html import NotebookFormatter
-from .utils import coerce_arrow, _is_expr, _process_null_values
-import polars
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet
-import pyarrow.feather
-import numpy as np
-import os
-from pathlib import Path
-
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from .lazy import LazyFrame, Expr
+    from .lazy import Expr, LazyFrame
 
 
 def wrap_df(df: PyDataFrame) -> "DataFrame":
@@ -77,7 +72,7 @@ class DataFrame:
 
     def __init__(
         self,
-        data: Union[Dict[str, Sequence], List[Series], np.ndarray],
+        data: Union[Dict[str, Sequence], tp.List[Series], np.ndarray],
         nullable: bool = True,
     ) -> None:
         """
@@ -127,7 +122,7 @@ class DataFrame:
     @staticmethod
     def from_rows(
         rows: Sequence[Sequence[Any]],
-        column_names: Optional[List[str]] = None,
+        column_names: Optional[tp.List[str]] = None,
         column_name_mapping: Optional[Dict[int, str]] = None,
     ) -> "DataFrame":
         """
@@ -167,16 +162,16 @@ class DataFrame:
         ignore_errors: bool = False,
         stop_after_n_rows: Optional[int] = None,
         skip_rows: int = 0,
-        projection: Optional[List[int]] = None,
+        projection: Optional[tp.List[int]] = None,
         sep: str = ",",
-        columns: Optional[List[str]] = None,
+        columns: Optional[tp.List[str]] = None,
         rechunk: bool = True,
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
-        null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+        null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -222,7 +217,7 @@ class DataFrame:
             Values to interpret as null values. You can provide a:
 
             - str -> all values encountered equal to this string will be null
-            - List[str] -> A null value per column.
+            - tp.List[str] -> A null value per column.
             - Dict[str, str] -> A dictionary that maps column name to a null value string.
 
         Example
@@ -242,12 +237,12 @@ class DataFrame:
             path = file
         else:
             path = None
-            if isinstance(file, io.BytesIO):
+            if isinstance(file, BytesIO):
                 file = file.getvalue()
-            if isinstance(file, io.StringIO):
+            if isinstance(file, StringIO):
                 file = file.getvalue().encode()
 
-        dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
+        dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
         if dtype is not None:
             dtype_list = []
             for k, v in dtype.items():
@@ -749,9 +744,9 @@ class DataFrame:
                         self._df.take([self._pos_idx(i, dim=0) for i in item])
                     )
             dtype = item.dtype
-            if dtype == datatypes.Boolean:
+            if dtype == Boolean:
                 return wrap_df(self._df.filter(item.inner()))
-            if dtype == datatypes.UInt32:
+            if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
 
     def __setitem__(self, key: Union[str, int, Tuple[Any, Any]], value: Any) -> None:
@@ -888,7 +883,7 @@ class DataFrame:
         return self._df.width()
 
     @property
-    def columns(self) -> List[str]:
+    def columns(self) -> tp.List[str]:
         """
         Get or set column names.
 
@@ -923,7 +918,7 @@ class DataFrame:
         return self._df.columns()
 
     @columns.setter
-    def columns(self, columns: List[str]) -> None:
+    def columns(self, columns: tp.List[str]) -> None:
         """
         Change the column names of the `DataFrame`.
 
@@ -936,7 +931,7 @@ class DataFrame:
         self._df.set_column_names(columns)
 
     @property
-    def dtypes(self) -> List[Type[DataType]]:
+    def dtypes(self) -> tp.List[Type[DataType]]:
         """
         Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
 
@@ -966,7 +961,7 @@ class DataFrame:
         ╰─────┴─────┴─────╯
         ```
         """
-        return [datatypes.dtypes[idx] for idx in self._df.dtypes()]
+        return [dtypes[idx] for idx in self._df.dtypes()]
 
     def describe(self) -> "DataFrame":
         """
@@ -1006,9 +1001,9 @@ class DataFrame:
                     columns.append(s.cast(float))
                 else:
                     columns.append(s)
-            return polars.DataFrame(columns)
+            return pl.DataFrame(columns)
 
-        summary = polars.concat(
+        summary = pl.concat(
             [
                 describe_cast(self.mean()),
                 describe_cast(self.std()),
@@ -1018,7 +1013,7 @@ class DataFrame:
             ]
         )
         summary.insert_at_idx(
-            0, polars.Series("describe", ["mean", "std", "min", "max", "median"])
+            0, pl.Series("describe", ["mean", "std", "min", "max", "median"])
         )
         return summary
 
@@ -1037,9 +1032,9 @@ class DataFrame:
 
     def sort(
         self,
-        by: Union[str, "Expr", List["Expr"]],
+        by: Union[str, "Expr", tp.List["Expr"]],
         in_place: bool = False,
-        reverse: Union[bool, List[bool]] = False,
+        reverse: Union[bool, tp.List[bool]] = False,
     ) -> Optional["DataFrame"]:
         """
         Sort the DataFrame by column.
@@ -1085,7 +1080,7 @@ class DataFrame:
         df.sort([col("foo"), col("bar") ** 2], reverse=[True, False])
         ```
         """
-        if type(by) is list or _is_expr(by):
+        if type(by) is list or isinstance(by, pl.Expr):
             df = (
                 self.lazy()
                 .sort(by, reverse)
@@ -1245,7 +1240,7 @@ class DataFrame:
         """
         return wrap_df(self._df.tail(length))
 
-    def drop_nulls(self, subset: Optional[List[str]] = None) -> "DataFrame":
+    def drop_nulls(self, subset: Optional[tp.List[str]] = None) -> "DataFrame":
         """
         Return a new DataFrame where the null values are dropped.
         """
@@ -1268,7 +1263,7 @@ class DataFrame:
         """
         return func(self, *args, **kwargs)
 
-    def groupby(self, by: Union[str, List[str]]) -> "GroupBy":
+    def groupby(self, by: Union[str, tp.List[str]]) -> "GroupBy":
         """
         Start a groupby operation.
 
@@ -1343,7 +1338,7 @@ class DataFrame:
             by = [by]
         return GroupBy(self._df, by, downsample=False)
 
-    def downsample(self, by: Union[str, List[str]], rule: str, n: int) -> "GroupBy":
+    def downsample(self, by: Union[str, tp.List[str]], rule: str, n: int) -> "GroupBy":
         """
         Start a downsampling groupby operation.
 
@@ -1371,9 +1366,9 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: Optional[Union[str, List[str], "Expr", List["Expr"]]] = None,
-        right_on: Optional[Union[str, List[str], "Expr", List["Expr"]]] = None,
-        on: Optional[Union[str, List[str]]] = None,
+        left_on: Optional[Union[str, tp.List[str], "Expr", tp.List["Expr"]]] = None,
+        right_on: Optional[Union[str, tp.List[str], "Expr", tp.List["Expr"]]] = None,
+        on: Optional[Union[str, tp.List[str]]] = None,
         how: str = "inner",
     ) -> Union["DataFrame", "LazyFrame"]:
         """
@@ -1460,7 +1455,7 @@ class DataFrame:
             right_on = on
         if left_on is None or right_on is None:
             raise ValueError("You should pass the column to join on as an argument.")
-        if _is_expr(left_on[0]) or _is_expr(right_on[0]):  # type: ignore
+        if isinstance(left_on[0], pl.Expr) or isinstance(right_on[0], pl.Expr):  # type: ignore
             return self.lazy().join(df.lazy(), left_on, right_on, how=how)
 
         out = self._df.join(df._df, left_on, right_on, how)
@@ -1495,13 +1490,13 @@ class DataFrame:
         column
             Series, where the name of the Series refers to the column in the DataFrame.
         """
-        if _is_expr(column):
-            return self.with_columns([column])  # type: ignore
+        if isinstance(column, pl.Expr):
+            return self.with_columns([column])
         else:
-            return wrap_df(self._df.with_column(column._s))  # type: ignore
+            return wrap_df(self._df.with_column(column._s))
 
     def hstack(
-        self, columns: Union[List[Series], "DataFrame"], in_place: bool = False
+        self, columns: Union[tp.List[Series], "DataFrame"], in_place: bool = False
     ) -> Optional["DataFrame"]:
         """
         Return a new DataFrame grown horizontally by stacking multiple Series to it.
@@ -1538,7 +1533,7 @@ class DataFrame:
         else:
             return wrap_df(self._df.vstack(df._df))
 
-    def drop(self, name: Union[str, List[str]]) -> "DataFrame":
+    def drop(self, name: Union[str, tp.List[str]]) -> "DataFrame":
         """
         Remove column from DataFrame and return as new.
 
@@ -1608,7 +1603,7 @@ class DataFrame:
         """
         return wrap_df(self._df.clone())
 
-    def get_columns(self) -> List[Series]:
+    def get_columns(self) -> tp.List[Series]:
         """
         Get the DataFrame as a List of Series.
         """
@@ -1635,15 +1630,13 @@ class DataFrame:
         -------
             DataFrame with None replaced with the filling strategy.
         """
-        if _is_expr(strategy):
+        if isinstance(strategy, pl.Expr):
             return self.lazy().fill_none(strategy).collect()
         if not isinstance(strategy, str):
-            from .lazy import lit
-
-            return self.fill_none(lit(strategy))  # type: ignore
+            return self.fill_none(pl.lit(strategy))
         return wrap_df(self._df.fill_none(strategy))
 
-    def explode(self, columns: Union[str, List[str]]) -> "DataFrame":
+    def explode(self, columns: Union[str, tp.List[str]]) -> "DataFrame":
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
 
@@ -1661,7 +1654,7 @@ class DataFrame:
         return wrap_df(self._df.explode(columns))
 
     def melt(
-        self, id_vars: Union[List[str], str], value_vars: Union[List[str], str]
+        self, id_vars: Union[tp.List[str], str], value_vars: Union[tp.List[str], str]
     ) -> "DataFrame":
         """
         Unpivot DataFrame to long format.
@@ -1742,11 +1735,13 @@ class DataFrame:
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
-        from polars.lazy import wrap_ldf
+        from .lazy import wrap_ldf
 
         return wrap_ldf(self._df.lazy())
 
-    def select(self, exprs: Union[str, "Expr", List[str], List["Expr"]]) -> "DataFrame":
+    def select(
+        self, exprs: Union[str, "Expr", tp.List[str], tp.List["Expr"]]
+    ) -> "DataFrame":
         """
         Select columns from this DataFrame.
 
@@ -1759,7 +1754,7 @@ class DataFrame:
             self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
         )
 
-    def with_columns(self, exprs: Union["Expr", List["Expr"]]) -> "DataFrame":
+    def with_columns(self, exprs: Union["Expr", tp.List["Expr"]]) -> "DataFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -1855,7 +1850,7 @@ class DataFrame:
     def drop_duplicates(
         self,
         maintain_order: bool = True,
-        subset: Optional[Union[str, List[str]]] = None,
+        subset: Optional[Union[str, tp.List[str]]] = None,
     ) -> "DataFrame":
         """
         Drop duplicate rows from this DataFrame.
@@ -1998,7 +1993,7 @@ class DataFrame:
         """
         return self._df.row_tuple(index)
 
-    def rows(self) -> List[Tuple[Any]]:
+    def rows(self) -> tp.List[Tuple[Any]]:
         """
         Convert columnar data to rows as python tuples.
         """
@@ -2032,7 +2027,7 @@ class GroupBy:
     def __init__(
         self,
         df: PyDataFrame,
-        by: Union[str, List[str]],
+        by: Union[str, tp.List[str]],
         downsample: bool = False,
         rule: Optional[str] = None,
         downsample_n: int = 0,
@@ -2116,9 +2111,9 @@ class GroupBy:
     def agg(
         self,
         column_to_agg: Union[
-            List[Tuple[str, List[str]]],
-            Dict[str, Union[str, List[str]]],
-            List["Expr"],
+            tp.List[Tuple[str, tp.List[str]]],
+            Dict[str, Union[str, tp.List[str]]],
+            tp.List["Expr"],
             "Expr",
         ],
     ) -> DataFrame:
@@ -2160,15 +2155,14 @@ class GroupBy:
             .agg({"spam": ["sum", "min"})
         ```
         """
-        if _is_expr(column_to_agg):
-            column_to_agg = [column_to_agg]  # type: ignore
+        if isinstance(column_to_agg, pl.Expr):
+            column_to_agg = [column_to_agg]
         if isinstance(column_to_agg, dict):
             column_to_agg = [
                 (column, [agg] if isinstance(agg, str) else agg)
                 for (column, agg) in column_to_agg.items()
             ]
         elif isinstance(column_to_agg, list):
-            from .lazy import Expr
 
             if isinstance(column_to_agg[0], tuple):
                 column_to_agg = [  # type: ignore
@@ -2176,7 +2170,7 @@ class GroupBy:
                     for (column, agg) in column_to_agg
                 ]
 
-            elif isinstance(column_to_agg[0], Expr):
+            elif isinstance(column_to_agg[0], pl.Expr):
                 return (
                     wrap_df(self._df)
                     .lazy()
@@ -2204,7 +2198,7 @@ class GroupBy:
 
         return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
 
-    def select(self, columns: Union[str, List[str]]) -> "GBSelection":
+    def select(self, columns: Union[str, tp.List[str]]) -> "GBSelection":
         """
         Select the columns that will be aggregated.
 
@@ -2317,7 +2311,7 @@ class PivotOps:
     def __init__(
         self,
         df: DataFrame,
-        by: Union[str, List[str]],
+        by: Union[str, tp.List[str]],
         pivot_column: str,
         values_column: str,
     ) -> None:
@@ -2391,8 +2385,8 @@ class GBSelection:
     def __init__(
         self,
         df: PyDataFrame,
-        by: Union[str, List[str]],
-        selection: Optional[List[str]],
+        by: Union[str, tp.List[str]],
+        selection: Optional[tp.List[str]],
         downsample: bool = False,
         rule: Optional[str] = None,
         downsample_n: int = 0,
