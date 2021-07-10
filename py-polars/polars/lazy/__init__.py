@@ -145,7 +145,7 @@ class LazyFrame:
             dtype_list = []
             for k, v in dtype.items():
                 dtype_list.append((k, pytype_to_polars_type(v)))
-        null_values = _process_null_values(null_values)  # type: ignore
+        processed_null_values = _process_null_values(null_values)
 
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = PyLazyFrame.new_from_csv(
@@ -159,7 +159,7 @@ class LazyFrame:
             dtype_list,
             low_memory,
             comment_char,
-            null_values,
+            processed_null_values,
         )
         return self
 
