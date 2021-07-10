@@ -556,9 +556,14 @@ impl ProjectionPushDown {
                 let mut names_right = init_set();
                 let mut local_projection = init_vec();
 
-                // if there are no projections we don't have to do anything
+                // if there are no projections we don't have to do anything (all columns are projected)
                 // otherwise we build local projections to sort out proper column names due to the
                 // join operation
+                //
+                // Joins on columns with different names, for example
+                // left_on = "a", right_on = "b
+                // will remove the name "b" (it is "a" now). That columns should therefore not
+                // be added to a local projection.
                 if !acc_projections.is_empty() {
                     let schema_left = lp_arena.get(input_left).schema(lp_arena);
                     let schema_right = lp_arena.get(input_right).schema(lp_arena);
@@ -582,9 +587,7 @@ impl ProjectionPushDown {
                             &mut names_right,
                             expr_arena,
                         );
-                        if !local_projection.contains(e) {
-                            local_projection.push(*e)
-                        }
+                        // we don't add right column names to local_projection as they are removed
                     }
 
                     for proj in acc_projections {
