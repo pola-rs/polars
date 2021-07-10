@@ -1,26 +1,27 @@
+import typing as tp
+from contextlib import contextmanager
+from io import BytesIO, StringIO
+from pathlib import Path
 from typing import (
-    Union,
-    TextIO,
-    Optional,
-    List,
-    BinaryIO,
-    Sequence,
-    Dict,
     Any,
-    Type,
-    Iterator,
+    BinaryIO,
     ContextManager,
+    Dict,
+    Iterator,
+    Optional,
+    Sequence,
+    TextIO,
+    Type,
+    Union,
     overload,
 )
-import builtins
-import urllib.request
-import io
-from io import StringIO, BytesIO
-from contextlib import contextmanager
-from pathlib import Path
-
+from urllib.request import urlopen
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.compute
+import pyarrow.csv
+import pyarrow.parquet
 
 try:
     import pandas as pd
@@ -36,20 +37,15 @@ try:
 except ImportError:
     WITH_FSSPEC = False
 
-import pyarrow as pa
-import pyarrow.parquet
-import pyarrow.csv
-import pyarrow.compute
-
-from .frame import DataFrame
-from .series import Series
-from .lazy import LazyFrame
 from .datatypes import DataType
+from .frame import DataFrame
+from .lazy import LazyFrame
+from .series import Series
 
 
-def _process_http_file(path: str) -> io.BytesIO:
-    with urllib.request.urlopen(path) as f:
-        return io.BytesIO(f.read())
+def _process_http_file(path: str) -> BytesIO:
+    with urlopen(path) as f:
+        return BytesIO(f.read())
 
 
 @overload
@@ -61,14 +57,14 @@ def _prepare_file_arg(
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
-) -> ContextManager[Union[str, BinaryIO, List[str], List[BinaryIO]]]:
+    file: Union[str, tp.List[str], TextIO, Path, BinaryIO], **kwargs: Any
+) -> ContextManager[Union[str, BinaryIO, tp.List[str], tp.List[BinaryIO]]]:
     ...
 
 
 def _prepare_file_arg(
-    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
-) -> ContextManager[Union[str, BinaryIO, List[str], List[BinaryIO]]]:
+    file: Union[str, tp.List[str], TextIO, Path, BinaryIO], **kwargs: Any
+) -> ContextManager[Union[str, BinaryIO, tp.List[str], tp.List[BinaryIO]]]:
     """
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
@@ -93,7 +89,7 @@ def _prepare_file_arg(
             pass
 
     if isinstance(file, StringIO):
-        return io.BytesIO(file.read().encode("utf8"))
+        return BytesIO(file.read().encode("utf8"))
     if isinstance(file, BytesIO):
         return file
     if isinstance(file, Path):
@@ -137,19 +133,19 @@ def read_csv(
     ignore_errors: bool = False,
     stop_after_n_rows: Optional[int] = None,
     skip_rows: int = 0,
-    projection: Optional[List[int]] = None,
+    projection: Optional[tp.List[int]] = None,
     sep: str = ",",
-    columns: Optional[List[str]] = None,
+    columns: Optional[tp.List[str]] = None,
     rechunk: bool = True,
     encoding: str = "utf8",
     n_threads: Optional[int] = None,
     dtype: Optional[Dict[str, Type[DataType]]] = None,
-    new_columns: Optional[List[str]] = None,
+    new_columns: Optional[tp.List[str]] = None,
     use_pyarrow: bool = True,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
     storage_options: Optional[Dict] = None,
-    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+    null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a csv file.
@@ -209,7 +205,7 @@ def read_csv(
         Values to interpret as null values. You can provide a:
 
         - str -> all values encountered equal to this string will be null
-        - List[str] -> A null value per column.
+        - tp.List[str] -> A null value per column.
         - Dict[str, str] -> A dictionary that maps column name to a null value string.
 
     Returns
@@ -311,7 +307,7 @@ def scan_csv(
     dtype: Optional[Dict[str, Type[DataType]]] = None,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
-    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+    null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
 ) -> LazyFrame:
     """
     Lazily read from a csv file.
@@ -347,7 +343,7 @@ def scan_csv(
         Values to interpret as null values. You can provide a:
 
         - str -> all values encountered equal to this string will be null
-        - List[str] -> A null value per column.
+        - tp.List[str] -> A null value per column.
         - Dict[str, str] -> A dictionary that maps column name to a null value string.
     """
     if isinstance(file, Path):
@@ -422,10 +418,10 @@ def read_ipc(
 
 
 def read_parquet(
-    source: Union[str, BinaryIO, Path, List[str]],
+    source: Union[str, BinaryIO, Path, tp.List[str]],
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
-    columns: Optional[List[str]] = None,
+    columns: Optional[tp.List[str]] = None,
     storage_options: Optional[Dict] = None,
     **kwargs: Any,
 ) -> DataFrame:
@@ -569,7 +565,7 @@ def from_pandas(
     return from_arrow(table, rechunk)  # type: ignore
 
 
-def concat(dfs: List[DataFrame], rechunk: bool = True) -> DataFrame:
+def concat(dfs: tp.List[DataFrame], rechunk: bool = True) -> DataFrame:
     """
     Aggregate all the Dataframes in a List of DataFrames to a single DataFrame.
 
@@ -582,7 +578,7 @@ def concat(dfs: List[DataFrame], rechunk: bool = True) -> DataFrame:
     """
     assert len(dfs) > 0
     df = dfs[0].clone()
-    for i in builtins.range(1, len(dfs)):
+    for i in range(1, len(dfs)):
         try:
             df = df.vstack(dfs[i], in_place=False)  # type: ignore
         # could have a double borrow (one mutable one ref)
@@ -633,7 +629,7 @@ def read_json(
 
 def from_rows(
     rows: Sequence[Sequence[Any]],
-    column_names: Optional[List[str]] = None,
+    column_names: Optional[tp.List[str]] = None,
     column_name_mapping: Optional[Dict[int, str]] = None,
 ) -> DataFrame:
     """

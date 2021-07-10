@@ -1,50 +1,53 @@
 """
 This module contains all expressions and classes needed for lazy computation/ query execution.
 """
-
-from typing import Union, List, Tuple, Callable, Optional, Dict, Any, Type
-
-from polars import Series
-from polars.frame import DataFrame, wrap_df
-from polars import datatypes
-from polars.datatypes import DataType
 import os
-import tempfile
-import subprocess
 import shutil
+import subprocess
+import tempfile
+import typing as tp
 from datetime import datetime
+from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
+
 import numpy as np
-from ..utils import _is_expr, _process_null_values
+
+from ..datatypes import (
+    Boolean,
+    DataType,
+    Date32,
+    Date64,
+    Float64,
+    Int64,
+    Utf8,
+    pytype_to_polars_type,
+)
+from ..frame import DataFrame, wrap_df
+from ..series import Series
+from ..utils import _process_null_values
 
 try:
-    from ..polars import (
-        PyLazyFrame,
-        col as pycol,
-        lit as pylit,
-        # binary_expr,
-        binary_function as pybinary_function,
-        pearson_corr as pypearson_corr,
-        cov as pycov,
-        argsort_by as pyargsort_by,
-        PyExpr,
-        PyLazyGroupBy,
-        when as pywhen,
-        except_ as pyexcept,
-        series_from_range as _series_from_range,
-    )
+    from ..polars import PyExpr, PyLazyFrame, PyLazyGroupBy
+    from ..polars import argsort_by as pyargsort_by
+    from ..polars import binary_function as pybinary_function
+    from ..polars import col as pycol
+    from ..polars import cov as pycov
+    from ..polars import except_ as pyexcept
+    from ..polars import lit as pylit
+    from ..polars import pearson_corr as pypearson_corr
+    from ..polars import series_from_range as _series_from_range
+    from ..polars import when as pywhen
 except ImportError:
     import warnings
 
     warnings.warn("Binary files missing.")
-
     __pdoc__ = {"wrap_ldf": False, "wrap_expr": False}
 
 
 def _selection_to_pyexpr_list(
-    exprs: Union[str, List[str], "Expr", List["Expr"]]
-) -> List[PyExpr]:
-    pyexpr_list: List[PyExpr]
-    if not isinstance(exprs, List):
+    exprs: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+) -> tp.List[PyExpr]:
+    pyexpr_list: tp.List[PyExpr]
+    if not isinstance(exprs, list):
         if isinstance(exprs, str):
             exprs = col(exprs)
         pyexpr_list = [exprs._pyexpr]
@@ -69,7 +72,7 @@ class LazyGroupBy:
     def __init__(self, lgb: PyLazyGroupBy):
         self.lgb = lgb
 
-    def agg(self, aggs: Union[List["Expr"], "Expr"]) -> "LazyFrame":
+    def agg(self, aggs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
         """
         Describe the aggregation that need to be done on a group.
 
@@ -132,16 +135,16 @@ class LazyFrame:
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
-        null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+        null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
         """
-        dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
+        dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
         if dtype is not None:
             dtype_list = []
             for k, v in dtype.items():
-                dtype_list.append((k, datatypes.pytype_to_polars_type(v)))
+                dtype_list.append((k, pytype_to_polars_type(v)))
         null_values = _process_null_values(null_values)  # type: ignore
 
         self = LazyFrame.__new__(LazyFrame)
@@ -239,8 +242,8 @@ class LazyFrame:
             Passed to matlotlib if `show` == True.
         """
         try:
-            import matplotlib.pyplot as plt
             import matplotlib.image as mpimg
+            import matplotlib.pyplot as plt
         except ImportError:
             raise ImportError(
                 "Graphviz dot binary should be on your PATH and matplotlib should be installed to show graph."
@@ -268,8 +271,8 @@ class LazyFrame:
 
     def sort(
         self,
-        by_columns: Union[str, "Expr", List["Expr"]],
-        reverse: Union[bool, List[bool]] = False,
+        by_columns: Union[str, "Expr", tp.List["Expr"]],
+        reverse: Union[bool, tp.List[bool]] = False,
     ) -> "LazyFrame":
         """
         Sort the DataFrame by:
@@ -417,7 +420,9 @@ class LazyFrame:
             predicate = col(predicate)
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
-    def select(self, exprs: Union[str, "Expr", List[str], List["Expr"]]) -> "LazyFrame":
+    def select(
+        self, exprs: Union[str, "Expr", tp.List[str], tp.List["Expr"]]
+    ) -> "LazyFrame":
         """
         Select columns from this DataFrame.
 
@@ -429,7 +434,9 @@ class LazyFrame:
         exprs = _selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 
-    def groupby(self, by: Union[str, List[str], "Expr", List["Expr"]]) -> LazyGroupBy:
+    def groupby(
+        self, by: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+    ) -> LazyGroupBy:
         """
         Start a groupby operation.
 
@@ -438,7 +445,7 @@ class LazyFrame:
         by
             Column(s) to group by.
         """
-        new_by: List[PyExpr]
+        new_by: tp.List[PyExpr]
         if isinstance(by, list):
             new_by = []
             for e in by:
@@ -455,9 +462,9 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
-        right_on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
-        on: Optional[Union["Expr", str, List["Expr"], List[str]]] = None,
+        left_on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
+        right_on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
+        on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
         how: str = "inner",
         allow_parallel: bool = True,
         force_parallel: bool = False,
@@ -499,7 +506,7 @@ class LazyFrame:
         if isinstance(on, str):
             left_on = [on]
             right_on = [on]
-        elif isinstance(on, List):
+        elif isinstance(on, list):
             left_on = on
             right_on = on
         if left_on is None or right_on is None:
@@ -522,7 +529,7 @@ class LazyFrame:
 
         return wrap_ldf(out)
 
-    def with_columns(self, exprs: Union[List["Expr"], "Expr"]) -> "LazyFrame":
+    def with_columns(self, exprs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -531,12 +538,12 @@ class LazyFrame:
         exprs
             List of Expressions that evaluate to columns.
         """
-        if _is_expr(exprs):
-            return self.with_column(exprs)  # type: ignore
+        if isinstance(exprs, Expr):
+            return self.with_column(exprs)
 
         pyexprs = []
 
-        for e in exprs:  # type: ignore
+        for e in exprs:
             if isinstance(e, Expr):
                 pyexprs.append(e._pyexpr)
             elif isinstance(e, Series):
@@ -555,7 +562,7 @@ class LazyFrame:
         """
         return self.with_columns([expr])
 
-    def drop_columns(self, columns: List[str]) -> "LazyFrame":
+    def drop_columns(self, columns: tp.List[str]) -> "LazyFrame":
         """
         Remove multiple columns from a DataFrame.
 
@@ -733,7 +740,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.quantile(quantile))
 
-    def explode(self, columns: Union[str, List[str]]) -> "LazyFrame":
+    def explode(self, columns: Union[str, tp.List[str]]) -> "LazyFrame":
         """
         Explode lists to long format.
         """
@@ -744,26 +751,28 @@ class LazyFrame:
     def drop_duplicates(
         self,
         maintain_order: bool = False,
-        subset: Optional[Union[List[str], str]] = None,
+        subset: Optional[Union[tp.List[str], str]] = None,
     ) -> "LazyFrame":
         """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
-        if subset is not None and not isinstance(subset, List):
+        if subset is not None and not isinstance(subset, list):
             subset = [subset]
         return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
 
-    def drop_nulls(self, subset: Optional[Union[List[str], str]] = None) -> "LazyFrame":
+    def drop_nulls(
+        self, subset: Optional[Union[tp.List[str], str]] = None
+    ) -> "LazyFrame":
         """
         Drop rows with null values from this DataFrame.
         """
-        if subset is not None and not isinstance(subset, List):
+        if subset is not None and not isinstance(subset, list):
             subset = [subset]
         return wrap_ldf(self._ldf.drop_nulls(subset))
 
     def melt(
-        self, id_vars: Union[str, List[str]], value_vars: Union[str, List[str]]
+        self, id_vars: Union[str, tp.List[str]], value_vars: Union[str, tp.List[str]]
     ) -> "LazyFrame":
         """
         Unpivot DataFrame to long format.
@@ -1030,13 +1039,13 @@ class Expr:
             Output data type.
         """
         if dtype == str:
-            dtype = datatypes.Utf8
+            dtype = Utf8
         elif dtype == bool:
-            dtype = datatypes.Boolean
+            dtype = Boolean
         elif dtype == float:
-            dtype = datatypes.Float64
+            dtype = Float64
         elif dtype == int:
-            dtype = datatypes.Int64
+            dtype = Int64
         return wrap_expr(self._pyexpr.cast(dtype))
 
     def sort(self, reverse: bool = False) -> "Expr":
@@ -1227,7 +1236,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: Union[str, "Expr", List["Expr"]]) -> "Expr":
+    def over(self, expr: Union[str, "Expr", tp.List["Expr"]]) -> "Expr":
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -1351,13 +1360,13 @@ class Expr:
             return_dtype = f.return_dtype
             f = f.f
         if return_dtype == str:
-            return_dtype = datatypes.Utf8
+            return_dtype = Utf8
         elif return_dtype == int:
-            return_dtype = datatypes.Int64
+            return_dtype = Int64
         elif return_dtype == float:
-            return_dtype = datatypes.Float64
+            return_dtype = Float64
         elif return_dtype == bool:
-            return_dtype = datatypes.Boolean
+            return_dtype = Boolean
         return wrap_expr(self._pyexpr.map(f, return_dtype))
 
     def apply(
@@ -1448,7 +1457,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pow(exponent))
 
-    def is_in(self, other: Union["Expr", List[Any]]) -> "Expr":
+    def is_in(self, other: Union["Expr", tp.List[Any]]) -> "Expr":
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -1497,7 +1506,7 @@ class Expr:
             end = lit(end)
             cast_to_date64 = True
         if cast_to_date64:
-            expr = self.cast(datatypes.Date64)
+            expr = self.cast(Date64)
         else:
             expr = self
         return ((expr > start) & (expr < end)).alias("is_between")
@@ -1527,7 +1536,7 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[datatypes.Date32, datatypes.Date64],
+        datatype: Union[Date32, Date64],
         fmt: Optional[str] = None,
     ) -> Expr:
         """
@@ -1540,16 +1549,16 @@ class ExprStringNameSpace:
         fmt
             "yyyy-mm-dd".
         """
-        if datatype == datatypes.Date32:
+        if datatype == Date32:
             return wrap_expr(self._pyexpr.str_parse_date32(fmt))
-        elif datatype == datatypes.Date64:
+        elif datatype == Date64:
             return wrap_expr(self._pyexpr.str_parse_date64(fmt))
         else:
             raise NotImplementedError
 
     def parse_date(
         self,
-        datatype: Union[datatypes.Date32, datatypes.Date64],
+        datatype: Union[Date32, Date64],
         fmt: Optional[str] = None,
     ) -> Expr:
         """
@@ -1777,7 +1786,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, int, float, str, List[Expr]], str_to_lit: bool = True
+    expr: Union[Expr, int, float, str, tp.List[Expr]], str_to_lit: bool = True
 ) -> Expr:
     """
     Helper function that converts args to expressions.
@@ -1992,7 +2001,7 @@ def var(column: Union[str, Series]) -> Union[Expr, float]:
     return col(column).var()
 
 
-def max(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
+def max(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -2002,7 +2011,7 @@ def max(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
             - Union[str, Series] -> aggregate the maximum value of that column.
-            - List[Expr] -> aggregate the maximum value horizontally.
+            - tp.List[Expr] -> aggregate the maximum value horizontally.
     """
     if isinstance(column, Series):
         return column.max()
@@ -2017,7 +2026,7 @@ def max(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         return col(column).max()
 
 
-def min(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
+def min(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the minimum value.
 
@@ -2025,7 +2034,7 @@ def min(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
             - Union[str, Series] -> aggregate the sum value of that column.
-            - List[Expr] -> aggregate the sum value horizontally.
+            - tp.List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, Series):
         return column.min()
@@ -2040,7 +2049,7 @@ def min(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         return col(column).min()
 
 
-def sum(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
+def sum(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
     """
     Get the sum value.
 
@@ -2048,7 +2057,7 @@ def sum(column: Union[str, List[Expr], Series]) -> Union[Expr, Any]:
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
             - Union[str, Series] -> aggregate the sum value of that column.
-            - List[Expr] -> aggregate the sum value horizontally.
+            - tp.List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, Series):
         return column.sum()
@@ -2192,7 +2201,7 @@ def lit(
     ```
     """
     if isinstance(value, datetime):
-        return lit(int(value.timestamp() * 1e3)).cast(datatypes.Date64)
+        return lit(int(value.timestamp() * 1e3)).cast(Date64)
 
     if isinstance(value, Series):
         name = value.name
@@ -2276,7 +2285,9 @@ def map_binary(
     return wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, return_dtype))
 
 
-def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) -> Expr:
+def fold(
+    acc: Expr, f: Callable[[Series, Series], Series], exprs: tp.List[Expr]
+) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
 
@@ -2297,7 +2308,7 @@ def fold(acc: Expr, f: Callable[[Series, Series], Series], exprs: List[Expr]) ->
     return acc
 
 
-def any(name: Union[str, List[Expr]]) -> Expr:
+def any(name: Union[str, tp.List[Expr]]) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
     """
@@ -2306,7 +2317,7 @@ def any(name: Union[str, List[Expr]]) -> Expr:
     return col(name).sum() > 0
 
 
-def all(name: Union[str, List[Expr]]) -> Expr:
+def all(name: Union[str, tp.List[Expr]]) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise AND operation.
     """
@@ -2384,11 +2395,9 @@ def arange(
         If eager evaluation is `True`, a Series is returned instead of an Expr
     """
     if dtype is None:
-        dtype = datatypes.Int64
+        dtype = Int64
 
     def create_range(s1: Series, s2: Series) -> Series:
-        from .. import Series
-
         assert s1.len() == 1
         assert s2.len() == 1
         return Series._from_pyseries(_series_from_range(s1[0], s2[0], step, dtype))
@@ -2409,7 +2418,9 @@ def arange(
     return map_binary(low, high, create_range, return_dtype=dtype)  # type: ignore
 
 
-def argsort_by(exprs: List[Expr], reverse: Union[List[bool], bool] = False) -> Expr:
+def argsort_by(
+    exprs: tp.List[Expr], reverse: Union[tp.List[bool], bool] = False
+) -> Expr:
     """
     Find the indexes that would sort the columns.
 
