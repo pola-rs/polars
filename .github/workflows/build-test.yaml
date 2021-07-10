@@ -77,7 +77,7 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
-          black --check .
+          cd py-polars && black --check . && isort --check . && cd ..
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
