@@ -285,12 +285,6 @@ impl<'a> Iterator for SplitFields<'a> {
                 return self.finish();
             }
 
-            debug_assert!(
-                idx != 0,
-                "Field with non closing double-quote at: {}",
-                std::str::from_utf8(self.v).unwrap(),
-            );
-
             idx
         } else {
             match self.v.iter().position(|x| *x == self.delimiter) {
