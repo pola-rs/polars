@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import typing as tp
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
@@ -44,12 +44,12 @@ except ImportError:
 
 
 def _selection_to_pyexpr_list(
-    exprs: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+    exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
 ) -> tp.List[PyExpr]:
     pyexpr_list: tp.List[PyExpr]
-    if not isinstance(exprs, list):
-        if isinstance(exprs, str):
-            exprs = col(exprs)
+    if isinstance(exprs, str):
+        pyexpr_list = [col(exprs)._pyexpr]
+    elif isinstance(exprs, Expr):
         pyexpr_list = [exprs._pyexpr]
     else:
         pyexpr_list = []
@@ -421,7 +421,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(
-        self, exprs: Union[str, "Expr", tp.List[str], tp.List["Expr"]]
+        self, exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
     ) -> "LazyFrame":
         """
         Select columns from this DataFrame.

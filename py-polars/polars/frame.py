@@ -723,8 +723,8 @@ class DataFrame:
         if isinstance(item, Sequence):
             if isinstance(item[0], str):
                 return wrap_df(self._df.select(item))
-            if hasattr(item[0], "_pyexpr"):
-                return self.select(item)  # type: ignore
+            elif isinstance(item[0], pl.Expr):
+                return self.select(item)
 
         # select rows by mask or index
         # df[[1, 2, 3]]
@@ -1742,7 +1742,7 @@ class DataFrame:
         return wrap_ldf(self._df.lazy())
 
     def select(
-        self, exprs: Union[str, "Expr", tp.List[str], tp.List["Expr"]]
+        self, exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
     ) -> "DataFrame":
         """
         Select columns from this DataFrame.
