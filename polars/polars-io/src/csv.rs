@@ -964,7 +964,6 @@ AUDCAD,1616455921,0.96212,0.95666,1
             .has_header(false)
             .with_comment_char(Some(b'#'))
             .finish()?;
-        use polars_core::df;
         assert_eq!(df.shape(), (3, 5));
         Ok(())
     }
@@ -981,9 +980,7 @@ null-value,b,bar,
             .has_header(false)
             .with_null_values(NullValues::AllColumns("null-value".to_string()).into())
             .finish()?;
-        use polars_core::df;
-        dbg!(df);
-        // assert_eq!(df.shape(), (3, 5));
+        assert!(df.get_columns()[0].null_count() > 0);
         Ok(())
     }
 }
