@@ -33,7 +33,7 @@ import polars as pl
 from ._html import NotebookFormatter
 from .datatypes import Boolean, DataType, UInt32, dtypes, pytype_to_polars_type
 from .series import Series, wrap_s
-from .utils import _is_expr, _process_null_values, coerce_arrow
+from .utils import _process_null_values, coerce_arrow
 
 try:
     from .polars import version  # noqa: F401
@@ -1080,7 +1080,7 @@ class DataFrame:
         df.sort([col("foo"), col("bar") ** 2], reverse=[True, False])
         ```
         """
-        if type(by) is list or _is_expr(by):
+        if type(by) is list or isinstance(by, pl.Expr):
             df = (
                 self.lazy()
                 .sort(by, reverse)
@@ -1455,7 +1455,7 @@ class DataFrame:
             right_on = on
         if left_on is None or right_on is None:
             raise ValueError("You should pass the column to join on as an argument.")
-        if _is_expr(left_on[0]) or _is_expr(right_on[0]):  # type: ignore
+        if isinstance(left_on[0], pl.Expr) or isinstance(right_on[0], pl.Expr):  # type: ignore
             return self.lazy().join(df.lazy(), left_on, right_on, how=how)
 
         out = self._df.join(df._df, left_on, right_on, how)
@@ -1490,10 +1490,10 @@ class DataFrame:
         column
             Series, where the name of the Series refers to the column in the DataFrame.
         """
-        if _is_expr(column):
-            return self.with_columns([column])  # type: ignore
+        if isinstance(column, pl.Expr):
+            return self.with_columns([column])
         else:
-            return wrap_df(self._df.with_column(column._s))  # type: ignore
+            return wrap_df(self._df.with_column(column._s))
 
     def hstack(
         self, columns: Union[tp.List[Series], "DataFrame"], in_place: bool = False
@@ -1630,12 +1630,10 @@ class DataFrame:
         -------
             DataFrame with None replaced with the filling strategy.
         """
-        if _is_expr(strategy):
+        if isinstance(strategy, pl.Expr):
             return self.lazy().fill_none(strategy).collect()
         if not isinstance(strategy, str):
-            from .lazy import lit
-
-            return self.fill_none(lit(strategy))  # type: ignore
+            return self.fill_none(pl.lit(strategy))
         return wrap_df(self._df.fill_none(strategy))
 
     def explode(self, columns: Union[str, tp.List[str]]) -> "DataFrame":
@@ -2157,15 +2155,14 @@ class GroupBy:
             .agg({"spam": ["sum", "min"})
         ```
         """
-        if _is_expr(column_to_agg):
-            column_to_agg = [column_to_agg]  # type: ignore
+        if isinstance(column_to_agg, pl.Expr):
+            column_to_agg = [column_to_agg]
         if isinstance(column_to_agg, dict):
             column_to_agg = [
                 (column, [agg] if isinstance(agg, str) else agg)
                 for (column, agg) in column_to_agg.items()
             ]
         elif isinstance(column_to_agg, list):
-            from .lazy import Expr
 
             if isinstance(column_to_agg[0], tuple):
                 column_to_agg = [  # type: ignore
@@ -2173,7 +2170,7 @@ class GroupBy:
                     for (column, agg) in column_to_agg
                 ]
 
-            elif isinstance(column_to_agg[0], Expr):
+            elif isinstance(column_to_agg[0], pl.Expr):
                 return (
                     wrap_df(self._df)
                     .lazy()

@@ -23,7 +23,7 @@ from ..datatypes import (
 )
 from ..frame import DataFrame, wrap_df
 from ..series import Series
-from ..utils import _is_expr, _process_null_values
+from ..utils import _process_null_values
 
 try:
     from ..polars import PyExpr, PyLazyFrame, PyLazyGroupBy
@@ -538,12 +538,12 @@ class LazyFrame:
         exprs
             List of Expressions that evaluate to columns.
         """
-        if _is_expr(exprs):
-            return self.with_column(exprs)  # type: ignore
+        if isinstance(exprs, Expr):
+            return self.with_column(exprs)
 
         pyexprs = []
 
-        for e in exprs:  # type: ignore
+        for e in exprs:
             if isinstance(e, Expr):
                 pyexprs.append(e._pyexpr)
             elif isinstance(e, Series):
@@ -2398,8 +2398,6 @@ def arange(
         dtype = Int64
 
     def create_range(s1: Series, s2: Series) -> Series:
-        from .. import Series
-
         assert s1.len() == 1
         assert s2.len() == 1
         return Series._from_pyseries(_series_from_range(s1[0], s2[0], step, dtype))

@@ -1,6 +1,6 @@
 import typing as tp
 import warnings
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import pyarrow as pa
 
@@ -38,10 +38,6 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
             array = pa.compute.cast(array, pa.large_list())
         array = array.combine_chunks()
     return array
-
-
-def _is_expr(arg: Any) -> bool:
-    return hasattr(arg, "_pyexpr")
 
 
 def _process_null_values(
