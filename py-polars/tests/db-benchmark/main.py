@@ -3,7 +3,6 @@ import time
 import numpy as np
 
 import polars as pl
-from polars import col
 
 print(pl.__version__)
 
@@ -94,7 +93,7 @@ out = (
     x.drop_nulls("v3")
     .sort("v3", reverse=True)
     .groupby("id6")
-    .agg(col("v3").head(2).alias("largest2_v3"))
+    .agg(pl.col("v3").head(2).alias("largest2_v3"))
     .explode("largest2_v3")
     .collect()
 )
@@ -196,7 +195,7 @@ out = (
     x.drop_nulls("v3")
     .sort("v3", reverse=True)
     .groupby("id6")
-    .agg(col("v3").head(2).alias("largest2_v3"))
+    .agg(pl.col("v3").head(2).alias("largest2_v3"))
     .explode("largest2_v3")
     .collect()
 )
