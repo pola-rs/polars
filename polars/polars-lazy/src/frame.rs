@@ -1489,7 +1489,7 @@ mod test {
     }
 
     #[test]
-    fn test_lazy_query_6() {
+    fn test_lazy_query_6() -> Result<()> {
         let df = df! {
             "uid" => [0, 0, 0, 1, 1, 1],
             "day" => [1, 2, 4, 1, 2, 3],
@@ -1502,39 +1502,13 @@ mod test {
             .groupby(vec![col("uid")])
             // a double aggregation expression.
             .agg(vec![pearson_corr(col("day"), col("cumcases")).pow(2.0)])
+            .sort("uid", false)
             .collect()
             .unwrap();
-        dbg!(out);
-    }
-
-    #[test]
-    #[cfg(feature = "temporal")]
-    fn test_lazy_query_7() {
-        let date = NaiveDate::from_ymd(2021, 3, 5);
-        let dates = vec![
-            NaiveDateTime::new(date, NaiveTime::from_hms(12, 0, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(12, 1, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(12, 3, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(12, 4, 0)),
-            NaiveDateTime::new(date, NaiveTime::from_hms(12, 5, 0)),
-        ];
-        let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
-        let df = DataFrame::new(vec![
-            Date64Chunked::new_from_naive_datetime("date", &*dates).into(),
-            Series::new("data", data),
-        ])
-        .unwrap();
-        // this tests if predicate pushdown not interferes with the shift data.
-        let out = df
-            .lazy()
-            .with_column(col("data").shift(-1).alias("output"))
-            .with_column(col("output").shift(2).alias("shifted"))
-            .filter(col("date").gt(lit(NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)))))
-            .collect()
-            .unwrap();
-        let a = out.column(&"shifted").unwrap().sum::<f64>().unwrap() - 7.0;
-        assert!(a < 0.01 && a > -0.01);
+        let s = out.column("pearson_corr")?.f64()?;
+        assert!((s.get(0).unwrap() - 0.994360902255639).abs() < 0.000001);
+        assert!((s.get(1).unwrap() - 0.9552238805970149).abs() < 0.000001);
+        Ok(())
     }
 
     #[test]
@@ -1566,6 +1540,76 @@ mod test {
             .collect()?;
         assert_eq!(out.shape(), (2, 5));
         Ok(())
+    }
+
+    #[test]
+    fn test_lazy_query_9() -> Result<()> {
+        // https://github.com/pola-rs/polars/issues/958
+        let cities = df![
+            "Cities.City"=> ["Moscow", "Berlin", "Paris","Hamburg", "Lyon", "Novosibirsk"],
+            "Cities.Population"=> [11.92, 3.645, 2.161, 1.841, 0.513, 1.511],
+            "Cities.Country"=> ["Russia", "Germany", "France", "Germany", "France", "Russia"]
+        ]?;
+
+        let sales = df![
+                   "Sales.City"=> ["Moscow", "Berlin", "Paris", "Moscow", "Berlin", "Paris", "Moscow", "Berlin", "Paris"],
+        "Sales.Item"=> ["Item A", "Item A","Item A",
+                       "Item B", "Item B","Item B",
+                       "Item C", "Item C","Item C"],
+        "Sales.Amount"=> [200, 180, 100,
+                        3, 30, 20,
+                        90, 130, 125]
+            ]?;
+
+        let out = sales
+            .lazy()
+            .join(
+                cities.lazy(),
+                vec![col("Sales.City")],
+                vec![col("Cities.City")],
+                JoinType::Inner,
+            )
+            .groupby(vec![col("Cities.Country")])
+            .agg(vec![col("Sales.Amount").sum().alias("sum")])
+            .sort("sum", false)
+            .collect()?;
+        let vals = out
+            .column("sum")?
+            .i32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(vals, &[245, 293, 340]);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "temporal")]
+    fn test_lazy_query_7() {
+        let date = NaiveDate::from_ymd(2021, 3, 5);
+        let dates = vec![
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 1, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 3, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 4, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 5, 0)),
+        ];
+        let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
+        let df = DataFrame::new(vec![
+            Date64Chunked::new_from_naive_datetime("date", &*dates).into(),
+            Series::new("data", data),
+        ])
+        .unwrap();
+        // this tests if predicate pushdown not interferes with the shift data.
+        let out = df
+            .lazy()
+            .with_column(col("data").shift(-1).alias("output"))
+            .with_column(col("output").shift(2).alias("shifted"))
+            .filter(col("date").gt(lit(NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)))))
+            .collect()
+            .unwrap();
+        let a = out.column(&"shifted").unwrap().sum::<f64>().unwrap() - 7.0;
+        assert!(a < 0.01 && a > -0.01);
     }
 
     #[test]
