@@ -37,6 +37,7 @@ repeat_by = ["polars-core/repeat_by"]
 round_series = ["polars-core/round_series"]
 is_first = ["polars-core/is_first"]
 cross_join = ["polars-core/cross_join"]
+dot_product = ["polars-core/dot_product"]
 
 # no guarantees whatsoever
 private = []
