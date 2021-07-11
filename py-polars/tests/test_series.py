@@ -12,6 +12,27 @@ def create_series() -> pl.Series:
     return pl.Series("a", [1, 2])
 
 
+def test_init_inputs():
+    # Good inputs
+    pl.Series("a", [1, 2])
+    pl.Series("a", values=[1, 2])
+    pl.Series(name="a", values=[1, 2])
+    pl.Series(values=[1, 2], name="a")
+
+    pl.Series([1, 2])
+    pl.Series(values=[1, 2])
+
+    # Bad inputs
+    with pytest.raises(ValueError):
+        pl.Series()
+    with pytest.raises(ValueError):
+        pl.Series("a")
+    with pytest.raises(ValueError):
+        pl.Series([1, 2, 3], [1, 2, 3])
+    with pytest.raises(ValueError):
+        pl.Series({"a": [1, 2, 3]})
+
+
 def test_to_frame():
     assert create_series().to_frame().shape == (2, 1)
 
