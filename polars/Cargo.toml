@@ -63,6 +63,7 @@ pivot = ["polars-core/pivot"]
 downsample = ["polars-core/downsample"]
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
+simdutf8 = ["polars-io/simdutf8"]
 
 # extra operations
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
