@@ -505,26 +505,35 @@ class LazyFrame:
                 self._ldf.join(ldf._ldf, [], [], allow_parallel, force_parallel, how)
             )
 
-        if isinstance(left_on, str):
-            left_on = [left_on]
-        if isinstance(right_on, str):
-            right_on = [right_on]
+        left_on_: Union[tp.List[str], tp.List[Expr], None]
+        if isinstance(left_on, (str, Expr)):
+            left_on_ = [left_on]  # type: ignore[assignment]
+        else:
+            left_on_ = left_on
+
+        right_on_: Union[tp.List[str], tp.List[Expr], None]
+        if isinstance(right_on, (str, Expr)):
+            right_on_ = [right_on]  # type: ignore[assignment]
+        else:
+            right_on_ = right_on
+
         if isinstance(on, str):
-            left_on = [on]
-            right_on = [on]
+            left_on_ = [on]
+            right_on_ = [on]
         elif isinstance(on, list):
-            left_on = on
-            right_on = on
-        if left_on is None or right_on is None:
+            left_on_ = on
+            right_on_ = on
+
+        if left_on_ is None or right_on_ is None:
             raise ValueError("You should pass the column to join on as an argument.")
 
         new_left_on = []
-        for column in left_on:  # type: ignore
+        for column in left_on_:
             if isinstance(column, str):
                 column = col(column)
             new_left_on.append(column._pyexpr)
         new_right_on = []
-        for column in right_on:  # type: ignore
+        for column in right_on_:
             if isinstance(column, str):
                 column = col(column)
             new_right_on.append(column._pyexpr)
