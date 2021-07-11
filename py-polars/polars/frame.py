@@ -2522,13 +2522,6 @@ class GBSelection:
         return df
 
 
-def _series_to_frame(self: Series) -> DataFrame:
-    return wrap_df(PyDataFrame([self._s]))
-
-
-Series.to_frame = _series_to_frame  # type: ignore
-
-
 class StringCache:
     """
     Context manager that allows data sources to share the same categorical features.

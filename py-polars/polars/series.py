@@ -45,7 +45,7 @@ from .ffi import _ptr_to_numpy
 from .utils import coerce_arrow
 
 try:
-    from .polars import PySeries
+    from .polars import PyDataFrame, PySeries
 except ImportError:
     import warnings
 
@@ -534,8 +534,7 @@ class Series:
         """
         Cast this Series to a DataFrame.
         """
-        # implementation is in .frame due to circular imports
-        pass
+        return pl.wrap_df(PyDataFrame([self._s]))
 
     @property
     def dtype(self) -> Type[DataType]:
