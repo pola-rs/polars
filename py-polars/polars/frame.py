@@ -2167,8 +2167,8 @@ class GroupBy:
         elif isinstance(column_to_agg, list):
 
             if isinstance(column_to_agg[0], tuple):
-                column_to_agg = [  # type: ignore
-                    (column, [agg] if isinstance(agg, str) else agg)  # type: ignore
+                column_to_agg = [  # type: ignore[misc]
+                    (column, [agg] if isinstance(agg, str) else agg)  # type: ignore[misc]
                     for (column, agg) in column_to_agg
                 ]
 
@@ -2177,7 +2177,7 @@ class GroupBy:
                     wrap_df(self._df)
                     .lazy()
                     .groupby(self.by)
-                    .agg(column_to_agg)  # type: ignore
+                    .agg(column_to_agg)  # type: ignore[arg-type]
                     .collect(no_optimization=True, string_cache=False)
                 )
 
