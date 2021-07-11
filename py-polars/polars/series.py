@@ -102,7 +102,7 @@ def wrap_s(s: PySeries) -> "Series":
     return Series._from_pyseries(s)
 
 
-def _find_first_non_none(a: tp.List[Optional[Any]]) -> Any:
+def _find_first_non_none(a: Sequence[Optional[Any]]) -> Any:
     v = a[0]
     if v is None:
         return _find_first_non_none(a[1:])
@@ -113,8 +113,8 @@ def _find_first_non_none(a: tp.List[Optional[Any]]) -> Any:
 class Series:
     def __init__(
         self,
-        name: str,
-        values: Union["Series", np.ndarray, Sequence[Any], None] = None,
+        name: Union[str, Sequence[Any], "Series", pa.Array, np.ndarray] = "",
+        values: Optional[Union[Sequence[Any], "Series", pa.Array, np.ndarray]] = None,
         nullable: bool = True,
         dtype: Optional[Type[DataType]] = None,
     ):
@@ -133,27 +133,30 @@ class Series:
                 in Polars
             Series creation may be faster if set to False and there are no null values.
         """
-        # assume the first input were the values
-        if values is None and not isinstance(name, str):
-            values = name
-            name = ""
-        if isinstance(values, Series):
-            values.rename(name, in_place=True)
-            self._s: PySeries = values._s
-            return
+        # Handle case where values are passed as the first argument
+        if not isinstance(name, str):
+            if values is None:
+                values = name
+                name = ""
+            else:
+                raise ValueError("Series name must be a string.")
 
-        self._s: PySeries  # type: ignore
+        self._s: PySeries
+
         # series path
         if isinstance(values, Series):
-            self._from_pyseries(values)
+            values.rename(name, in_place=True)
+            self._s = values._s
+            return
+        elif isinstance(values, pa.Array):
+            self._s = self.from_arrow(name, values)._s
             return
         elif isinstance(values, dict):
             raise ValueError(
                 f"Constructing a Series with a dict is not supported for {values}"
             )
-        elif isinstance(values, pa.Array):
-            self._s = self.from_arrow(name, values)._s
-            return
+        elif values is None:
+            raise ValueError("Series values cannot be None.")
 
         # castable to numpy
         if not isinstance(values, np.ndarray) and not nullable:
@@ -194,7 +197,7 @@ class Series:
             else:
                 self._s = PySeries.new_object(name, values)
             return
-        # list path
+        # sequence path
         else:
             if dtype is not None:
                 if dtype == Date32:
@@ -232,7 +235,7 @@ class Series:
                 else:
                     raise ValueError(f"{dtype} not yet implemented")
             else:
-                dtype = _find_first_non_none(values)  # type: ignore
+                dtype = _find_first_non_none(values)
                 # order is important as booleans are instance of int in python.
                 if isinstance(dtype, bool):
                     self._s = PySeries.new_opt_bool(name, values)
