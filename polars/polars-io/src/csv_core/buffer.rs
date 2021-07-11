@@ -1,6 +1,8 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::csv::RunningSize;
 use crate::csv_core::parser::{drop_quotes, skip_whitespace};
+use arrow::array::{ArrayData, LargeStringArray};
+use polars_arrow::builder::BooleanBufferBuilder;
 use polars_core::prelude::*;
 use std::fmt::Debug;
 
@@ -104,17 +106,24 @@ where
 }
 
 pub(crate) struct Utf8Field {
-    builder: Utf8ChunkedBuilder,
-    // buffer that is used as output buffer for csv-core
-    string_buf: Vec<u8>,
+    name: String,
+    // buffer that holds the string data
+    data: AlignedVec<u8>,
+    // offsets in the string data buffer
+    offsets: AlignedVec<i64>,
+    validity: BooleanBufferBuilder,
     rdr: csv_core::Reader,
 }
 
 impl Utf8Field {
     fn new(name: &str, capacity: usize, str_capacity: usize, delimiter: u8) -> Self {
+        let mut offsets = AlignedVec::with_capacity_aligned(capacity + 1);
+        offsets.push(0);
         Self {
-            builder: Utf8ChunkedBuilder::new(name, capacity, str_capacity),
-            string_buf: vec![0; 256],
+            name: name.to_string(),
+            data: AlignedVec::with_capacity_aligned(str_capacity),
+            offsets,
+            validity: BooleanBufferBuilder::new(capacity),
             rdr: csv_core::ReaderBuilder::new().delimiter(delimiter).build(),
         }
     }
@@ -129,6 +138,15 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         _start_pos: usize,
         encoding: CsvEncoding,
     ) -> Result<()> {
+        // first check utf8 validity
+        let parse_result =
+            std::str::from_utf8(bytes).map_err(|_| PolarsError::Other("invalid utf8 data".into()));
+        let data_len = self.data.len();
+
+        // Write bytes to string buffer, but don't update the length just yet.
+        // We do that after we are sure its valid utf8.
+        // Or in case of LossyUtf8 and invalid utf8, we overwrite it with lossy parsed data and then
+        // set the length.
         let bytes = unsafe {
             // csv core expects the delimiter for its state machine, but we already split on that.
             // so we extend the slice by one to include the delimiter
@@ -138,31 +156,39 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
             let ptr = bytes.as_ptr();
             std::slice::from_raw_parts(ptr, bytes.len() + 1)
         };
-
-        if bytes.len() > self.string_buf.capacity() {
-            self.string_buf
-                .resize(std::cmp::max(bytes.len(), self.string_buf.capacity()), 0);
+        // check if field fits in the str data buffer
+        let remaining_capacity = self.data.capacity() - data_len;
+        if remaining_capacity < bytes.len() {
+            // exponential growth strategy
+            self.data
+                .reserve(std::cmp::max(self.data.capacity(), bytes.len()))
         }
-        let (_, _, n_end) = self.rdr.read_field(bytes, &mut self.string_buf);
-
-        let bytes = unsafe {
-            // SAFETY
-            // we know that n_end never will be larger than our output buffer
-            self.string_buf.get_unchecked(..n_end)
+        // Safety:
+        // we just allocated enough capacity and data_len is correct.
+        let out_buf = unsafe {
+            std::slice::from_raw_parts_mut(self.data.as_mut_ptr().add(data_len), bytes.len())
         };
+        let (_, _, n_written) = self.rdr.read_field(bytes, out_buf);
 
-        let parse_result =
-            std::str::from_utf8(bytes).map_err(|_| PolarsError::Other("invalid utf8 data".into()));
         match parse_result {
-            Ok(s) => {
-                self.builder.append_value(s);
+            Ok(_) => {
+                // Soundness
+                // the n_written from csv-core are now valid bytes so we can update the length.
+                unsafe { self.data.set_len(data_len + n_written) }
+                self.offsets.push(self.data.len() as i64);
+                self.validity.append(true);
             }
             Err(err) => {
                 if matches!(encoding, CsvEncoding::LossyUtf8) {
-                    let s = String::from_utf8_lossy(bytes);
-                    self.builder.append_value(s.as_ref());
+                    let s = String::from_utf8_lossy(
+                        &self.data.as_slice()[data_len..data_len + n_written],
+                    )
+                    .into_owned();
+                    self.data.extend_from_slice(s.as_bytes());
                 } else if ignore_errors {
-                    self.builder.append_null();
+                    // append null
+                    self.offsets.push(self.data.len() as i64);
+                    self.validity.append(false);
                 } else {
                     return Err(err);
                 }
@@ -290,7 +316,20 @@ impl Buffer {
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
-            Buffer::Utf8(v) => v.builder.finish().into_series(),
+            Buffer::Utf8(mut v) => {
+                v.offsets.shrink_to_fit();
+                v.data.shrink_to_fit();
+                let array_data = ArrayData::builder(ArrowDataType::LargeUtf8)
+                    .len(v.offsets.len() - 1)
+                    .add_buffer(v.offsets.into_arrow_buffer())
+                    .add_buffer(v.data.into_arrow_buffer())
+                    .null_bit_buffer(v.validity.finish())
+                    .build();
+
+                let arr = LargeStringArray::from(array_data);
+                let ca = Utf8Chunked::new_from_chunks(&v.name, vec![Arc::new(arr)]);
+                ca.into_series()
+            }
         }
     }
 
@@ -304,7 +343,10 @@ impl Buffer {
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
-            Buffer::Utf8(v) => v.builder.append_null(),
+            Buffer::Utf8(v) => {
+                v.offsets.push(v.data.len() as i64);
+                v.validity.append(false);
+            }
         };
     }
 
