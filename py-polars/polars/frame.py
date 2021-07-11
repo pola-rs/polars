@@ -1988,7 +1988,7 @@ class DataFrame:
             function that takes two `Series` and returns a `Series`.
         """
         if self.width == 1:
-            return self  # type: ignore
+            return self.select_at_idx(0)
         df = self
         acc = operation(df.select_at_idx(0), df.select_at_idx(1))
 
