@@ -2491,7 +2491,7 @@ class GBSelection:
 
     def apply(
         self,
-        func: Union[Callable[[Any], Any], Callable[[Any], Any]],
+        func: Callable[[Any], Any],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> DataFrame:
         """

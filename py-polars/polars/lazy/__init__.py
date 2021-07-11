@@ -884,10 +884,10 @@ class Expr:
     def __le__(self, other: Any) -> "Expr":
         return self.lt_eq(self.__to_expr(other))
 
-    def __eq__(self, other: Any) -> "Expr":  # type: ignore
+    def __eq__(self, other: Any) -> "Expr":  # type: ignore[override]
         return self.eq(self.__to_expr(other))
 
-    def __ne__(self, other: Any) -> "Expr":  # type: ignore
+    def __ne__(self, other: Any) -> "Expr":  # type: ignore[override]
         return self.neq(self.__to_expr(other))
 
     def __lt__(self, other: Any) -> "Expr":
