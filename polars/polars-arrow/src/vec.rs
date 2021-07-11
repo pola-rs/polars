@@ -153,22 +153,27 @@ impl<T> AlignedVec<T> {
     ///
     /// - `new_len` must be less than or equal to `capacity`.
     /// - The elements at `old_len..new_len` must be initialized.
+    #[inline]
     pub unsafe fn set_len(&mut self, new_len: usize) {
         self.inner.set_len(new_len);
     }
 
+    #[inline]
     pub fn as_ptr(&self) -> *const T {
         self.inner.as_ptr()
     }
 
+    #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut T {
         self.inner.as_mut_ptr()
     }
 
+    #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         self.inner.as_mut_slice()
     }
 
+    #[inline]
     pub fn as_slice(&self) -> &[T] {
         self.inner.as_slice()
     }
