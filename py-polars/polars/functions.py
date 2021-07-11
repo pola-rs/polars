@@ -268,7 +268,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        return from_arrow(tbl, rechunk)  # type: ignore
+        return from_arrow(tbl, rechunk)  # type: ignore[return-value]
 
     with _prepare_file_arg(file, **storage_options) as data:
         df = DataFrame.read_csv(
@@ -414,11 +414,11 @@ def read_ipc(
     """
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
-        return DataFrame.read_ipc(data, use_pyarrow)  # type: ignore
+        return DataFrame.read_ipc(data, use_pyarrow)
 
 
 def read_parquet(
-    source: Union[str, BinaryIO, Path, tp.List[str]],
+    source: Union[str, BinaryIO],
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
     columns: Optional[tp.List[str]] = None,
@@ -453,8 +453,10 @@ def read_parquet(
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
         if stop_after_n_rows is not None:
-            return DataFrame.read_parquet(source_prep, stop_after_n_rows=stop_after_n_rows)  # type: ignore
-        return from_arrow(  # type: ignore
+            return DataFrame.read_parquet(
+                source_prep, stop_after_n_rows=stop_after_n_rows
+            )
+        return from_arrow(  # type: ignore[return-value]
             pa.parquet.read_table(
                 source_prep, memory_map=memory_map, columns=columns, **kwargs
             )
@@ -533,7 +535,7 @@ def _from_pandas_helper(a: pd.Series) -> pa.Array:  # noqa: F821
 def from_pandas(
     df: Union[pd.DataFrame, pd.Series, pd.DatetimeIndex],
     rechunk: bool = True,  # noqa: F821
-) -> DataFrame:
+) -> Union[Series, DataFrame]:
     """
     Convert from a pandas DataFrame to a polars DataFrame.
 
@@ -549,7 +551,7 @@ def from_pandas(
     A Polars DataFrame
     """
     if isinstance(df, pd.Series) or isinstance(df, pd.DatetimeIndex):
-        return from_arrow(_from_pandas_helper(df))  # type: ignore
+        return from_arrow(_from_pandas_helper(df))
 
     # Note: we first tried to infer the schema via pyarrow and then modify the schema if needed.
     # However arrow 3.0 determines the type of a string like this:
@@ -562,10 +564,10 @@ def from_pandas(
         data[name] = _from_pandas_helper(s)
 
     table = pa.table(data)
-    return from_arrow(table, rechunk)  # type: ignore
+    return from_arrow(table, rechunk)
 
 
-def concat(dfs: tp.List[DataFrame], rechunk: bool = True) -> DataFrame:
+def concat(dfs: Sequence[DataFrame], rechunk: bool = True) -> DataFrame:
     """
     Aggregate all the Dataframes in a List of DataFrames to a single DataFrame.
 
@@ -580,7 +582,7 @@ def concat(dfs: tp.List[DataFrame], rechunk: bool = True) -> DataFrame:
     df = dfs[0].clone()
     for i in range(1, len(dfs)):
         try:
-            df = df.vstack(dfs[i], in_place=False)  # type: ignore
+            df = df.vstack(dfs[i], in_place=False)  # type: ignore[assignment]
         # could have a double borrow (one mutable one ref)
         except RuntimeError:
             df.vstack(dfs[i].clone(), in_place=True)
@@ -613,9 +615,7 @@ def repeat(val: Union[int, float, str], n: int, name: Optional[str] = None) -> S
         return Series.from_arrow(name, pa.repeat(val, n))
 
 
-def read_json(
-    source: Union[str, StringIO, Path],
-) -> DataFrame:
+def read_json(source: Union[str, BytesIO]) -> DataFrame:
     """
     Read into a DataFrame from JSON format.
 
@@ -624,7 +624,7 @@ def read_json(
     source
         Path to a file or a file like object.
     """
-    return DataFrame.read_json(source)  # type: ignore
+    return DataFrame.read_json(source)
 
 
 def from_rows(
@@ -682,7 +682,7 @@ def read_sql(sql: str, engine: Any) -> DataFrame:
         # conversion from pandas to arrow is very cheap compared to db driver
         import pandas as pd
 
-        return from_pandas(pd.read_sql(sql, engine))
+        return from_pandas(pd.read_sql(sql, engine))  # type: ignore[return-value]
     except ImportError:
         from sqlalchemy import text
 

@@ -26,12 +26,3 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     """
     ptr_ctype = ctypes.cast(ptr, ctypes.POINTER(ptr_type))
     return np.ctypeslib.as_array(ptr_ctype, (len,))
-
-
-def _as_float_ndarray(ptr: int, size: int) -> np.ndarray:
-    """
-    https://github.com/maciejkula/python-rustlearn
-
-    Turn a float* to a numpy array.
-    """
-    return np.core.multiarray.int_asbuffer(ptr, size * np.float32.itemsize)  # type: ignore

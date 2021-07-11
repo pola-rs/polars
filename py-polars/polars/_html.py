@@ -15,7 +15,7 @@ class Tag:
         elements: tp.List[str],
         tag: str,
         attributes: Optional[Dict[str, str]] = None,
-    ) -> None:
+    ):
         self.tag = tag
         self.elements = elements
         self.attributes = attributes
@@ -130,10 +130,11 @@ class HTMLFormatter:
     def write(self, inner: str) -> None:
         self.elements.append(inner)
 
-    def render(self) -> None:
+    def render(self) -> tp.List[str]:
         with Tag(self.elements, "table", {"border": "1", "class": "dataframe"}):
             self.write_header()
             self.write_body()
+        return self.elements
 
 
 class NotebookFormatter(HTMLFormatter):
@@ -166,7 +167,7 @@ class NotebookFormatter(HTMLFormatter):
         template = dedent("\n".join((template_first, template_mid, template_last)))
         self.write(template)
 
-    def render(self) -> tp.List[str]:  # type: ignore
+    def render(self) -> tp.List[str]:
         """
         Return the lines needed to render a HTML table.
         """

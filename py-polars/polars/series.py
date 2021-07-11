@@ -68,7 +68,10 @@ class IdentityDict(dict):
 
 
 def get_ffi_func(
-    name: str, dtype: Type[DataType], obj: Optional["Series"] = None, default: Optional = None  # type: ignore
+    name: str,
+    dtype: Type[DataType],
+    obj: Optional["Series"] = None,
+    default: Optional[Callable[[Any], Any]] = None,
 ) -> Callable[..., Any]:
     """
     Dynamically obtain the proper ffi function/ method.
@@ -321,7 +324,7 @@ class Series:
     def __or__(self, other: "Series") -> "Series":
         return wrap_s(self._s.bitor(other._s))
 
-    def __eq__(self, other: Any) -> "Series":  # type: ignore
+    def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -331,7 +334,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __ne__(self, other: Any) -> "Series":  # type: ignore
+    def __ne__(self, other: Any) -> "Series":  # type: ignore[override]
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -406,12 +409,11 @@ class Series:
         if self.dtype != primitive:
             return self.__floordiv__(other)
 
-        out_dtype: Type[DataType]
-        if not self.is_float():
-            out_dtype = Float64
-        else:
+        if self.is_float():
             out_dtype = self.dtype
-        return np.true_divide(self, other, dtype=out_dtype)  # type: ignore
+        else:
+            out_dtype = Float64
+        return np.true_divide(self, other, dtype=out_dtype)  # type: ignore[call-overload]
 
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
@@ -458,12 +460,11 @@ class Series:
         if self.dtype != primitive:
             self.__rfloordiv__(other)
 
-        out_dtype: Union[Type[Float64], str]
-        if not self.is_float():
-            out_dtype = Float64
+        if self.is_float():
+            out_dtype = self.dtype
         else:
-            out_dtype = DTYPE_TO_FFINAME[self.dtype]
-        return np.true_divide(other, self, dtype=out_dtype)  # type: ignore
+            out_dtype = Float64
+        return np.true_divide(other, self, dtype=out_dtype)  # type: ignore[call-overload]
 
     def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
@@ -513,7 +514,7 @@ class Series:
             elif key.dtype == UInt64:
                 self._s = self.set_at_idx(key, value)._s
             elif key.dtype == UInt32:
-                self._s = self.set_at_idx(key.cast_u64(), value)._s  # type: ignore
+                self._s = self.set_at_idx(key.cast(UInt64), value)._s
         # TODO: implement for these types without casting to series
         elif isinstance(key, (np.ndarray, list, tuple)):
             s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
@@ -1692,7 +1693,7 @@ class DateTimeNameSpace:
     Series.dt namespace.
     """
 
-    def __init__(self, series: Series) -> None:
+    def __init__(self, series: Series):
         self._s = series._s
 
     def strftime(self, fmt: str) -> Series:
@@ -1926,7 +1927,7 @@ class SeriesIter:
     Utility class that allows slow iteration over a `Series`.
     """
 
-    def __init__(self, length: int, s: Series) -> None:
+    def __init__(self, length: int, s: Series):
         self.len = length
         self.i = 0
         self.s = s
