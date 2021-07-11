@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import typing as tp
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
@@ -44,12 +44,12 @@ except ImportError:
 
 
 def _selection_to_pyexpr_list(
-    exprs: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+    exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
 ) -> tp.List[PyExpr]:
     pyexpr_list: tp.List[PyExpr]
-    if not isinstance(exprs, list):
-        if isinstance(exprs, str):
-            exprs = col(exprs)
+    if isinstance(exprs, str):
+        pyexpr_list = [col(exprs)._pyexpr]
+    elif isinstance(exprs, Expr):
         pyexpr_list = [exprs._pyexpr]
     else:
         pyexpr_list = []
@@ -145,7 +145,7 @@ class LazyFrame:
             dtype_list = []
             for k, v in dtype.items():
                 dtype_list.append((k, pytype_to_polars_type(v)))
-        null_values = _process_null_values(null_values)  # type: ignore
+        processed_null_values = _process_null_values(null_values)
 
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = PyLazyFrame.new_from_csv(
@@ -159,7 +159,7 @@ class LazyFrame:
             dtype_list,
             low_memory,
             comment_char,
-            null_values,
+            processed_null_values,
         )
         return self
 
@@ -421,7 +421,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(
-        self, exprs: Union[str, "Expr", tp.List[str], tp.List["Expr"]]
+        self, exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
     ) -> "LazyFrame":
         """
         Select columns from this DataFrame.
@@ -462,9 +462,9 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
-        right_on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
-        on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
+        left_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        right_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
         how: str = "inner",
         allow_parallel: bool = True,
         force_parallel: bool = False,
@@ -505,26 +505,35 @@ class LazyFrame:
                 self._ldf.join(ldf._ldf, [], [], allow_parallel, force_parallel, how)
             )
 
-        if isinstance(left_on, str):
-            left_on = [left_on]
-        if isinstance(right_on, str):
-            right_on = [right_on]
+        left_on_: Union[tp.List[str], tp.List[Expr], None]
+        if isinstance(left_on, (str, Expr)):
+            left_on_ = [left_on]  # type: ignore[assignment]
+        else:
+            left_on_ = left_on
+
+        right_on_: Union[tp.List[str], tp.List[Expr], None]
+        if isinstance(right_on, (str, Expr)):
+            right_on_ = [right_on]  # type: ignore[assignment]
+        else:
+            right_on_ = right_on
+
         if isinstance(on, str):
-            left_on = [on]
-            right_on = [on]
+            left_on_ = [on]
+            right_on_ = [on]
         elif isinstance(on, list):
-            left_on = on
-            right_on = on
-        if left_on is None or right_on is None:
+            left_on_ = on
+            right_on_ = on
+
+        if left_on_ is None or right_on_ is None:
             raise ValueError("You should pass the column to join on as an argument.")
 
         new_left_on = []
-        for column in left_on:  # type: ignore
+        for column in left_on_:
             if isinstance(column, str):
                 column = col(column)
             new_left_on.append(column._pyexpr)
         new_right_on = []
-        for column in right_on:  # type: ignore
+        for column in right_on_:
             if isinstance(column, str):
                 column = col(column)
             new_right_on.append(column._pyexpr)
@@ -884,10 +893,10 @@ class Expr:
     def __le__(self, other: Any) -> "Expr":
         return self.lt_eq(self.__to_expr(other))
 
-    def __eq__(self, other: Any) -> "Expr":  # type: ignore
+    def __eq__(self, other: Any) -> "Expr":  # type: ignore[override]
         return self.eq(self.__to_expr(other))
 
-    def __ne__(self, other: Any) -> "Expr":  # type: ignore
+    def __ne__(self, other: Any) -> "Expr":  # type: ignore[override]
         return self.neq(self.__to_expr(other))
 
     def __lt__(self, other: Any) -> "Expr":
@@ -1389,7 +1398,7 @@ class Expr:
 
     def apply(
         self,
-        f: Union["UDF", Callable[[Series], Series]],
+        f: Callable[[Series], Series],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
@@ -1437,7 +1446,7 @@ class Expr:
 
         # input x: Series of type list containing the group values
         def wrap_f(x: "Series") -> "Series":
-            return x.apply(f, return_dtype=return_dtype)  # type: ignore
+            return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f)
 
@@ -1836,7 +1845,7 @@ class WhenThenThen:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhenthenthen: "PyWhenThenThen") -> None:  # type: ignore # noqa F821
+    def __init__(self, pywhenthenthen: Any):
         self.pywenthenthen = pywhenthenthen
 
     def when(self, predicate: Expr) -> "WhenThenThen":
@@ -1869,7 +1878,7 @@ class WhenThen:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhenthen: "PyWhenThen"):  # type: ignore # noqa F821
+    def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
 
     def when(self, predicate: Expr) -> WhenThenThen:
@@ -1903,8 +1912,8 @@ class When:
         See Also: the `when` function.
         """
         expr = expr_to_lit_or_expr(expr)
-        whenthen = self._pywhen.then(expr._pyexpr)
-        return WhenThen(whenthen)
+        pywhenthen = self._pywhen.then(expr._pyexpr)
+        return WhenThen(pywhenthen)
 
 
 def when(expr: Expr) -> When:
@@ -2363,9 +2372,7 @@ class UDF:
     Deprecated: don't use me
     """
 
-    def __init__(
-        self, f: Callable[[Series], Series], return_dtype: Type[DataType]
-    ) -> None:
+    def __init__(self, f: Callable[[Series], Series], return_dtype: Type[DataType]):
         self.f = f
         self.return_dtype = return_dtype
 
@@ -2429,11 +2436,11 @@ def arange(
         return Series._from_pyseries(_series_from_range(low, high, step, dtype))
 
     if isinstance(low, int):
-        low = lit(low)  # type: ignore
+        low = lit(low)
     if isinstance(high, int):
-        high = lit(high)  # type: ignore
+        high = lit(high)
 
-    return map_binary(low, high, create_range, return_dtype=dtype)  # type: ignore
+    return map_binary(low, high, create_range, return_dtype=dtype)
 
 
 def argsort_by(
