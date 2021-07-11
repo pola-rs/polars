@@ -50,6 +50,13 @@ def _process_http_file(path: str) -> BytesIO:
 
 @overload
 def _prepare_file_arg(
+    file: Union[str, tp.List[str], Path, BinaryIO], **kwargs: Any
+) -> ContextManager[Union[str, BinaryIO]]:
+    ...
+
+
+@overload
+def _prepare_file_arg(
     file: Union[str, TextIO, Path, BinaryIO], **kwargs: Any
 ) -> ContextManager[Union[str, BinaryIO]]:
     ...
@@ -58,7 +65,7 @@ def _prepare_file_arg(
 @overload
 def _prepare_file_arg(
     file: Union[str, tp.List[str], TextIO, Path, BinaryIO], **kwargs: Any
-) -> ContextManager[Union[str, BinaryIO, tp.List[str], tp.List[BinaryIO]]]:
+) -> ContextManager[Union[str, tp.List[str], BinaryIO, tp.List[BinaryIO]]]:
     ...
 
 
@@ -418,7 +425,7 @@ def read_ipc(
 
 
 def read_parquet(
-    source: Union[str, BinaryIO],
+    source: Union[str, tp.List[str], Path, BinaryIO],
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
     columns: Optional[tp.List[str]] = None,
