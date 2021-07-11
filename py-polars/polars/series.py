@@ -1279,6 +1279,17 @@ class Series:
         """
         return wrap_s(self._s.round(decimals))
 
+    def dot(self, other: "Series") -> Optional[float]:
+        """
+        Compute the dot/inner product between two Series
+
+        Parameters
+        ----------
+        other
+            Series to compute dot product with
+        """
+        return self._s.dot(other._s)
+
     def apply(
         self,
         func: Callable[[Any], Any],

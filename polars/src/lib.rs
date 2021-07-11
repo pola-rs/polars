@@ -121,6 +121,7 @@
 //!     - `is_first` - Check if element is first unique value.
 //!     - `is_last` - Check if element is last unique value.
 //!     - `checked_arithmetic` - checked arithmetic/ returning `None` on invalid operations.
+//!     - `dot_product` - Dot/inner product on Series and Expressions.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)

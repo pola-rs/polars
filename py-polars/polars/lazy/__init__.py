@@ -1035,6 +1035,18 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.round(decimals))
 
+    def dot(self, other: "Expr") -> "Expr":
+        """
+        Compute the dot/inner product between two Expressions
+
+        Parameters
+        ----------
+        other
+            Expression to compute dot product with
+        """
+        other = expr_to_lit_or_expr(other, str_to_lit=False)
+        return wrap_expr(self._pyexpr.dot(other._pyexpr))
+
     def cast(self, dtype: Type[Any]) -> "Expr":
         """
         Cast an expression to a different data types.
