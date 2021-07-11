@@ -74,7 +74,7 @@ class DataFrame:
         self,
         data: Union[Dict[str, Sequence], tp.List[Series], np.ndarray],
         nullable: bool = True,
-    ) -> None:
+    ):
         """
         A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
         """
@@ -248,7 +248,7 @@ class DataFrame:
             for k, v in dtype.items():
                 dtype_list.append((k, pytype_to_polars_type(v)))
 
-        null_values = _process_null_values(null_values)  # type: ignore
+        processed_null_values = _process_null_values(null_values)
 
         self._df = PyDataFrame.read_csv(
             file,
@@ -268,7 +268,7 @@ class DataFrame:
             dtype_list,
             low_memory,
             comment_char,
-            null_values,
+            processed_null_values,
         )
         return self
 
@@ -723,8 +723,8 @@ class DataFrame:
         if isinstance(item, Sequence):
             if isinstance(item[0], str):
                 return wrap_df(self._df.select(item))
-            if hasattr(item[0], "_pyexpr"):
-                return self.select(item)  # type: ignore
+            elif isinstance(item[0], pl.Expr):
+                return self.select(item)
 
         # select rows by mask or index
         # df[[1, 2, 3]]
@@ -1366,8 +1366,8 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: Optional[Union[str, tp.List[str], "Expr", tp.List["Expr"]]] = None,
-        right_on: Optional[Union[str, tp.List[str], "Expr", tp.List["Expr"]]] = None,
+        left_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        right_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
         on: Optional[Union[str, tp.List[str]]] = None,
         how: str = "inner",
     ) -> Union["DataFrame", "LazyFrame"]:
@@ -1446,23 +1446,32 @@ class DataFrame:
         if how == "cross":
             return wrap_df(self._df.join(df._df, [], [], how))
 
-        if isinstance(left_on, str):
-            left_on = [left_on]
-        if isinstance(right_on, str):
-            right_on = [right_on]
+        left_on_: Union[tp.List[str], tp.List[pl.Expr], None]
+        if isinstance(left_on, (str, pl.Expr)):
+            left_on_ = [left_on]  # type: ignore[assignment]
+        else:
+            left_on_ = left_on
+
+        right_on_: Union[tp.List[str], tp.List[pl.Expr], None]
+        if isinstance(right_on, (str, pl.Expr)):
+            right_on_ = [right_on]  # type: ignore[assignment]
+        else:
+            right_on_ = right_on
 
         if isinstance(on, str):
-            left_on = [on]
-            right_on = [on]
+            left_on_ = [on]
+            right_on_ = [on]
         elif isinstance(on, list):
-            left_on = on
-            right_on = on
-        if left_on is None or right_on is None:
-            raise ValueError("You should pass the column to join on as an argument.")
-        if isinstance(left_on[0], pl.Expr) or isinstance(right_on[0], pl.Expr):  # type: ignore
-            return self.lazy().join(df.lazy(), left_on, right_on, how=how)
+            left_on_ = on
+            right_on_ = on
 
-        return wrap_df(self._df.join(df._df, left_on, right_on, how))
+        if left_on_ is None or right_on_ is None:
+            raise ValueError("You should pass the column to join on as an argument.")
+
+        if isinstance(left_on_[0], pl.Expr) or isinstance(right_on_[0], pl.Expr):
+            return self.lazy().join(df.lazy(), left_on, right_on, how=how)
+        else:
+            return wrap_df(self._df.join(df._df, left_on_, right_on_, how))
 
     def apply(
         self,
@@ -1742,7 +1751,7 @@ class DataFrame:
         return wrap_ldf(self._df.lazy())
 
     def select(
-        self, exprs: Union[str, "Expr", tp.List[str], tp.List["Expr"]]
+        self, exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
     ) -> "DataFrame":
         """
         Select columns from this DataFrame.
@@ -2033,7 +2042,7 @@ class GroupBy:
         downsample: bool = False,
         rule: Optional[str] = None,
         downsample_n: int = 0,
-    ) -> None:
+    ):
         self._df = df
         self.by = by
         self.downsample = downsample
@@ -2167,8 +2176,8 @@ class GroupBy:
         elif isinstance(column_to_agg, list):
 
             if isinstance(column_to_agg[0], tuple):
-                column_to_agg = [  # type: ignore
-                    (column, [agg] if isinstance(agg, str) else agg)  # type: ignore
+                column_to_agg = [  # type: ignore[misc]
+                    (column, [agg] if isinstance(agg, str) else agg)  # type: ignore[misc]
                     for (column, agg) in column_to_agg
                 ]
 
@@ -2177,7 +2186,7 @@ class GroupBy:
                     wrap_df(self._df)
                     .lazy()
                     .groupby(self.by)
-                    .agg(column_to_agg)  # type: ignore
+                    .agg(column_to_agg)  # type: ignore[arg-type]
                     .collect(no_optimization=True, string_cache=False)
                 )
 
@@ -2316,7 +2325,7 @@ class PivotOps:
         by: Union[str, tp.List[str]],
         pivot_column: str,
         values_column: str,
-    ) -> None:
+    ):
         self._df = df
         self.by = by
         self.pivot_column = pivot_column
@@ -2392,7 +2401,7 @@ class GBSelection:
         downsample: bool = False,
         rule: Optional[str] = None,
         downsample_n: int = 0,
-    ) -> None:
+    ):
         self._df = df
         self.by = by
         self.selection = selection
@@ -2491,18 +2500,18 @@ class GBSelection:
 
     def apply(
         self,
-        func: Union[Callable[[Any], Any], Callable[[Any], Any]],
+        func: Callable[[Any], Any],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> DataFrame:
         """
         Apply a function over the groups.
         """
         df = self.agg_list()
-        if isinstance(self.selection, str):
-            selection = [self.selection]
-        else:
-            selection = self.selection
-        for name in selection:  # type: ignore
+        if self.selection is None:
+            raise TypeError(
+                "apply not available for Groupby.select_all(). Use select() instead."
+            )
+        for name in self.selection:
             s = df.drop_in_place(name + "_agg_list").apply(func, return_dtype)
             s.rename(name, in_place=True)
             df[name] = s
