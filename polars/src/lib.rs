@@ -106,6 +106,7 @@
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
+//!     - `simdutf8` - Improve performance of utf8 validation during csv parsing by using [simdutf8 crate](https://github.com/rusticstuff/simdutf8)
 //! * `DataFrame` operations:
 //!     - `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns

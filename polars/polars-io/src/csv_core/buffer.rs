@@ -139,6 +139,10 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         encoding: CsvEncoding,
     ) -> Result<()> {
         // first check utf8 validity
+        #[cfg(feature = "simdutf8")]
+        let parse_result = simdutf8::basic::from_utf8(bytes)
+            .map_err(|_| PolarsError::Other("invalid utf8 data".into()));
+        #[cfg(not(feature = "simdutf8"))]
         let parse_result =
             std::str::from_utf8(bytes).map_err(|_| PolarsError::Other("invalid utf8 data".into()));
         let data_len = self.data.len();
