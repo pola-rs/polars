@@ -68,7 +68,10 @@ class IdentityDict(dict):
 
 
 def get_ffi_func(
-    name: str, dtype: Type[DataType], obj: Optional["Series"] = None, default: Optional = None  # type: ignore
+    name: str,
+    dtype: Type[DataType],
+    obj: Optional["Series"] = None,
+    default: Optional[Callable[[Any], Any]] = None,
 ) -> Callable[..., Any]:
     """
     Dynamically obtain the proper ffi function/ method.
@@ -513,7 +516,7 @@ class Series:
             elif key.dtype == UInt64:
                 self._s = self.set_at_idx(key, value)._s
             elif key.dtype == UInt32:
-                self._s = self.set_at_idx(key.cast_u64(), value)._s  # type: ignore
+                self._s = self.set_at_idx(key.cast(UInt64), value)._s
         # TODO: implement for these types without casting to series
         elif isinstance(key, (np.ndarray, list, tuple)):
             s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
