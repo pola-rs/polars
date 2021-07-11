@@ -517,7 +517,7 @@ def from_arrow(
         raise ValueError(f"expected arrow table / array, got {a}")
 
 
-def _from_pandas_helper(a: pd.Series) -> pa.Array:  # noqa: F821
+def _from_pandas_helper(a: "pd.Series") -> pa.Array:  # noqa: F821
     dtype = a.dtype
     if dtype == "datetime64[ns]":
         # We first cast to ms because that's the unit of Date64,
@@ -533,7 +533,7 @@ def _from_pandas_helper(a: pd.Series) -> pa.Array:  # noqa: F821
 
 
 def from_pandas(
-    df: Union[pd.DataFrame, pd.Series, pd.DatetimeIndex],
+    df: Union["pd.DataFrame", "pd.Series", "pd.DatetimeIndex"],
     rechunk: bool = True,  # noqa: F821
 ) -> Union[Series, DataFrame]:
     """

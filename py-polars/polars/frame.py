@@ -23,7 +23,6 @@ from typing import (
 )
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
 import pyarrow.feather
 import pyarrow.parquet
@@ -43,10 +42,14 @@ except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
-    __pdoc__ = {"wrap_df": False}
 
 if TYPE_CHECKING:
     from .lazy import Expr, LazyFrame
+
+try:
+    import pandas as pd
+except ImportError:
+    pass
 
 
 def wrap_df(df: PyDataFrame) -> "DataFrame":
@@ -414,7 +417,7 @@ class DataFrame:
 
     def to_pandas(
         self, *args: Any, date_as_object: bool = False, **kwargs: Any
-    ) -> pd.DataFrame:  # noqa: F821
+    ) -> "pd.DataFrame":  # noqa: F821
         """
         Cast to a Pandas DataFrame. This requires that Pandas is installed.
         This operation clones data.
