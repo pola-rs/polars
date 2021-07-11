@@ -74,6 +74,7 @@ is_first = ["polars-core/is_first", "polars-lazy/is_first"]
 is_last = ["polars-core/is_last"]
 asof_join = ["polars-core/asof_join"]
 cross_join = ["polars-core/cross_join", "polars-lazy/cross_join"]
+dot_product = ["polars-core/dot_product", "polars-lazy/dot_product"]
 
 # don't use this
 private = []
