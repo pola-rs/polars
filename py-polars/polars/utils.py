@@ -1,6 +1,6 @@
 import typing as tp
 import warnings
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Tuple, Union
 
 import pyarrow as pa
 

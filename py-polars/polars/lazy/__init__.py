@@ -1836,7 +1836,7 @@ class WhenThenThen:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhenthenthen: "PyWhenThenThen"):  # type: ignore # noqa F821
+    def __init__(self, pywhenthenthen: Any):
         self.pywenthenthen = pywhenthenthen
 
     def when(self, predicate: Expr) -> "WhenThenThen":
@@ -1869,7 +1869,7 @@ class WhenThen:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhenthen: "PyWhenThen"):  # type: ignore # noqa F821
+    def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
 
     def when(self, predicate: Expr) -> WhenThenThen:
@@ -1903,8 +1903,8 @@ class When:
         See Also: the `when` function.
         """
         expr = expr_to_lit_or_expr(expr)
-        whenthen = self._pywhen.then(expr._pyexpr)
-        return WhenThen(whenthen)
+        pywhenthen = self._pywhen.then(expr._pyexpr)
+        return WhenThen(pywhenthen)
 
 
 def when(expr: Expr) -> When:
@@ -2427,11 +2427,11 @@ def arange(
         return Series._from_pyseries(_series_from_range(low, high, step, dtype))
 
     if isinstance(low, int):
-        low = lit(low)  # type: ignore
+        low = lit(low)
     if isinstance(high, int):
-        high = lit(high)  # type: ignore
+        high = lit(high)
 
-    return map_binary(low, high, create_range, return_dtype=dtype)  # type: ignore
+    return map_binary(low, high, create_range, return_dtype=dtype)
 
 
 def argsort_by(
