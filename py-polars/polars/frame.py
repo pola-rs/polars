@@ -2498,11 +2498,11 @@ class GBSelection:
         Apply a function over the groups.
         """
         df = self.agg_list()
-        if isinstance(self.selection, str):
-            selection = [self.selection]
-        else:
-            selection = self.selection
-        for name in selection:  # type: ignore
+        if self.selection is None:
+            raise TypeError(
+                "apply not available for Groupby.select_all(). Use select() instead."
+            )
+        for name in self.selection:
             s = df.drop_in_place(name + "_agg_list").apply(func, return_dtype)
             s.rename(name, in_place=True)
             df[name] = s
