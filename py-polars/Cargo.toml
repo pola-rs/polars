@@ -55,7 +55,8 @@ features = [
     "is_first",
     "asof_join",
     "cross_join",
-    "dot_product"
+    "dot_product",
+    "simdutf8"
 ]
 
 #[patch.crates-io]
