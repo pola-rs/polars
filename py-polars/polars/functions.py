@@ -268,7 +268,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        return from_arrow(tbl, rechunk)  # type: ignore
+        return from_arrow(tbl, rechunk)  # type: ignore[return-value]
 
     with _prepare_file_arg(file, **storage_options) as data:
         df = DataFrame.read_csv(
@@ -456,7 +456,7 @@ def read_parquet(
             return DataFrame.read_parquet(
                 source_prep, stop_after_n_rows=stop_after_n_rows
             )
-        return from_arrow(  # type: ignore
+        return from_arrow(  # type: ignore[return-value]
             pa.parquet.read_table(
                 source_prep, memory_map=memory_map, columns=columns, **kwargs
             )
@@ -582,7 +582,7 @@ def concat(dfs: Sequence[DataFrame], rechunk: bool = True) -> DataFrame:
     df = dfs[0].clone()
     for i in range(1, len(dfs)):
         try:
-            df = df.vstack(dfs[i], in_place=False)  # type: ignore
+            df = df.vstack(dfs[i], in_place=False)  # type: ignore[assignment]
         # could have a double borrow (one mutable one ref)
         except RuntimeError:
             df.vstack(dfs[i].clone(), in_place=True)
@@ -682,7 +682,7 @@ def read_sql(sql: str, engine: Any) -> DataFrame:
         # conversion from pandas to arrow is very cheap compared to db driver
         import pandas as pd
 
-        return from_pandas(pd.read_sql(sql, engine))  # type: ignore
+        return from_pandas(pd.read_sql(sql, engine))  # type: ignore[return-value]
     except ImportError:
         from sqlalchemy import text
 
