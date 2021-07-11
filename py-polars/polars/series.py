@@ -409,11 +409,10 @@ class Series:
         if self.dtype != primitive:
             return self.__floordiv__(other)
 
-        out_dtype: Type[DataType]
-        if not self.is_float():
-            out_dtype = Float64
-        else:
+        if self.is_float():
             out_dtype = self.dtype
+        else:
+            out_dtype = Float64
         return np.true_divide(self, other, dtype=out_dtype)  # type: ignore
 
     def __floordiv__(self, other: Any) -> "Series":
@@ -461,11 +460,10 @@ class Series:
         if self.dtype != primitive:
             self.__rfloordiv__(other)
 
-        out_dtype: Union[Type[Float64], str]
-        if not self.is_float():
-            out_dtype = Float64
+        if self.is_float():
+            out_dtype = self.dtype
         else:
-            out_dtype = DTYPE_TO_FFINAME[self.dtype]
+            out_dtype = Float64
         return np.true_divide(other, self, dtype=out_dtype)  # type: ignore
 
     def __rfloordiv__(self, other: Any) -> "Series":
