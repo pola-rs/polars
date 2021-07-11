@@ -1109,6 +1109,10 @@ impl PySeries {
     pub fn shrink_to_fit(&mut self) {
         self.series.shrink_to_fit();
     }
+
+    pub fn dot(&self, other: &PySeries) -> Option<f64> {
+        self.series.dot(&other.series)
+    }
 }
 
 macro_rules! impl_ufuncs {

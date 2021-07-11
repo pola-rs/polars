@@ -765,3 +765,10 @@ def test_str_concat():
     out = df.with_column((pl.lit("Dr. ") + pl.col("name")).alias("graduated_name"))
     assert out["graduated_name"][0] == "Dr. ham"
     assert out["graduated_name"][1] == "Dr. spam"
+
+
+def dot_product():
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
+
+    assert df["a"].dot(df["b"]) == 20
+    assert df[[col("a").dot("b")]][0, "a"] == 20

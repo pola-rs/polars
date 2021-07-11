@@ -1478,6 +1478,11 @@ impl Series {
             format!("{:?} is not a floating point datatype", self.dtype()).into(),
         ))
     }
+
+    #[cfg(feature = "dot_product")]
+    pub fn dot(&self, other: &Series) -> Option<f64> {
+        (self * other).sum::<f64>()
+    }
 }
 
 impl Deref for Series {

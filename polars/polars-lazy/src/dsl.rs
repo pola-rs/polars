@@ -1108,6 +1108,16 @@ impl Expr {
             Some(DataType::Boolean),
         )
     }
+
+    #[cfg(feature = "dot_product")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
+    pub fn dot(self, other: Expr) -> Expr {
+        let function = |s: Series, other: Series| Ok((&s * &other).sum_as_series());
+
+        map_binary_lazy_field(self, other, function, |_schema, _ctxt, l, _r| {
+            Some(Field::new(l.name(), l.data_type().clone()))
+        })
+    }
 }
 
 /// Create a Column Expression based on a column name.

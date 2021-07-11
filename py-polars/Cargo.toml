@@ -54,7 +54,8 @@ features = [
     "round_series",
     "is_first",
     "asof_join",
-    "cross_join"
+    "cross_join",
+    "dot_product"
 ]
 
 #[patch.crates-io]
