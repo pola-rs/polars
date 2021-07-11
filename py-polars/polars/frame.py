@@ -1446,23 +1446,32 @@ class DataFrame:
         if how == "cross":
             return wrap_df(self._df.join(df._df, [], [], how))
 
-        if isinstance(left_on, str):
-            left_on = [left_on]
-        if isinstance(right_on, str):
-            right_on = [right_on]
+        left_on_: Union[tp.List[str], tp.List[pl.Expr], None]
+        if isinstance(left_on, (str, pl.Expr)):
+            left_on_ = [left_on]  # type: ignore[assignment]
+        else:
+            left_on_ = left_on
+
+        right_on_: Union[tp.List[str], tp.List[pl.Expr], None]
+        if isinstance(right_on, (str, pl.Expr)):
+            right_on_ = [right_on]  # type: ignore[assignment]
+        else:
+            right_on_ = right_on
 
         if isinstance(on, str):
-            left_on = [on]
-            right_on = [on]
+            left_on_ = [on]
+            right_on_ = [on]
         elif isinstance(on, list):
-            left_on = on
-            right_on = on
-        if left_on is None or right_on is None:
-            raise ValueError("You should pass the column to join on as an argument.")
-        if isinstance(left_on[0], pl.Expr) or isinstance(right_on[0], pl.Expr):  # type: ignore
-            return self.lazy().join(df.lazy(), left_on, right_on, how=how)
+            left_on_ = on
+            right_on_ = on
 
-        return wrap_df(self._df.join(df._df, left_on, right_on, how))
+        if left_on_ is None or right_on_ is None:
+            raise ValueError("You should pass the column to join on as an argument.")
+
+        if isinstance(left_on_[0], pl.Expr) or isinstance(right_on_[0], pl.Expr):
+            return self.lazy().join(df.lazy(), left_on, right_on, how=how)
+        else:
+            return wrap_df(self._df.join(df._df, left_on_, right_on_, how))
 
     def apply(
         self,
