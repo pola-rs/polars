@@ -462,9 +462,9 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
-        right_on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
-        on: Optional[Union["Expr", str, tp.List["Expr"], tp.List[str]]] = None,
+        left_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        right_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
         how: str = "inner",
         allow_parallel: bool = True,
         force_parallel: bool = False,

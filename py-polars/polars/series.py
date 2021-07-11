@@ -324,7 +324,7 @@ class Series:
     def __or__(self, other: "Series") -> "Series":
         return wrap_s(self._s.bitor(other._s))
 
-    def __eq__(self, other: Any) -> "Series":  # type: ignore
+    def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -334,7 +334,7 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
-    def __ne__(self, other: Any) -> "Series":  # type: ignore
+    def __ne__(self, other: Any) -> "Series":  # type: ignore[override]
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, nullable=True)
         if isinstance(other, Series):
@@ -413,7 +413,7 @@ class Series:
             out_dtype = self.dtype
         else:
             out_dtype = Float64
-        return np.true_divide(self, other, dtype=out_dtype)  # type: ignore
+        return np.true_divide(self, other, dtype=out_dtype)  # type: ignore[call-overload]
 
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
@@ -464,7 +464,7 @@ class Series:
             out_dtype = self.dtype
         else:
             out_dtype = Float64
-        return np.true_divide(other, self, dtype=out_dtype)  # type: ignore
+        return np.true_divide(other, self, dtype=out_dtype)  # type: ignore[call-overload]
 
     def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
