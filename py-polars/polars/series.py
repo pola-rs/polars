@@ -29,7 +29,7 @@ from .datatypes import (
     Utf8,
     dtype_to_ctype,
     dtype_to_primitive,
-    dtypes,
+    DTYPES,
 )
 from .utils import _ptr_to_numpy, coerce_arrow
 
@@ -535,7 +535,7 @@ class Series:
         """
         Get the data type of this Series.
         """
-        return dtypes[self._s.dtype()]
+        return DTYPES[self._s.dtype()]
 
     def describe(self) -> Dict[str, Union[int, float]]:
         """

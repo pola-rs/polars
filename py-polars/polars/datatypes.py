@@ -11,6 +11,44 @@ __pdoc__ = {
     "pytype_to_polars_type": False,
 }
 
+__all__ = [
+    "DataType",
+    "Int8",
+    "Int16",
+    "Int32",
+    "Int64",
+    "UInt8",
+    "UInt16",
+    "UInt32",
+    "UInt64",
+    "Float32",
+    "Float64",
+    "Boolean",
+    "Utf8",
+    "List",
+    "Date32",
+    "Date64",
+    "Time32Millisecond",
+    "Time32Second",
+    "Time64Nanosecond",
+    "Time64Microsecond",
+    "DurationNanosecond",
+    "DurationMicrosecond",
+    "DurationMillisecond",
+    "DurationSecond",
+    "TimestampNanosecond",
+    "TimestampMicrosecond",
+    "TimestampMillisecond",
+    "TimestampSecond",
+    "Object",
+    "Categorical",
+    "DTYPES",
+    "DTYPE_TO_FFINAME",
+    "dtype_to_primitive",
+    "dtype_to_ctype",
+    "pytype_to_polars_type",
+]
+
 
 class DataType:
     pass
@@ -133,7 +171,7 @@ class Categorical(DataType):
 
 
 # Don't change the order of these!
-dtypes: tp.List[Type[DataType]] = [
+DTYPES: tp.List[Type[DataType]] = [
     Int8,
     Int16,
     Int32,
@@ -224,7 +262,7 @@ def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:  # noqa: F821
 
 def dtype_to_int(dtype: Type[DataType]) -> int:
     i = 0
-    for dt in dtypes:
+    for dt in DTYPES:
         if dt == dtype:
             return i
         i += 1
