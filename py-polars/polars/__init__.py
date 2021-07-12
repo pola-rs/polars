@@ -1,6 +1,6 @@
 # flake8: noqa
 from .datatypes import *
-from .frame import DataFrame, StringCache, wrap_df
+from .frame import *
 from .functions import *
 from .lazy import *
 from .series import Series, wrap_s

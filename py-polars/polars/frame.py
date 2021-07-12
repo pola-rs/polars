@@ -7,7 +7,6 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from types import TracebackType
 from typing import (
-    TYPE_CHECKING,
     Any,
     BinaryIO,
     Callable,
@@ -43,20 +42,25 @@ except ImportError:
 
     warnings.warn("binary files missing")
 
-if TYPE_CHECKING:
-    from .lazy import Expr, LazyFrame
 
 try:
     import pandas as pd
 except ImportError:
     pass
 
+__all__ = [
+    "DataFrame",
+    "wrap_df",
+    "StringCache",
+    "toggle_string_cache",
+]
+
 
 def wrap_df(df: PyDataFrame) -> "DataFrame":
     return DataFrame._from_pydf(df)
 
 
-def _prepare_other_arg(other: Any) -> Series:
+def _prepare_other_arg(other: Any) -> "Series":
     # if not a series create singleton series such that it will broadcast
     if not isinstance(other, Series):
         if isinstance(other, str):
@@ -825,7 +829,7 @@ class DataFrame:
         """
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self, predicate: "Expr") -> "DataFrame":
+    def filter(self, predicate: "pl.Expr") -> "DataFrame":
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -1035,7 +1039,7 @@ class DataFrame:
 
     def sort(
         self,
-        by: Union[str, "Expr", tp.List["Expr"]],
+        by: Union[str, "pl.Expr", tp.List["pl.Expr"]],
         in_place: bool = False,
         reverse: Union[bool, tp.List[bool]] = False,
     ) -> Optional["DataFrame"]:
@@ -1369,11 +1373,15 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
-        right_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        left_on: Optional[
+            Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]]
+        ] = None,
+        right_on: Optional[
+            Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]]
+        ] = None,
         on: Optional[Union[str, tp.List[str]]] = None,
         how: str = "inner",
-    ) -> Union["DataFrame", "LazyFrame"]:
+    ) -> Union["DataFrame", "pl.LazyFrame"]:
         """
         SQL like joins.
 
@@ -1495,7 +1503,7 @@ class DataFrame:
         """
         return wrap_s(self._df.apply(f, return_dtype))
 
-    def with_column(self, column: Union[Series, "Expr"]) -> "DataFrame":
+    def with_column(self, column: Union[Series, "pl.Expr"]) -> "DataFrame":
         """
         Return a new DataFrame with the column added or replaced.
 
@@ -1623,7 +1631,7 @@ class DataFrame:
         """
         return list(map(lambda s: wrap_s(s), self._df.get_columns()))
 
-    def fill_none(self, strategy: Union[str, "Expr"]) -> "DataFrame":
+    def fill_none(self, strategy: Union[str, "pl.Expr"]) -> "DataFrame":
         """
         Fill None values by a filling strategy or an Expression evaluation.
 
@@ -1735,7 +1743,7 @@ class DataFrame:
         """
         return wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "LazyFrame":
+    def lazy(self) -> "pl.LazyFrame":
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -1754,7 +1762,7 @@ class DataFrame:
         return wrap_ldf(self._df.lazy())
 
     def select(
-        self, exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
+        self, exprs: Union[str, "pl.Expr", Sequence[str], Sequence["pl.Expr"]]
     ) -> "DataFrame":
         """
         Select columns from this DataFrame.
@@ -1768,7 +1776,7 @@ class DataFrame:
             self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
         )
 
-    def with_columns(self, exprs: Union["Expr", tp.List["Expr"]]) -> "DataFrame":
+    def with_columns(self, exprs: Union["pl.Expr", tp.List["pl.Expr"]]) -> "DataFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -2127,8 +2135,8 @@ class GroupBy:
         column_to_agg: Union[
             tp.List[Tuple[str, tp.List[str]]],
             Dict[str, Union[str, tp.List[str]]],
-            tp.List["Expr"],
-            "Expr",
+            tp.List["pl.Expr"],
+            "pl.Expr",
         ],
     ) -> DataFrame:
         """
