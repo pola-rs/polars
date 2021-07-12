@@ -1,4 +1,3 @@
-import typing as tp
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -8,6 +7,7 @@ from typing import (
     ContextManager,
     Dict,
     Iterator,
+    List,
     Optional,
     Sequence,
     TextIO,
@@ -37,10 +37,25 @@ try:
 except ImportError:
     WITH_FSSPEC = False
 
-from .datatypes import DataType
-from .frame import DataFrame
-from .lazy import LazyFrame
-from .series import Series
+import polars as pl
+
+__all__ = [
+    "get_dummies",
+    "concat",
+    "repeat",
+    "arg_where",
+    "read_csv",
+    "read_parquet",
+    "read_json",
+    "read_sql",
+    "read_ipc",
+    "scan_csv",
+    "scan_parquet",
+    "from_arrow",
+    "from_pandas",
+    "from_rows",
+    "from_arrow_table",  # deprecated
+]
 
 
 def _process_http_file(path: str) -> BytesIO:
@@ -50,7 +65,7 @@ def _process_http_file(path: str) -> BytesIO:
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, tp.List[str], Path, BinaryIO], **kwargs: Any
+    file: Union[str, List[str], Path, BinaryIO], **kwargs: Any
 ) -> ContextManager[Union[str, BinaryIO]]:
     ...
 
@@ -64,14 +79,14 @@ def _prepare_file_arg(
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, tp.List[str], TextIO, Path, BinaryIO], **kwargs: Any
-) -> ContextManager[Union[str, tp.List[str], BinaryIO, tp.List[BinaryIO]]]:
+    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
+) -> ContextManager[Union[str, List[str], BinaryIO, List[BinaryIO]]]:
     ...
 
 
 def _prepare_file_arg(
-    file: Union[str, tp.List[str], TextIO, Path, BinaryIO], **kwargs: Any
-) -> ContextManager[Union[str, BinaryIO, tp.List[str], tp.List[BinaryIO]]]:
+    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
+) -> ContextManager[Union[str, BinaryIO, List[str], List[BinaryIO]]]:
     """
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
@@ -120,7 +135,7 @@ def _prepare_file_arg(
     return managed_file(file)
 
 
-def get_dummies(df: DataFrame) -> DataFrame:
+def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
     """
     Convert categorical variables into dummy/indicator variables.
 
@@ -140,20 +155,20 @@ def read_csv(
     ignore_errors: bool = False,
     stop_after_n_rows: Optional[int] = None,
     skip_rows: int = 0,
-    projection: Optional[tp.List[int]] = None,
+    projection: Optional[List[int]] = None,
     sep: str = ",",
-    columns: Optional[tp.List[str]] = None,
+    columns: Optional[List[str]] = None,
     rechunk: bool = True,
     encoding: str = "utf8",
     n_threads: Optional[int] = None,
-    dtype: Optional[Dict[str, Type[DataType]]] = None,
-    new_columns: Optional[tp.List[str]] = None,
-    use_pyarrow: bool = False,
+    dtype: Optional[Dict[str, Type["pl.DataType"]]] = None,
+    new_columns: Optional[List[str]] = None,
+    use_pyarrow: bool = True,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
     storage_options: Optional[Dict] = None,
-    null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
-) -> DataFrame:
+    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+) -> "pl.DataFrame":
     """
     Read into a DataFrame from a csv file.
 
@@ -212,7 +227,7 @@ def read_csv(
         Values to interpret as null values. You can provide a:
 
         - str -> all values encountered equal to this string will be null
-        - tp.List[str] -> A null value per column.
+        - List[str] -> A null value per column.
         - Dict[str, str] -> A dictionary that maps column name to a null value string.
 
     Returns
@@ -278,7 +293,7 @@ def read_csv(
         return from_arrow(tbl, rechunk)  # type: ignore[return-value]
 
     with _prepare_file_arg(file, **storage_options) as data:
-        df = DataFrame.read_csv(
+        df = pl.DataFrame.read_csv(
             file=data,
             infer_schema_length=infer_schema_length,
             batch_size=batch_size,
@@ -311,11 +326,11 @@ def scan_csv(
     skip_rows: int = 0,
     stop_after_n_rows: Optional[int] = None,
     cache: bool = True,
-    dtype: Optional[Dict[str, Type[DataType]]] = None,
+    dtype: Optional[Dict[str, Type["pl.DataType"]]] = None,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
-    null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
-) -> LazyFrame:
+    null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+) -> "pl.LazyFrame":
     """
     Lazily read from a csv file.
 
@@ -350,12 +365,12 @@ def scan_csv(
         Values to interpret as null values. You can provide a:
 
         - str -> all values encountered equal to this string will be null
-        - tp.List[str] -> A null value per column.
+        - List[str] -> A null value per column.
         - Dict[str, str] -> A dictionary that maps column name to a null value string.
     """
     if isinstance(file, Path):
         file = str(file)
-    return LazyFrame.scan_csv(
+    return pl.LazyFrame.scan_csv(
         file=file,
         has_headers=has_headers,
         sep=sep,
@@ -374,7 +389,7 @@ def scan_parquet(
     file: Union[str, Path],
     stop_after_n_rows: Optional[int] = None,
     cache: bool = True,
-) -> LazyFrame:
+) -> "pl.LazyFrame":
     """
     Lazily read from a parquet file.
 
@@ -392,7 +407,7 @@ def scan_parquet(
     """
     if isinstance(file, Path):
         file = str(file)
-    return LazyFrame.scan_parquet(
+    return pl.LazyFrame.scan_parquet(
         file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
     )
 
@@ -401,7 +416,7 @@ def read_ipc(
     file: Union[str, BinaryIO, Path],
     use_pyarrow: bool = True,
     storage_options: Optional[Dict] = None,
-) -> DataFrame:
+) -> "pl.DataFrame":
     """
     Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -421,17 +436,17 @@ def read_ipc(
     """
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
-        return DataFrame.read_ipc(data, use_pyarrow)
+        return pl.DataFrame.read_ipc(data, use_pyarrow)
 
 
 def read_parquet(
-    source: Union[str, tp.List[str], Path, BinaryIO],
+    source: Union[str, List[str], Path, BinaryIO],
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
-    columns: Optional[tp.List[str]] = None,
+    columns: Optional[List[str]] = None,
     storage_options: Optional[Dict] = None,
     **kwargs: Any,
-) -> DataFrame:
+) -> "pl.DataFrame":
     """
     Read into a DataFrame from a parquet file.
 
@@ -460,7 +475,7 @@ def read_parquet(
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
         if stop_after_n_rows is not None:
-            return DataFrame.read_parquet(
+            return pl.DataFrame.read_parquet(
                 source_prep, stop_after_n_rows=stop_after_n_rows
             )
         return from_arrow(  # type: ignore[return-value]
@@ -470,7 +485,7 @@ def read_parquet(
         )
 
 
-def arg_where(mask: Series) -> Series:
+def arg_where(mask: "pl.Series") -> "pl.Series":
     """
     Get index values where Boolean mask evaluate True.
 
@@ -486,7 +501,7 @@ def arg_where(mask: Series) -> Series:
     return mask.arg_true()
 
 
-def from_arrow_table(table: pa.Table, rechunk: bool = True) -> DataFrame:
+def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "pl.DataFrame":
     """
     .. deprecated:: 7.3
         use `from_arrow`
@@ -500,12 +515,12 @@ def from_arrow_table(table: pa.Table, rechunk: bool = True) -> DataFrame:
     rechunk
         Make sure that all data is contiguous.
     """
-    return DataFrame.from_arrow(table, rechunk)
+    return pl.DataFrame.from_arrow(table, rechunk)
 
 
 def from_arrow(
     a: Union[pa.Table, pa.Array], rechunk: bool = True
-) -> Union[DataFrame, Series]:
+) -> Union["pl.DataFrame", "pl.Series"]:
     """
     Create a DataFrame from an arrow Table.
 
@@ -517,9 +532,9 @@ def from_arrow(
         Make sure that all data is contiguous.
     """
     if isinstance(a, pa.Table):
-        return DataFrame.from_arrow(a, rechunk)
+        return pl.DataFrame.from_arrow(a, rechunk)
     elif isinstance(a, pa.Array):
-        return Series.from_arrow("", a)
+        return pl.Series.from_arrow("", a)
     else:
         raise ValueError(f"expected arrow table / array, got {a}")
 
@@ -542,7 +557,7 @@ def _from_pandas_helper(a: "pd.Series") -> pa.Array:  # noqa: F821
 def from_pandas(
     df: Union["pd.DataFrame", "pd.Series", "pd.DatetimeIndex"],
     rechunk: bool = True,  # noqa: F821
-) -> Union[Series, DataFrame]:
+) -> Union["pl.Series", "pl.DataFrame"]:
     """
     Convert from a pandas DataFrame to a polars DataFrame.
 
@@ -574,7 +589,7 @@ def from_pandas(
     return from_arrow(table, rechunk)
 
 
-def concat(dfs: Sequence[DataFrame], rechunk: bool = True) -> DataFrame:
+def concat(dfs: Sequence["pl.DataFrame"], rechunk: bool = True) -> "pl.DataFrame":
     """
     Aggregate all the Dataframes in a List of DataFrames to a single DataFrame.
 
@@ -599,7 +614,9 @@ def concat(dfs: Sequence[DataFrame], rechunk: bool = True) -> DataFrame:
     return df
 
 
-def repeat(val: Union[int, float, str], n: int, name: Optional[str] = None) -> Series:
+def repeat(
+    val: Union[int, float, str], n: int, name: Optional[str] = None
+) -> "pl.Series":
     """
     Repeat a single value n times and collect into a Series.
 
@@ -615,14 +632,14 @@ def repeat(val: Union[int, float, str], n: int, name: Optional[str] = None) -> S
     if name is None:
         name = ""
     if isinstance(val, str):
-        s = Series._repeat(name, val, n)
+        s = pl.Series._repeat(name, val, n)
         s.rename(name)
         return s
     else:
-        return Series.from_arrow(name, pa.repeat(val, n))
+        return pl.Series.from_arrow(name, pa.repeat(val, n))
 
 
-def read_json(source: Union[str, BytesIO]) -> DataFrame:
+def read_json(source: Union[str, BytesIO]) -> "pl.DataFrame":
     """
     Read into a DataFrame from JSON format.
 
@@ -631,14 +648,14 @@ def read_json(source: Union[str, BytesIO]) -> DataFrame:
     source
         Path to a file or a file like object.
     """
-    return DataFrame.read_json(source)
+    return pl.DataFrame.read_json(source)
 
 
 def from_rows(
     rows: Sequence[Sequence[Any]],
-    column_names: Optional[tp.List[str]] = None,
+    column_names: Optional[List[str]] = None,
     column_name_mapping: Optional[Dict[int, str]] = None,
-) -> DataFrame:
+) -> "pl.DataFrame":
     """
     Create a DataFrame from rows. This should only be used as a last resort, as this is more expensive than
     creating from columnar data.
@@ -656,10 +673,10 @@ def from_rows(
             column_mapping: {0: "first_column, 3: "fourth column"}
         ```
     """
-    return DataFrame.from_rows(rows, column_names, column_name_mapping)
+    return pl.DataFrame.from_rows(rows, column_names, column_name_mapping)
 
 
-def read_sql(sql: str, engine: Any) -> DataFrame:
+def read_sql(sql: str, engine: Any) -> "pl.DataFrame":
     """
     # Preface
     Deprecated by design. Will not have a long future support and no guarantees given whatsoever.
