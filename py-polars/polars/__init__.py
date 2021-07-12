@@ -3,7 +3,7 @@ from .datatypes import *
 from .frame import *
 from .functions import *
 from .lazy import *
-from .series import Series, wrap_s
+from .series import *
 
 # during docs building the binary code is not yet available
 try:

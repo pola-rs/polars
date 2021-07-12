@@ -103,7 +103,7 @@ class HTMLFormatter:
                         self.elements.append(col)
             with Tag(self.elements, "tr"):
                 for dtype in self.df.dtypes:
-                    ffi_name = pl.datatypes.DTYPE_TO_FFINAME[dtype]
+                    ffi_name = pl.DTYPE_TO_FFINAME[dtype]
                     with Tag(self.elements, "td"):
                         self.elements.append(ffi_name)
 

@@ -1,17 +1,7 @@
 import typing as tp
 from datetime import date, datetime
 from numbers import Number
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 import pyarrow as pa
@@ -41,8 +31,7 @@ from .datatypes import (
     dtype_to_primitive,
     dtypes,
 )
-from .ffi import _ptr_to_numpy
-from .utils import coerce_arrow
+from .utils import _ptr_to_numpy, coerce_arrow
 
 try:
     from .polars import PyDataFrame, PySeries
@@ -58,13 +47,10 @@ except ImportError:
         "SeriesIter": False,
     }
 
-if TYPE_CHECKING:
-    from .frame import DataFrame
-
-
-class IdentityDict(dict):
-    def __missing__(self, key: Any) -> Any:
-        return key
+__all__ = [
+    "Series",
+    "wrap_s",
+]
 
 
 def get_ffi_func(
@@ -538,7 +524,7 @@ class Series:
         """
         return wrap_s(self._s.drop_nulls())
 
-    def to_frame(self) -> "DataFrame":
+    def to_frame(self) -> "pl.DataFrame":
         """
         Cast this Series to a DataFrame.
         """
@@ -651,13 +637,13 @@ class Series:
         """
         return self._s.quantile(quantile)
 
-    def to_dummies(self) -> "DataFrame":
+    def to_dummies(self) -> "pl.DataFrame":
         """
         Get dummy variables.
         """
         return pl.frame.wrap_df(self._s.to_dummies())
 
-    def value_counts(self) -> "DataFrame":
+    def value_counts(self) -> "pl.DataFrame":
         """
         Count the unique values in a Series.
         """
