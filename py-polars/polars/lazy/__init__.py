@@ -1835,7 +1835,7 @@ def expr_to_lit_or_expr(
     elif isinstance(expr, (int, float, str)):
         return lit(expr)
     elif isinstance(expr, list):
-        return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore
+        return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]
     else:
         return expr
 
