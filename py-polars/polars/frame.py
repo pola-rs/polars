@@ -1988,7 +1988,7 @@ class DataFrame:
             function that takes two `Series` and returns a `Series`.
         """
         if self.width == 1:
-            return self  # type: ignore
+            return self.select_at_idx(0)
         df = self
         acc = operation(df.select_at_idx(0), df.select_at_idx(1))
 
@@ -2520,13 +2520,6 @@ class GBSelection:
             df[name] = s
 
         return df
-
-
-def _series_to_frame(self: Series) -> DataFrame:
-    return wrap_df(PyDataFrame([self._s]))
-
-
-Series.to_frame = _series_to_frame  # type: ignore
 
 
 class StringCache:
