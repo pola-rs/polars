@@ -76,6 +76,7 @@ pub(crate) fn is_whitespace(b: u8) -> bool {
     b == b' ' || b == b'\t'
 }
 
+#[inline]
 fn skip_condition<F>(input: &[u8], f: F) -> (&[u8], usize)
 where
     F: Fn(u8) -> bool,
@@ -108,17 +109,20 @@ pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
 }
 
 /// Remove whitespace and line endings from the start of file.
+#[inline]
 pub(crate) fn skip_whitespace(input: &[u8]) -> (&[u8], usize) {
     skip_condition(input, |b| is_whitespace(b) || is_line_ending(b))
 }
 
 /// Local version of slice::starts_with (as it won't inline)
+#[inline]
 fn starts_with(bytes: &[u8], needle: u8) -> bool {
     !bytes.is_empty() && bytes[0] == needle
 }
 
 /// Slice `"100"` to `100`, if slice starts with `"` it does not check that it ends with `"`, but
 /// assumes this. Be aware of this.
+#[inline]
 pub(crate) fn drop_quotes(input: &[u8]) -> &[u8] {
     if starts_with(input, b'"') {
         &input[1..input.len() - 1]
@@ -127,6 +131,7 @@ pub(crate) fn drop_quotes(input: &[u8]) -> &[u8] {
     }
 }
 
+#[inline]
 pub(crate) fn skip_line_ending(input: &[u8]) -> (&[u8], usize) {
     skip_condition(input, is_line_ending)
 }
@@ -190,18 +195,15 @@ impl<'a> Iterator for SplitLines<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<&'a [u8]> {
-        // denotes if we are in a string field
-        let mut in_field = false;
-        let len = self.v.len();
-        if len == 0 {
+        if self.v.is_empty() {
             return None;
         }
 
-        let mut pos = 0;
-        for i in 0..len {
-            pos = i;
-            let c = unsafe { *self.v.get_unchecked(i) };
-
+        // denotes if we are in a string field, started with a quote
+        let mut in_field = false;
+        let mut pos = 0u32;
+        for &c in self.v {
+            pos += 1;
             if c == b'"' {
                 // toggle between string field enclosure
                 //      if we encounter a starting '"' -> in_field = true;
@@ -209,14 +211,14 @@ impl<'a> Iterator for SplitLines<'a> {
                 in_field = !in_field;
             }
             // if we are not in a string and we encounter '\n' we can stop at this position.
-            if !in_field && c == self.end_line_char {
+            if c == self.end_line_char && !in_field {
                 break;
             }
         }
         // return line up to this position
-        let ret = Some(&self.v[..pos]);
+        let ret = Some(&self.v[..(pos - 1) as usize]);
         // skip the '\n' token and update slice.
-        self.v = &self.v[pos + 1..];
+        self.v = &self.v[pos as usize..];
         ret
     }
 }
@@ -238,27 +240,31 @@ impl<'a> SplitFields<'a> {
         }
     }
 
-    fn finish(&mut self) -> Option<&'a [u8]> {
+    fn finish(&mut self, need_escaping: bool) -> Option<(&'a [u8], bool)> {
         if self.finished {
             None
         } else {
             self.finished = true;
-            Some(self.v)
+            Some((self.v, need_escaping))
         }
     }
 }
 
 impl<'a> Iterator for SplitFields<'a> {
-    type Item = &'a [u8];
+    // the bool is used to indicate that it requires escaping
+    type Item = (&'a [u8], bool);
 
     #[inline]
-    fn next(&mut self) -> Option<&'a [u8]> {
+    //
+    fn next(&mut self) -> Option<(&'a [u8], bool)> {
         if self.finished {
             return None;
         }
+        let mut needs_escaping = false;
         // There can be strings with delimiters:
         // "Street, City",
         let pos = if !self.v.is_empty() && self.v[0] == b'"' {
+            needs_escaping = true;
             // There can be pair of double-quotes within string.
             // Each of the embedded double-quote characters must be represented
             // by a pair of double-quote characters:
@@ -267,33 +273,37 @@ impl<'a> Iterator for SplitFields<'a> {
             // To find the last double-quote we check for the last uneven double-quote
             // character followed by a comma.
             let mut previous_char = b'"';
-            let mut idx = 0;
-            for (current_idx, current_char) in self.v.iter().enumerate() {
-                if current_char == &self.delimiter && previous_char == b'"' {
+            let mut idx = 0u32;
+            let mut current_idx = 0u32;
+            // micro optimizations
+            #[allow(clippy::explicit_counter_loop)]
+            for &current_char in self.v.iter() {
+                if current_char == self.delimiter && previous_char == b'"' {
                     idx = current_idx;
                     break;
                 }
-                if current_char == &b'"' && previous_char != b'"' {
+                if current_char == b'"' && previous_char != b'"' {
                     previous_char = b'"';
                 } else {
                     // Replace previous char by '#' when the number of double-quote is even.
                     previous_char = b'#';
                 }
+                current_idx += 1;
             }
 
             if idx == 0 && previous_char == b'"' {
-                return self.finish();
+                return self.finish(needs_escaping);
             }
 
-            idx
+            idx as usize
         } else {
             match self.v.iter().position(|x| *x == self.delimiter) {
-                None => return self.finish(),
+                None => return self.finish(needs_escaping),
                 Some(idx) => idx,
             }
         };
 
-        let ret = Some(&self.v[..pos]);
+        let ret = Some((&self.v[..pos], needs_escaping));
         self.v = &self.v[pos + 1..];
         ret
     }
@@ -371,7 +381,7 @@ pub(crate) fn parse_lines(
 
         let iter = SplitFields::new(line, delimiter);
 
-        for (idx, field) in iter.enumerate() {
+        for (idx, (field, needs_escaping)) in iter.enumerate() {
             if idx == next_projected {
                 debug_assert!(processed_fields < buffers.len());
                 let buf = unsafe {
@@ -391,7 +401,7 @@ pub(crate) fn parse_lines(
                 if add_null {
                     buf.add_null()
                 } else {
-                    buf.add(field, ignore_parser_errors, read, encoding)
+                    buf.add(field, ignore_parser_errors, read, encoding, needs_escaping)
                         .map_err(|e| {
                             PolarsError::Other(
                                 format!(
