@@ -230,29 +230,6 @@ impl<R: Read + Sync + Send + MmapBytesReader> SequentialReader<R> {
             }
         }
 
-        // assume 10 chars per str
-        // this is not updated in low memory mode
-        let init_str_bytes = chunk_size * 10;
-        let str_capacities: Vec<_> = str_columns
-            .iter()
-            .map(|_| RunningSize::new(init_str_bytes))
-            .collect();
-
-        // An empty file with a schema should return an empty DataFrame with that schema
-        if bytes.is_empty() {
-            let buffers = init_buffers(
-                &projection,
-                0,
-                &self.schema,
-                &str_capacities,
-                self.delimiter,
-            )?;
-            let df = DataFrame::new_no_checks(
-                buffers.into_iter().map(|buf| buf.into_series()).collect(),
-            );
-            return Ok(df);
-        }
-
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
         let file_chunks =
@@ -277,6 +254,29 @@ impl<R: Read + Sync + Send + MmapBytesReader> SequentialReader<R> {
         // Structure:
         //      the inner vec has got buffers from all the columns.
         if predicate.is_some() {
+            // assume 10 chars per str
+            // this is not updated in low memory mode
+            let init_str_bytes = chunk_size * 10;
+            let str_capacities: Vec<_> = str_columns
+                .iter()
+                .map(|_| RunningSize::new(init_str_bytes))
+                .collect();
+
+            // An empty file with a schema should return an empty DataFrame with that schema
+            if bytes.is_empty() {
+                let buffers = init_buffers(
+                    &projection,
+                    0,
+                    &self.schema,
+                    &str_capacities,
+                    self.delimiter,
+                )?;
+                let df = DataFrame::new_no_checks(
+                    buffers.into_iter().map(|buf| buf.into_series()).collect(),
+                );
+                return Ok(df);
+            }
+
             let dfs = pool.install(|| {
                 file_chunks
                     .into_par_iter()
@@ -370,6 +370,21 @@ impl<R: Read + Sync + Send + MmapBytesReader> SequentialReader<R> {
             // let exponential growth solve the needed size. This leads to less memory overhead
             // in the later rechunk. Because we have large chunks they are easier reused for the
             // large final contiguous memory needed at the end.
+            let rows_per_thread = total_rows / n_threads;
+            let max_proxy = bytes.len() / n_threads / 2;
+            let capacity = if self.low_memory {
+                chunk_size
+            } else {
+                std::cmp::min(rows_per_thread, max_proxy)
+            };
+
+            // assume 10 chars per str
+            let init_str_bytes = capacity * 10;
+            let str_capacities: Vec<_> = str_columns
+                .iter()
+                .map(|_| RunningSize::new(init_str_bytes))
+                .collect();
+
             let dfs = pool.install(|| {
                 file_chunks
                     .into_par_iter()
@@ -382,7 +397,7 @@ impl<R: Read + Sync + Send + MmapBytesReader> SequentialReader<R> {
                         let mut read = bytes_offset_thread;
                         let mut buffers = init_buffers(
                             projection,
-                            chunk_size,
+                            capacity,
                             &schema,
                             &str_capacities,
                             self.delimiter,
@@ -406,7 +421,7 @@ impl<R: Read + Sync + Send + MmapBytesReader> SequentialReader<R> {
                                 self.encoding,
                                 // chunk size doesn't really matter anymore,
                                 // less calls if we increase the size
-                                chunk_size * 32,
+                                chunk_size * 320000,
                             )?;
                         }
                         Ok(DataFrame::new_no_checks(

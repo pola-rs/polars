@@ -28,12 +28,14 @@ pub(crate) trait PrimitiveParser: ArrowPrimitiveType {
 }
 
 impl PrimitiveParser for Float32Type {
+    #[inline]
     fn parse(bytes: &[u8]) -> Result<f32> {
         let a = fast_float::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
     }
 }
 impl PrimitiveParser for Float64Type {
+    #[inline]
     fn parse(bytes: &[u8]) -> Result<f64> {
         let a = fast_float::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
@@ -41,24 +43,28 @@ impl PrimitiveParser for Float64Type {
 }
 
 impl PrimitiveParser for UInt32Type {
+    #[inline]
     fn parse(bytes: &[u8]) -> Result<u32> {
         let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
     }
 }
 impl PrimitiveParser for UInt64Type {
+    #[inline]
     fn parse(bytes: &[u8]) -> Result<u64> {
         let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
     }
 }
 impl PrimitiveParser for Int32Type {
+    #[inline]
     fn parse(bytes: &[u8]) -> Result<i32> {
         let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
     }
 }
 impl PrimitiveParser for Int64Type {
+    #[inline]
     fn parse(bytes: &[u8]) -> Result<i64> {
         let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
@@ -72,6 +78,7 @@ trait ParsedBuffer<T> {
         ignore_errors: bool,
         start_pos: usize,
         encoding: CsvEncoding,
+        _needs_escaping: bool,
     ) -> Result<()>;
 }
 
@@ -79,12 +86,14 @@ impl<T> ParsedBuffer<T> for PrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType + PrimitiveParser,
 {
+    #[inline]
     fn parse_bytes(
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
         _start_pos: usize,
         _encoding: CsvEncoding,
+        _needs_escaping: bool,
     ) -> Result<()> {
         let (bytes, _) = skip_whitespace(bytes);
         let bytes = drop_quotes(bytes);
@@ -137,6 +146,7 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         ignore_errors: bool,
         _start_pos: usize,
         encoding: CsvEncoding,
+        needs_escaping: bool,
     ) -> Result<()> {
         // first check utf8 validity
         #[cfg(feature = "simdutf8")]
@@ -147,19 +157,6 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
             std::str::from_utf8(bytes).map_err(|_| PolarsError::Other("invalid utf8 data".into()));
         let data_len = self.data.len();
 
-        // Write bytes to string buffer, but don't update the length just yet.
-        // We do that after we are sure its valid utf8.
-        // Or in case of LossyUtf8 and invalid utf8, we overwrite it with lossy parsed data and then
-        // set the length.
-        let bytes = unsafe {
-            // csv core expects the delimiter for its state machine, but we already split on that.
-            // so we extend the slice by one to include the delimiter
-            // Safety:
-            // A field always has a delimiter OR a end of line char so we can extend the field
-            // without accessing unowned memory
-            let ptr = bytes.as_ptr();
-            std::slice::from_raw_parts(ptr, bytes.len() + 1)
-        };
         // check if field fits in the str data buffer
         let remaining_capacity = self.data.capacity() - data_len;
         if remaining_capacity < bytes.len() {
@@ -167,12 +164,32 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
             self.data
                 .reserve(std::cmp::max(self.data.capacity(), bytes.len()))
         }
-        // Safety:
-        // we just allocated enough capacity and data_len is correct.
-        let out_buf = unsafe {
-            std::slice::from_raw_parts_mut(self.data.as_mut_ptr().add(data_len), bytes.len())
+        let n_written = if needs_escaping {
+            // Write bytes to string buffer, but don't update the length just yet.
+            // We do that after we are sure its valid utf8.
+            // Or in case of LossyUtf8 and invalid utf8, we overwrite it with lossy parsed data and then
+            // set the length.
+            let bytes = unsafe {
+                // csv core expects the delimiter for its state machine, but we already split on that.
+                // so we extend the slice by one to include the delimiter
+                // Safety:
+                // A field always has a delimiter OR a end of line char so we can extend the field
+                // without accessing unowned memory
+                let ptr = bytes.as_ptr();
+                std::slice::from_raw_parts(ptr, bytes.len() + 1)
+            };
+
+            // Safety:
+            // we just allocated enough capacity and data_len is correct.
+            let out_buf = unsafe {
+                std::slice::from_raw_parts_mut(self.data.as_mut_ptr().add(data_len), bytes.len())
+            };
+            let (_, _, n_written) = self.rdr.read_field(bytes, out_buf);
+            n_written
+        } else {
+            self.data.extend_from_slice(bytes);
+            bytes.len()
         };
-        let (_, _, n_written) = self.rdr.read_field(bytes, out_buf);
 
         match parse_result {
             Ok(_) => {
@@ -211,6 +228,7 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
         ignore_errors: bool,
         start_pos: usize,
         _encoding: CsvEncoding,
+        _needs_escaping: bool,
     ) -> Result<()> {
         if bytes.eq_ignore_ascii_case(b"false") {
             self.append_value(false);
@@ -249,7 +267,6 @@ pub(crate) fn init_buffers(
             let field = schema.field(i).unwrap();
             let mut str_capacity = 0;
             // determine the needed capacity for this column
-            // we overallocate 20%
             if field.data_type() == &DataType::Utf8 {
                 str_capacity = str_capacities[str_index].size_hint();
                 str_index += 1;
@@ -361,6 +378,7 @@ impl Buffer {
         ignore_errors: bool,
         start_pos: usize,
         encoding: CsvEncoding,
+        needs_escaping: bool,
     ) -> Result<()> {
         use Buffer::*;
         match self {
@@ -370,6 +388,7 @@ impl Buffer {
                 ignore_errors,
                 start_pos,
                 encoding,
+                needs_escaping,
             ),
             Int32(buf) => {
                 <PrimitiveChunkedBuilder<Int32Type> as ParsedBuffer<Int32Type>>::parse_bytes(
@@ -378,6 +397,7 @@ impl Buffer {
                     ignore_errors,
                     start_pos,
                     encoding,
+                    needs_escaping,
                 )
             }
             Int64(buf) => {
@@ -387,6 +407,7 @@ impl Buffer {
                     ignore_errors,
                     start_pos,
                     encoding,
+                    needs_escaping,
                 )
             }
             #[cfg(feature = "dtype-u64")]
@@ -397,6 +418,7 @@ impl Buffer {
                     ignore_errors,
                     start_pos,
                     encoding,
+                    needs_escaping,
                 )
             }
             UInt32(buf) => {
@@ -406,6 +428,7 @@ impl Buffer {
                     ignore_errors,
                     start_pos,
                     encoding,
+                    needs_escaping,
                 )
             }
             Float32(buf) => {
@@ -415,6 +438,7 @@ impl Buffer {
                     ignore_errors,
                     start_pos,
                     encoding,
+                    needs_escaping,
                 )
             }
             Float64(buf) => {
@@ -424,6 +448,7 @@ impl Buffer {
                     ignore_errors,
                     start_pos,
                     encoding,
+                    needs_escaping,
                 )
             }
             Utf8(buf) => <Utf8Field as ParsedBuffer<Utf8Type>>::parse_bytes(
@@ -432,6 +457,7 @@ impl Buffer {
                 ignore_errors,
                 start_pos,
                 encoding,
+                needs_escaping,
             ),
         }
     }
