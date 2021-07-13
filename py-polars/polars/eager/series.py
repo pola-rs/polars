@@ -241,9 +241,7 @@ class Series:
                     self._s.rename(name)
                 elif isinstance(dtype, date):
                     arrow_array = pa.array(values)
-                    from .functions import from_arrow
-
-                    s = from_arrow(arrow_array)
+                    s = pl.from_arrow(arrow_array)
                     self._s = s._s
                     self._s.rename(name)
                 # make list array
