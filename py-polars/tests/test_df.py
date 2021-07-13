@@ -438,7 +438,7 @@ def test_multiple_columns_drop():
 def test_concat():
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
-    assert pl.functions.concat([df, df]).shape == (6, 3)
+    assert pl.concat([df, df]).shape == (6, 3)
 
     # check if a remains unchanged
     a = pl.from_rows(((1, 2), (1, 2)))

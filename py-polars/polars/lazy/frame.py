@@ -28,7 +28,7 @@ __all__ = [
 ]
 
 
-def wrap_ldf(ldf: PyLazyFrame) -> "LazyFrame":
+def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
     return LazyFrame._from_pyldf(ldf)
 
 
@@ -41,7 +41,7 @@ class LazyFrame:
         self._ldf: PyLazyFrame
 
     @staticmethod
-    def _from_pyldf(ldf: PyLazyFrame) -> "LazyFrame":
+    def _from_pyldf(ldf: "PyLazyFrame") -> "LazyFrame":
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = ldf
         return self
@@ -760,7 +760,7 @@ class LazyGroupBy:
     Created by `df.lazy().groupby("foo)"`
     """
 
-    def __init__(self, lgb: PyLazyGroupBy):
+    def __init__(self, lgb: "PyLazyGroupBy"):
         self.lgb = lgb
 
     def agg(self, aggs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":

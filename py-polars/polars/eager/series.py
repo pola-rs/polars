@@ -55,7 +55,7 @@ __all__ = [
 
 def get_ffi_func(
     name: str,
-    dtype: Type[DataType],
+    dtype: Type["DataType"],
     obj: Optional["Series"] = None,
     default: Optional[Callable[[Any], Any]] = None,
 ) -> Callable[..., Any]:
@@ -87,7 +87,7 @@ def get_ffi_func(
         return globals().get(fname, default)
 
 
-def wrap_s(s: PySeries) -> "Series":
+def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
 
 
@@ -274,7 +274,7 @@ class Series:
                     self._s = PySeries.new_object(name, values)
 
     @staticmethod
-    def _from_pyseries(s: PySeries) -> "Series":
+    def _from_pyseries(s: "PySeries") -> "Series":
         self = Series.__new__(Series)
         self._s = s
         return self
@@ -301,7 +301,7 @@ class Series:
         array = coerce_arrow(array)
         return Series._from_pyseries(PySeries.from_arrow(name, array))
 
-    def inner(self) -> PySeries:
+    def inner(self) -> "PySeries":
         return self._s
 
     def __str__(self) -> str:

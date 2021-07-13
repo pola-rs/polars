@@ -26,7 +26,7 @@ __all__ = [
 
 def _selection_to_pyexpr_list(
     exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
-) -> tp.List[PyExpr]:
+) -> tp.List["PyExpr"]:
     pyexpr_list: tp.List[PyExpr]
     if isinstance(exprs, str):
         pyexpr_list = [col(exprs)._pyexpr]
@@ -41,7 +41,7 @@ def _selection_to_pyexpr_list(
     return pyexpr_list
 
 
-def wrap_expr(pyexpr: PyExpr) -> "Expr":
+def wrap_expr(pyexpr: "PyExpr") -> "Expr":
     return Expr._from_pyexpr(pyexpr)
 
 
@@ -54,12 +54,12 @@ class Expr:
         self._pyexpr: PyExpr
 
     @staticmethod
-    def _from_pyexpr(pyexpr: PyExpr) -> "Expr":
+    def _from_pyexpr(pyexpr: "PyExpr") -> "Expr":
         self = Expr.__new__(Expr)
         self._pyexpr = pyexpr
         return self
 
-    def __to_pyexpr(self, other: Any) -> PyExpr:
+    def __to_pyexpr(self, other: Any) -> "PyExpr":
         if isinstance(other, PyExpr):
             return other
         elif isinstance(other, Expr):

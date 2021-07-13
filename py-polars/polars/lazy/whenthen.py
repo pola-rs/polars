@@ -76,7 +76,7 @@ class When:
     Utility class. See the `when` function.
     """
 
-    def __init__(self, pywhen: pywhen):
+    def __init__(self, pywhen: "pywhen"):
         self._pywhen = pywhen
 
     def then(self, expr: Union["pl.Expr", int, float, str]) -> WhenThen:

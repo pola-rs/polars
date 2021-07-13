@@ -54,7 +54,7 @@ __all__ = [
 ]
 
 
-def wrap_df(df: PyDataFrame) -> "DataFrame":
+def wrap_df(df: "PyDataFrame") -> "DataFrame":
     return DataFrame._from_pydf(df)
 
 
@@ -123,7 +123,7 @@ class DataFrame:
         self._df = PyDataFrame(columns)
 
     @staticmethod
-    def _from_pydf(df: PyDataFrame) -> "DataFrame":
+    def _from_pydf(df: "PyDataFrame") -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
         self._df = df
         return self
@@ -603,7 +603,7 @@ class DataFrame:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __getattr__(self, item: Any) -> PySeries:
+    def __getattr__(self, item: Any) -> "PySeries":
         """
         Access columns as attribute.
         """
@@ -2050,7 +2050,7 @@ class GroupBy:
 
     def __init__(
         self,
-        df: PyDataFrame,
+        df: "PyDataFrame",
         by: Union[str, tp.List[str]],
         downsample: bool = False,
         rule: Optional[str] = None,
@@ -2408,7 +2408,7 @@ class GBSelection:
 
     def __init__(
         self,
-        df: PyDataFrame,
+        df: "PyDataFrame",
         by: Union[str, tp.List[str]],
         selection: Optional[tp.List[str]],
         downsample: bool = False,
