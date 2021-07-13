@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.8.10"
+version = "0.8.11-beta.1"
 dependencies = [
  "libc",
  "mimalloc",
