@@ -8,13 +8,11 @@ import tempfile
 import typing as tp
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
+import polars as pl
+
 from ..datatypes import DataType, pytype_to_polars_type
-from ..eager import DataFrame, Series, wrap_df
 from ..utils import _process_null_values
 from .expr import UDF, Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
-
-# import polars as pl
-
 
 try:
     from ..polars import PyExpr, PyLazyFrame, PyLazyGroupBy
@@ -22,7 +20,7 @@ except ImportError:
     import warnings
 
     warnings.warn("Binary files missing.")
-    __pdoc__ = {"wrap_ldf": False, "wrap_expr": False}
+    __pdoc__ = {"wrap_ldf": False}
 
 __all__ = [
     "wrap_ldf",
@@ -32,51 +30,6 @@ __all__ = [
 
 def wrap_ldf(ldf: PyLazyFrame) -> "LazyFrame":
     return LazyFrame._from_pyldf(ldf)
-
-
-class LazyGroupBy:
-    """
-    Created by `df.lazy().groupby("foo)"`
-    """
-
-    def __init__(self, lgb: PyLazyGroupBy):
-        self.lgb = lgb
-
-    def agg(self, aggs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
-        """
-        Describe the aggregation that need to be done on a group.
-
-        Parameters
-        ----------
-        aggs
-            Single/ Multiple aggregation expression(s).
-
-        # Example
-
-        ```python
-        (pl.scan_csv("data.csv")
-            .groupby("groups")
-            .agg([
-                    pl.col("name").n_unique().alias("unique_names"),
-                    pl.max("values")
-                ])
-        )
-        ```
-        """
-        aggs = _selection_to_pyexpr_list(aggs)
-        return wrap_ldf(self.lgb.agg(aggs))
-
-    def apply(self, f: Callable[[DataFrame], DataFrame]) -> "LazyFrame":
-        """
-        Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
-        this as materializing the `DataFrame` is quite expensive.
-
-        Parameters
-        ----------
-        f
-            Function to apply over the `DataFrame`.
-        """
-        return wrap_ldf(self.lgb.apply(f))
 
 
 class LazyFrame:
@@ -275,7 +228,7 @@ class LazyFrame:
         simplify_expression: bool = True,
         string_cache: bool = False,
         no_optimization: bool = False,
-    ) -> DataFrame:
+    ) -> "pl.DataFrame":
         """
         Collect into a DataFrame.
 
@@ -314,7 +267,7 @@ class LazyFrame:
             simplify_expression,
             string_cache,
         )
-        return wrap_df(ldf.collect())
+        return pl.wrap_df(ldf.collect())
 
     def fetch(
         self,
@@ -325,7 +278,7 @@ class LazyFrame:
         simplify_expression: bool = True,
         string_cache: bool = True,
         no_optimization: bool = False,
-    ) -> DataFrame:
+    ) -> "pl.DataFrame":
         """
         Fetch is like a collect operation, but it overwrites the number of rows read by every scan
         operation. This is a utility that helps debug a query on a smaller number of rows.
@@ -367,7 +320,7 @@ class LazyFrame:
             simplify_expression,
             string_cache,
         )
-        return wrap_df(ldf.fetch(n_rows))
+        return pl.wrap_df(ldf.fetch(n_rows))
 
     def cache(
         self,
@@ -406,7 +359,7 @@ class LazyFrame:
 
     def groupby(
         self, by: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
-    ) -> LazyGroupBy:
+    ) -> "LazyGroupBy":
         """
         Start a groupby operation.
 
@@ -531,7 +484,7 @@ class LazyFrame:
         for e in exprs:
             if isinstance(e, Expr):
                 pyexprs.append(e._pyexpr)
-            elif isinstance(e, Series):
+            elif isinstance(e, pl.Series):
                 pyexprs.append(lit(e)._pyexpr)
 
         return wrap_ldf(self._ldf.with_columns(pyexprs))
@@ -777,7 +730,7 @@ class LazyFrame:
 
     def map(
         self,
-        f: Union["UDF", Callable[[DataFrame], DataFrame]],
+        f: Union["UDF", Callable[["pl.DataFrame"], "pl.DataFrame"]],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         no_optimizations: bool = False,
@@ -800,3 +753,48 @@ class LazyFrame:
             predicate_pushdown = False
             projection_pushdown = False
         return wrap_ldf(self._ldf.map(f, predicate_pushdown, projection_pushdown))
+
+
+class LazyGroupBy:
+    """
+    Created by `df.lazy().groupby("foo)"`
+    """
+
+    def __init__(self, lgb: PyLazyGroupBy):
+        self.lgb = lgb
+
+    def agg(self, aggs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
+        """
+        Describe the aggregation that need to be done on a group.
+
+        Parameters
+        ----------
+        aggs
+            Single/ Multiple aggregation expression(s).
+
+        # Example
+
+        ```python
+        (pl.scan_csv("data.csv")
+            .groupby("groups")
+            .agg([
+                    pl.col("name").n_unique().alias("unique_names"),
+                    pl.max("values")
+                ])
+        )
+        ```
+        """
+        aggs = _selection_to_pyexpr_list(aggs)
+        return wrap_ldf(self.lgb.agg(aggs))
+
+    def apply(self, f: Callable[["pl.DataFrame"], "pl.DataFrame"]) -> "LazyFrame":
+        """
+        Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
+        this as materializing the `DataFrame` is quite expensive.
+
+        Parameters
+        ----------
+        f
+            Function to apply over the `DataFrame`.
+        """
+        return wrap_ldf(self.lgb.apply(f))

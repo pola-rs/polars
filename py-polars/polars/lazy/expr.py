@@ -8,8 +8,9 @@ from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
 
+import polars as pl
+
 from ..datatypes import Boolean, DataType, Date32, Date64, Float64, Int64, Utf8
-from ..eager import Series
 
 try:
     from ..polars import PyExpr
@@ -26,7 +27,7 @@ except ImportError:
     import warnings
 
     warnings.warn("Binary files missing.")
-    __pdoc__ = {"wrap_ldf": False, "wrap_expr": False}
+    __pdoc__ = {"wrap_expr": False}
 
 __all__ = [
     "wrap_expr",
@@ -622,7 +623,7 @@ class Expr:
 
     def map(
         self,
-        f: Union["UDF", Callable[[Series], Series]],
+        f: Union["UDF", Callable[["pl.Series"], "pl.Series"]],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
@@ -652,7 +653,7 @@ class Expr:
 
     def apply(
         self,
-        f: Callable[[Series], Series],
+        f: Callable[["pl.Series"], "pl.Series"],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
@@ -699,7 +700,7 @@ class Expr:
         """
 
         # input x: Series of type list containing the group values
-        def wrap_f(x: "Series") -> "Series":
+        def wrap_f(x: "pl.Series") -> "pl.Series":
             return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f)
@@ -752,7 +753,7 @@ class Expr:
         Expr that evaluates to a Boolean Series.
         """
         if isinstance(other, list):
-            other = lit(Series("", other))
+            other = lit(pl.Series("", other))
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
     def repeat_by(self, by: "Expr") -> "Expr":
@@ -1248,11 +1249,11 @@ def except_(name: str) -> Expr:
     return wrap_expr(pyexcept(name))
 
 
-def count(column: Union[str, Series] = "") -> Union[Expr, int]:
+def count(column: Union[str, "pl.Series"] = "") -> Union[Expr, int]:
     """
     Count the number of values in this column.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.len()
     return col(column).count()
 
@@ -1264,25 +1265,25 @@ def to_list(name: str) -> Expr:
     return col(name).list()
 
 
-def std(column: Union[str, Series]) -> Union[Expr, float]:
+def std(column: Union[str, "pl.Series"]) -> Union[Expr, float]:
     """
     Get the standard deviation.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.std()
     return col(column).std()
 
 
-def var(column: Union[str, Series]) -> Union[Expr, float]:
+def var(column: Union[str, "pl.Series"]) -> Union["Expr", float]:
     """
     Get the variance.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.var()
     return col(column).var()
 
 
-def max(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
+def max(column: Union[str, tp.List[Expr], "pl.Series"]) -> Union[Expr, Any]:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -1294,11 +1295,11 @@ def max(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
             - Union[str, Series] -> aggregate the maximum value of that column.
             - tp.List[Expr] -> aggregate the maximum value horizontally.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.max()
     elif isinstance(column, list):
 
-        def max_(acc: Series, val: Series) -> Series:
+        def max_(acc: "pl.Series", val: "pl.Series") -> "pl.Series":
             mask = acc < val
             return acc.zip_with(mask, val)
 
@@ -1307,7 +1308,7 @@ def max(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
         return col(column).max()
 
 
-def min(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
+def min(column: Union[str, tp.List[Expr], "pl.Series"]) -> Union[Expr, Any]:
     """
     Get the minimum value.
 
@@ -1317,11 +1318,11 @@ def min(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
             - Union[str, Series] -> aggregate the sum value of that column.
             - tp.List[Expr] -> aggregate the sum value horizontally.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.min()
     elif isinstance(column, list):
 
-        def min_(acc: Series, val: Series) -> Series:
+        def min_(acc: "pl.Series", val: "pl.Series") -> "pl.Series":
             mask = acc > val
             return acc.zip_with(mask, val)
 
@@ -1330,7 +1331,7 @@ def min(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
         return col(column).min()
 
 
-def sum(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
+def sum(column: Union[str, tp.List[Expr], "pl.Series"]) -> Union[Expr, Any]:
     """
     Get the sum value.
 
@@ -1340,7 +1341,7 @@ def sum(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
             - Union[str, Series] -> aggregate the sum value of that column.
             - tp.List[Expr] -> aggregate the sum value horizontally.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.sum()
     elif isinstance(column, list):
         return fold(lit(0), lambda a, b: a + b, column).alias("sum")
@@ -1348,43 +1349,43 @@ def sum(column: Union[str, tp.List[Expr], Series]) -> Union[Expr, Any]:
         return col(column).sum()
 
 
-def mean(column: Union[str, Series]) -> Union[Expr, float]:
+def mean(column: Union[str, "pl.Series"]) -> Union["Expr", float]:
     """
     Get the mean value.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.mean()
     return col(column).mean()
 
 
-def avg(column: Union[str, Series]) -> Union[Expr, float]:
+def avg(column: Union[str, "pl.Series"]) -> Union["Expr", float]:
     """
     Alias for mean.
     """
     return mean(column)
 
 
-def median(column: Union[str, Series]) -> Union[Expr, float, int]:
+def median(column: Union[str, "pl.Series"]) -> Union["Expr", float, int]:
     """
     Get the median value.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.median()
     return col(column).median()
 
 
-def n_unique(column: Union[str, Series]) -> Union[Expr, int]:
+def n_unique(column: Union[str, "pl.Series"]) -> Union["Expr", int]:
     """Count unique values."""
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.n_unique()
     return col(column).n_unique()
 
 
-def first(column: Union[str, Series]) -> Union[Expr, Any]:
+def first(column: Union[str, "pl.Series"]) -> Union[Expr, Any]:
     """
     Get the first value.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         if column.len() > 0:
             return column[0]
         else:
@@ -1392,11 +1393,11 @@ def first(column: Union[str, Series]) -> Union[Expr, Any]:
     return col(column).first()
 
 
-def last(column: Union[str, Series]) -> Expr:
+def last(column: Union[str, "pl.Series"]) -> "Expr":
     """
     Get the last value.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         if column.len() > 0:
             return column[-1]
         else:
@@ -1404,7 +1405,9 @@ def last(column: Union[str, Series]) -> Expr:
     return col(column).last()
 
 
-def head(column: Union[str, Series], n: Optional[int] = None) -> Union[Expr, Series]:
+def head(
+    column: Union[str, "pl.Series"], n: Optional[int] = None
+) -> Union[Expr, "pl.Series"]:
     """
     Get the first n rows of an Expression.
 
@@ -1415,12 +1418,14 @@ def head(column: Union[str, Series], n: Optional[int] = None) -> Union[Expr, Ser
     n
         Number of rows to take.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.head(n)
     return col(column).head(n)
 
 
-def tail(column: Union[str, Series], n: Optional[int] = None) -> Union[Expr, Series]:
+def tail(
+    column: Union[str, "pl.Series"], n: Optional[int] = None
+) -> Union["Expr", "pl.Series"]:
     """
     Get the last n rows of an Expression.
 
@@ -1431,7 +1436,7 @@ def tail(column: Union[str, Series], n: Optional[int] = None) -> Union[Expr, Ser
     n
         Number of rows to take.
     """
-    if isinstance(column, Series):
+    if isinstance(column, pl.Series):
         return column.tail(n)
     return col(column).tail(n)
 
@@ -1449,7 +1454,7 @@ def lit_date(dt: datetime) -> Expr:
 
 
 def lit(
-    value: Optional[Union[float, int, str, datetime, Series]],
+    value: Optional[Union[float, int, str, datetime, "pl.Series"]],
     dtype: Optional[Type[DataType]] = None,
 ) -> Expr:
     """
@@ -1484,13 +1489,13 @@ def lit(
     if isinstance(value, datetime):
         return lit(int(value.timestamp() * 1e3)).cast(Date64)
 
-    if isinstance(value, Series):
+    if isinstance(value, pl.Series):
         name = value.name
         value = value._s
         return wrap_expr(pylit(value)).alias(name)
 
     if isinstance(value, np.ndarray):
-        return lit(Series("", value))
+        return lit(pl.Series("", value))
 
     if dtype:
         return wrap_expr(pylit(value)).cast(dtype)
@@ -1542,7 +1547,7 @@ def cov(
 def map_binary(
     a: Union[str, Expr],
     b: Union[str, Expr],
-    f: Callable[[Series, Series], Series],
+    f: Callable[["pl.Series", "pl.Series"], "pl.Series"],
     return_dtype: Optional[Type[DataType]] = None,
 ) -> Expr:
     """
@@ -1567,7 +1572,9 @@ def map_binary(
 
 
 def fold(
-    acc: Expr, f: Callable[[Series, Series], Series], exprs: tp.List[Expr]
+    acc: Expr,
+    f: Callable[["pl.Series", "pl.Series"], "pl.Series"],
+    exprs: tp.List[Expr],
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1626,12 +1633,14 @@ class UDF:
     Deprecated: don't use me
     """
 
-    def __init__(self, f: Callable[[Series], Series], return_dtype: Type[DataType]):
+    def __init__(
+        self, f: Callable[["pl.Series"], "pl.Series"], return_dtype: Type[DataType]
+    ):
         self.f = f
         self.return_dtype = return_dtype
 
 
-def udf(f: Callable[[Series], Series], return_dtype: Type[DataType]) -> UDF:
+def udf(f: Callable[["pl.Series"], "pl.Series"], return_dtype: Type[DataType]) -> UDF:
     """
     Deprecated: don't use me
     """
@@ -1644,7 +1653,7 @@ def arange(
     step: int = 1,
     dtype: Optional[Type[DataType]] = None,
     eager: bool = False,
-) -> Union[Expr, Series]:
+) -> Union[Expr, "pl.Series"]:
     """
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
@@ -1676,10 +1685,10 @@ def arange(
     if dtype is None:
         dtype = Int64
 
-    def create_range(s1: Series, s2: Series) -> Series:
+    def create_range(s1: "pl.Series", s2: "pl.Series") -> "pl.Series":
         assert s1.len() == 1
         assert s2.len() == 1
-        return Series._from_pyseries(_series_from_range(s1[0], s2[0], step, dtype))
+        return pl.Series._from_pyseries(_series_from_range(s1[0], s2[0], step, dtype))
 
     # eager execution can only work if low and high are literals
     if eager:
@@ -1687,7 +1696,7 @@ def arange(
             raise ValueError(
                 "arguments low and high must be integers in eager execution"
             )
-        return Series._from_pyseries(_series_from_range(low, high, step, dtype))
+        return pl.Series._from_pyseries(_series_from_range(low, high, step, dtype))
 
     if isinstance(low, int):
         low = lit(low)
