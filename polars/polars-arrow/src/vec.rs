@@ -212,16 +212,20 @@ impl<T: ArrowNativeType> AlignedVec<T> {
 
     /// Transform this array to an Arrow Buffer.
     pub fn into_arrow_buffer(self) -> Buffer {
-        let values = unsafe { self.into_inner() };
+        if self.is_empty() && self.capacity() == 0 {
+            MutableBuffer::new(0).into()
+        } else {
+            let values = unsafe { self.into_inner() };
 
-        let me = mem::ManuallyDrop::new(values);
-        let ptr = me.as_ptr() as *mut u8;
-        let len = me.len() * std::mem::size_of::<T>();
-        let capacity = me.capacity() * std::mem::size_of::<T>();
-        debug_assert_eq!((ptr as usize) % 64, 0);
-        let ptr = std::ptr::NonNull::new(ptr).unwrap();
+            let me = mem::ManuallyDrop::new(values);
+            let ptr = me.as_ptr() as *mut u8;
+            let len = me.len() * std::mem::size_of::<T>();
+            let capacity = me.capacity() * std::mem::size_of::<T>();
+            debug_assert_eq!((ptr as usize) % 64, 0);
+            let ptr = std::ptr::NonNull::new(ptr).unwrap();
 
-        unsafe { Buffer::from_raw_parts(ptr, len, capacity) }
+            unsafe { Buffer::from_raw_parts(ptr, len, capacity) }
+        }
     }
 
     pub fn into_primitive_array<A: ArrowPrimitiveType>(
