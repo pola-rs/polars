@@ -1,5 +1,5 @@
 # flake8: noqa
 from .expr import *
+from .expr_functions import *
 from .frame import *
-from .functions import *
 from .whenthen import *
