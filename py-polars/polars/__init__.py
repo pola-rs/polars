@@ -11,5 +11,3 @@ try:
     __version__ = version()
 except ImportError:
     pass
-
-__pdoc__ = {"ffi": False}
