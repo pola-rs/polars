@@ -28,14 +28,13 @@ import pyarrow.parquet
 
 import polars as pl
 
-from ._html import NotebookFormatter
-from .datatypes import Boolean, DataType, UInt32, DTYPES, pytype_to_polars_type
-from .utils import _process_null_values, coerce_arrow
+from .._html import NotebookFormatter
+from ..datatypes import DTYPES, Boolean, DataType, UInt32, pytype_to_polars_type
+from ..utils import _process_null_values, coerce_arrow
 
 try:
-    from .polars import version  # noqa: F401
-    from .polars import PyDataFrame, PySeries
-    from .polars import toggle_string_cache as pytoggle_string_cache
+    from ..polars import PyDataFrame, PySeries
+    from ..polars import toggle_string_cache as pytoggle_string_cache
 except ImportError:
     import warnings
 
@@ -1760,9 +1759,7 @@ class DataFrame:
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
-        from .lazy import wrap_ldf
-
-        return wrap_ldf(self._df.lazy())
+        return pl.wrap_ldf(self._df.lazy())
 
     def select(
         self, exprs: Union[str, "pl.Expr", Sequence[str], Sequence["pl.Expr"]]

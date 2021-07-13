@@ -8,8 +8,9 @@ import pyarrow as pa
 
 import polars as pl
 
-from .datatypes import (
+from ..datatypes import (
     DTYPE_TO_FFINAME,
+    DTYPES,
     Boolean,
     DataType,
     Date32,
@@ -29,12 +30,11 @@ from .datatypes import (
     Utf8,
     dtype_to_ctype,
     dtype_to_primitive,
-    DTYPES,
 )
-from .utils import _ptr_to_numpy, coerce_arrow
+from ..utils import _ptr_to_numpy, coerce_arrow
 
 try:
-    from .polars import PyDataFrame, PySeries
+    from ..polars import PyDataFrame, PySeries
 except ImportError:
     import warnings
 
@@ -236,9 +236,7 @@ class Series:
                     self._s = PySeries.new_str(name, values)
                 elif isinstance(dtype, datetime):
                     arrow_array = pa.array(values)
-                    from .functions import from_arrow
-
-                    s = from_arrow(arrow_array)
+                    s = pl.from_arrow(arrow_array)
                     self._s = s._s
                     self._s.rename(name)
                 elif isinstance(dtype, date):
@@ -641,13 +639,13 @@ class Series:
         """
         Get dummy variables.
         """
-        return pl.frame.wrap_df(self._s.to_dummies())
+        return pl.wrap_df(self._s.to_dummies())
 
     def value_counts(self) -> "pl.DataFrame":
         """
         Count the unique values in a Series.
         """
-        return pl.frame.wrap_df(self._s.value_counts())
+        return pl.wrap_df(self._s.value_counts())
 
     @property
     def name(self) -> str:

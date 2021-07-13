@@ -21,8 +21,7 @@ from ..datatypes import (
     Utf8,
     pytype_to_polars_type,
 )
-from ..frame import DataFrame, wrap_df
-from ..series import Series
+from ..eager import DataFrame, Series, wrap_df
 from ..utils import _process_null_values
 
 try:
