@@ -406,7 +406,7 @@ def test_from_pydatetime():
         datetime(2021, 1, 4, 12, 12),
         None,
     ]
-    s = pl.Series("", dates)
+    s = pl.Series("name", dates)
     assert s.dtype == pl.Date64
     assert s.name == "name"
     assert s.null_count() == 1
