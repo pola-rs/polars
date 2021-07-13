@@ -148,7 +148,7 @@ def read_csv(
     n_threads: Optional[int] = None,
     dtype: Optional[Dict[str, Type[DataType]]] = None,
     new_columns: Optional[tp.List[str]] = None,
-    use_pyarrow: bool = True,
+    use_pyarrow: bool = False,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
     storage_options: Optional[Dict] = None,
