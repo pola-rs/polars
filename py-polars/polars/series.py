@@ -1,5 +1,5 @@
 import typing as tp
-from datetime import datetime
+from datetime import date, datetime
 from numbers import Number
 from typing import (
     TYPE_CHECKING,
@@ -254,6 +254,14 @@ class Series:
 
                     s = from_arrow(arrow_array)
                     self._s = s._s
+                    self._s.rename(name)
+                elif isinstance(dtype, date):
+                    arrow_array = pa.array(values)
+                    from .functions import from_arrow
+
+                    s = from_arrow(arrow_array)
+                    self._s = s._s
+                    self._s.rename(name)
                 # make list array
                 elif isinstance(dtype, (list, tuple)):
                     value_dtype = _find_first_non_none(dtype)

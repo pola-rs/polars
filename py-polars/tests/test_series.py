@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 import numpy as np
 import pyarrow as pa
@@ -408,6 +408,14 @@ def test_from_pydatetime():
     ]
     s = pl.Series("", dates)
     assert s.dtype == pl.Date64
+    assert s.name == "name"
+    assert s.null_count() == 1
+
+    dates = [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3), None]
+    s = pl.Series("name", dates)
+    assert s.dtype == pl.Date32
+    assert s.name == "name"
+    assert s.null_count() == 1
 
 
 def test_round():
