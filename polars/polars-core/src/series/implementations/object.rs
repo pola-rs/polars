@@ -246,4 +246,32 @@ where
         debug_assert!(index < self.0.len());
         unsafe { ObjectChunked::get_as_any(&self.0, index) }
     }
+
+    fn as_any(&self) -> &dyn Any {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_downcast_object() -> Result<()> {
+        impl PolarsObject for i32 {
+            fn type_name() -> &'static str {
+                "i32"
+            }
+        }
+
+        let ca = ObjectChunked::new_from_vec("a", vec![0i32, 1, 2]);
+        let s = ca.into_series();
+
+        let ca = s.as_any().downcast_ref::<ObjectChunked<i32>>().unwrap();
+        assert_eq!(*ca.get(0).unwrap(), 0);
+        assert_eq!(*ca.get(1).unwrap(), 1);
+        assert_eq!(*ca.get(2).unwrap(), 2);
+
+        Ok(())
+    }
 }
