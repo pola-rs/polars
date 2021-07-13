@@ -6,6 +6,12 @@ from typing import Any, Dict, Tuple, Union
 import numpy as np
 import pyarrow as pa
 
+__all__ = [
+    "coerce_arrow",
+    "_process_null_values",
+    "_ptr_to_numpy",
+]
+
 
 def coerce_arrow(array: pa.Array) -> pa.Array:
     # also coerces timezone to naive representation
