@@ -1006,6 +1006,13 @@ pub trait SeriesTrait:
         unimplemented!()
     }
 
+    /// Get a hold to self as `Any` trait reference.
+    /// Only implemented for ObjectType
+    #[cfg(feature = "object")]
+    fn as_any(&self) -> &dyn Any {
+        unimplemented!()
+    }
+
     /// Raise a numeric series to the power of exponent.
     fn pow(&self, _exponent: f64) -> Result<Series> {
         Err(PolarsError::InvalidOperation(
