@@ -75,6 +75,7 @@ is_last = ["polars-core/is_last"]
 asof_join = ["polars-core/asof_join"]
 cross_join = ["polars-core/cross_join", "polars-lazy/cross_join"]
 dot_product = ["polars-core/dot_product", "polars-lazy/dot_product"]
+concat_str = ["polars-core/concat_str", "polars-lazy/concat_str"]
 
 # don't use this
 private = []
@@ -136,7 +137,8 @@ docs-selection = [
     "is_first",
     "is_last",
     "asof_join",
-    "cross_join"
+    "cross_join",
+    "concat_str"
 ]
 
 [dependencies]

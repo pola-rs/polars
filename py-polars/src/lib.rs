@@ -99,6 +99,12 @@ fn toggle_string_cache(toggle: bool) {
 }
 
 #[pyfunction]
+fn concat_str(s: Vec<dsl::PyExpr>) -> dsl::PyExpr {
+    let s = s.into_iter().map(|e| e.inner).collect();
+    polars::lazy::functions::concat_str(s).into()
+}
+
+#[pyfunction]
 fn series_from_range(low: i64, high: i64, step_by: usize, dtype: &PyAny) -> PySeries {
     let str_repr = dtype.str().unwrap().to_str().unwrap();
     let dtype = str_to_polarstype(str_repr);
@@ -146,5 +152,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(except_)).unwrap();
     m.add_wrapped(wrap_pyfunction!(series_from_range)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
     Ok(())
 }
