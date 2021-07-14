@@ -17,7 +17,7 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     ///  use polars_core::prelude::*;
     ///  let s0 = Series::new("a", &[1i64, 2, 3]);
     ///  let s1 = Series::new("b", &[1i64, 1, 1]);
@@ -126,7 +126,7 @@ impl DataFrame {
     /// * `id_vars` - String slice that represent the columns to use as id variables.
     /// * `value_vars` - String slice that represent the columns to use as value variables.
     ///
-    /// ```rust
+    /// ```ignore
     ///
     ///  # #[macro_use] extern crate polars_core;
     /// use polars_core::prelude::*;
@@ -211,6 +211,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "dtype-i8")]
+    #[cfg_attr(miri, ignore)]
     fn test_explode() {
         let s0 = Series::new("a", &[1i8, 2, 3]);
         let s1 = Series::new("b", &[1i8, 1, 1]);
@@ -245,6 +246,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_melt() {
         let df = df!("A" => &["a", "b", "a"],
          "B" => &[1, 3, 5],

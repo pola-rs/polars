@@ -490,6 +490,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "sort_multiple")]
+    #[cfg_attr(miri, ignore)]
     fn test_argsort_multiple() -> Result<()> {
         let a = Int32Chunked::new_from_slice("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
         let b = Int64Chunked::new_from_slice("b", &[0, 1, 2, 3, 4, 5, 6, 1]);

@@ -414,7 +414,7 @@ impl DataFrame {
 ///
 /// Until described otherwise, the examples in this struct are performed on the following DataFrame:
 ///
-/// ```rust
+/// ```ignore
 /// use polars_core::prelude::*;
 ///
 /// let dates = &[
@@ -1198,6 +1198,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "dtype-date32")]
+    #[cfg_attr(miri, ignore)]
     fn test_group_by() {
         let s0 = Date32Chunked::parse_from_str_slice(
             "date",
@@ -1302,6 +1303,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_static_groupby_by_12_columns() {
         // Build GroupBy DataFrame.
         let s0 = Series::new("G1", ["A", "A", "B", "B", "C"].as_ref());
@@ -1340,6 +1342,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_dynamic_groupby_by_13_columns() {
         // The content for every groupby series.
         let series_content = ["A", "A", "B", "B", "C"];
@@ -1392,6 +1395,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_groupby_floats() {
         let df = df! {"flt" => [1., 1., 2., 2., 3.],
                     "val" => [1, 1, 1, 1, 1]
@@ -1406,6 +1410,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_groupby_categorical() {
         let mut df = df! {"foo" => ["a", "a", "b", "b", "c"],
                     "ham" => ["a", "a", "b", "b", "c"],
@@ -1431,6 +1436,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_groupby_apply() {
         let df = df! {
             "a" => [1, 1, 2, 2, 2],
@@ -1443,6 +1449,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_groupby_threaded() {
         for slice in &[
             vec![1, 2, 3, 4, 4, 4, 2, 1],
@@ -1465,6 +1472,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_groupby_null_handling() -> Result<()> {
         let df = df!(
             "a" => ["a", "a", "a", "b", "b"],
@@ -1480,6 +1488,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_groupby_var() -> Result<()> {
         // check variance and proper coercion to f64
         let df = df![
@@ -1506,6 +1515,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_groupby_null_group() -> Result<()> {
         // check if null is own group
         let mut df = df![
