@@ -99,9 +99,9 @@ fn toggle_string_cache(toggle: bool) {
 }
 
 #[pyfunction]
-fn concat_str(s: Vec<dsl::PyExpr>) -> dsl::PyExpr {
+fn concat_str(s: Vec<dsl::PyExpr>, delimiter: &str) -> dsl::PyExpr {
     let s = s.into_iter().map(|e| e.inner).collect();
-    polars::lazy::functions::concat_str(s).into()
+    polars::lazy::functions::concat_str(s, delimiter).into()
 }
 
 #[pyfunction]
