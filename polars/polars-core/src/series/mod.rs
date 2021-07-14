@@ -1490,6 +1490,12 @@ impl Series {
     pub fn dot(&self, other: &Series) -> Option<f64> {
         (self * other).sum::<f64>()
     }
+
+    #[cfg(feature = "row_hash")]
+    /// Get a hash of this Series
+    pub fn hash(&self, build_hasher: ahash::RandomState) -> UInt64Chunked {
+        UInt64Chunked::new_from_aligned_vec(self.name(), self.0.vec_hash(build_hasher))
+    }
 }
 
 impl Deref for Series {

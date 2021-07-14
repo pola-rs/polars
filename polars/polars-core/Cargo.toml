@@ -58,6 +58,7 @@ asof_join = []
 cross_join = []
 dot_product = []
 concat_str = []
+row_hash = []
 
 
 # opt-in datatypes for Series
@@ -96,7 +97,8 @@ docs-selection = [
     "asof_join",
     "cross_join",
     "dot_product",
-    "concat_str"
+    "concat_str",
+    "row_hash"
 ]
 
 [dependencies]

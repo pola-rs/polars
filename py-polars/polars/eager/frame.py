@@ -2035,6 +2035,14 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
+    def hash_rows(self) -> "pl.Series":
+        """
+        Hash and combine the rows in this DataFrame.
+
+        Hash value is UInt64
+        """
+        return pl.wrap_s(self._df.hash_rows())
+
 
 class GroupBy:
     """
