@@ -438,6 +438,16 @@ impl PyExpr {
     pub fn dot(&self, other: PyExpr) -> PyExpr {
         self.inner.clone().dot(other.inner).into()
     }
+    pub fn hash(&self, k0: u64, k1: u64, k2: u64, k3: u64) -> PyExpr {
+        let function = move |s: Series| {
+            let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
+            Ok(s.hash(hb).into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, Some(DataType::UInt64))
+            .into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
