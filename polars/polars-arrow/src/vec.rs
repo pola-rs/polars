@@ -25,7 +25,7 @@ impl<T: ArrowNativeType> Drop for AlignedVec<T> {
             let ptr: *mut T = me.as_mut_ptr();
             let ptr = ptr as *mut u8;
             let ptr = std::ptr::NonNull::new(ptr).unwrap();
-            unsafe { alloc::free_aligned::<u8>(ptr, self.capacity()) }
+            unsafe { alloc::free_aligned::<u8>(ptr, me.capacity() * mem::size_of::<T>()) }
         }
     }
 }
