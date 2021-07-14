@@ -8,7 +8,10 @@ use crate::prelude::*;
 use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
+#[cfg(feature = "concat_str")]
+use itertools::Itertools;
 use num::{Float, NumCast};
+use polars_arrow::prelude::ValueSize;
 use std::ops::Add;
 
 /// Compute the covariance between two columns.
@@ -61,6 +64,66 @@ pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
     let (first, by, reverse) =
         prepare_argsort(by.to_vec(), reverse.iter().copied().collect()).unwrap();
     first.argsort_multiple(&by, &reverse)
+}
+
+/// Casts all series to string data and will concat them in linear time
+#[cfg(feature = "concat_str")]
+pub fn concat_str(s: &[Series]) -> Result<Utf8Chunked> {
+    if s.is_empty() {
+        return Err(PolarsError::NoData(
+            "expected multiple series in concat_str function".into(),
+        ));
+    }
+    let len = s.iter().map(|s| s.len()).max().unwrap();
+
+    let cas = s
+        .iter()
+        .map(|s| {
+            let s = s.cast::<Utf8Type>()?;
+            let mut ca = s.utf8()?.clone();
+            // broadcast
+            if ca.len() == 1 && len > 1 {
+                ca = ca.expand_at_index(0, len)
+            }
+
+            Ok(ca)
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if !s.iter().map(|s| s.len()).all_equal() {
+        return Err(PolarsError::ValueError(
+            "all series in concat_str function should have equal length".into(),
+        ));
+    }
+    let mut iters = cas.iter().map(|ca| ca.into_iter()).collect::<Vec<_>>();
+    let bytes_cap = cas.iter().map(|ca| ca.get_values_size()).sum();
+    let mut builder = Utf8ChunkedBuilder::new(s[0].name(), len, bytes_cap);
+
+    // use a string buffer, to amortize alloc
+    let mut buf = String::with_capacity(128);
+
+    for _ in 0..len {
+        let mut has_null = false;
+
+        iters.iter_mut().for_each(|it| {
+            match it.next() {
+                Some(Some(s)) => buf.push_str(s),
+                Some(None) => has_null = true,
+                None => {
+                    // should not happen as the out loop counts to length
+                    unreachable!()
+                }
+            }
+        });
+
+        if has_null {
+            builder.append_null();
+        } else {
+            builder.append_value(&buf)
+        }
+        buf.truncate(0)
+    }
+    Ok(builder.finish())
 }
 
 #[cfg(test)]

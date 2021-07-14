@@ -67,8 +67,8 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
 /// be used and so on.
 pub fn argsort_by(by: Vec<Expr>, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
-    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
-        polars_core::functions::argsort_by(s, &reverse).map(|ca| ca.into_series())
+    let function = NoEq::new(Arc::new(move |by: &mut [Series]| {
+        polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
 
     Expr::Function {
@@ -76,5 +76,19 @@ pub fn argsort_by(by: Vec<Expr>, reverse: &[bool]) -> Expr {
         function,
         output_type: Some(DataType::UInt32),
         collect_groups: true,
+    }
+}
+
+#[cfg(feature = "concat_str")]
+/// Concat string columns in linear time
+pub fn concat_str(s: Vec<Expr>) -> Expr {
+    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+        polars_core::functions::concat_str(s).map(|ca| ca.into_series())
+    }) as Arc<dyn SeriesUdf>);
+    Expr::Function {
+        input: s,
+        function,
+        output_type: Some(DataType::Utf8),
+        collect_groups: false,
     }
 }

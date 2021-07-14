@@ -123,6 +123,7 @@
 //!     - `is_last` - Check if element is last unique value.
 //!     - `checked_arithmetic` - checked arithmetic/ returning `None` on invalid operations.
 //!     - `dot_product` - Dot/inner product on Series and Expressions.
+//!     - `concat_str` - Concat string data in linear time.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)

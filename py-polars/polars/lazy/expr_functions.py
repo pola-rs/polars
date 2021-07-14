@@ -12,6 +12,7 @@ try:
     from ..polars import argsort_by as pyargsort_by
     from ..polars import binary_function as pybinary_function
     from ..polars import col as pycol
+    from ..polars import concat_str as _concat_str
     from ..polars import cov as pycov
     from ..polars import except_ as pyexcept
     from ..polars import lit as pylit
@@ -52,6 +53,7 @@ __all__ = [
     "quantile",
     "arange",
     "argsort_by",
+    "concat_str",
     "UDF",  # deprecated
     "udf",  # deprecated
 ]
@@ -581,3 +583,16 @@ def argsort_by(
         reverse = [reverse]
     exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
     return pl.wrap_expr(pyargsort_by(exprs, reverse))
+
+
+def concat_str(exprs: tp.List["pl.Expr"]) -> "pl.Expr":
+    """
+    Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
+
+    Parameters
+    ----------
+    exprs
+        Columns to concat into a Utf8 Series
+    """
+    exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
+    return pl.wrap_expr(_concat_str(exprs))
