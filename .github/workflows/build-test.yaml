@@ -14,7 +14,7 @@ jobs:
         with:
           toolchain: nightly-2021-07-04
           override: true
-          components: rustfmt, clippy
+          components: rustfmt, clippy, miri
       - name: Cache Cargo
         uses: actions/cache@v2
         with:
@@ -35,6 +35,13 @@ jobs:
       - name: Run formatting checks
         run: |
           cargo fmt --all -- --check
+      - name: Run miri
+        run: |
+          cd polars
+          cargo miri setup
+          cargo clean
+          make miri
+          cd ..
       - name: Run linting checks
         run : |
           # do not produce debug symbols to keep memory usage down
