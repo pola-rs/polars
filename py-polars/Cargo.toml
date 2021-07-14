@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.8.11-beta.1"
+version = "0.8.11"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 readme = "README.md"
@@ -56,7 +56,6 @@ features = [
     "asof_join",
     "cross_join",
     "dot_product",
-    "simdutf8"
 ]
 
 #[patch.crates-io]
