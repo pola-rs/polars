@@ -81,9 +81,10 @@ pub fn argsort_by(by: Vec<Expr>, reverse: &[bool]) -> Expr {
 
 #[cfg(feature = "concat_str")]
 /// Concat string columns in linear time
-pub fn concat_str(s: Vec<Expr>) -> Expr {
+pub fn concat_str(s: Vec<Expr>, delimiter: &str) -> Expr {
+    let delimiter = delimiter.to_string();
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
-        polars_core::functions::concat_str(s).map(|ca| ca.into_series())
+        polars_core::functions::concat_str(s, &delimiter).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
     Expr::Function {
         input: s,

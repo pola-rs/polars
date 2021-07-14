@@ -585,7 +585,7 @@ def argsort_by(
     return pl.wrap_expr(pyargsort_by(exprs, reverse))
 
 
-def concat_str(exprs: tp.List["pl.Expr"]) -> "pl.Expr":
+def concat_str(exprs: tp.List["pl.Expr"], delimiter: str = "") -> "pl.Expr":
     """
     Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 
@@ -593,6 +593,8 @@ def concat_str(exprs: tp.List["pl.Expr"]) -> "pl.Expr":
     ----------
     exprs
         Columns to concat into a Utf8 Series
+    delimiter
+        String value that will be used to separate the values.
     """
     exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
-    return pl.wrap_expr(_concat_str(exprs))
+    return pl.wrap_expr(_concat_str(exprs, delimiter))
