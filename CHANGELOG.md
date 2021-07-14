@@ -2,6 +2,16 @@
 
 The Python bindings of `polars` have their own changelog.
 
+### Polars 0.14.7
+* feature
+  - cross join added
+  - dot-product
+* performance
+  - improve csv-parser performance by ~25%
+* bug fix
+  - fix ub of alignedvec dealloc
+  - various minor
+
 ### Polars 0.14.6
 * feature
   - is_first expr/method

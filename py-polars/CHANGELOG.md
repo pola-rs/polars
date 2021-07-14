@@ -2,6 +2,15 @@
 
 The Rust crate `polars` has its own changelog.
 
+### Polars 0.8.11
+* feature
+  - cross join added
+  - dot-product
+* performance
+  - improve csv-parser performance by ~25%
+* bug fix
+  - various minor
+
 ### Polars 0.8.10
 * feature
   - is_first expr/method
