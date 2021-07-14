@@ -1279,6 +1279,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_inner_join() {
         let (temp, rain) = create_frames();
 
@@ -1305,6 +1306,7 @@ mod test {
 
     #[test]
     #[allow(clippy::float_cmp)]
+    #[cfg_attr(miri, ignore)]
     fn test_left_join() {
         for i in 1..8 {
             std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
@@ -1342,6 +1344,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_outer_join() -> Result<()> {
         let (temp, rain) = create_frames();
         let joined = temp.outer_join(&rain, "days", "days")?;
@@ -1367,6 +1370,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_join_with_nulls() {
         let dts = &[20, 21, 22, 23, 24, 25, 27, 28];
         let vals = &[1.2, 2.4, 4.67, 5.8, 4.4, 3.6, 7.6, 6.5];
@@ -1409,6 +1413,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_join_multiple_columns() {
         let (df_a, df_b) = get_dfs();
 
@@ -1481,6 +1486,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_join_categorical() {
         let _lock = crate::SINGLE_LOCK.lock();
         toggle_string_cache(true);
@@ -1522,6 +1528,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn empty_df_join() {
         let empty: Vec<String> = vec![];
         let left = DataFrame::new(vec![

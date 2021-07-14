@@ -1503,7 +1503,7 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     ///
     /// # #[macro_use] extern crate polars_core;
     /// # fn main() {
@@ -1773,6 +1773,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_recordbatch_iterator() {
         let df = df!(
             "foo" => &[1, 2, 3, 4, 5]
@@ -1784,6 +1785,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_frame_from_recordbatch() {
         let record_batches: Vec<RecordBatch> = create_record_batches();
 
@@ -1796,12 +1798,14 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_select() {
         let df = create_frame();
         assert_eq!(df.column("days").unwrap().eq(1).sum(), Some(1));
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_filter() {
         let df = create_frame();
         println!("{}", df.column("days").unwrap());
@@ -1810,6 +1814,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_filter_broadcast_on_utf8_col() {
         let col_name = "some_col";
         let v = vec!["test".to_string()];
@@ -1824,6 +1829,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_filter_broadcast_on_list_col() {
         let s1 = Series::new("", &[true, false, true]);
         let ll: ListChunked = [&s1].iter().copied().collect();
@@ -1836,6 +1842,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_sort() {
         let mut df = create_frame();
         df.sort_in_place("temp", false).unwrap();
@@ -1852,6 +1859,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "dtype-u8")]
+    #[cfg_attr(miri, ignore)]
     fn get_dummies() {
         let df = df! {
             "id" => &[1, 2, 3, 1, 2, 3, 1, 1],
@@ -1890,6 +1898,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn drop_duplicates() {
         let df = df! {
             "flt" => [1., 1., 2., 2., 3., 3.],
