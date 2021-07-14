@@ -769,6 +769,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "dtype-date64")]
+    #[cfg_attr(miri, ignore)]
     fn test_datelike_join() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
         let mut s1 = s.cast_with_dtype(&DataType::Date64)?;
