@@ -778,3 +778,10 @@ def dot_product():
 
     assert df["a"].dot(df["b"]) == 20
     assert df[[col("a").dot("b")]][0, "a"] == 20
+
+
+def test_hash_rows():
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
+    assert df.hash_rows().dtype == pl.UInt64
+    assert df["a"].hash().dtype == pl.UInt64
+    assert df[[col("a").hash().alias("foo")]]["foo"].dtype == pl.UInt64

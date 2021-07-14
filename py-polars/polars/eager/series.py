@@ -1554,6 +1554,25 @@ class Series:
         """
         return StringNameSpace(self)
 
+    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pl.Series":
+        """
+        Hash the Series.
+
+        The hash value is of type `Date64`
+
+        Parameters
+        ----------
+        k0
+            seed parameter
+        k1
+            seed parameter
+        k2
+            seed parameter
+        k3
+            seed parameter
+        """
+        return wrap_s(self._s.hash(k0, k1, k2, k3))
+
 
 class StringNameSpace:
     """
