@@ -984,7 +984,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.14.6"
+version = "0.14.7"
 dependencies = [
  "polars-core",
  "polars-io",
@@ -1002,7 +1002,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.14.6"
+version = "0.14.7"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1029,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.14.6"
+version = "0.14.7"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1053,7 +1053,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.14.6"
+version = "0.14.7"
 dependencies = [
  "ahash",
  "itertools",
@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.8.11-beta.1"
+version = "0.8.11"
 dependencies = [
  "libc",
  "mimalloc",
