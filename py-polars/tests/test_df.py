@@ -30,7 +30,7 @@ def test_init():
 
 
 def test_selection():
-    df = DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
     # column selection by string(s) in first dimension
     assert df["a"] == [1, 2, 3]
@@ -98,7 +98,7 @@ def test_from_arrow():
 
 
 def test_downsample():
-    s = Series(
+    s = pl.Series(
         "datetime",
         [
             946684800000,
@@ -124,7 +124,7 @@ def test_downsample():
         ],
     ).cast(Date64)
     s2 = s.clone()
-    df = DataFrame({"a": s, "b": s2})
+    df = pl.DataFrame({"a": s, "b": s2})
     out = df.downsample("a", rule="minute", n=5).first()
     assert out.shape == (4, 2)
 
@@ -140,16 +140,16 @@ def test_downsample():
 
 
 def test_sort():
-    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
+    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     df.sort("a", in_place=True)
-    assert df.frame_equal(DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
+    assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
 
 
 def test_replace():
-    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    s = Series("c", [True, False, True])
+    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
+    s = pl.Series("c", [True, False, True])
     df.replace("a", s)
-    assert df.frame_equal(DataFrame({"c": [True, False, True], "b": [1, 2, 3]}))
+    assert df.frame_equal(pl.DataFrame({"c": [True, False, True], "b": [1, 2, 3]}))
 
 
 def test_assignment():
@@ -160,18 +160,18 @@ def test_assignment():
 
 
 def test_slice():
-    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
     df = df.slice(1, 2)
-    assert df.frame_equal(DataFrame({"a": [1, 3], "b": ["b", "c"]}))
+    assert df.frame_equal(pl.DataFrame({"a": [1, 3], "b": ["b", "c"]}))
 
 
 def test_null_count():
-    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", None]})
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", None]})
     assert df.null_count().shape == (1, 2)
 
 
 def test_head_tail():
-    df = DataFrame({"a": range(10), "b": range(10)})
+    df = pl.DataFrame({"a": range(10), "b": range(10)})
     assert df.head(5).height == 5
     assert df.tail(5).height == 5
 
@@ -182,7 +182,7 @@ def test_head_tail():
 
 
 def test_groupby():
-    df = DataFrame(
+    df = pl.DataFrame(
         {
             "a": ["a", "b", "a", "b", "b", "c"],
             "b": [1, 2, 3, 4, 5, 6],
@@ -195,7 +195,7 @@ def test_groupby():
         df.groupby("a")["b"]
         .sum()
         .sort(by="a")
-        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
 
     assert (
@@ -203,42 +203,44 @@ def test_groupby():
         .select("b")
         .sum()
         .sort(by="a")
-        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
     assert (
         df.groupby("a")
         .select("c")
         .sum()
         .sort(by="a")
-        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
+        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .min()
         .sort(by="a")
-        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
+        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .max()
         .sort(by="a")
-        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
+        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     assert (
         df.groupby("a")
         .select("b")
         .mean()
         .sort(by="a")
-        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]}))
+        .frame_equal(
+            pl.DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]})
+        )
     )
     assert (
         df.groupby("a")
         .select("b")
         .last()
         .sort(by="a")
-        .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
+        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     # check if it runs
     (df.groupby("a").select("b").n_unique())
@@ -253,11 +255,13 @@ def test_groupby():
     #
     # # TODO: is false because count is u32
     # df.groupby(by="a", select="b", agg="count").frame_equal(
-    #     DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
+    #     pl.DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
     # )
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
-    assert df.groupby("a").groups().sort("a")["a"].series_equal(Series(["a", "b", "c"]))
+    assert (
+        df.groupby("a").groups().sort("a")["a"].series_equal(pl.Series(["a", "b", "c"]))
+    )
 
     for subdf in df.groupby("a"):
         if subdf["a"][0] == "b":
@@ -285,14 +289,14 @@ def test_groupby():
 
 
 def test_join():
-    df_left = DataFrame(
+    df_left = pl.DataFrame(
         {
             "a": ["a", "b", "a", "z"],
             "b": [1, 2, 3, 4],
             "c": [6, 5, 4, 3],
         }
     )
-    df_right = DataFrame(
+    df_right = pl.DataFrame(
         {
             "a": ["b", "c", "b", "a"],
             "k": [0, 3, 9, 6],
@@ -301,17 +305,17 @@ def test_join():
     )
 
     joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
-    assert joined["b"].series_equal(Series("", [1, 3, 2, 2]))
+    assert joined["b"].series_equal(pl.Series("", [1, 3, 2, 2]))
     joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
     assert joined["c_right"].is_null().sum() == 1
-    assert joined["b"].series_equal(Series("", [1, 3, 2, 2, 4]))
+    assert joined["b"].series_equal(pl.Series("", [1, 3, 2, 2, 4]))
     joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
     assert joined["c_right"].null_count() == 1
     assert joined["c"].null_count() == 2
     assert joined["b"].null_count() == 2
 
-    df_a = DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
-    df_b = DataFrame(
+    df_a = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
+    df_b = pl.DataFrame(
         {"foo": [1, 1, 1], "bar": ["a", "c", "c"], "ham": ["let", "var", "const"]}
     )
 
@@ -325,17 +329,17 @@ def test_join():
 
 
 def test_hstack():
-    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df.hstack([Series("stacked", [-1, -1, -1])], in_place=True)
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
+    df.hstack([pl.Series("stacked", [-1, -1, -1])], in_place=True)
     assert df.shape == (3, 3)
     assert df.columns == ["a", "b", "stacked"]
 
 
 def test_drop():
-    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
     df = df.drop("a")
     assert df.shape == (3, 2)
-    df = DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
     s = df.drop_in_place("a")
     assert s.name == "a"
 
@@ -344,7 +348,7 @@ def test_file_buffer():
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
-    df = DataFrame.read_csv(f, has_headers=False)
+    df = pl.DataFrame.read_csv(f, has_headers=False)
     assert df.shape == (2, 6)
     f.seek(0)
 
@@ -356,26 +360,28 @@ def test_file_buffer():
 
 def test_set():
     np.random.seed(1)
-    df = DataFrame({"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10})
+    df = pl.DataFrame(
+        {"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10}
+    )
     df["new"] = np.random.rand(10)
     df[df["new"] > 0.5, "new"] = 1
 
 
 def test_melt():
-    df = DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
     melted = df.melt(id_vars="A", value_vars=["B", "C"])
     assert melted["value"] == [1, 3, 4, 2, 4, 6]
 
 
 def test_shift():
-    df = DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
     a = df.shift(1)
-    b = DataFrame({"A": [None, "a", "b"], "B": [None, 1, 3]}, nullable=True)
+    b = pl.DataFrame({"A": [None, "a", "b"], "B": [None, 1, 3]}, nullable=True)
     assert a.frame_equal(b, null_equal=True)
 
 
 def test_to_dummies():
-    df = DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
+    df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
     dummies = df.to_dummies()
     assert dummies["A_a"].to_list() == [1, 0, 0]
     assert dummies["A_b"].to_list() == [0, 1, 0]
@@ -403,16 +409,16 @@ def test_from_pandas():
 
 
 def test_custom_groupby():
-    df = DataFrame({"A": ["a", "a", "c", "c"], "B": [1, 3, 5, 2]})
+    df = pl.DataFrame({"A": ["a", "a", "c", "c"], "B": [1, 3, 5, 2]})
     assert df.groupby("A").select("B").apply(lambda x: x.sum()).shape == (2, 2)
     assert df.groupby("A").select("B").apply(
-        lambda x: Series("", np.array(x))
+        lambda x: pl.Series("", np.array(x))
     ).shape == (
         2,
         2,
     )
 
-    df = DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
+    df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
 
     out = (
         df.lazy()
@@ -424,15 +430,15 @@ def test_custom_groupby():
 
 
 def test_multiple_columns_drop():
-    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
     out = df.drop(["a", "b"])
     assert out.columns == ["c"]
 
 
 def test_concat():
-    df = DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
-    assert pl.functions.concat([df, df]).shape == (6, 3)
+    assert pl.concat([df, df]).shape == (6, 3)
 
     # check if a remains unchanged
     a = pl.from_rows(((1, 2), (1, 2)))
@@ -445,7 +451,7 @@ def test_to_pandas(df):
     df.to_pandas()
     # test shifted df
     df.shift(2).to_pandas()
-    df = DataFrame({"col": Series([True, False, True])})
+    df = pl.DataFrame({"col": pl.Series([True, False, True])})
     df.shift(2).to_pandas()
 
 
@@ -477,14 +483,14 @@ def test_from_pandas_datetime():
 def test_df_fold():
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
 
-    assert df.fold(lambda s1, s2: s1 + s2).series_equal(Series("a", [4.0, 5.0, 9.0]))
+    assert df.fold(lambda s1, s2: s1 + s2).series_equal(pl.Series("a", [4.0, 5.0, 9.0]))
     assert df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2)).series_equal(
-        Series("a", [1.0, 1.0, 3.0])
+        pl.Series("a", [1.0, 1.0, 3.0])
     )
 
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.fold(lambda s1, s2: s1 + s2)
-    out.series_equal(Series("", ["foo11", "bar22", "233"]))
+    out.series_equal(pl.Series("", ["foo11", "bar22", "233"]))
 
     df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     # just check dispatch. values are tested on rust side.

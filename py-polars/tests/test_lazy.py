@@ -1,3 +1,5 @@
+import numpy as np
+
 import polars as pl
 from polars.datatypes import *
 from polars.lazy import *
