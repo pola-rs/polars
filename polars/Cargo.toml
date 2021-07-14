@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.14.6"
+version = "0.14.7"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -44,7 +44,7 @@ json = ["polars-io", "polars-io/json"]
 ipc = ["polars-io", "polars-io/ipc"]
 
 # support for arrows csv file parsing
-csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
+csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file", "polars-io/simdutf8"]
 
 # ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
 # that fits a TrustedLen iterator.
@@ -63,7 +63,6 @@ pivot = ["polars-core/pivot"]
 downsample = ["polars-core/downsample"]
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
-simdutf8 = ["polars-io/simdutf8"]
 
 # extra operations
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
@@ -141,9 +140,9 @@ docs-selection = [
 ]
 
 [dependencies]
-polars-core = {version = "0.14.6", path = "./polars-core", features= ["docs", "private"], default-features = false}
-polars-io = {version = "0.14.6", path = "./polars-io", default-features = false, optional=true}
-polars-lazy = {version = "0.14.6", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
+polars-core = {version = "0.14.7", path = "./polars-core", features= ["docs", "private"], default-features = false}
+polars-io = {version = "0.14.7", path = "./polars-io", default-features = false, optional=true}
+polars-lazy = {version = "0.14.7", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
 
 [dev-dependencies]
 criterion = "0.3"
