@@ -52,9 +52,13 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let lhs = self.left.evaluate(df, state)?;
-        let rhs = self.right.evaluate(df, state)?;
-        apply_operator(&lhs, &rhs, self.op)
+        let (lhs, rhs) = POOL.install(|| {
+            rayon::join(
+                || self.left.evaluate(df, state),
+                || self.right.evaluate(df, state),
+            )
+        });
+        apply_operator(&lhs?, &rhs?, self.op)
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         todo!()
