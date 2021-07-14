@@ -8,6 +8,8 @@
 pub mod dates;
 #[cfg(feature = "object")]
 pub mod object;
+#[cfg(feature = "object")]
+use std::any::Any;
 
 use super::private;
 use super::IntoSeries;
@@ -858,6 +860,11 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "is_first")]
             fn is_first(&self) -> Result<BooleanChunked> {
                 self.0.is_first()
+            }
+
+            #[cfg(feature = "object")]
+            fn as_any(&self) -> &dyn Any {
+                &self.0
             }
         }
     };

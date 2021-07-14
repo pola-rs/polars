@@ -17,7 +17,8 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use ahash::RandomState;
-use arrow::array::ArrayRef;
+#[cfg(feature = "object")]
+use std::any::Any;
 use std::borrow::Cow;
 
 impl<T> ChunkedArray<T> {
@@ -708,6 +709,11 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "is_first")]
             fn is_first(&self) -> Result<BooleanChunked> {
                 cast_and_apply!(self, is_first,)
+            }
+
+            #[cfg(feature = "object")]
+            fn as_any(&self) -> &dyn Any {
+                &self.0
             }
         }
     };
