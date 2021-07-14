@@ -56,9 +56,11 @@ pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
     first.argsort_multiple(&by, &reverse)
 }
 
-/// Casts all series to string data and will concat them in linear time
+/// Casts all series to string data and will concat them in linear time.
+/// The concatenated strings are separated by a `delimiter`.
+/// If no `delimiter` is needed, an empty &str should be passed as argument.
 #[cfg(feature = "concat_str")]
-pub fn concat_str(s: &[Series]) -> Result<Utf8Chunked> {
+pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
     if s.is_empty() {
         return Err(PolarsError::NoData(
             "expected multiple series in concat_str function".into(),
@@ -92,8 +94,11 @@ pub fn concat_str(s: &[Series]) -> Result<Utf8Chunked> {
     // use a string buffer, to amortize alloc
     let mut buf = String::with_capacity(128);
 
-    for _ in 0..len {
+    for i in 0..len {
         let mut has_null = false;
+        if i > 0 {
+            buf.push_str(delimiter);
+        }
 
         iters.iter_mut().for_each(|it| {
             match it.next() {
