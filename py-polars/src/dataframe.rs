@@ -885,6 +885,11 @@ impl PyDataFrame {
     pub fn shrink_to_fit(&mut self) {
         self.df.shrink_to_fit();
     }
+
+    pub fn hash_rows(&self) -> PyResult<PySeries> {
+        let hash = self.df.hash_rows().map_err(PyPolarsEr::from)?;
+        Ok(hash.into_series().into())
+    }
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {

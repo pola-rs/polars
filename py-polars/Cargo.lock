@@ -1102,6 +1102,7 @@ dependencies = [
 name = "py-polars"
 version = "0.8.11"
 dependencies = [
+ "ahash",
  "libc",
  "mimalloc",
  "ndarray",

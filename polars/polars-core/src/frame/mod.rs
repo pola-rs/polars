@@ -32,6 +32,8 @@ mod upstream_traits;
 
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
+#[cfg(feature = "row_hash")]
+use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -1631,6 +1633,20 @@ impl DataFrame {
             .map(|s| Series::new(s.name(), &[s.null_count() as u32]))
             .collect();
         Self::new_no_checks(cols)
+    }
+
+    /// Hash and combine the row values
+    #[cfg(feature = "row_hash")]
+    pub fn hash_rows(&self) -> Result<UInt64Chunked> {
+        let dfs = split_df(self, POOL.current_num_threads())?;
+        let (cas, _) = df_rows_to_hashes_threaded(&dfs, None);
+
+        let mut iter = cas.into_iter();
+        let mut acc_ca = iter.next().unwrap();
+        for ca in iter {
+            acc_ca.append(&ca);
+        }
+        Ok(acc_ca.rechunk())
     }
 }
 

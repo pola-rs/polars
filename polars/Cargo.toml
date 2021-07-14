@@ -76,6 +76,7 @@ asof_join = ["polars-core/asof_join"]
 cross_join = ["polars-core/cross_join", "polars-lazy/cross_join"]
 dot_product = ["polars-core/dot_product", "polars-lazy/dot_product"]
 concat_str = ["polars-core/concat_str", "polars-lazy/concat_str"]
+row_hash = ["polars-core/row_hash"]
 
 # don't use this
 private = []

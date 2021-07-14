@@ -1116,6 +1116,11 @@ impl PySeries {
     pub fn dot(&self, other: &PySeries) -> Option<f64> {
         self.series.dot(&other.series)
     }
+
+    pub fn hash(&self, k0: u64, k1: u64, k2: u64, k3: u64) -> Self {
+        let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
+        self.series.hash(hb).into_series().into()
+    }
 }
 
 macro_rules! impl_ufuncs {
