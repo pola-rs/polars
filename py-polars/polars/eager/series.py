@@ -1,25 +1,16 @@
 import typing as tp
 from datetime import date, datetime
 from numbers import Number
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 import pyarrow as pa
 
 import polars as pl
 
-from .datatypes import (
+from ..datatypes import (
     DTYPE_TO_FFINAME,
+    DTYPES,
     Boolean,
     DataType,
     Date32,
@@ -39,13 +30,11 @@ from .datatypes import (
     Utf8,
     dtype_to_ctype,
     dtype_to_primitive,
-    dtypes,
 )
-from .ffi import _ptr_to_numpy
-from .utils import coerce_arrow
+from ..utils import _ptr_to_numpy, coerce_arrow
 
 try:
-    from .polars import PyDataFrame, PySeries
+    from ..polars import PyDataFrame, PySeries
 except ImportError:
     import warnings
 
@@ -58,18 +47,15 @@ except ImportError:
         "SeriesIter": False,
     }
 
-if TYPE_CHECKING:
-    from .frame import DataFrame
-
-
-class IdentityDict(dict):
-    def __missing__(self, key: Any) -> Any:
-        return key
+__all__ = [
+    "Series",
+    "wrap_s",
+]
 
 
 def get_ffi_func(
     name: str,
-    dtype: Type[DataType],
+    dtype: Type["DataType"],
     obj: Optional["Series"] = None,
     default: Optional[Callable[[Any], Any]] = None,
 ) -> Callable[..., Any]:
@@ -101,7 +87,7 @@ def get_ffi_func(
         return globals().get(fname, default)
 
 
-def wrap_s(s: PySeries) -> "Series":
+def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
 
 
@@ -250,16 +236,12 @@ class Series:
                     self._s = PySeries.new_str(name, values)
                 elif isinstance(dtype, datetime):
                     arrow_array = pa.array(values)
-                    from .functions import from_arrow
-
-                    s = from_arrow(arrow_array)
+                    s = pl.from_arrow(arrow_array)
                     self._s = s._s
                     self._s.rename(name)
                 elif isinstance(dtype, date):
                     arrow_array = pa.array(values)
-                    from .functions import from_arrow
-
-                    s = from_arrow(arrow_array)
+                    s = pl.from_arrow(arrow_array)
                     self._s = s._s
                     self._s.rename(name)
                 # make list array
@@ -290,7 +272,7 @@ class Series:
                     self._s = PySeries.new_object(name, values)
 
     @staticmethod
-    def _from_pyseries(s: PySeries) -> "Series":
+    def _from_pyseries(s: "PySeries") -> "Series":
         self = Series.__new__(Series)
         self._s = s
         return self
@@ -317,7 +299,7 @@ class Series:
         array = coerce_arrow(array)
         return Series._from_pyseries(PySeries.from_arrow(name, array))
 
-    def inner(self) -> PySeries:
+    def inner(self) -> "PySeries":
         return self._s
 
     def __str__(self) -> str:
@@ -538,7 +520,7 @@ class Series:
         """
         return wrap_s(self._s.drop_nulls())
 
-    def to_frame(self) -> "DataFrame":
+    def to_frame(self) -> "pl.DataFrame":
         """
         Cast this Series to a DataFrame.
         """
@@ -549,7 +531,7 @@ class Series:
         """
         Get the data type of this Series.
         """
-        return dtypes[self._s.dtype()]
+        return DTYPES[self._s.dtype()]
 
     def describe(self) -> Dict[str, Union[int, float]]:
         """
@@ -651,17 +633,17 @@ class Series:
         """
         return self._s.quantile(quantile)
 
-    def to_dummies(self) -> "DataFrame":
+    def to_dummies(self) -> "pl.DataFrame":
         """
         Get dummy variables.
         """
-        return pl.frame.wrap_df(self._s.to_dummies())
+        return pl.wrap_df(self._s.to_dummies())
 
-    def value_counts(self) -> "DataFrame":
+    def value_counts(self) -> "pl.DataFrame":
         """
         Count the unique values in a Series.
         """
-        return pl.frame.wrap_df(self._s.value_counts())
+        return pl.wrap_df(self._s.value_counts())
 
     @property
     def name(self) -> str:

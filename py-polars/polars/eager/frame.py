@@ -7,7 +7,6 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from types import TracebackType
 from typing import (
-    TYPE_CHECKING,
     Any,
     BinaryIO,
     Callable,
@@ -29,42 +28,45 @@ import pyarrow.parquet
 
 import polars as pl
 
-from ._html import NotebookFormatter
-from .datatypes import Boolean, DataType, UInt32, dtypes, pytype_to_polars_type
-from .series import Series, wrap_s
-from .utils import _process_null_values, coerce_arrow
+from .._html import NotebookFormatter
+from ..datatypes import DTYPES, Boolean, DataType, UInt32, pytype_to_polars_type
+from ..utils import _process_null_values, coerce_arrow
 
 try:
-    from .polars import version  # noqa: F401
-    from .polars import PyDataFrame, PySeries
-    from .polars import toggle_string_cache as pytoggle_string_cache
+    from ..polars import PyDataFrame, PySeries
+    from ..polars import toggle_string_cache as pytoggle_string_cache
 except ImportError:
     import warnings
 
     warnings.warn("binary files missing")
 
-if TYPE_CHECKING:
-    from .lazy import Expr, LazyFrame
 
 try:
     import pandas as pd
 except ImportError:
     pass
 
+__all__ = [
+    "DataFrame",
+    "wrap_df",
+    "StringCache",
+    "toggle_string_cache",
+]
 
-def wrap_df(df: PyDataFrame) -> "DataFrame":
+
+def wrap_df(df: "PyDataFrame") -> "DataFrame":
     return DataFrame._from_pydf(df)
 
 
-def _prepare_other_arg(other: Any) -> Series:
+def _prepare_other_arg(other: Any) -> "pl.Series":
     # if not a series create singleton series such that it will broadcast
-    if not isinstance(other, Series):
+    if not isinstance(other, pl.Series):
         if isinstance(other, str):
             pass
         elif isinstance(other, Sequence):
             raise ValueError("Operation not supported.")
 
-        other = Series("", [other])
+        other = pl.Series("", [other])
     return other
 
 
@@ -75,7 +77,7 @@ class DataFrame:
 
     def __init__(
         self,
-        data: Union[Dict[str, Sequence], tp.List[Series], np.ndarray],
+        data: Union[Dict[str, Sequence], tp.List["pl.Series"], np.ndarray],
         nullable: bool = True,
     ):
         """
@@ -85,17 +87,19 @@ class DataFrame:
         columns = []
         if isinstance(data, dict):
             for k, v in data.items():
-                columns.append(Series(k, v, nullable=nullable).inner())
+                columns.append(pl.Series(k, v, nullable=nullable).inner())
         elif isinstance(data, np.ndarray):
             shape = data.shape
             if len(shape) == 2:
                 for i, c in enumerate(range(shape[1])):
-                    columns.append(Series(str(i), data[:, c], nullable=False).inner())
+                    columns.append(
+                        pl.Series(str(i), data[:, c], nullable=False).inner()
+                    )
             else:
                 raise ValueError("A numpy array should have 2 dimensions.")
         elif isinstance(data, list):
             for s in data:
-                if not isinstance(s, Series):
+                if not isinstance(s, pl.Series):
                     raise ValueError("A list should contain Series.")
                 columns.append(s.inner())
         else:
@@ -105,9 +109,11 @@ class DataFrame:
                 if isinstance(data, pd.DataFrame):
                     for col in data.columns:
                         if nullable:
-                            s = Series(col, data[col].to_list(), nullable=True).inner()
+                            s = pl.Series(
+                                col, data[col].to_list(), nullable=True
+                            ).inner()
                         else:
-                            s = Series(col, data[col].values, nullable=False).inner()
+                            s = pl.Series(col, data[col].values, nullable=False).inner()
                         columns.append(s)
                 else:
                     raise ValueError("A dictionary was expected.")
@@ -117,7 +123,7 @@ class DataFrame:
         self._df = PyDataFrame(columns)
 
     @staticmethod
-    def _from_pydf(df: PyDataFrame) -> "DataFrame":
+    def _from_pydf(df: "PyDataFrame") -> "DataFrame":
         self = DataFrame.__new__(DataFrame)
         self._df = df
         return self
@@ -597,12 +603,12 @@ class DataFrame:
     def __repr__(self) -> str:
         return self.__str__()
 
-    def __getattr__(self, item: Any) -> PySeries:
+    def __getattr__(self, item: Any) -> "PySeries":
         """
         Access columns as attribute.
         """
         try:
-            return wrap_s(self._df.column(item))
+            return pl.wrap_s(self._df.column(item))
         except RuntimeError:
             raise AttributeError(f"{item} not found")
 
@@ -633,7 +639,7 @@ class DataFrame:
         if hasattr(item, "_pyexpr"):
             return self.select(item)
         if isinstance(item, np.ndarray):
-            item = Series("", item)
+            item = pl.Series("", item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple):
@@ -667,7 +673,7 @@ class DataFrame:
                 # df[:, unknown]
                 series = self.__getitem__(col_selection)
                 # s[:]
-                wrap_s(series[row_selection])
+                pl.wrap_s(series[row_selection])
 
             # df[2, :] (select row as df)
             if isinstance(row_selection, int):
@@ -700,7 +706,7 @@ class DataFrame:
         # select single column
         # df["foo"]
         if isinstance(item, str):
-            return wrap_s(self._df.column(item))
+            return pl.wrap_s(self._df.column(item))
 
         # df[idx]
         if isinstance(item, int):
@@ -737,11 +743,11 @@ class DataFrame:
                 return wrap_df(self._df.take(item))
             if isinstance(item[0], str):
                 return wrap_df(self._df.select(item))
-        if isinstance(item, (Series, Sequence)):
+        if isinstance(item, (pl.Series, Sequence)):
             if isinstance(item, Sequence):
                 # only bool or integers allowed
                 if type(item[0]) == bool:
-                    item = Series("", item)
+                    item = pl.Series("", item)
                 else:
                     return wrap_df(
                         self._df.take([self._pos_idx(i, dim=0) for i in item])
@@ -756,12 +762,12 @@ class DataFrame:
         # df["foo"] = series
         if isinstance(key, str):
             try:
-                self.replace(key, Series(key, value))
+                self.replace(key, pl.Series(key, value))
             except Exception:
-                self.hstack([Series(key, value)], in_place=True)
+                self.hstack([pl.Series(key, value)], in_place=True)
         # df[idx] = series
         elif isinstance(key, int):
-            assert isinstance(value, Series)
+            assert isinstance(value, pl.Series)
             self.replace_at_idx(key, value)
         # df[a, b]
         elif isinstance(key, tuple):
@@ -812,7 +818,7 @@ class DataFrame:
             df._df.rename(k, v)
         return df
 
-    def insert_at_idx(self, index: int, series: Series) -> None:
+    def insert_at_idx(self, index: int, series: "pl.Series") -> None:
         """
         Insert a Series at a certain column index. This operation is in place.
 
@@ -825,7 +831,7 @@ class DataFrame:
         """
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self, predicate: "Expr") -> "DataFrame":
+    def filter(self, predicate: "pl.Expr") -> "DataFrame":
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -964,7 +970,7 @@ class DataFrame:
         ╰─────┴─────┴─────╯
         ```
         """
-        return [dtypes[idx] for idx in self._df.dtypes()]
+        return [DTYPES[idx] for idx in self._df.dtypes()]
 
     def describe(self) -> "DataFrame":
         """
@@ -1020,7 +1026,7 @@ class DataFrame:
         )
         return summary
 
-    def replace_at_idx(self, index: int, series: Series) -> None:
+    def replace_at_idx(self, index: int, series: "pl.Series") -> None:
         """
         Replace a column at an index location.
 
@@ -1035,7 +1041,7 @@ class DataFrame:
 
     def sort(
         self,
-        by: Union[str, "Expr", tp.List["Expr"]],
+        by: Union[str, "pl.Expr", tp.List["pl.Expr"]],
         in_place: bool = False,
         reverse: Union[bool, tp.List[bool]] = False,
     ) -> Optional["DataFrame"]:
@@ -1134,7 +1140,7 @@ class DataFrame:
         """
         return self._df.frame_equal(other._df, null_equal)
 
-    def replace(self, column: str, new_col: Series) -> None:
+    def replace(self, column: str, new_col: "pl.Series") -> None:
         """
         Replace a column by a new Series.
 
@@ -1369,11 +1375,15 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
-        right_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        left_on: Optional[
+            Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]]
+        ] = None,
+        right_on: Optional[
+            Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]]
+        ] = None,
         on: Optional[Union[str, tp.List[str]]] = None,
         how: str = "inner",
-    ) -> Union["DataFrame", "LazyFrame"]:
+    ) -> Union["DataFrame", "pl.LazyFrame"]:
         """
         SQL like joins.
 
@@ -1480,7 +1490,7 @@ class DataFrame:
         self,
         f: Callable[[Tuple[Any]], Any],
         return_dtype: Optional[Type[DataType]] = None,
-    ) -> "Series":
+    ) -> "pl.Series":
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
 
@@ -1493,9 +1503,9 @@ class DataFrame:
         return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
         """
-        return wrap_s(self._df.apply(f, return_dtype))
+        return pl.wrap_s(self._df.apply(f, return_dtype))
 
-    def with_column(self, column: Union[Series, "Expr"]) -> "DataFrame":
+    def with_column(self, column: Union["pl.Series", "pl.Expr"]) -> "DataFrame":
         """
         Return a new DataFrame with the column added or replaced.
 
@@ -1510,7 +1520,7 @@ class DataFrame:
             return wrap_df(self._df.with_column(column._s))
 
     def hstack(
-        self, columns: Union[tp.List[Series], "DataFrame"], in_place: bool = False
+        self, columns: Union[tp.List["pl.Series"], "DataFrame"], in_place: bool = False
     ) -> Optional["DataFrame"]:
         """
         Return a new DataFrame grown horizontally by stacking multiple Series to it.
@@ -1589,7 +1599,7 @@ class DataFrame:
 
         return wrap_df(self._df.drop(name))
 
-    def drop_in_place(self, name: str) -> Series:
+    def drop_in_place(self, name: str) -> "pl.Series":
         """
         Drop in place.
 
@@ -1598,9 +1608,9 @@ class DataFrame:
         name
             Column to drop.
         """
-        return wrap_s(self._df.drop_in_place(name))
+        return pl.wrap_s(self._df.drop_in_place(name))
 
-    def select_at_idx(self, idx: int) -> Series:
+    def select_at_idx(self, idx: int) -> "pl.Series":
         """
         Select column at index location.
 
@@ -1609,7 +1619,7 @@ class DataFrame:
         idx
             Location of selection.
         """
-        return wrap_s(self._df.select_at_idx(idx))
+        return pl.wrap_s(self._df.select_at_idx(idx))
 
     def clone(self) -> "DataFrame":
         """
@@ -1617,13 +1627,13 @@ class DataFrame:
         """
         return wrap_df(self._df.clone())
 
-    def get_columns(self) -> tp.List[Series]:
+    def get_columns(self) -> tp.List["pl.Series"]:
         """
         Get the DataFrame as a List of Series.
         """
-        return list(map(lambda s: wrap_s(s), self._df.get_columns()))
+        return list(map(lambda s: pl.wrap_s(s), self._df.get_columns()))
 
-    def fill_none(self, strategy: Union[str, "Expr"]) -> "DataFrame":
+    def fill_none(self, strategy: Union[str, "pl.Expr"]) -> "DataFrame":
         """
         Fill None values by a filling strategy or an Expression evaluation.
 
@@ -1723,19 +1733,19 @@ class DataFrame:
             .collect(no_optimization=True, string_cache=False)
         )
 
-    def is_duplicated(self) -> Series:
+    def is_duplicated(self) -> "pl.Series":
         """
         Get a mask of all duplicated rows in this DataFrame.
         """
-        return wrap_s(self._df.is_duplicated())
+        return pl.wrap_s(self._df.is_duplicated())
 
-    def is_unique(self) -> Series:
+    def is_unique(self) -> "pl.Series":
         """
         Get a mask of all unique rows in this DataFrame.
         """
-        return wrap_s(self._df.is_unique())
+        return pl.wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "LazyFrame":
+    def lazy(self) -> "pl.LazyFrame":
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -1749,12 +1759,10 @@ class DataFrame:
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
-        from .lazy import wrap_ldf
-
-        return wrap_ldf(self._df.lazy())
+        return pl.wrap_ldf(self._df.lazy())
 
     def select(
-        self, exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
+        self, exprs: Union[str, "pl.Expr", Sequence[str], Sequence["pl.Expr"]]
     ) -> "DataFrame":
         """
         Select columns from this DataFrame.
@@ -1768,7 +1776,7 @@ class DataFrame:
             self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
         )
 
-    def with_columns(self, exprs: Union["Expr", tp.List["Expr"]]) -> "DataFrame":
+    def with_columns(self, exprs: Union["pl.Expr", tp.List["pl.Expr"]]) -> "DataFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -1798,7 +1806,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.max())
         if axis == 1:
-            return wrap_s(self._df.hmax()).to_frame()
+            return pl.wrap_s(self._df.hmax()).to_frame()
         raise ValueError("Axis should be 0 or 1.")
 
     def min(self, axis: int = 0) -> "DataFrame":
@@ -1808,7 +1816,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.min())
         if axis == 1:
-            return wrap_s(self._df.hmin()).to_frame()
+            return pl.wrap_s(self._df.hmin()).to_frame()
         raise ValueError("Axis should be 0 or 1.")
 
     def sum(self, axis: int = 0) -> "DataFrame":
@@ -1818,7 +1826,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.sum())
         if axis == 1:
-            return wrap_s(self._df.hsum()).to_frame()
+            return pl.wrap_s(self._df.hsum()).to_frame()
         raise ValueError("Axis should be 0 or 1.")
 
     def mean(self, axis: int = 0) -> "DataFrame":
@@ -1828,7 +1836,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.mean())
         if axis == 1:
-            return wrap_s(self._df.hmean()).to_frame()
+            return pl.wrap_s(self._df.hmean()).to_frame()
         raise ValueError("Axis should be 0 or 1.")
 
     def std(self) -> "DataFrame":
@@ -1910,7 +1918,9 @@ class DataFrame:
             return wrap_df(self._df.sample_n(n, with_replacement))
         return wrap_df(self._df.sample_frac(frac, with_replacement))
 
-    def fold(self, operation: Callable[[Series, Series], Series]) -> Series:
+    def fold(
+        self, operation: Callable[["pl.Series", "pl.Series"], "pl.Series"]
+    ) -> "pl.Series":
         """
         Apply a horizontal reduction on a DataFrame. This can be used to effectively
         determine aggregations on a row level, and can be applied to any DataType that
@@ -2040,7 +2050,7 @@ class GroupBy:
 
     def __init__(
         self,
-        df: PyDataFrame,
+        df: "PyDataFrame",
         by: Union[str, tp.List[str]],
         downsample: bool = False,
         rule: Optional[str] = None,
@@ -2127,8 +2137,8 @@ class GroupBy:
         column_to_agg: Union[
             tp.List[Tuple[str, tp.List[str]]],
             Dict[str, Union[str, tp.List[str]]],
-            tp.List["Expr"],
-            "Expr",
+            tp.List["pl.Expr"],
+            "pl.Expr",
         ],
     ) -> DataFrame:
         """
@@ -2398,7 +2408,7 @@ class GBSelection:
 
     def __init__(
         self,
-        df: PyDataFrame,
+        df: "PyDataFrame",
         by: Union[str, tp.List[str]],
         selection: Optional[tp.List[str]],
         downsample: bool = False,
