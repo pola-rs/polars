@@ -57,6 +57,7 @@ is_last = []
 asof_join = []
 cross_join = []
 dot_product = []
+concat_str = []
 
 
 # opt-in datatypes for Series
@@ -92,7 +93,8 @@ docs-selection = [
     "is_last",
     "asof_join",
     "cross_join",
-    "dot_product"
+    "dot_product",
+    "concat_str"
 ]
 
 [dependencies]

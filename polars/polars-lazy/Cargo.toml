@@ -38,6 +38,7 @@ round_series = ["polars-core/round_series"]
 is_first = ["polars-core/is_first"]
 cross_join = ["polars-core/cross_join"]
 dot_product = ["polars-core/dot_product"]
+concat_str = ["polars-core/concat_str"]
 
 # no guarantees whatsoever
 private = []
