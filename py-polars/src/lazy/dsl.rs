@@ -4,7 +4,7 @@ use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyFloat, PyInt, PyString};
+use pyo3::types::{PyFloat, PyInt, PyString, PyBool};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
 
 #[pyclass]
@@ -618,7 +618,11 @@ pub fn binary_function(
 }
 
 pub fn lit(value: &PyAny) -> PyExpr {
-    if let Ok(int) = value.downcast::<PyInt>() {
+    if let Ok(true) = value.is_instance::<PyBool>() {
+        let val = value.extract::<bool>().unwrap();
+        dsl::lit(val).into()
+    }
+    else if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();
         dsl::lit(val).into()
     } else if let Ok(float) = value.downcast::<PyFloat>() {
