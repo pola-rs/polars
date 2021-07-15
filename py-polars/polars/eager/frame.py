@@ -2035,7 +2035,9 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
-    def hash_rows(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pl.Series":
+    def hash_rows(
+        self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3
+    ) -> "pl.Series":
         """
         Hash and combine the rows in this DataFrame.
 
