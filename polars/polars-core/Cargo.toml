@@ -59,6 +59,7 @@ cross_join = []
 dot_product = []
 concat_str = []
 row_hash = []
+reinterpret = []
 
 
 # opt-in datatypes for Series

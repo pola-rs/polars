@@ -780,6 +780,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
+    def reinterpret(self, signed: bool) -> "pl.Expr":
+        """
+        Reinterpret the underlying bits as a signed/unsigned integer.
+        This operation is only allowed for 64bit integers. For lower bits integers,
+        you can safely use that cast operation.
+
+        Parameters
+        ----------
+        signed
+            True -> pl.Int64
+            False -> pl.UInt64
+        """
+        return wrap_expr(self._pyexpr.reinterpret(signed))
+
 
 class ExprStringNameSpace:
     """

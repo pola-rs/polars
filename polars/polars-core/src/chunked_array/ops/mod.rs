@@ -35,6 +35,17 @@ pub(crate) mod window;
 #[cfg(feature = "zip_with")]
 pub(crate) mod zip;
 
+#[cfg(feature = "reinterpret")]
+pub trait Reinterpret {
+    fn reinterpret_signed(&self) -> Series {
+        unimplemented!()
+    }
+
+    fn reinterpret_unsigned(&self) -> Series {
+        unimplemented!()
+    }
+}
+
 /// Transmute ChunkedArray to bit representation.
 /// This is useful in hashing context and reduces no.
 /// of compiled code paths.
