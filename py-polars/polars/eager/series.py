@@ -1573,7 +1573,7 @@ class Series:
         """
         return wrap_s(self._s.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, signed: bool = True):
+    def reinterpret(self, signed: bool = True) -> "Series":
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
         This operation is only allowed for 64bit integers. For lower bits integers,

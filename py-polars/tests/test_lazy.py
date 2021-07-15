@@ -221,3 +221,27 @@ def test_concat_str():
 
     out = df[[pl.concat_str(["a", "b"], delimiter="-")]]
     assert out["a"] == ["a-1", "a-2", "a-3"]
+
+
+def test_fold_filter():
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
+
+    out = df.filter(
+        pl.fold(
+            acc=pl.lit(True),
+            f=lambda a, b: a & b,
+            exprs=[col(c) > 1 for c in df.columns],
+        )
+    )
+
+    assert out.shape == (1, 2)
+
+    out = df.filter(
+        pl.fold(
+            acc=pl.lit(True),
+            f=lambda a, b: a | b,
+            exprs=[col(c) > 1 for c in df.columns],
+        )
+    )
+
+    assert out.shape == (3, 2)
