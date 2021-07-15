@@ -243,6 +243,14 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
     // a normal python file: with open(...) as f:.
     else if py_f.getattr("read").is_ok() {
         if let Ok(filename) = py_f.getattr("name") {
+            if let Ok(val) = py_f.getattr("compression") {
+                // read into bytes with fsspec
+                if !val.is_none() {
+                    let f =
+                        PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)?;
+                    return Ok(Box::new(f));
+                }
+            }
             let filename = filename.downcast::<PyString>()?;
             let f = File::open(filename.to_str()?)?;
             Ok(Box::new(f))
