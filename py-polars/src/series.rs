@@ -5,7 +5,7 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
-use crate::utils::{downsample_str_to_rule, str_to_polarstype};
+use crate::utils::{downsample_str_to_rule, str_to_polarstype, reinterpret};
 use crate::{arrow_interop, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use pyo3::types::{PyList, PyTuple};
@@ -1117,6 +1117,11 @@ impl PySeries {
     pub fn hash(&self, k0: u64, k1: u64, k2: u64, k3: u64) -> Self {
         let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
         self.series.hash(hb).into_series().into()
+    }
+
+    pub fn reinterpret(&self, signed: bool) -> PyResult<Self> {
+        let s = reinterpret(&self.series, signed).map_err(PyPolarsEr::from)?;
+        Ok(s.into())
     }
 }
 

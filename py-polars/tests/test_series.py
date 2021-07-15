@@ -435,3 +435,10 @@ def test_apply_list_out():
 def test_is_first():
     s = pl.Series("", [1, 1, 2])
     assert s.is_first() == [True, False, True]
+
+
+def test_reinterpret():
+    s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
+    assert s.reinterpret(signed=True).dtype == pl.Int64
+    df = pl.DataFrame([s])
+    assert df[[pl.col("a").reinterpret(signed=True)]]["a"].dtype == pl.Int64

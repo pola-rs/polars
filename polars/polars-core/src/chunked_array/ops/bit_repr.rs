@@ -69,3 +69,38 @@ impl ToBitRepr for CategoricalChunked {
         self.cast::<UInt32Type>().unwrap()
     }
 }
+
+#[cfg(feature = "reinterpret")]
+impl Reinterpret for UInt64Chunked {
+    fn reinterpret_signed(&self) -> Series {
+        let chunks = self
+            .downcast_iter()
+            .map(|array| {
+                let buf = array.values().clone();
+                // Safety
+                // same bit length u64 <-> i64
+                let buf = unsafe { std::mem::transmute::<_, Buffer<i64>>(buf) };
+                Arc::new(PrimitiveArray::from_data(
+                    ArrowDataType::Int64,
+                    buf,
+                    array.validity().clone(),
+                )) as Arc<dyn Array>
+            })
+            .collect::<Vec<_>>();
+        Int64Chunked::new_from_chunks(self.name(), chunks).into_series()
+    }
+
+    fn reinterpret_unsigned(&self) -> Series {
+        self.clone().into_series()
+    }
+}
+#[cfg(feature = "reinterpret")]
+impl Reinterpret for Int64Chunked {
+    fn reinterpret_signed(&self) -> Series {
+        self.clone().into_series()
+    }
+
+    fn reinterpret_unsigned(&self) -> Series {
+        self.bit_repr_large().into_series()
+    }
+}
