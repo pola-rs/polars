@@ -2040,6 +2040,7 @@ class DataFrame:
         Hash and combine the rows in this DataFrame.
 
         Hash value is UInt64
+
         Parameters
         ----------
         k0
