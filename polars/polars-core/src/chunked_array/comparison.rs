@@ -566,6 +566,24 @@ impl BitOr for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn bitor(self, rhs: Self) -> Self::Output {
+        if self.len() == 1 {
+            return match self.get(0) {
+                Some(true) => BooleanChunked::full(self.name(), true, rhs.len()),
+                Some(false) => {
+                    let mut rhs = rhs.clone();
+                    rhs.rename(self.name());
+                    rhs
+                }
+                None => &self.expand_at_index(0, rhs.len()) | rhs,
+            };
+        } else if rhs.len() == 1 {
+            return match rhs.get(0) {
+                Some(true) => BooleanChunked::full(self.name(), true, self.len()),
+                Some(false) => self.clone(),
+                None => &rhs.expand_at_index(0, self.len()) | self,
+            };
+        }
+
         let (lhs, rhs) = align_chunks_binary(self, rhs);
         let chunks = lhs
             .downcast_iter()
@@ -590,6 +608,20 @@ impl BitAnd for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn bitand(self, rhs: Self) -> Self::Output {
+        if self.len() == 1 {
+            return match self.get(0) {
+                Some(true) => rhs.clone(),
+                Some(false) => BooleanChunked::full(self.name(), false, rhs.len()),
+                None => &self.expand_at_index(0, rhs.len()) & rhs,
+            };
+        } else if rhs.len() == 1 {
+            return match rhs.get(0) {
+                Some(true) => self.clone(),
+                Some(false) => BooleanChunked::full(self.name(), false, self.len()),
+                None => self & &rhs.expand_at_index(0, self.len()),
+            };
+        }
+
         let (lhs, rhs) = align_chunks_binary(self, rhs);
         let chunks = lhs
             .downcast_iter()
