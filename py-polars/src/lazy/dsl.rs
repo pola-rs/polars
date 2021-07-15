@@ -1,5 +1,5 @@
 use crate::series::PySeries;
-use crate::utils::str_to_polarstype;
+use crate::utils::{str_to_polarstype, reinterpret};
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -446,6 +446,21 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, Some(DataType::UInt64))
+            .into()
+    }
+
+    pub fn reinterpret(&self, signed: bool) -> PyExpr {
+        let function = move |s: Series| {
+            reinterpret(&s, signed)
+        };
+        let dt = if signed {
+            DataType::Int64
+        } else {
+            DataType::UInt64
+        };
+        self.clone()
+            .inner
+            .map(function, Some(dt))
             .into()
     }
 }

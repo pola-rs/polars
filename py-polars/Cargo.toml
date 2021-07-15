@@ -58,7 +58,8 @@ features = [
     "cross_join",
     "dot_product",
     "concat_str",
-    "row_hash"
+    "row_hash",
+    "reinterpret"
 ]
 
 #[patch.crates-io]

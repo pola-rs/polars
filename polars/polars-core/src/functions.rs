@@ -11,6 +11,7 @@ use arrow::types::NativeType;
 #[cfg(feature = "concat_str")]
 use itertools::Itertools;
 use num::{Float, NumCast};
+#[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
 use std::ops::Add;
 
