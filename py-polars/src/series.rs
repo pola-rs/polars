@@ -5,7 +5,7 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
-use crate::utils::{downsample_str_to_rule, str_to_polarstype, reinterpret};
+use crate::utils::{downsample_str_to_rule, reinterpret, str_to_polarstype};
 use crate::{arrow_interop, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use pyo3::types::{PyList, PyTuple};
