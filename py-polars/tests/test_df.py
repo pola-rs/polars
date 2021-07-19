@@ -26,7 +26,7 @@ def test_init():
 
     df = pl.DataFrame(np.random.randn(3, 5))
     assert df.shape == (3, 5)
-    assert df.columns == ["0", "1", "2", "3", "4"]
+    assert df.columns == ["column_0", "column_1", "column_2", "column_3", "column_4"]
 
 
 def test_selection():
