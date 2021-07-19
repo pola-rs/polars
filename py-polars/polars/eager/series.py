@@ -144,8 +144,11 @@ class Series:
             raise ValueError(
                 f"Constructing a Series with a dict is not supported for {values}"
             )
+        elif values is None and dtype is None:
+            dtype = Float32
+            values = []
         elif values is None:
-            raise ValueError("Series values cannot be None.")
+            values = []
 
         # castable to numpy
         if not isinstance(values, np.ndarray) and not nullable:

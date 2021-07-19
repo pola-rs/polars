@@ -21,12 +21,10 @@ def test_init_inputs():
 
     pl.Series([1, 2])
     pl.Series(values=[1, 2])
+    pl.Series()
+    pl.Series("a")
 
     # Bad inputs
-    with pytest.raises(ValueError):
-        pl.Series()
-    with pytest.raises(ValueError):
-        pl.Series("a")
     with pytest.raises(ValueError):
         pl.Series([1, 2, 3], [1, 2, 3])
     with pytest.raises(ValueError):
@@ -316,6 +314,13 @@ def test_iter():
     assert iter.__next__() == 2
     assert iter.__next__() == 3
     assert sum(s) == 6
+
+
+def test_empty():
+    a = pl.Series(dtype=pl.Int8)
+    assert a.dtype == pl.Int8
+    a = pl.Series()
+    assert a.dtype == pl.Float32
 
 
 def test_describe():
