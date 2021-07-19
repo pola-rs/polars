@@ -1215,7 +1215,6 @@ dependencies = [
  "polars-core",
  "rayon",
  "regex",
- "simdutf8",
 ]
 
 [[package]]
@@ -1273,7 +1272,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.8.11-beta.1"
+version = "0.8.12"
 dependencies = [
  "ahash",
  "libc",
@@ -1554,12 +1553,6 @@ checksum = "16f1d0fef1604ba8f7a073c7e701f213e056707210e9020af4528e0101ce11a6"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "simdutf8"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c970da16e7c682fa90a261cf0724dee241c9f7831635ecc4e988ae8f3b505559"
 
 [[package]]
 name = "slab"
