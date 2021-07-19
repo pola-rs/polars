@@ -441,7 +441,7 @@ def test_concat():
     assert pl.concat([df, df]).shape == (6, 3)
 
     # check if a remains unchanged
-    a = pl.DataFrame.from_rows(((1, 2), (1, 2)))
+    a = pl.from_rows(((1, 2), (1, 2)))
     _ = pl.concat([a, a, a])
     assert a.shape == (2, 2)
 
