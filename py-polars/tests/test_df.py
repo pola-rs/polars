@@ -1,6 +1,7 @@
 from builtins import range
 from datetime import datetime
 from io import BytesIO
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -16,27 +17,130 @@ def test_version():
     pl.__version__
 
 
-def test_init():
+def test_init_empty():
     # Empty intialization
     df1 = pl.DataFrame()
-    df2 = pl.DataFrame([])
-    df3 = pl.DataFrame({})
-    assert df1.shape == df2.shape == df3.shape == (0, 0)
+    assert df1.shape == (0, 0)
 
-    # Only columns specified
-    df = pl.DataFrame(columns=["a", "b", "c"])
-    assert df.shape == (0, 3)
 
+# def test_init_only_columns():
+#     df = pl.DataFrame(columns=["a", "b", "c"])
+#     truth = pl.DataFrame({"a": [], "b": [], "c": []})
+#     assert df.shape == (0, 3)
+#     assert df.frame_equal(truth)
+
+
+def test_init_dict():
+    # Empty dictionary
+    df = pl.DataFrame({})
+    assert df.shape == (0, 0)
+
+    # Mixed dtypes
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     assert df.shape == (3, 2)
+    assert df.columns == ["a", "b"]
 
-    # length mismatch
+    # Values contained in tuples
+    df = pl.DataFrame({"a": (1, 2, 3), "b": [1.0, 2.0, 3.0]})
+    assert df.shape == (3, 2)
+
+    # Overriding dict column names
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}, columns=["c", "d"])
+    assert df.columns == ["c", "d"]
+
+
+def test_init_ndarray():
+    # Empty array
+    df = pl.DataFrame(np.array([]))
+    assert df.frame_equal(pl.DataFrame())
+
+    # 1D array
+    df = pl.DataFrame(np.array([1, 2, 3]), columns="a")
+    truth = pl.DataFrame({"a": [1, 2, 3]})
+    assert df.frame_equal(truth)
+
+    # 2D array
+    df = pl.DataFrame(np.random.randn(3, 4))
+    assert df.shape == (3, 4)
+    assert df.columns == ["column_0", "column_1", "column_2", "column_3"]
+
+
+def test_init_series():
+    # List of Series
+    df = pl.DataFrame([pl.Series("a", [1, 2, 3]), pl.Series("b", [4, 5, 6])])
+    truth = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    assert df.frame_equal(truth)
+
+    # Tuple of Series
+    df = pl.DataFrame((pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))))
+    assert df.frame_equal(truth)
+
+    # List of unnamed Series
+    df = pl.DataFrame([pl.Series([1, 2, 3]), pl.Series([4, 5, 6])])
+    truth = pl.DataFrame(
+        [pl.Series("column_0", [1, 2, 3]), pl.Series("column_1", [4, 5, 6])]
+    )
+    assert df.frame_equal(truth)
+
+    # Single Series
+    df = pl.DataFrame(pl.Series("a", [1, 2, 3]))
+    truth = pl.DataFrame({"a": [1, 2, 3]})
+    assert df.frame_equal(truth)
+
+
+def test_init_seq_of_seq():
+    # List of lists
+    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
+    truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+    assert df.frame_equal(truth)
+
+    # Tuple of tuples
+    df = pl.DataFrame(((1, 2, 3), (4, 5, 6)), columns=("a", "b", "c"))
+    assert df.frame_equal(truth)
+
+
+def test_init_1d_sequence():
+    # Empty list
+    df = pl.DataFrame([])
+    assert df.frame_equal(pl.DataFrame())
+
+    # List of strings
+    df = pl.DataFrame(["a", "b", "c"], columns=["hi"])
+    truth = pl.DataFrame({"hi": ["a", "b", "c"]})
+    assert df.frame_equal(truth)
+
+    # String sequence
+    with pytest.raises(ValueError):
+        pl.DataFrame("abc")
+
+
+def test_init_pandas():
+    pandas_df = pd.DataFrame([[1, 2], [4, 5]], columns=[1, 2])
+
+    # pandas is available; integer column names
+    with patch("polars.eager.frame._PANDAS_AVAILABLE", True):
+        df = pl.DataFrame(pandas_df)
+        truth = pl.DataFrame({"1": [1, 2], "2": [3, 4]})
+        df.frame_equal(truth)
+
+    # pandas is not available
+    with patch("polars.eager.frame._PANDAS_AVAILABLE", False):
+        with pytest.raises(ValueError):
+            pl.DataFrame(pandas_df)
+
+
+def test_init_errors():
+    # Length mismatch
     with pytest.raises(RuntimeError):
         pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0, 4.0]})
 
-    df = pl.DataFrame(np.random.randn(3, 5))
-    assert df.shape == (3, 5)
-    assert df.columns == ["column_0", "column_1", "column_2", "column_3", "column_4"]
+    # Columns don't match data dimensions
+    with pytest.raises(RuntimeError):
+        pl.DataFrame([[1, 2], [3, 4]], columns=["a", "b", "c"])
+
+    # Unmatched input
+    with pytest.raises(ValueError):
+        pl.DataFrame(0)
 
 
 def test_selection():

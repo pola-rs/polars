@@ -41,9 +41,9 @@ except ImportError:
 try:
     import pandas as pd
 
-    PANDAS_AVAILABLE = True
+    _PANDAS_AVAILABLE = True
 except ImportError:
-    PANDAS_AVAILABLE = False
+    _PANDAS_AVAILABLE = False
 
 __all__ = [
     "DataFrame",
@@ -110,14 +110,24 @@ class DataFrame:
 
         elif isinstance(data, np.ndarray):
             shape = data.shape
-            if len(shape) != 2:
-                raise ValueError("A numpy array should have two dimensions.")
-            data_series = [
-                pl.Series(f"column_{i}", data[:, c], nullable=False).inner()
-                for i, c in enumerate(range(shape[1]))
-            ]
 
-        elif isinstance(data, Sequence):
+            if shape == (0,):
+                data_series = []
+
+            elif len(shape) == 1:
+                s = pl.Series("column_0", data, nullable=False).inner()
+                data_series = [s]
+
+            elif len(shape) == 2:
+                data_series = [
+                    pl.Series(f"column_{i}", data[:, c], nullable=False).inner()
+                    for i, c in enumerate(range(shape[1]))
+                ]
+
+            else:
+                raise ValueError("A numpy array should have more than two dimensions.")
+
+        elif isinstance(data, Sequence) and not isinstance(data, str):
             if len(data) == 0:
                 data_series = []
 
@@ -128,7 +138,7 @@ class DataFrame:
                         s.rename(f"column_{i}", in_place=True)
                     data_series.append(s.inner())
 
-            elif isinstance(data[0], Sequence):
+            elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
                 self._df = PyDataFrame.read_rows(data)
                 if columns is not None:
                     self.columns = list(columns)
@@ -139,9 +149,9 @@ class DataFrame:
                 data_series = [s]
 
         elif isinstance(data, pl.Series):
-            data_series = [s]
+            data_series = [data.inner()]
 
-        elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+        elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             if nullable:
                 data_series = [
                     pl.Series(str(col), data[col].to_list(), nullable=True).inner()
