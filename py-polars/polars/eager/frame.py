@@ -40,8 +40,10 @@ except ImportError:
 
 try:
     import pandas as pd
+
+    PANDAS_AVAILABLE = True
 except ImportError:
-    pass
+    PANDAS_AVAILABLE = False
 
 __all__ = [
     "DataFrame",
@@ -71,50 +73,96 @@ class DataFrame:
 
     def __init__(
         self,
-        data: Union[Dict[str, Sequence], tp.List["pl.Series"], np.ndarray],
+        data: Optional[
+            Union[
+                Dict[str, Sequence[Any]],
+                Sequence["pl.Series"],
+                Sequence[Sequence[Any]],
+                np.ndarray,
+                "pd.DataFrame",
+                Sequence[Any],
+                "pl.Series",
+            ]
+        ] = None,
+        columns: Optional[Sequence[str]] = None,
         nullable: bool = True,
     ):
-        """
-        A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
-        """
+        # Handle positional arguments for old constructor
+        if isinstance(columns, bool):
+            warnings.warn(
+                "Specifying nullable as a positional argument is deprecated. "
+                "Use a keyword argument to silence this warning.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            nullable = columns
+            columns = None
 
-        columns = []
-        if isinstance(data, dict):
-            for k, v in data.items():
-                columns.append(pl.Series(k, v, nullable=nullable).inner())
+        data_series: tp.List["pl.Series"]
+
+        if data is None:
+            data_series = []
+
+        elif isinstance(data, dict):
+            data_series = [
+                pl.Series(k, v, nullable=nullable).inner() for k, v in data.items()
+            ]
+
         elif isinstance(data, np.ndarray):
             shape = data.shape
-            if len(shape) == 2:
-                for i, c in enumerate(range(shape[1])):
-                    columns.append(
-                        pl.Series(str(i), data[:, c], nullable=False).inner()
-                    )
+            if len(shape) != 2:
+                raise ValueError("A numpy array should have two dimensions.")
+            data_series = [
+                pl.Series(f"column_{i}", data[:, c], nullable=False).inner()
+                for i, c in enumerate(range(shape[1]))
+            ]
+
+        elif isinstance(data, Sequence):
+            if len(data) == 0:
+                data_series = []
+
+            elif isinstance(data[0], pl.Series):
+                data_series = []
+                for i, s in enumerate(data):
+                    if not s.name:  # TODO: Replace by `if s.name is None` once allowed
+                        s.rename(f"column_{i}", in_place=True)
+                    data_series.append(s.inner())
+
+            elif isinstance(data[0], Sequence):
+                self._df = DataFrame.from_rows(data, column_names=columns)
+                return
+
             else:
-                raise ValueError("A numpy array should have 2 dimensions.")
-        elif isinstance(data, list):
-            for s in data:
-                if not isinstance(s, pl.Series):
-                    raise ValueError("A list should contain Series.")
-                columns.append(s.inner())
+                s = pl.Series("column_0", data, nullable=nullable).inner()
+                data_series = [s]
+
+        elif isinstance(data, pl.Series):
+            data_series = [s]
+
+        elif PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+            if nullable:
+                data_series = [
+                    pl.Series(str(col), data[col].to_list(), nullable=True).inner()
+                    for col in data.columns
+                ]
+            else:
+                data_series = [
+                    pl.Series(str(col), data[col].values, nullable=False).inner()
+                    for col in data.columns
+                ]
+
         else:
-            try:
-                import pandas as pd
+            raise ValueError("DataFrame constructor not called properly.")
 
-                if isinstance(data, pd.DataFrame):
-                    for col in data.columns:
-                        if nullable:
-                            s = pl.Series(
-                                col, data[col].to_list(), nullable=True
-                            ).inner()
-                        else:
-                            s = pl.Series(col, data[col].values, nullable=False).inner()
-                        columns.append(s)
-                else:
-                    raise ValueError("A dictionary was expected.")
-            except ImportError:
-                raise ValueError("A dictionary was expected.")
+        # Handle the resulting list of Series
+        if not data_series and columns is not None:
+            for c in columns:
+                data_series.append(pl.Series(c, [], nullable=nullable).inner())
 
-        self._df = PyDataFrame(columns)
+        self._df = PyDataFrame(data_series)
+
+        if columns is not None:
+            self.columns = columns  # TODO: ValueError needed?
 
     @staticmethod
     def _from_pydf(df: "PyDataFrame") -> "DataFrame":
