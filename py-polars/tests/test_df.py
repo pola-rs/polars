@@ -23,11 +23,11 @@ def test_init_empty():
     assert df1.shape == (0, 0)
 
 
-# def test_init_only_columns():
-#     df = pl.DataFrame(columns=["a", "b", "c"])
-#     truth = pl.DataFrame({"a": [], "b": [], "c": []})
-#     assert df.shape == (0, 3)
-#     assert df.frame_equal(truth)
+def test_init_only_columns():
+    df = pl.DataFrame(columns=["a", "b", "c"])
+    truth = pl.DataFrame({"a": [], "b": [], "c": []})
+    assert df.shape == (0, 3)
+    assert df.frame_equal(truth)
 
 
 def test_init_dict():
