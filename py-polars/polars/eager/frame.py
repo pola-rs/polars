@@ -129,7 +129,9 @@ class DataFrame:
                     data_series.append(s.inner())
 
             elif isinstance(data[0], Sequence):
-                self._df = DataFrame.from_rows(data, column_names=columns)
+                self._df = PyDataFrame.read_rows(data)
+                if columns is not None:
+                    self.columns = list(columns)
                 return
 
             else:
@@ -162,7 +164,7 @@ class DataFrame:
         self._df = PyDataFrame(data_series)
 
         if columns is not None:
-            self.columns = columns  # TODO: ValueError needed?
+            self.columns = list(columns)  # TODO: ValueError needed?
 
     @staticmethod
     def _from_pydf(df: "PyDataFrame") -> "DataFrame":
