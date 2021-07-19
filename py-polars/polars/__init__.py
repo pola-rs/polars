@@ -1,18 +1,18 @@
 # flake8: noqa
 
 # mypy needs these imported explicitly
-from polars.eager.frame import DataFrame, wrap_df  # noqa: F401
-from polars.eager.series import Series, wrap_s  # noqa: F401
-from polars.lazy.expr import Expr, wrap_expr  # noqa: F401
-from polars.lazy.frame import LazyFrame, wrap_ldf  # noqa: F401
+from polars.eager.frame import DataFrame, wrap_df
+from polars.eager.series import Series, wrap_s
+from polars.lazy.expr import Expr, wrap_expr
+from polars.lazy.frame import LazyFrame, wrap_ldf
 
 from . import datatypes, eager, functions, io, lazy, string_cache
-from .datatypes import *  # noqa: F401, F403
-from .eager import *  # noqa: F401, F403
+from .datatypes import *
+from .eager import *
 from .functions import *
-from .io import *  # noqa: F401, F403
-from .lazy import *  # noqa: F401, F403
-from .string_cache import *  # noqa: F401, F403
+from .io import *
+from .lazy import *
+from .string_cache import *
 
 # during docs building the binary code is not yet available
 try:
