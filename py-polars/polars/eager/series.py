@@ -144,11 +144,12 @@ class Series:
             raise ValueError(
                 f"Constructing a Series with a dict is not supported for {values}"
             )
-        elif values is None and dtype is None:
+
+        # Handle empty values in constructor
+        if values is None:
+            values = []
+        if dtype is None and isinstance(values, Sequence) and len(values) == 0:
             dtype = Float32
-            values = []
-        elif values is None:
-            values = []
 
         # castable to numpy
         if not isinstance(values, np.ndarray) and not nullable:
