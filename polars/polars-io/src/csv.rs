@@ -41,7 +41,7 @@
 //! }
 //! ```
 //!
-use crate::csv_core::csv::{build_csv_reader, SequentialReader};
+use crate::csv_core::csv::{build_csv_reader, CoreReader};
 use crate::mmap::MmapBytesReader;
 use crate::utils::{resolve_homedir, to_arrow_compatible_df};
 use crate::{SerReader, SerWriter};
@@ -345,7 +345,7 @@ where
         self
     }
 
-    pub fn build_inner_reader(self) -> Result<SequentialReader<R>> {
+    pub fn build_inner_reader(self) -> Result<CoreReader<R>> {
         build_csv_reader(
             self.reader,
             self.stop_after_n_rows,
