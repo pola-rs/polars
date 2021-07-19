@@ -17,6 +17,16 @@ def test_version():
 
 
 def test_init():
+    # Empty intialization
+    df1 = pl.DataFrame()
+    df2 = pl.DataFrame([])
+    df3 = pl.DataFrame({})
+    assert df1.shape == df2.shape == df3.shape == (0, 0)
+
+    # Only columns specified
+    df = pl.DataFrame(columns=["a", "b", "c"])
+    assert df.shape == (0, 3)
+
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     assert df.shape == (3, 2)
 
