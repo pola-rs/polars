@@ -16,16 +16,14 @@ from typing import (
 )
 from urllib.request import urlopen
 
-import numpy as np
 import pyarrow as pa
 import pyarrow.compute
 import pyarrow.csv
 import pyarrow.parquet
 
-try:
-    import pandas as pd
-except ImportError:
-    pass
+import polars as pl
+
+from .functions import from_arrow, from_pandas
 
 try:
     import fsspec
@@ -36,8 +34,6 @@ try:
 except ImportError:
     WITH_FSSPEC = False
 
-import polars as pl
-
 __all__ = [
     "read_csv",
     "read_parquet",
@@ -46,9 +42,6 @@ __all__ = [
     "read_ipc",
     "scan_csv",
     "scan_parquet",
-    "from_arrow",
-    "from_pandas",
-    "from_arrow_table",  # deprecated
 ]
 
 
@@ -465,94 +458,6 @@ def read_parquet(
                 source_prep, memory_map=memory_map, columns=columns, **kwargs
             )
         )
-
-
-def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "pl.DataFrame":
-    """
-    .. deprecated:: 7.3
-        use `from_arrow`
-
-    Create a DataFrame from an arrow Table.
-
-    Parameters
-    ----------
-    a
-        Arrow Table.
-    rechunk
-        Make sure that all data is contiguous.
-    """
-    return pl.DataFrame.from_arrow(table, rechunk)
-
-
-def from_arrow(
-    a: Union[pa.Table, pa.Array], rechunk: bool = True
-) -> Union["pl.DataFrame", "pl.Series"]:
-    """
-    Create a DataFrame from an arrow Table.
-
-    Parameters
-    ----------
-    a
-        Arrow Table.
-    rechunk
-        Make sure that all data is contiguous.
-    """
-    if isinstance(a, pa.Table):
-        return pl.DataFrame.from_arrow(a, rechunk)
-    elif isinstance(a, pa.Array):
-        return pl.Series.from_arrow("", a)
-    else:
-        raise ValueError(f"expected arrow table / array, got {a}")
-
-
-def _from_pandas_helper(a: "pd.Series") -> pa.Array:  # noqa: F821
-    dtype = a.dtype
-    if dtype == "datetime64[ns]":
-        # We first cast to ms because that's the unit of Date64,
-        # Then we cast to via int64 to date64. Casting directly to Date64 lead to
-        # loss of time information https://github.com/ritchie46/polars/issues/476
-        arr = pa.array(np.array(a.values, dtype="datetime64[ms]"))
-        arr = pa.compute.cast(arr, pa.int64())
-        return pa.compute.cast(arr, pa.date64())
-    elif dtype == "object" and isinstance(a.iloc[0], str):
-        return pa.array(a, pa.large_utf8())
-    else:
-        return pa.array(a)
-
-
-def from_pandas(
-    df: Union["pd.DataFrame", "pd.Series", "pd.DatetimeIndex"],
-    rechunk: bool = True,  # noqa: F821
-) -> Union["pl.Series", "pl.DataFrame"]:
-    """
-    Convert from a pandas DataFrame to a polars DataFrame.
-
-    Parameters
-    ----------
-    df
-        DataFrame to convert.
-    rechunk
-        Make sure that all data is contiguous.
-
-    Returns
-    -------
-    A Polars DataFrame
-    """
-    if isinstance(df, pd.Series) or isinstance(df, pd.DatetimeIndex):
-        return from_arrow(_from_pandas_helper(df))
-
-    # Note: we first tried to infer the schema via pyarrow and then modify the schema if needed.
-    # However arrow 3.0 determines the type of a string like this:
-    #       pa.array(array).type
-    # needlessly allocating and failing when the string is too large for the string dtype.
-    data = {}
-
-    for name in df.columns:
-        s = df[name]
-        data[name] = _from_pandas_helper(s)
-
-    table = pa.table(data)
-    return from_arrow(table, rechunk)
 
 
 def read_json(source: Union[str, BytesIO]) -> "pl.DataFrame":

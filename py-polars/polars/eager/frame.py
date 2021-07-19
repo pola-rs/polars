@@ -1006,7 +1006,7 @@ class DataFrame:
                     columns.append(s)
             return pl.DataFrame(columns)
 
-        summary = pl.eager.functions.concat(
+        summary = pl.functions.concat(
             [
                 describe_cast(self.mean()),
                 describe_cast(self.std()),

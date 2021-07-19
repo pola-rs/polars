@@ -2,7 +2,7 @@ from types import TracebackType
 from typing import Optional, Type
 
 try:
-    from ..polars import toggle_string_cache as pytoggle_string_cache
+    from .polars import toggle_string_cache as pytoggle_string_cache
 except ImportError:
     import warnings
 
