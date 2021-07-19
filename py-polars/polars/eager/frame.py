@@ -98,6 +98,7 @@ class DataFrame:
             nullable = columns
             columns = None
 
+        # Parse data into a list of Series
         data_series: tp.List["pl.Series"]
 
         if data is None:
@@ -174,7 +175,7 @@ class DataFrame:
         self._df = PyDataFrame(data_series)
 
         if columns is not None:
-            self.columns = list(columns)  # TODO: ValueError needed?
+            self.columns = list(columns)
 
     @staticmethod
     def _from_pydf(df: "PyDataFrame") -> "DataFrame":
