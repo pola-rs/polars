@@ -37,7 +37,7 @@ impl PyLazyGroupBy {
             let pydf = PyDataFrame::new(df);
 
             // Wrap this PySeries object in the python side DataFrame wrapper
-            let python_df_wrapper = pypolars.call1("wrap_df", (pydf,)).unwrap();
+            let python_df_wrapper = pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
 
             // call the lambda and get a python side DataFrame wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
@@ -366,9 +366,9 @@ impl PyLazyFrame {
             // get the pypolars module
             let pypolars = PyModule::import(py, "polars").unwrap();
             // create a PyDataFrame struct/object for Python
-            let pyseries = PyDataFrame::new(s);
+            let pydf = PyDataFrame::new(s);
             // Wrap this PyDataFrame object in the python side DataFrame wrapper
-            let python_df_wrapper = pypolars.call1("wrap_df", (pyseries,)).unwrap();
+            let python_df_wrapper = pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
             // call the lambda and get a python side Series wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
