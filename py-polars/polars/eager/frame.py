@@ -12,6 +12,7 @@ from typing import (
     Dict,
     Iterable,
     Iterator,
+    Literal,
     Optional,
     Sequence,
     TextIO,
@@ -76,16 +77,15 @@ class DataFrame:
         data: Optional[
             Union[
                 Dict[str, Sequence[Any]],
-                Sequence["pl.Series"],
-                Sequence[Sequence[Any]],
+                Sequence[Any],
                 np.ndarray,
                 "pd.DataFrame",
-                Sequence[Any],
                 "pl.Series",
             ]
         ] = None,
         columns: Optional[Sequence[str]] = None,
         nullable: bool = True,
+        orientation: Optional[Literal["column", "row"]] = None,
     ):
         # Handle positional arguments for old constructor
         if isinstance(columns, bool):
@@ -120,10 +120,21 @@ class DataFrame:
                 data_series = [s]
 
             elif len(shape) == 2:
-                data_series = [
-                    pl.Series(f"column_{i}", data[:, c], nullable=False).inner()
-                    for i, c in enumerate(range(shape[1]))
-                ]
+                # Infer orientation
+                if orientation is None and columns is not None:
+                    orientation = "column" if len(columns) == shape[0] else "row"
+
+                if orientation == "row":
+                    data_series = [
+                        pl.Series(f"column_{i}", data[:, i], nullable=False).inner()
+                        for i in range(shape[1])
+                    ]
+
+                else:
+                    data_series = [
+                        pl.Series(f"column_{i}", data[i], nullable=False).inner()
+                        for i in range(shape[0])
+                    ]
 
             else:
                 raise ValueError("A numpy array should have more than two dimensions.")
@@ -140,10 +151,20 @@ class DataFrame:
                     data_series.append(s.inner())
 
             elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
-                self._df = PyDataFrame.read_rows(data)
-                if columns is not None:
-                    self.columns = list(columns)
-                return
+                # Infer orientation
+                if orientation is None and columns is not None:
+                    orientation = "column" if len(columns) == len(data) else "row"
+
+                if orientation == "row":
+                    self._df = PyDataFrame.read_rows(data)
+                    if columns is not None:
+                        self.columns = list(columns)
+                    return
+                else:
+                    data_series = [
+                        pl.Series(f"column_{i}", data[i], nullable=nullable).inner()
+                        for i in range(len(data))
+                    ]
 
             else:
                 s = pl.Series("column_0", data, nullable=nullable).inner()
