@@ -129,7 +129,6 @@ class DataFrame:
                         pl.Series(f"column_{i}", data[:, i], nullable=False).inner()
                         for i in range(shape[1])
                     ]
-
                 else:
                     data_series = [
                         pl.Series(f"column_{i}", data[i], nullable=False).inner()
