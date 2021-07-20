@@ -920,7 +920,11 @@ fn append_series(
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(series);
     // Wrap this PySeries object in the python side Series wrapper
-    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,))?;
+    let python_series_wrapper = pypolars
+        .getattr("wrap_s")
+        .unwrap()
+        .call1((pyseries,))
+        .unwrap();
     // call the lambda en get a python side Series wrapper
     let out = lambda.call1((python_series_wrapper,));
     match out {
@@ -943,7 +947,12 @@ fn call_series_lambda(pypolars: &PyModule, lambda: &PyAny, series: Series) -> Op
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(series);
     // Wrap this PySeries object in the python side Series wrapper
-    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+    let python_series_wrapper = pypolars
+        .getattr("wrap_s")
+        .unwrap()
+        .call1((pyseries,))
+        .unwrap();
+
     // call the lambda en get a python side Series wrapper
     let out = lambda.call1((python_series_wrapper,));
     match out {
@@ -968,7 +977,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 // create a PySeries struct/object for Python
                 let pyseries = PySeries::new(v);
                 // Wrap this PySeries object in the python side Series wrapper
-                let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                let python_series_wrapper = pypolars
+                    .getattr("wrap_s")
+                    .unwrap()
+                    .call1((pyseries,))
+                    .unwrap();
 
                 let out = lambda.call1((python_series_wrapper,))?;
                 if out.is_none() {
@@ -1114,7 +1127,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     // create a PySeries struct/object for Python
                     let pyseries = PySeries::new(val);
                     // Wrap this PySeries object in the python side Series wrapper
-                    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                    let python_series_wrapper = pypolars
+                        .getattr("wrap_s")
+                        .unwrap()
+                        .call1((pyseries,))
+                        .unwrap();
                     call_lambda(py, lambda, python_series_wrapper).ok()
                 });
             Ok(iterator_to_primitive(
@@ -1133,7 +1150,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         // create a PySeries struct/object for Python
                         let pyseries = PySeries::new(val);
                         // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                        let python_series_wrapper = pypolars
+                            .getattr("wrap_s")
+                            .unwrap()
+                            .call1((pyseries,))
+                            .unwrap();
                         call_lambda(py, lambda, python_series_wrapper).ok()
                     })
                 });
@@ -1166,7 +1187,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     // create a PySeries struct/object for Python
                     let pyseries = PySeries::new(val);
                     // Wrap this PySeries object in the python side Series wrapper
-                    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                    let python_series_wrapper = pypolars
+                        .getattr("wrap_s")
+                        .unwrap()
+                        .call1((pyseries,))
+                        .unwrap();
                     call_lambda(py, lambda, python_series_wrapper).ok()
                 });
             Ok(iterator_to_bool(
@@ -1185,7 +1210,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         // create a PySeries struct/object for Python
                         let pyseries = PySeries::new(val);
                         // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                        let python_series_wrapper = pypolars
+                            .getattr("wrap_s")
+                            .unwrap()
+                            .call1((pyseries,))
+                            .unwrap();
                         call_lambda(py, lambda, python_series_wrapper).ok()
                     })
                 });
@@ -1220,7 +1249,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     // create a PySeries struct/object for Python
                     let pyseries = PySeries::new(val);
                     // Wrap this PySeries object in the python side Series wrapper
-                    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                    let python_series_wrapper = pypolars
+                        .getattr("wrap_s")
+                        .unwrap()
+                        .call1((pyseries,))
+                        .unwrap();
                     call_lambda(py, lambda, python_series_wrapper).ok()
                 });
 
@@ -1240,7 +1273,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         // create a PySeries struct/object for Python
                         let pyseries = PySeries::new(val);
                         // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                        let python_series_wrapper = pypolars
+                            .getattr("wrap_s")
+                            .unwrap()
+                            .call1((pyseries,))
+                            .unwrap();
                         call_lambda(py, lambda, python_series_wrapper).ok()
                     })
                 });
@@ -1313,7 +1350,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     // create a PySeries struct/object for Python
                     let pyseries = PySeries::new(val);
                     // Wrap this PySeries object in the python side Series wrapper
-                    let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                    let python_series_wrapper = pypolars
+                        .getattr("wrap_s")
+                        .unwrap()
+                        .call1((pyseries,))
+                        .unwrap();
                     call_lambda(py, lambda, python_series_wrapper).ok()
                 });
 
@@ -1333,7 +1374,11 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         // create a PySeries struct/object for Python
                         let pyseries = PySeries::new(val);
                         // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                        let python_series_wrapper = pypolars
+                            .getattr("wrap_s")
+                            .unwrap()
+                            .call1((pyseries,))
+                            .unwrap();
                         call_lambda(py, lambda, python_series_wrapper).ok()
                     })
                 });

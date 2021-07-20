@@ -17,6 +17,8 @@ where
 impl ListChunked {
     /// If all nested `Series` have the same length, a 2 dimensional `ndarray::Array` is returned.
     #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
+    // allow deprecated for now. Fix when removed
+    #[allow(deprecated)]
     pub fn to_ndarray<N>(&self) -> Result<Array2<N::Native>>
     where
         N: PolarsNumericType,
