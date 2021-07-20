@@ -19,6 +19,7 @@ use crate::prelude::*;
 use crate::utils::to_arrow_compatible_df;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::compute::cast;
+use arrow::io::parquet::write::Encoding;
 use arrow::io::parquet::{read, write};
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
@@ -207,6 +208,7 @@ where
                             array.as_ref(),
                             type_,
                             options,
+                            Encoding::Plain,
                         ))))
                     }),
             ))

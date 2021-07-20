@@ -64,7 +64,8 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.1.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=e3712b9ee2efe47aead19236ab9e8484bce9f96e#e3712b9ee2efe47aead19236ab9e8484bce9f96e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0b2250c2cf9355005939f7495ce280dec1b63aa82e2927a4e5513e94ee45912"
 dependencies = [
  "ahash",
  "base64",
@@ -399,9 +400,9 @@ checksum = "95765f67b4b18863968b4a1bd5bb576f732b29a4a28c7cd84c09fa3e2875f33c"
 
 [[package]]
 name = "flatbuffers"
-version = "0.8.4"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3c502342b7d6d73beb1b8bab39dc01deba0c8ef66f4e6f1eba7c69ee6b38069"
+checksum = "ef4c5738bcd7fad10315029c50026f83c9da5e4a21f8ed66826f43e0e2bde5f6"
 dependencies = [
  "bitflags",
  "smallvec",
@@ -1106,7 +1107,8 @@ dependencies = [
 [[package]]
 name = "parquet2"
 version = "0.1.0"
-source = "git+https://github.com/jorgecarleitao/parquet2?rev=a37dfc484df5ca2c0aa12c34515a526ce122c764#a37dfc484df5ca2c0aa12c34515a526ce122c764"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cab3c2da3dc2e9e5e62fbf409d2c635ac5389ea9fdd5280e3660ae0f900e000"
 dependencies = [
  "bitpacking",
  "brotli",
