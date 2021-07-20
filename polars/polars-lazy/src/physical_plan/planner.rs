@@ -814,7 +814,7 @@ impl DefaultPlanner {
                 input,
                 function,
                 output_type,
-                collect_groups,
+                options,
             } => {
                 let input = self.create_physical_expressions(&input, ctxt, expr_arena)?;
                 Ok(Arc::new(ApplyExpr {
@@ -822,7 +822,7 @@ impl DefaultPlanner {
                     function,
                     output_type,
                     expr: node_to_exp(expression, expr_arena),
-                    collect_groups,
+                    collect_groups: options.collect_groups,
                 }))
             }
             BinaryFunction {

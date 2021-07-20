@@ -89,12 +89,12 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             input,
             function,
             output_type,
-            collect_groups,
+            options,
         } => AExpr::Function {
             input: to_aexprs(input, arena),
             function,
             output_type,
-            collect_groups,
+            options,
         },
         Expr::BinaryFunction {
             input_a,
@@ -530,12 +530,12 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             input,
             function,
             output_type,
-            collect_groups,
+            options,
         } => Expr::Function {
             input: nodes_to_exprs(&input, expr_arena),
             function,
             output_type,
-            collect_groups,
+            options,
         },
         AExpr::BinaryFunction {
             input_a,
