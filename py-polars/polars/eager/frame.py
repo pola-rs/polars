@@ -84,8 +84,8 @@ class DataFrame:
             ]
         ] = None,
         columns: Optional[Sequence[str]] = None,
-        nullable: bool = True,
         orientation: Optional[Literal["column", "row"]] = None,
+        nullable: bool = True,
     ):
         # Handle positional arguments for old constructor
         if isinstance(columns, bool):
