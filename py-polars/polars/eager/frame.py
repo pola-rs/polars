@@ -3,6 +3,7 @@ Module containing logic related to eager DataFrames
 """
 import os
 import typing as tp
+import warnings
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -34,8 +35,6 @@ from ..utils import _process_null_values, coerce_arrow
 try:
     from ..polars import PyDataFrame, PySeries
 except ImportError:
-    import warnings
-
     warnings.warn("binary files missing")
 
 try:

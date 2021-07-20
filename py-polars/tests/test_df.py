@@ -59,20 +59,21 @@ def test_init_ndarray():
     truth = pl.DataFrame({"a": [1, 2, 3]})
     assert df.frame_equal(truth)
 
-    # 2D array - default to column orientation
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
-    truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
-    assert df.frame_equal(truth)
+    # TODO: Uncomment tests below when removing deprecation warning
+    # # 2D array - default to column orientation
+    # df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
+    # truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
+    # assert df.frame_equal(truth)
 
-    # 2D array - row orientation inferred
-    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b", "c"])
-    truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
-    assert df.frame_equal(truth)
+    # # 2D array - row orientation inferred
+    # df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b", "c"])
+    # truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+    # assert df.frame_equal(truth)
 
-    # 2D array - column orientation inferred
-    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"])
-    truth = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    assert df.frame_equal(truth)
+    # # 2D array - column orientation inferred
+    # df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"])
+    # truth = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    # assert df.frame_equal(truth)
 
     # 2D array - orientation conflicts with columns
     with pytest.raises(RuntimeError):
@@ -83,6 +84,14 @@ def test_init_ndarray():
     # 3D array
     with pytest.raises(ValueError):
         df = pl.DataFrame(np.random.randn(2, 2, 2))
+
+
+# TODO: Remove this test case when removing deprecated behaviour
+def test_init_ndarray_deprecated():
+    # 2D array - default to row orientation
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
+    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
+    assert df.frame_equal(truth)
 
 
 def test_init_series():
