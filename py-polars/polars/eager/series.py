@@ -111,7 +111,7 @@ class Series:
         Name of the series. Will be used as a column name when used in a DataFrame.
         When not specified, name is set to an empty string.
     values : ArrayLike, default None
-        One-dimensional data in various forms. Supported are Sequence, Series,
+        One-dimensional data in various forms. Supported are: Sequence, Series,
         pyarrow Array, and numpy ndarray.
     nullable : bool, default True
         If set to True, Sequence values will be parsed with None interpreted as missing,
