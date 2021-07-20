@@ -20,10 +20,11 @@ use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "parquet")]
 use polars_io::{parquet::ParquetReader, SerReader};
 
+use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::utils::{
     combine_predicates_expr, expr_to_root_column_name, expr_to_root_column_names, has_expr,
-    rename_expr_root_name,
+    has_wildcard, rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
 use polars_io::csv::NullValues;
@@ -713,7 +714,7 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
             input,
             function,
             output_type,
-            collect_groups,
+            options,
         } => Expr::Function {
             input: input
                 .into_iter()
@@ -721,7 +722,7 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
                 .collect(),
             function,
             output_type,
-            collect_groups,
+            options,
         },
         Expr::BinaryFunction {
             input_a,
@@ -847,9 +848,7 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             }
         }
 
-        let has_wildcard = has_expr(&expr, |e| matches!(e, Expr::Wildcard));
-
-        if has_wildcard {
+        if has_wildcard(&expr) {
             // if count wildcard. count one column
             if has_expr(&expr, |e| matches!(e, Expr::Agg(AggExpr::Count(_)))) {
                 let new_name = Arc::new(schema.field(0).unwrap().name().clone());
@@ -862,6 +861,53 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
                 };
                 result.push(expr);
 
+                continue;
+            }
+            // this path prepares the wildcard as input for the Function Expr
+            // To deal with the borrow checker we first create an arena from this expression.
+            // Then we clone that arena to `new_arena` because we cannot borrow and have mutable access,
+            // We iterate the old_arena mutable.
+            // * Replace the wildcard column with new column names (assign nodes into new arena)
+            // * Swap the inputs vec, from Expr::Function in the old arena to Expr::Function in the new arena
+            // * convert from arena expr to boxed expr
+            if has_expr(
+                &expr,
+                |e| matches!(e, Expr::Function { input, options,  .. } if options.input_wildcard_expansion && input.iter().any(has_wildcard)),
+            ) {
+                let mut arena = Arena::with_capacity(16);
+                let root = to_aexpr(expr, &mut arena);
+                let mut new_arena = arena.clone();
+                let iter = (&arena).iter(root);
+                let mut function_node = Default::default();
+                let mut function_inputs = Default::default();
+
+                for (node, ae) in iter {
+                    if let AExpr::Function { .. } = ae {
+                        function_node = node;
+                        break;
+                    }
+                }
+
+                if let AExpr::Function { input, .. } = arena.get_mut(function_node) {
+                    let (idx, _) = input
+                        .iter()
+                        .find_position(|&node| matches!(new_arena.get(*node), AExpr::Wildcard))
+                        .expect("should have wildcard");
+                    input.remove(idx);
+
+                    for field in schema.fields() {
+                        let node = new_arena.add(AExpr::Column(Arc::new(field.name().clone())));
+                        input.push(node);
+                    }
+                    function_inputs = std::mem::take(input);
+                }
+
+                if let AExpr::Function { input, .. } = new_arena.get_mut(function_node) {
+                    *input = function_inputs;
+                }
+
+                let new_expr = node_to_exp(root, &new_arena);
+                result.push(new_expr);
                 continue;
             }
 
