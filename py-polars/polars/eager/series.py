@@ -98,36 +98,101 @@ def _find_first_non_none(a: Sequence[Optional[Any]]) -> Any:
         return v
 
 
+ArrayLike = Union[Sequence[Any], "Series", pa.Array, np.ndarray]
+
+
 class Series:
+    """
+    A Series represents a single column in a polars DataFrame.
+
+    Parameters
+    ----------
+    name : str, default None
+        Name of the series. Will be used as a column name when used in a DataFrame.
+        When not specified, name is set to an empty string.
+    values : ArrayLike, default None
+        One-dimensional data in various forms. Supported are Sequence, Series,
+        pyarrow Array, and numpy ndarray.
+    nullable : bool, default True
+        If set to True, Sequence values will be parsed with None interpreted as missing,
+        and numpy arrays will be parsed with NaN interpreted as missing. Note that
+        missing and NaN is not the same in Polars. If your data does not contain null
+        values, set to False to speed up Series creation.
+    dtype : DataType, default None
+        Polars dtype of the Series data. If not specified, the dtype is inferred.
+
+    Examples
+    --------
+    Constructing a Series by specifying name and values positionally:
+
+    ```python
+    >>> s = pl.Series('a', [1, 2, 3])
+    >>> s
+    shape: (3,)
+    Series: 'a' [i64]
+    [
+            1
+            2
+            3
+    ]
+    ```
+
+    Notice that the dtype is automatically inferred as a polars Int64:
+
+    ```python
+    >>> s.dtype
+    <class 'polars.datatypes.Int64'>
+    ```
+
+    Constructing a Series with a specific dtype:
+
+    ```python
+    >>> s2 = pl.Series('a', [1, 2, 3], dtype=pl.Float32)
+    >>> s2
+    shape: (3,)
+    Series: 'a' [f32]
+    [
+            1
+            2
+            3
+    ]
+    ```
+
+    It is possible to construct a Series with values as the first positional argument.
+    This syntax considered an anti-pattern, but it can be useful in certain
+    scenarios. You must specify any other arguments through keywords.
+
+    ```python
+    >>> s3 = pl.Series([1, 2, 3], nullable=False)
+    >>> s3
+    shape: (3,)
+    Series: '' [i64]
+    [
+            1
+            2
+            3
+    ]
+    ```
+    """
+
     def __init__(
         self,
-        name: Union[str, Sequence[Any], "Series", pa.Array, np.ndarray] = "",
-        values: Optional[Union[Sequence[Any], "Series", pa.Array, np.ndarray]] = None,
+        name: Optional[Union[str, ArrayLike]] = None,
+        values: Optional[ArrayLike] = None,
         nullable: bool = True,
         dtype: Optional[Type[DataType]] = None,
     ):
-        """
-
-        Parameters
-        ----------
-        name
-            Name of the series.
-        values
-            Values of the series.
-        nullable
-            If nullable.
-                None values in a list will be interpreted as missing.
-                NaN values in a numpy array will be interpreted as missing. Note that missing and NaNs are not the same
-                in Polars
-            Series creation may be faster if set to False and there are no null values.
-        """
         # Handle case where values are passed as the first argument
-        if not isinstance(name, str):
+        if name is not None and not isinstance(name, str):
             if values is None:
                 values = name
-                name = ""
+                name = None
             else:
                 raise ValueError("Series name must be a string.")
+
+        # TODO: Remove if-statement below once Series name is allowed to be None
+        if name is None:
+            name = ""
 
         self._s: PySeries
 
