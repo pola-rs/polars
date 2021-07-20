@@ -59,10 +59,30 @@ def test_init_ndarray():
     truth = pl.DataFrame({"a": [1, 2, 3]})
     assert df.frame_equal(truth)
 
-    # 2D array
-    df = pl.DataFrame(np.random.randn(3, 4))
-    assert df.shape == (3, 4)
-    assert df.columns == ["column_0", "column_1", "column_2", "column_3"]
+    # 2D array - default to column orientation
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
+    truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
+    assert df.frame_equal(truth)
+
+    # 2D array - row orientation inferred
+    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b", "c"])
+    truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+    assert df.frame_equal(truth)
+
+    # 2D array - column orientation inferred
+    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"])
+    truth = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    assert df.frame_equal(truth)
+
+    # 2D array - orientation conflicts with columns
+    with pytest.raises(RuntimeError):
+        pl.DataFrame(
+            np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"], orientation="row"
+        )
+
+    # 3D array
+    with pytest.raises(ValueError):
+        df = pl.DataFrame(np.random.randn(2, 2, 2))
 
 
 def test_init_series():
@@ -94,8 +114,14 @@ def test_init_seq_of_seq():
     truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
     assert df.frame_equal(truth)
 
-    # Tuple of tuples
-    df = pl.DataFrame(((1, 2, 3), (4, 5, 6)), columns=("a", "b", "c"))
+    # Tuple of tuples, default to column orientation
+    df = pl.DataFrame(((1, 2, 3), (4, 5, 6)))
+    truth = pl.DataFrame({"column_0": [1, 2, 3], "column_1": [4, 5, 6]})
+    assert df.frame_equal(truth)
+
+    # Row orientation
+    df = pl.DataFrame(((1, 2), (3, 4)), columns=("a", "b"), orientation="row")
+    truth = pl.DataFrame({"a": [1, 3], "b": [2, 4]})
     assert df.frame_equal(truth)
 
 
@@ -115,13 +141,13 @@ def test_init_1d_sequence():
 
 
 def test_init_pandas():
-    pandas_df = pd.DataFrame([[1, 2], [4, 5]], columns=[1, 2])
+    pandas_df = pd.DataFrame([[1, 2], [3, 4]], columns=[1, 2])
 
     # pandas is available; integer column names
     with patch("polars.eager.frame._PANDAS_AVAILABLE", True):
         df = pl.DataFrame(pandas_df)
-        truth = pl.DataFrame({"1": [1, 2], "2": [3, 4]})
-        df.frame_equal(truth)
+        truth = pl.DataFrame({"1": [1, 3], "2": [2, 4]})
+        assert df.frame_equal(truth)
 
     # pandas is not available
     with patch("polars.eager.frame._PANDAS_AVAILABLE", False):
