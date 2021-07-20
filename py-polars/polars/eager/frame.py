@@ -12,7 +12,6 @@ from typing import (
     Dict,
     Iterable,
     Iterator,
-    Literal,
     Optional,
     Sequence,
     TextIO,
@@ -84,7 +83,7 @@ class DataFrame:
             ]
         ] = None,
         columns: Optional[Sequence[str]] = None,
-        orientation: Optional[Literal["column", "row"]] = None,
+        orientation: Optional[str] = None,
         nullable: bool = True,
     ):
         # Handle positional arguments for old constructor
@@ -121,8 +120,18 @@ class DataFrame:
 
             elif len(shape) == 2:
                 # Infer orientation
-                if orientation is None and columns is not None:
-                    orientation = "column" if len(columns) == shape[0] else "row"
+                if orientation is None:
+                    warnings.warn(
+                        "Default orientation for constructing DataFrame from numpy "
+                        'array will change from "row" to "column" in a future version. '
+                        "Specify orientation explicitly to silence this warning.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                    orientation = "row"
+                # Exchange if-block above for block below when removing warning
+                # if orientation is None and columns is not None:
+                #     orientation = "column" if len(columns) == shape[0] else "row"
 
                 if orientation == "row":
                     data_series = [
