@@ -3,34 +3,38 @@ use crate::prelude::*;
 use arrow::compute::kernels::substring::substring;
 use regex::Regex;
 #[cfg(feature = "extract_jsonpath")]
-use {
-    jsonpath_lib::Compiled,
-    serde_json::{from_str, Value},
-    std::borrow::Cow,
-    std::string::String,
-};
+use {jsonpath_lib::Compiled, serde_json::from_str, std::borrow::Cow, std::string::String};
 
 #[cfg(feature = "extract_jsonpath")]
 fn extract_json<'a>(expr: &'a Compiled, json_str: Option<&'a str>) -> Option<Cow<'a, str>> {
-    if let Some(value) = json_str {
-        let json: Value = from_str(value).unwrap();
-        let result = expr.select(&json).unwrap();
-        if result.is_empty() {
-            None
-        } else if result[0].is_string() {
-            Some(Cow::Owned(String::from(result[0].as_str().unwrap())))
-        } else if result[0].is_i64() {
-            Some(Cow::Owned(result[0].as_i64().unwrap().to_string()))
-        } else if result[0].is_f64() {
-            Some(Cow::Owned(result[0].as_f64().unwrap().to_string()))
-        } else if result[0].is_boolean() {
-            Some(Cow::Owned(result[0].as_bool().unwrap().to_string()))
-        } else {
-            None
+    json_str.and_then(|value| match from_str(value) {
+        Ok(json) => {
+            let results = expr.select(&json).unwrap();
+            if !results.is_empty() {
+                let result = results[0];
+                if let Some(s) = result.as_str() {
+                    Some(Cow::Owned(String::from(s)))
+                } else if let Some(v) = result.as_i64() {
+                    Some(Cow::Owned(v.to_string()))
+                } else if let Some(v) = result.as_f64() {
+                    Some(Cow::Owned(v.to_string()))
+                } else if let Some(v) = result.as_bool() {
+                    Some(Cow::Owned(v.to_string()))
+                } else if let Some(v) = result.as_u64() {
+                    Some(Cow::Owned(v.to_string()))
+                } else if let Some(v) = result.as_array() {
+                    Some(Cow::Owned(serde_json::to_string(v).unwrap()))
+                } else {
+                    result
+                        .as_object()
+                        .map(|v| Cow::Owned(serde_json::to_string(v).unwrap()))
+                }
+            } else {
+                None
+            }
         }
-    } else {
-        None
-    }
+        Err(_) => None,
+    })
 }
 
 impl Utf8Chunked {
@@ -55,8 +59,12 @@ impl Utf8Chunked {
     /// Refer to https://goessner.net/articles/JsonPath/
     #[cfg(feature = "extract_jsonpath")]
     pub fn extract_json_path_single(&self, json_path: &str) -> Result<Utf8Chunked> {
-        let pat = Compiled::compile(json_path).unwrap();
-        Ok(self.apply_on_opt(|str_val| extract_json(&pat, str_val)))
+        match Compiled::compile(json_path) {
+            Ok(pat) => Ok(self.apply_on_opt(|str_val| extract_json(&pat, str_val))),
+            Err(e) => Err(PolarsError::ValueError(
+                format!("error compiling JSONpath expression {:?}", e).into(),
+            )),
+        }
     }
 
     /// Replace the leftmost (sub)string by a regex pattern
