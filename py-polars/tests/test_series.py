@@ -451,3 +451,14 @@ def test_reinterpret():
     assert s.reinterpret(signed=True).dtype == pl.Int64
     df = pl.DataFrame([s])
     assert df[[pl.col("a").reinterpret(signed=True)]]["a"].dtype == pl.Int64
+
+
+def test_jsonpath_single():
+    s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
+    assert s.str.json_path_extract_single("$.a").to_list() == [
+        "1",
+        None,
+        "2",
+        "2.1",
+        "true",
+    ]
