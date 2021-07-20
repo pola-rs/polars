@@ -2411,4 +2411,25 @@ mod test {
         assert_eq!(out.shape(), (6, 4));
         Ok(())
     }
+
+    #[test]
+    fn test_fold_wildcard() -> Result<()> {
+        let df1 = df![
+        "a" => [1, 2, 3],
+        "b" => [1, 2, 3]
+        ]?;
+
+        let out = df1
+            .lazy()
+            .select(vec![
+                fold_exprs(lit(0), |a, b| Ok(&a + &b), vec![col("*")]).alias("foo")
+            ])
+            .collect()?;
+
+        assert_eq!(
+            Vec::from(out.column("foo")?.i32()?),
+            &[Some(2), Some(4), Some(6)]
+        );
+        Ok(())
+    }
 }

@@ -1,10 +1,11 @@
+use crate::lazy::utils::py_exprs_to_exprs;
 use crate::series::PySeries;
 use crate::utils::{reinterpret, str_to_polarstype};
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyFloat, PyInt, PyString, PyBool};
+use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
 
 #[pyclass]
@@ -567,6 +568,36 @@ pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     dsl::binary_expr(left, op, right).into()
 }
 
+/// A python lambda taking two Series
+fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<Series> {
+    let gil = Python::acquire_gil();
+    let py = gil.python();
+    // get the pypolars module
+    let pypolars = PyModule::import(py, "polars").unwrap();
+    // create a PySeries struct/object for Python
+    let pyseries_a = PySeries::new(a);
+    let pyseries_b = PySeries::new(b);
+
+    // Wrap this PySeries object in the python side Series wrapper
+    let python_series_wrapper_a = pypolars.call1("wrap_s", (pyseries_a,)).unwrap();
+    let python_series_wrapper_b = pypolars.call1("wrap_s", (pyseries_b,)).unwrap();
+
+    // call the lambda and get a python side Series wrapper
+    let result_series_wrapper =
+        match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
+            Ok(pyobj) => pyobj,
+            Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
+        };
+    // unpack the wrapper in a PySeries
+    let py_pyseries = result_series_wrapper
+        .getattr(py, "_s")
+        .expect("Could net get series attribute '_s'. Make sure that you return a Series object.");
+    // Downcast to Rust
+    let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
+    // Finally get the actual Series
+    Ok(pyseries.series)
+}
+
 pub fn binary_function(
     input_a: PyExpr,
     input_b: PyExpr,
@@ -585,44 +616,23 @@ pub fn binary_function(
         }
     };
 
-    let func = move |a: Series, b: Series| {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        // get the pypolars module
-        let pypolars = PyModule::import(py, "polars").unwrap();
-        // create a PySeries struct/object for Python
-        let pyseries_a = PySeries::new(a);
-        let pyseries_b = PySeries::new(b);
-
-        // Wrap this PySeries object in the python side Series wrapper
-        let python_series_wrapper_a = pypolars.call1("wrap_s", (pyseries_a,)).unwrap();
-        let python_series_wrapper_b = pypolars.call1("wrap_s", (pyseries_b,)).unwrap();
-
-        // call the lambda and get a python side Series wrapper
-        let result_series_wrapper =
-            match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
-                Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
-            };
-        // unpack the wrapper in a PySeries
-        let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
-            "Could net get series attribute '_s'. Make sure that you return a Series object.",
-        );
-        // Downcast to Rust
-        let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
-        // Finally get the actual Series
-        Ok(pyseries.series)
-    };
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
 
     polars::lazy::dsl::map_binary(input_a, input_b, func, Some(output_field)).into()
+}
+
+pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = py_exprs_to_exprs(exprs);
+
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    polars::lazy::dsl::fold_exprs(acc.inner, func, exprs).into()
 }
 
 pub fn lit(value: &PyAny) -> PyExpr {
     if let Ok(true) = value.is_instance::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         dsl::lit(val).into()
-    }
-    else if let Ok(int) = value.downcast::<PyInt>() {
+    } else if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();
         dsl::lit(val).into()
     } else if let Ok(float) = value.downcast::<PyFloat>() {

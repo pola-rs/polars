@@ -57,6 +57,11 @@ fn binary_expr(l: dsl::PyExpr, op: u8, r: dsl::PyExpr) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+    dsl::fold(acc, lambda, exprs)
+}
+
+#[pyfunction]
 fn binary_function(
     a: dsl::PyExpr,
     b: dsl::PyExpr,
@@ -141,6 +146,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<dsl::PyExpr>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_function)).unwrap();
     m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();

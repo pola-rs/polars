@@ -1,7 +1,7 @@
 //! Domain specific language for the Lazy api.
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{has_expr, output_name};
+use crate::utils::{has_expr, has_wildcard, output_name};
 use polars_core::prelude::*;
 
 #[cfg(feature = "temporal")]
@@ -15,6 +15,7 @@ use std::{
 };
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
+use polars_core::utils::get_supertype;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {
@@ -111,6 +112,26 @@ where
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct FunctionOptions {
+    /// Collect groups to a list before applying a function.
+    /// This can be important in aggregation context.
+    pub(crate) collect_groups: bool,
+    /// There can be two ways of expanding wildcards:
+    ///
+    /// Say the schema is 'a', 'b' and there is a function f
+    /// f('*')
+    /// can expand to:
+    /// 1.
+    ///     f('a', 'b')
+    /// or
+    /// 2.
+    ///     f('a'), f('b')
+    ///
+    /// setting this to true, will lead to behavior 1.
+    pub(crate) input_wildcard_expansion: bool,
+}
+
 #[derive(PartialEq, Clone)]
 pub enum AggExpr {
     Min(Box<Expr>),
@@ -203,9 +224,7 @@ pub enum Expr {
         function: NoEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
         output_type: Option<DataType>,
-        /// if the groups should aggregated to list before
-        /// execution of the function.
-        collect_groups: bool,
+        options: FunctionOptions,
     },
     Shift {
         input: Box<Expr>,
@@ -729,7 +748,10 @@ impl Expr {
             input: vec![self],
             function: NoEq::new(Arc::new(f)),
             output_type,
-            collect_groups: false,
+            options: FunctionOptions {
+                collect_groups: false,
+                input_wildcard_expansion: false,
+            },
         }
     }
 
@@ -752,7 +774,10 @@ impl Expr {
             input: vec![self],
             function: NoEq::new(Arc::new(f)),
             output_type,
-            collect_groups: true,
+            options: FunctionOptions {
+                collect_groups: true,
+                input_wildcard_expansion: false,
+            },
         }
     }
 
@@ -1206,14 +1231,48 @@ where
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F: 'static>(mut acc: Expr, f: F, exprs: Vec<Expr>) -> Expr
+pub fn fold_exprs<F: 'static>(mut acc: Expr, f: F, mut exprs: Vec<Expr>) -> Expr
 where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync + Copy,
+    F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone,
 {
-    for e in exprs {
-        acc = map_binary(acc, e, f, None);
+    if exprs.iter().any(has_wildcard) {
+        exprs.push(acc);
+
+        let function = NoEq::new(Arc::new(move |series: &mut [Series]| {
+            let mut series = series.to_vec();
+            let mut acc = series.pop().unwrap();
+
+            for s in series {
+                acc = f(acc, s)?
+            }
+            Ok(acc)
+        }) as Arc<dyn SeriesUdf>);
+
+        Expr::Function {
+            input: exprs,
+            function,
+            output_type: None,
+            options: FunctionOptions {
+                collect_groups: false,
+                input_wildcard_expansion: true,
+            },
+        }
+    } else {
+        for e in exprs {
+            acc = map_binary_lazy_field(
+                acc,
+                e,
+                f.clone(),
+                // written inline due to lifetime inference issues.
+                |_schema, _ctxt, f_l: &Field, f_r: &Field| {
+                    get_supertype(f_l.data_type(), f_r.data_type())
+                        .ok()
+                        .map(|dt| Field::new(f_l.name(), dt))
+                },
+            );
+        }
+        acc
     }
-    acc
 }
 
 /// Get the the sum of the values per row

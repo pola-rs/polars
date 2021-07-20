@@ -98,6 +98,11 @@ where
     current_expr.into_iter().any(|e| matches(e))
 }
 
+// this one is used so much that it has its own function, to reduce inlining
+pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
+    has_expr(current_expr, |e| matches!(e, Expr::Wildcard))
+}
+
 /// output name of expr
 pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
     for e in expr {
