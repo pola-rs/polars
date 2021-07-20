@@ -15,6 +15,7 @@ try:
     from ..polars import concat_str as _concat_str
     from ..polars import cov as pycov
     from ..polars import except_ as pyexcept
+    from ..polars import fold as pyfold
     from ..polars import lit as pylit
     from ..polars import pearson_corr as pypearson_corr
     from ..polars import series_from_range as _series_from_range
@@ -432,7 +433,7 @@ def map_binary(
 def fold(
     acc: "pl.Expr",
     f: Callable[["pl.Series", "pl.Series"], "pl.Series"],
-    exprs: tp.List["pl.Expr"],
+    exprs: Union[tp.List["pl.Expr"], "pl.Expr"],
 ) -> "pl.Expr":
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -447,11 +448,14 @@ def fold(
         Function to apply over the accumulator and the value.
         Fn(acc, value) -> new_value
     exprs
-        Expressions to aggregate over.
+        Expressions to aggregate over. May also be a wildcard expression.
     """
-    for e in exprs:
-        acc = map_binary(acc, e, f, None)
-    return acc
+    # in case of pl.col("*")
+    if isinstance(exprs, pl.Expr):
+        exprs = [exprs]
+
+    exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
+    return pl.wrap_expr(pyfold(acc._pyexpr, f, exprs))
 
 
 def any(name: Union[str, tp.List["pl.Expr"]]) -> "pl.Expr":
