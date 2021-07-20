@@ -67,7 +67,107 @@ def _prepare_other_arg(other: Any) -> "pl.Series":
 
 class DataFrame:
     """
-    A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
+    A DataFrame is a two-dimensional data structure that represents data as a table
+    with rows and columns.
+
+    Parameters
+    ----------
+    data : dict, Sequence, ndarray, Series, or pandas.DataFrame
+        Two-dimensional data in various forms. dict may contain Series or Sequences.
+        Sequence may contain Series or other Sequences.
+    columns : Sequence of str, default None
+        Column labels to use for resulting DataFrame. If specified, overrides any
+        labels already present in the data. Must match data dimensions.
+    orientation : {'column', 'row'}, default None
+        Whether to interpret two-dimensional data as columns or as rows. If None,
+        the orientation is infered by matching the columns and data dimensions. If this
+        does not yield conclusive results, 'column' orientation is used.
+    nullable : bool, default True
+        If your data does not contain null values, set to False to speed up
+        DataFrame creation.
+
+    Examples
+    --------
+    Constructing a DataFrame from a dictionary:
+
+    ```python
+    >>> data = {'a': [1, 2], 'b': [3, 4]}
+    >>> df = pl.DataFrame(data)
+    >>> df
+    shape: (2, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   │
+    ╰─────┴─────╯
+    ```
+
+    Notice that the dtype is automatically inferred as a polars Int64:
+
+    ```python
+    >>> df.dtypes
+    [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Int64'>]
+    ```
+
+    In order to specify dtypes for your columns, initialize the DataFrame with a list
+    of Series instead:
+
+    ```python
+    >>> data = [pl.Series('col1', [1, 2], dtype=pl.Float32),
+    ...         pl.Series('col2', [3, 4], dtype=pl.Int64)]
+    >>> df2 = pl.DataFrame(series)
+    >>> df2
+    shape: (2, 2)
+    ╭──────┬──────╮
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 1    ┆ 3    │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2    ┆ 4    │
+    ╰──────┴──────╯
+    ```
+
+    Constructing a DataFrame from a numpy ndarray, specifying column names:
+
+    ```python
+    >>> data = np.array([(1, 2), (3, 4)])
+    >>> df3 = pl.DataFrame(data, columns=['a', 'b'], orientation='column')
+    >>> df3
+    shape: (2, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   │
+    ╰─────┴─────╯
+    ```
+
+    Constructing a DataFrame from a list of lists, row orientation inferred:
+
+    ```python
+    >>> data = [[1, 2, 3], [4, 5, 6]]
+    >>> df4 = pl.DataFrame(data, columns=['a', 'b', 'c'])
+    >>> df4
+    shape: (2, 3)
+    ╭─────┬─────┬─────╮
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 2   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 4   ┆ 5   ┆ 6   │
+    ╰─────┴─────┴─────╯
+    ```
     """
 
     def __init__(
