@@ -3,6 +3,7 @@ Module containing logic related to eager DataFrames
 """
 import os
 import typing as tp
+import warnings
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -34,14 +35,14 @@ from ..utils import _process_null_values, coerce_arrow
 try:
     from ..polars import PyDataFrame, PySeries
 except ImportError:
-    import warnings
-
     warnings.warn("binary files missing")
 
 try:
     import pandas as pd
+
+    _PANDAS_AVAILABLE = True
 except ImportError:
-    pass
+    _PANDAS_AVAILABLE = False
 
 __all__ = [
     "DataFrame",
@@ -66,55 +67,243 @@ def _prepare_other_arg(other: Any) -> "pl.Series":
 
 class DataFrame:
     """
-    A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
+    A DataFrame is a two-dimensional data structure that represents data as a table
+    with rows and columns.
+
+    Parameters
+    ----------
+    data : dict, Sequence, ndarray, Series, or pandas.DataFrame
+        Two-dimensional data in various forms. dict may contain Series or Sequences.
+        Sequence may contain Series or other Sequences.
+    columns : Sequence of str, default None
+        Column labels to use for resulting DataFrame. If specified, overrides any
+        labels already present in the data. Must match data dimensions.
+    orientation : {'column', 'row'}, default None
+        Whether to interpret two-dimensional data as columns or as rows. If None,
+        the orientation is infered by matching the columns and data dimensions. If this
+        does not yield conclusive results, 'column' orientation is used.
+    nullable : bool, default True
+        If your data does not contain null values, set to False to speed up
+        DataFrame creation.
+
+    Examples
+    --------
+    Constructing a DataFrame from a dictionary:
+
+    ```python
+    >>> data = {'a': [1, 2], 'b': [3, 4]}
+    >>> df = pl.DataFrame(data)
+    >>> df
+    shape: (2, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   │
+    ╰─────┴─────╯
+    ```
+
+    Notice that the dtype is automatically inferred as a polars Int64:
+
+    ```python
+    >>> df.dtypes
+    [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Int64'>]
+    ```
+
+    In order to specify dtypes for your columns, initialize the DataFrame with a list
+    of Series instead:
+
+    ```python
+    >>> data = [pl.Series('col1', [1, 2], dtype=pl.Float32),
+    ...         pl.Series('col2', [3, 4], dtype=pl.Int64)]
+    >>> df2 = pl.DataFrame(series)
+    >>> df2
+    shape: (2, 2)
+    ╭──────┬──────╮
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 1    ┆ 3    │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2    ┆ 4    │
+    ╰──────┴──────╯
+    ```
+
+    Constructing a DataFrame from a numpy ndarray, specifying column names:
+
+    ```python
+    >>> data = np.array([(1, 2), (3, 4)])
+    >>> df3 = pl.DataFrame(data, columns=['a', 'b'], orientation='column')
+    >>> df3
+    shape: (2, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   │
+    ╰─────┴─────╯
+    ```
+
+    Constructing a DataFrame from a list of lists, row orientation inferred:
+
+    ```python
+    >>> data = [[1, 2, 3], [4, 5, 6]]
+    >>> df4 = pl.DataFrame(data, columns=['a', 'b', 'c'])
+    >>> df4
+    shape: (2, 3)
+    ╭─────┬─────┬─────╮
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 2   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 4   ┆ 5   ┆ 6   │
+    ╰─────┴─────┴─────╯
+    ```
     """
 
     def __init__(
         self,
-        data: Union[Dict[str, Sequence], tp.List["pl.Series"], np.ndarray],
+        data: Optional[
+            Union[
+                Dict[str, Sequence[Any]],
+                Sequence[Any],
+                np.ndarray,
+                "pd.DataFrame",
+                "pl.Series",
+            ]
+        ] = None,
+        columns: Optional[Sequence[str]] = None,
+        orientation: Optional[str] = None,
         nullable: bool = True,
     ):
-        """
-        A DataFrame is a two dimensional data structure that represents data as a table with rows and columns.
-        """
+        # Handle positional arguments for old constructor
+        if isinstance(columns, bool):
+            warnings.warn(
+                "Specifying nullable as a positional argument is deprecated. "
+                "Use a keyword argument to silence this warning.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            nullable = columns
+            columns = None
 
-        columns = []
-        if isinstance(data, dict):
-            for k, v in data.items():
-                columns.append(pl.Series(k, v, nullable=nullable).inner())
+        # Parse data into a list of Series
+        data_series: tp.List["pl.Series"]
+
+        if data is None:
+            data_series = []
+
+        elif isinstance(data, dict):
+            data_series = [
+                pl.Series(k, v, nullable=nullable).inner() for k, v in data.items()
+            ]
+
         elif isinstance(data, np.ndarray):
             shape = data.shape
-            if len(shape) == 2:
-                for i, c in enumerate(range(shape[1])):
-                    columns.append(
-                        pl.Series(str(i), data[:, c], nullable=False).inner()
+
+            if shape == (0,):
+                data_series = []
+
+            elif len(shape) == 1:
+                s = pl.Series("column_0", data, nullable=False).inner()
+                data_series = [s]
+
+            elif len(shape) == 2:
+                # Infer orientation
+                if orientation is None:
+                    warnings.warn(
+                        "Default orientation for constructing DataFrame from numpy "
+                        'array will change from "row" to "column" in a future version. '
+                        "Specify orientation explicitly to silence this warning.",
+                        DeprecationWarning,
+                        stacklevel=2,
                     )
-            else:
-                raise ValueError("A numpy array should have 2 dimensions.")
-        elif isinstance(data, list):
-            for s in data:
-                if not isinstance(s, pl.Series):
-                    raise ValueError("A list should contain Series.")
-                columns.append(s.inner())
-        else:
-            try:
-                import pandas as pd
+                    orientation = "row"
+                # Exchange if-block above for block below when removing warning
+                # if orientation is None and columns is not None:
+                #     orientation = "column" if len(columns) == shape[0] else "row"
 
-                if isinstance(data, pd.DataFrame):
-                    for col in data.columns:
-                        if nullable:
-                            s = pl.Series(
-                                col, data[col].to_list(), nullable=True
-                            ).inner()
-                        else:
-                            s = pl.Series(col, data[col].values, nullable=False).inner()
-                        columns.append(s)
+                if orientation == "row":
+                    data_series = [
+                        pl.Series(f"column_{i}", data[:, i], nullable=False).inner()
+                        for i in range(shape[1])
+                    ]
                 else:
-                    raise ValueError("A dictionary was expected.")
-            except ImportError:
-                raise ValueError("A dictionary was expected.")
+                    data_series = [
+                        pl.Series(f"column_{i}", data[i], nullable=False).inner()
+                        for i in range(shape[0])
+                    ]
 
-        self._df = PyDataFrame(columns)
+            else:
+                raise ValueError("A numpy array should have more than two dimensions.")
+
+        elif isinstance(data, Sequence) and not isinstance(data, str):
+            if len(data) == 0:
+                data_series = []
+
+            elif isinstance(data[0], pl.Series):
+                data_series = []
+                for i, s in enumerate(data):
+                    if not s.name:  # TODO: Replace by `if s.name is None` once allowed
+                        s.rename(f"column_{i}", in_place=True)
+                    data_series.append(s.inner())
+
+            elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
+                # Infer orientation
+                if orientation is None and columns is not None:
+                    orientation = "column" if len(columns) == len(data) else "row"
+
+                if orientation == "row":
+                    self._df = PyDataFrame.read_rows(data)
+                    if columns is not None:
+                        self.columns = list(columns)
+                    return
+                else:
+                    data_series = [
+                        pl.Series(f"column_{i}", data[i], nullable=nullable).inner()
+                        for i in range(len(data))
+                    ]
+
+            else:
+                s = pl.Series("column_0", data, nullable=nullable).inner()
+                data_series = [s]
+
+        elif isinstance(data, pl.Series):
+            data_series = [data.inner()]
+
+        elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+            if nullable:
+                data_series = [
+                    pl.Series(str(col), data[col].to_list(), nullable=True).inner()
+                    for col in data.columns
+                ]
+            else:
+                data_series = [
+                    pl.Series(str(col), data[col].values, nullable=False).inner()
+                    for col in data.columns
+                ]
+
+        else:
+            raise ValueError("DataFrame constructor not called properly.")
+
+        # Handle the resulting list of Series
+        if not data_series and columns is not None:
+            for c in columns:
+                data_series.append(pl.Series(c, [], nullable=nullable).inner())
+
+        self._df = PyDataFrame(data_series)
+
+        if columns is not None:
+            self.columns = list(columns)
 
     @staticmethod
     def _from_pydf(df: "PyDataFrame") -> "DataFrame":
