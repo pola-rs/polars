@@ -417,7 +417,11 @@ impl PyExpr {
             // create a PySeries struct/object for Python
             let pyseries = PySeries::new(s);
             // Wrap this PySeries object in the python side Series wrapper
-            let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+            let python_series_wrapper = pypolars
+                .getattr("wrap_s")
+                .unwrap()
+                .call1((pyseries,))
+                .unwrap();
             // call the lambda and get a python side Series wrapper
             let result_series_wrapper = match lambda.call1(py, (python_series_wrapper,)) {
                 Ok(pyobj) => pyobj,
@@ -579,8 +583,16 @@ fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<Series> {
     let pyseries_b = PySeries::new(b);
 
     // Wrap this PySeries object in the python side Series wrapper
-    let python_series_wrapper_a = pypolars.call1("wrap_s", (pyseries_a,)).unwrap();
-    let python_series_wrapper_b = pypolars.call1("wrap_s", (pyseries_b,)).unwrap();
+    let python_series_wrapper_a = pypolars
+        .getattr("wrap_s")
+        .unwrap()
+        .call1((pyseries_a,))
+        .unwrap();
+    let python_series_wrapper_b = pypolars
+        .getattr("wrap_s")
+        .unwrap()
+        .call1((pyseries_b,))
+        .unwrap();
 
     // call the lambda and get a python side Series wrapper
     let result_series_wrapper =
