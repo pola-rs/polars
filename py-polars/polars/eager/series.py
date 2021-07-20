@@ -1716,6 +1716,37 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_contains(pattern))
 
+    def json_path_extract_single(self, json_path: str) -> Series:
+        """
+        Extract the first match of json string with provided JSONPath expression.
+        Throw errors if encounter invalid json strings.
+        All return value will be casted to Utf8 regardless of the original value.
+        Documentation on JSONPath standard: https://goessner.net/articles/JsonPath/
+
+        Parameters
+        ----------
+        json_path
+            A valid JSON path query string
+
+        Returns
+        -------
+        Utf8 array. Contain null if original value is null or the json_path return nothing.
+
+        Examples
+        --------
+        >>> pl.Series(['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']).str.json_path_extract_single('$.a')
+        shape: (5,)
+        Series: '' [str]
+        [
+            "1"
+            null
+            "2"
+            "2.1"
+            "true"
+        ]
+        """
+        return wrap_s(self._s.str_json_path_extract_single(json_path))
+
     def replace(self, pattern: str, value: str) -> Series:
         """
         Replace first regex match with a string value.
