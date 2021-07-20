@@ -27,7 +27,7 @@ def test_init_only_columns():
     df = pl.DataFrame(columns=["a", "b", "c"])
     truth = pl.DataFrame({"a": [], "b": [], "c": []})
     assert df.shape == (0, 3)
-    assert df.frame_equal(truth)
+    assert df.frame_equal(truth, null_equal=True)
 
 
 def test_init_dict():
