@@ -125,7 +125,11 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::List(v) => {
                 let pypolars = PyModule::import(py, "polars").expect("polars installed");
                 let pyseries = PySeries::new(v);
-                let python_series_wrapper = pypolars.call1("wrap_s", (pyseries,)).unwrap();
+                let python_series_wrapper = pypolars
+                    .getattr("wrap_s")
+                    .unwrap()
+                    .call1((pyseries,))
+                    .unwrap();
                 python_series_wrapper.into()
             }
             AnyValue::Object(v) => v.into_py(py),
