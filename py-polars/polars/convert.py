@@ -63,7 +63,7 @@ def from_arrow(
         raise ValueError(f"expected arrow table / array, got {a}")
 
 
-def _from_pandas_helper(a: "pd.Series") -> pa.Array:
+def _from_pandas_helper(a: Union["pd.Series", "pd.DatetimeIndex"]) -> pa.Array:
     dtype = a.dtype
     if dtype == "datetime64[ns]":
         # We first cast to ms because that's the unit of Date64,
@@ -101,7 +101,7 @@ def from_pandas(
     except ImportError as e:
         raise ImportError("from_pandas requires pandas to be installed.") from e
 
-    if isinstance(df, pd.Series) or isinstance(df, pd.DatetimeIndex):
+    if isinstance(df, (pd.Series, pd.DatetimeIndex)):
         return from_arrow(_from_pandas_helper(df))
 
     # Note: we first tried to infer the schema via pyarrow and then modify the schema if
