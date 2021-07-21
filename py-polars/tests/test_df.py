@@ -77,9 +77,7 @@ def test_init_ndarray():
 
     # 2D array - orientation conflicts with columns
     with pytest.raises(RuntimeError):
-        pl.DataFrame(
-            np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"], orientation="row"
-        )
+        pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"], orient="row")
 
     # 3D array
     with pytest.raises(ValueError):
@@ -129,7 +127,7 @@ def test_init_seq_of_seq():
     assert df.frame_equal(truth)
 
     # Row orientation
-    df = pl.DataFrame(((1, 2), (3, 4)), columns=("a", "b"), orientation="row")
+    df = pl.DataFrame(((1, 2), (3, 4)), columns=("a", "b"), orient="row")
     truth = pl.DataFrame({"a": [1, 3], "b": [2, 4]})
     assert df.frame_equal(truth)
 

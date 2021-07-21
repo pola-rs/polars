@@ -73,15 +73,15 @@ class DataFrame:
     Parameters
     ----------
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
-        Two-dimensional data in various forms. dict may contain Series or Sequences.
+        Two-dimensional data in various forms. dict must contain Sequences.
         Sequence may contain Series or other Sequences.
     columns : Sequence of str, default None
         Column labels to use for resulting DataFrame. If specified, overrides any
         labels already present in the data. Must match data dimensions.
-    orientation : {'column', 'row'}, default None
+    orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
-        the orientation is infered by matching the columns and data dimensions. If this
-        does not yield conclusive results, 'column' orientation is used.
+        the orientation is infered by matching the columns and data dimensions. If
+        this does not yield conclusive results, column orientation is used.
     nullable : bool, default True
         If your data does not contain null values, set to False to speed up
         DataFrame creation.
@@ -137,7 +137,7 @@ class DataFrame:
 
     ```python
     >>> data = np.array([(1, 2), (3, 4)])
-    >>> df3 = pl.DataFrame(data, columns=['a', 'b'], orientation='column')
+    >>> df3 = pl.DataFrame(data, columns=['a', 'b'], orient='col')
     >>> df3
     shape: (2, 2)
     ╭─────┬─────╮
@@ -182,7 +182,7 @@ class DataFrame:
             ]
         ] = None,
         columns: Optional[Sequence[str]] = None,
-        orientation: Optional[str] = None,
+        orient: Optional[str] = None,
         nullable: bool = True,
     ):
         # Handle positional arguments for old constructor
@@ -219,7 +219,7 @@ class DataFrame:
 
             elif len(shape) == 2:
                 # Infer orientation
-                if orientation is None:
+                if orient is None:
                     warnings.warn(
                         "Default orientation for constructing DataFrame from numpy "
                         'array will change from "row" to "column" in a future version. '
@@ -227,12 +227,12 @@ class DataFrame:
                         DeprecationWarning,
                         stacklevel=2,
                     )
-                    orientation = "row"
+                    orient = "row"
                 # Exchange if-block above for block below when removing warning
                 # if orientation is None and columns is not None:
-                #     orientation = "column" if len(columns) == shape[0] else "row"
+                #     orientation = "col" if len(columns) == shape[0] else "row"
 
-                if orientation == "row":
+                if orient == "row":
                     data_series = [
                         pl.Series(f"column_{i}", data[:, i], nullable=False).inner()
                         for i in range(shape[1])
@@ -259,10 +259,10 @@ class DataFrame:
 
             elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
                 # Infer orientation
-                if orientation is None and columns is not None:
-                    orientation = "column" if len(columns) == len(data) else "row"
+                if orient is None and columns is not None:
+                    orient = "col" if len(columns) == len(data) else "row"
 
-                if orientation == "row":
+                if orient == "row":
                     self._df = PyDataFrame.read_rows(data)
                     if columns is not None:
                         self.columns = list(columns)
@@ -311,15 +311,193 @@ class DataFrame:
         self._df = df
         return self
 
-    @staticmethod
+    @classmethod
+    def from_dict(
+        cls,
+        data: Dict[str, Sequence[Any]],
+        columns: Optional[Sequence[str]] = None,
+        nullable: bool = True,
+    ) -> "DataFrame":
+        """
+        Construct a DataFrame from a dictionary of sequences.
+
+        Parameters
+        ----------
+        data : dict of sequences
+            Two-dimensional data represented as a dictionary. dict must contain
+            Sequences.
+        columns : Sequence of str, default None
+            Column labels to use for resulting DataFrame. If specified, overrides any
+            labels already present in the data. Must match data dimensions.
+        nullable : bool, default True
+            If your data does not contain null values, set to False to speed up
+            DataFrame creation.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        ```python
+        >>> data = {'a': [1, 2], 'b': [3, 4]}
+        >>> df = pl.DataFrame.from_dict(data)
+        >>> df
+        shape: (2, 2)
+        ╭─────┬─────╮
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 4   │
+        ╰─────┴─────╯
+        ```
+        """
+        return cls(data, columns=columns, nullable=nullable)
+
+    @classmethod
+    def from_records(
+        cls,
+        data: Union[np.ndarray, Sequence[Sequence[Any]]],
+        columns: Optional[Sequence[str]] = None,
+        orient: Optional[str] = None,
+        nullable: bool = True,
+    ) -> "DataFrame":
+        """
+        Construct a DataFrame from a numpy ndarray or sequence of sequences.
+
+        Parameters
+        ----------
+        data : numpy ndarray or Sequence of sequences
+            Two-dimensional data represented as numpy ndarray or sequence of sequences.
+        columns : Sequence of str, default None
+            Column labels to use for resulting DataFrame. Must match data dimensions.
+            If not specified, columns will be named `column_0`, `column_1`, etc.
+        orient : {'col', 'row'}, default None
+            Whether to interpret two-dimensional data as columns or as rows. If None,
+            the orientation is infered by matching the columns and data dimensions. If
+            this does not yield conclusive results, column orientation is used.
+        nullable : bool, default True
+            If your data does not contain null values, set to False to speed up
+            DataFrame creation.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        ```python
+        >>> data = [[1, 2, 3], [4, 5, 6]]
+        >>> df = pl.DataFrame.from_records(data, columns=['a', 'b'])
+        >>> df
+        shape: (3, 2)
+        ╭─────┬─────╮
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 6   │
+        ╰─────┴─────╯
+        ```
+        """
+        return cls(data, columns=columns, orient=orient, nullable=nullable)
+
+    @classmethod
+    def from_arrow(cls, table: pa.Table, rechunk: bool = True) -> "DataFrame":
+        """
+        Construct a DataFrame from an arrow Table.
+
+        Most will be zero copy. Types that are not supported by Polars may be cast to a
+        closest supported type.
+
+        Parameters
+        ----------
+        table
+            Arrow Table.
+        rechunk
+            Make sure that all data is contiguous.
+        """
+        data = {}
+        for i, column in enumerate(table):
+            # extract the name before casting
+            if column._name is None:
+                name = f"column_{i}"
+            else:
+                name = column._name
+
+            column = coerce_arrow(column)
+            data[name] = column
+
+        table = pa.table(data)
+        batches = table.to_batches()
+        self = cls.__new__(cls)
+        self._df = PyDataFrame.from_arrow_record_batches(batches)
+        if rechunk:
+            return self.rechunk()
+        return self
+
+    @classmethod
+    def from_pandas(
+        cls,
+        data: "pd.DataFrame",
+        columns: Optional[Sequence[str]] = None,
+        nullable: bool = True,
+    ) -> "DataFrame":
+        """
+        Construct a Polars DataFrame from a pandas DataFrame.
+
+        Parameters
+        ----------
+        data : pandas DataFrame
+            Two-dimensional data represented as a pandas DataFrame.
+        columns : Sequence of str, default None
+            Column labels to use for resulting DataFrame. If specified, overrides any
+            labels already present in the data. Must match data dimensions.
+        nullable : bool, default True
+            If your data does not contain null values, set to False to speed up
+            DataFrame creation.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        ```python
+        >>> pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=['a', 'b', 'c'])
+        >>> df = pl.DataFrame.from_pandas(pd_df, columns=['d', 'e', 'f'])
+        >>> df
+        shape: (2, 3)
+        ╭─────┬─────┬─────╮
+        │ d   ┆ e   ┆ f   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 2   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 5   ┆ 6   │
+        ╰─────┴─────┴─────╯
+        ```
+        """
+        return cls(data, columns=columns, nullable=nullable)
+
+    @classmethod
     def from_rows(
+        cls,
         rows: Sequence[Sequence[Any]],
         column_names: Optional[Sequence[str]] = None,
         column_name_mapping: Optional[Dict[int, str]] = None,
     ) -> "DataFrame":
         """
-        Create a DataFrame from rows. This should only be used as a last resort, as this is more expensive than
-        creating from columnar data.
+        Create a DataFrame from rows. This should only be used as a last resort,
+        as this is more expensive than creating from columnar data.
 
         Parameters
         ----------
@@ -334,16 +512,16 @@ class DataFrame:
                 column_mapping: {0: "first_column, 3: "fourth column"}
             ```
         """
-        self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_rows(rows)
+        df = DataFrame.__new__(DataFrame)
+        df._df = PyDataFrame.read_rows(rows)
         if column_names is not None:
-            self.columns = list(column_names)
+            df.columns = list(column_names)
         if column_name_mapping is not None:
             for i, name in column_name_mapping.items():
-                s = self[:, i]
+                s = df[:, i]
                 s.rename(name, in_place=True)
-                self.replace_at_idx(i, s)
-        return self
+                df.replace_at_idx(i, s)
+        return df
 
     @staticmethod
     def read_csv(
@@ -531,39 +709,6 @@ class DataFrame:
             file = file.read().decode("utf8")
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_json(file)
-        return self
-
-    @staticmethod
-    def from_arrow(table: pa.Table, rechunk: bool = True) -> "DataFrame":
-        """
-        Create DataFrame from arrow Table.
-        Most will be zero copy. Types that are not supported by Polars may be cast to a closest
-        supported type.
-
-        Parameters
-        ----------
-        table
-            Arrow Table.
-        rechunk
-            Make sure that all data is contiguous.
-        """
-        data = {}
-        for i, column in enumerate(table):
-            # extract the name before casting
-            if column._name is None:
-                name = f"column_{i}"
-            else:
-                name = column._name
-
-            column = coerce_arrow(column)
-            data[name] = column
-
-        table = pa.table(data)
-        batches = table.to_batches()
-        self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.from_arrow_record_batches(batches)
-        if rechunk:
-            return self.rechunk()
         return self
 
     def to_arrow(self) -> pa.Table:
