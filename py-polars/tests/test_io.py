@@ -1,4 +1,6 @@
+import gzip
 import io
+import zlib
 
 import numpy as np
 import pandas as pd
@@ -107,3 +109,37 @@ a,n/a,c"""
     df = pl.read_csv(f, null_values={"a": "na", "b": "n/a"})
     assert df[0, "a"] is None
     assert df[1, "b"] is None
+
+
+def test_compressed_csv():
+    # gzip compression
+    csv = """
+a,b,c
+1,a,1.0
+2,b,2.0,
+3,c,3.0
+"""
+    fout = io.BytesIO()
+    with gzip.GzipFile(fileobj=fout, mode="w") as f:
+        f.write(csv.encode())
+
+    bytes = fout.getvalue()
+    out = pl.read_csv(bytes)
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
+    )
+    assert out.frame_equal(expected)
+
+    # zlib compression
+    bytes = zlib.compress(csv.encode())
+    out = pl.read_csv(bytes)
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
+    )
+    assert out.frame_equal(expected)
+
+    # no compression
+    f = io.BytesIO(b"a, b\n1,2\n")
+    out = pl.read_csv(f)
+    expected = pl.DataFrame({"a": [1], "b": [2]})
+    assert out.frame_equal(expected)
