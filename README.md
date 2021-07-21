@@ -6,7 +6,7 @@
 
 ## Blazingly fast DataFrames in Rust & Python
 
-Polars is a blazingly fast DataFrames library implemented in Rust using Apache Arrow as memory model.
+Polars is a blazingly fast DataFrames library implemented in Rust using Apache Arrow(2) as memory model.
 
 * Lazy | eager execution
 * Multi-threaded
@@ -75,6 +75,11 @@ This can be done by going through the following steps in sequence:
 Note that the Rust crate implementing the Python bindings is called `py-polars` to distinguish from the wrapped 
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
 can `pip install polars` and `import polars` (previously, these were called `py-polars` and `pypolars`).
+
+## Arrow2
+Polars has a fully functional [arrow2](https://crates.io/crates/arrow2) branch and will ship the python binaries
+from this branch. Arrow2 is a faster and safer implementation of the arrow spec. Arrow2 also has a more granular code base,
+helping to reduce the compiler bloat.
 
 ## Acknowledgements
 Development of Polars is proudly powered by
