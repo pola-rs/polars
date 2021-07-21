@@ -23,6 +23,7 @@ dtype-date32 = ["polars-core/dtype-date32"]
 csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical", "arrow/io_csv"]
 #csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
 fmt = ["polars-core/plain_fmt"]
+decompress = ["flate2"]
 
 [dependencies]
 #arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "e3712b9ee2efe47aead19236ab9e8484bce9f96e" }
@@ -43,6 +44,7 @@ ahash = "0.7"
 num = "^0.4.0"
 dirs = "3.0"
 simdutf8 = {version="0.1", optional=true}
+flate2 = {version = "1", optional=true}
 
 [package.metadata.docs.rs]
 all-features = true

@@ -59,7 +59,8 @@ features = [
     "dot_product",
     "concat_str",
     "row_hash",
-    "reinterpret"
+    "reinterpret",
+    "decompress"
 ]
 
 #[patch.crates-io]

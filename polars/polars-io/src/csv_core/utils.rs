@@ -213,6 +213,53 @@ pub fn infer_file_schema<R: Read + Seek>(
     Ok((Schema::new(fields), records_count))
 }
 
+#[cfg(feature = "decompress")]
+pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
+    // magic numbers
+    let gzip: [u8; 2] = [31, 139];
+    let zlib0: [u8; 2] = [0x78, 0x01];
+    let zlib1: [u8; 2] = [0x78, 0x9C];
+    let zlib2: [u8; 2] = [0x78, 0xDA];
+
+    if bytes.starts_with(&gzip) {
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut decoder = flate2::read::GzDecoder::new(bytes);
+        decoder.read_to_end(&mut out).ok()?;
+        Some(out)
+    } else if bytes.starts_with(&zlib0) || bytes.starts_with(&zlib1) || bytes.starts_with(&zlib2) {
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+        decoder.read_to_end(&mut out).ok()?;
+        Some(out)
+    } else {
+        None
+    }
+}
+
+#[cfg(feature = "decompress")]
+/// Schema inference needs to be done again after decompression
+pub(crate) fn bytes_to_schema(
+    bytes: &[u8],
+    delimiter: u8,
+    has_header: bool,
+    skip_rows: usize,
+    comment_char: Option<u8>,
+) -> Result<SchemaRef> {
+    let mut r = std::io::Cursor::new(&bytes);
+    Ok(Arc::from(
+        infer_file_schema(
+            &mut r,
+            delimiter,
+            Some(100),
+            has_header,
+            None,
+            skip_rows,
+            comment_char,
+        )?
+        .0,
+    ))
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
