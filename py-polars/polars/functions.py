@@ -2,6 +2,7 @@ from typing import Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute
 
 import polars as pl
 
