@@ -78,6 +78,7 @@ dot_product = ["polars-core/dot_product", "polars-lazy/dot_product"]
 concat_str = ["polars-core/concat_str", "polars-lazy/concat_str"]
 row_hash = ["polars-core/row_hash"]
 reinterpret = ["polars-core/reinterpret", "polars-core/dtype-u64"]
+decompress = ["polars-io/decompress"]
 
 # don't use this
 private = []
@@ -140,7 +141,8 @@ docs-selection = [
     "is_last",
     "asof_join",
     "cross_join",
-    "concat_str"
+    "concat_str",
+    "decompress"
 ]
 
 [dependencies]

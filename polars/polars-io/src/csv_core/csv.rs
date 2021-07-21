@@ -11,6 +11,8 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::borrow::Cow;
 use std::fmt;
+#[cfg(feature = "decompress")]
+use std::io::SeekFrom;
 use std::io::{Read, Seek};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -39,6 +41,9 @@ pub struct CoreReader<R: Read + MmapBytesReader> {
     low_memory: bool,
     comment_char: Option<u8>,
     null_values: Option<Vec<String>>,
+    /// If schema was given by user or inferred
+    #[cfg(feature = "decompress")]
+    inferred_schema: bool,
 }
 
 impl<R> fmt::Debug for CoreReader<R>
@@ -456,10 +461,50 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
                 if let Some(file) = reader.to_file() {
                     let mmap = unsafe { memmap::Mmap::map(file)? };
                     let bytes = mmap[..].as_ref();
+
+                    #[cfg(feature = "decompress")]
+                    {
+                        if let Some(bytes) = decompress(bytes) {
+                            if self.inferred_schema {
+                                self.schema = bytes_to_schema(
+                                    &bytes,
+                                    self.delimiter,
+                                    self.has_header,
+                                    self.skip_rows,
+                                    self.comment_char,
+                                )?;
+                            }
+
+                            self.parse_csv(n_threads, &bytes, predicate.as_ref())?
+                        } else {
+                            self.parse_csv(n_threads, bytes, predicate.as_ref())?
+                        }
+                    }
+                    #[cfg(not(feature = "decompress"))]
                     self.parse_csv(n_threads, bytes, predicate.as_ref())?
                 } else {
                     // we can get the bytes for free
                     let bytes = if let Some(bytes) = reader.to_bytes() {
+                        #[cfg(feature = "decompress")]
+                        {
+                            if let Some(bytes) = decompress(bytes) {
+                                if self.inferred_schema {
+                                    self.schema = bytes_to_schema(
+                                        &bytes,
+                                        self.delimiter,
+                                        self.has_header,
+                                        self.skip_rows,
+                                        self.comment_char,
+                                    )?;
+                                }
+
+                                Cow::Owned(bytes)
+                            } else {
+                                Cow::Borrowed(bytes)
+                            }
+                        }
+
+                        #[cfg(not(feature = "decompress"))]
                         Cow::Borrowed(bytes)
                     } else {
                         // we have to read to an owned buffer to get the bytes.
@@ -470,6 +515,24 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
                         {
                             bytes.push(b'\n')
                         }
+
+                        #[cfg(feature = "decompress")]
+                        {
+                            if let Some(decomp_bytes) = decompress(&bytes) {
+                                if self.inferred_schema {
+                                    self.schema = bytes_to_schema(
+                                        &bytes,
+                                        self.delimiter,
+                                        self.has_header,
+                                        self.skip_rows,
+                                        self.comment_char,
+                                    )?;
+                                }
+
+                                bytes = decomp_bytes;
+                            }
+                        }
+
                         Cow::Owned(bytes)
                     };
 
@@ -524,19 +587,53 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
 ) -> Result<CoreReader<R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
+
+    #[cfg(feature = "decompress")]
+    let mut inferred_schema = false;
+
     let schema = match schema {
         Some(schema) => schema,
         None => {
-            let (inferred_schema, _) = infer_file_schema(
-                &mut reader,
-                delimiter,
-                max_records,
-                has_header,
-                schema_overwrite,
-                skip_rows,
-                comment_char,
-            )?;
-            Arc::new(inferred_schema)
+            #[cfg(feature = "decompress")]
+            {
+                // We keep track of the inferred schema bool
+                // In case the file is compressed this schema inference is wrong and has to be done
+                // again after decompression.
+                inferred_schema = true;
+
+                const N: usize = 5;
+                let mut bytes = [0u8; N];
+                reader.read_exact(&mut bytes)?;
+                // restore position
+                reader.seek(SeekFrom::Current(-(N as i64)))?;
+                if decompress(&bytes).is_some() {
+                    Arc::new(Schema::default())
+                } else {
+                    let (inferred_schema, _) = infer_file_schema(
+                        &mut reader,
+                        delimiter,
+                        max_records,
+                        has_header,
+                        schema_overwrite,
+                        skip_rows,
+                        comment_char,
+                    )?;
+                    Arc::new(inferred_schema)
+                }
+            }
+            #[cfg(not(feature = "decompress"))]
+            {
+                let (inferred_schema, _) = infer_file_schema(
+                    &mut reader,
+                    delimiter,
+                    max_records,
+                    has_header,
+                    schema_overwrite,
+                    skip_rows,
+                    comment_char,
+                )?;
+                Arc::new(inferred_schema)
+            }
         }
     };
 
@@ -569,5 +666,7 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
         low_memory,
         comment_char,
         null_values,
+        #[cfg(feature = "decompress")]
+        inferred_schema,
     })
 }

@@ -1029,6 +1029,7 @@ dependencies = [
  "csv-core",
  "dirs 3.0.2",
  "fast-float",
+ "flate2",
  "lazy_static",
  "lexical",
  "memmap2",
