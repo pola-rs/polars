@@ -10,6 +10,7 @@ from typing import (
     List,
     Optional,
     TextIO,
+    Tuple,
     Type,
     Union,
     overload,
@@ -17,22 +18,28 @@ from typing import (
 from urllib.request import urlopen
 
 import pyarrow as pa
-import pyarrow.compute
 import pyarrow.csv
 import pyarrow.parquet
 
 import polars as pl
 
-from .functions import from_arrow, from_pandas
+from .functions import from_arrow
+
+try:
+    import connectorx as cx
+
+    _WITH_CX = True
+except ImportError:
+    _WITH_CX = False
 
 try:
     import fsspec
     from fsspec.implementations.local import make_path_posix
     from fsspec.utils import infer_compression, infer_storage_options
 
-    WITH_FSSPEC = True
+    _WITH_FSSPEC = True
 except ImportError:
-    WITH_FSSPEC = False
+    _WITH_FSSPEC = False
 
 __all__ = [
     "read_csv",
@@ -104,7 +111,7 @@ def _prepare_file_arg(
     if isinstance(file, Path):
         return managed_file(str(file))
     if isinstance(file, str):
-        if WITH_FSSPEC:
+        if _WITH_FSSPEC:
             compressed = infer_compression(file) is not None
             local = infer_storage_options(file)["protocol"] == "file"
             if local and not compressed:
@@ -113,7 +120,7 @@ def _prepare_file_arg(
         if file.startswith("http"):
             return _process_http_file(file)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
-        if WITH_FSSPEC:
+        if _WITH_FSSPEC:
             compressed = any(infer_compression(f) is not None for f in file)
             local = all(infer_storage_options(f)["protocol"] == "file" for f in file)
             if local and not compressed:
@@ -472,42 +479,89 @@ def read_json(source: Union[str, BytesIO]) -> "pl.DataFrame":
     return pl.DataFrame.read_json(source)
 
 
-def read_sql(sql: str, engine: Any) -> "pl.DataFrame":
+def read_sql(
+    sql: Union[List[str], str],
+    connection_uri: str,
+    partition_on: Optional[str] = None,
+    partition_range: Optional[Tuple[int, int]] = None,
+    partition_num: Optional[int] = None,
+) -> "pl.DataFrame":
     """
-    # Preface
-    Deprecated by design. Will not have a long future support and no guarantees given whatsoever.
-    Want backwards compatibility?
+    Read a SQL query into a DataFrame
+    Make sure to install connextorx>=0.2
 
-    Use:
+    # Sources
+    Supports reading a sql query from the following data sources:
+
+    * Postgres
+    * Mysql
+    * Sqlite
+    * Redshift (through postgres protocol)
+    * Clickhouse (through mysql protocol)
+
+    ## Source not supported?
+    If a database source is not supported, pandas can be used to load the query:
 
     ```python
     df = pl.from_pandas(pd.read_sql(sql, engine))
     ```
 
-    The support is limited because I want something better.
-
-    # Docstring
-    Load a DataFrame from a database by sending a raw sql query.
-    Make sure to install sqlalchemy ^1.4
-
     Parameters
     ----------
     sql
         raw sql query
-    engine : sqlalchemy engine
-        make sure to install sqlalchemy ^1.4
+    connection_uri
+        connectorx connection uri:
+            - "postgresql://username:password@server:port/database"
+    partition_on
+      the column to partition the result.
+    partition_range
+      the value range of the partition column.
+    partition_num
+      how many partition to generate.
+
+
+    # Examples
+
+    ## Single threaded
+    Read a DataFrame from a SQL using a single thread:
+
+    ```python
+    uri = "postgresql://username:password@server:port/database"
+    query = "SELECT * FROM lineitem"
+    pl.read_sql(query, uri)
+    ```
+
+    ## Using 10 threads
+    Read a DataFrame parallelly using 10 threads by automatically partitioning the provided SQL on the partition column:
+
+    ```python
+    uri = "postgresql://username:password@server:port/database"
+    query = "SELECT * FROM lineitem"
+    read_sql(query, uir, partition_on="partition_col", partition_num=10)
+    ```
+
+    ## Using
+    Read a DataFrame parallel using 2 threads by manually providing two partition SQLs:
+
+    ```python
+    uri = "postgresql://username:password@server:port/database"
+    queries = ["SELECT * FROM lineitem WHERE partition_col <= 10", "SELECT * FROM lineitem WHERE partition_col > 10"]
+    read_sql(uri, queries)
+    ```
+
     """
-    try:
-        # pandas sql loading is faster.
-        # conversion from pandas to arrow is very cheap compared to db driver
-        import pandas as pd
-
-        return from_pandas(pd.read_sql(sql, engine))  # type: ignore[return-value]
-    except ImportError:
-        from sqlalchemy import text
-
-        with engine.connect() as con:
-            result = con.execute(text(sql))
-
-        rows = result.fetchall()
-        return pl.DataFrame.from_rows(rows, list(result.keys()))
+    if _WITH_CX:
+        tbl = cx.read_sql(
+            conn=connection_uri,
+            query=sql,
+            return_type="arrow",
+            partition_on=partition_on,
+            partition_range=partition_range,
+            partition_num=partition_num,
+        )
+        return pl.from_arrow(tbl)  # type: ignore[return-value]
+    else:
+        raise ImportError(
+            "connectorx is not installed." "Please run pip install connectorx>=0.2.0a3"
+        )
