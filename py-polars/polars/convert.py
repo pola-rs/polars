@@ -63,7 +63,7 @@ def from_arrow(
         raise ValueError(f"expected arrow table / array, got {a}")
 
 
-def _from_pandas_helper(a: "pd.Series") -> pa.Array:  # noqa: F821
+def _from_pandas_helper(a: "pd.Series") -> pa.Array:
     dtype = a.dtype
     if dtype == "datetime64[ns]":
         # We first cast to ms because that's the unit of Date64,
@@ -80,7 +80,7 @@ def _from_pandas_helper(a: "pd.Series") -> pa.Array:  # noqa: F821
 
 def from_pandas(
     df: Union["pd.DataFrame", "pd.Series", "pd.DatetimeIndex"],
-    rechunk: bool = True,  # noqa: F821
+    rechunk: bool = True,
 ) -> Union["pl.Series", "pl.DataFrame"]:
     """
     Convert from a pandas DataFrame to a polars DataFrame.
@@ -132,4 +132,11 @@ def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "pl.DataFrame":
     rechunk
         Make sure that all data is contiguous.
     """
+    import warnings
+
+    warnings.warn(
+        "from_arrow_table is deprecated, use DataFrame.from_arrow instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return pl.DataFrame.from_arrow(table, rechunk)
