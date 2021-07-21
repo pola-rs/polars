@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 import pyarrow as pa
@@ -6,10 +6,8 @@ import pyarrow.compute
 
 import polars as pl
 
-try:
+if TYPE_CHECKING:
     import pandas as pd
-except ImportError:
-    pass
 
 __all__ = [
     "from_rows",
@@ -98,6 +96,11 @@ def from_pandas(
     -------
     A Polars DataFrame
     """
+    try:
+        import pandas as pd
+    except ImportError as e:
+        raise ImportError("from_pandas requires pandas to be installed.") from e
+
     if isinstance(df, pd.Series) or isinstance(df, pd.DatetimeIndex):
         return from_arrow(_from_pandas_helper(df))
 
