@@ -34,8 +34,7 @@ except ImportError:
 
 try:
     import fsspec
-    from fsspec.implementations.local import make_path_posix
-    from fsspec.utils import infer_compression, infer_storage_options
+    from fsspec.utils import infer_storage_options
 
     _WITH_FSSPEC = True
 except ImportError:
@@ -89,12 +88,9 @@ def _prepare_file_arg(
     A local path is returned as a string
     An http url is read into a buffer and returned as a `BytesIO`
 
-    When fsspec is installed, except for `StringIO`, `BytesIO` and local
-    uncompressed files, the file is opened with `fsspec.open(file, **kwargs)`,
-    in which case, the compression is inferred.
+    When fsspec is installed, remote file(s) is (are) opened with
+    `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
     """
-
-    compression = kwargs.pop("compression", "infer")
 
     # Small helper to use a variable as context
     @contextmanager
@@ -112,20 +108,16 @@ def _prepare_file_arg(
         return managed_file(str(file))
     if isinstance(file, str):
         if _WITH_FSSPEC:
-            compressed = infer_compression(file) is not None
-            local = infer_storage_options(file)["protocol"] == "file"
-            if local and not compressed:
-                return managed_file(make_path_posix(file))
-            return fsspec.open(file, compression=compression, **kwargs)
+            if infer_storage_options(file)["protocol"] == "file":
+                return managed_file(file)
+            return fsspec.open(file, **kwargs)
         if file.startswith("http"):
             return _process_http_file(file)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _WITH_FSSPEC:
-            compressed = any(infer_compression(f) is not None for f in file)
-            local = all(infer_storage_options(f)["protocol"] == "file" for f in file)
-            if local and not compressed:
-                return managed_file(list(map(make_path_posix, file)))
-            return fsspec.open_files(file, compression=compression, **kwargs)
+            if all(infer_storage_options(f)["protocol"] == "file" for f in file):
+                return managed_file(file)
+            return fsspec.open_files(file, **kwargs)
     return managed_file(file)
 
 
@@ -161,7 +153,7 @@ def read_csv(
         By file-like object, we refer to objects with a ``read()`` method,
         such as a file handler (e.g. via builtin ``open`` function)
         or ``StringIO`` or ``BytesIO``.
-        If ``fsspec`` is installed, it will be used to open non-local or compressed files
+        If ``fsspec`` is installed, it will be used to open remote files
     infer_schema_length
         Maximum number of lines to read to infer schema.
     batch_size
@@ -406,7 +398,7 @@ def read_ipc(
     ----------
     file
         Path to a file or a file like object.
-        If ``fsspec`` is installed, it will be used to open non-local or compressed files
+        If ``fsspec`` is installed, it will be used to open remote files
     use_pyarrow
         Use pyarrow or rust arrow backend.
     storage_options
@@ -437,7 +429,7 @@ def read_parquet(
     source
         Path to a file | list of files, or a file like object. If the path is a directory, that directory will be used
         as partition aware scan.
-        If ``fsspec`` is installed, it will be used to open non-local or compressed files
+        If ``fsspec`` is installed, it will be used to open remote files
     stop_after_n_rows
         After n rows are read from the parquet, it stops reading. Note: this cannot be used in partition aware parquet
         reads.
