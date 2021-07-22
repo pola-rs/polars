@@ -20,9 +20,7 @@ pub mod parquet;
 pub mod prelude;
 pub(crate) mod utils;
 
-use arrow::{
-    error::Result as ArrowResult, io::json::Reader as ArrowJsonReader, record_batch::RecordBatch,
-};
+use arrow::{error::Result as ArrowResult, record_batch::RecordBatch};
 
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
@@ -62,16 +60,6 @@ pub trait ArrowReader {
     fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>>;
 
     fn schema(&self) -> Arc<Schema>;
-}
-
-impl<R: Read> ArrowReader for ArrowJsonReader<R> {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
-        self.next()
-    }
-
-    fn schema(&self) -> Arc<Schema> {
-        Arc::new((&**self.schema()).into())
-    }
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
