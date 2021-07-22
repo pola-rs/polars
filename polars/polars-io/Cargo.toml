@@ -11,12 +11,12 @@ repository = "https://github.com/ritchie46/polars"
 
 [features]
 # support for arrows json parsing
-json = []
+json = ["arrow/io_json"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc"]
 #ipc = []
 lazy = []
-parquet = ["polars-core/parquet"]
+parquet = ["polars-core/parquet", "arrow/io_parquet"]
 dtype-u64 = ["polars-core/dtype-u64"]
 dtype-date64 = ["polars-core/dtype-date64", "polars-core/temporal"]
 dtype-date32 = ["polars-core/dtype-date32"]
@@ -29,7 +29,7 @@ private = []
 
 [dependencies]
 #arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "e3712b9ee2efe47aead19236ab9e8484bce9f96e" }
-arrow = { package = "arrow2", version = "0.1"}
+arrow = { package = "arrow2", version = "0.1", default-features=false}
 polars-core = {version = "0.14.4", path = "../polars-core", features = ["private"], default-features=false}
 polars-arrow = {version = "0.14.4", path = "../polars-arrow"}
 csv = {version="1.1", optional=true}

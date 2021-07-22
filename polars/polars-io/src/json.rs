@@ -60,12 +60,26 @@
 //! +-----+--------+-------+--------+
 //! ```
 //!
-use crate::finish_reader;
 use crate::prelude::*;
-pub use arrow::io::json::ReaderBuilder;
+use crate::{finish_reader, ArrowReader};
+pub use arrow::{
+    error::Result as ArrowResult,
+    io::json::{Reader as ArrowJsonReader, ReaderBuilder},
+    record_batch::RecordBatch,
+};
 use polars_core::prelude::*;
 use std::io::{Read, Seek};
 use std::sync::Arc;
+
+impl<R: Read> ArrowReader for ArrowJsonReader<R> {
+    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
+        self.next()
+    }
+
+    fn schema(&self) -> Arc<Schema> {
+        Arc::new((&**self.schema()).into())
+    }
+}
 
 pub struct JsonReader<R>
 where

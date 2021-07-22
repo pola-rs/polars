@@ -10,6 +10,6 @@ description = "Arrow interfaces for Polars DataFrame library"
 
 [dependencies]
 #arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "e3712b9ee2efe47aead19236ab9e8484bce9f96e", default-features = false }
-arrow = { package = "arrow2", version = "0.1"}
+arrow = { package = "arrow2", version = "0.1", default-features=false}
 thiserror = "^1.0"
 num = "^0.4"
