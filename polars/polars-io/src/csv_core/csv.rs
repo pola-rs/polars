@@ -2,6 +2,7 @@ use crate::csv::{CsvEncoding, NullValues};
 use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::mmap::MmapBytesReader;
+use crate::utils::resolve_homedir;
 use crate::PhysicalIoExpr;
 use crate::ScanAggregation;
 use polars_arrow::array::*;
@@ -438,6 +439,49 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
         }
     }
 
+    #[cfg(feature = "decompress")]
+    fn decompress_and_parse(
+        &mut self,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        n_threads: usize,
+        bytes: &[u8],
+    ) -> Result<DataFrame> {
+        if let Some(bytes) = decompress(bytes) {
+            if self.inferred_schema {
+                self.schema = bytes_to_schema(
+                    &bytes,
+                    self.delimiter,
+                    self.has_header,
+                    self.skip_rows,
+                    self.comment_char,
+                )?;
+            }
+
+            self.parse_csv(n_threads, &bytes, predicate.as_ref())
+        } else {
+            self.parse_csv(n_threads, bytes, predicate.as_ref())
+        }
+    }
+
+    #[cfg(feature = "decompress")]
+    fn decompress<'a>(&mut self, bytes: &'a [u8]) -> Result<Cow<'a, [u8]>> {
+        if let Some(bytes) = decompress(bytes) {
+            if self.inferred_schema {
+                self.schema = bytes_to_schema(
+                    &bytes,
+                    self.delimiter,
+                    self.has_header,
+                    self.skip_rows,
+                    self.comment_char,
+                )?;
+            }
+
+            Ok(Cow::Owned(bytes))
+        } else {
+            Ok(Cow::Borrowed(bytes))
+        }
+    }
+
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
     pub fn as_df(
         &mut self,
@@ -449,9 +493,17 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
         let mut df = match &self.path {
             // we have a path so we can mmap
             Some(p) => {
-                let file = std::fs::File::open(p)?;
+                let p = resolve_homedir(p);
+                let file = std::fs::File::open(&p)?;
                 let mmap = unsafe { memmap::Mmap::map(&file)? };
                 let bytes = mmap[..].as_ref();
+
+                #[cfg(feature = "decompress")]
+                {
+                    self.decompress_and_parse(predicate, n_threads, bytes)?
+                }
+
+                #[cfg(not(feature = "decompress"))]
                 self.parse_csv(n_threads, bytes, predicate.as_ref())?
             }
             None => {
@@ -464,22 +516,9 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
 
                     #[cfg(feature = "decompress")]
                     {
-                        if let Some(bytes) = decompress(bytes) {
-                            if self.inferred_schema {
-                                self.schema = bytes_to_schema(
-                                    &bytes,
-                                    self.delimiter,
-                                    self.has_header,
-                                    self.skip_rows,
-                                    self.comment_char,
-                                )?;
-                            }
-
-                            self.parse_csv(n_threads, &bytes, predicate.as_ref())?
-                        } else {
-                            self.parse_csv(n_threads, bytes, predicate.as_ref())?
-                        }
+                        self.decompress_and_parse(predicate, n_threads, bytes)?
                     }
+
                     #[cfg(not(feature = "decompress"))]
                     self.parse_csv(n_threads, bytes, predicate.as_ref())?
                 } else {
@@ -487,21 +526,7 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
                     let bytes = if let Some(bytes) = reader.to_bytes() {
                         #[cfg(feature = "decompress")]
                         {
-                            if let Some(bytes) = decompress(bytes) {
-                                if self.inferred_schema {
-                                    self.schema = bytes_to_schema(
-                                        &bytes,
-                                        self.delimiter,
-                                        self.has_header,
-                                        self.skip_rows,
-                                        self.comment_char,
-                                    )?;
-                                }
-
-                                Cow::Owned(bytes)
-                            } else {
-                                Cow::Borrowed(bytes)
-                            }
+                            self.decompress(bytes)?
                         }
 
                         #[cfg(not(feature = "decompress"))]
@@ -518,21 +543,14 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
 
                         #[cfg(feature = "decompress")]
                         {
-                            if let Some(decomp_bytes) = decompress(&bytes) {
-                                if self.inferred_schema {
-                                    self.schema = bytes_to_schema(
-                                        &bytes,
-                                        self.delimiter,
-                                        self.has_header,
-                                        self.skip_rows,
-                                        self.comment_char,
-                                    )?;
-                                }
-
-                                bytes = decomp_bytes;
+                            match self.decompress(&bytes)? {
+                                // always return the owned version
+                                Cow::Borrowed(_) => Cow::Owned(bytes),
+                                Cow::Owned(bytes) => Cow::Owned(bytes),
                             }
                         }
 
+                        #[cfg(not(feature = "decompress"))]
                         Cow::Owned(bytes)
                     };
 

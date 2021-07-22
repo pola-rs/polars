@@ -7,6 +7,7 @@ use std::borrow::Borrow;
 use std::fs::File;
 use std::io;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use crate::prelude::resolve_homedir;
 
 #[derive(Clone)]
 pub struct PyFileLikeObject {
@@ -231,9 +232,10 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
 
     // string so read file
     if let Ok(pstring) = py_f.downcast::<PyString>() {
-        let rstring = pstring.to_string();
-        let str_slice: &str = rstring.borrow();
-        let f = File::open(str_slice)?;
+        let s = pstring.to_string();
+        let p = std::path::Path::new(&s);
+        let p = resolve_homedir(p);
+        let f = File::open(&p)?;
         Ok(Box::new(f))
     }
     // bytes object
