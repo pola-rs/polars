@@ -129,6 +129,9 @@ a,b,c
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
     )
     assert out.frame_equal(expected)
+    # now from disk
+    out = pl.read_csv("tests/files/gzipped.csv")
+    assert out.frame_equal(expected)
 
     # zlib compression
     bytes = zlib.compress(csv.encode())

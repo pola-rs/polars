@@ -24,6 +24,8 @@ csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical", "arrow/csv"]
 #csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
 fmt = ["polars-core/plain_fmt"]
 decompress = ["flate2"]
+# don't use this
+private = []
 
 [dependencies]
 arrow = {git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed", default-features=false}
