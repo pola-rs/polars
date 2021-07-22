@@ -12,9 +12,9 @@ if TYPE_CHECKING:
 __all__ = [
     "from_dict",
     "from_records",
-    "from_rows",
     "from_arrow",
     "from_pandas",
+    "from_rows",  # deprecated
     "from_arrow_table",  # deprecated
 ]
 
@@ -47,7 +47,7 @@ def from_dict(
     --------
     ```python
     >>> data = {'a': [1, 2], 'b': [3, 4]}
-    >>> df = pl.DataFrame.from_dict(data)
+    >>> df = pl.from_dict(data)
     >>> df
     shape: (2, 2)
     ╭─────┬─────╮
@@ -115,31 +115,6 @@ def from_records(
     return pl.DataFrame._from_records(
         data, columns=columns, orient=orient, nullable=nullable
     )
-
-
-def from_rows(
-    rows: Sequence[Sequence[Any]],
-    column_names: Optional[Sequence[str]] = None,
-    column_name_mapping: Optional[Dict[int, str]] = None,
-) -> "pl.DataFrame":
-    """
-    Create a DataFrame from rows. This should only be used as a last resort, as this is
-    more expensive than creating from columnar data.
-
-    Parameters
-    ----------
-    rows
-        rows.
-    column_names
-        column names to use for the DataFrame.
-    column_name_mapping
-        map column index to a new name:
-        Example:
-        ```python
-            column_mapping: {0: "first_column, 3: "fourth column"}
-        ```
-    """
-    return pl.DataFrame.from_rows(rows, column_names, column_name_mapping)
 
 
 def from_arrow(
@@ -217,6 +192,31 @@ def from_pandas(
 
     table = pa.table(data)
     return from_arrow(table, rechunk)
+
+
+def from_rows(
+    rows: Sequence[Sequence[Any]],
+    column_names: Optional[Sequence[str]] = None,
+    column_name_mapping: Optional[Dict[int, str]] = None,
+) -> "pl.DataFrame":
+    """
+    Create a DataFrame from rows. This should only be used as a last resort, as this is
+    more expensive than creating from columnar data.
+
+    Parameters
+    ----------
+    rows
+        rows.
+    column_names
+        column names to use for the DataFrame.
+    column_name_mapping
+        map column index to a new name:
+        Example:
+        ```python
+            column_mapping: {0: "first_column, 3: "fourth column"}
+        ```
+    """
+    return pl.DataFrame.from_rows(rows, column_names, column_name_mapping)
 
 
 def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "pl.DataFrame":
