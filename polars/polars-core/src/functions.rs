@@ -94,13 +94,14 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
     // use a string buffer, to amortize alloc
     let mut buf = String::with_capacity(128);
 
-    for i in 0..len {
+    for _ in 0..len {
         let mut has_null = false;
-        if i > 0 {
-            buf.push_str(delimiter);
-        }
 
-        iters.iter_mut().for_each(|it| {
+        iters.iter_mut().enumerate().for_each(|(i, it)| {
+            if i > 0 {
+                buf.push_str(delimiter);
+            }
+
             match it.next() {
                 Some(Some(s)) => buf.push_str(s),
                 Some(None) => has_null = true,
@@ -131,5 +132,15 @@ mod test {
         let b = Series::new("b", &[1.0f32, 2.0]);
         assert!((cov(&a.f32().unwrap(), &b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
         assert!((pearson_corr(&a.f32().unwrap(), &b.f32().unwrap()).unwrap() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    #[cfg(feature = "concat_str")]
+    fn test_concat_str() {
+        let a = Series::new("a", &["foo", "bar"]);
+        let b = Series::new("b", &["spam", "ham"]);
+
+        let a = concat_str(&[a, b], "_").unwrap();
+        assert_eq!(Vec::from(&a), &[Some("foo_spam"), Some("bar_ham")]);
     }
 }
