@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "from_dict",
+    "from_records",
     "from_rows",
     "from_arrow",
     "from_pandas",
@@ -61,6 +62,59 @@ def from_dict(
     ```
     """
     return pl.DataFrame._from_dict(data=data, columns=columns, nullable=nullable)
+
+
+def from_records(
+    data: Union[np.ndarray, Sequence[Sequence[Any]]],
+    columns: Optional[Sequence[str]] = None,
+    orient: Optional[str] = None,
+    nullable: bool = True,
+) -> "pl.DataFrame":
+    """
+    Construct a DataFrame from a numpy ndarray or sequence of sequences.
+
+    Parameters
+    ----------
+    data : numpy ndarray or Sequence of sequences
+        Two-dimensional data represented as numpy ndarray or sequence of sequences.
+    columns : Sequence of str, default None
+        Column labels to use for resulting DataFrame. Must match data dimensions.
+        If not specified, columns will be named `column_0`, `column_1`, etc.
+    orient : {'col', 'row'}, default None
+        Whether to interpret two-dimensional data as columns or as rows. If None,
+        the orientation is infered by matching the columns and data dimensions. If
+        this does not yield conclusive results, column orientation is used.
+    nullable : bool, default True
+        If your data does not contain null values, set to False to speed up
+        DataFrame creation.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+    ```python
+    >>> data = [[1, 2, 3], [4, 5, 6]]
+    >>> df = pl.from_records(data, columns=['a', 'b'])
+    >>> df
+    shape: (3, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 4   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 6   │
+    ╰─────┴─────╯
+    ```
+    """
+    return pl.DataFrame._from_records(
+        data, columns=columns, orient=orient, nullable=nullable
+    )
 
 
 def from_rows(

@@ -294,26 +294,6 @@ class DataFrame:
         Returns
         -------
         DataFrame
-
-        Examples
-        --------
-        ```python
-        >>> data = [[1, 2, 3], [4, 5, 6]]
-        >>> df = pl.DataFrame.from_records(data, columns=['a', 'b'])
-        >>> df
-        shape: (3, 2)
-        ╭─────┬─────╮
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 5   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 6   │
-        ╰─────┴─────╯
-        ```
         """
         return cls(data, columns=columns, orient=orient, nullable=nullable)
 
@@ -352,7 +332,7 @@ class DataFrame:
         return self
 
     @classmethod
-    def from_pandas(
+    def _from_pandas(
         cls,
         data: "pd.DataFrame",
         columns: Optional[Sequence[str]] = None,
@@ -420,6 +400,12 @@ class DataFrame:
                 column_mapping: {0: "first_column, 3: "fourth column"}
             ```
         """
+        warnings.warn(
+            "from_rows is deprecated, use from_records with orient='row'.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         df = DataFrame.__new__(DataFrame)
         df._df = PyDataFrame.read_rows(rows)
         if column_names is not None:
