@@ -15,7 +15,7 @@ pub(crate) fn to_arrow_compatible_df(df: &DataFrame) -> DataFrame {
     DataFrame::new_no_checks(cols)
 }
 
-pub(crate) fn resolve_homedir(path: &Path) -> PathBuf {
+pub fn resolve_homedir(path: &Path) -> PathBuf {
     // replace "~" with home directory
     if path.starts_with("~") {
         if let Some(homedir) = home_dir() {
