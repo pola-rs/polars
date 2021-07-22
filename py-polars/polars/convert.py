@@ -10,11 +10,57 @@ if TYPE_CHECKING:
     import pandas as pd
 
 __all__ = [
+    "from_dict",
     "from_rows",
     "from_arrow",
     "from_pandas",
     "from_arrow_table",  # deprecated
 ]
+
+
+def from_dict(
+    data: Dict[str, Sequence[Any]],
+    columns: Optional[Sequence[str]] = None,
+    nullable: bool = True,
+) -> "pl.DataFrame":
+    """
+    Construct a DataFrame from a dictionary of sequences.
+
+    Parameters
+    ----------
+    data : dict of sequences
+        Two-dimensional data represented as a dictionary. dict must contain
+        Sequences.
+    columns : Sequence of str, default None
+        Column labels to use for resulting DataFrame. If specified, overrides any
+        labels already present in the data. Must match data dimensions.
+    nullable : bool, default True
+        If your data does not contain null values, set to False to speed up
+        DataFrame creation.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+    ```python
+    >>> data = {'a': [1, 2], 'b': [3, 4]}
+    >>> df = pl.DataFrame.from_dict(data)
+    >>> df
+    shape: (2, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   │
+    ╰─────┴─────╯
+    ```
+    """
+    return pl.DataFrame._from_dict(data=data, columns=columns, nullable=nullable)
 
 
 def from_rows(
@@ -108,6 +154,7 @@ def from_pandas(
     # needed. However arrow 3.0 determines the type of a string like this:
     #       pa.array(array).type
     # Needlessly allocating and failing when the string is too large for the string dtype.
+
     data = {}
 
     for name in df.columns:
