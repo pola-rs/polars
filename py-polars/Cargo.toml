@@ -60,7 +60,7 @@ features = [
     "concat_str",
     "row_hash",
     "reinterpret",
-    "decompress"
+    "decompress",
 ]
 
 #[patch.crates-io]
