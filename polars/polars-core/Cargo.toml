@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.14.7"
+version = "0.14.8"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -107,7 +107,7 @@ arrow = {git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b0
 #arrow = {version = "4.4", default-features = false }
 parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed"}
 #parquet = {version = "4.4", default-features = false, optional = true }
-polars-arrow = {version = "0.14.7", path = "../polars-arrow"}
+polars-arrow = {version = "0.14.8", path = "../polars-arrow"}
 thiserror = "1.0"
 num = "^0.4"
 itertools = "0.10"
