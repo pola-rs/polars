@@ -23,7 +23,6 @@ from typing import (
 
 import numpy as np
 import pyarrow as pa
-import pyarrow.feather
 import pyarrow.parquet
 
 import polars as pl
@@ -468,7 +467,6 @@ class DataFrame:
     def read_parquet(
         file: Union[str, BinaryIO],
         stop_after_n_rows: Optional[int] = None,
-        use_pyarrow: bool = False,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -479,22 +477,13 @@ class DataFrame:
             Path to a file or a file like object. Any valid filepath can be used.
         stop_after_n_rows
             Only read specified number of rows of the dataset. After `n` stops reading.
-        use_pyarrow
-            Use pyarrow instead of the rust native parquet reader. The pyarrow reader is more stable.
         """
-        if use_pyarrow:
-            if stop_after_n_rows:
-                raise ValueError(
-                    "stop_after_n_rows can not be used with 'use_pyarrow==True'."
-                )
-            tbl = pa.parquet.read_table(file)
-            return DataFrame.from_arrow(tbl)
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_parquet(file, stop_after_n_rows)
         return self
 
     @staticmethod
-    def read_ipc(file: Union[str, BinaryIO], use_pyarrow: bool = True) -> "DataFrame":
+    def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -502,17 +491,11 @@ class DataFrame:
         ----------
         file
             Path to a file or a file like object.
-        use_pyarrow
-            Use pyarrow or rust arrow backend.
 
         Returns
         -------
         DataFrame
         """
-        if use_pyarrow:
-            tbl = pa.feather.read_table(file)
-            return DataFrame.from_arrow(tbl)
-
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_ipc(file)
         return self
