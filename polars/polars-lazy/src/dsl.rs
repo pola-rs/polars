@@ -1143,6 +1143,12 @@ impl Expr {
             Some(Field::new(l.name(), l.data_type().clone()))
         })
     }
+
+    #[cfg(feature = "mode")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
+    pub fn mode(self) -> Expr {
+        self.map(|s| s.mode().map(|ca| ca.into_series()), None)
+    }
 }
 
 /// Create a Column Expression based on a column name.

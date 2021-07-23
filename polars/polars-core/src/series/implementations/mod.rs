@@ -866,6 +866,10 @@ macro_rules! impl_dyn_series {
             fn as_any(&self) -> &dyn Any {
                 &self.0
             }
+            #[cfg(feature = "mode")]
+            fn mode(&self) -> Result<Series> {
+                Ok(self.0.mode()?.into_series())
+            }
         }
     };
 }
