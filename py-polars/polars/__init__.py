@@ -6,7 +6,8 @@ from polars.eager.series import Series, wrap_s
 from polars.lazy.expr import Expr, wrap_expr
 from polars.lazy.frame import LazyFrame, wrap_ldf
 
-from . import datatypes, eager, functions, io, lazy, string_cache
+from . import convert, datatypes, eager, functions, io, lazy, string_cache
+from .convert import *
 from .datatypes import *
 from .eager import *
 from .functions import *
@@ -23,7 +24,8 @@ except ImportError:
     pass
 
 __all__ = (
-    datatypes.__all__
+    convert.__all__
+    + datatypes.__all__
     + eager.__all__
     + functions.__all__
     + io.__all__

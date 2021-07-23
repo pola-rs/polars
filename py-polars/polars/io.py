@@ -23,7 +23,7 @@ import pyarrow.parquet
 
 import polars as pl
 
-from .functions import from_arrow
+from .convert import from_arrow
 
 try:
     import connectorx as cx
