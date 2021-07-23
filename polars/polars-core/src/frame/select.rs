@@ -28,19 +28,44 @@ impl<'a> Selection<'a, &str> for Vec<&'a str> {
     }
 }
 
+/// Similar to AsRef
+/// Needed to go from Arc<String> to &str
+pub trait AsRefPolars<T: ?Sized> {
+    /// Performs the conversion.
+    fn as_ref_p(&self) -> &T;
+}
+
+impl AsRefPolars<str> for std::sync::Arc<String> {
+    fn as_ref_p(&self) -> &str {
+        &**self
+    }
+}
+
+impl AsRefPolars<str> for String {
+    fn as_ref_p(&self) -> &str {
+        &**self
+    }
+}
+
+impl AsRefPolars<str> for &str {
+    fn as_ref_p(&self) -> &str {
+        self
+    }
+}
+
 impl<'a, T, S: 'a> Selection<'a, S> for &'a T
 where
     T: AsRef<[S]>,
-    S: AsRef<str>,
+    S: AsRefPolars<str>,
 {
     fn to_selection_vec(self) -> Vec<&'a str> {
-        self.as_ref().iter().map(|s| s.as_ref()).collect()
+        self.as_ref().iter().map(|s| s.as_ref_p()).collect()
     }
 
     fn single(&self) -> Option<&str> {
         let a = self.as_ref();
         match a.len() {
-            1 => Some(a[0].as_ref()),
+            1 => Some(a[0].as_ref_p()),
             _ => None,
         }
     }
