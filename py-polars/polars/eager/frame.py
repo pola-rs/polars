@@ -384,6 +384,11 @@ class DataFrame:
         column_name_mapping: Optional[Dict[int, str]] = None,
     ) -> "DataFrame":
         """
+        .. deprecated:: 0.8.13
+          `from_rows` will be removed in Polars 0.9.0, it is replaced by
+          `from_records` because the latter offers more versatility. To keep the same
+          functionality, call `from_records` with `orient='row'`
+
         Create a DataFrame from rows. This should only be used as a last resort,
         as this is more expensive than creating from columnar data.
 
