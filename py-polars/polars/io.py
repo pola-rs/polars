@@ -19,6 +19,7 @@ from urllib.request import urlopen
 
 import pyarrow as pa
 import pyarrow.csv
+import pyarrow.feather
 import pyarrow.parquet
 
 import polars as pl
@@ -400,7 +401,7 @@ def read_ipc(
         Path to a file or a file like object.
         If ``fsspec`` is installed, it will be used to open remote files
     use_pyarrow
-        Use pyarrow or rust arrow backend.
+        Use pyarrow or the native rust reader.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
 
@@ -410,11 +411,15 @@ def read_ipc(
     """
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
-        return pl.DataFrame.read_ipc(data, use_pyarrow)
+        if use_pyarrow:
+            tbl = pa.feather.read_table(data)
+            return pl.DataFrame.from_arrow(tbl)
+        return pl.DataFrame.read_ipc(data)
 
 
 def read_parquet(
     source: Union[str, List[str], Path, BinaryIO],
+    use_pyarrow: bool = True,
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
     columns: Optional[List[str]] = None,
@@ -427,16 +432,20 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file | list of files, or a file like object. If the path is a directory, that directory will be used
+        Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
         as partition aware scan.
         If ``fsspec`` is installed, it will be used to open remote files
+    use_pyarrow
+            Use pyarrow instead of the rust native parquet reader. The pyarrow reader is more stable.
     stop_after_n_rows
-        After n rows are read from the parquet, it stops reading. Note: this cannot be used in partition aware parquet
-        reads.
+        After n rows are read from the parquet, it stops reading.
+        Only valid when 'use_pyarrow==False'
     memory_map
         Memory map underlying file. This will likely increase performance.
+        Only used when 'use_pyarrow==True'
     columns
         Columns to project/ select.
+        Only valid when 'use_pyarrow==True'
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
     **kwargs
@@ -446,16 +455,24 @@ def read_parquet(
     -------
     DataFrame
     """
+    if use_pyarrow:
+        if stop_after_n_rows:
+            raise ValueError(
+                "'stop_after_n_rows' cannot be used with 'use_pyarrow==True'."
+            )
+    else:
+        if columns:
+            raise ValueError("'columns' cannot be used with 'use_pyarrow==False'.")
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
-        if stop_after_n_rows is not None:
-            return pl.DataFrame.read_parquet(
-                source_prep, stop_after_n_rows=stop_after_n_rows
+        if use_pyarrow:
+            return from_arrow(  # type: ignore[return-value]
+                pa.parquet.read_table(
+                    source_prep, memory_map=memory_map, columns=columns, **kwargs
+                )
             )
-        return from_arrow(  # type: ignore[return-value]
-            pa.parquet.read_table(
-                source_prep, memory_map=memory_map, columns=columns, **kwargs
-            )
+        return pl.DataFrame.read_parquet(
+            source_prep, stop_after_n_rows=stop_after_n_rows
         )
 
 
