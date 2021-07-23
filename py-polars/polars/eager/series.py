@@ -1348,6 +1348,12 @@ class Series:
         """
         return self._s.dot(other._s)
 
+    def mode(self) -> "Series":
+        """
+        Compute the most occurring value(s). Can return multiple Values
+        """
+        return wrap_s(self._s.mode())
+
     def apply(
         self,
         func: Callable[[Any], Any],

@@ -1064,6 +1064,12 @@ pub trait SeriesTrait:
     fn is_first(&self) -> Result<BooleanChunked> {
         unimplemented!()
     }
+
+    #[cfg(feature = "mode")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
+    fn mode(&self) -> Result<Series> {
+        unimplemented!()
+    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {

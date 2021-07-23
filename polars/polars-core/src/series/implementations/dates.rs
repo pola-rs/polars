@@ -725,6 +725,10 @@ macro_rules! impl_dyn_series {
             fn as_any(&self) -> &dyn Any {
                 &self.0
             }
+            #[cfg(feature = "mode")]
+            fn mode(&self) -> Result<Series> {
+                try_physical_dispatch!(self, mode,)
+            }
         }
     };
 }
