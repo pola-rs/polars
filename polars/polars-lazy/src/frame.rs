@@ -17,6 +17,7 @@ use crate::logical_plan::optimizer::{
 use crate::physical_plan::state::ExecutionState;
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
+use crate::prelude::fast_projection::FastProjection;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::combine_predicates_expr;
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
@@ -537,6 +538,8 @@ impl LazyFrame {
             let opt = AggScanProjection { columns };
             rules.push(Box::new(opt));
         }
+
+        rules.push(Box::new(FastProjection {}));
 
         let opt = StackOptimizer {};
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
