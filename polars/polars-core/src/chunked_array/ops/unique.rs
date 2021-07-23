@@ -135,6 +135,39 @@ where
     unique
 }
 
+#[cfg(feature = "mode")]
+#[allow(clippy::needless_collect)]
+fn mode<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
+where
+    ChunkedArray<T>: IntoGroupTuples + ChunkTake,
+{
+    if ca.is_empty() {
+        return ca.clone();
+    }
+    let mut groups = ca.group_tuples(true);
+    groups.sort_unstable_by_key(|k| k.1.len());
+    let first = &groups[0];
+
+    let max_occur = first.1.len();
+
+    // collect until we don't take with trusted len anymore
+    // TODO! take directly from iter, but first remove standard trusted-length collect.
+    let mut was_equal = true;
+    let idx = groups
+        .iter()
+        .rev()
+        .take_while(|v| {
+            let current = was_equal;
+            was_equal = v.1.len() == max_occur;
+            current
+        })
+        .map(|v| v.0)
+        .collect::<Vec<_>>();
+    // Safety:
+    // group indices are in bounds
+    unsafe { ca.take_unchecked(idx.into_iter().map(|i| i as usize).into()) }
+}
+
 macro_rules! arg_unique_ca {
     ($ca:expr) => {{
         match $ca.null_count() {
@@ -193,6 +226,11 @@ where
     fn n_unique(&self) -> Result<usize> {
         Ok(fill_set(self.into_iter()).len())
     }
+
+    #[cfg(feature = "mode")]
+    fn mode(&self) -> Result<Self> {
+        Ok(mode(self))
+    }
 }
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
@@ -225,6 +263,11 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn n_unique(&self) -> Result<usize> {
         Ok(fill_set(self.into_iter()).len())
     }
+
+    #[cfg(feature = "mode")]
+    fn mode(&self) -> Result<Self> {
+        Ok(mode(self))
+    }
 }
 
 impl ChunkUnique<CategoricalType> for CategoricalChunked {
@@ -256,6 +299,12 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
     }
     fn n_unique(&self) -> Result<usize> {
         Ok(self.categorical_map.as_ref().unwrap().len())
+    }
+    #[cfg(feature = "mode")]
+    fn mode(&self) -> Result<Self> {
+        let mut ca = self.cast::<UInt32Type>()?.mode()?;
+        ca.categorical_map = self.categorical_map.clone();
+        ca.cast()
     }
 }
 

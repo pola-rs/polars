@@ -617,6 +617,15 @@ pub trait ChunkUnique<T> {
             "is_duplicated is not implemented for this dtype".into(),
         ))
     }
+
+    /// The most occurring value(s). Can return multiple Values
+    #[cfg(feature = "mode")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
+    fn mode(&self) -> Result<ChunkedArray<T>> {
+        Err(PolarsError::InvalidOperation(
+            "mode is not implemented for this dtype".into(),
+        ))
+    }
 }
 
 pub trait ToDummies<T>: ChunkUnique<T> {

@@ -60,6 +60,7 @@ dot_product = []
 concat_str = []
 row_hash = []
 reinterpret = []
+mode = []
 
 
 # opt-in datatypes for Series
@@ -97,7 +98,8 @@ docs-selection = [
     "cross_join",
     "dot_product",
     "concat_str",
-    "row_hash"
+    "row_hash",
+    "mode"
 ]
 
 [dependencies]

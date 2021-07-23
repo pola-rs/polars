@@ -451,3 +451,10 @@ def test_reinterpret():
     assert s.reinterpret(signed=True).dtype == pl.Int64
     df = pl.DataFrame([s])
     assert df[[pl.col("a").reinterpret(signed=True)]]["a"].dtype == pl.Int64
+
+
+def test_mode():
+    s = pl.Series("a", [1, 1, 2])
+    assert s.mode() == [1]
+    df = pl.DataFrame([s])
+    assert df[[pl.col("a").mode()]]["a"] == [1]
