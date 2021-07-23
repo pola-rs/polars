@@ -35,6 +35,7 @@ use crate::prelude::sort::prepare_argsort;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
+use hashbrown::HashMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -581,10 +582,34 @@ impl DataFrame {
         S: Selection<'a, J>,
     {
         let cols = selection.to_selection_vec();
-        let selected = cols
-            .iter()
-            .map(|c| self.column(c).map(|s| s.clone()))
-            .collect::<Result<Vec<_>>>()?;
+        self.select_series_impl(&cols)
+    }
+
+    /// A non generic implementation to reduce compiler bloat.
+    fn select_series_impl(&self, cols: &[&str]) -> Result<Vec<Series>> {
+        let selected = if cols.len() > 1 && self.columns.len() > 300 {
+            // we hash, because there are user that having millions of columns.
+            // # https://github.com/pola-rs/polars/issues/1023
+            let name_to_idx: HashMap<&str, usize> = self
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.name(), i))
+                .collect();
+            cols.iter()
+                .map(|&name| {
+                    let idx = *name_to_idx
+                        .get(name)
+                        .ok_or_else(|| PolarsError::NotFound(name.into()))?;
+                    Ok(self.select_at_idx(idx).unwrap().clone())
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            cols.iter()
+                .map(|c| self.column(c).map(|s| s.clone()))
+                .collect::<Result<Vec<_>>>()?
+        };
+
         Ok(selected)
     }
 
