@@ -1123,6 +1123,11 @@ impl PySeries {
         let s = reinterpret(&self.series, signed).map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
+
+    pub fn mode(&self) -> PyResult<Self> {
+        let s = self.series.mode().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
 }
 
 macro_rules! impl_ufuncs {

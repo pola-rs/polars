@@ -463,6 +463,9 @@ impl PyExpr {
         };
         self.clone().inner.map(function, Some(dt)).into()
     }
+    pub fn mode(&self) -> PyExpr {
+        self.inner.clone().mode().into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

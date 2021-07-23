@@ -264,6 +264,12 @@ class Expr:
         other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.dot(other._pyexpr))
 
+    def mode(self) -> "Expr":
+        """
+        Compute the most occurring value(s). Can return multiple Values
+        """
+        return wrap_expr(self._pyexpr.mode())
+
     def cast(self, dtype: Type[Any]) -> "Expr":
         """
         Cast an expression to a different data types.
