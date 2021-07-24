@@ -92,6 +92,24 @@ def test_init_ndarray_deprecated():
     assert df.frame_equal(truth)
 
 
+def test_init_arrow():
+    # Handle unnamed column
+    df = pl.DataFrame(pa.table({"a": [1, 2], None: [3, 4]}))
+    truth = pl.DataFrame({"a": [1, 2], "column_1": [3, 4]})
+    assert df.frame_equal(truth)
+
+    # Rename columns
+    df = pl.DataFrame(pa.table({"a": [1, 2], "b": [3, 4]}), columns=["c", "d"])
+    truth = pl.DataFrame({"c": [1, 2], "d": [3, 4]})
+    assert df.frame_equal(truth)
+
+    # Bad columns argument
+    with pytest.raises(ValueError):
+        pl.DataFrame(
+            pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}), columns=["c", "d", "e"]
+        )
+
+
 def test_init_series():
     # List of Series
     df = pl.DataFrame([pl.Series("a", [1, 2, 3]), pl.Series("b", [4, 5, 6])])
@@ -241,7 +259,7 @@ def test_from_arrow():
             "decimal1": pa.array([1, 2], pa.decimal128(2, 2)),
         }
     )
-    assert pl.from_arrow_table(tbl).shape == (2, 5)
+    assert pl.from_arrow(tbl).shape == (2, 5)
 
 
 def test_downsample():
@@ -606,7 +624,7 @@ def test_from_arrow_table():
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df = pl.from_arrow_table(tbl)
+    df = pl.from_arrow(tbl)
     df.frame_equal(pl.DataFrame(data))
 
 
