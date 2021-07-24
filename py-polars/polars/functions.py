@@ -72,7 +72,7 @@ def repeat(
         s.rename(name)
         return s
     else:
-        return pl.Series.from_arrow(name, pa.repeat(val, n))
+        return pl.Series(name, pa.repeat(val, n))
 
 
 def arg_where(mask: "pl.Series") -> "pl.Series":

@@ -339,7 +339,7 @@ def numpy_type_to_constructor(dtype: Type[np.dtype]) -> Callable[..., "PySeries"
 
 def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
     """
-    Get the right PySeries constructor for the given Polars dtype.
+    Get the right PySeries constructor for the given Python dtype.
     """
     map = {
         float: PySeries.new_opt_f64,
@@ -355,6 +355,9 @@ def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
 
 
 def py_type_to_arrow_type(dtype: Type[Any]) -> pa.lib.DataType:
+    """
+    Convert a Python dtype to an Arrow dtype.
+    """
     map = {
         float: pa.float64(),
         int: pa.int64(),

@@ -37,7 +37,7 @@ from ..datatypes import (
     dtype_to_ctype,
     dtype_to_primitive,
 )
-from ..utils import _ptr_to_numpy, coerce_arrow
+from ..utils import _ptr_to_numpy
 
 try:
     from ..polars import PyDataFrame, PySeries
@@ -192,8 +192,6 @@ class Series:
         if name is None:
             name = ""
 
-        self._s: PySeries
-
         if values is None:
             self._s = sequence_to_pyseries(name, [], dtype=dtype)
         elif isinstance(values, Series):
@@ -206,8 +204,7 @@ class Series:
             if nullable:
                 self._s = sequence_to_pyseries(name, values, dtype=dtype)
             else:
-                values_numpy = np.array(values)
-                self._s = numpy_to_pyseries(name, values_numpy)
+                self._s = numpy_to_pyseries(name, np.array(values))
         else:
             raise ValueError("Series constructor not called properly.")
 
@@ -227,6 +224,10 @@ class Series:
     @classmethod
     def from_arrow(cls, name: str, array: pa.Array) -> "Series":
         """
+        .. deprecated:: 0.8.13
+            `Series.from_arrow` will be removed in Polars 0.9.0. Use `pl.from_arrow`
+            instead, or call the Series constructor directly.
+
         Create a Series from an arrow array.
 
         Parameters
@@ -236,8 +237,15 @@ class Series:
         array
             Arrow array.
         """
-        array = coerce_arrow(array)
-        return cls._from_pyseries(PySeries.from_arrow(name, array))
+        import warnings
+
+        warnings.warn(
+            "Series.from_arrow is deprecated, Use `pl.from_arrow` instead, "
+            "or call the Series constructor directly.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls(name, array)
 
     def inner(self) -> "PySeries":
         return self._s

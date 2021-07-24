@@ -206,11 +206,17 @@ def series_to_pyseries(
     name: Optional[str],
     values: "pl.Series",
 ) -> "PySeries":
+    """
+    Construct a PySeries from a Polars Series.
+    """
     values.rename(name, in_place=True)
     return values.inner()
 
 
 def arrow_to_pyseries(name: Optional[str], values: pa.Array) -> "PySeries":
+    """
+    Construct a PySeries from an Arrow array.
+    """
     array = coerce_arrow(values)
     return PySeries.from_arrow(name, array)
 
@@ -240,6 +246,8 @@ def numpy_to_pyseries(
 def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
     """
     Return the first value from a sequence that isn't None.
+
+    If sequence doesn't contain non-None values, return None.
     """
     return next((v for v in values if v is not None), None)
 
@@ -249,6 +257,9 @@ def sequence_to_pyseries(
     values: Sequence[Any],
     dtype: Optional[Type[DataType]] = None,
 ) -> "PySeries":
+    """
+    Construct a PySeries from a sequence.
+    """
     if dtype is not None:
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values)
