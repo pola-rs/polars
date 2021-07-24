@@ -15,11 +15,8 @@ from ..utils import _process_null_values
 from .expr import UDF, Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
 
 try:
-    from ..polars import PyExpr, PyLazyFrame, PyLazyGroupBy
+    from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
 except ImportError:
-    import warnings
-
-    warnings.warn("Binary files missing.")
     __pdoc__ = {"wrap_ldf": False}
 
 __all__ = [

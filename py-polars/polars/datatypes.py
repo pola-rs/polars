@@ -9,9 +9,7 @@ from _ctypes import _SimpleCData
 try:
     from polars.polars import PySeries
 except ImportError:
-    import warnings
-
-    warnings.warn("binary files missing")
+    pass
 
 __pdoc__ = {
     "dtype_to_ctype": False,

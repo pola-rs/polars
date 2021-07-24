@@ -40,11 +40,8 @@ from ..datatypes import (
 from ..utils import _ptr_to_numpy
 
 try:
-    from ..polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame, PySeries
 except ImportError:
-    import warnings
-
-    warnings.warn("binary files missing")
     __pdoc__ = {
         "wrap_s": False,
         "find_first_non_none": False,

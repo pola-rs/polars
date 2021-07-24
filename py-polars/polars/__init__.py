@@ -21,7 +21,9 @@ try:
 
     __version__ = version()
 except ImportError:
-    pass
+    import warnings
+
+    warnings.warn("Polars binary files missing!", UserWarning, stacklevel=2)
 
 __all__ = (
     convert.__all__

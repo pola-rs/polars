@@ -21,7 +21,7 @@ from polars.utils import coerce_arrow
 try:
     from polars.polars import PyDataFrame, PySeries
 except ImportError:
-    warnings.warn("binary files missing")
+    pass
 
 if TYPE_CHECKING:
     import pandas as pd

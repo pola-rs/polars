@@ -40,9 +40,9 @@ from ..datatypes import DTYPES, Boolean, DataType, UInt32, pytype_to_polars_type
 from ..utils import _process_null_values
 
 try:
-    from ..polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame, PySeries
 except ImportError:
-    warnings.warn("binary files missing")
+    pass
 
 try:
     import pandas as pd

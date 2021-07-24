@@ -8,11 +8,8 @@ from ..datatypes import Boolean, DataType, Date32, Date64, Float64, Int64, Utf8
 from .functions import UDF, col, lit
 
 try:
-    from ..polars import PyExpr
+    from polars.polars import PyExpr
 except ImportError:
-    import warnings
-
-    warnings.warn("Binary files missing.")
     __pdoc__ = {"wrap_expr": False}
 
 __all__ = [
