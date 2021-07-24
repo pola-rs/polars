@@ -320,9 +320,9 @@ def test_empty():
     a = pl.Series(dtype=pl.Int8)
     assert a.dtype == pl.Int8
     a = pl.Series()
-    assert a.dtype == pl.Float64
+    assert a.dtype == pl.Float32
     a = pl.Series("name", [])
-    assert a.dtype == pl.Float64
+    assert a.dtype == pl.Float32
     a = pl.Series(values=(), dtype=pl.Int8)
     assert a.dtype == pl.Int8
 

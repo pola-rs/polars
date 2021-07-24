@@ -10,6 +10,7 @@ from polars.datatypes import (
     DataType,
     Date32,
     Date64,
+    Float32,
     numpy_type_to_constructor,
     polars_type_to_constructor,
     py_type_to_arrow_type,
@@ -260,6 +261,10 @@ def sequence_to_pyseries(
     """
     Construct a PySeries from a sequence.
     """
+    # Empty sequence defaults to Float32 type
+    if not values and dtype is None:
+        dtype = Float32
+
     if dtype is not None:
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values)
