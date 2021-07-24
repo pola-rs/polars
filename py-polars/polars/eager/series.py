@@ -222,6 +222,13 @@ class Series:
         return cls._from_pyseries(PySeries.repeat(name, val, n))
 
     @classmethod
+    def _from_arrow(cls, name: Optional[str], values: pa.Array) -> "Series":
+        """
+        Construct a Series from an Arrow array.
+        """
+        return cls._from_pyseries(arrow_to_pyseries(name, values))
+
+    @classmethod
     def from_arrow(cls, name: str, array: pa.Array) -> "Series":
         """
         .. deprecated:: 0.8.13
@@ -245,7 +252,7 @@ class Series:
             DeprecationWarning,
             stacklevel=2,
         )
-        return cls(name, array)
+        return cls._from_arrow(name, array)
 
     def inner(self) -> "PySeries":
         return self._s

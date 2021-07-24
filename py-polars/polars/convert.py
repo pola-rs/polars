@@ -133,7 +133,7 @@ def from_arrow(
     if isinstance(a, pa.Table):
         return pl.DataFrame.from_arrow(a, rechunk)
     elif isinstance(a, pa.Array):
-        return pl.Series("", a)
+        return pl.Series._from_arrow("", a)
     else:
         raise ValueError(f"expected arrow table / array, got {a}")
 
