@@ -850,9 +850,12 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn str_json_path_extract_single(&self, pat: &str) -> PyResult<Self> {
+    pub fn str_json_path_match(&self, pat: &str) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
-        let s = ca.extract_json_path_single(pat).map_err(PyPolarsEr::from)?.into_series();
+        let s = ca
+            .json_path_match(pat)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
         Ok(s.into())
     }
 

@@ -367,10 +367,10 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_json_path_extract_single(&self, pat: String) -> PyExpr {
+    pub fn str_json_path_match(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.extract_json_path_single(&pat) {
+            match ca.json_path_match(&pat) {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
             }
