@@ -204,7 +204,7 @@ def series_to_pydf(
 
 
 def series_to_pyseries(
-    name: Optional[str],
+    name: str,
     values: "pl.Series",
 ) -> "PySeries":
     """
@@ -214,7 +214,7 @@ def series_to_pyseries(
     return values.inner()
 
 
-def arrow_to_pyseries(name: Optional[str], values: pa.Array) -> "PySeries":
+def arrow_to_pyseries(name: str, values: pa.Array) -> "PySeries":
     """
     Construct a PySeries from an Arrow array.
     """
@@ -223,7 +223,7 @@ def arrow_to_pyseries(name: Optional[str], values: pa.Array) -> "PySeries":
 
 
 def numpy_to_pyseries(
-    name: Optional[str],
+    name: str,
     values: np.ndarray,
     nullable: bool = True,
 ) -> "PySeries":
@@ -254,7 +254,7 @@ def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
 
 
 def sequence_to_pyseries(
-    name: Optional[str],
+    name: str,
     values: Sequence[Any],
     dtype: Optional[Type[DataType]] = None,
 ) -> "PySeries":

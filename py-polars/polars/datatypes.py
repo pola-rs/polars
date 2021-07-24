@@ -1,6 +1,6 @@
 import ctypes
 import typing as tp
-from typing import Any, Callable, Dict, Optional, Sequence, Type
+from typing import Any, Callable, Dict, Sequence, Type
 
 import numpy as np
 import pyarrow as pa
@@ -303,7 +303,7 @@ _POLARS_TYPE_TO_CONSTRUCTOR = {
 
 def polars_type_to_constructor(
     dtype: Type[DataType],
-) -> Callable[[Optional[str], Sequence[Any]], "PySeries"]:
+) -> Callable[[str, Sequence[Any]], "PySeries"]:
     """
     Get the right PySeries constructor for the given Polars dtype.
     """

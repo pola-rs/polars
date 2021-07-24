@@ -222,7 +222,7 @@ class Series:
         return cls._from_pyseries(PySeries.repeat(name, val, n))
 
     @classmethod
-    def _from_arrow(cls, name: Optional[str], values: pa.Array) -> "Series":
+    def _from_arrow(cls, name: str, values: pa.Array) -> "Series":
         """
         Construct a Series from an Arrow array.
         """
@@ -607,7 +607,7 @@ class Series:
         """
         return self._s.name()
 
-    def rename(self, name: Optional[str], in_place: bool = False) -> Optional["Series"]:
+    def rename(self, name: str, in_place: bool = False) -> Optional["Series"]:
         """
         Rename this Series.
 
