@@ -1,9 +1,14 @@
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type
 
 import numpy as np
 
 import polars as pl
+from polars.datatypes import (
+    DataType,
+    numpy_type_to_constructor,
+    polars_type_to_constructor,
+)
 
 try:
     from ..polars import PyDataFrame, PySeries
@@ -14,7 +19,9 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-# DataFrame constructor interface
+###################################
+# DataFrame constructor interface #
+###################################
 
 
 def _handle_columns_arg(
@@ -181,3 +188,54 @@ def series_to_pydf(
     data_series = [data.inner()]
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
+
+
+################################
+# Series constructor interface #
+################################
+
+
+def series_to_pyseries(
+    name: Optional[str],
+    values: "pl.Series",
+) -> "PySeries":
+    values.rename(name, in_place=True)
+    return values.inner()
+
+
+def numpy_to_pyseries(
+    name: Optional[str],
+    values: np.ndarray,
+    nullable: bool = True,
+) -> "PySeries":
+    """
+    Construct a PySeries from a numpy array.
+    """
+    if not values.data.contiguous:
+        values = np.array(values)
+
+    if len(values.shape) == 1:
+        dtype = values.dtype.type
+        constructor = numpy_type_to_constructor(dtype)
+        if dtype == np.float32 or dtype == np.float64:
+            return constructor(name, values, nullable)
+        else:
+            return constructor(name, values)
+
+    else:
+        return PySeries.new_object(name, values)
+
+
+# def sequence_to_pyseries(
+#     name: Optional[str],
+#     values: Sequence[Any],
+#     dtype: Optional[Type[DataType]] = None,
+#     nullable: bool = True,
+# ) -> "PySeries":
+#     if dtype is not None:
+#         constructor = polars_type_to_constructor(dtype)
+#         self._s = constructor(name, values)
+#         if dtype == Date32 or dtype == Date64:
+#             self._s = self.cast(dtype).inner()
+#     else:
+#         pass
