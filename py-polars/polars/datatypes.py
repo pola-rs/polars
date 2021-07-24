@@ -3,6 +3,7 @@ import typing as tp
 from typing import Any, Callable, Dict, Optional, Sequence, Type
 
 import numpy as np
+import pyarrow as pa
 from _ctypes import _SimpleCData
 
 try:
@@ -311,7 +312,7 @@ def polars_type_to_constructor(
         raise ValueError(f"Cannot construct PySeries for type {dtype}.")
 
 
-def numpy_type_to_constructor(dtype: Type[DataType]) -> Callable[..., "PySeries"]:
+def numpy_type_to_constructor(dtype: Type[np.dtype]) -> Callable[..., "PySeries"]:
     """
     Get the right PySeries constructor for the given Polars dtype.
     """
@@ -334,3 +335,34 @@ def numpy_type_to_constructor(dtype: Type[DataType]) -> Callable[..., "PySeries"
         return map[dtype]
     except KeyError:
         return PySeries.new_object
+
+
+def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
+    """
+    Get the right PySeries constructor for the given Polars dtype.
+    """
+    map = {
+        float: PySeries.new_opt_f64,
+        int: PySeries.new_opt_i64,
+        str: PySeries.new_str,
+        bool: PySeries.new_opt_bool,
+    }
+
+    try:
+        return map[dtype]
+    except KeyError:
+        return PySeries.new_object
+
+
+def py_type_to_arrow_type(dtype: Type[Any]) -> pa.lib.DataType:
+    map = {
+        float: pa.float64(),
+        int: pa.int64(),
+        str: pa.large_utf8(),
+        bool: pa.bool_(),
+    }
+
+    try:
+        return map[dtype]
+    except KeyError:
+        raise ValueError(f"Cannot parse dtype {dtype} into arrow dtype.")

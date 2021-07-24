@@ -1,17 +1,24 @@
 import warnings
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type
 
 import numpy as np
+import pyarrow as pa
 
 import polars as pl
 from polars.datatypes import (
     DataType,
+    Date32,
+    Date64,
     numpy_type_to_constructor,
     polars_type_to_constructor,
+    py_type_to_arrow_type,
+    py_type_to_constructor,
 )
+from polars.utils import coerce_arrow
 
 try:
-    from ..polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame, PySeries
 except ImportError:
     warnings.warn("binary files missing")
 
@@ -203,6 +210,11 @@ def series_to_pyseries(
     return values.inner()
 
 
+def arrow_to_pyseries(name: Optional[str], values: pa.Array) -> "PySeries":
+    array = coerce_arrow(values)
+    return PySeries.from_arrow(name, array)
+
+
 def numpy_to_pyseries(
     name: Optional[str],
     values: np.ndarray,
@@ -221,21 +233,56 @@ def numpy_to_pyseries(
             return constructor(name, values, nullable)
         else:
             return constructor(name, values)
-
     else:
         return PySeries.new_object(name, values)
 
 
-# def sequence_to_pyseries(
-#     name: Optional[str],
-#     values: Sequence[Any],
-#     dtype: Optional[Type[DataType]] = None,
-#     nullable: bool = True,
-# ) -> "PySeries":
-#     if dtype is not None:
-#         constructor = polars_type_to_constructor(dtype)
-#         self._s = constructor(name, values)
-#         if dtype == Date32 or dtype == Date64:
-#             self._s = self.cast(dtype).inner()
-#     else:
-#         pass
+def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
+    """
+    Return the first value from a sequence that isn't None.
+    """
+    return next((v for v in values if v is not None), None)
+
+
+def sequence_to_pyseries(
+    name: Optional[str],
+    values: Sequence[Any],
+    dtype: Optional[Type[DataType]] = None,
+) -> "PySeries":
+    if dtype is not None:
+        constructor = polars_type_to_constructor(dtype)
+        pyseries = constructor(name, values)
+        if dtype == Date32:
+            pyseries = pyseries.cast_date32()
+        elif dtype == Date64:
+            pyseries = pyseries.cast_date64()
+        return pyseries
+
+    else:
+        value = _get_first_non_none(values)
+        dtype_ = type(value) if value is not None else float
+
+        if dtype_ == date or dtype_ == datetime:
+            return arrow_to_pyseries(name, pa.array(values))
+
+        elif dtype_ == list or dtype_ == tuple:
+            nested_value = _get_first_non_none(value)
+            nested_dtype = type(nested_value) if value is not None else float
+
+            try:
+                nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
+            except ValueError as e:
+                raise ValueError(
+                    f"Cannot construct Series from sequence of {nested_dtype}."
+                ) from e
+
+            try:
+                arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
+                return arrow_to_pyseries(name, arrow_values)
+            # failure expected for mixed sequences like `[[12], "foo", 9]`
+            except pa.lib.ArrowInvalid:
+                return PySeries.new_object(name, values)
+
+        else:
+            constructor = py_type_to_constructor(dtype_)
+            return constructor(name, values)
