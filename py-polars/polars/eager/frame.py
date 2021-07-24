@@ -23,6 +23,7 @@ from typing import (
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute
 import pyarrow.parquet
 
 import polars as pl

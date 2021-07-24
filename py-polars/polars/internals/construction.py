@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type, Uni
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute
 
 import polars as pl
 from polars.datatypes import (
