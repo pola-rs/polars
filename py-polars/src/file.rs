@@ -1,4 +1,5 @@
 // Credits to https://github.com/omerbenamram/pyo3-file
+use crate::prelude::resolve_homedir;
 use polars::io::mmap::MmapBytesReader;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -7,7 +8,6 @@ use std::borrow::Borrow;
 use std::fs::File;
 use std::io;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
-use crate::prelude::resolve_homedir;
 
 #[derive(Clone)]
 pub struct PyFileLikeObject {

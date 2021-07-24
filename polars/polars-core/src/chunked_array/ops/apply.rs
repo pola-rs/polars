@@ -279,7 +279,9 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
     {
-        self.into_iter().map(f).collect_trusted()
+        let mut ca: Self = self.into_iter().map(f).collect_trusted();
+        ca.rename(self.name());
+        ca
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
@@ -293,7 +295,9 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     where
         F: Fn((usize, Option<&'a str>)) -> Option<Cow<'a, str>> + Copy,
     {
-        self.into_iter().enumerate().map(f).collect_trusted()
+        let mut ca: Self = self.into_iter().enumerate().map(f).collect_trusted();
+        ca.rename(self.name());
+        ca
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])

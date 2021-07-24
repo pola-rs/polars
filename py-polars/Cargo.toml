@@ -61,7 +61,8 @@ features = [
     "row_hash",
     "reinterpret",
     "decompress",
-    "mode"
+    "mode",
+    "extract_jsonpath"
 ]
 
 #[patch.crates-io]
