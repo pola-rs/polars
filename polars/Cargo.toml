@@ -81,6 +81,7 @@ row_hash = ["polars-core/row_hash"]
 reinterpret = ["polars-core/reinterpret", "polars-core/dtype-u64"]
 decompress = ["polars-io/decompress"]
 mode = ["polars-core/mode", "polars-lazy/mode"]
+extract_jsonpath = ["polars-core/extract_jsonpath", "polars-core/strings"]
 
 # don't use this
 private = []

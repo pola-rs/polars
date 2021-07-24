@@ -367,6 +367,20 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_json_path_match(&self, pat: String) -> PyExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.json_path_match(&pat) {
+                Ok(ca) => Ok(ca.into_series()),
+                Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
+            }
+        };
+        self.clone()
+            .inner
+            .map(function, Some(DataType::Boolean))
+            .into()
+    }
+
     pub fn strftime(&self, fmt: String) -> PyExpr {
         let function = move |s: Series| s.strftime(&fmt);
         self.clone()

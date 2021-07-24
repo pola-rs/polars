@@ -458,3 +458,15 @@ def test_mode():
     assert s.mode() == [1]
     df = pl.DataFrame([s])
     assert df[[pl.col("a").mode()]]["a"] == [1]
+
+
+def test_jsonpath_single():
+    s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
+    print(s.str.json_path_match("$.a"))
+    assert s.str.json_path_match("$.a").to_list() == [
+        "1",
+        None,
+        "2",
+        "2.1",
+        "true",
+    ]

@@ -1,3 +1,6 @@
+#[cfg(feature = "extract_jsonpath")]
+mod json_path;
+
 use crate::chunked_array::kernels::strings::string_lengths;
 use crate::prelude::*;
 use arrow::compute::substring::substring;
