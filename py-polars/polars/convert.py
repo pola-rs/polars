@@ -121,21 +121,66 @@ def from_arrow(
     a: Union[pa.Table, pa.Array], rechunk: bool = True
 ) -> Union["pl.DataFrame", "pl.Series"]:
     """
-    Create a DataFrame from an arrow Table.
+    Create a DataFrame or Series from an Arrow table or array.
+
+    This operation will be zero copy for the most part. Types that are not
+    supported by Polars may be cast to the closest supported type.
 
     Parameters
     ----------
-    a
-        Arrow Table.
-    rechunk
+    a : Arrow table or array
+        Data represented as Arrow table or array.
+    rechunk : bool, default True
         Make sure that all data is contiguous.
+
+    Returns
+    -------
+    DataFrame or Series
+
+    Examples
+    --------
+
+    Constructing a DataFrame from an Arrow table:
+
+    ```python
+    >>> data = pa.table({'a': [1, 2, 3], 'b': [4, 5, 6]})
+    >>> df = pl.from_arrow(data)
+    >>> df
+    shape: (3, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 4   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 6   │
+    ╰─────┴─────╯
+    ```
+
+    Constructing a Series from an Arrow array:
+
+    ```python
+    >>> data = pa.array([1, 2, 3])
+    >>> series = pl.from_arrow(data)
+    >>> series
+    shape: (3,)
+    Series: '' [i64]
+    [
+            1
+            2
+            3
+    ]
+    ```
     """
     if isinstance(a, pa.Table):
-        return pl.DataFrame.from_arrow(a, rechunk)
+        return pl.DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, pa.Array):
         return pl.Series._from_arrow("", a)
     else:
-        raise ValueError(f"expected arrow table / array, got {a}")
+        raise ValueError(f"Expected Arrow table or array, got {type(a)}.")
 
 
 def _from_pandas_helper(a: Union["pd.Series", "pd.DatetimeIndex"]) -> pa.Array:
