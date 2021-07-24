@@ -1,5 +1,5 @@
 import typing as tp
-from datetime import date, datetime
+from datetime import datetime
 from numbers import Number
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
@@ -7,6 +7,12 @@ import numpy as np
 import pyarrow as pa
 
 import polars as pl
+from polars.internals.construction import (
+    arrow_to_pyseries,
+    numpy_to_pyseries,
+    sequence_to_pyseries,
+    series_to_pyseries,
+)
 
 from ..datatypes import (
     DTYPE_TO_FFINAME,
@@ -31,7 +37,7 @@ from ..datatypes import (
     dtype_to_ctype,
     dtype_to_primitive,
 )
-from ..utils import _ptr_to_numpy, coerce_arrow
+from ..utils import _ptr_to_numpy
 
 try:
     from ..polars import PyDataFrame, PySeries
@@ -88,14 +94,6 @@ def get_ffi_func(
 
 def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
-
-
-def _find_first_non_none(a: Sequence[Optional[Any]]) -> Any:
-    v = a[0]
-    if v is None:
-        return _find_first_non_none(a[1:])
-    else:
-        return v
 
 
 ArrayLike = Union[Sequence[Any], "Series", pa.Array, np.ndarray]
@@ -194,167 +192,49 @@ class Series:
         if name is None:
             name = ""
 
-        self._s: PySeries
-
-        # series path
-        if isinstance(values, Series):
-            values.rename(name, in_place=True)
-            self._s = values._s
-            return
-        elif isinstance(values, pa.Array):
-            self._s = self.from_arrow(name, values)._s
-            return
-        elif isinstance(values, dict):
-            raise ValueError(
-                f"Constructing a Series with a dict is not supported for {values}"
-            )
-
-        # Handle empty values in constructor
         if values is None:
-            values = []
-        if dtype is None and isinstance(values, Sequence) and len(values) == 0:
-            dtype = Float32
-
-        # castable to numpy
-        if not isinstance(values, np.ndarray) and not nullable:
-            values = np.array(values)
-
-        # numpy path
-        if isinstance(values, np.ndarray):
-            if not values.data.contiguous:
-                values = np.array(values)
-            if len(values.shape) > 1:
-                self._s = PySeries.new_object(name, values)
-                return
-            dtype = values.dtype
-            if dtype == np.int64:
-                self._s = PySeries.new_i64(name, values)
-            elif dtype == np.int32:
-                self._s = PySeries.new_i32(name, values)
-            elif dtype == np.int16:
-                self._s = PySeries.new_i16(name, values)
-            elif dtype == np.int8:
-                self._s = PySeries.new_i8(name, values)
-            elif dtype == np.float32:
-                self._s = PySeries.new_f32(name, values, nullable)
-            elif dtype == np.float64:
-                self._s = PySeries.new_f64(name, values, nullable)
-            elif isinstance(values[0], str):
-                self._s = PySeries.new_str(name, values)
-            elif dtype == bool:
-                self._s = PySeries.new_bool(name, values)
-            elif dtype == np.uint8:
-                self._s = PySeries.new_u8(name, values)
-            elif dtype == np.uint16:
-                self._s = PySeries.new_u16(name, values)
-            elif dtype == np.uint32:
-                self._s = PySeries.new_u32(name, values)
-            elif dtype == np.uint64:
-                self._s = PySeries.new_u64(name, values)
+            self._s = sequence_to_pyseries(name, [], dtype=dtype)
+        elif isinstance(values, Series):
+            self._s = series_to_pyseries(name, values)
+        elif isinstance(values, np.ndarray):
+            self._s = numpy_to_pyseries(name, values)
+        elif isinstance(values, pa.Array):
+            self._s = arrow_to_pyseries(name, values)
+        elif isinstance(values, Sequence):
+            if nullable:
+                self._s = sequence_to_pyseries(name, values, dtype=dtype)
             else:
-                self._s = PySeries.new_object(name, values)
-            return
-        # sequence path
+                self._s = numpy_to_pyseries(name, np.array(values))
         else:
-            if dtype is not None:
-                if dtype == Date32:
-                    self._s = PySeries.new_opt_i32(name, values)
-                    self._s = self.cast(Date32)._s
-                elif dtype == Date64:
-                    self._s = PySeries.new_opt_i32(name, values)
-                    self._s = self.cast(Date64)._s
-                elif dtype == Int32:
-                    self._s = PySeries.new_opt_i32(name, values)
-                elif dtype == Int64:
-                    self._s = PySeries.new_opt_i64(name, values)
-                elif dtype == Float32:
-                    self._s = PySeries.new_opt_f32(name, values)
-                elif dtype == Float64:
-                    self._s = PySeries.new_opt_f64(name, values)
-                elif dtype == Boolean:
-                    self._s = PySeries.new_opt_bool(name, values)
-                elif dtype == Utf8:
-                    self._s = PySeries.new_str(name, values)
-                elif dtype == Int16:
-                    self._s = PySeries.new_opt_i16(name, values)
-                elif dtype == Int8:
-                    self._s = PySeries.new_opt_i8(name, values)
-                elif dtype == UInt8:
-                    self._s = PySeries.new_opt_u8(name, values)
-                elif dtype == UInt16:
-                    self._s = PySeries.new_opt_u16(name, values)
-                elif dtype == UInt32:
-                    self._s = PySeries.new_opt_u32(name, values)
-                elif dtype == UInt64:
-                    self._s = PySeries.new_opt_u64(name, values)
-                elif dtype == Object:
-                    self._s = PySeries.new_object(name, values)
-                else:
-                    raise ValueError(f"{dtype} not yet implemented")
-            else:
-                dtype = _find_first_non_none(values)
-                # order is important as booleans are instance of int in python.
-                if isinstance(dtype, bool):
-                    self._s = PySeries.new_opt_bool(name, values)
-                elif isinstance(dtype, int):
-                    self._s = PySeries.new_opt_i64(name, values)
-                elif isinstance(dtype, float):
-                    self._s = PySeries.new_opt_f64(name, values)
-                elif isinstance(dtype, str):
-                    self._s = PySeries.new_str(name, values)
-                elif isinstance(dtype, datetime):
-                    arrow_array = pa.array(values)
-                    s = pl.from_arrow(arrow_array)
-                    self._s = s._s
-                    self._s.rename(name)
-                elif isinstance(dtype, date):
-                    arrow_array = pa.array(values)
-                    s = pl.from_arrow(arrow_array)
-                    self._s = s._s
-                    self._s.rename(name)
-                # make list array
-                elif isinstance(dtype, (list, tuple)):
-                    value_dtype = _find_first_non_none(dtype)
+            raise ValueError("Series constructor not called properly.")
 
-                    # we can expect a failure if we pass `[[12], "foo", 9]`
-                    # in that case we catch the exception and create an object type
-                    try:
-                        if isinstance(value_dtype, bool):
-                            arrow_array = pa.array(values, pa.large_list(pa.bool_()))
-                        elif isinstance(value_dtype, int):
-                            arrow_array = pa.array(values, pa.large_list(pa.int64()))
-                        elif isinstance(value_dtype, float):
-                            arrow_array = pa.array(values, pa.large_list(pa.float64()))
-                        elif isinstance(value_dtype, str):
-                            arrow_array = pa.array(
-                                values, pa.large_list(pa.large_utf8())
-                            )
-                        else:
-                            self._s = PySeries.new_object(name, values)
-                            return
-                        self._s = Series.from_arrow(name, arrow_array)._s
+    @classmethod
+    def _from_pyseries(cls, pyseries: "PySeries") -> "Series":
+        series = cls.__new__(cls)
+        series._s = pyseries
+        return series
 
-                    except pa.lib.ArrowInvalid:
-                        self._s = PySeries.new_object(name, values)
-                else:
-                    self._s = PySeries.new_object(name, values)
-
-    @staticmethod
-    def _from_pyseries(s: "PySeries") -> "Series":
-        self = Series.__new__(Series)
-        self._s = s
-        return self
-
-    @staticmethod
-    def _repeat(name: str, val: str, n: int) -> "Series":
+    @classmethod
+    def _repeat(cls, name: str, val: str, n: int) -> "Series":
         """
         Only used for strings.
         """
-        return Series._from_pyseries(PySeries.repeat(name, val, n))
+        return cls._from_pyseries(PySeries.repeat(name, val, n))
 
-    @staticmethod
-    def from_arrow(name: str, array: pa.Array) -> "Series":
+    @classmethod
+    def _from_arrow(cls, name: str, values: pa.Array) -> "Series":
         """
+        Construct a Series from an Arrow array.
+        """
+        return cls._from_pyseries(arrow_to_pyseries(name, values))
+
+    @classmethod
+    def from_arrow(cls, name: str, array: pa.Array) -> "Series":
+        """
+        .. deprecated:: 0.8.13
+            `Series.from_arrow` will be removed in Polars 0.9.0. Use `pl.from_arrow`
+            instead, or call the Series constructor directly.
+
         Create a Series from an arrow array.
 
         Parameters
@@ -364,8 +244,15 @@ class Series:
         array
             Arrow array.
         """
-        array = coerce_arrow(array)
-        return Series._from_pyseries(PySeries.from_arrow(name, array))
+        import warnings
+
+        warnings.warn(
+            "Series.from_arrow is deprecated, Use `pl.from_arrow` instead, "
+            "or call the Series constructor directly.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls._from_arrow(name, array)
 
     def inner(self) -> "PySeries":
         return self._s
