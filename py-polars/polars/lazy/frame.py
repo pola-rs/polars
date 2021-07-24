@@ -9,15 +9,13 @@ import typing as tp
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import polars as pl
+from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
 
 from ..datatypes import DataType, pytype_to_polars_type
 from ..utils import _process_null_values
 from .expr import UDF, Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
 
-try:
-    from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
-except ImportError:
-    __pdoc__ = {"wrap_ldf": False}
+__pdoc__ = {"wrap_ldf": False}
 
 __all__ = [
     "LazyFrame",

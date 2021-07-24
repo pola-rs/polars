@@ -6,10 +6,7 @@ import numpy as np
 import pyarrow as pa
 from _ctypes import _SimpleCData
 
-try:
-    from polars.polars import PySeries
-except ImportError:
-    pass
+from polars.polars import PySeries
 
 __pdoc__ = {
     "dtype_to_ctype": False,

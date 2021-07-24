@@ -34,15 +34,11 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
+from polars.polars import PyDataFrame, PySeries
 
 from .._html import NotebookFormatter
 from ..datatypes import DTYPES, Boolean, DataType, UInt32, pytype_to_polars_type
 from ..utils import _process_null_values
-
-try:
-    from polars.polars import PyDataFrame, PySeries
-except ImportError:
-    pass
 
 try:
     import pandas as pd

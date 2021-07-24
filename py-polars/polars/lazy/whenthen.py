@@ -1,13 +1,9 @@
 from typing import Any, Union
 
 import polars as pl
+from polars.polars import when as pywhen
 
 from .expr import expr_to_lit_or_expr
-
-try:
-    from polars.polars import when as pywhen
-except ImportError:
-    pass
 
 __all__ = ["when"]
 

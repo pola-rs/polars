@@ -13,6 +13,7 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
+from polars.polars import PyDataFrame, PySeries
 
 from ..datatypes import (
     DTYPE_TO_FFINAME,
@@ -39,16 +40,13 @@ from ..datatypes import (
 )
 from ..utils import _ptr_to_numpy
 
-try:
-    from polars.polars import PyDataFrame, PySeries
-except ImportError:
-    __pdoc__ = {
-        "wrap_s": False,
-        "find_first_non_none": False,
-        "out_to_dtype": False,
-        "get_ffi_func": False,
-        "SeriesIter": False,
-    }
+__pdoc__ = {
+    "wrap_s": False,
+    "find_first_non_none": False,
+    "out_to_dtype": False,
+    "get_ffi_func": False,
+    "SeriesIter": False,
+}
 
 __all__ = [
     "Series",

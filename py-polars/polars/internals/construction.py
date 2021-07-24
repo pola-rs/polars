@@ -16,12 +16,8 @@ from polars.datatypes import (
     py_type_to_arrow_type,
     py_type_to_constructor,
 )
+from polars.polars import PyDataFrame, PySeries
 from polars.utils import coerce_arrow
-
-try:
-    from polars.polars import PyDataFrame, PySeries
-except ImportError:
-    pass
 
 if TYPE_CHECKING:
     import pandas as pd

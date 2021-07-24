@@ -3,14 +3,12 @@ from datetime import datetime
 from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import polars as pl
+from polars.polars import PyExpr
 
 from ..datatypes import Boolean, DataType, Date32, Date64, Float64, Int64, Utf8
 from .functions import UDF, col, lit
 
-try:
-    from polars.polars import PyExpr
-except ImportError:
-    __pdoc__ = {"wrap_expr": False}
+__pdoc__ = {"wrap_expr": False}
 
 __all__ = [
     "Expr",
