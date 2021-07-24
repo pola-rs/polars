@@ -222,7 +222,7 @@ class DataFrame:
             self._df = series_to_pydf(data, columns=columns)
 
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
-            self._df = pandas_to_pydf(data, columns=columns, nullable=nullable)
+            self._df = pandas_to_pydf(data, columns=columns)
 
         else:
             raise ValueError("DataFrame constructor not called properly.")
@@ -335,6 +335,32 @@ class DataFrame:
         return cls._from_pydf(arrow_to_pydf(data, columns=columns, rechunk=rechunk))
 
     @classmethod
+    def _from_pandas(
+        cls,
+        data: "pd.DataFrame",
+        columns: Optional[Sequence[str]] = None,
+        rechunk: bool = True,
+    ) -> "DataFrame":
+        """
+        Construct a Polars DataFrame from a pandas DataFrame.
+
+        Parameters
+        ----------
+        data : pandas DataFrame
+            Two-dimensional data represented as a pandas DataFrame.
+        columns : Sequence of str, default None
+            Column labels to use for resulting DataFrame. If specified, overrides any
+            labels already present in the data. Must match data dimensions.
+        rechunk : bool, default True
+            Make sure that all data is contiguous.
+
+        Returns
+        -------
+        DataFrame
+        """
+        return cls._from_pydf(pandas_to_pydf(data, columns=columns, rechunk=rechunk))
+
+    @classmethod
     def from_arrow(cls, table: pa.Table, rechunk: bool = True) -> "DataFrame":
         """
         .. deprecated:: 0.8.13
@@ -360,51 +386,6 @@ class DataFrame:
             stacklevel=2,
         )
         return cls._from_arrow(table, rechunk=rechunk)
-
-    @classmethod
-    def _from_pandas(
-        cls,
-        data: "pd.DataFrame",
-        columns: Optional[Sequence[str]] = None,
-        nullable: bool = True,
-    ) -> "DataFrame":
-        """
-        Construct a Polars DataFrame from a pandas DataFrame.
-
-        Parameters
-        ----------
-        data : pandas DataFrame
-            Two-dimensional data represented as a pandas DataFrame.
-        columns : Sequence of str, default None
-            Column labels to use for resulting DataFrame. If specified, overrides any
-            labels already present in the data. Must match data dimensions.
-        nullable : bool, default True
-            If your data does not contain null values, set to False to speed up
-            DataFrame creation.
-
-        Returns
-        -------
-        DataFrame
-
-        Examples
-        --------
-        ```python
-        >>> pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=['a', 'b', 'c'])
-        >>> df = pl.DataFrame.from_pandas(pd_df, columns=['d', 'e', 'f'])
-        >>> df
-        shape: (2, 3)
-        ╭─────┬─────┬─────╮
-        │ d   ┆ e   ┆ f   │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ 1   ┆ 2   ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 4   ┆ 5   ┆ 6   │
-        ╰─────┴─────┴─────╯
-        ```
-        """
-        return cls._from_pydf(pandas_to_pydf(data, columns=columns, nullable=nullable))
 
     @classmethod
     def from_rows(
