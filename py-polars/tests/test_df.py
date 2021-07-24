@@ -241,7 +241,7 @@ def test_from_arrow():
             "decimal1": pa.array([1, 2], pa.decimal128(2, 2)),
         }
     )
-    assert pl.from_arrow_table(tbl).shape == (2, 5)
+    assert pl.from_arrow(tbl).shape == (2, 5)
 
 
 def test_downsample():
@@ -606,7 +606,7 @@ def test_from_arrow_table():
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df = pl.from_arrow_table(tbl)
+    df = pl.from_arrow(tbl)
     df.frame_equal(pl.DataFrame(data))
 
 

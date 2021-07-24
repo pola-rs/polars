@@ -27,6 +27,7 @@ import pyarrow.parquet
 
 import polars as pl
 from polars.internals.construction import (
+    arrow_to_pydf,
     dict_to_pydf,
     numpy_to_pydf,
     pandas_to_pydf,
@@ -36,7 +37,7 @@ from polars.internals.construction import (
 
 from .._html import NotebookFormatter
 from ..datatypes import DTYPES, Boolean, DataType, UInt32, pytype_to_polars_type
-from ..utils import _process_null_values, coerce_arrow
+from ..utils import _process_null_values
 
 try:
     from ..polars import PyDataFrame, PySeries
@@ -213,6 +214,9 @@ class DataFrame:
                 data, columns=columns, orient=orient, nullable=nullable
             )
 
+        elif isinstance(data, pa.Table):
+            self._df = arrow_to_pydf(data, columns=columns)
+
         elif isinstance(data, Sequence) and not isinstance(data, str):
             self._df = sequence_to_pydf(
                 data, columns=columns, orient=orient, nullable=nullable
@@ -305,8 +309,42 @@ class DataFrame:
         return cls._from_pydf(pydf)
 
     @classmethod
+    def _from_arrow(
+        cls,
+        data: pa.Table,
+        columns: Optional[Sequence[str]] = None,
+        rechunk: bool = True,
+    ) -> "DataFrame":
+        """
+        Construct a DataFrame from an Arrow table.
+
+        This operation will be zero copy for the most part. Types that are not
+        supported by Polars may be cast to the closest supported type.
+
+        Parameters
+        ----------
+        data : numpy ndarray or Sequence of sequences
+            Two-dimensional data represented as Arrow table.
+        columns : Sequence of str, default None
+            Column labels to use for resulting DataFrame. Must match data dimensions.
+            If not specified, existing Array table columns are used, with missing names
+            named as `column_0`, `column_1`, etc.
+        rechunk : bool, default True
+            Make sure that all data is contiguous.
+
+        Returns
+        -------
+        DataFrame
+        """
+        return cls._from_pydf(arrow_to_pydf(data, columns=columns, rechunk=rechunk))
+
+    @classmethod
     def from_arrow(cls, table: pa.Table, rechunk: bool = True) -> "DataFrame":
         """
+        .. deprecated:: 0.8.13
+            `DataFrame.from_arrow` will be removed in Polars 0.9.0. Use `pl.from_arrow`
+            instead, or call the DataFrame constructor directly.
+
         Construct a DataFrame from an arrow Table.
 
         Most will be zero copy. Types that are not supported by Polars may be cast to a
@@ -319,24 +357,13 @@ class DataFrame:
         rechunk
             Make sure that all data is contiguous.
         """
-        data = {}
-        for i, column in enumerate(table):
-            # extract the name before casting
-            if column._name is None:
-                name = f"column_{i}"
-            else:
-                name = column._name
-
-            column = coerce_arrow(column)
-            data[name] = column
-
-        table = pa.table(data)
-        batches = table.to_batches()
-        self = cls.__new__(cls)
-        self._df = PyDataFrame.from_arrow_record_batches(batches)
-        if rechunk:
-            return self.rechunk()
-        return self
+        warnings.warn(
+            "DataFrame.from_arrow is deprecated, Use `pl.from_arrow` instead, "
+            "or call the DataFrame constructor directly.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls._from_arrow(table, rechunk=rechunk)
 
     @classmethod
     def _from_pandas(
