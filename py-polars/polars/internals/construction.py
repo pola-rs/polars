@@ -164,6 +164,38 @@ def sequence_to_pydf(
     return PyDataFrame(data_series)
 
 
+def arrow_to_pydf(
+    data: pa.Table, columns: Optional[Sequence[str]] = None, rechunk: bool = True
+) -> "PyDataFrame":
+    """
+    Construct a PyDataFrame from an Arrow Table.
+    """
+    if columns is not None:
+        try:
+            data = data.rename_columns(columns)
+        except pa.lib.ArrowInvalid as e:
+            raise ValueError(
+                "Dimensions of columns arg must match data dimensions."
+            ) from e
+
+    data_dict = {}
+    for i, column in enumerate(data):
+        # extract the name before casting
+        if column._name is None:
+            name = f"column_{i}"
+        else:
+            name = column._name
+
+        column = coerce_arrow(column)
+        data_dict[name] = column
+
+    batches = pa.table(data_dict).to_batches()
+    pydf = PyDataFrame.from_arrow_record_batches(batches)
+    if rechunk:
+        pydf = pydf.rechunk()
+    return pydf
+
+
 def pandas_to_pydf(
     data: "pd.DataFrame",
     columns: Optional[Sequence[str]] = None,
