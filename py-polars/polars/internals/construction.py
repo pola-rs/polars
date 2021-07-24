@@ -1,12 +1,25 @@
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type
 
 import numpy as np
+import pyarrow as pa
 
 import polars as pl
+from polars.datatypes import (
+    DataType,
+    Date32,
+    Date64,
+    Float32,
+    numpy_type_to_constructor,
+    polars_type_to_constructor,
+    py_type_to_arrow_type,
+    py_type_to_constructor,
+)
+from polars.utils import coerce_arrow
 
 try:
-    from ..polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame, PySeries
 except ImportError:
     warnings.warn("binary files missing")
 
@@ -14,7 +27,9 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-# DataFrame constructor interface
+###################################
+# DataFrame constructor interface #
+###################################
 
 
 def _handle_columns_arg(
@@ -181,3 +196,109 @@ def series_to_pydf(
     data_series = [data.inner()]
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
+
+
+################################
+# Series constructor interface #
+################################
+
+
+def series_to_pyseries(
+    name: str,
+    values: "pl.Series",
+) -> "PySeries":
+    """
+    Construct a PySeries from a Polars Series.
+    """
+    values.rename(name, in_place=True)
+    return values.inner()
+
+
+def arrow_to_pyseries(name: str, values: pa.Array) -> "PySeries":
+    """
+    Construct a PySeries from an Arrow array.
+    """
+    array = coerce_arrow(values)
+    return PySeries.from_arrow(name, array)
+
+
+def numpy_to_pyseries(
+    name: str,
+    values: np.ndarray,
+    nullable: bool = True,
+) -> "PySeries":
+    """
+    Construct a PySeries from a numpy array.
+    """
+    if not values.data.contiguous:
+        values = np.array(values)
+
+    if len(values.shape) == 1:
+        dtype = values.dtype.type
+        constructor = numpy_type_to_constructor(dtype)
+        if dtype == np.float32 or dtype == np.float64:
+            return constructor(name, values, nullable)
+        else:
+            return constructor(name, values)
+    else:
+        return PySeries.new_object(name, values)
+
+
+def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
+    """
+    Return the first value from a sequence that isn't None.
+
+    If sequence doesn't contain non-None values, return None.
+    """
+    return next((v for v in values if v is not None), None)
+
+
+def sequence_to_pyseries(
+    name: str,
+    values: Sequence[Any],
+    dtype: Optional[Type[DataType]] = None,
+) -> "PySeries":
+    """
+    Construct a PySeries from a sequence.
+    """
+    # Empty sequence defaults to Float32 type
+    if not values and dtype is None:
+        dtype = Float32
+
+    if dtype is not None:
+        constructor = polars_type_to_constructor(dtype)
+        pyseries = constructor(name, values)
+        if dtype == Date32:
+            pyseries = pyseries.cast_date32()
+        elif dtype == Date64:
+            pyseries = pyseries.cast_date64()
+        return pyseries
+
+    else:
+        value = _get_first_non_none(values)
+        dtype_ = type(value) if value is not None else float
+
+        if dtype_ == date or dtype_ == datetime:
+            return arrow_to_pyseries(name, pa.array(values))
+
+        elif dtype_ == list or dtype_ == tuple:
+            nested_value = _get_first_non_none(value)
+            nested_dtype = type(nested_value) if value is not None else float
+
+            try:
+                nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
+            except ValueError as e:
+                raise ValueError(
+                    f"Cannot construct Series from sequence of {nested_dtype}."
+                ) from e
+
+            try:
+                arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
+                return arrow_to_pyseries(name, arrow_values)
+            # failure expected for mixed sequences like `[[12], "foo", 9]`
+            except pa.lib.ArrowInvalid:
+                return PySeries.new_object(name, values)
+
+        else:
+            constructor = py_type_to_constructor(dtype_)
+            return constructor(name, values)

@@ -262,7 +262,7 @@ class DataFrame:
         -------
         DataFrame
         """
-        return cls(data, columns=columns, nullable=nullable)
+        return cls._from_pydf(dict_to_pydf(data, columns=columns, nullable=nullable))
 
     @classmethod
     def _from_records(
@@ -294,7 +294,15 @@ class DataFrame:
         -------
         DataFrame
         """
-        return cls(data, columns=columns, orient=orient, nullable=nullable)
+        if isinstance(data, np.ndarray):
+            pydf = numpy_to_pydf(
+                data, columns=columns, orient=orient, nullable=nullable
+            )
+        else:
+            pydf = sequence_to_pydf(
+                data, columns=columns, orient=orient, nullable=nullable
+            )
+        return cls._from_pydf(pydf)
 
     @classmethod
     def from_arrow(cls, table: pa.Table, rechunk: bool = True) -> "DataFrame":
@@ -373,7 +381,7 @@ class DataFrame:
         ╰─────┴─────┴─────╯
         ```
         """
-        return cls(data, columns=columns, nullable=nullable)
+        return cls._from_pydf(pandas_to_pydf(data, columns=columns, nullable=nullable))
 
     @classmethod
     def from_rows(
