@@ -40,14 +40,6 @@ from ..datatypes import (
 )
 from ..utils import _ptr_to_numpy
 
-__pdoc__ = {
-    "wrap_s": False,
-    "find_first_non_none": False,
-    "out_to_dtype": False,
-    "get_ffi_func": False,
-    "SeriesIter": False,
-}
-
 __all__ = [
     "Series",
 ]

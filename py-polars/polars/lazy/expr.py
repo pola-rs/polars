@@ -8,8 +8,6 @@ from polars.polars import PyExpr
 from ..datatypes import Boolean, DataType, Date32, Date64, Float64, Int64, Utf8
 from .functions import UDF, col, lit
 
-__pdoc__ = {"wrap_expr": False}
-
 __all__ = [
     "Expr",
     "ExprStringNameSpace",

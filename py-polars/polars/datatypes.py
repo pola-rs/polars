@@ -8,13 +8,6 @@ from _ctypes import _SimpleCData
 
 from polars.polars import PySeries
 
-__pdoc__ = {
-    "dtype_to_ctype": False,
-    "dtype_to_int": False,
-    "dtype_to_primitive": False,
-    "pytype_to_polars_type": False,
-}
-
 __all__ = [
     "DataType",
     "Int8",

@@ -15,8 +15,6 @@ from ..datatypes import DataType, pytype_to_polars_type
 from ..utils import _process_null_values
 from .expr import UDF, Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
 
-__pdoc__ = {"wrap_ldf": False}
-
 __all__ = [
     "LazyFrame",
 ]
