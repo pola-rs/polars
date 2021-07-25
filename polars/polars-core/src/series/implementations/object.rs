@@ -92,11 +92,11 @@ where
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>) -> Result<Series> {
+    fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
         Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
+    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
@@ -109,15 +109,12 @@ where
         Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
     }
 
-    unsafe fn take_opt_iter_unchecked(
-        &self,
-        iter: &mut dyn Iterator<Item = Option<usize>>,
-    ) -> Series {
-        ChunkTake::take_unchecked(&self.0, SeriesWrap(iter).into()).into_series()
+    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
+        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
     #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Result<Series> {
+    fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
         todo!()
     }
 
