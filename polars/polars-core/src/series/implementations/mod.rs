@@ -578,17 +578,17 @@ macro_rules! impl_dyn_series {
                 self.0.median()
             }
 
-            fn take(&self, indices: &UInt32Chunked) -> Series {
+            fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
                 } else {
                     Cow::Borrowed(indices)
                 };
-                ChunkTake::take(&self.0, (&*indices).into()).into_series()
+                Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
             }
 
-            fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
-                ChunkTake::take(&self.0, iter.into()).into_series()
+            fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>) -> Result<Series> {
+                Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
             }
 
             fn take_every(&self, n: usize) -> Series {
@@ -615,8 +615,11 @@ macro_rules! impl_dyn_series {
                 ChunkTake::take_unchecked(&self.0, SeriesWrap(iter).into()).into_series()
             }
 
-            fn take_opt_iter(&self, iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
-                ChunkTake::take(&self.0, SeriesWrap(iter).into()).into_series()
+            fn take_opt_iter(
+                &self,
+                iter: &mut dyn Iterator<Item = Option<usize>>,
+            ) -> Result<Series> {
+                Ok(ChunkTake::take(&self.0, SeriesWrap(iter).into())?.into_series())
             }
 
             fn len(&self) -> usize {

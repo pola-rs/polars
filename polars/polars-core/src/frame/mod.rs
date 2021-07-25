@@ -690,16 +690,12 @@ impl DataFrame {
     ///
     /// ```
     /// use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> DataFrame {
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let iterator = (0..9).into_iter();
     ///     df.take_iter(iterator)
     /// }
     /// ```
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_iter<I>(&self, iter: I) -> Self
+    pub fn take_iter<I>(&self, iter: I) -> Result<Self>
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -710,8 +706,8 @@ impl DataFrame {
                 let mut i = iter.clone();
                 s.take_iter(&mut i)
             })
-            .collect();
-        DataFrame::new_no_checks(new_col)
+            .collect::<Result<_>>()?;
+        Ok(DataFrame::new_no_checks(new_col))
     }
 
     /// Take DataFrame values by indexes from an iterator.
@@ -748,11 +744,7 @@ impl DataFrame {
             .par_iter()
             .map(|s| {
                 let mut i = iter.clone();
-                if s.null_count() == 0 {
-                    s.take_iter_unchecked(&mut i)
-                } else {
-                    s.take_iter(&mut i)
-                }
+                s.take_iter_unchecked(&mut i)
             })
             .collect();
         DataFrame::new_no_checks(new_col)
@@ -793,11 +785,7 @@ impl DataFrame {
             .par_iter()
             .map(|s| {
                 let mut i = iter.clone();
-                if s.null_count() == 0 {
-                    s.take_opt_iter_unchecked(&mut i)
-                } else {
-                    s.take_opt_iter(&mut i)
-                }
+                s.take_opt_iter_unchecked(&mut i)
             })
             .collect::<Vec<_>>();
         DataFrame::new_no_checks(new_col)
@@ -809,15 +797,12 @@ impl DataFrame {
     ///
     /// ```
     /// use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> DataFrame {
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let idx = UInt32Chunked::new_from_slice("idx", &[0, 1, 9]);
     ///     df.take(&idx)
     /// }
     /// ```
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take(&self, indices: &UInt32Chunked) -> Self {
+    pub fn take(&self, indices: &UInt32Chunked) -> Result<Self> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -830,10 +815,10 @@ impl DataFrame {
                     DataType::Utf8 => s.take_threaded(&indices, true),
                     _ => s.take(&indices),
                 })
-                .collect()
-        });
+                .collect::<Result<_>>()
+        })?;
 
-        DataFrame::new_no_checks(new_col)
+        Ok(DataFrame::new_no_checks(new_col))
     }
 
     pub(crate) unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Self {

@@ -3,10 +3,10 @@ use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use arrow::array::*;
 use arrow::types::NativeType;
+use polars_arrow::is_valid::IsValid;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
-use unsafe_unwrap::UnsafeUnwrap;
 
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{
@@ -32,11 +32,21 @@ macro_rules! impl_take_random_get {
 macro_rules! impl_take_random_get_unchecked {
     ($self:ident, $index:ident, $array_type:ty) => {{
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
-        let arr = {
-            let arr = $self.chunks.get_unchecked(chunk_idx);
-            &*(arr as *const ArrayRef as *const Arc<$array_type>)
-        };
-        arr.value_unchecked(idx)
+        // Safety:
+        // bounds are checked above
+        let arr = $self.chunks.get_unchecked(chunk_idx);
+
+        // Safety:
+        // caller should give right array type
+        let arr = &*(arr as *const ArrayRef as *const Arc<$array_type>);
+
+        // Safety:
+        // index should be in bounds
+        if arr.is_valid_unchecked(idx) {
+            Some(arr.value_unchecked(idx))
+        } else {
+            None
+        }
     }};
 }
 
@@ -53,7 +63,7 @@ where
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         impl_take_random_get_unchecked!(self, index, PrimitiveArray<T::Native>)
     }
 }
@@ -71,7 +81,7 @@ where
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         (*self).get_unchecked(index)
     }
 }
@@ -85,11 +95,6 @@ impl TakeRandom for BooleanChunked {
         // Out of bounds is checked and downcast is of correct type
         unsafe { impl_take_random_get!(self, index, BooleanArray) }
     }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        impl_take_random_get_unchecked!(self, index, BooleanArray)
-    }
 }
 
 impl TakeRandom for CategoricalChunked {
@@ -99,7 +104,7 @@ impl TakeRandom for CategoricalChunked {
         self.deref().get(index)
     }
 
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         self.deref().get_unchecked(index)
     }
 }
@@ -112,16 +117,6 @@ impl<'a> TakeRandom for &'a Utf8Chunked {
         // Safety:
         // Out of bounds is checked and downcast is of correct type
         unsafe { impl_take_random_get!(self, index, LargeStringArray) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = {
-            let arr = self.chunks.get_unchecked(chunk_idx);
-            &*(arr as *const ArrayRef as *const Arc<LargeStringArray>)
-        };
-        arr.value_unchecked(idx)
     }
 }
 
@@ -138,13 +133,8 @@ impl<'a> TakeRandomUtf8 for &'a Utf8Chunked {
     }
 
     #[inline]
-    unsafe fn get_unchecked(self, index: usize) -> Self::Item {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = {
-            let arr = self.chunks.get_unchecked(chunk_idx);
-            &*(arr as *const ArrayRef as *const Arc<LargeStringArray>)
-        };
-        arr.value_unchecked(idx)
+    unsafe fn get_unchecked(self, index: usize) -> Option<Self::Item> {
+        impl_take_random_get_unchecked!(self, index, LargeStringArray)
     }
 }
 
@@ -160,7 +150,7 @@ impl<'a, T: PolarsObject> TakeRandom for &'a ObjectChunked<T> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         impl_take_random_get_unchecked!(self, index, ObjectArray<T>)
     }
 }
@@ -180,14 +170,11 @@ impl TakeRandom for ListChunked {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = {
-            let arr = self.chunks.get_unchecked(chunk_idx);
-            &*(arr as *const ArrayRef as *const Arc<LargeListArray>)
-        };
-        let arr = arr.value_unchecked(idx);
-        let s = Series::try_from((self.name(), arr));
-        s.unsafe_unwrap()
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        let opt_arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
+        opt_arr.map(|arr| {
+            let s = Series::try_from((self.name(), arr));
+            s.unwrap()
+        })
     }
 }

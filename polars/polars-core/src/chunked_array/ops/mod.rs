@@ -261,8 +261,6 @@ pub trait TakeRandom {
 
     /// Get a nullable value by index.
     ///
-    /// # Safety
-    ///
     /// Out of bounds access doesn't Error but will return a Null value
     fn get(&self, index: usize) -> Option<Self::Item>;
 
@@ -270,8 +268,13 @@ pub trait TakeRandom {
     ///
     /// # Safety
     ///
-    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
+    /// Does not do bound checks.
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item>
+    where
+        Self: Sized,
+    {
+        self.get(index)
+    }
 }
 // Utility trait because associated type needs a lifetime
 pub trait TakeRandomUtf8 {
@@ -279,16 +282,20 @@ pub trait TakeRandomUtf8 {
 
     /// Get a nullable value by index.
     ///
-    /// # Safety
-    ///
     /// Out of bounds access doesn't Error but will return a Null value
     fn get(self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
     ///
     /// # Safety
-    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
-    unsafe fn get_unchecked(self, index: usize) -> Self::Item;
+    ///
+    /// Does not do bound checks.
+    unsafe fn get_unchecked(self, index: usize) -> Option<Self::Item>
+    where
+        Self: Sized,
+    {
+        self.get(index)
+    }
 }
 
 pub enum TakeIdx<'a, I, INulls>
@@ -348,7 +355,7 @@ pub trait ChunkTake {
         INulls: Iterator<Item = Option<usize>>;
 
     /// Take values from ChunkedArray by index.
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
     where
         Self: std::marker::Sized,
         I: Iterator<Item = usize>,
@@ -838,7 +845,7 @@ macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse<$arrow_type> for $ca_type {
             fn reverse(&self) -> Self {
-                self.take((0..self.len()).rev().into())
+                unsafe { self.take_unchecked((0..self.len()).rev().into()) }
             }
         }
     };

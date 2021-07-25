@@ -20,7 +20,7 @@ impl PhysicalExpr for TakeExpr {
         let idx = self.idx.evaluate(df, state)?;
         let idx_ca = idx.u32()?;
 
-        Ok(series.take(idx_ca))
+        series.take(idx_ca)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
