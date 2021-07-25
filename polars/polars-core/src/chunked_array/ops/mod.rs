@@ -305,7 +305,7 @@ pub trait ChunkTake {
     /// # Safety
     ///
     /// Doesn't do any bound checking.
-    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdxUnchecked<I, INulls>) -> Self
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
         I: TakeIterator,
@@ -314,7 +314,7 @@ pub trait ChunkTake {
     /// Take values from ChunkedArray by index.
     /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
     /// by reference.
-    fn take<I, INulls>(&self, indices: TakeIdxUnchecked<I, INulls>) -> Result<Self>
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
     where
         Self: std::marker::Sized,
         I: TakeIterator,
