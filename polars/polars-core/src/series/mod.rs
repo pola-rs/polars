@@ -462,7 +462,7 @@ pub trait SeriesTrait:
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value for that element.
-    fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
+    fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Result<Series> {
         unimplemented!()
     }
 
@@ -500,7 +500,7 @@ pub trait SeriesTrait:
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value for that element
-    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
+    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Result<Series> {
         unimplemented!()
     }
 
@@ -509,7 +509,7 @@ pub trait SeriesTrait:
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value for that element.
-    fn take(&self, _indices: &UInt32Chunked) -> Series {
+    fn take(&self, _indices: &UInt32Chunked) -> Result<Series> {
         unimplemented!()
     }
 
@@ -1414,11 +1414,15 @@ impl Series {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_threaded(&self, idx: &UInt32Chunked, rechunk: bool) -> Series {
+    pub fn take_threaded(&self, idx: &UInt32Chunked, rechunk: bool) -> Result<Series> {
         let n_threads = POOL.current_num_threads();
         let idx = split_ca(idx, n_threads).unwrap();
 
-        let series: Vec<_> = POOL.install(|| idx.par_iter().map(|idx| self.take(idx)).collect());
+        let series = POOL.install(|| {
+            idx.par_iter()
+                .map(|idx| self.take(idx))
+                .collect::<Result<Vec<_>>>()
+        })?;
 
         let s = series
             .into_iter()
@@ -1428,9 +1432,9 @@ impl Series {
             })
             .unwrap();
         if rechunk {
-            s.rechunk()
+            Ok(s.rechunk())
         } else {
-            s
+            Ok(s)
         }
     }
 

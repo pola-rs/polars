@@ -3,25 +3,24 @@ use crate::chunked_array::object::ObjectArray;
 use crate::prelude::downcast::Chunks;
 use crate::prelude::*;
 use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use polars_arrow::is_valid::*;
 use std::convert::TryFrom;
-use unsafe_unwrap::UnsafeUnwrap;
 
 macro_rules! take_random_get {
     ($self:ident, $index:ident) => {{
         let (chunk_idx, arr_idx) =
             crate::utils::index_to_chunked_index($self.chunk_lens.iter().copied(), $index as u32);
-        let arr = $self.chunks.get(chunk_idx as usize);
-        match arr {
-            Some(arr) => {
-                if arr.is_null(arr_idx as usize) {
-                    None
-                } else {
-                    // SAFETY:
-                    // bounds checked above
-                    unsafe { Some(arr.value_unchecked(arr_idx as usize)) }
-                }
-            }
-            None => None,
+
+        // Safety:
+        // bounds are checked above
+        let arr = unsafe { $self.chunks.get_unchecked(chunk_idx as usize) };
+
+        if arr.is_null(arr_idx as usize) {
+            None
+        } else {
+            // SAFETY:
+            // bounds checked above
+            unsafe { Some(arr.value_unchecked(arr_idx as usize)) }
         }
     }};
 }
@@ -30,10 +29,18 @@ macro_rules! take_random_get_unchecked {
     ($self:ident, $index:ident) => {{
         let (chunk_idx, arr_idx) =
             crate::utils::index_to_chunked_index($self.chunk_lens.iter().copied(), $index as u32);
-        $self
-            .chunks
-            .get_unchecked(chunk_idx as usize)
-            .value_unchecked(arr_idx as usize)
+
+        // Safety:
+        // bounds are checked above
+        let arr = $self.chunks.get_unchecked(chunk_idx as usize);
+
+        if arr.is_null_unchecked(arr_idx as usize) {
+            None
+        } else {
+            // SAFETY:
+            // bounds checked above
+            Some(arr.value_unchecked(arr_idx as usize))
+        }
     }};
 }
 
@@ -79,7 +86,7 @@ where
         }
     }
 
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         match self {
             Self::SingleNoNull(s) => s.get_unchecked(index),
             Self::Single(s) => s.get_unchecked(index),
@@ -107,7 +114,7 @@ where
         }
     }
 
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         match self {
             Self::Single(s) => s.get_unchecked(index),
             Self::Multi(m) => m.get_unchecked(index),
@@ -166,7 +173,7 @@ impl<'a> TakeRandom for Utf8TakeRandom<'a> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
     }
 }
@@ -184,8 +191,12 @@ impl<'a> TakeRandom for Utf8TakeRandomSingleChunk<'a> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.arr.value_unchecked(index)
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        if self.arr.is_valid_unchecked(index) {
+            Some(self.arr.value_unchecked(index))
+        } else {
+            None
+        }
     }
 }
 
@@ -278,7 +289,7 @@ where
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
     }
 }
@@ -299,8 +310,8 @@ where
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        *self.slice.get_unchecked(index)
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        Some(*self.slice.get_unchecked(index))
     }
 }
 
@@ -323,8 +334,12 @@ where
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        *self.arr.values().get_unchecked(index)
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        if self.arr.is_valid_unchecked(index) {
+            Some(self.arr.value_unchecked(index))
+        } else {
+            None
+        }
     }
 }
 
@@ -342,7 +357,7 @@ impl<'a> TakeRandom for BoolTakeRandom<'a> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
     }
 }
@@ -360,8 +375,12 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.arr.values().get_bit_unchecked(index)
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        if self.arr.is_valid_unchecked(index) {
+            Some(self.arr.value_unchecked(index))
+        } else {
+            None
+        }
     }
 }
 
@@ -385,10 +404,12 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         let v = take_random_get_unchecked!(self, index);
-        let s = Series::try_from((self.ca.name(), v));
-        s.unsafe_unwrap()
+        v.map(|v| {
+            let s = Series::try_from((self.ca.name(), v));
+            s.unwrap()
+        })
     }
 }
 
@@ -410,9 +431,14 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        let s = Series::try_from((self.name, self.arr.value_unchecked(index)));
-        s.unsafe_unwrap()
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        if self.arr.is_valid_unchecked(index) {
+            let v = self.arr.value_unchecked(index);
+            let s = Series::try_from((self.name, v));
+            s.ok()
+        } else {
+            None
+        }
     }
 }
 
@@ -432,7 +458,7 @@ impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandom<'a, T> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
         take_random_get_unchecked!(self, index)
     }
 }
@@ -452,8 +478,12 @@ impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandomSingleChunk<'a, T> {
     }
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
-        self.arr.value(index)
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        if self.arr.is_valid_unchecked(index) {
+            Some(self.arr.value_unchecked(index))
+        } else {
+            None
+        }
     }
 }
 

@@ -390,14 +390,17 @@ impl PySeries {
         self.series.arg_max()
     }
 
-    pub fn take(&self, indices: Vec<usize>) -> Self {
-        let take = self.series.take_iter(&mut indices.iter().copied());
-        PySeries::new(take)
+    pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
+        let take = self
+            .series
+            .take_iter(&mut indices.iter().copied())
+            .map_err(PyPolarsEr::from)?;
+        Ok(PySeries::new(take))
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let take = self.series.take(idx);
+        let take = self.series.take(idx).map_err(PyPolarsEr::from)?;
         Ok(PySeries::new(take))
     }
 

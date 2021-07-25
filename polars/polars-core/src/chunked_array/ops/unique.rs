@@ -348,12 +348,15 @@ impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
         let groups = self.group_tuples(true);
         let col_name = self.name();
+        let taker = self.take_rand();
 
         let columns = groups
             .into_par_iter()
             .map(|(first, groups)| {
-                let val = unsafe { self.get_unchecked(first as usize) };
-                let name = format!("{}_{}", col_name, val);
+                let name = match unsafe { taker.get_unchecked(first as usize) } {
+                    Some(val) => format!("{}_{}", col_name, val),
+                    None => format!("{}_null", col_name),
+                };
                 let ca = dummies_helper(groups, self.len(), &name);
                 ca.into_series()
             })
@@ -371,12 +374,16 @@ where
     fn to_dummies(&self) -> Result<DataFrame> {
         let groups = self.group_tuples(true);
         let col_name = self.name();
+        let taker = self.take_rand();
 
         let columns = groups
             .into_par_iter()
             .map(|(first, groups)| {
-                let val = unsafe { self.get_unchecked(first as usize) };
-                let name = format!("{}_{}", col_name, val);
+                let name = match unsafe { taker.get_unchecked(first as usize) } {
+                    Some(val) => format!("{}_{}", col_name, val),
+                    None => format!("{}_null", col_name),
+                };
+
                 let ca = dummies_helper(groups, self.len(), &name);
                 ca.into_series()
             })
