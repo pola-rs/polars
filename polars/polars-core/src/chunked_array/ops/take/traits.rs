@@ -3,19 +3,45 @@ use crate::prelude::*;
 use arrow::array::UInt32Array;
 
 // Utility traits
-pub trait TakeIterator: Iterator<Item = usize> {}
-pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> {}
+pub trait TakeIterator: Iterator<Item = usize> {
+    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIterator + 'a>;
+}
+pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> {
+    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIteratorNulls + 'a>;
+}
 
 // Implement for the ref as well
-impl TakeIterator for &mut dyn TakeIterator {}
-impl TakeIteratorNulls for &mut dyn TakeIteratorNulls {}
+impl TakeIterator for &mut dyn TakeIterator {
+    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIterator + 'a> {
+        (**self).shallow_clone()
+    }
+}
+impl TakeIteratorNulls for &mut dyn TakeIteratorNulls {
+    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIteratorNulls + 'a> {
+        (**self).shallow_clone()
+    }
+}
 
 // Clonable iterators may implement the traits above
-impl<I> TakeIterator for I where I: Iterator<Item = usize> + Clone + Sized {}
-impl<I> TakeIteratorNulls for I where I: Iterator<Item = Option<usize>> + Clone + Sized {}
+impl<I> TakeIterator for I
+where
+    I: Iterator<Item = usize> + Clone + Sized,
+{
+    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIterator + 'a> {
+        Box::new(self.clone())
+    }
+}
+impl<I> TakeIteratorNulls for I
+where
+    I: Iterator<Item = Option<usize>> + Clone + Sized,
+{
+    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIteratorNulls + 'a> {
+        Box::new(self.clone())
+    }
+}
 
 /// One of the three arguments allowed in unchecked_take
-pub enum TakeIdxUnchecked<'a, I, INulls>
+pub enum TakeIdx<'a, I, INulls>
 where
     I: TakeIterator,
     INulls: TakeIteratorNulls,
@@ -24,16 +50,6 @@ where
     Iter(I),
     // will return a null where None
     IterNulls(INulls),
-}
-
-/// One of the two arguments allowed in safe take
-/// This one differs from unchecked because we don't allow a take with an optional iterator
-pub enum TakeIdx<'a, I>
-where
-    I: TakeIterator,
-{
-    Array(&'a UInt32Array),
-    Iter(I),
 }
 
 /// Dummy type, we need to instantiate all generic types, so we fill one with a dummy.
@@ -49,40 +65,7 @@ pub type Dummy<T> = std::iter::Once<T>;
 // Unchecked conversions
 
 /// Conversion from UInt32Chunked to Unchecked TakeIdx
-impl<'a> From<&'a UInt32Chunked> for TakeIdxUnchecked<'a, Dummy<usize>, Dummy<Option<usize>>> {
-    fn from(ca: &'a UInt32Chunked) -> Self {
-        if ca.chunks.len() == 1 {
-            TakeIdxUnchecked::Array(ca.downcast_iter().next().unwrap())
-        } else {
-            panic!("implementation error, should be transformed to an iterator by the caller")
-        }
-    }
-}
-
-/// Conversion from Iterator<Item=usize> to Unchecked TakeIdx
-impl<'a, I> From<I> for TakeIdxUnchecked<'a, I, Dummy<Option<usize>>>
-where
-    I: TakeIterator,
-{
-    fn from(iter: I) -> Self {
-        TakeIdxUnchecked::Iter(iter)
-    }
-}
-
-/// Conversion from Iterator<Item=Option<usize>> to Unchecked TakeIdx
-impl<'a, I> From<I> for TakeIdxUnchecked<'a, Dummy<usize>, I>
-where
-    I: TakeIteratorNulls,
-{
-    fn from(iter: I) -> Self {
-        TakeIdxUnchecked::IterNulls(iter)
-    }
-}
-
-// Checked conversions
-
-/// Conversion from UInt32Chunked to TakeIdx
-impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>> {
+impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
     fn from(ca: &'a UInt32Chunked) -> Self {
         if ca.chunks.len() == 1 {
             TakeIdx::Array(ca.downcast_iter().next().unwrap())
@@ -92,12 +75,22 @@ impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>> {
     }
 }
 
-/// Conversion from Iterator<Item=usize> to TakeIdx
-impl<'a, I> From<I> for TakeIdx<'a, I>
+/// Conversion from Iterator<Item=usize> to Unchecked TakeIdx
+impl<'a, I> From<I> for TakeIdx<'a, I, Dummy<Option<usize>>>
 where
     I: TakeIterator,
 {
     fn from(iter: I) -> Self {
         TakeIdx::Iter(iter)
+    }
+}
+
+/// Conversion from Iterator<Item=Option<usize>> to Unchecked TakeIdx
+impl<'a, I> From<I> for TakeIdx<'a, Dummy<usize>, I>
+where
+    I: TakeIteratorNulls,
+{
+    fn from(iter: I) -> Self {
+        TakeIdx::IterNulls(iter)
     }
 }
