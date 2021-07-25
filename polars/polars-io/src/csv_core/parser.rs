@@ -176,13 +176,13 @@ pub(crate) fn get_line_stats(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)>
 ///
 /// This will fail when strings fields are have embedded end line characters.
 /// For instance: "This is a valid field\nI have multiples lines" is a valid string field, that contains multiple lines.
-struct SplitLines<'a> {
+pub(crate) struct SplitLines<'a> {
     v: &'a [u8],
     end_line_char: u8,
 }
 
 impl<'a> SplitLines<'a> {
-    fn new(slice: &'a [u8], end_line_char: u8) -> Self {
+    pub(crate) fn new(slice: &'a [u8], end_line_char: u8) -> Self {
         Self {
             v: slice,
             end_line_char,
@@ -225,14 +225,14 @@ impl<'a> Iterator for SplitLines<'a> {
 
 /// An adapted version of std::iter::Split.
 /// This exists solely because we cannot split the lines naively as
-struct SplitFields<'a> {
+pub(crate) struct SplitFields<'a> {
     v: &'a [u8],
     delimiter: u8,
     finished: bool,
 }
 
 impl<'a> SplitFields<'a> {
-    fn new(slice: &'a [u8], delimiter: u8) -> Self {
+    pub(crate) fn new(slice: &'a [u8], delimiter: u8) -> Self {
         Self {
             v: slice,
             delimiter,

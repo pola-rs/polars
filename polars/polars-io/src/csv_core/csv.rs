@@ -448,13 +448,8 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
     ) -> Result<DataFrame> {
         if let Some(bytes) = decompress(bytes) {
             if self.inferred_schema {
-                self.schema = bytes_to_schema(
-                    &bytes,
-                    self.delimiter,
-                    self.has_header,
-                    self.skip_rows,
-                    self.comment_char,
-                )?;
+                self.schema =
+                    bytes_to_schema(&bytes, self.delimiter, self.has_header, self.skip_rows)?;
             }
 
             self.parse_csv(n_threads, &bytes, predicate.as_ref())
@@ -467,13 +462,8 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
     fn decompress<'a>(&mut self, bytes: &'a [u8]) -> Result<Cow<'a, [u8]>> {
         if let Some(bytes) = decompress(bytes) {
             if self.inferred_schema {
-                self.schema = bytes_to_schema(
-                    &bytes,
-                    self.delimiter,
-                    self.has_header,
-                    self.skip_rows,
-                    self.comment_char,
-                )?;
+                self.schema =
+                    bytes_to_schema(&bytes, self.delimiter, self.has_header, self.skip_rows)?;
             }
 
             Ok(Cow::Owned(bytes))
@@ -508,57 +498,15 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
             }
             None => {
                 let mut reader = self.reader.take().unwrap();
+                let bytes = get_reader_bytes(&mut reader)?;
 
-                // we have a file so we can mmap
-                if let Some(file) = reader.to_file() {
-                    let mmap = unsafe { memmap::Mmap::map(file)? };
-                    let bytes = mmap[..].as_ref();
-
-                    #[cfg(feature = "decompress")]
-                    {
-                        self.decompress_and_parse(predicate, n_threads, bytes)?
-                    }
-
-                    #[cfg(not(feature = "decompress"))]
-                    self.parse_csv(n_threads, bytes, predicate.as_ref())?
-                } else {
-                    // we can get the bytes for free
-                    let bytes = if let Some(bytes) = reader.to_bytes() {
-                        #[cfg(feature = "decompress")]
-                        {
-                            self.decompress(bytes)?
-                        }
-
-                        #[cfg(not(feature = "decompress"))]
-                        Cow::Borrowed(bytes)
-                    } else {
-                        // we have to read to an owned buffer to get the bytes.
-                        let mut bytes = Vec::with_capacity(1024 * 128);
-                        reader.read_to_end(&mut bytes)?;
-                        if !bytes.is_empty()
-                            && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
-                        {
-                            bytes.push(b'\n')
-                        }
-
-                        #[cfg(feature = "decompress")]
-                        {
-                            match self.decompress(&bytes)? {
-                                // always return the owned version
-                                Cow::Borrowed(_) => Cow::Owned(bytes),
-                                Cow::Owned(bytes) => Cow::Owned(bytes),
-                            }
-                        }
-
-                        #[cfg(not(feature = "decompress"))]
-                        Cow::Owned(bytes)
-                    };
-
-                    let out = self.parse_csv(n_threads, &bytes, predicate.as_ref())?;
-                    // restore reader for a potential second run
-                    self.reader = Some(reader);
-                    out
+                #[cfg(feature = "decompress")]
+                {
+                    self.decompress_and_parse(predicate, n_threads, &bytes)?
                 }
+
+                #[cfg(not(feature = "decompress"))]
+                self.parse_csv(n_threads, &bytes, predicate.as_ref())?
             }
         };
 
@@ -634,7 +582,6 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
                         has_header,
                         schema_overwrite,
                         skip_rows,
-                        comment_char,
                     )?;
                     Arc::new(inferred_schema)
                 }
@@ -648,7 +595,6 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
                     has_header,
                     schema_overwrite,
                     skip_rows,
-                    comment_char,
                 )?;
                 Arc::new(inferred_schema)
             }

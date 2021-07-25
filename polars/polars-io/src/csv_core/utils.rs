@@ -1,26 +1,12 @@
 use crate::csv::CsvEncoding;
-use crate::csv_core::parser::next_line_position;
+use crate::csv_core::parser::{next_line_position, SplitFields, SplitLines};
+use crate::mmap::MmapBytesReader;
 use lazy_static::lazy_static;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use regex::{Regex, RegexBuilder};
 use std::borrow::Cow;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-
-pub(crate) fn init_csv_reader<R: Read>(
-    reader: R,
-    has_header: bool,
-    delimiter: u8,
-    comment_char: Option<u8>,
-) -> csv::Reader<R> {
-    let mut reader_builder = csv::ReaderBuilder::new();
-    reader_builder.has_headers(has_header);
-    reader_builder.delimiter(delimiter);
-    reader_builder.comment(comment_char);
-    // don't error on shorter fields.
-    reader_builder.flexible(true);
-    reader_builder.from_reader(reader)
-}
+use std::io::Read;
 
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
@@ -50,6 +36,29 @@ pub(crate) fn get_file_chunks(
     }
     offsets.push((last_pos, total_len));
     offsets
+}
+
+pub(crate) fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<Vec<u8>> {
+    // we have a file so we can mmap
+    if let Some(file) = reader.to_file() {
+        let mmap = unsafe { memmap::Mmap::map(file)? };
+        Ok(mmap[..].to_vec())
+    } else {
+        // we can get the bytes for free
+        if let Some(bytes) = reader.to_bytes() {
+            Ok(bytes.to_vec())
+        } else {
+            // we have to read to an owned buffer to get the bytes.
+            let mut bytes = Vec::with_capacity(1024 * 128);
+            reader.read_to_end(&mut bytes)?;
+            if !bytes.is_empty()
+                && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
+            {
+                bytes.push(b'\n')
+            }
+            Ok(bytes)
+        }
+    }
 }
 
 lazy_static! {
@@ -97,53 +106,48 @@ pub(crate) fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> 
 /// If `max_read_records` is not set, the whole file is read to infer its schema.
 ///
 /// Return inferred schema and number of records used for inference.
-pub fn infer_file_schema<R: Read + Seek>(
+pub fn infer_file_schema<R: Read + MmapBytesReader>(
     reader: &mut R,
     delimiter: u8,
     max_read_records: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
     skip_rows: usize,
-    comment_char: Option<u8>,
 ) -> Result<(Schema, usize)> {
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new();
-    for _ in 0..skip_rows {
-        reader.read_line(&mut line)?;
-        line.clear()
-    }
-
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
-    // set headers to false otherwise the csv crate, skips them.
-    let csv_reader = init_csv_reader(reader, false, delimiter, comment_char);
 
-    let mut records = csv_reader.into_byte_records();
-    let header_length;
+    let bytes = get_reader_bytes(reader)?;
+    let mut lines = SplitLines::new(&bytes, b'\n').skip(skip_rows);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
-    let headers: Vec<String> = if let Some(byterecord) = records.next() {
-        let byterecord = byterecord.map_err(anyhow::Error::from)?;
-        header_length = byterecord.len();
+    let headers: Vec<String> = if let Some(header_line) = lines.next() {
+        let byterecord = SplitFields::new(header_line, delimiter);
         if has_header {
             byterecord
-                .iter()
-                .map(|slice| {
-                    let s = parse_bytes_with_encoding(slice, encoding)?;
+                .map(|(slice, needs_escaping)| {
+                    let slice_escaped = if needs_escaping && (slice.len() >= 2) {
+                        &slice[1..(slice.len() - 1)]
+                    } else {
+                        slice
+                    };
+                    let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     Ok(s.into())
                 })
                 .collect::<Result<_>>()?
         } else {
-            (0..header_length)
-                .map(|i| format!("column_{}", i + 1))
+            byterecord
+                .enumerate()
+                .map(|(i, _s)| format!("column_{}", i + 1))
                 .collect()
         }
     } else {
         return Err(PolarsError::NoData("empty csv".into()));
     };
 
+    let header_length = headers.len();
     // keep track of inferred field types
     let mut column_types: Vec<PlHashSet<DataType>> = vec![PlHashSet::new(); header_length];
     // keep track of columns with nulls
@@ -153,18 +157,23 @@ pub fn infer_file_schema<R: Read + Seek>(
     let mut fields = Vec::with_capacity(header_length);
 
     // needed to prevent ownership going into the iterator loop
-    let records_ref = &mut records;
+    let records_ref = &mut lines;
 
     for result in records_ref.take(max_read_records.unwrap_or(usize::MAX)) {
-        let record = result.map_err(anyhow::Error::from)?;
         records_count += 1;
+        let mut record = SplitFields::new(result, delimiter);
 
         for i in 0..header_length {
-            if let Some(slice) = record.get(i) {
+            if let Some((slice, needs_escaping)) = record.next() {
                 if slice.is_empty() {
                     nulls[i] = true;
                 } else {
-                    let s = parse_bytes_with_encoding(slice, encoding)?;
+                    let slice_escaped = if needs_escaping && (slice.len() >= 2) {
+                        &slice[1..(slice.len() - 1)]
+                    } else {
+                        slice
+                    };
+                    let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     column_types[i].insert(infer_field_schema(&s));
                 }
             }
@@ -205,10 +214,6 @@ pub fn infer_file_schema<R: Read + Seek>(
             _ => fields.push(Field::new(field_name, DataType::Utf8)),
         }
     }
-    let csv_reader = records.into_reader();
-
-    // return the reader seek back to the start
-    csv_reader.into_inner().seek(SeekFrom::Start(0))?;
 
     Ok((Schema::new(fields), records_count))
 }
@@ -243,20 +248,10 @@ pub(crate) fn bytes_to_schema(
     delimiter: u8,
     has_header: bool,
     skip_rows: usize,
-    comment_char: Option<u8>,
 ) -> Result<SchemaRef> {
     let mut r = std::io::Cursor::new(&bytes);
     Ok(Arc::from(
-        infer_file_schema(
-            &mut r,
-            delimiter,
-            Some(100),
-            has_header,
-            None,
-            skip_rows,
-            comment_char,
-        )?
-        .0,
+        infer_file_schema(&mut r, delimiter, Some(100), has_header, None, skip_rows)?.0,
     ))
 }
 

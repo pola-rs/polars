@@ -1037,7 +1037,6 @@ impl LogicalPlanBuilder {
                 has_header,
                 schema_overwrite,
                 skip_rows,
-                comment_char,
             )
             .expect("could not read schema");
             Arc::new(schema)
