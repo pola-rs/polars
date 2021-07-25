@@ -615,6 +615,7 @@ macro_rules! impl_dyn_series {
                 ChunkTake::take_unchecked(&self.0, SeriesWrap(iter).into()).into_series()
             }
 
+            #[cfg(feature = "take_opt_iter")]
             fn take_opt_iter(
                 &self,
                 iter: &mut dyn Iterator<Item = Option<usize>>,
