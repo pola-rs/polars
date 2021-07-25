@@ -464,7 +464,7 @@ pub trait SeriesTrait:
     }
 
     /// Take by index from an iterator. This operation clones the data.
-    fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Result<Series> {
+    fn take_iter(&self, _iter: &mut dyn TakeIterator) -> Result<Series> {
         unimplemented!()
     }
 
@@ -473,7 +473,7 @@ pub trait SeriesTrait:
     /// # Safety
     ///
     /// This doesn't check any bounds.
-    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
+    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series {
         unimplemented!()
     }
 
@@ -490,17 +490,14 @@ pub trait SeriesTrait:
     /// # Safety
     ///
     /// This doesn't check any bounds.
-    unsafe fn take_opt_iter_unchecked(
-        &self,
-        _iter: &mut dyn Iterator<Item = Option<usize>>,
-    ) -> Series {
+    unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series {
         unimplemented!()
     }
 
     /// Take by index from an iterator. This operation clones the data.
     #[cfg(feature = "take_opt_iter")]
     #[cfg_attr(docsrs, doc(cfg(feature = "take_opt_iter")))]
-    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Result<Series> {
+    fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
         unimplemented!()
     }
 

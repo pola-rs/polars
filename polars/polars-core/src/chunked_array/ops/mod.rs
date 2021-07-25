@@ -1,11 +1,11 @@
 //! Traits for miscellaneous operations on ChunkedArray
+pub use self::take::*;
 use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use arrow::array::{ArrayRef, UInt32Array};
+use arrow::array::ArrayRef;
 use std::marker::Sized;
 
 pub(crate) mod aggregate;
@@ -297,49 +297,6 @@ pub trait TakeRandomUtf8 {
     }
 }
 
-pub enum TakeIdx<'a, I, INulls>
-where
-    I: Iterator<Item = usize>,
-    INulls: Iterator<Item = Option<usize>>,
-{
-    Array(&'a UInt32Array),
-    Iter(I),
-    // will return a null where None
-    IterNulls(INulls),
-}
-
-pub type Dummy<T> = std::iter::Once<T>;
-pub type TakeIdxIter<'a, I> = TakeIdx<'a, I, Dummy<Option<usize>>>;
-pub type TakeIdxIterNull<'a, INull> = TakeIdx<'a, Dummy<usize>, INull>;
-
-impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
-    fn from(ca: &'a UInt32Chunked) -> Self {
-        if ca.chunks.len() == 1 {
-            TakeIdx::Array(ca.downcast_iter().next().unwrap())
-        } else {
-            panic!("implementation error, should be transformed to an iterator by the caller")
-        }
-    }
-}
-
-impl<'a, I> From<I> for TakeIdx<'a, I, Dummy<Option<usize>>>
-where
-    I: Iterator<Item = usize>,
-{
-    fn from(iter: I) -> Self {
-        TakeIdx::Iter(iter)
-    }
-}
-
-impl<'a, INulls> From<SeriesWrap<INulls>> for TakeIdx<'a, Dummy<usize>, INulls>
-where
-    INulls: Iterator<Item = Option<usize>>,
-{
-    fn from(iter: SeriesWrap<INulls>) -> Self {
-        TakeIdx::IterNulls(iter.0)
-    }
-}
-
 /// Fast access by index.
 pub trait ChunkTake {
     /// Take values from ChunkedArray by index.
@@ -347,18 +304,20 @@ pub trait ChunkTake {
     /// # Safety
     ///
     /// Doesn't do any bound checking.
-    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdxUnchecked<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
-        I: Iterator<Item = usize>,
-        INulls: Iterator<Item = Option<usize>>;
+        I: TakeIterator,
+        INulls: TakeIteratorNulls;
 
     /// Take values from ChunkedArray by index.
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
+    /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
+    /// by reference.
+    fn take<I, INulls>(&self, indices: TakeIdxUnchecked<I, INulls>) -> Result<Self>
     where
         Self: std::marker::Sized,
-        I: Iterator<Item = usize>,
-        INulls: Iterator<Item = Option<usize>>;
+        I: TakeIterator,
+        INulls: TakeIteratorNulls;
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
