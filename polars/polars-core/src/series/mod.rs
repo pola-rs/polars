@@ -464,10 +464,6 @@ pub trait SeriesTrait:
     }
 
     /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value for that element.
     fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Result<Series> {
         unimplemented!()
     }
@@ -502,19 +498,13 @@ pub trait SeriesTrait:
     }
 
     /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value for that element
+    #[cfg(feature = "take_opt_iter")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "take_opt_iter")))]
     fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Result<Series> {
         unimplemented!()
     }
 
     /// Take by index. This operation is clone.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value for that element.
     fn take(&self, _indices: &UInt32Chunked) -> Result<Series> {
         unimplemented!()
     }

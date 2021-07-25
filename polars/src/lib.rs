@@ -129,6 +129,9 @@
 //!     - `dot_product` - Dot/inner product on Series and Expressions.
 //!     - `concat_str` - Concat string data in linear time.
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
+//!     - `take_opt_iter` - Take from a Series with `Iterator<Item=Option<usize>>`
+//!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
+//!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)

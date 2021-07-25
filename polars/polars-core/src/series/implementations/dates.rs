@@ -471,6 +471,7 @@ macro_rules! impl_dyn_series {
                 physical_dispatch!(self, take_opt_iter_unchecked, iter)
             }
 
+            #[cfg(feature = "take_opt_iter")]
             fn take_opt_iter(
                 &self,
                 iter: &mut dyn Iterator<Item = Option<usize>>,
