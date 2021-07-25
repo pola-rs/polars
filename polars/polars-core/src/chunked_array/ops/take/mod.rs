@@ -3,7 +3,12 @@
 //! IntoTakeRandom provides structs that implement the TakeRandom trait.
 //! There are several structs that implement the fastest path for random access.
 //!
-mod traits;
+use std::ops::Deref;
+
+use arrow::array::{Array, ArrayRef};
+use arrow::compute::kernels::take::take;
+
+pub use traits::*;
 
 use crate::chunked_array::kernels::take::{
     take_bool_iter, take_bool_iter_unchecked, take_bool_opt_iter_unchecked, take_no_null_bool_iter,
@@ -16,11 +21,11 @@ use crate::chunked_array::kernels::take::{
     take_utf8, take_utf8_iter, take_utf8_iter_unchecked, take_utf8_opt_iter_unchecked,
 };
 use crate::prelude::*;
-use crate::utils::NoNull;
-use arrow::array::{Array, ArrayRef};
-use arrow::compute::kernels::take::take;
-use std::ops::Deref;
-pub use traits::*;
+
+mod take_every;
+pub(crate) mod take_random;
+pub(crate) mod take_single;
+mod traits;
 
 macro_rules! handle_empty_array_take {
     ($ca:expr, $indices:expr, $Self:ty) => {{
@@ -675,79 +680,6 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
                 panic!("not supported in take, only supported in take_unchecked for the join operation")
             }
         }
-    }
-}
-
-pub trait AsTakeIndex {
-    fn as_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = usize> + 'a>;
-
-    fn as_opt_take_iter<'a>(&'a self) -> Box<dyn Iterator<Item = Option<usize>> + 'a> {
-        unimplemented!()
-    }
-
-    fn take_index_len(&self) -> usize;
-}
-
-impl<T> ChunkTakeEvery<T> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    fn take_every(&self, n: usize) -> ChunkedArray<T> {
-        if self.null_count() == 0 {
-            let a: NoNull<_> = self.into_no_null_iter().step_by(n).collect();
-            a.into_inner()
-        } else {
-            self.into_iter().step_by(n).collect()
-        }
-    }
-}
-
-impl ChunkTakeEvery<BooleanType> for BooleanChunked {
-    fn take_every(&self, n: usize) -> BooleanChunked {
-        if self.null_count() == 0 {
-            self.into_no_null_iter().step_by(n).collect()
-        } else {
-            self.into_iter().step_by(n).collect()
-        }
-    }
-}
-
-impl ChunkTakeEvery<Utf8Type> for Utf8Chunked {
-    fn take_every(&self, n: usize) -> Utf8Chunked {
-        if self.null_count() == 0 {
-            self.into_no_null_iter().step_by(n).collect()
-        } else {
-            self.into_iter().step_by(n).collect()
-        }
-    }
-}
-
-impl ChunkTakeEvery<ListType> for ListChunked {
-    fn take_every(&self, n: usize) -> ListChunked {
-        if self.null_count() == 0 {
-            self.into_no_null_iter().step_by(n).collect()
-        } else {
-            self.into_iter().step_by(n).collect()
-        }
-    }
-}
-
-impl ChunkTakeEvery<CategoricalType> for CategoricalChunked {
-    fn take_every(&self, n: usize) -> CategoricalChunked {
-        let mut ca = if self.null_count() == 0 {
-            let ca: NoNull<UInt32Chunked> = self.into_no_null_iter().step_by(n).collect();
-            ca.into_inner()
-        } else {
-            self.into_iter().step_by(n).collect()
-        };
-        ca.categorical_map = self.categorical_map.clone();
-        ca.cast().unwrap()
-    }
-}
-#[cfg(feature = "object")]
-impl<T> ChunkTakeEvery<ObjectType<T>> for ObjectChunked<T> {
-    fn take_every(&self, _n: usize) -> ObjectChunked<T> {
-        todo!()
     }
 }
 

@@ -2,7 +2,7 @@
 //! Used to speed up PartialEq and PartialOrd of elements within an array
 //!
 
-use super::take_random::{
+use crate::chunked_array::ops::take::take_random::{
     BoolTakeRandom, BoolTakeRandomSingleChunk, NumTakeRandomChunked, NumTakeRandomCont,
     NumTakeRandomSingleChunk, Utf8TakeRandom, Utf8TakeRandomSingleChunk,
 };
