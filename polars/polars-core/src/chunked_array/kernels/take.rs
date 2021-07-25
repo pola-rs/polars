@@ -6,7 +6,7 @@ use arrow::array::{
     UInt32Array,
 };
 use arrow::buffer::{Buffer, MutableBuffer};
-use polars_arrow::buffer::IsValid;
+use polars_arrow::is_valid::IsValid;
 use std::mem;
 use std::sync::Arc;
 

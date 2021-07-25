@@ -1,7 +1,7 @@
 //! kernels that combine take and aggregations.
 use crate::prelude::*;
 use arrow::array::{Array, PrimitiveArray};
-use polars_arrow::buffer::IsValid;
+use polars_arrow::is_valid::IsValid;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 pub(crate) unsafe fn take_agg_no_null_primitive_iter_unchecked<

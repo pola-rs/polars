@@ -5,7 +5,7 @@ use crate::frame::hash_join::multiple_keys::{
 };
 use crate::frame::select::Selection;
 use crate::prelude::*;
-use crate::utils::{set_partition_size, split_ca, NoNull};
+use crate::utils::{set_partition_size, split_ca};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, StrHash,
@@ -902,8 +902,7 @@ where
                     }
                 }
             })
-            .collect::<NoNull<ChunkedArray<T>>>()
-            .into_inner()
+            .collect::<ChunkedArray<T>>()
             .into_series()
     }
 }

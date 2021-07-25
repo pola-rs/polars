@@ -516,14 +516,17 @@ impl PyDataFrame {
         }
     }
 
-    pub fn take(&self, indices: Vec<usize>) -> Self {
-        let df = self.df.take_iter(indices.iter().copied());
-        PyDataFrame::new(df)
+    pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
+        let df = self
+            .df
+            .take_iter(indices.iter().copied())
+            .map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let df = self.df.take(idx);
+        let df = self.df.take(idx).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
