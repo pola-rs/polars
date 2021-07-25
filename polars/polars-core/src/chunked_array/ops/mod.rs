@@ -1,13 +1,15 @@
 //! Traits for miscellaneous operations on ChunkedArray
+use std::marker::Sized;
+
+use arrow::array::ArrayRef;
+
 pub use self::take::*;
 use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use crate::utils::NoNull;
-use arrow::array::ArrayRef;
 use arrow::buffer::Buffer;
-use std::marker::Sized;
 
 pub(crate) mod aggregate;
 pub(crate) mod any_value;
@@ -29,8 +31,6 @@ pub(crate) mod set;
 pub(crate) mod shift;
 pub(crate) mod sort;
 pub(crate) mod take;
-pub(crate) mod take_random;
-pub(crate) mod take_single;
 pub(crate) mod unique;
 pub(crate) mod window;
 #[cfg(feature = "zip_with")]
