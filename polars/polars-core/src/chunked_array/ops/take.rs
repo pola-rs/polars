@@ -668,16 +668,8 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
                 ca.rename(self.name());
                 Ok(ca)
             }
-            TakeIdx::IterNulls(iter) => {
-                handle_empty_array_take_iter!(self, Self);
-                let taker = self.take_rand();
-
-                let mut ca: ObjectChunked<T> = iter
-                    .map(|opt_idx| opt_idx.and_then(|idx| taker.get(idx).cloned()))
-                    .collect();
-
-                ca.rename(self.name());
-                Ok(ca)
+            TakeIdx::IterNulls(_) => {
+                panic!("not supported in take, only supported in take_unchecked for the join operation")
             }
         }
     }

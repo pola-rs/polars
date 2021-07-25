@@ -60,6 +60,7 @@ dot_product = []
 concat_str = []
 row_hash = []
 reinterpret = []
+take_opt_iter = []
 mode = []
 extract_jsonpath = ["serde_json", "jsonpath_lib"]
 
@@ -100,7 +101,8 @@ docs-selection = [
     "dot_product",
     "concat_str",
     "row_hash",
-    "mode"
+    "mode",
+    "extract_jsonpath"
 ]
 
 [dependencies]

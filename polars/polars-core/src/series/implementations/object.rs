@@ -116,6 +116,7 @@ where
         ChunkTake::take_unchecked(&self.0, SeriesWrap(iter).into()).into_series()
     }
 
+    #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Result<Series> {
         todo!()
     }
