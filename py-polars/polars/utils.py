@@ -5,6 +5,7 @@ from typing import Any, Dict, Tuple, Union
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute
 
 __all__ = [
     "coerce_arrow",
