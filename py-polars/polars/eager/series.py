@@ -10,6 +10,7 @@ import polars as pl
 from polars.internals.construction import (
     arrow_to_pyseries,
     numpy_to_pyseries,
+    pandas_to_pyseries,
     sequence_to_pyseries,
     series_to_pyseries,
 )
@@ -39,6 +40,13 @@ from ..datatypes import (
     dtype_to_primitive,
 )
 from ..utils import _ptr_to_numpy
+
+try:
+    import pandas as pd
+
+    _PANDAS_AVAILABLE = True
+except ImportError:
+    _PANDAS_AVAILABLE = False
 
 __all__ = [
     "Series",
@@ -83,7 +91,9 @@ def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
 
 
-ArrayLike = Union[Sequence[Any], "Series", pa.Array, np.ndarray]
+ArrayLike = Union[
+    Sequence[Any], "Series", pa.Array, np.ndarray, "pd.Series", "pd.DatetimeIndex"
+]
 
 
 class Series:
@@ -192,6 +202,8 @@ class Series:
                 self._s = sequence_to_pyseries(name, values, dtype=dtype)
             else:
                 self._s = numpy_to_pyseries(name, np.array(values))
+        elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
+            self._s = pandas_to_pyseries(name, values)
         else:
             raise ValueError("Series constructor not called properly.")
 
@@ -214,6 +226,15 @@ class Series:
         Construct a Series from an Arrow array.
         """
         return cls._from_pyseries(arrow_to_pyseries(name, values))
+
+    @classmethod
+    def _from_pandas(
+        cls, name: str, values: Union["pd.Series", "pd.DatetimeIndex"]
+    ) -> "Series":
+        """
+        Construct a Series from a pandas Series or DatetimeIndex.
+        """
+        return cls._from_pyseries(pandas_to_pyseries(name, values))
 
     @classmethod
     def from_arrow(cls, name: str, array: pa.Array) -> "Series":
