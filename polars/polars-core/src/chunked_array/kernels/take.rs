@@ -1,14 +1,13 @@
 use crate::prelude::*;
 use crate::utils::arrow::util::bit_util::unset_bit;
 use crate::utils::CustomIterTools;
-use arrow::array::{
-    Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray,
-    UInt32Array,
-};
+use arrow::array::{Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray, UInt32Array, GenericListArray, ArrayDataBuilder, ArrayRef};
 use arrow::buffer::{Buffer, MutableBuffer};
 use polars_arrow::is_valid::IsValid;
 use std::mem;
 use std::sync::Arc;
+use polars_arrow::bit_util;
+use std::convert::TryFrom;
 
 /// Take kernel for single chunk without nulls and arrow array as index.
 pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
@@ -628,6 +627,132 @@ pub(crate) unsafe fn take_utf8(
         data = data.null_bit_buffer(null_buffer);
     }
     Arc::new(LargeStringArray::from(data.build()))
+}
+
+/// Forked and adapted from arrow-rs
+/// This is faster because it does no bounds checks and allocates directly into aligned memory
+/// 
+/// Takes/filters a list array's inner data using the offsets of the list array.
+///
+/// Where a list array has indices `[0,2,5,10]`, taking indices of `[2,0]` returns
+/// an array of the indices `[5..10, 0..2]` and offsets `[0,5,7]` (5 elements and 2
+/// elements)
+///
+/// # Safety
+/// No bounds checks
+unsafe fn take_value_indices_from_list(
+    list: &GenericListArray<i64>,
+    indices: &UInt32Array,
+) -> Result<(UInt32Array, AlignedVec<i64>)>
+{
+    let offsets = list.value_offsets();
+
+    let mut new_offsets = AlignedVec::with_capacity_aligned(indices.len());
+    // will likely have at least indices.len values
+    let mut values = AlignedVec::with_capacity_aligned(indices.len());
+    let mut current_offset = 0;
+    // add first offset
+    new_offsets.push(0);
+    // compute the value indices, and set offsets accordingly
+
+    let indices_values = indices.values();
+
+    if indices.null_count() == 0 {
+        for i in 0..indices.len() {
+            let idx = *indices_values.get_unchecked(i) as usize;
+            let start = *offsets.get_unchecked(idx);
+            let end = *offsets.get_unchecked(idx + 1);
+            current_offset += end - start;
+            new_offsets.push(current_offset);
+
+            let mut curr = start;
+
+            // if start == end, this slot is empty
+            while curr < end {
+                values.push(curr);
+                curr += 1;
+            }
+        }
+    } else {
+        let offset = indices.offset();
+        let buf = indices
+            .data_ref()
+            .null_buffer()
+            .expect("null buffer should be there");
+
+        for i in 0..indices.len() {
+            if buf.is_valid_unchecked(i + offset) {
+
+                let idx = *indices_values.get_unchecked(i) as usize;
+                let start = *offsets.get_unchecked(idx);
+                let end = *offsets.get_unchecked(idx + 1);
+                current_offset += end - start;
+                new_offsets.push(current_offset);
+
+                let mut curr = start;
+
+                // if start == end, this slot is empty
+                while curr < end {
+                    values.push(curr);
+                    curr += 1;
+                }
+
+            } else {
+                new_offsets.push(current_offset);
+            }
+
+        }
+
+    }
+
+
+    Ok((values.into_primitive_array(None), new_offsets))
+}
+
+/// Forked and adapted from arrow-rs
+/// This is faster because it does no bounds checks and allocates directly into aligned memory
+///
+/// # Safety
+/// No bounds checks
+unsafe fn take_list_unchecked(
+    values: &GenericListArray<i64>,
+    indices: &UInt32Array,
+) -> Result<GenericListArray<i64>>
+{
+    // taking the whole list or a contiguous sublist
+    let (list_indices, offsets) =
+        take_value_indices_from_list(values, indices)?;
+
+    // tmp series so that we can take primitives from it
+    let s = Series::try_from(("", values.values()))?;
+    let taken = s.take_unchecked(&UInt32Chunked::new_from_chunks("", vec![Arc::new(list_indices) as ArrayRef]))?;
+    let taken = taken.chunks()[0].clone();
+
+    // determine null count and null buffer, which are a function of `values` and `indices`
+    let mut null_count = 0;
+    let num_bytes = bit_util::ceil(indices.len(), 8);
+    let mut null_buf = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
+    {
+        let null_slice = null_buf.as_slice_mut();
+        offsets.as_slice().windows(2).enumerate().for_each(
+            |(i, window): (usize, &[i64])| {
+                if window[0] == window[1] {
+                    // offsets are equal, slot is null
+                    bit_util::unset_bit(null_slice, i);
+                    null_count += 1;
+                }
+            },
+        );
+    }
+    // create a new list with taken data and computed null information
+    let list_data = ArrayDataBuilder::new(values.data_type().clone())
+        .len(indices.len())
+        .null_bit_buffer(null_buf.into())
+        .offset(0)
+        .add_child_data(taken.data().clone())
+        .add_buffer(offsets.into_arrow_buffer())
+        .build();
+    Ok(GenericListArray::<i64>::from(list_data))
 }
 
 #[cfg(test)]
