@@ -1,4 +1,8 @@
 # flake8: noqa
+try:
+    from polars.polars import version
+except ImportError as e:
+    raise ImportError("Polars binary files missing!") from e
 
 # mypy needs these imported explicitly
 from polars.eager.frame import DataFrame, wrap_df
@@ -15,14 +19,6 @@ from .io import *
 from .lazy import *
 from .string_cache import *
 
-# during docs building the binary code is not yet available
-try:
-    from .polars import version
-
-    __version__ = version()
-except ImportError:
-    pass
-
 __all__ = (
     convert.__all__
     + datatypes.__all__
@@ -32,3 +28,5 @@ __all__ = (
     + lazy.__all__
     + string_cache.__all__
 )
+
+__version__ = version()

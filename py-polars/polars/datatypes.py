@@ -6,19 +6,7 @@ import numpy as np
 import pyarrow as pa
 from _ctypes import _SimpleCData
 
-try:
-    from polars.polars import PySeries
-except ImportError:
-    import warnings
-
-    warnings.warn("binary files missing")
-
-__pdoc__ = {
-    "dtype_to_ctype": False,
-    "dtype_to_int": False,
-    "dtype_to_primitive": False,
-    "pytype_to_polars_type": False,
-}
+from polars.polars import PySeries
 
 __all__ = [
     "DataType",

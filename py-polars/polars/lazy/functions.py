@@ -5,24 +5,18 @@ from typing import Any, Callable, Optional, Type, Union
 import numpy as np
 
 import polars as pl
+from polars.polars import argsort_by as pyargsort_by
+from polars.polars import binary_function as pybinary_function
+from polars.polars import col as pycol
+from polars.polars import concat_str as _concat_str
+from polars.polars import cov as pycov
+from polars.polars import except_ as pyexcept
+from polars.polars import fold as pyfold
+from polars.polars import lit as pylit
+from polars.polars import pearson_corr as pypearson_corr
+from polars.polars import series_from_range as _series_from_range
 
 from ..datatypes import DataType, Date64, Int64
-
-try:
-    from ..polars import argsort_by as pyargsort_by
-    from ..polars import binary_function as pybinary_function
-    from ..polars import col as pycol
-    from ..polars import concat_str as _concat_str
-    from ..polars import cov as pycov
-    from ..polars import except_ as pyexcept
-    from ..polars import fold as pyfold
-    from ..polars import lit as pylit
-    from ..polars import pearson_corr as pypearson_corr
-    from ..polars import series_from_range as _series_from_range
-except ImportError:
-    import warnings
-
-    warnings.warn("Binary files missing.")
 
 __all__ = [
     "col",
