@@ -1,24 +1,24 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
 use crate::prelude::*;
-use arrow::array::UInt32Array;
+use arrow::array::{Array, UInt32Array};
 
 // Utility traits
 pub trait TakeIterator: Iterator<Item = usize> {
-    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIterator + 'a>;
+    fn check_bounds(&self, bound: usize) -> Result<()>;
 }
 pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> {
-    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIteratorNulls + 'a>;
+    fn check_bounds(&self, bound: usize) -> Result<()>;
 }
 
 // Implement for the ref as well
 impl TakeIterator for &mut dyn TakeIterator {
-    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIterator + 'a> {
-        (**self).shallow_clone()
+    fn check_bounds(&self, bound: usize) -> Result<()> {
+        (**self).check_bounds(bound)
     }
 }
 impl TakeIteratorNulls for &mut dyn TakeIteratorNulls {
-    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIteratorNulls + 'a> {
-        (**self).shallow_clone()
+    fn check_bounds(&self, bound: usize) -> Result<()> {
+        (**self).check_bounds(bound)
     }
 }
 
@@ -27,16 +27,48 @@ impl<I> TakeIterator for I
 where
     I: Iterator<Item = usize> + Clone + Sized,
 {
-    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIterator + 'a> {
-        Box::new(self.clone())
+    fn check_bounds(&self, bound: usize) -> Result<()> {
+        // clone so that the iterator can be used again.
+        let iter = self.clone();
+        let mut inbounds = true;
+
+        for i in iter {
+            if i >= bound {
+                inbounds = false;
+                break;
+            }
+        }
+        if inbounds {
+            Ok(())
+        } else {
+            Err(PolarsError::OutOfBounds(
+                "take indices are out of bounds".into(),
+            ))
+        }
     }
 }
 impl<I> TakeIteratorNulls for I
 where
     I: Iterator<Item = Option<usize>> + Clone + Sized,
 {
-    fn shallow_clone<'a>(&'a self) -> Box<dyn TakeIteratorNulls + 'a> {
-        Box::new(self.clone())
+    fn check_bounds(&self, bound: usize) -> Result<()> {
+        // clone so that the iterator can be used again.
+        let iter = self.clone();
+        let mut inbounds = true;
+
+        for i in iter.flatten() {
+            if i >= bound {
+                inbounds = false;
+                break;
+            }
+        }
+        if inbounds {
+            Ok(())
+        } else {
+            Err(PolarsError::OutOfBounds(
+                "take indices are out of bounds".into(),
+            ))
+        }
     }
 }
 
@@ -50,6 +82,48 @@ where
     Iter(I),
     // will return a null where None
     IterNulls(INulls),
+}
+
+impl<'a, I, INulls> TakeIdx<'a, I, INulls>
+where
+    I: TakeIterator,
+    INulls: TakeIteratorNulls,
+{
+    pub(crate) fn check_bounds(&self, bound: usize) -> Result<()> {
+        match self {
+            TakeIdx::Iter(i) => i.check_bounds(bound),
+            TakeIdx::IterNulls(i) => i.check_bounds(bound),
+            TakeIdx::Array(arr) => {
+                let mut inbounds = true;
+                let len = bound as u32;
+                if arr.null_count() == 0 {
+                    for &i in arr.values().as_slice() {
+                        if i >= len {
+                            inbounds = false;
+                            break;
+                        }
+                    }
+                } else {
+                    for opt_v in *arr {
+                        match opt_v {
+                            Some(&v) if v >= len => {
+                                inbounds = false;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                if inbounds {
+                    Ok(())
+                } else {
+                    Err(PolarsError::OutOfBounds(
+                        "take indices are out of bounds".into(),
+                    ))
+                }
+            }
+        }
+    }
 }
 
 /// Dummy type, we need to instantiate all generic types, so we fill one with a dummy.
