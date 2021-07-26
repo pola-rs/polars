@@ -516,10 +516,10 @@ impl PyDataFrame {
         }
     }
 
-    pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
+    pub fn take(&self, indices: Vec<u32>) -> PyResult<Self> {
         let df = self
             .df
-            .take_iter(indices.iter().copied())
+            .take_iter(indices.iter().map(|i| *i as usize))
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
