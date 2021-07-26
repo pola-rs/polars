@@ -10,7 +10,6 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
-use std::borrow::Cow;
 use std::fmt;
 #[cfg(feature = "decompress")]
 use std::io::SeekFrom;
@@ -460,25 +459,6 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
             self.parse_csv(n_threads, &bytes, predicate.as_ref())
         } else {
             self.parse_csv(n_threads, bytes, predicate.as_ref())
-        }
-    }
-
-    #[cfg(feature = "decompress")]
-    fn decompress<'a>(&mut self, bytes: &'a [u8]) -> Result<Cow<'a, [u8]>> {
-        if let Some(bytes) = decompress(bytes) {
-            if self.inferred_schema {
-                self.schema = bytes_to_schema(
-                    &bytes,
-                    self.delimiter,
-                    self.has_header,
-                    self.skip_rows,
-                    self.comment_char,
-                )?;
-            }
-
-            Ok(Cow::Owned(bytes))
-        } else {
-            Ok(Cow::Borrowed(bytes))
         }
     }
 
