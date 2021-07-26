@@ -64,57 +64,6 @@ macro_rules! take_opt_iter_n_chunks_unchecked {
     }};
 }
 
-fn check_bounds<I, INulls>(len: usize, indices: &TakeIdx<I, INulls>) -> Result<()>
-where
-    I: TakeIterator,
-    INulls: TakeIteratorNulls,
-{
-    let mut inbounds = true;
-    match indices {
-        TakeIdx::Iter(i) => {
-            // we clone so that we can iterate twice
-            let iter = i.shallow_clone();
-            for i in iter {
-                if i >= len {
-                    inbounds = false;
-                    break;
-                }
-            }
-        }
-        TakeIdx::Array(arr) => {
-            let len = len as u32;
-            if arr.null_count() == 0 {
-                for &i in arr.values() {
-                    if i >= len {
-                        inbounds = false;
-                        break;
-                    }
-                }
-            } else {
-                for opt_v in *arr {
-                    match opt_v {
-                        Some(v) if v >= len => {
-                            inbounds = false;
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        _ => {
-            return Err(PolarsError::ValueError(
-                "iterator with opetions not supported".into(),
-            ))
-        }
-    }
-    if inbounds {
-        Ok(())
-    } else {
-        Err(PolarsError::OutOfBounds("index is out of bounds".into()))
-    }
-}
-
 impl<T> ChunkTake for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -201,7 +150,7 @@ where
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        check_bounds(self.len(), &indices)?;
+        indices.check_bounds(self.len())?;
         // Safety:
         // just checked bounds
         Ok(unsafe { self.take_unchecked(indices) })
@@ -285,7 +234,7 @@ impl ChunkTake for BooleanChunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        check_bounds(self.len(), &indices)?;
+        indices.check_bounds(self.len())?;
         // Safety:
         // just checked bounds
         Ok(unsafe { self.take_unchecked(indices) })
@@ -363,7 +312,7 @@ impl ChunkTake for Utf8Chunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        check_bounds(self.len(), &indices)?;
+        indices.check_bounds(self.len())?;
         // Safety:
         // just checked bounds
         Ok(unsafe { self.take_unchecked(indices) })
@@ -423,7 +372,7 @@ impl ChunkTake for ListChunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        check_bounds(self.len(), &indices)?;
+        indices.check_bounds(self.len())?;
         // Safety:
         // just checked bounds
         Ok(unsafe { self.take_unchecked(indices) })
@@ -534,7 +483,7 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        check_bounds(self.len(), &indices)?;
+        indices.check_bounds(self.len())?;
         // Safety:
         // just checked bounds
         Ok(unsafe { self.take_unchecked(indices) })
