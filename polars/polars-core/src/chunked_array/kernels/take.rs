@@ -1,13 +1,16 @@
 use crate::prelude::*;
 use crate::utils::arrow::util::bit_util::unset_bit;
 use crate::utils::CustomIterTools;
-use arrow::array::{Array, ArrayData, BooleanArray, LargeStringArray, LargeStringBuilder, PrimitiveArray, UInt32Array, GenericListArray, ArrayDataBuilder, ArrayRef};
+use arrow::array::{
+    Array, ArrayData, ArrayDataBuilder, ArrayRef, BooleanArray, GenericListArray, LargeStringArray,
+    LargeStringBuilder, PrimitiveArray, UInt32Array,
+};
 use arrow::buffer::{Buffer, MutableBuffer};
+use polars_arrow::bit_util;
 use polars_arrow::is_valid::IsValid;
+use std::convert::TryFrom;
 use std::mem;
 use std::sync::Arc;
-use polars_arrow::bit_util;
-use std::convert::TryFrom;
 
 /// Take kernel for single chunk without nulls and arrow array as index.
 pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
@@ -122,24 +125,6 @@ pub(crate) unsafe fn take_no_null_primitive_iter_unchecked<
     Arc::new(PrimitiveArray::<T>::from(data))
 }
 
-/// Take kernel for single chunk without nulls and an iterator as index that does bound checks.
-pub(crate) fn take_no_null_primitive_iter<T: PolarsNumericType, I: IntoIterator<Item = usize>>(
-    arr: &PrimitiveArray<T>,
-    indices: I,
-) -> Arc<PrimitiveArray<T>> {
-    assert_eq!(arr.null_count(), 0);
-
-    let array_values = arr.values();
-
-    let av = indices
-        .into_iter()
-        .map(|idx| array_values[idx])
-        .collect::<AlignedVec<_>>();
-    let arr = av.into_primitive_array(None);
-
-    Arc::new(arr)
-}
-
 /// Take kernel for a single chunk with null values and an iterator as index.
 ///
 /// # Panics
@@ -166,36 +151,6 @@ pub(crate) unsafe fn take_primitive_iter_unchecked<
         }
     });
     let arr = PrimitiveArray::from_trusted_len_iter(iter);
-
-    Arc::new(arr)
-}
-
-/// Take kernel for a single chunk with null values and an iterator as index that does bound checks.
-///
-/// # Panics
-/// panics if the array does not have nulls
-pub(crate) fn take_primitive_iter<T: PolarsNumericType, I: IntoIterator<Item = usize>>(
-    arr: &PrimitiveArray<T>,
-    indices: I,
-) -> Arc<PrimitiveArray<T>> {
-    let array_values = arr.values();
-    let validity = arr
-        .data_ref()
-        .null_bitmap()
-        .as_ref()
-        .expect("bitmap should be set");
-    let offset = arr.offset();
-
-    let arr = indices
-        .into_iter()
-        .map(|idx| {
-            if validity.is_set(idx + offset) {
-                array_values.get(idx).copied()
-            } else {
-                None
-            }
-        })
-        .collect();
 
     Arc::new(arr)
 }
@@ -274,18 +229,6 @@ pub(crate) fn take_primitive_opt_iter_n_chunks<
         .collect()
 }
 
-/// Take kernel for single chunk without nulls and an iterator as index that does bound checks.
-pub(crate) fn take_no_null_bool_iter<I: IntoIterator<Item = usize>>(
-    arr: &BooleanArray,
-    indices: I,
-) -> Arc<BooleanArray> {
-    debug_assert_eq!(arr.null_count(), 0);
-
-    let iter = indices.into_iter().map(|idx| Some(arr.value(idx)));
-
-    Arc::new(iter.collect())
-}
-
 /// Take kernel for single chunk without nulls and an iterator as index.
 pub(crate) unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &BooleanArray,
@@ -297,29 +240,6 @@ pub(crate) unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usi
         .map(|idx| Some(arr.value_unchecked(idx)));
 
     Arc::new(iter.collect())
-}
-
-/// Take kernel for single chunk and an iterator as index that does bound checks.
-pub(crate) fn take_bool_iter<I: IntoIterator<Item = usize>>(
-    arr: &BooleanArray,
-    indices: I,
-) -> Arc<BooleanArray> {
-    if let Some(validity) = arr.data_ref().null_bitmap() {
-        let offset = arr.offset();
-        let iter = indices.into_iter().map(|idx| {
-            if validity.is_set(idx + offset) {
-                Some(arr.value(idx))
-            } else {
-                None
-            }
-        });
-
-        Arc::new(iter.collect())
-    } else {
-        let iter = indices.into_iter().map(|idx| Some(arr.value(idx)));
-
-        Arc::new(iter.collect())
-    }
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -459,41 +379,7 @@ pub(crate) unsafe fn take_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<
     Arc::new(iter.collect())
 }
 
-pub(crate) fn take_no_null_utf8_iter<I: IntoIterator<Item = usize>>(
-    arr: &LargeStringArray,
-    indices: I,
-) -> Arc<LargeStringArray> {
-    let iter = indices.into_iter().map(|idx| Some(arr.value(idx)));
-
-    Arc::new(iter.collect())
-}
-
-/// # Panics
-///
-/// panics if array has no null data
-pub(crate) fn take_utf8_iter<I: IntoIterator<Item = usize>>(
-    arr: &LargeStringArray,
-    indices: I,
-) -> Arc<LargeStringArray> {
-    let offset = arr.offset();
-    let validity = arr
-        .data_ref()
-        .null_bitmap()
-        .as_ref()
-        .expect("null buffer should be there");
-
-    let iter = indices.into_iter().map(|idx| {
-        if validity.is_set(idx + offset) {
-            Some(arr.value(idx))
-        } else {
-            None
-        }
-    });
-
-    Arc::new(iter.collect())
-}
-
-pub(crate) unsafe fn take_utf8(
+pub(crate) unsafe fn take_utf8_unchecked(
     arr: &LargeStringArray,
     indices: &UInt32Array,
 ) -> Arc<LargeStringArray> {
@@ -631,7 +517,7 @@ pub(crate) unsafe fn take_utf8(
 
 /// Forked and adapted from arrow-rs
 /// This is faster because it does no bounds checks and allocates directly into aligned memory
-/// 
+///
 /// Takes/filters a list array's inner data using the offsets of the list array.
 ///
 /// Where a list array has indices `[0,2,5,10]`, taking indices of `[2,0]` returns
@@ -643,8 +529,7 @@ pub(crate) unsafe fn take_utf8(
 unsafe fn take_value_indices_from_list(
     list: &GenericListArray<i64>,
     indices: &UInt32Array,
-) -> Result<(UInt32Array, AlignedVec<i64>)>
-{
+) -> (UInt32Array, AlignedVec<i64>) {
     let offsets = list.value_offsets();
 
     let mut new_offsets = AlignedVec::with_capacity_aligned(indices.len());
@@ -669,7 +554,7 @@ unsafe fn take_value_indices_from_list(
 
             // if start == end, this slot is empty
             while curr < end {
-                values.push(curr);
+                values.push(curr as u32);
                 curr += 1;
             }
         }
@@ -682,7 +567,6 @@ unsafe fn take_value_indices_from_list(
 
         for i in 0..indices.len() {
             if buf.is_valid_unchecked(i + offset) {
-
                 let idx = *indices_values.get_unchecked(i) as usize;
                 let start = *offsets.get_unchecked(idx);
                 let end = *offsets.get_unchecked(idx + 1);
@@ -693,20 +577,16 @@ unsafe fn take_value_indices_from_list(
 
                 // if start == end, this slot is empty
                 while curr < end {
-                    values.push(curr);
+                    values.push(curr as u32);
                     curr += 1;
                 }
-
             } else {
                 new_offsets.push(current_offset);
             }
-
         }
-
     }
 
-
-    Ok((values.into_primitive_array(None), new_offsets))
+    (values.into_primitive_array(None), new_offsets)
 }
 
 /// Forked and adapted from arrow-rs
@@ -714,35 +594,38 @@ unsafe fn take_value_indices_from_list(
 ///
 /// # Safety
 /// No bounds checks
-unsafe fn take_list_unchecked(
+pub(crate) unsafe fn take_list_unchecked(
     values: &GenericListArray<i64>,
     indices: &UInt32Array,
-) -> Result<GenericListArray<i64>>
-{
+) -> GenericListArray<i64> {
     // taking the whole list or a contiguous sublist
-    let (list_indices, offsets) =
-        take_value_indices_from_list(values, indices)?;
+    let (list_indices, offsets) = take_value_indices_from_list(values, indices);
 
     // tmp series so that we can take primitives from it
-    let s = Series::try_from(("", values.values()))?;
-    let taken = s.take_unchecked(&UInt32Chunked::new_from_chunks("", vec![Arc::new(list_indices) as ArrayRef]))?;
+    let s = Series::try_from(("", values.values())).unwrap();
+    let taken = s
+        .take_unchecked(&UInt32Chunked::new_from_chunks(
+            "",
+            vec![Arc::new(list_indices) as ArrayRef],
+        ))
+        .unwrap();
     let taken = taken.chunks()[0].clone();
 
-    // determine null count and null buffer, which are a function of `values` and `indices`
-    let mut null_count = 0;
+    // determine null buffer, which are a function of `values` and `indices`
     let num_bytes = bit_util::ceil(indices.len(), 8);
     let mut null_buf = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
     {
         let null_slice = null_buf.as_slice_mut();
-        offsets.as_slice().windows(2).enumerate().for_each(
-            |(i, window): (usize, &[i64])| {
+        offsets
+            .as_slice()
+            .windows(2)
+            .enumerate()
+            .for_each(|(i, window): (usize, &[i64])| {
                 if window[0] == window[1] {
                     // offsets are equal, slot is null
                     bit_util::unset_bit(null_slice, i);
-                    null_count += 1;
                 }
-            },
-        );
+            });
     }
     // create a new list with taken data and computed null information
     let list_data = ArrayDataBuilder::new(values.data_type().clone())
@@ -752,7 +635,7 @@ unsafe fn take_list_unchecked(
         .add_child_data(taken.data().clone())
         .add_buffer(offsets.into_arrow_buffer())
         .build();
-    Ok(GenericListArray::<i64>::from(list_data))
+    GenericListArray::<i64>::from(list_data)
 }
 
 #[cfg(test)]
@@ -763,13 +646,13 @@ mod test {
     fn test_utf8_kernel() {
         let s = LargeStringArray::from(vec![Some("foo"), None, Some("bar")]);
         unsafe {
-            let out = take_utf8(&s, &UInt32Array::from(vec![1, 2]));
+            let out = take_utf8_unchecked(&s, &UInt32Array::from(vec![1, 2]));
             assert!(out.is_null(0));
             assert!(out.is_valid(1));
-            let out = take_utf8(&s, &UInt32Array::from(vec![None, Some(2)]));
+            let out = take_utf8_unchecked(&s, &UInt32Array::from(vec![None, Some(2)]));
             assert!(out.is_null(0));
             assert!(out.is_valid(1));
-            let out = take_utf8(&s, &UInt32Array::from(vec![None, None]));
+            let out = take_utf8_unchecked(&s, &UInt32Array::from(vec![None, None]));
             assert!(out.is_null(0));
             assert!(out.is_null(1));
         }

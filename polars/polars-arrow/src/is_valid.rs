@@ -36,7 +36,7 @@ impl<A: ArrowArray> IsValid for A {
         if let Some(b) = self.data_ref().null_buffer() {
             b.is_valid_unchecked(self.offset() + i)
         } else {
-            false
+            true
         }
     }
 

@@ -11,14 +11,14 @@ use arrow::compute::kernels::take::take;
 pub use traits::*;
 
 use crate::chunked_array::kernels::take::{
-    take_bool_iter, take_bool_iter_unchecked, take_bool_opt_iter_unchecked, take_no_null_bool_iter,
+    take_bool_iter_unchecked, take_bool_opt_iter_unchecked, take_list_unchecked,
     take_no_null_bool_iter_unchecked, take_no_null_bool_opt_iter_unchecked,
-    take_no_null_primitive_iter, take_no_null_primitive_iter_unchecked,
-    take_no_null_primitive_opt_iter_unchecked, take_no_null_primitive_unchecked,
-    take_no_null_utf8_iter, take_no_null_utf8_iter_unchecked, take_no_null_utf8_opt_iter_unchecked,
-    take_primitive_iter, take_primitive_iter_n_chunks, take_primitive_iter_unchecked,
-    take_primitive_opt_iter_n_chunks, take_primitive_opt_iter_unchecked, take_primitive_unchecked,
-    take_utf8, take_utf8_iter, take_utf8_iter_unchecked, take_utf8_opt_iter_unchecked,
+    take_no_null_primitive_iter_unchecked, take_no_null_primitive_opt_iter_unchecked,
+    take_no_null_primitive_unchecked, take_no_null_utf8_iter_unchecked,
+    take_no_null_utf8_opt_iter_unchecked, take_primitive_iter_n_chunks,
+    take_primitive_iter_unchecked, take_primitive_opt_iter_n_chunks,
+    take_primitive_opt_iter_unchecked, take_primitive_unchecked, take_utf8_iter_unchecked,
+    take_utf8_opt_iter_unchecked, take_utf8_unchecked,
 };
 use crate::prelude::*;
 
@@ -26,28 +26,6 @@ mod take_every;
 pub(crate) mod take_random;
 pub(crate) mod take_single;
 mod traits;
-
-macro_rules! handle_empty_array_take {
-    ($ca:expr, $indices:expr, $Self:ty) => {{
-        if $ca.is_empty() {
-            if $indices.is_empty() {
-                return Ok(<$Self>::full_null($ca.name(), $indices.len()));
-            }
-            return Err(PolarsError::OutOfBounds(
-                "cannot take from an empty array".into(),
-            ));
-        }
-    }};
-}
-macro_rules! handle_empty_array_take_iter {
-    ($ca:expr, $Self:ty) => {{
-        if $ca.is_empty() {
-            return Err(PolarsError::OutOfBounds(
-                "cannot take from an empty array".into(),
-            ));
-        }
-    }};
-}
 
 macro_rules! take_iter_n_chunks {
     ($ca:expr, $indices:expr) => {{
@@ -95,7 +73,7 @@ where
     match indices {
         TakeIdx::Iter(i) => {
             // we clone so that we can iterate twice
-            let mut iter = i.shallow_clone();
+            let iter = i.shallow_clone();
             for i in iter {
                 if i >= len {
                     inbounds = false;
@@ -240,7 +218,7 @@ impl ChunkTake for BooleanChunked {
         let mut chunks = self.downcast_iter();
         match indices {
             TakeIdx::Array(array) => {
-                if self.is_empty() || array.null_count() == array.len() {
+                if array.null_count() == array.len() {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
@@ -328,7 +306,7 @@ impl ChunkTake for Utf8Chunked {
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match self.chunks.len() {
-                    1 => take_utf8(chunks.next().unwrap(), array) as ArrayRef,
+                    1 => take_utf8_unchecked(chunks.next().unwrap(), array) as ArrayRef,
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -399,7 +377,44 @@ impl ChunkTake for ListChunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        self.take(indices).unwrap()
+        let mut chunks = self.downcast_iter();
+        match indices {
+            TakeIdx::Array(array) => {
+                if array.null_count() == array.len() {
+                    return Self::full_null(self.name(), array.len());
+                }
+                let array = match self.chunks.len() {
+                    1 => Arc::new(take_list_unchecked(chunks.next().unwrap(), array)) as ArrayRef,
+                    _ => {
+                        return if array.null_count() == 0 {
+                            let iter = array.values().iter().map(|i| *i as usize);
+                            let mut ca: ListChunked = take_iter_n_chunks_unchecked!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        } else {
+                            let iter = array
+                                .into_iter()
+                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
+                            let mut ca: ListChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
+                            ca.rename(self.name());
+                            ca
+                        }
+                    }
+                };
+                self.copy_with_chunks(vec![array])
+            }
+            // todo! fast path for single chunk
+            TakeIdx::Iter(iter) => {
+                let mut ca: ListChunked = take_iter_n_chunks_unchecked!(self, iter);
+                ca.rename(self.name());
+                ca
+            }
+            TakeIdx::IterNulls(iter) => {
+                let mut ca: ListChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
+                ca.rename(self.name());
+                ca
+            }
+        }
     }
 
     fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
@@ -408,51 +423,10 @@ impl ChunkTake for ListChunked {
         I: TakeIterator,
         INulls: TakeIteratorNulls,
     {
-        let mut chunks = self.downcast_iter();
-        match indices {
-            TakeIdx::Array(array) => {
-                handle_empty_array_take!(self, array, Self);
-                if array.null_count() == array.len() {
-                    return Ok(Self::full_null(self.name(), array.len()));
-                }
-                let array = match self.chunks.len() {
-                    1 => take(chunks.next().unwrap(), array, None).unwrap() as ArrayRef,
-                    _ => {
-                        return if array.null_count() == 0 {
-                            let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: ListChunked = take_iter_n_chunks!(self, iter);
-                            ca.rename(self.name());
-                            Ok(ca)
-                        } else {
-                            let iter = array
-                                .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| idx as usize));
-                            let mut ca: ListChunked = take_opt_iter_n_chunks!(self, iter);
-                            ca.rename(self.name());
-                            Ok(ca)
-                        }
-                    }
-                };
-                Ok(self.copy_with_chunks(vec![array]))
-            }
-            TakeIdx::Iter(iter) => {
-                if self.is_empty() {
-                    return Ok(Self::full_null(self.name(), iter.size_hint().0));
-                }
-                let mut ca: ListChunked = take_iter_n_chunks!(self, iter);
-                ca.rename(self.name());
-                Ok(ca)
-            }
-            TakeIdx::IterNulls(iter) => {
-                if self.is_empty() {
-                    return Ok(Self::full_null(self.name(), iter.size_hint().0));
-                }
-
-                let mut ca: ListChunked = take_opt_iter_n_chunks!(self, iter);
-                ca.rename(self.name());
-                Ok(ca)
-            }
-        }
+        check_bounds(self.len(), &indices)?;
+        // Safety:
+        // just checked bounds
+        Ok(unsafe { self.take_unchecked(indices) })
     }
 }
 
@@ -480,7 +454,6 @@ impl ChunkTake for CategoricalChunked {
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
-    // TODO! implement unsafe unchecked
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
