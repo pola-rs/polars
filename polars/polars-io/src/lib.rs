@@ -18,6 +18,8 @@ pub mod mmap;
 #[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
 pub mod prelude;
+#[cfg(all(test, feature = "csv-file"))]
+mod tests;
 pub(crate) mod utils;
 
 use arrow::{error::Result as ArrowResult, record_batch::RecordBatch};
