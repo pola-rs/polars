@@ -205,7 +205,10 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
                         &self.data.as_slice()[data_len..data_len + n_written],
                     )
                     .into_owned();
-                    self.data.extend_from_slice(s.as_bytes());
+                    let b = s.as_bytes();
+                    self.data.extend_from_slice(b);
+                    self.offsets.push(self.data.len() as i64);
+                    self.validity.append(true);
                 } else if ignore_errors {
                     // append null
                     self.offsets.push(self.data.len() as i64);
