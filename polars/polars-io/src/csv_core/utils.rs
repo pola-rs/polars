@@ -1,5 +1,7 @@
 use crate::csv::CsvEncoding;
-use crate::csv_core::parser::{next_line_position, SplitFields, SplitLines};
+use crate::csv_core::parser::{
+    next_line_position, skip_bom, skip_line_ending, skip_whitespace, SplitFields, SplitLines,
+};
 use crate::mmap::MmapBytesReader;
 use lazy_static::lazy_static;
 use polars_core::datatypes::PlHashSet;
@@ -113,17 +115,30 @@ pub fn infer_file_schema<R: Read + MmapBytesReader>(
     has_header: bool,
     schema_overwrite: Option<&Schema>,
     skip_rows: usize,
+    comment_char: Option<u8>,
 ) -> Result<(Schema, usize)> {
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
-    let bytes = get_reader_bytes(reader)?;
+    let mut bytes = get_reader_bytes(reader)?;
+    bytes = skip_line_ending(skip_whitespace(skip_bom(&bytes)).0)
+        .0
+        .to_vec();
     let mut lines = SplitLines::new(&bytes, b'\n').skip(skip_rows);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
-    let headers: Vec<String> = if let Some(header_line) = lines.next() {
+    let headers: Vec<String> = if let Some(mut header_line) = lines.next() {
+        let len = header_line.len();
+        if len > 1 {
+            // remove carriage return
+            let trailing_byte = header_line[len - 1];
+            if trailing_byte == b'\r' {
+                header_line = &header_line[..len - 1];
+            }
+        }
+
         let byterecord = SplitFields::new(header_line, delimiter);
         if has_header {
             byterecord
@@ -159,9 +174,26 @@ pub fn infer_file_schema<R: Read + MmapBytesReader>(
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
 
-    for result in records_ref.take(max_read_records.unwrap_or(usize::MAX)) {
+    for mut line in records_ref.take(max_read_records.unwrap_or(usize::MAX)) {
         records_count += 1;
-        let mut record = SplitFields::new(result, delimiter);
+
+        if let Some(c) = comment_char {
+            // line is a comment -> skip
+            if line[0] == c {
+                continue;
+            }
+        }
+
+        let len = line.len();
+        if len > 1 {
+            // remove carriage return
+            let trailing_byte = line[len - 1];
+            if trailing_byte == b'\r' {
+                line = &line[..len - 1];
+            }
+        }
+
+        let mut record = SplitFields::new(line, delimiter);
 
         for i in 0..header_length {
             if let Some((slice, needs_escaping)) = record.next() {
@@ -248,10 +280,20 @@ pub(crate) fn bytes_to_schema(
     delimiter: u8,
     has_header: bool,
     skip_rows: usize,
+    comment_char: Option<u8>,
 ) -> Result<SchemaRef> {
     let mut r = std::io::Cursor::new(&bytes);
     Ok(Arc::from(
-        infer_file_schema(&mut r, delimiter, Some(100), has_header, None, skip_rows)?.0,
+        infer_file_schema(
+            &mut r,
+            delimiter,
+            Some(100),
+            has_header,
+            None,
+            skip_rows,
+            comment_char,
+        )?
+        .0,
     ))
 }
 

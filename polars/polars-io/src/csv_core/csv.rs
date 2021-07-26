@@ -448,8 +448,13 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
     ) -> Result<DataFrame> {
         if let Some(bytes) = decompress(bytes) {
             if self.inferred_schema {
-                self.schema =
-                    bytes_to_schema(&bytes, self.delimiter, self.has_header, self.skip_rows)?;
+                self.schema = bytes_to_schema(
+                    &bytes,
+                    self.delimiter,
+                    self.has_header,
+                    self.skip_rows,
+                    self.comment_char,
+                )?;
             }
 
             self.parse_csv(n_threads, &bytes, predicate.as_ref())
@@ -462,8 +467,13 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
     fn decompress<'a>(&mut self, bytes: &'a [u8]) -> Result<Cow<'a, [u8]>> {
         if let Some(bytes) = decompress(bytes) {
             if self.inferred_schema {
-                self.schema =
-                    bytes_to_schema(&bytes, self.delimiter, self.has_header, self.skip_rows)?;
+                self.schema = bytes_to_schema(
+                    &bytes,
+                    self.delimiter,
+                    self.has_header,
+                    self.skip_rows,
+                    self.comment_char,
+                )?;
             }
 
             Ok(Cow::Owned(bytes))
@@ -582,6 +592,7 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
                         has_header,
                         schema_overwrite,
                         skip_rows,
+                        comment_char,
                     )?;
                     Arc::new(inferred_schema)
                 }
@@ -595,6 +606,7 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
                     has_header,
                     schema_overwrite,
                     skip_rows,
+                    comment_char,
                 )?;
                 Arc::new(inferred_schema)
             }

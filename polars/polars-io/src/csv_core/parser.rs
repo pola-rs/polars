@@ -464,4 +464,22 @@ mod test {
         hello";
         assert_eq!(skip_whitespace(input).0, b"hello");
     }
+
+    #[test]
+    fn test_splitfields() {
+        let input = "\"foo\",\"bar\"";
+        let mut fields = SplitFields::new(input.as_bytes(), b',');
+
+        assert_eq!(fields.next(), Some(("\"foo\"".as_bytes(), true)));
+        assert_eq!(fields.next(), Some(("\"bar\"".as_bytes(), true)));
+        assert_eq!(fields.next(), None);
+
+        let input2 = "\"foo\n bar\";\"baz\";12345";
+        let mut fields2 = SplitFields::new(input2.as_bytes(), b';');
+
+        assert_eq!(fields2.next(), Some(("\"foo\n bar\"".as_bytes(), true)));
+        assert_eq!(fields2.next(), Some(("\"baz\"".as_bytes(), true)));
+        assert_eq!(fields2.next(), Some(("12345".as_bytes(), false)));
+        assert_eq!(fields2.next(), None);
+    }
 }
