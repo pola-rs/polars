@@ -118,15 +118,15 @@ where
 /// }
 ///
 /// ```
-pub struct IpcWriter<'a, W> {
-    writer: &'a mut W,
+pub struct IpcWriter<W> {
+    writer: W,
 }
 
-impl<'a, W> SerWriter<'a, W> for IpcWriter<'a, W>
+impl<W> SerWriter<W> for IpcWriter<W>
 where
     W: Write,
 {
-    fn new(writer: &'a mut W) -> Self {
+    fn new(writer: W) -> Self {
         IpcWriter { writer }
     }
 

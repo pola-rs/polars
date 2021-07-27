@@ -87,16 +87,16 @@ use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 // Write a DataFrame to JSON
-pub struct JsonWriter<'a, W: Write> {
+pub struct JsonWriter<W: Write> {
     /// File or Stream handler
-    buffer: &'a mut W,
+    buffer: W,
 }
 
-impl<'a, W> SerWriter<'a, W> for JsonWriter<'a, W>
+impl<W> SerWriter<W> for JsonWriter<W>
 where
     W: Write,
 {
-    fn new(buffer: &'a mut W) -> Self {
+    fn new(buffer: W) -> Self {
         JsonWriter { buffer }
     }
 
