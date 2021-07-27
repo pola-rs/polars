@@ -579,7 +579,8 @@ class Expr:
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
-        Apply a custom UDF. It is important that the UDF returns a Polars Series.
+        Apply a custom python function. This function must produce a `Series`. Any other value will be stored as
+        null/missing. If you want to apply a function over single values, consider using `apply`.
 
         [read more in the book](https://ritchie46.github.io/polars-book/how_can_i/use_custom_functions.html#lazy)
 
@@ -605,12 +606,22 @@ class Expr:
 
     def apply(
         self,
-        f: Callable[["pl.Series"], "pl.Series"],
+        f: Union[Callable[["pl.Series"], "pl.Series"], Callable[[Any], Any]],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
-        Apply a custom UDF in a GroupBy context. This is syntactic sugar for the `apply` method which operates on all
-        groups at once. The UDF passed to this expression will operate on a single group.
+        Apply a custom function in a GroupBy or Projection context.
+
+        Depending on the context it has the following behavior:
+
+        ## Context
+
+        * Select/Project
+            expected type `f`: Callable[[Any], Any]
+            Applies a python function over each individual value in the column.
+        * GroupBy
+            expected type `f`: Callable[[Series], Series]
+            Applies a python function over each group.
 
         Parameters
         ----------
