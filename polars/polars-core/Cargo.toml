@@ -63,6 +63,8 @@ reinterpret = []
 take_opt_iter = []
 mode = []
 extract_jsonpath = ["serde_json", "jsonpath_lib"]
+# allow groupby operation on list type
+groupby_list = []
 
 
 # opt-in datatypes for Series
