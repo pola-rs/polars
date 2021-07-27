@@ -171,7 +171,14 @@ impl IntoGroupTuples for CategoricalChunked {
 
 impl IntoGroupTuples for ListChunked {}
 #[cfg(feature = "object")]
-impl<T> IntoGroupTuples for ObjectChunked<T> {}
+impl<T> IntoGroupTuples for ObjectChunked<T>
+where
+    T: PolarsObject,
+{
+    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+        groupby(self.into_iter())
+    }
+}
 
 /// Used to tightly two 32 bit values and null information
 /// Only the bit values matter, not the meaning of the bits
