@@ -444,8 +444,8 @@ impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
 
 #[cfg(feature = "object")]
 pub struct ObjectTakeRandom<'a, T: PolarsObject> {
-    chunks: Vec<&'a ObjectArray<T>>,
-    chunk_lens: Vec<u32>,
+    pub(crate) chunks: Chunks<'a, ObjectArray<T>>,
+    pub(crate) chunk_lens: Vec<u32>,
 }
 
 #[cfg(feature = "object")]
@@ -465,7 +465,7 @@ impl<'a, T: PolarsObject> TakeRandom for ObjectTakeRandom<'a, T> {
 
 #[cfg(feature = "object")]
 pub struct ObjectTakeRandomSingleChunk<'a, T: PolarsObject> {
-    arr: &'a ObjectArray<T>,
+    pub(crate) arr: &'a ObjectArray<T>,
 }
 
 #[cfg(feature = "object")]
@@ -493,15 +493,15 @@ impl<'a, T: PolarsObject> IntoTakeRandom<'a> for &'a ObjectChunked<T> {
     type TakeRandom = TakeRandBranch2<ObjectTakeRandomSingleChunk<'a, T>, ObjectTakeRandom<'a, T>>;
 
     fn take_rand(&self) -> Self::TakeRandom {
-        let mut chunks = self.downcast_iter();
+        let chunks = self.downcast_chunks();
         if self.chunks.len() == 1 {
             let t = ObjectTakeRandomSingleChunk {
-                arr: chunks.next().unwrap(),
+                arr: chunks.get(0).unwrap(),
             };
             TakeRandBranch2::Single(t)
         } else {
             let t = ObjectTakeRandom {
-                chunks: chunks.collect(),
+                chunks,
                 chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
             };
             TakeRandBranch2::Multi(t)
