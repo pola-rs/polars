@@ -68,8 +68,35 @@ pub use arrow::{
     record_batch::RecordBatch,
 };
 use polars_core::prelude::*;
+use std::io::Write;
 use std::io::{Read, Seek};
 use std::sync::Arc;
+
+// Write a DataFrame to JSON
+pub struct JsonWriter<W: Write> {
+    /// File or Stream handler
+    buffer: W,
+}
+
+impl<W> SerWriter<W> for JsonWriter<W>
+where
+    W: Write,
+{
+    fn new(buffer: W) -> Self {
+        JsonWriter { buffer }
+    }
+
+    fn finish(self, df: &DataFrame) -> Result<()> {
+        let df = to_arrow_compatible_df(df);
+        let mut json_writer = arrow::io::json::LineDelimitedWriter::new(self.buffer);
+
+        let batches = df.as_record_batches()?;
+        json_writer.write_batches(&batches)?;
+        json_writer.finish()?;
+
+        Ok(())
+    }
+}
 
 impl<R: Read> ArrowReader for ArrowJsonReader<R> {
     fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
