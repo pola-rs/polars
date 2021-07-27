@@ -50,11 +50,11 @@ where
     fn finish(self) -> Result<DataFrame>;
 }
 
-pub trait SerWriter<'a, W>
+pub trait SerWriter<W>
 where
     W: Write,
 {
-    fn new(writer: &'a mut W) -> Self;
+    fn new(writer: W) -> Self;
     fn finish(self, df: &DataFrame) -> Result<()>;
 }
 

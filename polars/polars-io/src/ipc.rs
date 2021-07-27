@@ -117,21 +117,21 @@ where
 /// }
 ///
 /// ```
-pub struct IpcWriter<'a, W> {
-    writer: &'a mut W,
+pub struct IpcWriter<W> {
+    writer: W,
 }
 
-impl<'a, W> SerWriter<'a, W> for IpcWriter<'a, W>
+impl<W> SerWriter<W> for IpcWriter<W>
 where
     W: Write,
 {
-    fn new(writer: &'a mut W) -> Self {
+    fn new(writer: W) -> Self {
         IpcWriter { writer }
     }
 
-    fn finish(self, df: &DataFrame) -> Result<()> {
+    fn finish(mut self, df: &DataFrame) -> Result<()> {
         let df = to_arrow_compatible_df(df);
-        let mut ipc_writer = write::FileWriter::try_new(self.writer, &df.schema().to_arrow())?;
+        let mut ipc_writer = write::FileWriter::try_new(&mut self.writer, &df.schema().to_arrow())?;
 
         let iter = df.iter_record_batches();
 
