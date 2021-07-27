@@ -11,6 +11,7 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+#[repr(transparent)]
 pub struct Wrap<T>(pub T);
 
 impl<T> Deref for Wrap<T> {
