@@ -8,14 +8,20 @@ pub mod implementations;
 pub(crate) mod iterator;
 
 use crate::chunked_array::{builder::get_list_builder, ChunkIdIter};
+#[cfg(feature = "groupby_list")]
+use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
+#[cfg(feature = "groupby_list")]
+use ahash::RandomState;
 use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
 use rayon::prelude::*;
 use std::any::Any;
 use std::convert::TryFrom;
+#[cfg(feature = "groupby_list")]
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -1162,6 +1168,25 @@ impl<'a> (dyn SeriesTrait + 'a) {
 /// ```
 #[derive(Clone)]
 pub struct Series(pub Arc<dyn SeriesTrait>);
+
+#[cfg(feature = "groupby_list")]
+impl PartialEq for Wrap<Series> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.series_equal_missing(other)
+    }
+}
+
+#[cfg(feature = "groupby_list")]
+impl Eq for Wrap<Series> {}
+
+#[cfg(feature = "groupby_list")]
+impl Hash for Wrap<Series> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let rs = RandomState::with_seeds(0, 0, 0, 0);
+        let h = UInt64Chunked::new_from_aligned_vec("", self.0.vec_hash(rs)).sum();
+        h.hash(state)
+    }
+}
 
 impl Series {
     pub(crate) fn get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
