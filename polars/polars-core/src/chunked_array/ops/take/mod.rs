@@ -19,6 +19,7 @@ use crate::chunked_array::kernels::take::{
 };
 
 use crate::prelude::*;
+use crate::utils::NoNull;
 
 pub use take_random::*;
 pub use traits::*;
@@ -358,14 +359,24 @@ impl ChunkTake for ListChunked {
             }
             // todo! fast path for single chunk
             TakeIdx::Iter(iter) => {
-                let mut ca: ListChunked = take_iter_n_chunks_unchecked!(self, iter);
-                ca.rename(self.name());
-                ca
+                if self.chunks.len() == 1 {
+                    let idx: NoNull<UInt32Chunked> = iter.map(|v| v as u32).collect();
+                    self.take_unchecked((&idx.into_inner()).into())
+                } else {
+                    let mut ca: ListChunked = take_iter_n_chunks_unchecked!(self, iter);
+                    ca.rename(self.name());
+                    ca
+                }
             }
             TakeIdx::IterNulls(iter) => {
-                let mut ca: ListChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
-                ca.rename(self.name());
-                ca
+                if self.chunks.len() == 1 {
+                    let idx: UInt32Chunked = iter.map(|v| v.map(|v| v as u32)).collect();
+                    self.take_unchecked((&idx).into())
+                } else {
+                    let mut ca: ListChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
+                    ca.rename(self.name());
+                    ca
+                }
             }
         }
     }
