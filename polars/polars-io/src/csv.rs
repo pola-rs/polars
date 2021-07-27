@@ -53,18 +53,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Write a DataFrame to csv.
-pub struct CsvWriter<'a, W: Write> {
+pub struct CsvWriter<W: Write> {
     /// File or Stream handler
-    buffer: &'a mut W,
+    buffer: W,
     /// Builds an Arrow CSV Writer
     writer_builder: WriterBuilder,
 }
 
-impl<'a, W> SerWriter<'a, W> for CsvWriter<'a, W>
+impl<W> SerWriter<W> for CsvWriter<W>
 where
     W: Write,
 {
-    fn new(buffer: &'a mut W) -> Self {
+    fn new(buffer: W) -> Self {
         CsvWriter {
             buffer,
             writer_builder: WriterBuilder::new(),
@@ -83,7 +83,7 @@ where
     }
 }
 
-impl<'a, W> CsvWriter<'a, W>
+impl<W> CsvWriter<W>
 where
     W: Write,
 {
