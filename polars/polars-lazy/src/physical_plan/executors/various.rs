@@ -31,8 +31,24 @@ impl Executor for StandardExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
 
+        let zero_length = df.height() == 0;
+
         let df = evaluate_physical_expressions(&df, &self.expr, state);
         state.clear_expr_cache();
-        df
+
+        // a literal could be projected to a zero length dataframe.
+        // This prevents a panic.
+        if zero_length {
+            df.map(|df| {
+                let min = df.get_columns().iter().map(|s| s.len()).min();
+                if min.is_some() {
+                    df.head(min)
+                } else {
+                    df
+                }
+            })
+        } else {
+            df
+        }
     }
 }

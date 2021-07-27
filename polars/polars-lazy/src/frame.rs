@@ -2435,4 +2435,24 @@ mod test {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_select_empty_df() -> Result<()> {
+        // https://github.com/pola-rs/polars/issues/1056
+        let df1 = df![
+        "a" => [1, 2, 3],
+        "b" => [1, 2, 3]
+        ]?;
+
+        let out = df1
+            .lazy()
+            .filter(col("a").eq(lit(0))) // this will lead to an empty frame
+            .select(vec![col("a"), lit(1).alias("c")])
+            .collect()?;
+
+        assert_eq!(out.column("a")?.len(), 0);
+        assert_eq!(out.column("c")?.len(), 0);
+
+        Ok(())
+    }
 }
