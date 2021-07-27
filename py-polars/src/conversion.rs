@@ -3,12 +3,14 @@ use crate::prelude::*;
 use crate::series::PySeries;
 use polars::frame::row::Row;
 use polars::prelude::AnyValue;
+use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::any::Any;
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -179,6 +181,36 @@ impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
 #[derive(Clone, Debug)]
 pub struct ObjectValue {
     pub inner: PyObject,
+}
+
+impl Hash for ObjectValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        let h = self
+            .inner
+            .as_ref(python)
+            .hash()
+            .expect("should be hashable");
+        state.write_isize(h)
+    }
+}
+
+impl Eq for ObjectValue {}
+
+impl PartialEq for ObjectValue {
+    fn eq(&self, other: &Self) -> bool {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        match self
+            .inner
+            .as_ref(py)
+            .rich_compare(other.inner.as_ref(py), CompareOp::Eq)
+        {
+            Ok(result) => result.is_true().unwrap(),
+            Err(_) => false,
+        }
+    }
 }
 
 impl Display for ObjectValue {

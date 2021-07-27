@@ -634,7 +634,8 @@ impl PyDataFrame {
     }
 
     pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {
-        let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
+        let gb = Python::with_gil(|py| py.allow_threads(|| self.df.groupby(&by)))
+            .map_err(PyPolarsEr::from)?;
         let selection = match select.as_ref() {
             Some(s) => gb.select(s),
             None => gb,
@@ -753,9 +754,14 @@ impl PyDataFrame {
         maintain_order: bool,
         subset: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        let df = self
-            .df
-            .drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+
+        let df = py
+            .allow_threads(|| {
+                self.df
+                    .drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
+            })
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
@@ -897,7 +903,10 @@ impl PyDataFrame {
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
-    let df = match agg {
+    let gil = Python::acquire_gil();
+    let py = gil.python();
+
+    let df = py.allow_threads(|| match agg {
         "min" => gb.min(),
         "max" => gb.max(),
         "mean" => gb.mean(),
@@ -914,7 +923,8 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
         a => Err(PolarsError::Other(
             format!("agg fn {} does not exists", a).into(),
         )),
-    };
+    });
+
     let df = df.map_err(PyPolarsEr::from)?;
     Ok(PyDataFrame::new(df))
 }
