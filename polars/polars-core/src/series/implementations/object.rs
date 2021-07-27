@@ -1,8 +1,11 @@
+use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
+use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
+use ahash::RandomState;
 use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
 use std::any::Any;
@@ -33,6 +36,21 @@ where
             None => Cow::Borrowed("null"),
             Some(val) => Cow::Owned(format!("{}", val)),
         }
+    }
+    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
+        (&self.0).into_partial_eq_inner()
+    }
+
+    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+        self.0.vec_hash(random_state)
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
+        self.0.vec_hash_combine(build_hasher, hashes)
+    }
+
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+        IntoGroupTuples::group_tuples(&self.0, multithreaded)
     }
 }
 #[cfg(feature = "object")]

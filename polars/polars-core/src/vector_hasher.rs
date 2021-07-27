@@ -147,6 +147,42 @@ impl VecHash for Float64Chunked {
 
 impl VecHash for ListChunked {}
 
+#[cfg(feature = "object")]
+impl<T> VecHash for ObjectChunked<T>
+where
+    T: PolarsObject,
+{
+    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+        // Note that we don't use the no null branch! This can break in unexpected ways.
+        // for instance with threading we split an array in n_threads, this may lead to
+        // splits that have no nulls and splits that have nulls. Then one array is hashed with
+        // Option<T> and the other array with T.
+        // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
+        // the only deterministic seed.
+        let mut av = AlignedVec::with_capacity_aligned(self.len());
+
+        self.downcast_iter().for_each(|arr| {
+            av.extend(arr.into_iter().map(|opt_v| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                hasher.finish()
+            }))
+        });
+        av
+    }
+
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        self.apply_to_slice(
+            |opt_v, h| {
+                let mut hasher = random_state.build_hasher();
+                opt_v.hash(&mut hasher);
+                boost_hash_combine(hasher.finish(), *h)
+            },
+            hashes,
+        )
+    }
+}
+
 // Used to to get a u64 from the hashing keys
 // We need to modify the hashing algorithm to use the hash for this and only compute the hash once.
 pub(crate) trait AsU64 {

@@ -508,3 +508,74 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         });
     }
 }
+
+#[cfg(feature = "object")]
+impl<'a, T> ChunkApply<'a, &'a T, T> for ObjectChunked<T>
+where
+    T: PolarsObject,
+{
+    fn apply_cast_numeric<F, S>(&'a self, _f: F) -> ChunkedArray<S>
+    where
+        F: Fn(&'a T) -> S::Native + Copy,
+        S: PolarsNumericType,
+    {
+        todo!()
+    }
+
+    fn branch_apply_cast_numeric_no_null<F, S>(&'a self, _f: F) -> ChunkedArray<S>
+    where
+        F: Fn(Option<&'a T>) -> S::Native + Copy,
+        S: PolarsNumericType,
+    {
+        todo!()
+    }
+
+    fn apply<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(&'a T) -> T + Copy,
+    {
+        let mut ca: ObjectChunked<T> = self.into_iter().map(|opt_v| opt_v.map(f)).collect();
+        ca.rename(self.name());
+        ca
+    }
+
+    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    where
+        F: Fn(Option<&'a T>) -> Option<T> + Copy,
+    {
+        let mut ca: ObjectChunked<T> = self.into_iter().map(f).collect();
+        ca.rename(self.name());
+        ca
+    }
+
+    fn apply_with_idx<F>(&'a self, _f: F) -> Self
+    where
+        F: Fn((usize, &'a T)) -> T + Copy,
+    {
+        todo!()
+    }
+
+    fn apply_with_idx_on_opt<F>(&'a self, _f: F) -> Self
+    where
+        F: Fn((usize, Option<&'a T>)) -> Option<T> + Copy,
+    {
+        todo!()
+    }
+
+    fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])
+    where
+        F: Fn(Option<&'a T>, &V) -> V,
+    {
+        assert!(slice.len() >= self.len());
+        let mut idx = 0;
+        self.downcast_iter().for_each(|arr| {
+            arr.into_iter().for_each(|opt_val| {
+                // Safety:
+                // length asserted above
+                let item = unsafe { slice.get_unchecked_mut(idx) };
+                *item = f(opt_val, item);
+                idx += 1;
+            })
+        });
+    }
+}

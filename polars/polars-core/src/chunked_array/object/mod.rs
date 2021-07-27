@@ -6,9 +6,11 @@ pub use crate::prelude::*;
 use crate::utils::arrow::array::ArrayData;
 use arrow::array::{Array, ArrayRef, BooleanBufferBuilder, JsonEqual};
 use arrow::bitmap::Bitmap;
+use polars_arrow::is_valid::IsValid;
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -23,7 +25,9 @@ where
     pub(crate) len: usize,
 }
 
-pub trait PolarsObject: Any + Debug + Clone + Send + Sync + Default + Display {
+pub trait PolarsObject:
+    Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq
+{
     fn type_name() -> &'static str;
 }
 
@@ -49,6 +53,28 @@ where
     /// the size of the array.
     pub unsafe fn value_unchecked(&self, index: usize) -> &T {
         self.values.get_unchecked(index)
+    }
+
+    /// Check validity
+    ///
+    /// # Safety
+    /// No bounds checks
+    #[inline]
+    pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
+        if let Some(b) = &self.null_bitmap {
+            b.buffer_ref().is_valid_unchecked(self.offset + i)
+        } else {
+            true
+        }
+    }
+
+    /// Check validity
+    ///
+    /// # Safety
+    /// No bounds checks
+    #[inline]
+    pub unsafe fn is_null_unchecked(&self, i: usize) -> bool {
+        !self.is_valid_unchecked(i)
     }
 }
 
