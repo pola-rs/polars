@@ -2,7 +2,7 @@ use crate::csv::CsvEncoding;
 use crate::csv_core::parser::{
     next_line_position, skip_bom, skip_line_ending, skip_whitespace, SplitFields, SplitLines,
 };
-use crate::mmap::MmapBytesReader;
+use crate::mmap::{MmapBytesReader, ReaderBytes};
 use lazy_static::lazy_static;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
@@ -40,15 +40,18 @@ pub(crate) fn get_file_chunks(
     offsets
 }
 
-pub(crate) fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<Vec<u8>> {
+pub(crate) fn get_reader_bytes<R: Read + MmapBytesReader>(
+    reader: &mut R,
+) -> Result<ReaderBytes<'_>> {
     // we have a file so we can mmap
     if let Some(file) = reader.to_file() {
         let mmap = unsafe { memmap::Mmap::map(file)? };
-        Ok(mmap[..].to_vec())
+        Ok(ReaderBytes::Mapped(mmap))
     } else {
         // we can get the bytes for free
-        if let Some(bytes) = reader.to_bytes() {
-            Ok(bytes.to_vec())
+        if reader.to_bytes().is_some() {
+            // duplicate .to_bytes() is necessary to satisfy the borrow checker
+            Ok(ReaderBytes::Borrowed(reader.to_bytes().unwrap()))
         } else {
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);
@@ -58,7 +61,7 @@ pub(crate) fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Res
             {
                 bytes.push(b'\n')
             }
-            Ok(bytes)
+            Ok(ReaderBytes::Owned(bytes))
         }
     }
 }
@@ -121,11 +124,9 @@ pub fn infer_file_schema<R: Read + MmapBytesReader>(
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
-    let mut bytes = get_reader_bytes(reader)?;
-    bytes = skip_line_ending(skip_whitespace(skip_bom(&bytes)).0)
-        .0
-        .to_vec();
-    let mut lines = SplitLines::new(&bytes, b'\n').skip(skip_rows);
+    let reader_bytes = get_reader_bytes(reader)?;
+    let bytes = &skip_line_ending(skip_whitespace(skip_bom(&reader_bytes)).0).0;
+    let mut lines = SplitLines::new(bytes, b'\n').skip(skip_rows);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix

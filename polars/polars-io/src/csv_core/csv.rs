@@ -488,15 +488,15 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
             }
             None => {
                 let mut reader = self.reader.take().unwrap();
-                let bytes = get_reader_bytes(&mut reader)?;
+                let bytes = &get_reader_bytes(&mut reader)?;
 
                 #[cfg(feature = "decompress")]
                 {
-                    self.decompress_and_parse(predicate, n_threads, &bytes)?
+                    self.decompress_and_parse(predicate, n_threads, bytes)?
                 }
 
                 #[cfg(not(feature = "decompress"))]
-                self.parse_csv(n_threads, &bytes, predicate.as_ref())?
+                self.parse_csv(n_threads, bytes, predicate.as_ref())?
             }
         };
 
