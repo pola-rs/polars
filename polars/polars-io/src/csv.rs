@@ -952,6 +952,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
         let csv = r"1,2,3,4,5
 # this is a comment
 1,2,3,4,5
+# this is also a comment
 1,2,3,4,5
 ";
 
@@ -961,6 +962,22 @@ AUDCAD,1616455921,0.96212,0.95666,1
             .with_comment_char(Some(b'#'))
             .finish()?;
         assert_eq!(df.shape(), (3, 5));
+
+        let csv = r"a,b,c,d,e
+1,2,3,4,5
+% this is a comment
+1,2,3,4,5
+% this is also a comment
+1,2,3,4,5
+";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .has_header(true)
+            .with_comment_char(Some(b'%'))
+            .finish()?;
+        assert_eq!(df.shape(), (3, 5));
+
         Ok(())
     }
 
