@@ -1192,7 +1192,6 @@ dependencies = [
  "ahash",
  "anyhow",
  "arrow2",
- "csv",
  "csv-core",
  "dirs 3.0.2",
  "fast-float",
