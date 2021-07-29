@@ -271,8 +271,7 @@ pub enum AnyValue<'a> {
     Time64(i64, TimeUnit),
     /// A 32-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     Duration(i64, TimeUnit),
-    /// Naive Time elapsed from the Unix epoch, 00:00:00.000 on 1 January 1970, excluding leap seconds, as a 64-bit integer.
-    /// Note that UNIX time does not include leap seconds.
+    /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
     /// Use as_any to get a dyn Any
