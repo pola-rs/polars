@@ -563,28 +563,27 @@ pub(crate) unsafe fn take_list_unchecked(
         .unwrap();
     let taken = taken.chunks()[0].clone();
 
-    // determine null buffer, which are a function of `values` and `indices`
-    let mut validity = MutableBitmap::with_capacity(indices.len());
-    validity.extend_constant(indices.len(), true);
+    let validity =
+        if values.null_count() > 0 || indices.null_count() > 0 {
+            // determine null buffer, which are a function of `values` and `indices`
+            let mut validity = MutableBitmap::with_capacity(indices.len());
+            validity.extend_constant(indices.len(), true);
 
-    {
-        offsets
-            .as_slice()
-            .windows(2)
-            .enumerate()
-            .for_each(|(i, window): (usize, &[i64])| {
-                if window[0] == window[1] {
-                    // offsets are equal, slot is null
-                    validity.set(i, false);
-                }
-            });
-    }
-    ListArray::from_data(
-        values.data_type().clone(),
-        offsets.into(),
-        taken,
-        Some(validity.into()),
-    )
+            {
+                offsets.as_slice().windows(2).enumerate().for_each(
+                    |(i, window): (usize, &[i64])| {
+                        if window[0] == window[1] {
+                            // offsets are equal, slot is null
+                            validity.set(i, false);
+                        }
+                    },
+                );
+            }
+            Some(validity.into())
+        } else {
+            None
+        };
+    ListArray::from_data(values.data_type().clone(), offsets.into(), taken, validity)
 }
 
 #[cfg(test)]
