@@ -25,10 +25,25 @@ where
     pub(crate) len: usize,
 }
 
+/// Trimmed down object safe polars object
+pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
+    fn type_name(&self) -> &'static str
+    where
+        Self: Sized;
+}
+
+/// Values need to implement this so that they can be stored into a Series and DataFrame
 pub trait PolarsObject:
     Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq
 {
+    /// This should be used as type information. Consider this a part of the type system.
     fn type_name() -> &'static str;
+}
+
+impl<T: PolarsObject> PolarsObjectSafe for T {
+    fn type_name(&self) -> &'static str {
+        T::type_name()
+    }
 }
 
 impl<T> ObjectArray<T>
@@ -166,14 +181,28 @@ impl<T> ObjectChunked<T>
 where
     T: PolarsObject,
 {
+    /// Get a hold to an object that can be formatted or downcasted via the Any trait.
     ///
     /// # Safety
     ///
     /// No bounds checks
-    pub unsafe fn get_as_any(&self, index: usize) -> &dyn Any {
+    pub unsafe fn get_object_unchecked(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
         let chunks = self.downcast_chunks();
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let arr = chunks.get_unchecked(chunk_idx);
-        arr.value(idx)
+        if arr.is_valid_unchecked(idx) {
+            Some(arr.value(idx))
+        } else {
+            None
+        }
+    }
+
+    /// Get a hold to an object that can be formatted or downcasted via the Any trait.
+    pub fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
+        if index < self.len() {
+            unsafe { self.get_object_unchecked(index) }
+        } else {
+            None
+        }
     }
 }

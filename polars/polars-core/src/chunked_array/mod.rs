@@ -600,12 +600,12 @@ where
                 let s = Series::try_from(("", v));
                 AnyValue::List(s.unwrap())
             }
-            #[cfg(feature = "object")]
-            DataType::Object(_) => AnyValue::Object("object"),
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
                 AnyValue::Utf8(self.categorical_map.as_ref().expect("should be set").get(v))
             }
+            #[cfg(feature = "object")]
+            DataType::Object(_) => panic!("should not be here"),
             _ => unimplemented!(),
         }
     }
