@@ -59,27 +59,27 @@ def _process_http_file(path: str) -> BytesIO:
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, List[str], Path, BinaryIO], **kwargs: Any
+    file: Union[str, List[str], Path, BinaryIO, bytes], **kwargs: Any
 ) -> ContextManager[Union[str, BinaryIO]]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, TextIO, Path, BinaryIO], **kwargs: Any
+    file: Union[str, TextIO, Path, BinaryIO, bytes], **kwargs: Any
 ) -> ContextManager[Union[str, BinaryIO]]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
+    file: Union[str, List[str], TextIO, Path, BinaryIO, bytes], **kwargs: Any
 ) -> ContextManager[Union[str, List[str], BinaryIO, List[BinaryIO]]]:
     ...
 
 
 def _prepare_file_arg(
-    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
+    file: Union[str, List[str], TextIO, Path, BinaryIO, bytes], **kwargs: Any
 ) -> ContextManager[Union[str, BinaryIO, List[str], List[BinaryIO]]]:
     """
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
@@ -123,7 +123,7 @@ def _prepare_file_arg(
 
 
 def read_csv(
-    file: Union[str, TextIO, Path, BinaryIO],
+    file: Union[str, TextIO, Path, BinaryIO, bytes],
     infer_schema_length: int = 100,
     batch_size: int = 8192,
     has_headers: bool = True,
@@ -388,7 +388,7 @@ def scan_parquet(
 
 
 def read_ipc(
-    file: Union[str, BinaryIO, Path],
+    file: Union[str, BinaryIO, Path, bytes],
     use_pyarrow: bool = True,
     storage_options: Optional[Dict] = None,
 ) -> "pl.DataFrame":
@@ -418,7 +418,7 @@ def read_ipc(
 
 
 def read_parquet(
-    source: Union[str, List[str], Path, BinaryIO],
+    source: Union[str, List[str], Path, BinaryIO, bytes],
     use_pyarrow: bool = True,
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
