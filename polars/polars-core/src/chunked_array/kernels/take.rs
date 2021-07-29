@@ -611,30 +611,35 @@ pub(crate) unsafe fn take_list_unchecked(
         .unwrap();
     let taken = taken.chunks()[0].clone();
 
-    // determine null buffer, which are a function of `values` and `indices`
-    let num_bytes = bit_util::ceil(indices.len(), 8);
-    let mut null_buf = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
-    {
-        let null_slice = null_buf.as_slice_mut();
-        offsets
-            .as_slice()
-            .windows(2)
-            .enumerate()
-            .for_each(|(i, window): (usize, &[i64])| {
-                if window[0] == window[1] {
-                    // offsets are equal, slot is null
-                    bit_util::unset_bit(null_slice, i);
-                }
-            });
-    }
     // create a new list with taken data and computed null information
-    let list_data = ArrayDataBuilder::new(values.data_type().clone())
+    let mut list_data_builder = ArrayDataBuilder::new(values.data_type().clone())
         .len(indices.len())
-        .null_bit_buffer(null_buf.into())
         .offset(0)
-        .add_child_data(taken.data().clone())
+        .add_child_data(taken.data().clone());
+
+    if values.null_count() > 0 || indices.null_count() > 0 {
+        // determine null buffer, which are a function of `values` and `indices`
+        let num_bytes = bit_util::ceil(indices.len(), 8);
+        let mut null_buf = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
+        {
+            let null_slice = null_buf.as_slice_mut();
+            offsets
+                .as_slice()
+                .windows(2)
+                .enumerate()
+                .for_each(|(i, window): (usize, &[i64])| {
+                    if window[0] == window[1] {
+                        // offsets are equal, slot is null
+                        bit_util::unset_bit(null_slice, i);
+                    }
+                });
+            list_data_builder = list_data_builder.null_bit_buffer(null_buf.into())
+        }
+    };
+    let list_data = list_data_builder
         .add_buffer(offsets.into_arrow_buffer())
         .build();
+
     GenericListArray::<i64>::from(list_data)
 }
 
