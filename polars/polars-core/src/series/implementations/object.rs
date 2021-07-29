@@ -1,4 +1,5 @@
 use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
+use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
 use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
@@ -249,9 +250,8 @@ where
         ObjectChunked::sample_frac(&self.0, frac, with_replacement).map(|ca| ca.into_series())
     }
 
-    fn get_as_any(&self, index: usize) -> &dyn Any {
-        debug_assert!(index < self.0.len());
-        unsafe { ObjectChunked::get_as_any(&self.0, index) }
+    fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
+        ObjectChunked::<T>::get_object(&self.0, index)
     }
 
     fn as_any(&self) -> &dyn Any {

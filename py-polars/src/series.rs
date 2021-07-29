@@ -188,9 +188,7 @@ impl PySeries {
         let gil = Python::acquire_gil();
         let python = gil.python();
         if matches!(self.series.dtype(), DataType::Object(_)) {
-            // we don't use the null bitmap in this context as T::default is pyobject None
-            let any = self.series.get_as_any(index);
-            let obj: &ObjectValue = any.into();
+            let obj: Option<&ObjectValue> = self.series.get_object(index).map(|any| any.into());
             obj.to_object(python)
         } else {
             python.None()
@@ -554,11 +552,8 @@ impl PySeries {
             DataType::Object(_) => {
                 let v = PyList::empty(python);
                 for i in 0..series.len() {
-                    let val = series
-                        .get_as_any(i)
-                        .downcast_ref::<ObjectValue>()
-                        .map(|obj| obj.inner.clone())
-                        .unwrap_or_else(|| python.None());
+                    let obj: Option<&ObjectValue> = self.series.get_object(i).map(|any| any.into());
+                    let val = obj.to_object(python);
 
                     v.append(val).unwrap();
                 }

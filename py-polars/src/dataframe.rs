@@ -238,8 +238,7 @@ impl PyDataFrame {
             py,
             self.df.get_columns().iter().map(|s| match s.dtype() {
                 DataType::Object(_) => {
-                    let any = s.get_as_any(idx);
-                    let obj: &ObjectValue = any.into();
+                    let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                     obj.to_object(py)
                 }
                 _ => Wrap(s.get(idx)).into_py(py),
@@ -260,8 +259,7 @@ impl PyDataFrame {
                     py,
                     self.df.get_columns().iter().map(|s| match s.dtype() {
                         DataType::Object(_) => {
-                            let any = s.get_as_any(idx);
-                            let obj: &ObjectValue = any.into();
+                            let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                             obj.to_object(py)
                         }
                         _ => Wrap(s.get(idx)).into_py(py),

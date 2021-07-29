@@ -1,6 +1,7 @@
 use crate::error::PyPolarsEr;
 use crate::prelude::*;
 use crate::series::PySeries;
+use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 use polars::prelude::AnyValue;
 use pyo3::basic::CompareOp;
@@ -8,7 +9,6 @@ use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
-use std::any::Any;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
@@ -134,7 +134,10 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .unwrap();
                 python_series_wrapper.into()
             }
-            AnyValue::Object(v) => v.into_py(py),
+            AnyValue::Object(v) => {
+                let s = format!("{}", v);
+                s.into_py(py)
+            }
         }
     }
 }
@@ -244,9 +247,9 @@ impl<'a> FromPyObject<'a> for ObjectValue {
 /// # Safety
 ///
 /// The caller is responsible for checking that val is Object otherwise UB
-impl From<&dyn Any> for &ObjectValue {
-    fn from(val: &dyn Any) -> Self {
-        unsafe { &*(val as *const dyn Any as *const ObjectValue) }
+impl From<&dyn PolarsObjectSafe> for &ObjectValue {
+    fn from(val: &dyn PolarsObjectSafe) -> Self {
+        unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
     }
 }
 
