@@ -7,6 +7,8 @@ mod comparison;
 pub mod implementations;
 pub(crate) mod iterator;
 
+#[cfg(feature = "object")]
+use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::{builder::get_list_builder, ChunkIdIter};
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
@@ -19,6 +21,7 @@ use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
 use rayon::prelude::*;
+#[cfg(feature = "object")]
 use std::any::Any;
 use std::convert::TryFrom;
 #[cfg(feature = "groupby_list")]
@@ -1005,14 +1008,17 @@ pub trait SeriesTrait:
     /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series>;
 
+    #[cfg(feature = "object")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     /// Get the value at this index as a downcastable Any trait ref.
-    fn get_as_any(&self, _index: usize) -> &dyn Any {
+    fn get_object(&self, _index: usize) -> Option<&dyn PolarsObjectSafe> {
         unimplemented!()
     }
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
     #[cfg(feature = "object")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     fn as_any(&self) -> &dyn Any {
         unimplemented!()
     }

@@ -83,10 +83,16 @@ impl ChunkAnyValue for CategoricalChunked {
 impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
-        get_any_value_unchecked!(self, index)
+        match self.get_object_unchecked(index) {
+            None => AnyValue::Null,
+            Some(v) => AnyValue::Object(v),
+        }
     }
 
     fn get_any_value(&self, index: usize) -> AnyValue {
-        get_any_value!(self, index)
+        match self.get_object(index) {
+            None => AnyValue::Null,
+            Some(v) => AnyValue::Object(v),
+        }
     }
 }
