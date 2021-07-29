@@ -37,3 +37,21 @@ impl<T: MmapBytesReader + ?Sized> MmapBytesReader for Box<T> {
         T::to_bytes(self)
     }
 }
+
+// Handle various forms of input bytes
+pub(crate) enum ReaderBytes<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+    Mapped(memmap::Mmap),
+}
+
+impl std::ops::Deref for ReaderBytes<'_> {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Borrowed(ref_bytes) => ref_bytes,
+            Self::Owned(vec) => vec,
+            Self::Mapped(mmap) => mmap,
+        }
+    }
+}
