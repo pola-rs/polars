@@ -6,6 +6,8 @@
 //! [See the AnyValue variants](enum.AnyValue.html#variants) for the data types that
 //! are currently supported.
 //!
+#[cfg(feature = "object")]
+use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use ahash::RandomState;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
@@ -274,8 +276,8 @@ pub enum AnyValue<'a> {
     /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
-    /// Use as_any to get a dyn Any
-    Object(&'a str),
+    /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
+    Object(&'a dyn PolarsObjectSafe),
 }
 
 impl From<f64> for AnyValue<'_> {
