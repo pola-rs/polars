@@ -17,7 +17,7 @@ where
 {
     let values = array.values();
 
-    let mut av = AlignedVec::with_capacity_aligned(array.len());
+    let mut av = AlignedVec::with_capacity(array.len());
     BinaryMaskedSliceIterator::new(mask)
         .into_iter()
         .for_each(|(lower, upper, truthy)| {

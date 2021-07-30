@@ -89,7 +89,7 @@ where
         #[cfg(not(feature = "performant"))]
         {
             // 2021-02-07: aligned vec was ~2x faster than arrow collect.
-            let mut av = AlignedVec::with_capacity_aligned(0);
+            let mut av = AlignedVec::with_capacity(0);
             av.extend(iter);
             NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
         }
@@ -322,7 +322,7 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut av = AlignedVec::with_capacity_aligned(capacity);
+        let mut av = AlignedVec::with_capacity(capacity);
         for v in vectors {
             av.extend_from_slice(&v)
         }
@@ -342,7 +342,7 @@ where
         let capacity: usize = get_capacity_from_par_results(&vectors);
         // zeroed immediately correct for nulls
         let mut validity = MutableBuffer::from_len_zeroed(capacity.saturating_add(7) / 8);
-        let mut values = AlignedVec::with_capacity_aligned(capacity);
+        let mut values = AlignedVec::with_capacity(capacity);
 
         for vec in vectors {
             // Safety:

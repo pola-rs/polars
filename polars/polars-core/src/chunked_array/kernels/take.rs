@@ -405,7 +405,7 @@ pub(crate) unsafe fn take_utf8_unchecked(
     };
 
     // 16 bytes per string as default alloc
-    let mut values_buf = AlignedVec::<u8>::with_capacity_aligned(values_capacity);
+    let mut values_buf = AlignedVec::<u8>::with_capacity(values_capacity);
 
     // both 0 nulls
     if arr.null_count() == 0 && indices.null_count() == 0 {
@@ -532,9 +532,9 @@ unsafe fn take_value_indices_from_list(
 ) -> (UInt32Array, AlignedVec<i64>) {
     let offsets = list.value_offsets();
 
-    let mut new_offsets = AlignedVec::with_capacity_aligned(indices.len());
+    let mut new_offsets = AlignedVec::with_capacity(indices.len());
     // will likely have at least indices.len values
-    let mut values = AlignedVec::with_capacity_aligned(indices.len());
+    let mut values = AlignedVec::with_capacity(indices.len());
     let mut current_offset = 0;
     // add first offset
     new_offsets.push(0);

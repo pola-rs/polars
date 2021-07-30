@@ -20,7 +20,7 @@ fn create_rand_index_with_replacement(n: usize, len: usize) -> (ThreadRng, UInt3
 fn create_rand_index_no_replacement(n: usize, len: usize) -> (ThreadRng, UInt32Chunked) {
     // TODO! prevent allocation.
     let mut rng = rand::thread_rng();
-    let mut buf = AlignedVec::with_capacity_aligned(n);
+    let mut buf = AlignedVec::with_capacity(n);
     // Safety: will be filled
     unsafe { buf.set_len(n) };
     (0u32..len as u32).choose_multiple_fill(&mut rng, buf.as_mut_slice());
