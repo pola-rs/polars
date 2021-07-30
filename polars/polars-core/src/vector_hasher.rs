@@ -38,7 +38,7 @@ where
         // Option<T> and the other array with T.
         // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
         // the only deterministic seed.
-        let mut av = AlignedVec::with_capacity_aligned(self.len());
+        let mut av = AlignedVec::with_capacity(self.len());
 
         self.downcast_iter().for_each(|arr| {
             av.extend(arr.into_iter().map(|opt_v| {
@@ -64,7 +64,7 @@ where
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
-        let mut av = AlignedVec::with_capacity_aligned(self.len());
+        let mut av = AlignedVec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {
             av.extend(arr.into_iter().map(|opt_v| {
                 let mut hasher = random_state.build_hasher();
@@ -89,7 +89,7 @@ impl VecHash for Utf8Chunked {
 
 impl VecHash for BooleanChunked {
     fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
-        let mut av = AlignedVec::with_capacity_aligned(self.len());
+        let mut av = AlignedVec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {
             av.extend(arr.into_iter().map(|opt_v| {
                 let mut hasher = random_state.build_hasher();
@@ -125,7 +125,7 @@ impl VecHash for Float64Chunked {
     fn vec_hash(&self, _random_state: RandomState) -> AlignedVec<u64> {
         #[cfg(not(feature = "dtype-u64"))]
         {
-            let mut av = AlignedVec::with_capacity_aligned(self.len());
+            let mut av = AlignedVec::with_capacity(self.len());
             self.downcast_iter().for_each(|arr| {
                 av.extend(arr.into_iter().map(|opt_v| {
                     let mut hasher = _random_state.build_hasher();
@@ -159,7 +159,7 @@ where
         // Option<T> and the other array with T.
         // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
         // the only deterministic seed.
-        let mut av = AlignedVec::with_capacity_aligned(self.len());
+        let mut av = AlignedVec::with_capacity(self.len());
 
         self.downcast_iter().for_each(|arr| {
             av.extend(arr.into_iter().map(|opt_v| {

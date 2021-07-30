@@ -514,7 +514,7 @@ where
                     MutableBuffer::new((groups.len() + 1) * std::mem::size_of::<i64>());
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
-                let mut av = AlignedVec::with_capacity_aligned(self.len());
+                let mut av = AlignedVec::with_capacity(self.len());
 
                 groups.iter().for_each(|(_, idx)| {
                     length_so_far += idx.len() as i64;

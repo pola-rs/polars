@@ -126,11 +126,11 @@ pub(crate) struct Utf8Field {
 
 impl Utf8Field {
     fn new(name: &str, capacity: usize, str_capacity: usize, delimiter: u8) -> Self {
-        let mut offsets = AlignedVec::with_capacity_aligned(capacity + 1);
+        let mut offsets = AlignedVec::with_capacity(capacity + 1);
         offsets.push(0);
         Self {
             name: name.to_string(),
-            data: AlignedVec::with_capacity_aligned(str_capacity),
+            data: AlignedVec::with_capacity(str_capacity),
             offsets,
             validity: BooleanBufferBuilder::new(capacity),
             rdr: csv_core::ReaderBuilder::new().delimiter(delimiter).build(),

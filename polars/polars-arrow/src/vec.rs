@@ -36,7 +36,7 @@ impl<T: ArrowNativeType> FromIterator<T> for AlignedVec<T> {
         let sh = iter.size_hint();
         let size = sh.1.unwrap_or(sh.0);
 
-        let mut av = Self::with_capacity_aligned(size);
+        let mut av = Self::with_capacity(size);
         av.extend(iter);
 
         // Iterator size hint wasn't correct and reallocation has occurred
@@ -49,7 +49,7 @@ impl<T: Copy + ArrowNativeType> AlignedVec<T> {
     /// Uses a memcpy to initialize this AlignedVec
     pub fn new_from_slice(other: &[T]) -> Self {
         let len = other.len();
-        let mut av = Self::with_capacity_aligned(len);
+        let mut av = Self::with_capacity(len);
         unsafe {
             // Safety:
             // we set initiate the memory after this with a memcpy.
@@ -81,7 +81,7 @@ impl<T: ArrowNativeType> AlignedVec<T> {
     /// by arrow spec.
     /// Read more:
     /// <https://github.com/rust-ndarray/ndarray/issues/771>
-    pub fn with_capacity_aligned(size: usize) -> Self {
+    pub fn with_capacity(size: usize) -> Self {
         // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
         let t_size = std::mem::size_of::<T>();
         let capacity = size * t_size;
@@ -305,7 +305,7 @@ impl<T: ArrowNativeType> Default for AlignedVec<T> {
     fn default() -> Self {
         // Be careful here. Don't initialize with a normal Vec as this will cause the wrong deallocator
         // to run and SIGSEGV
-        Self::with_capacity_aligned(0)
+        Self::with_capacity(0)
     }
 }
 
@@ -335,7 +335,7 @@ mod test {
     fn test_aligned_vec_allocations() {
         // Can only have a zero copy to arrow memory if address of first byte % 64 == 0
         // check if we can increase above initial capacity and keep the Arrow alignment
-        let mut v = AlignedVec::with_capacity_aligned(2);
+        let mut v = AlignedVec::with_capacity(2);
         v.push(1);
         v.push(2);
         v.push(3);
@@ -345,7 +345,7 @@ mod test {
         assert_eq!((ptr as usize) % alloc::ALIGNMENT, 0);
 
         // check if we can shrink to fit
-        let mut v = AlignedVec::with_capacity_aligned(10);
+        let mut v = AlignedVec::with_capacity(10);
         v.push(1);
         v.push(2);
         v.shrink_to_fit();
