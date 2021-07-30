@@ -282,20 +282,18 @@ pub(crate) fn bytes_to_schema(
     has_header: bool,
     skip_rows: usize,
     comment_char: Option<u8>,
-) -> Result<SchemaRef> {
+) -> Result<Schema> {
     let mut r = std::io::Cursor::new(&bytes);
-    Ok(Arc::from(
-        infer_file_schema(
-            &mut r,
-            delimiter,
-            Some(100),
-            has_header,
-            None,
-            skip_rows,
-            comment_char,
-        )?
-        .0,
-    ))
+    Ok(infer_file_schema(
+        &mut r,
+        delimiter,
+        Some(100),
+        has_header,
+        None,
+        skip_rows,
+        comment_char,
+    )?
+    .0)
 }
 
 #[cfg(test)]

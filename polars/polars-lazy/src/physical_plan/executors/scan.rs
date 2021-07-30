@@ -162,7 +162,7 @@ impl Executor for CsvExec {
         let reader = CsvReader::from_path(&self.path)
             .unwrap()
             .has_header(self.options.has_header)
-            .with_schema(self.schema.clone())
+            .with_schema(&self.schema)
             .with_delimiter(self.options.delimiter)
             .with_ignore_parser_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)
