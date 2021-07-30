@@ -462,9 +462,11 @@ impl DataType {
             Date32 => ArrowDataType::Date32,
             Date64 => ArrowDataType::Date64,
             Time64(tu) => ArrowDataType::Time64(tu.clone()),
-            List(dt) => {
-                ArrowDataType::List(Box::new(arrow::datatypes::Field::new("", dt.clone(), true)))
-            }
+            List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
+                "",
+                dt.clone(),
+                true,
+            ))),
             Duration(tu) => ArrowDataType::Duration(tu.clone()),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
@@ -591,7 +593,26 @@ impl Schema {
     }
 
     pub fn to_arrow(&self) -> ArrowSchema {
-        let fields = self.fields.iter().map(|f| f.to_arrow()).collect();
+        let fields = self
+            .fields
+            .iter()
+            .map(|f| {
+                match f.data_type() {
+                    // we must call this item, because the arrow crate names this item when creating a
+                    // schema from record batches
+                    DataType::List(dt) => ArrowField::new(
+                        f.name(),
+                        ArrowDataType::LargeList(Box::new(ArrowField::new(
+                            "item",
+                            dt.clone(),
+                            true,
+                        ))),
+                        true,
+                    ),
+                    _ => f.to_arrow(),
+                }
+            })
+            .collect();
         ArrowSchema::new(fields)
     }
 
