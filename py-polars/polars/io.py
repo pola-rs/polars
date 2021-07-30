@@ -209,6 +209,8 @@ def read_csv(
     -------
     DataFrame
     """
+    if isinstance(file, bytes) and len(file) == 0:
+        raise ValueError("no date in bytes")
 
     storage_options = storage_options or {}
 
