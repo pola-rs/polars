@@ -1,6 +1,7 @@
 import datetime
 
 import pandas as pd
+import pyarrow as pa
 
 import polars as pl
 
@@ -25,3 +26,8 @@ def test_from_pandas_datetime():
 
     # checks lazy dispatch
     pl.DataFrame([s.rename("foo")])[pl.col("foo").dt.round("hour", 2)]
+
+
+def test_arrow_list_roundtrip():
+    # https://github.com/pola-rs/polars/issues/1064
+    pl.from_arrow(pa.table({"a": [1], "b": [[1, 2]]})).to_arrow()
