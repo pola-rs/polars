@@ -10,18 +10,18 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use std::borrow::Cow;
 use std::fmt;
 #[cfg(feature = "decompress")]
 use std::io::SeekFrom;
-use std::io::{Read, Seek};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
 /// CSV file reader
-pub struct CoreReader<R: Read + MmapBytesReader> {
+pub struct CoreReader<'a, R: MmapBytesReader> {
     /// Explicit schema for the CSV file
-    schema: SchemaRef,
+    schema: Cow<'a, Schema>,
     /// Optional projection for which columns to load (zero-based column indices)
     projection: Option<Vec<usize>>,
     /// File reader
@@ -46,9 +46,9 @@ pub struct CoreReader<R: Read + MmapBytesReader> {
     inferred_schema: bool,
 }
 
-impl<R> fmt::Debug for CoreReader<R>
+impl<'a, R> fmt::Debug for CoreReader<'a, R>
 where
-    R: Read + MmapBytesReader,
+    R: MmapBytesReader,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reader")
@@ -107,23 +107,8 @@ impl RunningSize {
     }
 }
 
-impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
-    /// Returns the schema of the reader, useful for getting the schema without reading
-    /// record batches
-    pub fn schema(&self) -> SchemaRef {
-        match &self.projection {
-            Some(projection) => {
-                let fields = self.schema.fields();
-                let projected_fields: Vec<Field> =
-                    projection.iter().map(|i| fields[*i].clone()).collect();
-
-                Arc::new(Schema::new(projected_fields))
-            }
-            None => self.schema.clone(),
-        }
-    }
-
-    fn find_starting_point<'a>(&self, mut bytes: &'a [u8]) -> Result<&'a [u8]> {
+impl<'a, R: MmapBytesReader> CoreReader<'a, R> {
+    fn find_starting_point<'b>(&self, mut bytes: &'b [u8]) -> Result<&'b [u8]> {
         // Skip all leading white space and the occasional utf8-bom
         bytes = skip_line_ending(skip_whitespace(skip_bom(bytes)).0).0;
 
@@ -447,13 +432,13 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
     ) -> Result<DataFrame> {
         if let Some(bytes) = decompress(bytes) {
             if self.inferred_schema {
-                self.schema = bytes_to_schema(
+                self.schema = Cow::Owned(bytes_to_schema(
                     &bytes,
                     self.delimiter,
                     self.has_header,
                     self.skip_rows,
                     self.comment_char,
-                )?;
+                )?);
             }
 
             self.parse_csv(n_threads, &bytes, predicate.as_ref())
@@ -520,7 +505,7 @@ impl<R: Read + Sync + Send + MmapBytesReader> CoreReader<R> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
+pub fn build_csv_reader<'a, R: MmapBytesReader>(
     mut reader: R,
     n_rows: Option<usize>,
     skip_rows: usize,
@@ -529,18 +514,18 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
     delimiter: Option<u8>,
     has_header: bool,
     ignore_parser_errors: bool,
-    schema: Option<SchemaRef>,
+    schema: Option<&'a Schema>,
     columns: Option<Vec<String>>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     path: Option<PathBuf>,
-    schema_overwrite: Option<&Schema>,
+    schema_overwrite: Option<&'a Schema>,
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
     comment_char: Option<u8>,
     null_values: Option<NullValues>,
-) -> Result<CoreReader<R>> {
+) -> Result<CoreReader<'a, R>> {
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
 
@@ -548,7 +533,7 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
     let mut inferred_schema = false;
 
     let schema = match schema {
-        Some(schema) => schema,
+        Some(schema) => Cow::Borrowed(schema),
         None => {
             #[cfg(feature = "decompress")]
             {
@@ -563,7 +548,7 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
                 // restore position
                 reader.seek(SeekFrom::Current(-(N as i64)))?;
                 if decompress(&bytes).is_some() {
-                    Arc::new(Schema::default())
+                    Cow::Owned(Schema::default())
                 } else {
                     let (inferred_schema, _) = infer_file_schema(
                         &mut reader,
@@ -574,7 +559,7 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
                         skip_rows,
                         comment_char,
                     )?;
-                    Arc::new(inferred_schema)
+                    Cow::Owned(inferred_schema)
                 }
             }
             #[cfg(not(feature = "decompress"))]
@@ -588,7 +573,7 @@ pub fn build_csv_reader<R: Read + Seek + Sync + Send + MmapBytesReader>(
                     skip_rows,
                     comment_char,
                 )?;
-                Arc::new(inferred_schema)
+                Cow::Owned(inferred_schema)
             }
         }
     };

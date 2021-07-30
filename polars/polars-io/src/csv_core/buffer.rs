@@ -256,7 +256,7 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
 pub(crate) fn init_buffers(
     projection: &[usize],
     capacity: usize,
-    schema: &SchemaRef,
+    schema: &Schema,
     // The running statistic of the amount of bytes we must allocate per str column
     str_capacities: &[RunningSize],
     delimiter: u8,

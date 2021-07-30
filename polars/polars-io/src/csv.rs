@@ -48,9 +48,8 @@ use crate::{SerReader, SerWriter};
 pub use arrow::csv::WriterBuilder;
 use polars_core::prelude::*;
 use std::fs::File;
-use std::io::{Read, Seek, Write};
+use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 /// Write a DataFrame to csv.
 pub struct CsvWriter<W: Write> {
@@ -179,7 +178,7 @@ impl NullValues {
 /// ```
 pub struct CsvReader<'a, R>
 where
-    R: Read + Seek + MmapBytesReader,
+    R: MmapBytesReader,
 {
     /// File or Stream object
     reader: R,
@@ -197,7 +196,7 @@ where
     delimiter: Option<u8>,
     has_header: bool,
     ignore_parser_errors: bool,
-    schema: Option<Arc<Schema>>,
+    schema: Option<&'a Schema>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     path: Option<PathBuf>,
@@ -211,7 +210,7 @@ where
 
 impl<'a, R> CsvReader<'a, R>
 where
-    R: Read + Seek + Sync + Send + MmapBytesReader,
+    R: MmapBytesReader,
 {
     /// Sets the chunk size used by the parser. This influences performance
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
@@ -242,7 +241,7 @@ where
     /// in the csv parser and expects a complete Schema.
     ///
     /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
-    pub fn with_schema(mut self, schema: Arc<Schema>) -> Self {
+    pub fn with_schema(mut self, schema: &'a Schema) -> Self {
         self.schema = Some(schema);
         self
     }
@@ -345,7 +344,7 @@ where
         self
     }
 
-    pub fn build_inner_reader(self) -> Result<CoreReader<R>> {
+    pub fn build_inner_reader(self) -> Result<CoreReader<'a, R>> {
         build_csv_reader(
             self.reader,
             self.stop_after_n_rows,
@@ -381,7 +380,7 @@ impl<'a> CsvReader<'a, File> {
 
 impl<'a, R> SerReader<R> for CsvReader<'a, R>
 where
-    R: Read + Seek + Sync + Send + MmapBytesReader,
+    R: MmapBytesReader,
 {
     /// Create a new CsvReader from a file/ stream
     fn new(reader: R) -> Self {
@@ -813,7 +812,7 @@ id090,id048,id0000067778,24,2,51862,4,9,
                     .map(|s| s.name().to_string())
                     .collect(),
             ))
-            .with_schema(Arc::new(schema))
+            .with_schema(&schema)
             .finish();
         assert!(result.is_ok())
     }
@@ -839,11 +838,11 @@ id090,id048,id0000067778,24,2,51862,4,9,
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
             .has_header(true)
-            .with_schema(Arc::new(Schema::new(vec![
+            .with_schema(&Schema::new(vec![
                 Field::new("foo", DataType::UInt32),
                 Field::new("bar", DataType::UInt32),
                 Field::new("ham", DataType::UInt32),
-            ])))
+            ]))
             .finish()
             .unwrap();
         assert_eq!(df.column("ham").unwrap().len(), 3)
