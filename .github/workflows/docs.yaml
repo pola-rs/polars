@@ -24,10 +24,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pdoc3 ghp-import numpy pyarrow
+          pip install -r py-polars/build.requirements.txt
+          cd py-polars && ./tasks.sh test-install
+      - name: Build python reference
+        run: |
+          cd py-polars/docs
+          make html
       - name: deploy docs
         run: |
           RUSTFLAGS="--cfg docsrs" cargo doc --all-features --package polars && \
           echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
+          mkdir target/doc/py-polars
+          cp -r py-polars/docs/build/html target/doc/py-polars
           ghp-import -n target/doc && \
           git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages
