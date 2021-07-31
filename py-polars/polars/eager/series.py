@@ -1,5 +1,5 @@
 import typing as tp
-from datetime import datetime
+from datetime import date, datetime
 from numbers import Number
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
@@ -1727,6 +1727,11 @@ class DateTimeNameSpace:
     def __init__(self, series: Series):
         self._s = series._s
 
+    def __getitem__(self, item: int) -> Union[date, datetime]:
+        s = wrap_s(self._s)
+        out = wrap_s(self._s)[item]
+        return _to_python_datetime(out, s.dtype)
+
     def strftime(self, fmt: str) -> Series:
         """
         Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
@@ -1887,7 +1892,7 @@ class DateTimeNameSpace:
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
-    def min(self) -> datetime:
+    def min(self) -> Union[date, datetime]:
         """
         Return minimum as python DateTime
         """
@@ -1895,7 +1900,7 @@ class DateTimeNameSpace:
         out = s.min()
         return _to_python_datetime(out, s.dtype)
 
-    def max(self) -> datetime:
+    def max(self) -> Union[date, datetime]:
         """
         Return maximum as python DateTime
         """
@@ -1903,7 +1908,7 @@ class DateTimeNameSpace:
         out = s.max()
         return _to_python_datetime(out, s.dtype)
 
-    def median(self) -> datetime:
+    def median(self) -> Union[date, datetime]:
         """
         Return median as python DateTime
         """
@@ -1911,7 +1916,7 @@ class DateTimeNameSpace:
         out = int(s.median())
         return _to_python_datetime(out, s.dtype)
 
-    def mean(self) -> datetime:
+    def mean(self) -> Union[date, datetime]:
         """
         Return mean as python DateTime
         """
@@ -1942,10 +1947,12 @@ class DateTimeNameSpace:
         return wrap_s(self._s.round_datetime(rule, n))
 
 
-def _to_python_datetime(value: Union[int, float], dtype: Type[DataType]) -> datetime:
+def _to_python_datetime(
+    value: Union[int, float], dtype: Type[DataType]
+) -> Union[date, datetime]:
     if dtype == Date32:
         # days to seconds
-        return datetime.utcfromtimestamp(value * 3600 * 24)
+        return date.fromtimestamp(value * 3600 * 24)
     elif dtype == Date64:
         # ms to seconds
         return datetime.utcfromtimestamp(value // 1000)
