@@ -41,21 +41,13 @@ Install the latest polars version with:
 Want to know about all the features Polars support? Read the docs!
 
 #### Rust
-* [Documentation (stable)](https://docs.rs/polars/latest/polars/). 
 * [Documentation (master branch)](https://pola-rs.github.io/polars/polars/index.html). 
-    * [DataFrame](https://pola-rs.github.io/polars/polars/frame/struct.DataFrame.html) 
-    * [Series](https://pola-rs.github.io/polars/polars/prelude/struct.Series.html)
-    * [ChunkedArray](https://pola-rs.github.io/polars/polars/chunked_array/struct.ChunkedArray.html)
-    * [Traits for ChunkedArray](https://pola-rs.github.io/polars/polars/chunked_array/ops/index.html)
-    * [Time/ DateTime utilities](https://pola-rs.github.io/polars/polars/doc/time/index.html)
-    * [Groupby, aggregations and pivots](https://pola-rs.github.io/polars/polars/frame/groupby/struct.GroupBy.html)
-    * [Lazy DataFrame](https://pola-rs.github.io/polars/polars/prelude/struct.LazyFrame.html)
 * [User Guide](https://pola-rs.github.io/polars-book/)
     
 #### Python
 * installation guide: `$ pip3 install polars`
 * [User Guide](https://pola-rs.github.io/polars-book/)
-* [Reference guide](https://pola-rs.github.io/polars-book/api-python/)
+* [Reference guide](https://pola-rs.github.io/polars/py-polars/html/reference/index.html)
 
 ## Contribution
 Want to contribute? Read our [contribution guideline](https://github.com/ritchie46/polars/blob/master/CONTRIBUTING.md).

@@ -2386,7 +2386,8 @@ class GroupBy:
         ],
     ) -> DataFrame:
         """
-        Use multiple aggregations on columns. This can be combined with complete lazy API.
+        Use multiple aggregations on columns. This can be combined with complete lazy API
+        and is considered idiomatic polars.
 
         Parameters
         ----------
@@ -2394,6 +2395,9 @@ class GroupBy:
             map column to aggregation functions.
 
             Examples:
+                ## use lazy API syntax (recommended)
+                [col("foo").sum(), col("bar").min()]
+
                 ## column name to aggregation with tuples:
                 [("foo", ["sum", "n_unique", "min"]),
                  ("bar": ["max"])]
@@ -2401,9 +2405,6 @@ class GroupBy:
                 ## column name to aggregation with dict:
                 {"foo": ["sum", "n_unique", "min"],
                 "bar": "max" }
-
-                ## use lazy API syntax
-                [col("foo").sum(), col("bar").min()]
 
         Returns
         -------
