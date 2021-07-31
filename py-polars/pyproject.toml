@@ -8,7 +8,7 @@ dependencies = [
     "numpy",
     # the Arrow memory format is stable between 4.0 and 5.0-SNAPSHOTS
     # (which the Rust libraries use to take advantage of Rust API changes).
-    "pyarrow==4.0.*"
+    "pyarrow>=4.0.*"
 ]
 
 [tool.isort]

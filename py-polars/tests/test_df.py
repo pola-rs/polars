@@ -256,7 +256,7 @@ def test_from_arrow():
             "b": pa.array([1, 2], pa.timestamp("ms")),
             "c": pa.array([1, 2], pa.timestamp("us")),
             "d": pa.array([1, 2], pa.timestamp("ns")),
-            "decimal1": pa.array([1, 2], pa.decimal128(2, 2)),
+            "decimal1": pa.array([1, 2], pa.decimal128(2, 1)),
         }
     )
     assert pl.from_arrow(tbl).shape == (2, 5)
