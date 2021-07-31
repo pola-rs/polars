@@ -470,7 +470,7 @@ impl DataType {
             Duration(tu) => ArrowDataType::Duration(tu.clone()),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
-            Object(_) => unimplemented!(),
+            Object(_) => panic!("cannot convert object to arrow"),
             Categorical => ArrowDataType::UInt32,
         }
     }
