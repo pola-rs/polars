@@ -328,8 +328,7 @@ def scan_csv(
         Start reading after `skip_rows`.
     stop_after_n_rows
         After n rows are read from the CSV, it stops reading.
-        During multi-threaded parsing, an upper bound of `n` rows
-        cannot be guaranteed.
+        During multi-threaded parsing, an upper bound of `n` rows cannot be guaranteed.
     cache
         Cache the result after reading.
     dtype

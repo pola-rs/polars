@@ -1,7 +1,13 @@
 from typing import Any, Union
 
 import polars as pl
-from polars.polars import when as pywhen
+
+try:
+    from polars.polars import when as pywhen
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 from .expr import expr_to_lit_or_expr
 
