@@ -34,8 +34,7 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.extlinks",
     "sphinx.ext.todo",
-    "numpydoc",
-    # "sphinx.ext.napoleon",  # numpy docstrings
+    "numpydoc",  # numpy docstrings
     "sphinx.ext.intersphinx",
     "sphinx.ext.coverage",
     "sphinx.ext.mathjax",
@@ -84,18 +83,3 @@ html_theme_options = {
         },
     ],
 }
-
-# for markdown in docstring
-import commonmark
-
-
-def docstring(app, what, name, obj, options, lines):
-    md = "\n".join(lines)
-    ast = commonmark.Parser().parse(md)
-    rst = commonmark.ReStructuredTextRenderer().render(ast)
-    lines.clear()
-    lines += rst.splitlines()
-
-
-def setup(app):
-    app.connect("autodoc-process-docstring", docstring)
