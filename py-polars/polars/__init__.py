@@ -1,8 +1,12 @@
 # flake8: noqa
+import warnings
+
 try:
     from polars.polars import version
 except ImportError as e:
-    raise ImportError("Polars binary files missing!") from e
+    version = lambda: ""
+    # this is only useful for documentation
+    warnings.warn("polars binary missing!")
 
 # mypy needs these imported explicitly
 from polars.eager.frame import DataFrame, wrap_df

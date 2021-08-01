@@ -9,7 +9,13 @@ import typing as tp
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import polars as pl
-from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
+
+try:
+    from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 from ..datatypes import DataType, pytype_to_polars_type
 from ..utils import _process_null_values

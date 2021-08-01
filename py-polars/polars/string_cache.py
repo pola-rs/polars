@@ -1,7 +1,12 @@
 from types import TracebackType
 from typing import Optional, Type
 
-from polars.polars import toggle_string_cache as pytoggle_string_cache
+try:
+    from polars.polars import toggle_string_cache as pytoggle_string_cache
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 __all__ = [
     "StringCache",
