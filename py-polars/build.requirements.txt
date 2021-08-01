@@ -19,4 +19,5 @@ sphinxcontrib-qthelp==1.0.3
 sphinxcontrib-serializinghtml==1.1.5
 sphinxcontrib-napoleon
 commonmark==0.9.1
+numpydoc
 

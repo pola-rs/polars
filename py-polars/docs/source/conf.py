@@ -34,7 +34,8 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.extlinks",
     "sphinx.ext.todo",
-    "sphinx.ext.napoleon",  # numpy docstrings
+    "numpydoc",
+    # "sphinx.ext.napoleon",  # numpy docstrings
     "sphinx.ext.intersphinx",
     "sphinx.ext.coverage",
     "sphinx.ext.mathjax",
