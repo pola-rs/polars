@@ -14,7 +14,13 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
-from polars.polars import PyDataFrame, PySeries
+
+try:
+    from polars.polars import PyDataFrame, PySeries
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 from ..datatypes import (
     DTYPE_TO_FFINAME,
