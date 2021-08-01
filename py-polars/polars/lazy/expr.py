@@ -490,22 +490,15 @@ class Expr:
         Examples
         --------
 
-        ``` python
-        df = DataFrame({
+        >>> df = DataFrame({
             "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
             "values": [1, 2, 3, 4, 5, 6, 7, 8, 8]
         })
-        print(df.lazy()
+        >>> print(df.lazy()
             .select([
                 col("groups")
                 sum("values").over("groups"))
             ]).collect())
-
-        ```
-
-        outputs:
-
-        ``` text
             ╭────────┬────────╮
             │ groups ┆ values │
             │ ---    ┆ ---    │
@@ -532,7 +525,6 @@ class Expr:
             │ 1      ┆ 16     │
             ╰────────┴────────╯
 
-        ```
         """
 
         pyexprs = _selection_to_pyexpr_list(expr)
@@ -636,23 +628,17 @@ class Expr:
         return_dtype
             Dtype of the output Series.
 
-        # Example
+        Examples
+        --------
 
-        ```python
-        df = pl.DataFrame({"a": [1,  2,  1,  1],
+        >>> df = pl.DataFrame({"a": [1,  2,  1,  1],
                    "b": ["a", "b", "c", "c"]})
-
-        (df
+        >>> (df
          .lazy()
          .groupby("b")
          .agg([col("a").apply(lambda x: x.sum())])
          .collect()
         )
-        ```
-
-        > returns
-
-        ```text
         shape: (3, 2)
         ╭─────┬─────╮
         │ b   ┆ a   │
@@ -665,7 +651,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 2   │
         ╰─────┴─────╯
-        ```
+
         """
 
         # input x: Series of type list containing the group values
@@ -899,14 +885,10 @@ class ExprStringNameSpace:
         Examples
         --------
 
-        ```python
-        df = pl.DataFrame({
+        >>> df = pl.DataFrame({
         'json_val' = ['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
         })
-        df.select(pl.col('json_val').str.json_path_match('$.a')
-        ```
-
-        ```text
+        >>> df.select(pl.col('json_val').str.json_path_match('$.a')
         shape: (5,)
         Series: 'json_val' [str]
         [
@@ -916,7 +898,6 @@ class ExprStringNameSpace:
             "2.1"
             "true"
         ]
-        ```
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 

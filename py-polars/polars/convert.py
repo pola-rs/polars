@@ -44,7 +44,7 @@ def from_dict(
 
     Examples
     --------
-    ```python
+
     >>> data = {'a': [1, 2], 'b': [3, 4]}
     >>> df = pl.from_dict(data)
     >>> df
@@ -58,7 +58,6 @@ def from_dict(
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   │
     ╰─────┴─────╯
-    ```
     """
     return pl.DataFrame._from_dict(data=data, columns=columns, nullable=nullable)
 
@@ -93,7 +92,7 @@ def from_records(
 
     Examples
     --------
-    ```python
+
     >>> data = [[1, 2, 3], [4, 5, 6]]
     >>> df = pl.from_records(data, columns=['a', 'b'])
     >>> df
@@ -109,7 +108,6 @@ def from_records(
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 6   │
     ╰─────┴─────╯
-    ```
     """
     return pl.DataFrame._from_records(
         data, columns=columns, orient=orient, nullable=nullable
@@ -140,7 +138,6 @@ def from_arrow(
     --------
     Constructing a DataFrame from an Arrow table:
 
-    ```python
     >>> data = pa.table({'a': [1, 2, 3], 'b': [4, 5, 6]})
     >>> df = pl.from_arrow(data)
     >>> df
@@ -156,11 +153,9 @@ def from_arrow(
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 6   │
     ╰─────┴─────╯
-    ```
 
     Constructing a Series from an Arrow array:
 
-    ```python
     >>> data = pa.array([1, 2, 3])
     >>> series = pl.from_arrow(data)
     >>> series
@@ -171,7 +166,6 @@ def from_arrow(
             2
             3
     ]
-    ```
     """
     if isinstance(a, pa.Table):
         return pl.DataFrame._from_arrow(a, rechunk=rechunk)
@@ -208,7 +202,6 @@ def from_pandas(
     --------
     Constructing a DataFrame from a pandas DataFrame:
 
-    ```python
     >>> pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=['a', 'b', 'c'])
     >>> df = pl.from_pandas(pd_df)
     >>> df
@@ -222,11 +215,9 @@ def from_pandas(
     ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
     │ 4   ┆ 5   ┆ 6   │
     ╰─────┴─────┴─────╯
-    ```
 
     Constructing a Series from a pandas Series:
 
-    ```python
     >>> pd_series = pd.Series([1,2,3], name='pd')
     >>> df = pl.from_pandas(pd_series)
     >>> df
@@ -273,10 +264,11 @@ def from_rows(
         column names to use for the DataFrame.
     column_name_mapping
         map column index to a new name:
+
         Example:
-        ```python
-            column_mapping: {0: "first_column, 3: "fourth column"}
-        ```
+        --------
+
+        >>> column_mapping: {0: "first_column", 3: "fourth column"}
     """
     return pl.DataFrame.from_rows(rows, column_names, column_name_mapping)
 
