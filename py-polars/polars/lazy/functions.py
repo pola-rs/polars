@@ -71,21 +71,17 @@ def except_(name: str) -> "pl.Expr":
     """
     Exclude a column from a selection.
 
-    # Example
-    ```python
-    df = pl.DataFrame({
+    Examples
+    --------
+
+    >>> df = pl.DataFrame({
         "ham": [1, 1, 2, 2, 3],
         "foo": [1, 1, 2, 2, 3],
         "bar": [1, 1, 2, 2, 3],
     })
-
-    df.lazy()
+    >>> df.lazy()
         .select(["*", except_("foo")])
         .collect()
-    ```
-    Outputs:
-
-    ```text
     ╭─────┬─────╮
     │ ham ┆ bar │
     │ --- ┆ --- │
@@ -101,7 +97,6 @@ def except_(name: str) -> "pl.Expr":
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 3   │
     ╰─────┴─────╯
-    ```
     """
     return pl.lazy.expr.wrap_expr(pyexcept(name))
 
@@ -324,24 +319,23 @@ def lit(
     dtype
         Optionally define a dtype.
 
-    # Example
+    Examples
+    --------
 
-    ```python
-    # literal integer
-    lit(1)
+    >>> # literal integer
+    >>> lit(1)
 
-    # literal str.
-    lit("foo")
+    >>> # literal str.
+    >>> lit("foo")
 
-    # literal date64
-    lit(datetime(2021, 1, 20))
+    >>> # literal date64
+    >>> lit(datetime(2021, 1, 20))
 
-    # literal Null
-    lit(None)
+    >>> # literal Null
+    >>> lit(None)
 
-    # literal eager Series
-    lit(Series("a", [1, 2, 3])
-    ```
+    >>> # literal eager Series
+    >>> lit(Series("a", [1, 2, 3])
     """
     if isinstance(value, datetime):
         return lit(int(value.timestamp() * 1e3)).cast(Date64)
@@ -520,13 +514,12 @@ def arange(
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
 
-    # Example
+     Examples
+     --------
 
-    ```python
-    (df.lazy()
+    >>> (df.lazy()
         .filter(pl.col("foo") < pl.arange(0, 100))
         .collect())
-    ```
 
     Parameters
     ----------

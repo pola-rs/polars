@@ -770,17 +770,16 @@ class LazyGroupBy:
         aggs
             Single/ Multiple aggregation expression(s).
 
-        # Example
+        Examples
+        --------
 
-        ```python
-        (pl.scan_csv("data.csv")
+        >>> (pl.scan_csv("data.csv")
             .groupby("groups")
             .agg([
                     pl.col("name").n_unique().alias("unique_names"),
                     pl.max("values")
                 ])
         )
-        ```
         """
         aggs = _selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
