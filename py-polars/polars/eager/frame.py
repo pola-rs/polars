@@ -35,7 +35,13 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-from polars.polars import PyDataFrame, PySeries
+
+try:
+    from polars.polars import PyDataFrame, PySeries
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 from .._html import NotebookFormatter
 from ..datatypes import DTYPES, Boolean, DataType, UInt32, pytype_to_polars_type
