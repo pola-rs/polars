@@ -512,9 +512,7 @@ def read_sql(
     ## Source not supported?
     If a database source is not supported, pandas can be used to load the query:
 
-    ```python
-    df = pl.from_pandas(pd.read_sql(sql, engine))
-    ```
+    >>>> df = pl.from_pandas(pd.read_sql(sql, engine))
 
     Parameters
     ----------
@@ -531,34 +529,29 @@ def read_sql(
       how many partition to generate.
 
 
-    # Examples
+    Examples
+    --------
 
     ## Single threaded
     Read a DataFrame from a SQL using a single thread:
 
-    ```python
-    uri = "postgresql://username:password@server:port/database"
-    query = "SELECT * FROM lineitem"
-    pl.read_sql(query, uri)
-    ```
+    >>> uri = "postgresql://username:password@server:port/database"
+    >>> query = "SELECT * FROM lineitem"
+    >>> pl.read_sql(query, uri)
 
     ## Using 10 threads
     Read a DataFrame parallelly using 10 threads by automatically partitioning the provided SQL on the partition column:
 
-    ```python
-    uri = "postgresql://username:password@server:port/database"
-    query = "SELECT * FROM lineitem"
-    read_sql(query, uir, partition_on="partition_col", partition_num=10)
-    ```
+    >>> uri = "postgresql://username:password@server:port/database"
+    >>> query = "SELECT * FROM lineitem"
+    >>> read_sql(query, uir, partition_on="partition_col", partition_num=10)
 
     ## Using
     Read a DataFrame parallel using 2 threads by manually providing two partition SQLs:
 
-    ```python
-    uri = "postgresql://username:password@server:port/database"
-    queries = ["SELECT * FROM lineitem WHERE partition_col <= 10", "SELECT * FROM lineitem WHERE partition_col > 10"]
-    read_sql(uri, queries)
-    ```
+    >>> uri = "postgresql://username:password@server:port/database"
+    >>> queries = ["SELECT * FROM lineitem WHERE partition_col <= 10", "SELECT * FROM lineitem WHERE partition_col > 10"]
+    >>> read_sql(uri, queries)
 
     """
     if _WITH_CX:
