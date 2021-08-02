@@ -36,7 +36,7 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
     // in later checks
     // this is in the assumption that most values will be valid.
     // Maybe we could add another branch based on the null count
-    let num_bytes = indices.len() * std::mem::size_of::<i32>() / 8;
+    let num_bytes = bit_util::ceil(indices.len(), 8);
     let mut validity = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
     let validity_slice = validity.as_slice_mut();
 

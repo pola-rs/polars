@@ -962,3 +962,8 @@ def test_hashing_on_python_objects():
     df = df.with_column(col("a").apply(lambda x: datetime(2021, 1, 1)).alias("foo"))
     assert df.groupby(["foo"]).first().shape == (1, 3)
     assert df.drop_duplicates().shape == (3, 3)
+
+
+def test_drop_duplicates_unit_rows():
+    # simply test if we don't panic.
+    pl.DataFrame({"a": [1], "b": [None]}).drop_duplicates(subset="a")
