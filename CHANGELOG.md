@@ -2,6 +2,31 @@
 
 The Python bindings of `polars` have their own changelog.
 
+### Polars 0.15.0
+* feature
+  - extract jsonpath
+  - more object support
+* performance
+  - improve list take performance
+* bug fix
+  - don't panic in out of bounds take, but error
+  - update offsets in case of utf8lossy
+* breaking
+  - take returns error
+  - parsers take `W: Write` instead of `&mut W`
+
+### Polars 0.14.8
+* feature
+  - concat_str function
+  - more object support
+  - hash and row_hash function/ expr
+  - reinterpret function/ expr
+  - Series.mode expr/function
+  - csv file decompression
+  - read_sql support
+* performance
+  - divide and conquer binary expressions
+
 ### Polars 0.14.7
 * feature
   - cross join added
