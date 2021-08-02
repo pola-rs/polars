@@ -2,6 +2,41 @@
 
 The Rust crate `polars` has its own changelog.
 
+### Polars 0.8.16
+patch release to fix panic #1077
+
+### Polars 0.8.15
+* feature
+  - extract jsonpath
+  - more object support
+* performance
+  - improve list take performance
+* bug fix
+  - don't panic in out of bounds take, but error
+  - update offsets in case of utf8lossy
+  - fix bug in pyarrow round trip with list types
+
+### Polars 0.8.13/(14 patch)
+* feature
+  - concat_str function
+  - more object support
+  - hash and row_hash function/ expr
+  - reinterpret function/ expr
+  - Series.mode expr/function
+  - csv file decompression
+  - read_sql support
+* performance
+  - divide and conquer binary expressions
+
+### Polars 0.8.12
+* feature
+  - cross join added
+  - dot-product
+* performance
+  - improve csv-parser performance by ~25%
+* bug fix
+  - various minor
+
 ### Polars 0.8.11
 * feature
   - cross join added
