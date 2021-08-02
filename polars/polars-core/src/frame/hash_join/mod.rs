@@ -1550,4 +1550,27 @@ mod test {
         right.inner_join(&left, "key", "key").unwrap();
         right.outer_join(&left, "key", "key").unwrap();
     }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn unit_df_join() -> Result<()> {
+        let df1 = df![
+            "a" => [1],
+            "b" => [2]
+        ]?;
+
+        let df2 = df![
+            "a" => [1, 2, 3, 4],
+            "b" => [Some(1), None, Some(3), Some(4)]
+        ]?;
+
+        let out = df1.left_join(&df2, "a", "a")?;
+        let expected = df![
+            "a" => [1],
+            "b" => [2],
+            "b_right" => [1]
+        ]?;
+        assert!(out.frame_equal(&expected));
+        Ok(())
+    }
 }
