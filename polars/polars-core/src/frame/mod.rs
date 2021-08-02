@@ -715,7 +715,7 @@ impl DataFrame {
     /// # Safety
     ///
     /// This doesn't do any bound checking but checks null validity.
-    pub unsafe fn take_iter_unchecked<I>(&self, iter: I) -> Self
+    pub unsafe fn take_iter_unchecked<I>(&self, mut iter: I) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -733,20 +733,26 @@ impl DataFrame {
             .iter()
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
-        if n_chunks == 1 || has_utf8 {
+        if (n_chunks == 1 && self.width() > 1) || has_utf8 {
             let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
             let idx_ca = idx_ca.into_inner();
             return self.take_unchecked(&idx_ca);
         }
 
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_iter_unchecked(&mut i)
-            })
-            .collect();
+        let new_col = if self.width() == 1 {
+            self.columns
+                .iter()
+                .map(|s| s.take_iter_unchecked(&mut iter))
+                .collect::<Vec<_>>()
+        } else {
+            self.columns
+                .par_iter()
+                .map(|s| {
+                    let mut i = iter.clone();
+                    s.take_iter_unchecked(&mut i)
+                })
+                .collect::<Vec<_>>()
+        };
         DataFrame::new_no_checks(new_col)
     }
 
@@ -756,7 +762,7 @@ impl DataFrame {
     ///
     /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
     /// Null validity is checked
-    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I) -> Self
+    pub unsafe fn take_opt_iter_unchecked<I>(&self, mut iter: I) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
@@ -775,19 +781,26 @@ impl DataFrame {
             .iter()
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
-        if n_chunks == 1 || has_utf8 {
+        if (n_chunks == 1 && self.width() > 1) || has_utf8 {
             let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
             return self.take_unchecked(&idx_ca);
         }
 
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_opt_iter_unchecked(&mut i)
-            })
-            .collect::<Vec<_>>();
+        let new_col = if self.width() == 1 {
+            self.columns
+                .iter()
+                .map(|s| s.take_opt_iter_unchecked(&mut iter))
+                .collect::<Vec<_>>()
+        } else {
+            self.columns
+                .par_iter()
+                .map(|s| {
+                    let mut i = iter.clone();
+                    s.take_opt_iter_unchecked(&mut i)
+                })
+                .collect::<Vec<_>>()
+        };
+
         DataFrame::new_no_checks(new_col)
     }
 
