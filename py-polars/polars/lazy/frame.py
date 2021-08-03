@@ -676,12 +676,68 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.quantile(quantile))
 
-    def explode(self, columns: Union[str, tp.List[str]]) -> "LazyFrame":
+    def explode(
+        self, columns: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+    ) -> "LazyFrame":
         """
         Explode lists to long format.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
+        >>>     "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]]
+        >>> })
+        >>> df
+        shape: (6, 2)
+        ╭─────────┬────────────╮
+        │ letters ┆ nrs        │
+        │ ---     ┆ ---        │
+        │ str     ┆ list [i64] │
+        ╞═════════╪════════════╡
+        │ "c"     ┆ [1, 2]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "c"     ┆ [1, 3]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "a"     ┆ [4, 3]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "c"     ┆ [5, 5, 5]  │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "a"     ┆ [6]        │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "b"     ┆ [2, 1, 2]  │
+        ╰─────────┴────────────╯
+        >>> df.explode("nrs")
+        shape: (13, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ ...     ┆ ... │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 6   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 2   │
+        ╰─────────┴─────╯
+
         """
-        if isinstance(columns, str):
-            columns = [columns]
+        columns = _selection_to_pyexpr_list(columns)
         return wrap_ldf(self._ldf.explode(columns))
 
     def drop_duplicates(

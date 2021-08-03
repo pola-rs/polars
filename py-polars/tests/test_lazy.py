@@ -250,3 +250,54 @@ def test_fold_filter():
     )
 
     assert out.shape == (3, 2)
+
+
+def test_head_groupby():
+    commodity_prices = {
+        "commodity": [
+            "Wheat",
+            "Wheat",
+            "Wheat",
+            "Wheat",
+            "Corn",
+            "Corn",
+            "Corn",
+            "Corn",
+            "Corn",
+        ],
+        "location": [
+            "StPaul",
+            "StPaul",
+            "StPaul",
+            "Chicago",
+            "Chicago",
+            "Chicago",
+            "Chicago",
+            "Chicago",
+            "Chicago",
+        ],
+        "seller": [
+            "Bob",
+            "Charlie",
+            "Susan",
+            "Paul",
+            "Ed",
+            "Mary",
+            "Paul",
+            "Charlie",
+            "Norman",
+        ],
+        "price": [1.0, 0.7, 0.8, 0.55, 2.0, 3.0, 2.4, 1.8, 2.1],
+    }
+    df = pl.DataFrame(commodity_prices)
+
+    # this query flexes the wildcard exclusion quite a bit.
+    keys = ["commodity", "location"]
+    out = (
+        df.sort(by="price")
+        .groupby(keys)
+        .agg([col("*").exclude(keys).head(2).list().keep_name()])
+        .explode(col("*").exclude(keys))
+    )
+
+    assert out.shape == (5, 4)
