@@ -99,6 +99,7 @@ Manipulation/ selection
     Expr.head
     Expr.tail
     Expr.reinterpret
+    Expr.drop_nulls
 
 Column names
 ------------

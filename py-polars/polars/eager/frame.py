@@ -934,7 +934,7 @@ class DataFrame:
         if isinstance(item, slice):
             # special case df[::-1]
             if item.start is None and item.stop is None and item.step == -1:
-                return self.select(pl.col("*").reverse())
+                return self.select(pl.col("*").reverse())  # type: ignore
 
             if getattr(item, "end", False):
                 raise ValueError("A slice with steps larger than 1 is not supported.")
@@ -954,7 +954,7 @@ class DataFrame:
             else:
                 # df[start:stop:step]
                 return self.select(
-                    pl.col("*").slice(start, length).take_every(item.step)
+                    pl.col("*").slice(start, length).take_every(item.step)  # type: ignore
                 )
 
         # select multiple columns

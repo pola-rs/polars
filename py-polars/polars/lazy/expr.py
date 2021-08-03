@@ -379,6 +379,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.slice(offset, length))
 
+    def drop_nulls(self) -> "Expr":
+        """
+        Syntactic sugar for:
+
+        >>> col("foo").filter(col("foo").is_not_null())
+        """
+        return self.filter(self.is_not_null())
+
     def cum_sum(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative sum computed at every element.
@@ -664,14 +672,14 @@ class Expr:
         --------
 
         >>> df = DataFrame({
-            "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
-            "values": [1, 2, 3, 4, 5, 6, 7, 8, 8]
-        })
-        >>> print(df.lazy()
-            .select([
-                col("groups")
-                sum("values").over("groups"))
-            ]).collect())
+        >>>    "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
+        >>>    "values": [1, 2, 3, 4, 5, 6, 7, 8, 8]
+        >>>})
+        >>> (df.lazy()
+        >>>    .select([
+        >>>       col("groups")
+        >>>       sum("values").over("groups"))
+        >>>   ]).collect())
             ╭────────┬────────╮
             │ groups ┆ values │
             │ ---    ┆ ---    │
