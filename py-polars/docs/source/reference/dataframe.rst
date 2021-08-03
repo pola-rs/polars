@@ -136,9 +136,11 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
    :toctree: api/
 
     GroupBy.agg
+    GroupBy.apply
+    GroupBy.head
+    GroupBy.tail
     GroupBy.get_group
     GroupBy.groups
-    GroupBy.apply
     GroupBy.select
     GroupBy.select_all
     GroupBy.pivot
