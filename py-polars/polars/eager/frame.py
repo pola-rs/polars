@@ -2429,11 +2429,11 @@ class GroupBy:
 
         >>> # use lazy API
         >>> (df.groupby(["foo", "bar])
-            .agg([pl.sum("ham"), col("spam").tail(4).sum()])
+        >>> .agg([pl.sum("ham"), col("spam").tail(4).sum()])
 
         >>> # use a dict
         >>> (df.groupby(["foo", "bar])
-            .agg({"spam": ["sum", "min"})
+        >>> .agg({"spam": ["sum", "min"})
 
         """
         if isinstance(column_to_agg, pl.Expr):
@@ -2479,8 +2479,142 @@ class GroupBy:
 
         return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
 
+    def head(self, n: int = 5) -> DataFrame:
+        """
+        Return first n rows of each group.
+
+        Parameters
+        ----------
+        n
+            Number of values of the group to select
+
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
+        >>>     "nrs": [1, 2, 3, 4, 5, 6]
+        >>> })
+        >>> df
+        shape: (6, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 4   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 6   │
+        ╰─────────┴─────╯
+        >>> (df.groupby("letters")
+        >>>  .head(2)
+        >>>  .sort("letters")
+        >>> )
+        shape: (5, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "a"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 6   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ╰─────────┴─────╯
+
+        """
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by)
+            .head(n)  # type: ignore[arg-type]
+            .collect(no_optimization=True, string_cache=False)
+        )
+
+    def tail(self, n: int = 5) -> DataFrame:
+        """
+        Return last n rows of each group.
+
+        Parameters
+        ----------
+        n
+            Number of values of the group to select
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
+        >>>     "nrs": [1, 2, 3, 4, 5, 6]
+        >>> })
+        >>> df
+        shape: (6, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 4   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 6   │
+        ╰─────────┴─────╯
+        >>> (df.groupby("letters")
+        >>>  .tail(2)
+        >>>  .sort("letters")
+        >>> )
+        shape: (5, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "a"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 6   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 4   │
+        ╰─────────┴─────╯
+
+        """
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by)
+            .tail(n)  # type: ignore[arg-type]
+            .collect(no_optimization=True, string_cache=False)
+        )
+
     def select(self, columns: Union[str, tp.List[str]]) -> "GBSelection":
         """
+        .. deprecated:: 0.8.16
+            Use `groupby.agg(col("selection"))` instead
+
         Select the columns that will be aggregated.
 
         Parameters
@@ -2496,6 +2630,9 @@ class GroupBy:
 
     def select_all(self) -> "GBSelection":
         """
+        .. deprecated:: 0.8.16
+            Use `groupby.agg(col("*"))` instead
+
         Select all columns for aggregation.
         """
         return GBSelection(

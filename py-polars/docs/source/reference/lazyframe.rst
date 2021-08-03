@@ -84,3 +84,5 @@ This namespace comes available by calling `LazyFrame.groupby(..)`.
 
     LazyGroupBy.agg
     LazyGroupBy.apply
+    LazyGroupBy.head
+    LazyGroupBy.tail

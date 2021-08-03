@@ -19,7 +19,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::fast_projection::FastProjection;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
-use crate::utils::combine_predicates_expr;
+use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use polars_io::csv::NullValues;
 
@@ -999,6 +999,32 @@ impl LazyGroupBy {
             .groupby(Arc::new(self.keys), aggs, None)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
+    }
+
+    /// Return first n rows of each group
+    pub fn head(self, n: Option<usize>) -> LazyFrame {
+        let keys = self
+            .keys
+            .iter()
+            .map(|k| expr_to_root_column_names(k).into_iter())
+            .flatten()
+            .collect::<Vec<_>>();
+
+        self.agg(vec![col("*").exclude(&keys).head(n).list().keep_name()])
+            .explode(vec![col("*").exclude(&keys)])
+    }
+
+    /// Return last n rows of each group
+    pub fn tail(self, n: Option<usize>) -> LazyFrame {
+        let keys = self
+            .keys
+            .iter()
+            .map(|k| expr_to_root_column_names(k).into_iter())
+            .flatten()
+            .collect::<Vec<_>>();
+
+        self.agg(vec![col("*").exclude(&keys).tail(n).list().keep_name()])
+            .explode(vec![col("*").exclude(&keys)])
     }
 
     /// Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
