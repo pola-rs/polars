@@ -46,7 +46,7 @@ pub mod upstream_traits;
 
 use arrow::array::{
     Array, ArrayData, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
-    LargeListArray,
+    LargeListArray, PrimitiveArray,
 };
 
 use crate::chunked_array::builder::categorical::RevMapping;
@@ -872,6 +872,12 @@ impl ListChunked {
             DataType::List(dt) => dt.into(),
             _ => unreachable!(),
         }
+    }
+}
+
+impl<T: PolarsNumericType> From<PrimitiveArray<T>> for ChunkedArray<T> {
+    fn from(a: PrimitiveArray<T>) -> Self {
+        ChunkedArray::new_from_chunks("", vec![Arc::new(a)])
     }
 }
 
