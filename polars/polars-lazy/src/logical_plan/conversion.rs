@@ -130,8 +130,8 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             length,
         },
         Expr::Wildcard => AExpr::Wildcard,
-        Expr::Except(input) => AExpr::Except(to_aexpr(*input, arena)),
-        Expr::KeepName(_) => panic!("no keep name expected at this point"),
+        Expr::KeepName(_) => panic!("no keep_name expected at this point"),
+        Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
     };
     arena.add(v)
 }
@@ -573,7 +573,6 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length,
         },
         AExpr::Wildcard => Expr::Wildcard,
-        AExpr::Except(node) => Expr::Except(Box::new(node_to_exp(node, expr_arena))),
     }
 }
 

@@ -12,7 +12,6 @@ try:
     from polars.polars import col as pycol
     from polars.polars import concat_str as _concat_str
     from polars.polars import cov as pycov
-    from polars.polars import except_ as pyexcept
     from polars.polars import fold as pyfold
     from polars.polars import lit as pylit
     from polars.polars import pearson_corr as pypearson_corr
@@ -26,7 +25,6 @@ from ..datatypes import DataType, Date64, Int64
 
 __all__ = [
     "col",
-    "except_",
     "count",
     "to_list",
     "std",
@@ -65,40 +63,6 @@ def col(name: str) -> "pl.Expr":
     A column in a DataFrame.
     """
     return pl.lazy.expr.wrap_expr(pycol(name))
-
-
-def except_(name: str) -> "pl.Expr":
-    """
-    Exclude a column from a selection.
-
-    Examples
-    --------
-
-    >>> df = pl.DataFrame({
-        "ham": [1, 1, 2, 2, 3],
-        "foo": [1, 1, 2, 2, 3],
-        "bar": [1, 1, 2, 2, 3],
-    })
-    >>> df.lazy()
-        .select(["*", except_("foo")])
-        .collect()
-    ╭─────┬─────╮
-    │ ham ┆ bar │
-    │ --- ┆ --- │
-    │ f64 ┆ f64 │
-    ╞═════╪═════╡
-    │ 1   ┆ 1   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 1   ┆ 1   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 2   ┆ 2   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 2   ┆ 2   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 3   ┆ 3   │
-    ╰─────┴─────╯
-    """
-    return pl.lazy.expr.wrap_expr(pyexcept(name))
 
 
 def count(column: Union[str, "pl.Series"] = "") -> Union["pl.Expr", int]:

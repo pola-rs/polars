@@ -90,7 +90,7 @@ impl<'a> Iterator for ExprIter<'a> {
                     push(input_a);
                     push(input_b)
                 }
-                Except(e) => push(e),
+                Exclude(e, _) => push(e),
                 KeepName(e) => push(e),
             }
             current_expr
@@ -193,7 +193,6 @@ impl AExpr {
                 push(input_a);
                 push(input_b)
             }
-            Except(input) => push(input),
         }
     }
 }

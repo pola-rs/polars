@@ -483,6 +483,9 @@ impl PyExpr {
     pub fn keep_name(&self) -> PyExpr {
         self.inner.clone().keep_name().into()
     }
+    pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
+        self.inner.clone().exclude(&columns).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
@@ -562,10 +565,6 @@ pub fn when(predicate: PyExpr) -> When {
 
 pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
-}
-
-pub fn except(name: &str) -> PyExpr {
-    dsl::except(name).into()
 }
 
 pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
