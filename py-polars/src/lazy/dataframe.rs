@@ -321,10 +321,10 @@ impl PyLazyFrame {
         ldf.quantile(quantile).into()
     }
 
-    pub fn explode(&self, column: Vec<String>) -> Self {
+    pub fn explode(&self, column: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
-        let column = column.into_iter().map(|s| col(&s)).collect::<Vec<_>>();
-        ldf.explode(&column).into()
+        let column = py_exprs_to_exprs(column);
+        ldf.explode(column).into()
     }
 
     pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {

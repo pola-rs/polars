@@ -1855,7 +1855,9 @@ class DataFrame:
             return self.fill_none(pl.lit(strategy))
         return wrap_df(self._df.fill_none(strategy))
 
-    def explode(self, columns: Union[str, tp.List[str]]) -> "DataFrame":
+    def explode(
+        self, columns: Union[str, tp.List[str], "pl.Expr", tp.List["pl.Expr"]]
+    ) -> "DataFrame":
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
 
@@ -1867,10 +1869,63 @@ class DataFrame:
         Returns
         -------
         DataFrame
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
+        >>>     "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]]
+        >>> })
+        >>> df
+        shape: (6, 2)
+        ╭─────────┬────────────╮
+        │ letters ┆ nrs        │
+        │ ---     ┆ ---        │
+        │ str     ┆ list [i64] │
+        ╞═════════╪════════════╡
+        │ "c"     ┆ [1, 2]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "c"     ┆ [1, 3]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "a"     ┆ [4, 3]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "c"     ┆ [5, 5, 5]  │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "a"     ┆ [6]        │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "b"     ┆ [2, 1, 2]  │
+        ╰─────────┴────────────╯
+        >>> df.explode("nrs")
+        shape: (13, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ ...     ┆ ... │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 6   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 2   │
+        ╰─────────┴─────╯
+
         """
-        if isinstance(columns, str):
-            columns = [columns]
-        return wrap_df(self._df.explode(columns))
+        return self.lazy().explode(columns).collect(no_optimization=True)
 
     def melt(
         self, id_vars: Union[tp.List[str], str], value_vars: Union[tp.List[str], str]
