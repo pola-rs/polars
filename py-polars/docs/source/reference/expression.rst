@@ -116,6 +116,7 @@ Column names
 
     Expr.alias
     Expr.keep_name
+    Expr.exclude
 
 Apply
 -----

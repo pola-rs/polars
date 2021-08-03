@@ -39,7 +39,6 @@ These functions can be used as expression and sometimes also in eager contexts.
    :toctree: api/
 
    col
-   except_
    count
    to_list
    std

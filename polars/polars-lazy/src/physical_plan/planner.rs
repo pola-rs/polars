@@ -923,7 +923,6 @@ impl DefaultPlanner {
                 }))
             }
             Wildcard => panic!("should be no wildcard at this point"),
-            Except(_) => panic!("should be no except at this point"),
         }
     }
 }
