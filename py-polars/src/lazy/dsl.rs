@@ -480,6 +480,9 @@ impl PyExpr {
     pub fn mode(&self) -> PyExpr {
         self.inner.clone().mode().into()
     }
+    pub fn keep_name(&self) -> PyExpr {
+        self.inner.clone().keep_name().into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

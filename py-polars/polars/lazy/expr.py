@@ -138,8 +138,98 @@ class Expr:
         ----------
         name
             New name.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "a": [1, 2, 3],
+        >>>     "b": ["a", "b", None]
+        >>> })
+        >>> df
+        shape: (3, 2)
+        ╭─────┬──────╮
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ str  │
+        ╞═════╪══════╡
+        │ 1   ┆ "a"  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ "b"  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3   ┆ null │
+        ╰─────┴──────╯
+        >>> df.select([
+        >>>     col("a").alias("bar"),
+        >>>     col("b").alias("foo")
+        >>> ])
+        shape: (3, 2)
+        ╭─────┬──────╮
+        │ bar ┆ foo  │
+        │ --- ┆ ---  │
+        │ i64 ┆ str  │
+        ╞═════╪══════╡
+        │ 1   ┆ "a"  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ "b"  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3   ┆ null │
+        ╰─────┴──────╯
+
         """
         return wrap_expr(self._pyexpr.alias(name))
+
+    def keep_name(self) -> "Expr":
+        """
+        Keep the original root name of the expression.
+
+        Examples
+        --------
+
+        A groupby aggregation often changes the name of a column.
+        With `keep_name` we can keep the original name of the column
+
+        >>> df = pl.DataFrame({
+        >>> "a": [1, 2, 3],
+        >>> "b": ["a", "b", None]
+        >>> })
+        >>> (df.groupby("a")
+        >>> .agg(col("b").list())
+        >>> .sort(by="a")
+        >>> )
+        shape: (3, 2)
+        ╭─────┬────────────╮
+        │ a   ┆ b_agg_list │
+        │ --- ┆ ---        │
+        │ i64 ┆ list [str] │
+        ╞═════╪════════════╡
+        │ 1   ┆ [a]        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ [b]        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ [null]     │
+        ╰─────┴────────────╯
+        >>> # keep the original column name
+        >>> (df.groupby("a")
+        >>> .agg(col("b").list().keep_name())
+        >>> .sort(by="a")
+        >>> )
+        shape: (3, 2)
+        ╭─────┬────────────╮
+        │ a   ┆ b          │
+        │ --- ┆ ---        │
+        │ i64 ┆ list [str] │
+        ╞═════╪════════════╡
+        │ 1   ┆ [a]        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ [b]        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ [null]     │
+        ╰─────┴────────────╯
+
+        """
+
+        return wrap_expr(self._pyexpr.keep_name())
 
     def is_not(self) -> "Expr":
         """
@@ -350,6 +440,7 @@ class Expr:
         -------
         Values taken by index
         """
+        index = expr_to_lit_or_expr(index, str_to_lit=False)
         return wrap_expr(self._pyexpr.take(index._pyexpr))
 
     def shift(self, periods: int) -> "Expr":
