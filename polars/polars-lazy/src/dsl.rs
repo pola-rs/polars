@@ -261,6 +261,8 @@ pub enum Expr {
     },
     /// Can be used in a select statement to exclude a column from selection
     Except(Box<Expr>),
+    /// Set root name as Alias
+    KeepName(Box<Expr>),
 }
 
 impl Expr {
@@ -352,6 +354,7 @@ impl fmt::Debug for Expr {
             } => write!(f, "SLICE {:?} offset: {} len: {}", input, offset, length),
             Wildcard => write!(f, "*"),
             Except(column) => write!(f, "EXCEPT {:?}", column),
+            KeepName(e) => write!(f, "KEEP NAME {:?}", e),
         }
     }
 }
@@ -1146,8 +1149,27 @@ impl Expr {
 
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
+    /// Compute the mode(s) of this column. These is the most occurring value.
     pub fn mode(self) -> Expr {
         self.map(|s| s.mode().map(|ca| ca.into_series()), None)
+    }
+
+    /// Keep the original root name
+    ///
+    /// ```
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: LazyFrame) -> LazyFrame {
+    ///     df.select(vec![
+    /// // even thought the alias yields a different column name,
+    /// // `keep_name` will make sure that the original column name is used
+    ///         col("*").alias("foo").keep_name()
+    /// ])
+    /// }
+    /// ```
+    pub fn keep_name(self) -> Expr {
+        Expr::KeepName(Box::new(self))
     }
 }
 

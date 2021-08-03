@@ -91,6 +91,7 @@ impl<'a> Iterator for ExprIter<'a> {
                     push(input_b)
                 }
                 Except(e) => push(e),
+                KeepName(e) => push(e),
             }
             current_expr
         })

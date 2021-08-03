@@ -2455,4 +2455,23 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_keep_name() -> Result<()> {
+        let df = df![
+        "a" => [1, 2, 3],
+        "b" => [1, 2, 3]
+        ]?;
+
+        let out = df
+            .lazy()
+            .select(vec![
+                col("a").alias("bar").keep_name(),
+                col("b").alias("bar").keep_name(),
+            ])
+            .collect()?;
+
+        assert_eq!(out.get_column_names(), &["a", "b"]);
+        Ok(())
+    }
 }

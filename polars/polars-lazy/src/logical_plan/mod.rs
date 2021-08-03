@@ -828,6 +828,25 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
         Expr::Column(_) => expr,
         Expr::Literal(_) => expr,
         Expr::Except(_) => expr,
+        Expr::KeepName(e) => {
+            Expr::KeepName(Box::new(replace_wildcard_with_column(*e, column_name)))
+        }
+    }
+}
+
+fn rewrite_keep_name(expr: Expr) -> Expr {
+    if has_expr(&expr, |e| matches!(e, Expr::KeepName(_))) {
+        if let Expr::KeepName(expr) = expr {
+            let roots = expr_to_root_column_names(&expr);
+            let name = roots
+                .get(0)
+                .expect("expected root column to keep expression name");
+            Expr::Alias(expr, name.clone())
+        } else {
+            panic!("keep_name should be last expression")
+        }
+    } else {
+        expr
     }
 }
 
@@ -914,9 +933,11 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             for field in schema.fields() {
                 let name = field.name();
                 let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
+                let new_expr = rewrite_keep_name(new_expr);
                 result.push(new_expr)
             }
         } else {
+            let expr = rewrite_keep_name(expr);
             result.push(expr)
         };
     }
