@@ -648,8 +648,7 @@ impl LazyFrame {
     /// /// This function selects all columns except "foo"
     /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col("*"),
-    ///                   except("foo")])
+    ///         .select(&[col("*").exclude("foo")])
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
@@ -867,18 +866,7 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode(self, columns: &[Expr]) -> LazyFrame {
-        let columns = columns
-            .iter()
-            .map(|e| {
-                if let Expr::Column(name) = e {
-                    (**name).clone()
-                } else {
-                    panic!("expected column expression")
-                }
-            })
-            .collect();
-        // Note: this operation affects multiple columns. Therefore it isn't implemented as expression.
+    pub fn explode(self, columns: Vec<Expr>) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1441,7 +1429,7 @@ mod test {
                     )
                     .alias("diff_cases"),
             ])
-            .explode(&[col("day"), col("diff_cases")])
+            .explode(vec![col("day"), col("diff_cases")])
             .join(
                 base_df,
                 vec![col("uid"), col("day")],
@@ -2296,7 +2284,7 @@ mod test {
                 col("b").list().alias("b_list"),
                 col("c").list().alias("c_list"),
             ])
-            .explode(&[col("c_list"), col("b_list")])
+            .explode(vec![col("c_list"), col("b_list")])
             .collect()?;
         assert_eq!(out.shape(), (5, 3));
 

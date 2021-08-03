@@ -729,12 +729,6 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
-    pub fn explode(&self, columns: Vec<String>) -> PyResult<Self> {
-        let df = self.df.explode(&columns);
-        let df = df.map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn melt(&self, id_vars: Vec<&str>, value_vars: Vec<&str>) -> PyResult<Self> {
         let df = self
             .df
