@@ -1215,7 +1215,19 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Vec<String>) -> Self {
+    pub fn explode(self, columns: Vec<Expr>) -> Self {
+        let columns = rewrite_projections(columns, self.0.schema());
+        // columns to string
+        let columns = columns
+            .iter()
+            .map(|e| {
+                if let Expr::Column(name) = e {
+                    (**name).clone()
+                } else {
+                    panic!("expected column expression")
+                }
+            })
+            .collect();
         LogicalPlan::Explode {
             input: Box::new(self.0),
             columns,
