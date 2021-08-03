@@ -314,3 +314,8 @@ def test_head_groupby():
     assert out.frame_equal(
         pl.DataFrame({"str": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]})
     )
+
+
+def test_drop_nulls():
+    df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
+    assert df.select(col("nrs").drop_nulls()).shape == (5, 1)
