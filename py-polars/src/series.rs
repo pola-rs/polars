@@ -388,10 +388,13 @@ impl PySeries {
         self.series.arg_max()
     }
 
-    pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
+    pub fn take(&self, indices: Wrap<AlignedVec<u32>>) -> PyResult<Self> {
+        let indices = indices.0;
+        let indices = indices.into_primitive_array::<UInt32Type>(None);
+
         let take = self
             .series
-            .take_iter(&mut indices.iter().copied())
+            .take(&indices.into())
             .map_err(PyPolarsEr::from)?;
         Ok(PySeries::new(take))
     }
