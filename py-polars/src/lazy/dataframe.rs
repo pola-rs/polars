@@ -24,6 +24,16 @@ impl PyLazyGroupBy {
         lgb.agg(aggs).into()
     }
 
+    pub fn head(&mut self, n: usize) -> PyLazyFrame {
+        let lgb = self.lgb.take().unwrap();
+        lgb.head(Some(n)).into()
+    }
+
+    pub fn tail(&mut self, n: usize) -> PyLazyFrame {
+        let lgb = self.lgb.take().unwrap();
+        lgb.tail(Some(n)).into()
+    }
+
     pub fn apply(&mut self, lambda: PyObject) -> PyLazyFrame {
         let lgb = self.lgb.take().unwrap();
 

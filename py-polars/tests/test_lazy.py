@@ -301,3 +301,16 @@ def test_head_groupby():
     )
 
     assert out.shape == (5, 4)
+
+    df = pl.DataFrame(
+        {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
+    )
+
+    out = df.groupby("letters").tail(2).sort("letters")
+    assert out.frame_equal(
+        pl.DataFrame({"str": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]})
+    )
+    out = df.groupby("letters").head(2).sort("letters")
+    assert out.frame_equal(
+        pl.DataFrame({"str": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]})
+    )
