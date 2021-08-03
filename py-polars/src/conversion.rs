@@ -11,6 +11,7 @@ use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use polars_core::utils::arrow::datatypes::ArrowNativeType;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -266,5 +267,16 @@ impl Default for ObjectValue {
         ObjectValue {
             inner: python.None(),
         }
+    }
+}
+
+impl<'a, T: ArrowNativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<AlignedVec<T>> {
+    fn extract(obj: &'a PyAny) -> PyResult<Self> {
+        let seq = <PySequence as PyTryFrom>::try_from(obj)?;
+        let mut v = AlignedVec::with_capacity(seq.len().unwrap_or(0) as usize);
+        for item in seq.iter()? {
+            v.push(item?.extract::<T>()?);
+        }
+        Ok(Wrap(v))
     }
 }

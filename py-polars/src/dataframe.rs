@@ -514,10 +514,12 @@ impl PyDataFrame {
         }
     }
 
-    pub fn take(&self, indices: Vec<u32>) -> PyResult<Self> {
+    pub fn take(&self, indices: Wrap<AlignedVec<u32>>) -> PyResult<Self> {
+        let indices = indices.0;
+        let indices = indices.into_primitive_array::<UInt32Type>(None);
         let df = self
             .df
-            .take_iter(indices.iter().map(|i| *i as usize))
+            .take(&indices.into())
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
