@@ -35,7 +35,6 @@ pub mod strings;
 pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
-
 use arrow::array::Array;
 
 use crate::chunked_array::builder::categorical::RevMapping;
@@ -866,6 +865,12 @@ pub(crate) fn to_array<T: PolarsPrimitiveType>(
     validity: Option<Bitmap>,
 ) -> ArrayRef {
     Arc::new(to_primitive::<T>(values, validity))
+}
+
+impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
+    fn from(a: PrimitiveArray<T::Native>) -> Self {
+        ChunkedArray::new_from_chunks("", vec![Arc::new(a)])
+    }
 }
 
 #[cfg(test)]
