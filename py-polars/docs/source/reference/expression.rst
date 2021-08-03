@@ -79,7 +79,6 @@ Manipulation/ selection
 .. autosummary::
    :toctree: api/
 
-    Expr.alias
     Expr.slice
     Expr.explode
     Expr.take_every
@@ -101,6 +100,22 @@ Manipulation/ selection
     Expr.tail
     Expr.reinterpret
 
+Column names
+------------
+   Expressions that help renaming/ selecting columns by name.
+
+   A wildcard `col("*")` selects all columns in a DataFrame.
+
+   Examples
+   --------
+
+   >>> df.select(col("*"))
+
+.. autosummary::
+   :toctree: api/
+
+    Expr.alias
+    Expr.keep_name
 
 Apply
 -----
@@ -111,7 +126,7 @@ Apply
     Expr.apply
 
 Window
---------
+------
 .. autosummary::
    :toctree: api/
 

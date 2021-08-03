@@ -131,6 +131,7 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         },
         Expr::Wildcard => AExpr::Wildcard,
         Expr::Except(input) => AExpr::Except(to_aexpr(*input, arena)),
+        Expr::KeepName(_) => panic!("no keep name expected at this point"),
     };
     arena.add(v)
 }
