@@ -23,8 +23,8 @@ use polars_io::{parquet::ParquetReader, SerReader};
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::utils::{
-    combine_predicates_expr, expr_to_root_column_name, expr_to_root_column_names, has_expr,
-    has_wildcard, rename_expr_root_name,
+    combine_predicates_expr, expr_to_root_column_names, has_expr, has_wildcard,
+    rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
 use polars_io::csv::NullValues;
@@ -827,7 +827,8 @@ fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
         },
         Expr::Column(_) => expr,
         Expr::Literal(_) => expr,
-        Expr::Except(_) => expr,
+        // take the inner expression thus removes the exclude
+        Expr::Exclude(e, _) => replace_wildcard_with_column(*e, column_name),
         Expr::KeepName(e) => {
             Expr::KeepName(Box::new(replace_wildcard_with_column(*e, column_name)))
         }
@@ -854,20 +855,16 @@ fn rewrite_keep_name(expr: Expr) -> Expr {
 /// In other cases replace the wildcard with an expression with all columns
 fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
-    let mut exclude = vec![];
     for expr in exprs {
-        // Columns that are excepted are later removed from the projection.
-        // This can be ergonomical in combination with a wildcard expression.
-        if let Expr::Except(column) = &expr {
-            if let Expr::Column(name) = &**column {
-                exclude.push(name.clone());
-                continue;
-            } else {
-                panic!("Except expression should have column name")
-            }
-        }
-
         if has_wildcard(&expr) {
+            // keep track of column excluded from the wildcard
+            let mut exclude = vec![];
+            (&expr).into_iter().for_each(|e| {
+                if let Expr::Exclude(_, names) = e {
+                    exclude.extend_from_slice(names)
+                }
+            });
+
             // if count wildcard. count one column
             if has_expr(&expr, |e| matches!(e, Expr::Agg(AggExpr::Count(_)))) {
                 let new_name = Arc::new(schema.field(0).unwrap().name().clone());
@@ -932,27 +929,17 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
 
             for field in schema.fields() {
                 let name = field.name();
-                let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
-                let new_expr = rewrite_keep_name(new_expr);
-                result.push(new_expr)
+                if !exclude.iter().any(|exluded| &**exluded == name) {
+                    let new_expr =
+                        replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
+                    let new_expr = rewrite_keep_name(new_expr);
+                    result.push(new_expr)
+                }
             }
         } else {
             let expr = rewrite_keep_name(expr);
             result.push(expr)
         };
-    }
-    if !exclude.is_empty() {
-        for name in exclude {
-            let idx = result
-                .iter()
-                .position(|expr| match expr_to_root_column_name(expr) {
-                    Ok(column_name) => column_name == name,
-                    Err(_) => false,
-                });
-            if let Some(idx) = idx {
-                result.swap_remove(idx);
-            }
-        }
     }
     result
 }
