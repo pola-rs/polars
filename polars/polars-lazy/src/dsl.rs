@@ -15,6 +15,7 @@ use std::{
 };
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
+use polars_core::frame::select::Selection;
 use polars_core::utils::get_supertype;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
@@ -260,7 +261,7 @@ pub enum Expr {
         output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
     },
     /// Can be used in a select statement to exclude a column from selection
-    Except(Box<Expr>),
+    Exclude(Box<Expr>, Vec<Arc<String>>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
 }
@@ -353,32 +354,9 @@ impl fmt::Debug for Expr {
                 length,
             } => write!(f, "SLICE {:?} offset: {} len: {}", input, offset, length),
             Wildcard => write!(f, "*"),
-            Except(column) => write!(f, "EXCEPT {:?}", column),
+            Exclude(column, names) => write!(f, "{:?}, EXCEPT {:?}", column, names),
             KeepName(e) => write!(f, "KEEP NAME {:?}", e),
         }
-    }
-}
-
-/// Exclude a column from selection.
-///
-/// # Example
-///
-/// ```rust
-/// use polars_core::prelude::*;
-/// use polars_lazy::prelude::*;
-///
-/// // Select all columns except foo.
-/// fn example(df: DataFrame) -> LazyFrame {
-///       df.lazy()
-///         .select(&[
-///                 col("*"), except("foo")
-///                 ])
-/// }
-/// ```
-pub fn except(name: &str) -> Expr {
-    match name {
-        "*" => panic!("cannot use a wildcard as a column exception"),
-        _ => Expr::Except(Box::new(col(name))),
     }
 }
 
@@ -1170,6 +1148,34 @@ impl Expr {
     /// ```
     pub fn keep_name(self) -> Expr {
         Expr::KeepName(Box::new(self))
+    }
+
+    /// Exclude a column from a wildcard selection
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// // Select all columns except foo.
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .select(&[
+    ///                 col("*").exclude(&["foo"])
+    ///                 ])
+    /// }
+    /// ```
+    pub fn exclude<'a, S, J>(self, columns: S) -> Expr
+    where
+        S: Selection<'a, J>,
+    {
+        let v = columns
+            .to_selection_vec()
+            .iter()
+            .map(|s| Arc::new(s.to_string()))
+            .collect();
+        Expr::Exclude(Box::new(self), v)
     }
 }
 

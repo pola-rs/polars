@@ -1921,24 +1921,6 @@ mod test {
     }
 
     #[test]
-    fn test_select_except() {
-        let df = df! {
-            "foo" => &[1, 1, 2, 2, 3],
-            "bar" => &[1.0, 1.0, 2.0, 2.0, 3.0],
-            "ham" => &[1.0, 1.0, 2.0, 2.0, 3.0]
-        }
-        .unwrap();
-
-        let out = df
-            .lazy()
-            .select(&[col("*"), except("foo")])
-            .collect()
-            .unwrap();
-
-        assert_eq!(out.get_column_names(), &["ham", "bar"]);
-    }
-
-    #[test]
     fn test_lazy_groupby_apply() {
         let df = df! {
             "A" => &[1, 2, 3, 4, 5],
@@ -2472,6 +2454,20 @@ mod test {
             .collect()?;
 
         assert_eq!(out.get_column_names(), &["a", "b"]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_exclude() -> Result<()> {
+        let df = df![
+        "a" => [1, 2, 3],
+        "b" => [1, 2, 3],
+        "c" => [1, 2, 3]
+        ]?;
+
+        let out = df.lazy().select(vec![col("*").exclude(&["b"])]).collect()?;
+
+        assert_eq!(out.get_column_names(), &["a", "c"]);
         Ok(())
     }
 }
