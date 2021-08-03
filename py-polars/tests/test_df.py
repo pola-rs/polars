@@ -248,6 +248,13 @@ def test_selection():
     assert df[2, "c"] == "c"
     assert df[0, "a"] == 1
 
+    # more slicing
+    expect = pl.DataFrame({"a": [3, 2, 1], "b": [3.0, 2.0, 1.0], "c": ["c", "b", "a"]})
+    assert df[::-1].frame_equal(expect)
+
+    expect = pl.DataFrame({"a": [1, 3], "b": [1.0, 3.0], "c": ["a", "c"]})
+    assert df[::2].frame_equal(expect)
+
 
 def test_from_arrow():
     tbl = pa.table(
