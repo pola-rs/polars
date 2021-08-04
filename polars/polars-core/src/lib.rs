@@ -16,6 +16,8 @@ pub mod serde;
 pub mod series;
 pub mod testing;
 pub(crate) mod vector_hasher;
+#[cfg(feature = "ndarray")]
+pub mod ndarray;
 
 use ahash::AHashMap;
 use lazy_static::lazy_static;

@@ -14,6 +14,17 @@ where
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
+impl<'a, T> From<&'a ChunkedArray<T>> for ArrayView1<'a, T::Native>
+    where
+        T: PolarsNumericType
+{
+    /// Convert from a ChunkedArray into a 1-dimensional ArrayView
+    fn from(a: &'a ChunkedArray<T>) -> Self {
+        a.to_ndarray().unwrap()
+    }
+}
+
 impl ListChunked {
     /// If all nested `Series` have the same length, a 2 dimensional `ndarray::Array` is returned.
     #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
@@ -113,3 +124,76 @@ impl DataFrame {
         Ok(ndarr)
     }
 }
+
+macro_rules! make_ndarray_type_conversion {
+    ($polars:ty, $native:ty) => {
+        #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
+        impl From<DataFrame> for Array2<$native> {
+            fn from(d: DataFrame) -> Self {
+                d.to_ndarray::<$polars>().unwrap()
+            }
+        }
+
+        #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
+        impl From<ListChunked> for Array2<$native> {
+            fn from(l: ListChunked) -> Self {
+                l.to_ndarray::<$polars>().unwrap()
+            }
+        }
+    };
+}
+
+// Todo add try from
+make_ndarray_type_conversion!(Int8Type, i8);
+make_ndarray_type_conversion!(Int16Type, i16);
+make_ndarray_type_conversion!(Int32Type, i32);
+make_ndarray_type_conversion!(Int64Type, i64);
+make_ndarray_type_conversion!(UInt8Type, u8);
+make_ndarray_type_conversion!(UInt16Type, u16);
+make_ndarray_type_conversion!(UInt32Type, u32);
+make_ndarray_type_conversion!(UInt64Type, u64);
+make_ndarray_type_conversion!(Float32Type, f32);
+make_ndarray_type_conversion!(Float64Type, f64);
+
+// #[cfg(feature = "ndarray")]
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_df_to_ndarray(){
+        let df = df![
+            "a" => [1, 2, 3],
+            "b" => [0.1, 0.2, 0.3]
+        ].unwrap();
+        let arr: Array2<f64> = df.into();
+        assert!(!arr.is_empty());
+    }
+}
+
+// make_df_to_type!(UInt8Type);
+// make_df_to_type!(UInt16Type);
+// make_df_to_type!(UInt32Type);
+// make_df_to_type!(UInt64Type);
+// make_df_to_type!(Int8Type);
+// make_df_to_type!(Int16Type);
+// make_df_to_type!(Int32Type);
+// make_df_to_type!(Int64Type);
+// make_df_to_type!(Float32Type);
+// make_df_to_type!(Float64Type);
+// make_df_to_type!(Date32Type);
+// make_df_to_type!(Date64Type);
+// make_df_to_type!(Time64NanosecondType);
+// make_df_to_type!(DurationNanosecondType);
+// make_df_to_type!(DurationMillisecondType);
+
+// #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
+// impl From<DataFrame> for Array2<<Float64Type as ArrowPrimitiveType>::Native>
+// {
+//     fn from(d: DataFrame) -> Self {
+//         d.to_ndarray::<Float64Type>().unwrap()
+//     }
+//     // fn from(d: DataFrame) -> Array2<N::Native> {
+//     //     d.to_ndarray::<N>().unwrap()
+//     // }
+// }
