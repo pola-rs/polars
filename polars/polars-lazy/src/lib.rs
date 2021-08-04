@@ -205,6 +205,9 @@ pub mod prelude;
 pub(crate) mod utils;
 
 #[cfg(test)]
+mod test;
+
+#[cfg(test)]
 mod tests {
     use polars_core::prelude::*;
     use polars_io::prelude::*;
