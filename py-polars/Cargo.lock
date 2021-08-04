@@ -64,8 +64,7 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70586af497bb464c82348a7e411d7026cefa3d3698e682aaa43f0214c3158ab2"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=fa3c2ce2dd4419256de8283f885538b6b011e5d4#fa3c2ce2dd4419256de8283f885538b6b011e5d4"
 dependencies = [
  "base64",
  "chrono",
@@ -75,11 +74,13 @@ dependencies = [
  "hash_hasher",
  "lazy_static",
  "lexical-core",
+ "lz4",
  "multiversion",
  "num",
  "packed_simd_2",
  "parquet2",
  "regex",
+ "zstd",
 ]
 
 [[package]]
