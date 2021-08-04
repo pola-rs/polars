@@ -9,7 +9,6 @@ def test_lazy():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
 
-    print(ldf.collect())
     # test if it executes
     new = (
         df.lazy()
@@ -18,6 +17,9 @@ def test_lazy():
         )
         .collect()
     )
+
+    # test if pl.list is available, this is `to_list` re-exported as list
+    df.groupby("a").agg(pl.list("b"))
 
 
 def test_apply():
