@@ -412,4 +412,13 @@ impl PyLazyFrame {
     pub fn clone(&self) -> PyLazyFrame {
         self.ldf.clone().into()
     }
+
+    pub fn columns(&self) -> Vec<String> {
+        self.ldf
+            .schema()
+            .fields()
+            .iter()
+            .map(|fld| fld.name().to_string())
+            .collect()
+    }
 }
