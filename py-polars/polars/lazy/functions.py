@@ -77,6 +77,8 @@ def count(column: Union[str, "pl.Series"] = "") -> Union["pl.Expr", int]:
 def to_list(name: str) -> "pl.Expr":
     """
     Aggregate to list.
+
+    Re-exported as `pl.list()`
     """
     return col(name).list()
 
