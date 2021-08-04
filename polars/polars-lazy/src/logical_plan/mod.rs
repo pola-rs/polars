@@ -947,7 +947,7 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
 pub struct LogicalPlanBuilder(LogicalPlan);
 
 impl LogicalPlan {
-    pub(crate) fn schema(&self) -> &Schema {
+    pub(crate) fn schema(&self) -> &SchemaRef {
         use LogicalPlan::*;
         match self {
             Cache { input } => input.schema(),
