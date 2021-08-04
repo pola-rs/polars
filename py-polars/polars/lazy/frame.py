@@ -192,7 +192,7 @@ class LazyFrame:
 
     def sort(
         self,
-        by_columns: Union[str, "Expr", tp.List["Expr"]],
+        by: Union[str, "Expr", tp.List["Expr"]],
         reverse: Union[bool, tp.List[bool]] = False,
     ) -> "LazyFrame":
         """
@@ -204,19 +204,19 @@ class LazyFrame:
 
         Parameters
         ----------
-        by_columns
+        by
             Column (expressions) to sort by.
         reverse
             Whether or not to sort in reverse order.
         """
-        if type(by_columns) is str:
-            return wrap_ldf(self._ldf.sort(by_columns, reverse))
+        if type(by) is str:
+            return wrap_ldf(self._ldf.sort(by, reverse))
         if type(reverse) is bool:
             reverse = [reverse]
 
-        by_columns = expr_to_lit_or_expr(by_columns, str_to_lit=False)
-        by_columns = _selection_to_pyexpr_list(by_columns)
-        return wrap_ldf(self._ldf.sort_by_exprs(by_columns, reverse))
+        by = expr_to_lit_or_expr(by, str_to_lit=False)
+        by = _selection_to_pyexpr_list(by)
+        return wrap_ldf(self._ldf.sort_by_exprs(by, reverse))
 
     def collect(
         self,
