@@ -20,7 +20,6 @@ use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "parquet")]
 use polars_io::{parquet::ParquetReader, SerReader};
 
-use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::utils::{
     combine_predicates_expr, expr_to_root_column_names, has_expr, has_wildcard,
@@ -851,11 +850,25 @@ fn rewrite_keep_name(expr: Expr) -> Expr {
     }
 }
 
+/// Take an expression with a root: col("*") and copies that expression for all columns in the schema,
+/// with the exclusion of the `names` in the exclude expression.
+/// The resulting expressions are written to result.
+fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<String>], schema: &Schema) {
+    for field in schema.fields() {
+        let name = field.name();
+        if !exclude.iter().any(|exluded| &**exluded == name) {
+            let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
+            let new_expr = rewrite_keep_name(new_expr);
+            result.push(new_expr)
+        }
+    }
+}
+
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
-    for expr in exprs {
+    for mut expr in exprs {
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
             let mut exclude = vec![];
@@ -880,62 +893,35 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
                 continue;
             }
             // this path prepares the wildcard as input for the Function Expr
-            // To deal with the borrow checker we first create an arena from this expression.
-            // Then we clone that arena to `new_arena` because we cannot borrow and have mutable access,
-            // We iterate the old_arena mutable.
-            // * Replace the wildcard column with new column names (assign nodes into new arena)
-            // * Swap the inputs vec, from Expr::Function in the old arena to Expr::Function in the new arena
-            // * convert from arena expr to boxed expr
             if has_expr(
                 &expr,
                 |e| matches!(e, Expr::Function { input, options,  .. } if options.input_wildcard_expansion && input.iter().any(has_wildcard)),
             ) {
-                let mut arena = Arena::with_capacity(16);
-                let root = to_aexpr(expr, &mut arena);
-                let mut new_arena = arena.clone();
-                let iter = (&arena).iter(root);
-                let mut function_node = Default::default();
-                let mut function_inputs = Default::default();
+                let mut unsafe_iter = expr.iter_mut();
 
-                for (node, ae) in iter {
-                    if let AExpr::Function { .. } = ae {
-                        function_node = node;
-                        break;
+                // Safety: this is safe because we directly stop iteration once the children are mutated.
+                unsafe {
+                    while let Some(e) = unsafe_iter.next_unsafe() {
+                        if let Expr::Function { input, .. } = e {
+                            let mut new_inputs = Vec::with_capacity(input.len());
+
+                            input.iter_mut().for_each(|e| {
+                                if has_wildcard(e) {
+                                    replace_wilcard(e, &mut new_inputs, &[], schema)
+                                } else {
+                                    new_inputs.push(e.clone())
+                                }
+                            });
+
+                            *input = new_inputs;
+                            break;
+                        }
                     }
                 }
-
-                if let AExpr::Function { input, .. } = arena.get_mut(function_node) {
-                    let (idx, _) = input
-                        .iter()
-                        .find_position(|&node| matches!(new_arena.get(*node), AExpr::Wildcard))
-                        .expect("should have wildcard");
-                    input.remove(idx);
-
-                    for field in schema.fields() {
-                        let node = new_arena.add(AExpr::Column(Arc::new(field.name().clone())));
-                        input.push(node);
-                    }
-                    function_inputs = std::mem::take(input);
-                }
-
-                if let AExpr::Function { input, .. } = new_arena.get_mut(function_node) {
-                    *input = function_inputs;
-                }
-
-                let new_expr = node_to_exp(root, &new_arena);
-                result.push(new_expr);
+                result.push(expr);
                 continue;
             }
-
-            for field in schema.fields() {
-                let name = field.name();
-                if !exclude.iter().any(|exluded| &**exluded == name) {
-                    let new_expr =
-                        replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
-                    let new_expr = rewrite_keep_name(new_expr);
-                    result.push(new_expr)
-                }
-            }
+            replace_wilcard(&expr, &mut result, &exclude, schema);
         } else {
             let expr = rewrite_keep_name(expr);
             result.push(expr)
