@@ -3,6 +3,45 @@ Expressions
 ===========
 .. currentmodule:: polars
 
+
+Functions
+---------
+These functions can be used as expression and sometimes also in eager contexts.
+
+.. autosummary::
+   :toctree: api/
+
+   col
+   count
+   to_list
+   std
+   var
+   max
+   min
+   sum
+   mean
+   avg
+   median
+   n_unique
+   first
+   last
+   head
+   tail
+   lit_date
+   lit
+   pearson_corr
+   cov
+   map_binary
+   fold
+   any
+   all
+   groups
+   quantile
+   arange
+   argsort_by
+   concat_str
+   when
+
 Constructor
 -----------
 .. autosummary::

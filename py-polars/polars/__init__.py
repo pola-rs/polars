@@ -21,6 +21,7 @@ from .eager import *
 from .functions import *
 from .io import *
 from .lazy import *
+from .lazy import to_list as list
 from .string_cache import *
 
 __all__ = (
