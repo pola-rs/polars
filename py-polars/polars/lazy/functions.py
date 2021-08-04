@@ -425,10 +425,30 @@ def any(name: Union[str, tp.List["pl.Expr"]]) -> "pl.Expr":
     return col(name).sum() > 0
 
 
-def all(name: Union[str, tp.List["pl.Expr"]]) -> "pl.Expr":
+def all(name: Optional[Union[str, tp.List["pl.Expr"]]] = None) -> "pl.Expr":
     """
-    Evaluate columnwise or elementwise with a bitwise AND operation.
+    This function is two things
+
+    * function can do a columnwise or elementwise AND operation
+    * a wildcard column selection
+
+    Parameters
+    ----------
+
+    name
+        If given this function will apply a bitwise & on the columns.
+
+    Examples
+    --------
+
+    >>> # sum all columns
+    >>> df.select(pl.all().sum())
+
+
+    >>> df.select(pl.all([col(name).is_not_null() for name in df.columns]))
     """
+    if name is None:
+        return col("*")
     if isinstance(name, list):
         return fold(lit(0), lambda a, b: a & b, name).alias("all")
     return col(name).cast(bool).sum() == col(name).count()
