@@ -1,19 +1,13 @@
-#[cfg(feature = "temporal")]
-use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use polars_core::{
-    prelude::*,
-    df
-};
 use crate::functions::{argsort_by, pearson_corr};
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::tests::get_df;
+#[cfg(feature = "temporal")]
+use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use polars_core::{df, prelude::*};
 
-use crate::{
-    prelude::*,
-    frame::*
-};
-use std::iter::FromIterator;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
+use crate::prelude::*;
+use std::iter::FromIterator;
 
 fn scan_foods_csv() -> LazyFrame {
     let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
@@ -107,17 +101,17 @@ fn test_lazy_melt() {
 #[test]
 fn test_lazy_drop_nulls() {
     let df = df! {
-            "foo" => &[Some(1), None, Some(3)],
-            "bar" => &[Some(1), Some(2), None]
-        }
-        .unwrap();
+        "foo" => &[Some(1), None, Some(3)],
+        "bar" => &[Some(1), Some(2), None]
+    }
+    .unwrap();
 
     let new = df.clone().lazy().drop_nulls(None).collect().unwrap();
     let out = df! {
-            "foo" => &[Some(1)],
-            "bar" => &[Some(1)]
-        }
-        .unwrap();
+        "foo" => &[Some(1)],
+        "bar" => &[Some(1)]
+    }
+    .unwrap();
     assert!(new.frame_equal(&out));
 }
 
@@ -200,7 +194,7 @@ fn test_lazy_agg() {
         ],
         "%Y-%m-%d",
     )
-        .into_series();
+    .into_series();
     let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
     let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
     let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
@@ -273,10 +267,10 @@ fn test_lazy_binary_ops() {
 
 fn load_df() -> DataFrame {
     df!("a" => &[1, 2, 3, 4, 5],
-                     "b" => &["a", "a", "b", "c", "c"],
-                     "c" => &[1, 2, 3, 4, 5]
-        )
-        .unwrap()
+                 "b" => &["a", "a", "b", "c", "c"],
+                 "c" => &[1, 2, 3, 4, 5]
+    )
+    .unwrap()
 }
 
 #[test]
@@ -321,11 +315,11 @@ fn test_lazy_query_3() {
 #[test]
 fn test_lazy_query_4() {
     let df = df! {
-            "uid" => [0, 0, 0, 1, 1, 1],
-            "day" => [1, 2, 3, 1, 2, 3],
-            "cumcases" => [10, 12, 15, 25, 30, 41]
-        }
-        .unwrap();
+        "uid" => [0, 0, 0, 1, 1, 1],
+        "day" => [1, 2, 3, 1, 2, 3],
+        "cumcases" => [10, 12, 15, 25, 30, 41]
+    }
+    .unwrap();
 
     let base_df = df.lazy();
 
@@ -369,11 +363,11 @@ fn test_lazy_query_4() {
 fn test_lazy_query_5() {
     // if this one fails, the list builder probably does not handle offsets
     let df = df! {
-            "uid" => [0, 0, 0, 1, 1, 1],
-            "day" => [1, 2, 4, 1, 2, 3],
-            "cumcases" => [10, 12, 15, 25, 30, 41]
-        }
-        .unwrap();
+        "uid" => [0, 0, 0, 1, 1, 1],
+        "day" => [1, 2, 4, 1, 2, 3],
+        "cumcases" => [10, 12, 15, 25, 30, 41]
+    }
+    .unwrap();
 
     let out = df
         .lazy()
@@ -403,11 +397,11 @@ fn test_lazy_query_5() {
 #[test]
 fn test_lazy_query_6() -> Result<()> {
     let df = df! {
-            "uid" => [0, 0, 0, 1, 1, 1],
-            "day" => [1, 2, 4, 1, 2, 3],
-            "cumcases" => [10, 12, 15, 25, 30, 41]
-        }
-        .unwrap();
+        "uid" => [0, 0, 0, 1, 1, 1],
+        "day" => [1, 2, 4, 1, 2, 3],
+        "cumcases" => [10, 12, 15, 25, 30, 41]
+    }
+    .unwrap();
 
     let out = df
         .lazy()
@@ -428,12 +422,12 @@ fn test_lazy_query_6() -> Result<()> {
 fn test_lazy_query_8() -> Result<()> {
     // https://github.com/pola-rs/polars/issues/842
     let df = df![
-            "A" => [1, 2, 3],
-            "B" => [1, 2, 3],
-            "C" => [1, 2, 3],
-            "D" => [1, 2, 3],
-            "E" => [1, 2, 3]
-        ]?;
+        "A" => [1, 2, 3],
+        "B" => [1, 2, 3],
+        "C" => [1, 2, 3],
+        "D" => [1, 2, 3],
+        "E" => [1, 2, 3]
+    ]?;
 
     let mut selection = vec![];
 
@@ -458,20 +452,20 @@ fn test_lazy_query_8() -> Result<()> {
 fn test_lazy_query_9() -> Result<()> {
     // https://github.com/pola-rs/polars/issues/958
     let cities = df![
-            "Cities.City"=> ["Moscow", "Berlin", "Paris","Hamburg", "Lyon", "Novosibirsk"],
-            "Cities.Population"=> [11.92, 3.645, 2.161, 1.841, 0.513, 1.511],
-            "Cities.Country"=> ["Russia", "Germany", "France", "Germany", "France", "Russia"]
-        ]?;
+        "Cities.City"=> ["Moscow", "Berlin", "Paris","Hamburg", "Lyon", "Novosibirsk"],
+        "Cities.Population"=> [11.92, 3.645, 2.161, 1.841, 0.513, 1.511],
+        "Cities.Country"=> ["Russia", "Germany", "France", "Germany", "France", "Russia"]
+    ]?;
 
     let sales = df![
-                   "Sales.City"=> ["Moscow", "Berlin", "Paris", "Moscow", "Berlin", "Paris", "Moscow", "Berlin", "Paris"],
-        "Sales.Item"=> ["Item A", "Item A","Item A",
-                       "Item B", "Item B","Item B",
-                       "Item C", "Item C","Item C"],
-        "Sales.Amount"=> [200, 180, 100,
-                        3, 30, 20,
-                        90, 130, 125]
-            ]?;
+               "Sales.City"=> ["Moscow", "Berlin", "Paris", "Moscow", "Berlin", "Paris", "Moscow", "Berlin", "Paris"],
+    "Sales.Item"=> ["Item A", "Item A","Item A",
+                   "Item B", "Item B","Item B",
+                   "Item C", "Item C","Item C"],
+    "Sales.Amount"=> [200, 180, 100,
+                    3, 30, 20,
+                    90, 130, 125]
+        ]?;
 
     let out = sales
         .lazy()
@@ -511,7 +505,7 @@ fn test_lazy_query_7() {
         Date64Chunked::new_from_naive_datetime("date", &*dates).into(),
         Series::new("data", data),
     ])
-        .unwrap();
+    .unwrap();
     // this tests if predicate pushdown not interferes with the shift data.
     let out = df
         .lazy()
@@ -543,10 +537,10 @@ fn test_lazy_shift_and_fill_all() {
 fn test_lazy_shift_operation_no_filter() {
     // check if predicate pushdown optimization does not fail
     let df = df! {
-            "a" => &[1, 2, 3],
-            "b" => &[1, 2, 3]
-        }
-        .unwrap();
+        "a" => &[1, 2, 3],
+        "b" => &[1, 2, 3]
+    }
+    .unwrap();
     df.lazy()
         .with_column(col("b").shift(1).alias("output"))
         .collect()
@@ -617,9 +611,9 @@ fn test_lazy_filter_and_rename() {
         .select(&[col("x")]);
 
     let correct = df! {
-            "x" => &[4, 5]
-        }
-        .unwrap();
+        "x" => &[4, 5]
+    }
+    .unwrap();
     assert!(lf.collect().unwrap().frame_equal(&correct));
 
     // now we check if the column is rename or added when we don't select
@@ -689,16 +683,16 @@ fn test_lazy_update_column() {
 #[test]
 fn test_lazy_fill_none() {
     let df = df! {
-            "a" => &[None, Some(2)],
-            "b" => &[Some(1), None]
-        }
-        .unwrap();
+        "a" => &[None, Some(2)],
+        "b" => &[Some(1), None]
+    }
+    .unwrap();
     let out = df.lazy().fill_none(lit(10.0)).collect().unwrap();
     let correct = df! {
-            "a" => &[Some(10.0), Some(2.0)],
-            "b" => &[Some(1.0), Some(10.0)]
-        }
-        .unwrap();
+        "a" => &[Some(10.0), Some(2.0)],
+        "b" => &[Some(1.0), Some(10.0)]
+    }
+    .unwrap();
     assert!(out.frame_equal(&correct));
     assert_eq!(out.get_column_names(), vec!["a", "b"])
 }
@@ -706,10 +700,10 @@ fn test_lazy_fill_none() {
 #[test]
 fn test_lazy_window_functions() {
     let df = df! {
-            "groups" => &[1, 1, 2, 2, 1, 2, 3, 3, 1],
-            "values" => &[1, 2, 3, 4, 5, 6, 7, 8, 8]
-        }
-        .unwrap();
+        "groups" => &[1, 1, 2, 2, 1, 2, 3, 3, 1],
+        "values" => &[1, 2, 3, 4, 5, 6, 7, 8, 8]
+    }
+    .unwrap();
 
     // sums
     // 1 => 16
@@ -744,9 +738,9 @@ fn test_lazy_window_functions() {
 #[test]
 fn test_lazy_double_projection() {
     let df = df! {
-            "foo" => &[1, 2, 3]
-        }
-        .unwrap();
+        "foo" => &[1, 2, 3]
+    }
+    .unwrap();
     df.lazy()
         .select(&[col("foo").alias("bar")])
         .select(&[col("bar")])
@@ -757,10 +751,10 @@ fn test_lazy_double_projection() {
 #[test]
 fn test_type_coercion() {
     let df = df! {
-            "foo" => &[1, 2, 3],
-            "bar" => &[1.0, 2.0, 3.0]
-        }
-        .unwrap();
+        "foo" => &[1, 2, 3],
+        "bar" => &[1.0, 2.0, 3.0]
+    }
+    .unwrap();
 
     let lp = df.lazy().select(&[col("foo") * col("bar")]).logical_plan;
 
@@ -786,10 +780,10 @@ fn test_type_coercion() {
 #[test]
 fn test_lazy_partition_agg() {
     let df = df! {
-            "foo" => &[1, 1, 2, 2, 3],
-            "bar" => &[1.0, 1.0, 2.0, 2.0, 3.0]
-        }
-        .unwrap();
+        "foo" => &[1, 1, 2, 2, 3],
+        "bar" => &[1.0, 1.0, 2.0, 2.0, 3.0]
+    }
+    .unwrap();
 
     let out = df
         .lazy()
@@ -832,12 +826,12 @@ fn test_lazy_partition_agg() {
 #[test]
 fn test_lazy_groupby_apply() {
     let df = df! {
-            "A" => &[1, 2, 3, 4, 5],
-            "fruits" => &["banana", "banana", "apple", "apple", "banana"],
-            "B" => &[5, 4, 3, 2, 1],
-            "cars" => &["beetle", "audi", "beetle", "beetle", "beetle"]
-        }
-        .unwrap();
+        "A" => &[1, 2, 3, 4, 5],
+        "fruits" => &["banana", "banana", "apple", "apple", "banana"],
+        "B" => &[5, 4, 3, 2, 1],
+        "cars" => &["beetle", "audi", "beetle", "beetle", "beetle"]
+    }
+    .unwrap();
 
     df.lazy()
         .groupby(vec![col("fruits")])
@@ -859,10 +853,10 @@ fn test_lazy_groupby_apply() {
 #[test]
 fn test_lazy_shift_and_fill() {
     let df = df! {
-            "A" => &[1, 2, 3, 4, 5],
-            "B" => &[5, 4, 3, 2, 1]
-        }
-        .unwrap();
+        "A" => &[1, 2, 3, 4, 5],
+        "B" => &[5, 4, 3, 2, 1]
+    }
+    .unwrap();
     let out = df
         .clone()
         .lazy()
@@ -892,10 +886,10 @@ fn test_lazy_shift_and_fill() {
 #[test]
 fn test_lazy_groupby() {
     let df = df! {
-            "a" => &[Some(1.0), None, Some(3.0), Some(4.0), Some(5.0)],
-            "groups" => &["a", "a", "b", "c", "c"]
-        }
-        .unwrap();
+        "a" => &[Some(1.0), None, Some(3.0), Some(4.0), Some(5.0)],
+        "groups" => &["a", "a", "b", "c", "c"]
+    }
+    .unwrap();
 
     let out = df
         .lazy()
@@ -914,10 +908,10 @@ fn test_lazy_groupby() {
 #[test]
 fn test_lazy_tail() {
     let df = df! {
-            "A" => &[1, 2, 3, 4, 5],
-            "B" => &[5, 4, 3, 2, 1]
-        }
-        .unwrap();
+        "A" => &[1, 2, 3, 4, 5],
+        "B" => &[5, 4, 3, 2, 1]
+    }
+    .unwrap();
 
     let _out = df.clone().lazy().tail(3).collect().unwrap();
 }
@@ -925,10 +919,10 @@ fn test_lazy_tail() {
 #[test]
 fn test_lazy_groupby_sort() {
     let df = df! {
-            "a" => ["a", "b", "a", "b", "b", "c"],
-            "b" => [1, 2, 3, 4, 5, 6]
-        }
-        .unwrap();
+        "a" => ["a", "b", "a", "b", "b", "c"],
+        "b" => [1, 2, 3, 4, 5, 6]
+    }
+    .unwrap();
 
     let out = df
         .clone()
@@ -963,11 +957,11 @@ fn test_lazy_groupby_sort() {
 #[test]
 fn test_lazy_groupby_sort_by() {
     let df = df! {
-            "a" => ["a", "a", "a", "b", "b", "c"],
-            "b" => [1, 2, 3, 4, 5, 6],
-            "c" => [6, 1, 4, 3, 2, 1]
-        }
-        .unwrap();
+        "a" => ["a", "a", "a", "b", "b", "c"],
+        "b" => [1, 2, 3, 4, 5, 6],
+        "c" => [6, 1, 4, 3, 2, 1]
+    }
+    .unwrap();
 
     let out = df
         .lazy()
@@ -988,10 +982,10 @@ fn test_lazy_groupby_sort_by() {
 #[cfg(feature = "dtype-date64")]
 fn test_lazy_groupby_cast() {
     let df = df! {
-            "a" => ["a", "a", "a", "b", "b", "c"],
-            "b" => [1, 2, 3, 4, 5, 6]
-        }
-        .unwrap();
+        "a" => ["a", "a", "a", "b", "b", "c"],
+        "b" => [1, 2, 3, 4, 5, 6]
+    }
+    .unwrap();
 
     // test if it runs in groupby context
     let _out = df
@@ -1005,10 +999,10 @@ fn test_lazy_groupby_cast() {
 #[test]
 fn test_lazy_groupby_binary_expr() {
     let df = df! {
-            "a" => ["a", "a", "a", "b", "b", "c"],
-            "b" => [1, 2, 3, 4, 5, 6]
-        }
-        .unwrap();
+        "a" => ["a", "a", "a", "b", "b", "c"],
+        "b" => [1, 2, 3, 4, 5, 6]
+    }
+    .unwrap();
 
     // test if it runs in groupby context
     let out = df
@@ -1027,9 +1021,9 @@ fn test_lazy_groupby_binary_expr() {
 #[test]
 fn test_lazy_groupby_filter() -> Result<()> {
     let df = df! {
-            "a" => ["a", "a", "a", "b", "b", "c"],
-            "b" => [1, 2, 3, 4, 5, 6]
-        }?;
+        "a" => ["a", "a", "a", "b", "b", "c"],
+        "b" => [1, 2, 3, 4, 5, 6]
+    }?;
 
     // We test if the filters work in the groupby context
     // and that the aggregations can deal with empty sets
@@ -1072,10 +1066,10 @@ fn test_groupby_projection_pd_same_column() -> Result<()> {
 
     let a = || {
         let df = df![
-                "col1" => ["a", "ab", "abc"],
-                "col2" => [1, 2, 3]
-            ]
-            .unwrap();
+            "col1" => ["a", "ab", "abc"],
+            "col2" => [1, 2, 3]
+        ]
+        .unwrap();
 
         df.lazy()
             .select(vec![col("col1").alias("foo"), col("col2").alias("bar")])
@@ -1095,9 +1089,9 @@ fn test_groupby_projection_pd_same_column() -> Result<()> {
 #[test]
 fn test_groupby_sort_slice() -> Result<()> {
     let df = df![
-            "groups" => [1, 2, 2, 3, 3, 3],
-            "vals" => [1, 5, 6, 3, 9, 8]
-        ]?;
+        "groups" => [1, 2, 2, 3, 3, 3],
+        "vals" => [1, 5, 6, 3, 9, 8]
+    ]?;
     // get largest two values per groups
 
     // expected:
@@ -1130,9 +1124,9 @@ fn test_groupby_sort_slice() -> Result<()> {
 #[test]
 fn test_groupby_cumsum() -> Result<()> {
     let df = df![
-            "groups" => [1, 2, 2, 3, 3, 3],
-            "vals" => [1, 5, 6, 3, 9, 8]
-        ]?;
+        "groups" => [1, 2, 2, 3, 3, 3],
+        "vals" => [1, 5, 6, 3, 9, 8]
+    ]?;
 
     let out = df
         .lazy()
@@ -1156,10 +1150,10 @@ fn test_groupby_cumsum() -> Result<()> {
 #[test]
 fn test_argsort_multiple() -> Result<()> {
     let df = df![
-            "int" => [1, 2, 3, 1, 2],
-            "flt" => [3.0, 2.0, 1.0, 2.0, 1.0],
-            "str" => ["a", "a", "a", "b", "b"]
-        ]?;
+        "int" => [1, 2, 3, 1, 2],
+        "flt" => [3.0, 2.0, 1.0, 2.0, 1.0],
+        "str" => ["a", "a", "a", "b", "b"]
+    ]?;
 
     let out = df
         .clone()
@@ -1193,10 +1187,10 @@ fn test_argsort_multiple() -> Result<()> {
 #[test]
 fn test_multiple_explode() -> Result<()> {
     let df = df![
-            "a" => [0, 1, 2, 0, 2],
-            "b" => [5, 4, 3, 2, 1],
-            "c" => [2, 3, 4, 1, 5]
-        ]?;
+        "a" => [0, 1, 2, 0, 2],
+        "b" => [5, 4, 3, 2, 1],
+        "c" => [2, 3, 4, 1, 5]
+    ]?;
 
     let out = df
         .lazy()
@@ -1215,8 +1209,8 @@ fn test_multiple_explode() -> Result<()> {
 #[test]
 fn test_filter_and_alias() -> Result<()> {
     let df = df![
-            "a" => [0, 1, 2, 0, 2]
-        ]?;
+        "a" => [0, 1, 2, 0, 2]
+    ]?;
 
     let out = df
         .lazy()
@@ -1225,9 +1219,9 @@ fn test_filter_and_alias() -> Result<()> {
         .collect()?;
 
     let expected = df![
-            "a" => [2, 2],
-            "a_squared" => [4, 4]
-        ]?;
+        "a" => [2, 2],
+        "a_squared" => [4, 4]
+    ]?;
 
     assert!(out.frame_equal(&expected));
     Ok(())
@@ -1248,8 +1242,8 @@ fn test_filter_lit() {
 #[test]
 fn test_ternary_null() -> Result<()> {
     let df = df![
-            "a" => ["a", "b", "c"]
-        ]?;
+        "a" => ["a", "b", "c"]
+    ]?;
 
     let out = df
         .lazy()
@@ -1269,9 +1263,9 @@ fn test_ternary_null() -> Result<()> {
 #[test]
 fn test_fill_forward() -> Result<()> {
     let df = df![
-            "a" => ["a", "b", "a"],
-            "b" => [Some(1), None, None]
-        ]?;
+        "a" => ["a", "b", "a"],
+        "b" => [Some(1), None, None]
+    ]?;
 
     let out = df
         .lazy()
@@ -1292,14 +1286,14 @@ fn test_fill_forward() -> Result<()> {
 #[test]
 fn test_cross_join() -> Result<()> {
     let df1 = df![
-            "a" => ["a", "b", "a"],
-            "b" => [Some(1), None, None]
-        ]?;
+        "a" => ["a", "b", "a"],
+        "b" => [Some(1), None, None]
+    ]?;
 
     let df2 = df![
-            "a" => [1, 2],
-            "b" => [None, Some(12)]
-        ]?;
+        "a" => [1, 2],
+        "b" => [None, Some(12)]
+    ]?;
 
     let out = df1.lazy().cross_join(df2.lazy()).collect()?;
     assert_eq!(out.shape(), (6, 4));
@@ -1309,11 +1303,12 @@ fn test_cross_join() -> Result<()> {
 #[test]
 fn test_fold_wildcard() -> Result<()> {
     let df1 = df![
-        "a" => [1, 2, 3],
-        "b" => [1, 2, 3]
-        ]?;
+    "a" => [1, 2, 3],
+    "b" => [1, 2, 3]
+    ]?;
 
     let out = df1
+        .clone()
         .lazy()
         .select(vec![
             fold_exprs(lit(0), |a, b| Ok(&a + &b), vec![col("*")]).alias("foo")
@@ -1324,6 +1319,12 @@ fn test_fold_wildcard() -> Result<()> {
         Vec::from(out.column("foo")?.i32()?),
         &[Some(2), Some(4), Some(6)]
     );
+
+    // test if we don't panic due to wildcard
+    let out = df1
+        .lazy()
+        .select(vec![all_exprs(vec![col("*").is_not_null()])])
+        .collect()?;
     Ok(())
 }
 
@@ -1331,9 +1332,9 @@ fn test_fold_wildcard() -> Result<()> {
 fn test_select_empty_df() -> Result<()> {
     // https://github.com/pola-rs/polars/issues/1056
     let df1 = df![
-        "a" => [1, 2, 3],
-        "b" => [1, 2, 3]
-        ]?;
+    "a" => [1, 2, 3],
+    "b" => [1, 2, 3]
+    ]?;
 
     let out = df1
         .lazy()
@@ -1350,9 +1351,9 @@ fn test_select_empty_df() -> Result<()> {
 #[test]
 fn test_keep_name() -> Result<()> {
     let df = df![
-        "a" => [1, 2, 3],
-        "b" => [1, 2, 3]
-        ]?;
+    "a" => [1, 2, 3],
+    "b" => [1, 2, 3]
+    ]?;
 
     let out = df
         .lazy()
@@ -1369,10 +1370,10 @@ fn test_keep_name() -> Result<()> {
 #[test]
 fn test_exclude() -> Result<()> {
     let df = df![
-        "a" => [1, 2, 3],
-        "b" => [1, 2, 3],
-        "c" => [1, 2, 3]
-        ]?;
+    "a" => [1, 2, 3],
+    "b" => [1, 2, 3],
+    "c" => [1, 2, 3]
+    ]?;
 
     let out = df.lazy().select(vec![col("*").exclude(&["b"])]).collect()?;
 
