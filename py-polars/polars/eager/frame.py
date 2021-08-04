@@ -1271,8 +1271,8 @@ class DataFrame:
     def sort(
         self,
         by: Union[str, "pl.Expr", tp.List["pl.Expr"]],
-        in_place: bool = False,
         reverse: Union[bool, tp.List[bool]] = False,
+        in_place: bool = False,
     ) -> Optional["DataFrame"]:
         """
         Sort the DataFrame by column.
@@ -1281,10 +1281,10 @@ class DataFrame:
         ----------
         by
             By which column to sort. Only accepts string.
-        in_place
-            Perform operation in-place.
         reverse
             Reverse/descending sort.
+        in_place
+            Perform operation in-place.
 
         Examples
         --------
