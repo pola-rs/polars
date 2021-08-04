@@ -320,6 +320,27 @@ class LazyFrame:
         )
         return pl.eager.frame.wrap_df(ldf.fetch(n_rows))
 
+    @property
+    def columns(self) -> tp.List[str]:
+        """
+        Get or set column names.
+
+        Examples
+        --------
+
+        >>> df = (pl.DataFrame({
+        >>>    "foo": [1, 2, 3],
+        >>>    "bar": [6, 7, 8],
+        >>>    "ham": ['a', 'b', 'c']
+        >>>    }).lazy()
+        >>>     .select(["foo", "bar"]))
+
+        >>> df.columns
+        ["foo", "bar"]
+
+        """
+        return self._ldf.columns()
+
     def cache(
         self,
     ) -> "LazyFrame":

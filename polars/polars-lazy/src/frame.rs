@@ -236,6 +236,12 @@ impl Default for OptState {
 pub type AllowedOptimizations = OptState;
 
 impl LazyFrame {
+    /// Get a hold on the schema of the current LazyFrame computation.
+    pub fn schema(&self) -> SchemaRef {
+        let logical_plan = self.clone().get_plan_builder().build();
+        logical_plan.schema().clone()
+    }
+
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg(feature = "parquet")]
     pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {

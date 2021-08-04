@@ -324,3 +324,15 @@ def test_drop_nulls():
 def test_all_expr():
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert df[[pl.all()]].frame_equal(df)
+
+
+def test_lazy_columns():
+    df = pl.DataFrame(
+        {
+            "a": [1],
+            "b": [1],
+            "c": [1],
+        }
+    ).lazy()
+
+    assert df.select(["a", "c"]).columns == ["a", "c"]
