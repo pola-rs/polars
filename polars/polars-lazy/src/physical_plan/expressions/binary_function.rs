@@ -1,9 +1,11 @@
 use crate::logical_plan::Context;
+use crate::physical_plan::expressions::binary::binary_check_group_tuples;
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::{prelude::*, POOL};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub(crate) struct BinaryFunctionExpr {
@@ -39,6 +41,40 @@ impl PhysicalExpr for BinaryFunctionExpr {
             s.rename(&name);
             s
         })
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        let (series_a, series_b) = POOL.install(|| {
+            rayon::join(
+                || self.input_a.evaluate_on_groups(df, groups, state),
+                || self.input_b.evaluate_on_groups(df, groups, state),
+            )
+        });
+        let (series_a, groups_a) = series_a?;
+        let (series_b, groups_b) = series_b?;
+
+        let name = self
+            .output_field
+            .get_field(
+                &df.schema(),
+                Context::Default,
+                &Field::new(series_a.name(), series_a.dtype().clone()),
+                &Field::new(series_b.name(), series_b.dtype().clone()),
+            )
+            .map(|fld| fld.name().clone())
+            .unwrap_or_else(|| "binary_function".to_string());
+
+        let out = self.function.call_udf(series_a, series_b).map(|mut s| {
+            s.rename(&name);
+            s
+        })?;
+        binary_check_group_tuples(out, groups_a, groups_b)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
