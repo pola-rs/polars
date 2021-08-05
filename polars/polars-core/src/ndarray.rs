@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use ndarray::prelude::*;
-use std::convert::{TryFrom, From};
+use std::convert::{From, TryFrom};
 
 impl<T> ChunkedArray<T>
 where
@@ -17,8 +17,8 @@ where
 
 #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
 impl<'a, T> From<&'a ChunkedArray<T>> for ArrayView1<'a, T::Native>
-    where
-        T: PolarsNumericType
+where
+    T: PolarsNumericType,
 {
     /// Convert from a ChunkedArray into a 1-dimensional ArrayView
     fn from(a: &'a ChunkedArray<T>) -> Self {
@@ -128,13 +128,6 @@ impl DataFrame {
 
 macro_rules! make_ndarray_type_conversion {
     ($polars:ty, $native:ty) => {
-        // #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
-        // impl From<DataFrame> for Array2<$native> {
-        //     fn from(d: DataFrame) -> Self {
-        //         d.to_ndarray::<$polars>().unwrap()
-        //     }
-        // }
-
         #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
         impl TryFrom<DataFrame> for Array2<$native> {
             type Error = PolarsError;
@@ -144,13 +137,6 @@ macro_rules! make_ndarray_type_conversion {
             }
         }
 
-        // #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
-        // impl From<ListChunked> for Array2<$native> {
-        //     fn from(l: ListChunked) -> Self {
-        //         l.to_ndarray::<$polars>().unwrap()
-        //     }
-        // }
-        //
         #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
         impl TryFrom<ListChunked> for Array2<$native> {
             type Error = PolarsError;
@@ -162,7 +148,6 @@ macro_rules! make_ndarray_type_conversion {
     };
 }
 
-// // Todo add try from
 make_ndarray_type_conversion!(Int8Type, i8);
 make_ndarray_type_conversion!(Int16Type, i16);
 make_ndarray_type_conversion!(Int32Type, i32);
@@ -181,68 +166,14 @@ mod test {
     use std::convert::TryInto;
 
     #[test]
-    fn test_df_to_ndarray(){
+    fn test_df_to_ndarray() {
         let df = df![
             "a" => [1, 2, 3],
             "b" => [0.1, 0.2, 0.3]
-        ].unwrap();
+        ]
+        .unwrap();
         let arr: Array2<f64> = df.try_into().unwrap();
         assert!(!arr.is_empty());
-        assert_eq!(arr, array![
-            [1., 0.1],
-            [2., 0.2],
-            [3., 0.3]
-        ])
+        assert_eq!(arr, array![[1., 0.1], [2., 0.2], [3., 0.3]])
     }
 }
-
-// make_df_to_type!(UInt8Type);
-// make_df_to_type!(UInt16Type);
-// make_df_to_type!(UInt32Type);
-// make_df_to_type!(UInt64Type);
-// make_df_to_type!(int8type);
-// make_df_to_type!(int16type);
-// make_df_to_type!(int32type);
-// make_df_to_type!(int64type);
-// make_df_to_type!(float32type);
-// make_df_to_type!(float64type);
-// make_df_to_type!(date32type);
-// make_df_to_type!(date64type);
-// make_df_to_type!(time64nanosecondtype);
-// make_df_to_type!(durationnanosecondtype);
-// make_df_to_type!(durationmillisecondtype);
-
-// #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
-// impl From<DataFrame> for Array2<<Float64Type as ArrowPrimitiveType>::Native>
-// {
-//     fn from(d: DataFrame) -> Self {
-//         d.to_ndarray::<Float64Type>().unwrap()
-//     }
-//     // fn from(d: DataFrame) -> Array2<N::Native> {
-//     //     d.to_ndarray::<N>().unwrap()
-//     // }
-// }
-// trait PolarsConv<U>
-// {
-//     fn convert(&self, df: DataFrame) -> Array2<U>;
-// }
-//
-// impl<T> PolarsConv<f64> for T where
-//     T: PolarsNumericType
-// {
-//     fn convert(df: DataFrame) -> Array2<f64> {
-//         df.to_ndarray().unwrap()
-//     }
-// }
-//
-// #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
-// impl<T, U> From<DataFrame> for Array2<U>
-// where T: PolarsConv<U>
-// {
-//     fn from(&self, d: DataFrame) -> Self {
-//         T::convert(df)
-//     }
-//     // fn from(d: DataFrame) -> Array2<N::Native> {
-//     //     d.to_ndarray::<N>().unwrap()
-//     // }
-// }
