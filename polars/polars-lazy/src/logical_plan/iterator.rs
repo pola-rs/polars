@@ -1,7 +1,8 @@
 use crate::prelude::*;
 
 macro_rules! push_expr {
-    ($current_expr:expr, $push:ident) => {{
+    ($current_expr:expr, $push:ident, $iter:ident) => {{
+        use Expr::*;
         match $current_expr {
             Column(_) | Literal(_) | Wildcard => {}
             Alias(e, _) => $push(e),
@@ -54,7 +55,7 @@ macro_rules! push_expr {
                 $push(falsy);
                 $push(predicate)
             }
-            Function { input, .. } => input.iter().for_each(|e| $push(e)),
+            Function { input, .. } => input.$iter().for_each(|e| $push(e)),
             Shift { input, .. } => $push(input),
             Reverse(e) => $push(e),
             Duplicated(e) => $push(e),
@@ -87,62 +88,37 @@ macro_rules! push_expr {
 }
 
 impl Expr {
-    pub(crate) fn iter_mut(&mut self) -> ExprIterMut<'_> {
+    /// Expr::mutate().apply(fn())
+    pub(crate) fn mutate(&mut self) -> ExprMut {
         let mut stack = Vec::with_capacity(8);
-        stack.push(self as *mut Expr);
-        ExprIterMut { root: self, stack }
+        stack.push(self);
+        ExprMut { stack }
     }
 }
 
-pub(crate) struct ExprIterMut<'a> {
-    #[allow(dead_code)]
-    // SAFETY: Don't ever access this!
-    root: &'a mut Expr,
-    stack: Vec<*mut Expr>,
+pub(crate) struct ExprMut<'a> {
+    stack: Vec<&'a mut Expr>,
 }
 
-impl<'a> ExprIterMut<'a> {
-    /// # Safety
+impl<'a> ExprMut<'a> {
     ///
-    /// This is a mutable iterator over the Expr. However iterating this is unsafe. Once you
-    /// update a node in the Expr tree, (For instance its children). The old children are on this
-    /// stack and are still dereferenced leading to UB.
-    ///
-    /// Its the callers responsibility to stop iteration once an element is mutably accessed.
-    pub unsafe fn next_unsafe(&mut self) -> Option<&'a mut Expr> {
-        self.stack.pop().map(|current_expr| {
-            use Expr::*;
-            // we don't use a &mut Expr, but a &Expr, so that we can reuse the macro. This should
-            // not matter for safety.
-            let mut push = |e: &'a Expr| self.stack.push(e as *const Expr as *mut Expr);
-
-            let current_expr = &mut *current_expr;
-
-            push_expr!(current_expr, push);
-
-            current_expr
-        })
-    }
-}
-
-impl<'a> Iterator for ExprIterMut<'a> {
-    type Item = &'a mut Expr;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.stack.pop().map(|current_expr| {
-            use Expr::*;
-            // we don't use a &mut Expr, but a &Expr, so that we can reuse the macro. This should
-            // not matter for safety.
-            let mut push = |e: &'a Expr| self.stack.push(e as *const Expr as *mut Expr);
-
-            unsafe {
-                let current_expr = &mut *current_expr;
-
-                push_expr!(current_expr, push);
-
-                current_expr
+    /// # Arguments
+    /// * `f` - A function that may mutate an expression. If the function returns `true` iteration
+    /// continues.
+    pub(crate) fn apply<F>(&mut self, f: F)
+    where
+        F: Fn(&mut Expr) -> bool,
+    {
+        while let Some(current_expr) = self.stack.pop() {
+            // the order is important, we first modify the Expr
+            // before we push its children on the stack.
+            // The modification can make the children invalid.
+            if !f(current_expr) {
+                break;
             }
-        })
+            let mut push = |e: &'a mut Expr| self.stack.push(e);
+            push_expr!(current_expr, push, iter_mut);
+        }
     }
 }
 
@@ -155,10 +131,9 @@ impl<'a> Iterator for ExprIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.stack.pop().map(|current_expr| {
-            use Expr::*;
             let mut push = |e: &'a Expr| self.stack.push(e);
 
-            push_expr!(current_expr, push);
+            push_expr!(current_expr, push, iter);
             current_expr
         })
     }

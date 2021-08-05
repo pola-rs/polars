@@ -670,168 +670,23 @@ impl LogicalPlan {
     }
 }
 
-fn replace_wildcard_with_column(expr: Expr, column_name: Arc<String>) -> Expr {
-    match expr {
-        Expr::Window {
-            function,
-            partition_by,
-            order_by,
-        } => Expr::Window {
-            function: Box::new(replace_wildcard_with_column(*function, column_name)),
-            partition_by,
-            order_by,
-        },
-        Expr::IsUnique(expr) => {
-            Expr::IsUnique(Box::new(replace_wildcard_with_column(*expr, column_name)))
+/// This replace the wilcard Expr with a Column Expr. It also removes the Exclude Expr from the
+/// expression chain.
+fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<String>) -> Expr {
+    expr.mutate().apply(|e| {
+        match &e {
+            Expr::Wildcard => {
+                *e = Expr::Column(column_name.clone());
+            }
+            Expr::Exclude(input, _) => {
+                *e = replace_wildcard_with_column(*input.clone(), column_name.clone());
+            }
+            _ => {}
         }
-        Expr::Duplicated(expr) => {
-            Expr::Duplicated(Box::new(replace_wildcard_with_column(*expr, column_name)))
-        }
-        Expr::Reverse(expr) => {
-            Expr::Reverse(Box::new(replace_wildcard_with_column(*expr, column_name)))
-        }
-        Expr::Explode(expr) => {
-            Expr::Explode(Box::new(replace_wildcard_with_column(*expr, column_name)))
-        }
-        Expr::Take { expr, idx } => Expr::Take {
-            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
-            idx,
-        },
-        Expr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => Expr::Ternary {
-            predicate: Box::new(replace_wildcard_with_column(
-                *predicate,
-                column_name.clone(),
-            )),
-            truthy: Box::new(replace_wildcard_with_column(*truthy, column_name.clone())),
-            falsy: Box::new(replace_wildcard_with_column(*falsy, column_name)),
-        },
-        Expr::Function {
-            input,
-            function,
-            output_type,
-            options,
-        } => Expr::Function {
-            input: input
-                .into_iter()
-                .map(|e| replace_wildcard_with_column(e, column_name.clone()))
-                .collect(),
-            function,
-            output_type,
-            options,
-        },
-        Expr::BinaryFunction {
-            input_a,
-            input_b,
-            function,
-            output_field,
-        } => Expr::BinaryFunction {
-            input_a: Box::new(replace_wildcard_with_column(*input_a, column_name.clone())),
-            input_b: Box::new(replace_wildcard_with_column(*input_b, column_name)),
-            function,
-            output_field,
-        },
-        Expr::BinaryExpr { left, op, right } => Expr::BinaryExpr {
-            left: Box::new(replace_wildcard_with_column(*left, column_name.clone())),
-            op,
-            right: Box::new(replace_wildcard_with_column(*right, column_name)),
-        },
-        Expr::Wildcard => Expr::Column(column_name),
-        Expr::IsNotNull(e) => {
-            Expr::IsNotNull(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
-        Expr::IsNull(e) => Expr::IsNull(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::Not(e) => Expr::Not(Box::new(replace_wildcard_with_column(*e, column_name))),
-        Expr::Alias(e, name) => Expr::Alias(
-            Box::new(replace_wildcard_with_column(*e, column_name)),
-            name,
-        ),
-        Expr::Filter { .. } => {
-            panic!("Expression filter may not be used with wildcard, use LazyFrame::filter")
-        }
-        Expr::Agg(agg) => match agg {
-            AggExpr::Mean(e) => {
-                AggExpr::Mean(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Median(e) => {
-                AggExpr::Median(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Max(e) => {
-                AggExpr::Max(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Min(e) => {
-                AggExpr::Min(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Sum(e) => {
-                AggExpr::Sum(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Count(e) => {
-                AggExpr::Count(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Last(e) => {
-                AggExpr::Last(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::First(e) => {
-                AggExpr::First(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::NUnique(e) => {
-                AggExpr::NUnique(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::AggGroups(e) => {
-                AggExpr::AggGroups(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Quantile { expr, quantile } => AggExpr::Quantile {
-                expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
-                quantile,
-            },
-            AggExpr::List(e) => {
-                AggExpr::List(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Var(e) => {
-                AggExpr::Var(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-            AggExpr::Std(e) => {
-                AggExpr::Std(Box::new(replace_wildcard_with_column(*e, column_name)))
-            }
-        }
-        .into(),
-        Expr::Shift { input, periods } => Expr::Shift {
-            input: Box::new(replace_wildcard_with_column(*input, column_name)),
-            periods,
-        },
-        Expr::Slice {
-            input,
-            offset,
-            length,
-        } => Expr::Slice {
-            input: Box::new(replace_wildcard_with_column(*input, column_name)),
-            offset,
-            length,
-        },
-        Expr::SortBy { expr, by, reverse } => Expr::SortBy {
-            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
-            by,
-            reverse,
-        },
-        Expr::Sort { expr, reverse } => Expr::Sort {
-            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
-            reverse,
-        },
-        Expr::Cast { expr, data_type } => Expr::Cast {
-            expr: Box::new(replace_wildcard_with_column(*expr, column_name)),
-            data_type,
-        },
-        Expr::Column(_) => expr,
-        Expr::Literal(_) => expr,
-        // take the inner expression thus removes the exclude
-        Expr::Exclude(e, _) => replace_wildcard_with_column(*e, column_name),
-        Expr::KeepName(e) => {
-            Expr::KeepName(Box::new(replace_wildcard_with_column(*e, column_name)))
-        }
-    }
+        // always keep iterating all inputs
+        true
+    });
+    expr
 }
 
 fn rewrite_keep_name(expr: Expr) -> Expr {
@@ -897,27 +752,24 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
                 &expr,
                 |e| matches!(e, Expr::Function { input, options,  .. } if options.input_wildcard_expansion && input.iter().any(has_wildcard)),
             ) {
-                let mut unsafe_iter = expr.iter_mut();
+                expr.mutate().apply(|e| {
+                    if let Expr::Function { input, .. } = e {
+                        let mut new_inputs = Vec::with_capacity(input.len());
 
-                // Safety: this is safe because we directly stop iteration once the children are mutated.
-                unsafe {
-                    while let Some(e) = unsafe_iter.next_unsafe() {
-                        if let Expr::Function { input, .. } = e {
-                            let mut new_inputs = Vec::with_capacity(input.len());
+                        input.iter_mut().for_each(|e| {
+                            if has_wildcard(e) {
+                                replace_wilcard(e, &mut new_inputs, &[], schema)
+                            } else {
+                                new_inputs.push(e.clone())
+                            }
+                        });
 
-                            input.iter_mut().for_each(|e| {
-                                if has_wildcard(e) {
-                                    replace_wilcard(e, &mut new_inputs, &[], schema)
-                                } else {
-                                    new_inputs.push(e.clone())
-                                }
-                            });
-
-                            *input = new_inputs;
-                            break;
-                        }
+                        *input = new_inputs;
+                        false
+                    } else {
+                        true
                     }
-                }
+                });
                 result.push(expr);
                 continue;
             }
