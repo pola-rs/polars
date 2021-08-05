@@ -4,7 +4,7 @@ use crate::series::PySeries;
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 use polars::prelude::AnyValue;
-use polars_core::utils::arrow::datatypes::ArrowNativeType;
+use polars_core::utils::arrow::types::NativeType;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
@@ -270,7 +270,7 @@ impl Default for ObjectValue {
     }
 }
 
-impl<'a, T: ArrowNativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<AlignedVec<T>> {
+impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<AlignedVec<T>> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let seq = <PySequence as PyTryFrom>::try_from(obj)?;
         let mut v = AlignedVec::with_capacity(seq.len().unwrap_or(0) as usize);
