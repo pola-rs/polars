@@ -2,6 +2,26 @@
 
 The Rust crate `polars` has its own changelog.
 
+### Polars 0.8.18
+* feature
+  - select columns by regex
+  - support >1M columns in IPC reader
+  - make DataFrame.sort arguments equal to LazyFrame.sort
+  - pl.all() == pl.col("*")
+
+* bug fix
+  - fix bugs due to filtering in aggregations: #1101
+  - fix bug in wildcard in functions `3163ee5`
+
+### Polars 0.8.17
+* feature
+  - keep_name expr
+  - exclude expr
+  - drop_nulls expre
+  - explode accepts expression (thus wildcard)
+  - groupby: head + tail added
+  - `df[::2]` slicing added
+  
 ### Polars 0.8.16
 patch release to fix panic #1077
 
