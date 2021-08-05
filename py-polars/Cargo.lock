@@ -1065,6 +1065,7 @@ dependencies = [
  "polars-core",
  "polars-io",
  "rayon",
+ "regex",
 ]
 
 [[package]]

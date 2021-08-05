@@ -719,10 +719,34 @@ fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<String>],
     }
 }
 
+#[cfg(feature = "regex")]
+fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &str) {
+    let re = regex::Regex::new(pattern)
+        .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
+    for field in schema.fields() {
+        let name = field.name();
+        if re.is_match(name) {
+            let mut new_expr = expr.clone();
+
+            new_expr.mutate().apply(|e| match &e {
+                Expr::Column(_) => {
+                    *e = Expr::Column(Arc::new(name.clone()));
+                    false
+                }
+                _ => true,
+            });
+
+            let new_expr = rewrite_keep_name(new_expr);
+            result.push(new_expr)
+        }
+    }
+}
+
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
+
     for mut expr in exprs {
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
@@ -775,8 +799,29 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             }
             replace_wilcard(&expr, &mut result, &exclude, schema);
         } else {
-            let expr = rewrite_keep_name(expr);
-            result.push(expr)
+            #[cfg(feature = "regex")]
+            {
+                // only in simple expression (no binary expression)
+                // we patter match regex columns
+                let roots = expr_to_root_column_names(&expr);
+                if roots.len() == 1 {
+                    let name = &**roots[0];
+                    if name.starts_with('^') && name.ends_with('$') {
+                        replace_regex(&expr, &mut result, schema, name)
+                    } else {
+                        let expr = rewrite_keep_name(expr);
+                        result.push(expr)
+                    }
+                } else {
+                    let expr = rewrite_keep_name(expr);
+                    result.push(expr)
+                }
+            }
+            #[cfg(not(feature = "regex"))]
+            {
+                let expr = rewrite_keep_name(expr);
+                result.push(expr)
+            }
         };
     }
     result
