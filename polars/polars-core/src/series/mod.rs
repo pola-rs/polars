@@ -7,16 +7,25 @@ mod comparison;
 pub mod implementations;
 pub(crate) mod iterator;
 
+#[cfg(feature = "object")]
+use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::{builder::get_list_builder, ChunkIdIter};
+#[cfg(feature = "groupby_list")]
+use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
+#[cfg(feature = "groupby_list")]
+use ahash::RandomState;
 use arrow::array::ArrayData;
 use arrow::compute::cast;
 use itertools::Itertools;
 use num::NumCast;
 use rayon::prelude::*;
+#[cfg(feature = "object")]
 use std::any::Any;
 use std::convert::TryFrom;
+#[cfg(feature = "groupby_list")]
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -464,11 +473,7 @@ pub trait SeriesTrait:
     }
 
     /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value for that element.
-    fn take_iter(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
+    fn take_iter(&self, _iter: &mut dyn TakeIterator) -> Result<Series> {
         unimplemented!()
     }
 
@@ -477,7 +482,7 @@ pub trait SeriesTrait:
     /// # Safety
     ///
     /// This doesn't check any bounds.
-    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn Iterator<Item = usize>) -> Series {
+    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series {
         unimplemented!()
     }
 
@@ -494,28 +499,19 @@ pub trait SeriesTrait:
     /// # Safety
     ///
     /// This doesn't check any bounds.
-    unsafe fn take_opt_iter_unchecked(
-        &self,
-        _iter: &mut dyn Iterator<Item = Option<usize>>,
-    ) -> Series {
+    unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series {
         unimplemented!()
     }
 
     /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value for that element
-    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
+    #[cfg(feature = "take_opt_iter")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "take_opt_iter")))]
+    fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
         unimplemented!()
     }
 
     /// Take by index. This operation is clone.
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value for that element.
-    fn take(&self, _indices: &UInt32Chunked) -> Series {
+    fn take(&self, _indices: &UInt32Chunked) -> Result<Series> {
         unimplemented!()
     }
 
@@ -1012,14 +1008,17 @@ pub trait SeriesTrait:
     /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series>;
 
+    #[cfg(feature = "object")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     /// Get the value at this index as a downcastable Any trait ref.
-    fn get_as_any(&self, _index: usize) -> &dyn Any {
+    fn get_object(&self, _index: usize) -> Option<&dyn PolarsObjectSafe> {
         unimplemented!()
     }
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
     #[cfg(feature = "object")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     fn as_any(&self) -> &dyn Any {
         unimplemented!()
     }
@@ -1186,6 +1185,25 @@ impl<'a> (dyn SeriesTrait + 'a) {
 /// ```
 #[derive(Clone)]
 pub struct Series(pub Arc<dyn SeriesTrait>);
+
+#[cfg(feature = "groupby_list")]
+impl PartialEq for Wrap<Series> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.series_equal_missing(other)
+    }
+}
+
+#[cfg(feature = "groupby_list")]
+impl Eq for Wrap<Series> {}
+
+#[cfg(feature = "groupby_list")]
+impl Hash for Wrap<Series> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let rs = RandomState::with_seeds(0, 0, 0, 0);
+        let h = UInt64Chunked::new_from_aligned_vec("", self.0.vec_hash(rs)).sum();
+        h.hash(state)
+    }
+}
 
 impl Series {
     pub(crate) fn get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
@@ -1425,11 +1443,15 @@ impl Series {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_threaded(&self, idx: &UInt32Chunked, rechunk: bool) -> Series {
+    pub fn take_threaded(&self, idx: &UInt32Chunked, rechunk: bool) -> Result<Series> {
         let n_threads = POOL.current_num_threads();
         let idx = split_ca(idx, n_threads).unwrap();
 
-        let series: Vec<_> = POOL.install(|| idx.par_iter().map(|idx| self.take(idx)).collect());
+        let series = POOL.install(|| {
+            idx.par_iter()
+                .map(|idx| self.take(idx))
+                .collect::<Result<Vec<_>>>()
+        })?;
 
         let s = series
             .into_iter()
@@ -1439,9 +1461,9 @@ impl Series {
             })
             .unwrap();
         if rechunk {
-            s.rechunk()
+            Ok(s.rechunk())
         } else {
-            s
+            Ok(s)
         }
     }
 

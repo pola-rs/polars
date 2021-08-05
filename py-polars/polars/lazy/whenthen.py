@@ -2,14 +2,14 @@ from typing import Any, Union
 
 import polars as pl
 
-from .expr import expr_to_lit_or_expr
-
 try:
-    from ..polars import when as pywhen
-except ImportError:
-    import warnings
+    from polars.polars import when as pywhen
 
-    warnings.warn("Binary files missing.")
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
+
+from .expr import expr_to_lit_or_expr
 
 __all__ = ["when"]
 
@@ -94,28 +94,24 @@ def when(expr: "pl.Expr") -> When:
     """
     Start a when, then, otherwise expression.
 
-    # Example
+    Examples
+    --------
 
     Below we add a column with the value 1, where column "foo" > 2 and the value -1 where it isn't.
 
-    ```python
-    lf.with_column(
+    >>> lf.with_column(
         when(col("foo") > 2)
         .then(lit(1))
         .otherwise(lit(-1))
     )
-    ```
 
     Or with multiple `when, thens` chained:
 
-
-    ```python
-    lf.with_column(
+    >>> lf.with_column(
         when(col("foo") > 2).then(1)
         when(col("bar") > 2).then(4)
         .otherwise(-1)
     )
-    ```
     """
     expr = expr_to_lit_or_expr(expr)
     pw = pywhen(expr._pyexpr)

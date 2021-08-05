@@ -126,11 +126,11 @@ pub(crate) struct Utf8Field {
 
 impl Utf8Field {
     fn new(name: &str, capacity: usize, str_capacity: usize, delimiter: u8) -> Self {
-        let mut offsets = AlignedVec::with_capacity_aligned(capacity + 1);
+        let mut offsets = AlignedVec::with_capacity(capacity + 1);
         offsets.push(0);
         Self {
             name: name.to_string(),
-            data: AlignedVec::with_capacity_aligned(str_capacity),
+            data: AlignedVec::with_capacity(str_capacity),
             offsets,
             validity: BooleanBufferBuilder::new(capacity),
             rdr: csv_core::ReaderBuilder::new().delimiter(delimiter).build(),
@@ -205,7 +205,10 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
                         &self.data.as_slice()[data_len..data_len + n_written],
                     )
                     .into_owned();
-                    self.data.extend_from_slice(s.as_bytes());
+                    let b = s.as_bytes();
+                    self.data.extend_from_slice(b);
+                    self.offsets.push(self.data.len() as i64);
+                    self.validity.append(true);
                 } else if ignore_errors {
                     // append null
                     self.offsets.push(self.data.len() as i64);
@@ -253,7 +256,7 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
 pub(crate) fn init_buffers(
     projection: &[usize],
     capacity: usize,
-    schema: &SchemaRef,
+    schema: &Schema,
     // The running statistic of the amount of bytes we must allocate per str column
     str_capacities: &[RunningSize],
     delimiter: u8,

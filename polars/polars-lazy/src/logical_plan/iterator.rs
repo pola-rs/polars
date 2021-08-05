@@ -1,5 +1,127 @@
 use crate::prelude::*;
 
+macro_rules! push_expr {
+    ($current_expr:expr, $push:ident, $iter:ident) => {{
+        use Expr::*;
+        match $current_expr {
+            Column(_) | Literal(_) | Wildcard => {}
+            Alias(e, _) => $push(e),
+            Not(e) => $push(e),
+            BinaryExpr { left, op: _, right } => {
+                $push(left);
+                $push(right);
+            }
+            IsNull(e) => $push(e),
+            IsNotNull(e) => $push(e),
+            Cast { expr, .. } => $push(expr),
+            Sort { expr, .. } => $push(expr),
+            Take { expr, idx } => {
+                $push(expr);
+                $push(idx);
+            }
+            Filter { input, by } => {
+                $push(input);
+                $push(by)
+            }
+            SortBy { expr, by, .. } => {
+                $push(expr);
+                $push(by)
+            }
+            Agg(agg_e) => {
+                use AggExpr::*;
+                match agg_e {
+                    Max(e) => $push(e),
+                    Min(e) => $push(e),
+                    Mean(e) => $push(e),
+                    Median(e) => $push(e),
+                    NUnique(e) => $push(e),
+                    First(e) => $push(e),
+                    Last(e) => $push(e),
+                    List(e) => $push(e),
+                    Count(e) => $push(e),
+                    Quantile { expr, .. } => $push(expr),
+                    Sum(e) => $push(e),
+                    AggGroups(e) => $push(e),
+                    Std(e) => $push(e),
+                    Var(e) => $push(e),
+                }
+            }
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
+                $push(truthy);
+                $push(falsy);
+                $push(predicate)
+            }
+            Function { input, .. } => input.$iter().for_each(|e| $push(e)),
+            Shift { input, .. } => $push(input),
+            Reverse(e) => $push(e),
+            Duplicated(e) => $push(e),
+            IsUnique(e) => $push(e),
+            Explode(e) => $push(e),
+            Window {
+                function,
+                partition_by,
+                order_by,
+            } => {
+                $push(function);
+                for e in partition_by {
+                    $push(e)
+                }
+                if let Some(e) = order_by {
+                    $push(e);
+                }
+            }
+            Slice { input, .. } => $push(input),
+            BinaryFunction {
+                input_a, input_b, ..
+            } => {
+                $push(input_a);
+                $push(input_b)
+            }
+            Exclude(e, _) => $push(e),
+            KeepName(e) => $push(e),
+        }
+    }};
+}
+
+impl Expr {
+    /// Expr::mutate().apply(fn())
+    pub(crate) fn mutate(&mut self) -> ExprMut {
+        let mut stack = Vec::with_capacity(8);
+        stack.push(self);
+        ExprMut { stack }
+    }
+}
+
+pub(crate) struct ExprMut<'a> {
+    stack: Vec<&'a mut Expr>,
+}
+
+impl<'a> ExprMut<'a> {
+    ///
+    /// # Arguments
+    /// * `f` - A function that may mutate an expression. If the function returns `true` iteration
+    /// continues.
+    pub(crate) fn apply<F>(&mut self, f: F)
+    where
+        F: Fn(&mut Expr) -> bool,
+    {
+        while let Some(current_expr) = self.stack.pop() {
+            // the order is important, we first modify the Expr
+            // before we push its children on the stack.
+            // The modification can make the children invalid.
+            if !f(current_expr) {
+                break;
+            }
+            let mut push = |e: &'a mut Expr| self.stack.push(e);
+            push_expr!(current_expr, push, iter_mut);
+        }
+    }
+}
+
 pub struct ExprIter<'a> {
     stack: Vec<&'a Expr>,
 }
@@ -9,89 +131,9 @@ impl<'a> Iterator for ExprIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.stack.pop().map(|current_expr| {
-            use Expr::*;
             let mut push = |e: &'a Expr| self.stack.push(e);
 
-            match current_expr {
-                Column(_) | Literal(_) | Wildcard => {}
-                Alias(e, _) => push(e),
-                Not(e) => push(e),
-                BinaryExpr { left, op: _, right } => {
-                    push(left);
-                    push(right);
-                }
-                IsNull(e) => push(e),
-                IsNotNull(e) => push(e),
-                Cast { expr, .. } => push(expr),
-                Sort { expr, .. } => push(expr),
-                Take { expr, idx } => {
-                    push(expr);
-                    push(idx);
-                }
-                Filter { input, by } => {
-                    push(input);
-                    push(by)
-                }
-                SortBy { expr, by, .. } => {
-                    push(expr);
-                    push(by)
-                }
-                Agg(agg_e) => {
-                    use AggExpr::*;
-                    match agg_e {
-                        Max(e) => push(e),
-                        Min(e) => push(e),
-                        Mean(e) => push(e),
-                        Median(e) => push(e),
-                        NUnique(e) => push(e),
-                        First(e) => push(e),
-                        Last(e) => push(e),
-                        List(e) => push(e),
-                        Count(e) => push(e),
-                        Quantile { expr, .. } => push(expr),
-                        Sum(e) => push(e),
-                        AggGroups(e) => push(e),
-                        Std(e) => push(e),
-                        Var(e) => push(e),
-                    }
-                }
-                Ternary {
-                    truthy,
-                    falsy,
-                    predicate,
-                } => {
-                    push(truthy);
-                    push(falsy);
-                    push(predicate)
-                }
-                Function { input, .. } => input.iter().for_each(|e| push(e)),
-                Shift { input, .. } => push(input),
-                Reverse(e) => push(e),
-                Duplicated(e) => push(e),
-                IsUnique(e) => push(e),
-                Explode(e) => push(e),
-                Window {
-                    function,
-                    partition_by,
-                    order_by,
-                } => {
-                    push(function);
-                    for e in partition_by {
-                        push(e)
-                    }
-                    if let Some(e) = order_by {
-                        push(e);
-                    }
-                }
-                Slice { input, .. } => push(input),
-                BinaryFunction {
-                    input_a, input_b, ..
-                } => {
-                    push(input_a);
-                    push(input_b)
-                }
-                Except(e) => push(e),
-            }
+            push_expr!(current_expr, push, iter);
             current_expr
         })
     }
@@ -192,7 +234,6 @@ impl AExpr {
                 push(input_a);
                 push(input_b)
             }
-            Except(input) => push(input),
         }
     }
 }

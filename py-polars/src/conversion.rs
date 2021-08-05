@@ -1,14 +1,17 @@
 use crate::error::PyPolarsEr;
 use crate::prelude::*;
 use crate::series::PySeries;
+use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 use polars::prelude::AnyValue;
+use polars_core::utils::arrow::datatypes::ArrowNativeType;
+use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
-use std::any::Any;
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -132,7 +135,10 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .unwrap();
                 python_series_wrapper.into()
             }
-            AnyValue::Object(v) => v.into_py(py),
+            AnyValue::Object(v) => {
+                let s = format!("{}", v);
+                s.into_py(py)
+            }
         }
     }
 }
@@ -181,6 +187,36 @@ pub struct ObjectValue {
     pub inner: PyObject,
 }
 
+impl Hash for ObjectValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let gil = Python::acquire_gil();
+        let python = gil.python();
+        let h = self
+            .inner
+            .as_ref(python)
+            .hash()
+            .expect("should be hashable");
+        state.write_isize(h)
+    }
+}
+
+impl Eq for ObjectValue {}
+
+impl PartialEq for ObjectValue {
+    fn eq(&self, other: &Self) -> bool {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        match self
+            .inner
+            .as_ref(py)
+            .rich_compare(other.inner.as_ref(py), CompareOp::Eq)
+        {
+            Ok(result) => result.is_true().unwrap(),
+            Err(_) => false,
+        }
+    }
+}
+
 impl Display for ObjectValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.inner)
@@ -212,9 +248,9 @@ impl<'a> FromPyObject<'a> for ObjectValue {
 /// # Safety
 ///
 /// The caller is responsible for checking that val is Object otherwise UB
-impl From<&dyn Any> for &ObjectValue {
-    fn from(val: &dyn Any) -> Self {
-        unsafe { &*(val as *const dyn Any as *const ObjectValue) }
+impl From<&dyn PolarsObjectSafe> for &ObjectValue {
+    fn from(val: &dyn PolarsObjectSafe) -> Self {
+        unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
     }
 }
 
@@ -231,5 +267,16 @@ impl Default for ObjectValue {
         ObjectValue {
             inner: python.None(),
         }
+    }
+}
+
+impl<'a, T: ArrowNativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<AlignedVec<T>> {
+    fn extract(obj: &'a PyAny) -> PyResult<Self> {
+        let seq = <PySequence as PyTryFrom>::try_from(obj)?;
+        let mut v = AlignedVec::with_capacity(seq.len().unwrap_or(0) as usize);
+        for item in seq.iter()? {
+            v.push(item?.extract::<T>()?);
+        }
+        Ok(Wrap(v))
     }
 }

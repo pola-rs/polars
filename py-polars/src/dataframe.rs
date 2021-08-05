@@ -238,8 +238,7 @@ impl PyDataFrame {
             py,
             self.df.get_columns().iter().map(|s| match s.dtype() {
                 DataType::Object(_) => {
-                    let any = s.get_as_any(idx);
-                    let obj: &ObjectValue = any.into();
+                    let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                     obj.to_object(py)
                 }
                 _ => Wrap(s.get(idx)).into_py(py),
@@ -260,8 +259,7 @@ impl PyDataFrame {
                     py,
                     self.df.get_columns().iter().map(|s| match s.dtype() {
                         DataType::Object(_) => {
-                            let any = s.get_as_any(idx);
-                            let obj: &ObjectValue = any.into();
+                            let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                             obj.to_object(py)
                         }
                         _ => Wrap(s.get(idx)).into_py(py),
@@ -516,14 +514,16 @@ impl PyDataFrame {
         }
     }
 
-    pub fn take(&self, indices: Vec<usize>) -> Self {
-        let df = self.df.take_iter(indices.iter().copied());
-        PyDataFrame::new(df)
+    pub fn take(&self, indices: Wrap<AlignedVec<u32>>) -> PyResult<Self> {
+        let indices = indices.0;
+        let indices = indices.into_primitive_array::<UInt32Type>(None);
+        let df = self.df.take(&indices.into()).map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let df = self.df.take(idx);
+        let df = self.df.take(idx).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -631,7 +631,8 @@ impl PyDataFrame {
     }
 
     pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {
-        let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
+        let gb = Python::with_gil(|py| py.allow_threads(|| self.df.groupby(&by)))
+            .map_err(PyPolarsEr::from)?;
         let selection = match select.as_ref() {
             Some(s) => gb.select(s),
             None => gb,
@@ -727,12 +728,6 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
-    pub fn explode(&self, columns: Vec<String>) -> PyResult<Self> {
-        let df = self.df.explode(&columns);
-        let df = df.map_err(PyPolarsEr::from)?;
-        Ok(PyDataFrame::new(df))
-    }
-
     pub fn melt(&self, id_vars: Vec<&str>, value_vars: Vec<&str>) -> PyResult<Self> {
         let df = self
             .df
@@ -750,9 +745,14 @@ impl PyDataFrame {
         maintain_order: bool,
         subset: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        let df = self
-            .df
-            .drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+
+        let df = py
+            .allow_threads(|| {
+                self.df
+                    .drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
+            })
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
@@ -894,7 +894,10 @@ impl PyDataFrame {
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
-    let df = match agg {
+    let gil = Python::acquire_gil();
+    let py = gil.python();
+
+    let df = py.allow_threads(|| match agg {
         "min" => gb.min(),
         "max" => gb.max(),
         "mean" => gb.mean(),
@@ -911,7 +914,8 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
         a => Err(PolarsError::Other(
             format!("agg fn {} does not exists", a).into(),
         )),
-    };
+    });
+
     let df = df.map_err(PyPolarsEr::from)?;
     Ok(PyDataFrame::new(df))
 }

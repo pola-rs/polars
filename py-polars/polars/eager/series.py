@@ -1,5 +1,5 @@
 import typing as tp
-from datetime import datetime
+from datetime import date, datetime
 from numbers import Number
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
@@ -10,9 +10,17 @@ import polars as pl
 from polars.internals.construction import (
     arrow_to_pyseries,
     numpy_to_pyseries,
+    pandas_to_pyseries,
     sequence_to_pyseries,
     series_to_pyseries,
 )
+
+try:
+    from polars.polars import PyDataFrame, PySeries
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
 
 from ..datatypes import (
     DTYPE_TO_FFINAME,
@@ -40,18 +48,11 @@ from ..datatypes import (
 from ..utils import _ptr_to_numpy
 
 try:
-    from ..polars import PyDataFrame, PySeries
-except ImportError:
-    import warnings
+    import pandas as pd
 
-    warnings.warn("binary files missing")
-    __pdoc__ = {
-        "wrap_s": False,
-        "find_first_non_none": False,
-        "out_to_dtype": False,
-        "get_ffi_func": False,
-        "SeriesIter": False,
-    }
+    _PANDAS_AVAILABLE = True
+except ImportError:
+    _PANDAS_AVAILABLE = False
 
 __all__ = [
     "Series",
@@ -96,7 +97,9 @@ def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
 
 
-ArrayLike = Union[Sequence[Any], "Series", pa.Array, np.ndarray]
+ArrayLike = Union[
+    Sequence[Any], "Series", pa.Array, np.ndarray, "pd.Series", "pd.DatetimeIndex"
+]
 
 
 class Series:
@@ -123,7 +126,6 @@ class Series:
     --------
     Constructing a Series by specifying name and values positionally:
 
-    ```python
     >>> s = pl.Series('a', [1, 2, 3])
     >>> s
     shape: (3,)
@@ -133,18 +135,14 @@ class Series:
             2
             3
     ]
-    ```
 
     Notice that the dtype is automatically inferred as a polars Int64:
 
-    ```python
     >>> s.dtype
     <class 'polars.datatypes.Int64'>
-    ```
 
     Constructing a Series with a specific dtype:
 
-    ```python
     >>> s2 = pl.Series('a', [1, 2, 3], dtype=pl.Float32)
     >>> s2
     shape: (3,)
@@ -154,13 +152,11 @@ class Series:
             2
             3
     ]
-    ```
 
     It is possible to construct a Series with values as the first positional argument.
     This syntax considered an anti-pattern, but it can be useful in certain
     scenarios. You must specify any other arguments through keywords.
 
-    ```python
     >>> s3 = pl.Series([1, 2, 3], nullable=False)
     >>> s3
     shape: (3,)
@@ -170,7 +166,6 @@ class Series:
             2
             3
     ]
-    ```
     """
 
     def __init__(
@@ -205,6 +200,8 @@ class Series:
                 self._s = sequence_to_pyseries(name, values, dtype=dtype)
             else:
                 self._s = numpy_to_pyseries(name, np.array(values))
+        elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
+            self._s = pandas_to_pyseries(name, values)
         else:
             raise ValueError("Series constructor not called properly.")
 
@@ -227,6 +224,15 @@ class Series:
         Construct a Series from an Arrow array.
         """
         return cls._from_pyseries(arrow_to_pyseries(name, values))
+
+    @classmethod
+    def _from_pandas(
+        cls, name: str, values: Union["pd.Series", "pd.DatetimeIndex"]
+    ) -> "Series":
+        """
+        Construct a Series from a pandas Series or DatetimeIndex.
+        """
+        return cls._from_pyseries(pandas_to_pyseries(name, values))
 
     @classmethod
     def from_arrow(cls, name: str, array: pa.Array) -> "Series":
@@ -493,20 +499,26 @@ class Series:
         Quick summary statistics of a series. Series with mixed datatypes will return summary statistics for the datatype of the first value.
 
         Returns
-        ---
+        -------
         Dictionary with summary statistics of a series.
 
-        Example
-        ---
-        ```python
+        Examples
+        --------
+
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
-        {'min': 1, 'max': 5, 'sum': 15, 'mean': 3.0, 'std': 1.4142135623730951, 'count': 5}
+        {'min': 1,
+         'max': 5,
+         'sum': 15,
+         'mean': 3.0,
+         'std': 1.4142135623730951,
+         'count': 5}
 
         >>> series_str = pl.Series(["a", "a", "b", "c"]
         >>> series_str.describe()
-        {'unique': 3, 'count': 4}
-        ```
+        {'unique': 3,
+        'count': 4}
+
         """
         if len(self) == 0:
             raise ValueError("Series must contain at least one value")
@@ -1060,17 +1072,16 @@ class Series:
         Get a view into this Series data with a numpy array. This operation doesn't clone data, but does not include
         missing values. Don't use this unless you know what you are doing.
 
-        # Safety.
+        .. warning::
 
-        This function can lead to undefined behavior in the following cases:
+            This function can lead to undefined behavior in the following cases:
 
-        ```python
-        # returns a view to a piece of memory that is already dropped.
-        pl.Series([1, 3, 5]).sort().view()
+            >>> # returns a view to a piece of memory that is already dropped.
+            >>> pl.Series([1, 3, 5]).sort().view()
 
-        # Sums invalid data that is missing.
-        pl.Series([1, 2, None], nullable=True).view().sum()
-        ```
+            >>> # Sums invalid data that is missing.
+            >>> pl.Series([1, 2, None], nullable=True).view().sum()
+
         """
         if not ignore_nulls:
             assert self.null_count() == 0
@@ -1622,14 +1633,10 @@ class StringNameSpace:
         Examples
         --------
 
-        ```python
-        df = pl.DataFrame({
-        'json_val' = ['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
+        >>> df = pl.DataFrame({
+        'json_val':['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}'
         })
-        df.select(pl.col('json_val').str.json_path_match('$.a')
-        ```
-
-        ```text
+        >>> df.select(pl.col('json_val').str.json_path_match('$.a')
         shape: (5,)
         Series: 'json_val' [str]
         [
@@ -1639,7 +1646,6 @@ class StringNameSpace:
             "2.1"
             "true"
         ]
-        ```
         """
         return wrap_s(self._s.str_json_path_match(json_path))
 
@@ -1719,9 +1725,14 @@ class DateTimeNameSpace:
     def __init__(self, series: Series):
         self._s = series._s
 
+    def __getitem__(self, item: int) -> Union[date, datetime]:
+        s = wrap_s(self._s)
+        out = wrap_s(self._s)[item]
+        return _to_python_datetime(out, s.dtype)
+
     def strftime(self, fmt: str) -> Series:
         """
-        Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+        Format date32/date64 with a formatting rule: See `chrono strftime/strptime <https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html>`_.
 
         Returns
         -------
@@ -1879,7 +1890,7 @@ class DateTimeNameSpace:
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
-    def min(self) -> datetime:
+    def min(self) -> Union[date, datetime]:
         """
         Return minimum as python DateTime
         """
@@ -1887,7 +1898,7 @@ class DateTimeNameSpace:
         out = s.min()
         return _to_python_datetime(out, s.dtype)
 
-    def max(self) -> datetime:
+    def max(self) -> Union[date, datetime]:
         """
         Return maximum as python DateTime
         """
@@ -1895,7 +1906,7 @@ class DateTimeNameSpace:
         out = s.max()
         return _to_python_datetime(out, s.dtype)
 
-    def median(self) -> datetime:
+    def median(self) -> Union[date, datetime]:
         """
         Return median as python DateTime
         """
@@ -1903,7 +1914,7 @@ class DateTimeNameSpace:
         out = int(s.median())
         return _to_python_datetime(out, s.dtype)
 
-    def mean(self) -> datetime:
+    def mean(self) -> Union[date, datetime]:
         """
         Return mean as python DateTime
         """
@@ -1934,10 +1945,12 @@ class DateTimeNameSpace:
         return wrap_s(self._s.round_datetime(rule, n))
 
 
-def _to_python_datetime(value: Union[int, float], dtype: Type[DataType]) -> datetime:
+def _to_python_datetime(
+    value: Union[int, float], dtype: Type[DataType]
+) -> Union[date, datetime]:
     if dtype == Date32:
         # days to seconds
-        return datetime.utcfromtimestamp(value * 3600 * 24)
+        return date.fromtimestamp(value * 3600 * 24)
     elif dtype == Date64:
         # ms to seconds
         return datetime.utcfromtimestamp(value // 1000)

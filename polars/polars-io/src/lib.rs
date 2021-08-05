@@ -18,6 +18,8 @@ pub mod mmap;
 #[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
 pub mod prelude;
+#[cfg(all(test, feature = "csv-file"))]
+mod tests;
 pub(crate) mod utils;
 
 use arrow::{
@@ -50,11 +52,11 @@ where
     fn finish(self) -> Result<DataFrame>;
 }
 
-pub trait SerWriter<'a, W>
+pub trait SerWriter<W>
 where
     W: Write,
 {
-    fn new(writer: &'a mut W) -> Self;
+    fn new(writer: W) -> Self;
     fn finish(self, df: &DataFrame) -> Result<()>;
 }
 

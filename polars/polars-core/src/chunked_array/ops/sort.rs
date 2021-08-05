@@ -144,7 +144,7 @@ where
             let n = self.len();
             let vals_ptr = vals.as_ptr();
             // allocate aligned
-            let mut new = AlignedVec::<T::Native>::with_capacity_aligned(n);
+            let mut new = AlignedVec::<T::Native>::with_capacity(n);
             let new_ptr = new.as_mut_ptr();
 
             // memcopy

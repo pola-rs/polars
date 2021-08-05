@@ -2,6 +2,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct AliasExpr {
@@ -18,6 +19,10 @@ impl AliasExpr {
             expr,
         }
     }
+    fn finish(&self, mut input: Series) -> Result<Series> {
+        input.rename(&self.name);
+        Ok(input)
+    }
 }
 
 impl PhysicalExpr for AliasExpr {
@@ -26,9 +31,19 @@ impl PhysicalExpr for AliasExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let mut series = self.physical_expr.evaluate(df, state)?;
-        series.rename(&self.name);
-        Ok(series)
+        let series = self.physical_expr.evaluate(df, state)?;
+        self.finish(series)
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        let (series, groups) = self.physical_expr.evaluate_on_groups(df, groups, state)?;
+        Ok((self.finish(series)?, groups))
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {

@@ -91,6 +91,7 @@
 //! The opt-in features are (not including dtype features):
 //!
 //! * `lazy` - Lazy API
+//!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
@@ -118,6 +119,7 @@
 //!     - `downsample` - [downsample operation](crate::frame::DataFrame::downsample) on `DataFrame`s
 //!     - `asof_join` - Join as of, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the cartesian product of two DataFrames.
+//!     - `groupby_list` - Allow groupby operation on keys of type List.
 //! * `Series` operations:
 //!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
@@ -129,6 +131,9 @@
 //!     - `dot_product` - Dot/inner product on Series and Expressions.
 //!     - `concat_str` - Concat string data in linear time.
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
+//!     - `take_opt_iter` - Take from a Series with `Iterator<Item=Option<usize>>`
+//!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
+//!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)

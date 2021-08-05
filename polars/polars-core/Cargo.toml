@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.14.8"
+version = "0.15.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -60,8 +60,11 @@ dot_product = []
 concat_str = []
 row_hash = []
 reinterpret = []
+take_opt_iter = []
 mode = []
 extract_jsonpath = ["serde_json", "jsonpath_lib"]
+# allow groupby operation on list type
+groupby_list = []
 
 
 # opt-in datatypes for Series
@@ -100,15 +103,16 @@ docs-selection = [
     "dot_product",
     "concat_str",
     "row_hash",
-    "mode"
+    "mode",
+    "extract_jsonpath"
 ]
 
 [dependencies]
-arrow = {git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed", default-features=false}
-#arrow = {version = "4.4", default-features = false }
-parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed"}
-#parquet = {version = "4.4", default-features = false, optional = true }
-polars-arrow = {version = "0.14.8", path = "../polars-arrow"}
+#arrow = {git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed", default-features=false}
+arrow = {version = "5.0", default-features = false }
+#parquet = {optional = true, git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed"}
+parquet = {version = "5.0", default-features = false, optional = true }
+polars-arrow = {version = "0.15.0", path = "../polars-arrow"}
 thiserror = "1.0"
 num = "^0.4"
 itertools = "0.10"

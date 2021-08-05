@@ -1,12 +1,15 @@
 //! Traits for miscellaneous operations on ChunkedArray
+use std::marker::Sized;
+
+use arrow::array::ArrayRef;
+
 use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use arrow::array::{ArrayRef, UInt32Array};
-use std::marker::Sized;
+
+pub use self::take::*;
 
 pub(crate) mod aggregate;
 pub(crate) mod any_value;
@@ -28,8 +31,6 @@ pub(crate) mod set;
 pub(crate) mod shift;
 pub(crate) mod sort;
 pub(crate) mod take;
-pub(crate) mod take_random;
-pub(crate) mod take_single;
 pub(crate) mod unique;
 pub(crate) mod window;
 #[cfg(feature = "zip_with")]
@@ -260,8 +261,6 @@ pub trait TakeRandom {
 
     /// Get a nullable value by index.
     ///
-    /// # Safety
-    ///
     /// Out of bounds access doesn't Error but will return a Null value
     fn get(&self, index: usize) -> Option<Self::Item>;
 
@@ -269,8 +268,13 @@ pub trait TakeRandom {
     ///
     /// # Safety
     ///
-    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
+    /// Does not do bound checks.
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item>
+    where
+        Self: Sized,
+    {
+        self.get(index)
+    }
 }
 // Utility trait because associated type needs a lifetime
 pub trait TakeRandomUtf8 {
@@ -278,58 +282,19 @@ pub trait TakeRandomUtf8 {
 
     /// Get a nullable value by index.
     ///
-    /// # Safety
-    ///
     /// Out of bounds access doesn't Error but will return a Null value
     fn get(self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
     ///
     /// # Safety
-    /// This doesn't check if the underlying type is null or not and may return an uninitialized value.
-    unsafe fn get_unchecked(self, index: usize) -> Self::Item;
-}
-
-pub enum TakeIdx<'a, I, INulls>
-where
-    I: Iterator<Item = usize>,
-    INulls: Iterator<Item = Option<usize>>,
-{
-    Array(&'a UInt32Array),
-    Iter(I),
-    // will return a null where None
-    IterNulls(INulls),
-}
-
-pub type Dummy<T> = std::iter::Once<T>;
-pub type TakeIdxIter<'a, I> = TakeIdx<'a, I, Dummy<Option<usize>>>;
-pub type TakeIdxIterNull<'a, INull> = TakeIdx<'a, Dummy<usize>, INull>;
-
-impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
-    fn from(ca: &'a UInt32Chunked) -> Self {
-        if ca.chunks.len() == 1 {
-            TakeIdx::Array(ca.downcast_iter().next().unwrap())
-        } else {
-            panic!("implementation error, should be transformed to an iterator by the caller")
-        }
-    }
-}
-
-impl<'a, I> From<I> for TakeIdx<'a, I, Dummy<Option<usize>>>
-where
-    I: Iterator<Item = usize>,
-{
-    fn from(iter: I) -> Self {
-        TakeIdx::Iter(iter)
-    }
-}
-
-impl<'a, INulls> From<SeriesWrap<INulls>> for TakeIdx<'a, Dummy<usize>, INulls>
-where
-    INulls: Iterator<Item = Option<usize>>,
-{
-    fn from(iter: SeriesWrap<INulls>) -> Self {
-        TakeIdx::IterNulls(iter.0)
+    ///
+    /// Does not do bound checks.
+    unsafe fn get_unchecked(self, index: usize) -> Option<Self::Item>
+    where
+        Self: Sized,
+    {
+        self.get(index)
     }
 }
 
@@ -343,15 +308,17 @@ pub trait ChunkTake {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
-        I: Iterator<Item = usize>,
-        INulls: Iterator<Item = Option<usize>>;
+        I: TakeIterator,
+        INulls: TakeIteratorNulls;
 
     /// Take values from ChunkedArray by index.
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
+    /// by reference.
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
     where
         Self: std::marker::Sized,
-        I: Iterator<Item = usize>,
-        INulls: Iterator<Item = Option<usize>>;
+        I: TakeIterator,
+        INulls: TakeIteratorNulls;
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
@@ -837,7 +804,7 @@ macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse<$arrow_type> for $ca_type {
             fn reverse(&self) -> Self {
-                self.take((0..self.len()).rev().into())
+                unsafe { self.take_unchecked((0..self.len()).rev().into()) }
             }
         }
     };

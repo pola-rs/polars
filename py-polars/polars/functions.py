@@ -1,7 +1,6 @@
 from typing import Optional, Sequence, Union
 
 import pyarrow as pa
-import pyarrow.compute
 
 import polars as pl
 

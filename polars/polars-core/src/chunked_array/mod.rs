@@ -44,7 +44,7 @@ pub mod upstream_traits;
 
 use arrow::array::{
     Array, ArrayData, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
-    LargeListArray,
+    LargeListArray, PrimitiveArray,
 };
 
 use crate::chunked_array::builder::categorical::RevMapping;
@@ -598,12 +598,12 @@ where
                 let s = Series::try_from(("", v));
                 AnyValue::List(s.unwrap())
             }
-            #[cfg(feature = "object")]
-            DataType::Object(_) => AnyValue::Object("object"),
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
                 AnyValue::Utf8(self.categorical_map.as_ref().expect("should be set").get(v))
             }
+            #[cfg(feature = "object")]
+            DataType::Object(_) => panic!("should not be here"),
             _ => unimplemented!(),
         }
     }
@@ -873,6 +873,12 @@ impl ListChunked {
     }
 }
 
+impl<T: PolarsNumericType> From<PrimitiveArray<T>> for ChunkedArray<T> {
+    fn from(a: PrimitiveArray<T>) -> Self {
+        ChunkedArray::new_from_chunks("", vec![Arc::new(a)])
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
@@ -947,7 +953,7 @@ pub(crate) mod test {
     #[test]
     fn take() {
         let a = get_chunked_array();
-        let new = a.take([0usize, 1].iter().copied().into());
+        let new = a.take([0usize, 1].iter().copied().into()).unwrap();
         assert_eq!(new.len(), 2)
     }
 

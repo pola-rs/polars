@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 import pyarrow as pa
-import pyarrow.compute
 
 import polars as pl
 
@@ -45,7 +44,7 @@ def from_dict(
 
     Examples
     --------
-    ```python
+
     >>> data = {'a': [1, 2], 'b': [3, 4]}
     >>> df = pl.from_dict(data)
     >>> df
@@ -59,7 +58,6 @@ def from_dict(
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   │
     ╰─────┴─────╯
-    ```
     """
     return pl.DataFrame._from_dict(data=data, columns=columns, nullable=nullable)
 
@@ -94,7 +92,7 @@ def from_records(
 
     Examples
     --------
-    ```python
+
     >>> data = [[1, 2, 3], [4, 5, 6]]
     >>> df = pl.from_records(data, columns=['a', 'b'])
     >>> df
@@ -110,7 +108,6 @@ def from_records(
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 6   │
     ╰─────┴─────╯
-    ```
     """
     return pl.DataFrame._from_records(
         data, columns=columns, orient=orient, nullable=nullable
@@ -121,36 +118,61 @@ def from_arrow(
     a: Union[pa.Table, pa.Array], rechunk: bool = True
 ) -> Union["pl.DataFrame", "pl.Series"]:
     """
-    Create a DataFrame from an arrow Table.
+    Create a DataFrame or Series from an Arrow table or array.
+
+    This operation will be zero copy for the most part. Types that are not
+    supported by Polars may be cast to the closest supported type.
 
     Parameters
     ----------
-    a
-        Arrow Table.
-    rechunk
+    a : Arrow table or array
+        Data represented as Arrow table or array.
+    rechunk : bool, default True
         Make sure that all data is contiguous.
+
+    Returns
+    -------
+    DataFrame or Series
+
+    Examples
+    --------
+    Constructing a DataFrame from an Arrow table:
+
+    >>> data = pa.table({'a': [1, 2, 3], 'b': [4, 5, 6]})
+    >>> df = pl.from_arrow(data)
+    >>> df
+    shape: (3, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 4   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 6   │
+    ╰─────┴─────╯
+
+    Constructing a Series from an Arrow array:
+
+    >>> data = pa.array([1, 2, 3])
+    >>> series = pl.from_arrow(data)
+    >>> series
+    shape: (3,)
+    Series: '' [i64]
+    [
+            1
+            2
+            3
+    ]
     """
     if isinstance(a, pa.Table):
-        return pl.DataFrame.from_arrow(a, rechunk)
+        return pl.DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, pa.Array):
         return pl.Series._from_arrow("", a)
     else:
-        raise ValueError(f"expected arrow table / array, got {a}")
-
-
-def _from_pandas_helper(a: Union["pd.Series", "pd.DatetimeIndex"]) -> pa.Array:
-    dtype = a.dtype
-    if dtype == "datetime64[ns]":
-        # We first cast to ms because that's the unit of Date64,
-        # Then we cast to via int64 to date64. Casting directly to Date64 lead to
-        # loss of time information https://github.com/ritchie46/polars/issues/476
-        arr = pa.array(np.array(a.values, dtype="datetime64[ms]"))
-        arr = pa.compute.cast(arr, pa.int64())
-        return pa.compute.cast(arr, pa.date64())
-    elif dtype == "object" and isinstance(a.iloc[0], str):
-        return pa.array(a, pa.large_utf8())
-    else:
-        return pa.array(a)
+        raise ValueError(f"Expected Arrow table or array, got {type(a)}.")
 
 
 def from_pandas(
@@ -158,18 +180,54 @@ def from_pandas(
     rechunk: bool = True,
 ) -> Union["pl.Series", "pl.DataFrame"]:
     """
-    Convert from a pandas DataFrame to a polars DataFrame.
+    Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
+
+    Requires the pandas package to be installed.
 
     Parameters
     ----------
-    df
-        DataFrame to convert.
-    rechunk
+    data : pandas DataFrame, Series, or DatetimeIndex
+        Data represented as a pandas DataFrame, Series, or DatetimeIndex.
+    columns : Sequence of str, default None
+        Column labels to use for resulting DataFrame. If specified, overrides any
+        labels already present in the data. Must match data dimensions.
+    rechunk : bool, default True
         Make sure that all data is contiguous.
 
     Returns
     -------
-    A Polars DataFrame
+    DataFrame
+
+    Examples
+    --------
+    Constructing a DataFrame from a pandas DataFrame:
+
+    >>> pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=['a', 'b', 'c'])
+    >>> df = pl.from_pandas(pd_df)
+    >>> df
+    shape: (2, 3)
+    ╭─────┬─────┬─────╮
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 2   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 4   ┆ 5   ┆ 6   │
+    ╰─────┴─────┴─────╯
+
+    Constructing a Series from a pandas Series:
+
+    >>> pd_series = pd.Series([1,2,3], name='pd')
+    >>> df = pl.from_pandas(pd_series)
+    >>> df
+    shape: (3,)
+    Series: 'pd' [i64]
+    [
+            1
+            2
+            3
+    ]
     """
     try:
         import pandas as pd
@@ -177,21 +235,11 @@ def from_pandas(
         raise ImportError("from_pandas requires pandas to be installed.") from e
 
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
-        return from_arrow(_from_pandas_helper(df))
-
-    # Note: we first tried to infer the schema via pyarrow and then modify the schema if
-    # needed. However arrow 3.0 determines the type of a string like this:
-    #       pa.array(array).type
-    # Needlessly allocating and failing when the string is too large for the string dtype.
-
-    data = {}
-
-    for name in df.columns:
-        s = df[name]
-        data[name] = _from_pandas_helper(s)
-
-    table = pa.table(data)
-    return from_arrow(table, rechunk)
+        return pl.Series._from_pandas("", df)
+    elif isinstance(df, pd.DataFrame):
+        return pl.DataFrame._from_pandas(df, rechunk=rechunk)
+    else:
+        raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")
 
 
 def from_rows(
@@ -216,10 +264,11 @@ def from_rows(
         column names to use for the DataFrame.
     column_name_mapping
         map column index to a new name:
+
         Example:
-        ```python
-            column_mapping: {0: "first_column, 3: "fourth column"}
-        ```
+        --------
+
+        >>> column_mapping: {0: "first_column", 3: "fourth column"}
     """
     return pl.DataFrame.from_rows(rows, column_names, column_name_mapping)
 

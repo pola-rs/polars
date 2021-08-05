@@ -690,16 +690,12 @@ impl DataFrame {
     ///
     /// ```
     /// use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> DataFrame {
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let iterator = (0..9).into_iter();
     ///     df.take_iter(iterator)
     /// }
     /// ```
-    ///
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_iter<I>(&self, iter: I) -> Self
+    pub fn take_iter<I>(&self, iter: I) -> Result<Self>
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -710,8 +706,8 @@ impl DataFrame {
                 let mut i = iter.clone();
                 s.take_iter(&mut i)
             })
-            .collect();
-        DataFrame::new_no_checks(new_col)
+            .collect::<Result<_>>()?;
+        Ok(DataFrame::new_no_checks(new_col))
     }
 
     /// Take DataFrame values by indexes from an iterator.
@@ -719,7 +715,7 @@ impl DataFrame {
     /// # Safety
     ///
     /// This doesn't do any bound checking but checks null validity.
-    pub unsafe fn take_iter_unchecked<I>(&self, iter: I) -> Self
+    pub unsafe fn take_iter_unchecked<I>(&self, mut iter: I) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
@@ -737,20 +733,26 @@ impl DataFrame {
             .iter()
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
-        if n_chunks == 1 || has_utf8 {
+        if (n_chunks == 1 && self.width() > 1) || has_utf8 {
             let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
             let idx_ca = idx_ca.into_inner();
             return self.take_unchecked(&idx_ca);
         }
 
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_iter_unchecked(&mut i)
-            })
-            .collect();
+        let new_col = if self.width() == 1 {
+            self.columns
+                .iter()
+                .map(|s| s.take_iter_unchecked(&mut iter))
+                .collect::<Vec<_>>()
+        } else {
+            self.columns
+                .par_iter()
+                .map(|s| {
+                    let mut i = iter.clone();
+                    s.take_iter_unchecked(&mut i)
+                })
+                .collect::<Vec<_>>()
+        };
         DataFrame::new_no_checks(new_col)
     }
 
@@ -760,7 +762,7 @@ impl DataFrame {
     ///
     /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
     /// Null validity is checked
-    pub unsafe fn take_opt_iter_unchecked<I>(&self, iter: I) -> Self
+    pub unsafe fn take_opt_iter_unchecked<I>(&self, mut iter: I) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync,
     {
@@ -779,19 +781,26 @@ impl DataFrame {
             .iter()
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
-        if n_chunks == 1 || has_utf8 {
+        if (n_chunks == 1 && self.width() > 1) || has_utf8 {
             let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
             return self.take_unchecked(&idx_ca);
         }
 
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_opt_iter_unchecked(&mut i)
-            })
-            .collect::<Vec<_>>();
+        let new_col = if self.width() == 1 {
+            self.columns
+                .iter()
+                .map(|s| s.take_opt_iter_unchecked(&mut iter))
+                .collect::<Vec<_>>()
+        } else {
+            self.columns
+                .par_iter()
+                .map(|s| {
+                    let mut i = iter.clone();
+                    s.take_opt_iter_unchecked(&mut i)
+                })
+                .collect::<Vec<_>>()
+        };
+
         DataFrame::new_no_checks(new_col)
     }
 
@@ -801,15 +810,12 @@ impl DataFrame {
     ///
     /// ```
     /// use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> DataFrame {
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let idx = UInt32Chunked::new_from_slice("idx", &[0, 1, 9]);
     ///     df.take(&idx)
     /// }
     /// ```
-    /// # Safety
-    ///
-    /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take(&self, indices: &UInt32Chunked) -> Self {
+    pub fn take(&self, indices: &UInt32Chunked) -> Result<Self> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -822,10 +828,10 @@ impl DataFrame {
                     DataType::Utf8 => s.take_threaded(&indices, true),
                     _ => s.take(&indices),
                 })
-                .collect()
-        });
+                .collect::<Result<_>>()
+        })?;
 
-        DataFrame::new_no_checks(new_col)
+        Ok(DataFrame::new_no_checks(new_col))
     }
 
     pub(crate) unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Self {

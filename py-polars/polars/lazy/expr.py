@@ -4,16 +4,15 @@ from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import polars as pl
 
+try:
+    from polars.polars import PyExpr
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
+
 from ..datatypes import Boolean, DataType, Date32, Date64, Float64, Int64, Utf8
 from .functions import UDF, col, lit
-
-try:
-    from ..polars import PyExpr
-except ImportError:
-    import warnings
-
-    warnings.warn("Binary files missing.")
-    __pdoc__ = {"wrap_expr": False}
 
 __all__ = [
     "Expr",
@@ -139,12 +138,184 @@ class Expr:
         ----------
         name
             New name.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "a": [1, 2, 3],
+        >>>     "b": ["a", "b", None]
+        >>> })
+        >>> df
+        shape: (3, 2)
+        ╭─────┬──────╮
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ str  │
+        ╞═════╪══════╡
+        │ 1   ┆ "a"  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ "b"  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3   ┆ null │
+        ╰─────┴──────╯
+        >>> df.select([
+        >>>     col("a").alias("bar"),
+        >>>     col("b").alias("foo")
+        >>> ])
+        shape: (3, 2)
+        ╭─────┬──────╮
+        │ bar ┆ foo  │
+        │ --- ┆ ---  │
+        │ i64 ┆ str  │
+        ╞═════╪══════╡
+        │ 1   ┆ "a"  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ "b"  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3   ┆ null │
+        ╰─────┴──────╯
+
         """
         return wrap_expr(self._pyexpr.alias(name))
+
+    def exclude(self, columns: Union[str, tp.List[str]]) -> "Expr":
+        """
+         Exclude certain columns from a wildcard expression.
+
+         Parameters
+         ----------
+         columns
+             Column(s) to exclude from selection
+
+         Examples
+         --------
+
+         >>> df = pl.DataFrame({
+         >>>     "a": [1, 2, 3],
+         >>>     "b": ["a", "b", None],
+         >>>     "c": [None, 2, 1]
+         >>> })
+         >>> df
+         shape: (3, 3)
+         ╭─────┬──────┬──────╮
+         │ a   ┆ b    ┆ c    │
+         │ --- ┆ ---  ┆ ---  │
+         │ i64 ┆ str  ┆ i64  │
+         ╞═════╪══════╪══════╡
+         │ 1   ┆ "a"  ┆ null │
+         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+         │ 2   ┆ "b"  ┆ 2    │
+         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+         │ 3   ┆ null ┆ 1    │
+         ╰─────┴──────┴──────╯
+         >>> df.select(col("*").exclude("b"))
+        shape: (3, 2)
+         ╭─────┬──────╮
+         │ a   ┆ c    │
+         │ --- ┆ ---  │
+         │ i64 ┆ i64  │
+         ╞═════╪══════╡
+         │ 1   ┆ null │
+         ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+         │ 2   ┆ 2    │
+         ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+         │ 3   ┆ 1    │
+         ╰─────┴──────╯
+        """
+        if isinstance(columns, str):
+            columns = [columns]
+        return wrap_expr(self._pyexpr.exclude(columns))
+
+    def keep_name(self) -> "Expr":
+        """
+        Keep the original root name of the expression.
+
+        Examples
+        --------
+
+        A groupby aggregation often changes the name of a column.
+        With `keep_name` we can keep the original name of the column
+
+        >>> df = pl.DataFrame({
+        >>> "a": [1, 2, 3],
+        >>> "b": ["a", "b", None]
+        >>> })
+        >>> (df.groupby("a")
+        >>> .agg(col("b").list())
+        >>> .sort(by="a")
+        >>> )
+        shape: (3, 2)
+        ╭─────┬────────────╮
+        │ a   ┆ b_agg_list │
+        │ --- ┆ ---        │
+        │ i64 ┆ list [str] │
+        ╞═════╪════════════╡
+        │ 1   ┆ [a]        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ [b]        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ [null]     │
+        ╰─────┴────────────╯
+        >>> # keep the original column name
+        >>> (df.groupby("a")
+        >>> .agg(col("b").list().keep_name())
+        >>> .sort(by="a")
+        >>> )
+        shape: (3, 2)
+        ╭─────┬────────────╮
+        │ a   ┆ b          │
+        │ --- ┆ ---        │
+        │ i64 ┆ list [str] │
+        ╞═════╪════════════╡
+        │ 1   ┆ [a]        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ [b]        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ [null]     │
+        ╰─────┴────────────╯
+
+        """
+
+        return wrap_expr(self._pyexpr.keep_name())
 
     def is_not(self) -> "Expr":
         """
         Negate a boolean expression.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "a": [True, False, False],
+        >>>     "b": ["a", "b", None],
+        >>> })
+        shape: (3, 2)
+        ╭───────┬──────╮
+        │ a     ┆ b    │
+        │ ---   ┆ ---  │
+        │ bool  ┆ str  │
+        ╞═══════╪══════╡
+        │ true  ┆ "a"  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ false ┆ "b"  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ false ┆ null │
+        ╰───────┴──────╯
+        >>> df.select(col("a").is_not())
+        shape: (3, 1)
+        ╭───────╮
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        ╰───────╯
+
         """
         return wrap_expr(self._pyexpr.is_not())
 
@@ -207,6 +378,14 @@ class Expr:
             Length of the slice.
         """
         return wrap_expr(self._pyexpr.slice(offset, length))
+
+    def drop_nulls(self) -> "Expr":
+        """
+        Syntactic sugar for:
+
+        >>> col("foo").filter(col("foo").is_not_null())
+        """
+        return self.filter(self.is_not_null())
 
     def cum_sum(self, reverse: bool = False) -> "Expr":
         """
@@ -351,6 +530,7 @@ class Expr:
         -------
         Values taken by index
         """
+        index = expr_to_lit_or_expr(index, str_to_lit=False)
         return wrap_expr(self._pyexpr.take(index._pyexpr))
 
     def shift(self, periods: int) -> "Expr":
@@ -491,22 +671,15 @@ class Expr:
         Examples
         --------
 
-        ``` python
-        df = DataFrame({
-            "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
-            "values": [1, 2, 3, 4, 5, 6, 7, 8, 8]
-        })
-        print(df.lazy()
-            .select([
-                col("groups")
-                sum("values").over("groups"))
-            ]).collect())
-
-        ```
-
-        outputs:
-
-        ``` text
+        >>> df = DataFrame({
+        >>>    "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
+        >>>    "values": [1, 2, 3, 4, 5, 6, 7, 8, 8]
+        >>>})
+        >>> (df.lazy()
+        >>>    .select([
+        >>>       col("groups")
+        >>>       sum("values").over("groups"))
+        >>>   ]).collect())
             ╭────────┬────────╮
             │ groups ┆ values │
             │ ---    ┆ ---    │
@@ -533,7 +706,6 @@ class Expr:
             │ 1      ┆ 16     │
             ╰────────┴────────╯
 
-        ```
         """
 
         pyexprs = _selection_to_pyexpr_list(expr)
@@ -586,7 +758,8 @@ class Expr:
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
-        Apply a custom UDF. It is important that the UDF returns a Polars Series.
+        Apply a custom python function. This function must produce a `Series`. Any other value will be stored as
+        null/missing. If you want to apply a function over single values, consider using `apply`.
 
         [read more in the book](https://ritchie46.github.io/polars-book/how_can_i/use_custom_functions.html#lazy)
 
@@ -612,12 +785,22 @@ class Expr:
 
     def apply(
         self,
-        f: Callable[["pl.Series"], "pl.Series"],
+        f: Union[Callable[["pl.Series"], "pl.Series"], Callable[[Any], Any]],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
-        Apply a custom UDF in a GroupBy context. This is syntactic sugar for the `apply` method which operates on all
-        groups at once. The UDF passed to this expression will operate on a single group.
+        Apply a custom function in a GroupBy or Projection context.
+
+        Depending on the context it has the following behavior:
+
+        ## Context
+
+        * Select/Project
+            expected type `f`: Callable[[Any], Any]
+            Applies a python function over each individual value in the column.
+        * GroupBy
+            expected type `f`: Callable[[Series], Series]
+            Applies a python function over each group.
 
         Parameters
         ----------
@@ -626,23 +809,17 @@ class Expr:
         return_dtype
             Dtype of the output Series.
 
-        # Example
+        Examples
+        --------
 
-        ```python
-        df = pl.DataFrame({"a": [1,  2,  1,  1],
+        >>> df = pl.DataFrame({"a": [1,  2,  1,  1],
                    "b": ["a", "b", "c", "c"]})
-
-        (df
+        >>> (df
          .lazy()
          .groupby("b")
          .agg([col("a").apply(lambda x: x.sum())])
          .collect()
         )
-        ```
-
-        > returns
-
-        ```text
         shape: (3, 2)
         ╭─────┬─────╮
         │ b   ┆ a   │
@@ -655,7 +832,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ c   ┆ 2   │
         ╰─────┴─────╯
-        ```
+
         """
 
         # input x: Series of type list containing the group values
@@ -889,14 +1066,10 @@ class ExprStringNameSpace:
         Examples
         --------
 
-        ```python
-        df = pl.DataFrame({
+        >>> df = pl.DataFrame({
         'json_val' = ['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
         })
-        df.select(pl.col('json_val').str.json_path_match('$.a')
-        ```
-
-        ```text
+        >>> df.select(pl.col('json_val').str.json_path_match('$.a')
         shape: (5,)
         Series: 'json_val' [str]
         [
@@ -906,7 +1079,6 @@ class ExprStringNameSpace:
             "2.1"
             "true"
         ]
-        ```
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 

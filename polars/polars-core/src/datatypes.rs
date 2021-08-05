@@ -6,6 +6,8 @@
 //! [See the AnyValue variants](enum.AnyValue.html#variants) for the data types that
 //! are currently supported.
 //!
+#[cfg(feature = "object")]
+use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use ahash::RandomState;
 pub use arrow::datatypes::DataType as ArrowDataType;
@@ -227,12 +229,11 @@ pub enum AnyValue<'a> {
     Time64(i64, TimeUnit),
     /// A 32-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     Duration(i64, TimeUnit),
-    /// Naive Time elapsed from the Unix epoch, 00:00:00.000 on 1 January 1970, excluding leap seconds, as a 64-bit integer.
-    /// Note that UNIX time does not include leap seconds.
+    /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
-    /// Use as_any to get a dyn Any
-    Object(&'a str),
+    /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
+    Object(&'a dyn PolarsObjectSafe),
 }
 
 impl From<f64> for AnyValue<'_> {
@@ -461,13 +462,15 @@ impl DataType {
             Date32 => ArrowDataType::Date32,
             Date64 => ArrowDataType::Date64,
             Time64(tu) => ArrowDataType::Time64(tu.clone()),
-            List(dt) => {
-                ArrowDataType::List(Box::new(arrow::datatypes::Field::new("", dt.clone(), true)))
-            }
+            List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
+                "",
+                dt.clone(),
+                true,
+            ))),
             Duration(tu) => ArrowDataType::Duration(tu.clone()),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
-            Object(_) => unimplemented!(),
+            Object(_) => panic!("cannot convert object to arrow"),
             Categorical => ArrowDataType::UInt32,
         }
     }
@@ -590,7 +593,26 @@ impl Schema {
     }
 
     pub fn to_arrow(&self) -> ArrowSchema {
-        let fields = self.fields.iter().map(|f| f.to_arrow()).collect();
+        let fields = self
+            .fields
+            .iter()
+            .map(|f| {
+                match f.data_type() {
+                    // we must call this item, because the arrow crate names this item when creating a
+                    // schema from record batches
+                    DataType::List(dt) => ArrowField::new(
+                        f.name(),
+                        ArrowDataType::LargeList(Box::new(ArrowField::new(
+                            "item",
+                            dt.clone(),
+                            true,
+                        ))),
+                        true,
+                    ),
+                    _ => f.to_arrow(),
+                }
+            })
+            .collect();
         ArrowSchema::new(fields)
     }
 

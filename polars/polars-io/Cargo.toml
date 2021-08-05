@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.14.8"
+version = "0.15.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -14,27 +14,24 @@ repository = "https://github.com/ritchie46/polars"
 json = []
 # support for arrows ipc file parsing
 ipc = ["arrow/ipc"]
-#ipc = []
 lazy = []
 parquet = ["polars-core/parquet", "parquet_lib"]
 dtype-u64 = ["polars-core/dtype-u64"]
 dtype-date64 = ["polars-core/dtype-date64", "polars-core/temporal"]
 dtype-date32 = ["polars-core/dtype-date32"]
-csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical", "arrow/csv"]
-#csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
+csv-file = ["csv-core", "memmap", "fast-float", "lexical", "arrow/csv"]
 fmt = ["polars-core/plain_fmt"]
 decompress = ["flate2"]
 # don't use this
 private = []
 
 [dependencies]
-arrow = {git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed", default-features=false}
-#arrow = {version = "4.4", default-features = false }
-parquet_lib = {optional = true, package="parquet", git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed"}
-#parquet_lib = {version = "4.4", package="parquet", optional = true}
-polars-core = {version = "0.14.8", path = "../polars-core", features = ["private"], default-features=false}
-polars-arrow = {version = "0.14.8", path = "../polars-arrow"}
-csv = {version="1.1", optional=true}
+#arrow = {git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed", default-features=false}
+arrow = {version = "5.0", default-features = false }
+#parquet_lib = {optional = true, package="parquet", git = "https://github.com/apache/arrow-rs", rev = "a1aace846f29dc4346b01289cad246dd99c2e3ed"}
+parquet_lib = {version = "5.0", package="parquet", optional = true}
+polars-core = {version = "0.15.0", path = "../polars-core", features = ["private"], default-features=false}
+polars-arrow = {version = "0.15.0", path = "../polars-arrow"}
 lexical = {version = "5.2", optional = true}
 num_cpus = "1.13.0"
 csv-core = {version = "0.1.10", optional=true}

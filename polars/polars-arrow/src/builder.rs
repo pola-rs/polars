@@ -236,10 +236,10 @@ pub struct NoNullLargeStringBuilder {
 
 impl NoNullLargeStringBuilder {
     pub fn with_capacity(values_capacity: usize, list_capacity: usize) -> Self {
-        let mut offsets = AlignedVec::with_capacity_aligned(list_capacity + 1);
+        let mut offsets = AlignedVec::with_capacity(list_capacity + 1);
         offsets.push(0);
         Self {
-            values: AlignedVec::with_capacity_aligned(values_capacity),
+            values: AlignedVec::with_capacity(values_capacity),
             offsets,
         }
     }

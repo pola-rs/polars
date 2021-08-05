@@ -4,6 +4,7 @@ use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct ApplyExpr {
@@ -31,6 +32,44 @@ impl PhysicalExpr for ApplyExpr {
             out.rename(&in_name);
         }
         Ok(out)
+    }
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        let mut owned_count = 0;
+        let mut inputs = Vec::with_capacity(self.inputs.len());
+        let mut groups_vec = Vec::with_capacity(self.inputs.len());
+        let mut owned_group = None;
+
+        self.inputs.iter().try_for_each::<_, Result<_>>(|e| {
+            let (s, groups_) = e.evaluate_on_groups(df, groups, state)?;
+            inputs.push(s);
+            if let Cow::Owned(_) = &groups_ {
+                owned_group = Some(groups_);
+                owned_count += 1;
+                return Ok(());
+            }
+            groups_vec.push(groups_);
+            Ok(())
+        })?;
+
+        let in_name = inputs[0].name().to_string();
+        let mut out = self.function.call_udf(&mut inputs)?;
+        if in_name != out.name() {
+            out.rename(&in_name);
+        }
+
+        match owned_count {
+            0 => Ok((out, groups_vec.pop().unwrap())),
+            1 => Ok((out, owned_group.unwrap())),
+            _ => Err(PolarsError::ValueError(
+                "Function may only have one input that contains a filter expression".into(),
+            )),
+        }
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         match &self.output_type {

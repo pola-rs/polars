@@ -8,17 +8,10 @@ from _ctypes import _SimpleCData
 
 try:
     from polars.polars import PySeries
+
+    _DOCUMENTING = False
 except ImportError:
-    import warnings
-
-    warnings.warn("binary files missing")
-
-__pdoc__ = {
-    "dtype_to_ctype": False,
-    "dtype_to_int": False,
-    "dtype_to_primitive": False,
-    "pytype_to_polars_type": False,
-}
+    _DOCUMENTING = True
 
 __all__ = [
     "DataType",
@@ -37,18 +30,6 @@ __all__ = [
     "List",
     "Date32",
     "Date64",
-    "Time32Millisecond",
-    "Time32Second",
-    "Time64Nanosecond",
-    "Time64Microsecond",
-    "DurationNanosecond",
-    "DurationMicrosecond",
-    "DurationMillisecond",
-    "DurationSecond",
-    "TimestampNanosecond",
-    "TimestampMicrosecond",
-    "TimestampMillisecond",
-    "TimestampSecond",
     "Object",
     "Categorical",
     "DTYPES",
@@ -282,23 +263,24 @@ def pytype_to_polars_type(data_type: Type[Any]) -> Type[DataType]:
     return polars_type
 
 
-_POLARS_TYPE_TO_CONSTRUCTOR = {
-    Float32: PySeries.new_opt_f32,
-    Float64: PySeries.new_opt_f64,
-    Int8: PySeries.new_opt_i8,
-    Int16: PySeries.new_opt_i16,
-    Int32: PySeries.new_opt_i32,
-    Int64: PySeries.new_opt_i64,
-    UInt8: PySeries.new_opt_u8,
-    UInt16: PySeries.new_opt_u16,
-    UInt32: PySeries.new_opt_u32,
-    UInt64: PySeries.new_opt_u64,
-    Date32: PySeries.new_opt_i32,
-    Date64: PySeries.new_opt_i32,
-    Boolean: PySeries.new_opt_bool,
-    Utf8: PySeries.new_str,
-    Object: PySeries.new_object,
-}
+if not _DOCUMENTING:
+    _POLARS_TYPE_TO_CONSTRUCTOR = {
+        Float32: PySeries.new_opt_f32,
+        Float64: PySeries.new_opt_f64,
+        Int8: PySeries.new_opt_i8,
+        Int16: PySeries.new_opt_i16,
+        Int32: PySeries.new_opt_i32,
+        Int64: PySeries.new_opt_i64,
+        UInt8: PySeries.new_opt_u8,
+        UInt16: PySeries.new_opt_u16,
+        UInt32: PySeries.new_opt_u32,
+        UInt64: PySeries.new_opt_u64,
+        Date32: PySeries.new_opt_i32,
+        Date64: PySeries.new_opt_i32,
+        Boolean: PySeries.new_opt_bool,
+        Utf8: PySeries.new_str,
+        Object: PySeries.new_object,
+    }
 
 
 def polars_type_to_constructor(
@@ -313,20 +295,21 @@ def polars_type_to_constructor(
         raise ValueError(f"Cannot construct PySeries for type {dtype}.")
 
 
-_NUMPY_TYPE_TO_CONSTRUCTOR = {
-    np.float32: PySeries.new_f32,
-    np.float64: PySeries.new_f64,
-    np.int8: PySeries.new_i8,
-    np.int16: PySeries.new_i16,
-    np.int32: PySeries.new_i32,
-    np.int64: PySeries.new_i64,
-    np.uint8: PySeries.new_u8,
-    np.uint16: PySeries.new_u16,
-    np.uint32: PySeries.new_u32,
-    np.uint64: PySeries.new_u64,
-    np.str_: PySeries.new_str,
-    bool: PySeries.new_bool,
-}
+if not _DOCUMENTING:
+    _NUMPY_TYPE_TO_CONSTRUCTOR = {
+        np.float32: PySeries.new_f32,
+        np.float64: PySeries.new_f64,
+        np.int8: PySeries.new_i8,
+        np.int16: PySeries.new_i16,
+        np.int32: PySeries.new_i32,
+        np.int64: PySeries.new_i64,
+        np.uint8: PySeries.new_u8,
+        np.uint16: PySeries.new_u16,
+        np.uint32: PySeries.new_u32,
+        np.uint64: PySeries.new_u64,
+        np.str_: PySeries.new_str,
+        bool: PySeries.new_bool,
+    }
 
 
 def numpy_type_to_constructor(dtype: Type[np.dtype]) -> Callable[..., "PySeries"]:
@@ -339,12 +322,13 @@ def numpy_type_to_constructor(dtype: Type[np.dtype]) -> Callable[..., "PySeries"
         return PySeries.new_object
 
 
-_PY_TYPE_TO_CONSTRUCTOR = {
-    float: PySeries.new_opt_f64,
-    int: PySeries.new_opt_i64,
-    str: PySeries.new_str,
-    bool: PySeries.new_opt_bool,
-}
+if not _DOCUMENTING:
+    _PY_TYPE_TO_CONSTRUCTOR = {
+        float: PySeries.new_opt_f64,
+        int: PySeries.new_opt_i64,
+        str: PySeries.new_str,
+        bool: PySeries.new_opt_bool,
+    }
 
 
 def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
@@ -357,12 +341,13 @@ def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
         return PySeries.new_object
 
 
-_PY_TYPE_TO_ARROW_TYPE = {
-    float: pa.float64(),
-    int: pa.int64(),
-    str: pa.large_utf8(),
-    bool: pa.bool_(),
-}
+if not _DOCUMENTING:
+    _PY_TYPE_TO_ARROW_TYPE = {
+        float: pa.float64(),
+        int: pa.int64(),
+        str: pa.large_utf8(),
+        bool: pa.bool_(),
+    }
 
 
 def py_type_to_arrow_type(dtype: Type[Any]) -> pa.lib.DataType:

@@ -78,6 +78,12 @@ where
 {
     fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<Float64Type, _>(groups, |(first, idx)| {
+            // this can fail due to a bug in lazy code.
+            // here users can create filters in aggregations
+            // and thereby creating shorter columns than the original group tuples.
+            // the group tuples are modified, but if that's done incorrect there can be out of bounds
+            // access
+            debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
                 None
             } else if idx.len() == 1 {
@@ -120,6 +126,7 @@ where
 
     fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<T, _>(groups, |(first, idx)| {
+            debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
                 None
             } else if idx.len() == 1 {
@@ -154,6 +161,7 @@ where
 
     fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<T, _>(groups, |(first, idx)| {
+            debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
                 None
             } else if idx.len() == 1 {
@@ -188,6 +196,7 @@ where
 
     fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<T, _>(groups, |(first, idx)| {
+            debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
                 None
             } else if idx.len() == 1 {
@@ -221,6 +230,7 @@ where
     }
     fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<Float64Type, _>(groups, |(_first, idx)| {
+            debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
                 return None;
             }
@@ -234,6 +244,7 @@ where
     }
     fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<Float64Type, _>(groups, |(_first, idx)| {
+            debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
                 return None;
             }
@@ -248,6 +259,7 @@ where
     #[cfg(feature = "lazy")]
     fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<UInt32Type, _>(groups, |(_first, idx)| {
+            debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
                 None
             } else if self.null_count() == 0 {
@@ -269,6 +281,7 @@ macro_rules! impl_agg_first {
         let mut ca = $groups
             .iter()
             .map(|(first, idx)| {
+                debug_assert!(idx.len() <= $self.len());
                 if idx.is_empty() {
                     return None;
                 }
@@ -349,6 +362,7 @@ macro_rules! impl_agg_last {
         let mut ca = $groups
             .iter()
             .map(|(_first, idx)| {
+                debug_assert!(idx.len() <= $self.len());
                 if idx.is_empty() {
                     return None;
                 }
@@ -428,21 +442,23 @@ macro_rules! impl_agg_n_unique {
         $groups
             .into_par_iter()
             .map(|(_first, idx)| {
+                debug_assert!(idx.len() <= $self.len());
                 if idx.is_empty() {
                     return 0;
                 }
+                let taker = $self.take_rand();
 
                 if $self.null_count() == 0 {
                     let mut set = HashSet::with_hasher(RandomState::new());
                     for i in idx {
-                        let v = unsafe { $self.get_unchecked(*i as usize) };
+                        let v = unsafe { taker.get_unchecked(*i as usize) };
                         set.insert(v);
                     }
                     set.len() as u32
                 } else {
                     let mut set = HashSet::with_hasher(RandomState::new());
                     for i in idx {
-                        let opt_v = $self.get(*i as usize);
+                        let opt_v = taker.get(*i as usize);
                         set.insert(opt_v);
                     }
                     set.len() as u32
@@ -513,7 +529,7 @@ where
                     MutableBuffer::new((groups.len() + 1) * std::mem::size_of::<i64>());
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
-                let mut av = AlignedVec::with_capacity_aligned(self.len());
+                let mut av = AlignedVec::with_capacity(self.len());
 
                 groups.iter().for_each(|(_, idx)| {
                     length_so_far += idx.len() as i64;

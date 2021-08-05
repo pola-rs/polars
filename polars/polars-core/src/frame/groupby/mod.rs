@@ -2,6 +2,8 @@ use self::hashing::*;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::frame::select::Selection;
 use crate::prelude::*;
+#[cfg(feature = "groupby_list")]
+use crate::utils::Wrap;
 use crate::utils::{accumulate_dataframes_vertical, set_partition_size, split_ca, NoNull};
 use crate::vector_hasher::{AsU64, StrHash};
 use crate::POOL;
@@ -169,9 +171,22 @@ impl IntoGroupTuples for CategoricalChunked {
     }
 }
 
-impl IntoGroupTuples for ListChunked {}
+impl IntoGroupTuples for ListChunked {
+    #[cfg(feature = "groupby_list")]
+    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+        groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)))
+    }
+}
+
 #[cfg(feature = "object")]
-impl<T> IntoGroupTuples for ObjectChunked<T> {}
+impl<T> IntoGroupTuples for ObjectChunked<T>
+where
+    T: PolarsObject,
+{
+    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+        groupby(self.into_iter())
+    }
+}
 
 /// Used to tightly two 32 bit values and null information
 /// Only the bit values matter, not the meaning of the bits

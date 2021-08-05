@@ -97,7 +97,6 @@ pub enum AExpr {
         /// Delays output type evaluation until input schema is known.
         output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
     },
-    Except(Node),
 }
 
 impl Default for AExpr {
@@ -313,7 +312,6 @@ impl AExpr {
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
-            Except(_) => panic!("should be no except at this point"),
         }
     }
 

@@ -6,27 +6,25 @@ import numpy as np
 
 import polars as pl
 
-from ..datatypes import DataType, Date64, Int64
-
 try:
-    from ..polars import argsort_by as pyargsort_by
-    from ..polars import binary_function as pybinary_function
-    from ..polars import col as pycol
-    from ..polars import concat_str as _concat_str
-    from ..polars import cov as pycov
-    from ..polars import except_ as pyexcept
-    from ..polars import fold as pyfold
-    from ..polars import lit as pylit
-    from ..polars import pearson_corr as pypearson_corr
-    from ..polars import series_from_range as _series_from_range
-except ImportError:
-    import warnings
+    from polars.polars import argsort_by as pyargsort_by
+    from polars.polars import binary_function as pybinary_function
+    from polars.polars import col as pycol
+    from polars.polars import concat_str as _concat_str
+    from polars.polars import cov as pycov
+    from polars.polars import fold as pyfold
+    from polars.polars import lit as pylit
+    from polars.polars import pearson_corr as pypearson_corr
+    from polars.polars import series_from_range as _series_from_range
 
-    warnings.warn("Binary files missing.")
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
+
+from ..datatypes import DataType, Date64, Int64
 
 __all__ = [
     "col",
-    "except_",
     "count",
     "to_list",
     "std",
@@ -63,47 +61,78 @@ __all__ = [
 def col(name: str) -> "pl.Expr":
     """
     A column in a DataFrame.
+    Can be used to select:
+
+     * a single column by name
+     * all columns by using a wildcard `"*"`
+     * column by regular expression if the regex starts with `^` and ends with `$`
+
+    Parameters
+    col
+        A string that holds the name of the column
+
+    Examples
+    -------
+
+    >>> df = pl.DataFrame({
+    >>> "ham": [1, 2, 3],
+    >>> "hamburger": [11, 22, 33],
+    >>> "foo": [3, 2, 1]})
+    >>> df.select(col("foo"))
+    shape: (3, 1)
+    ╭─────╮
+    │ foo │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 3   │
+    ├╌╌╌╌╌┤
+    │ 2   │
+    ├╌╌╌╌╌┤
+    │ 1   │
+    ╰─────╯
+    >>> df.select(col("*"))
+    shape: (3, 3)
+    ╭─────┬───────────┬─────╮
+    │ ham ┆ hamburger ┆ foo │
+    │ --- ┆ ---       ┆ --- │
+    │ i64 ┆ i64       ┆ i64 │
+    ╞═════╪═══════════╪═════╡
+    │ 1   ┆ 11        ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 22        ┆ 2   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 33        ┆ 1   │
+    ╰─────┴───────────┴─────╯
+    >>> df.select(col("^ham.*$"))
+    shape: (3, 2)
+    ╭─────┬───────────╮
+    │ ham ┆ hamburger │
+    │ --- ┆ ---       │
+    │ i64 ┆ i64       │
+    ╞═════╪═══════════╡
+    │ 1   ┆ 11        │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ 22        │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ 33        │
+    ╰─────┴───────────╯
+    >>> df.select(col("*").exclude("ham"))
+    shape: (3, 2)
+    ╭───────────┬─────╮
+    │ hamburger ┆ foo │
+    │ ---       ┆ --- │
+    │ i64       ┆ i64 │
+    ╞═══════════╪═════╡
+    │ 11        ┆ 3   │
+    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 22        ┆ 2   │
+    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 33        ┆ 1   │
+    ╰───────────┴─────╯
+
     """
     return pl.lazy.expr.wrap_expr(pycol(name))
-
-
-def except_(name: str) -> "pl.Expr":
-    """
-    Exclude a column from a selection.
-
-    # Example
-    ```python
-    df = pl.DataFrame({
-        "ham": [1, 1, 2, 2, 3],
-        "foo": [1, 1, 2, 2, 3],
-        "bar": [1, 1, 2, 2, 3],
-    })
-
-    df.lazy()
-        .select(["*", except_("foo")])
-        .collect()
-    ```
-    Outputs:
-
-    ```text
-    ╭─────┬─────╮
-    │ ham ┆ bar │
-    │ --- ┆ --- │
-    │ f64 ┆ f64 │
-    ╞═════╪═════╡
-    │ 1   ┆ 1   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 1   ┆ 1   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 2   ┆ 2   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 2   ┆ 2   │
-    ├╌╌╌╌╌┼╌╌╌╌╌┤
-    │ 3   ┆ 3   │
-    ╰─────┴─────╯
-    ```
-    """
-    return pl.lazy.expr.wrap_expr(pyexcept(name))
 
 
 def count(column: Union[str, "pl.Series"] = "") -> Union["pl.Expr", int]:
@@ -118,6 +147,8 @@ def count(column: Union[str, "pl.Series"] = "") -> Union["pl.Expr", int]:
 def to_list(name: str) -> "pl.Expr":
     """
     Aggregate to list.
+
+    Re-exported as `pl.list()`
     """
     return col(name).list()
 
@@ -324,24 +355,23 @@ def lit(
     dtype
         Optionally define a dtype.
 
-    # Example
+    Examples
+    --------
 
-    ```python
-    # literal integer
-    lit(1)
+    >>> # literal integer
+    >>> lit(1)
 
-    # literal str.
-    lit("foo")
+    >>> # literal str.
+    >>> lit("foo")
 
-    # literal date64
-    lit(datetime(2021, 1, 20))
+    >>> # literal date64
+    >>> lit(datetime(2021, 1, 20))
 
-    # literal Null
-    lit(None)
+    >>> # literal Null
+    >>> lit(None)
 
-    # literal eager Series
-    lit(Series("a", [1, 2, 3])
-    ```
+    >>> # literal eager Series
+    >>> lit(Series("a", [1, 2, 3])
     """
     if isinstance(value, datetime):
         return lit(int(value.timestamp() * 1e3)).cast(Date64)
@@ -467,10 +497,30 @@ def any(name: Union[str, tp.List["pl.Expr"]]) -> "pl.Expr":
     return col(name).sum() > 0
 
 
-def all(name: Union[str, tp.List["pl.Expr"]]) -> "pl.Expr":
+def all(name: Optional[Union[str, tp.List["pl.Expr"]]] = None) -> "pl.Expr":
     """
-    Evaluate columnwise or elementwise with a bitwise AND operation.
+    This function is two things
+
+    * function can do a columnwise or elementwise AND operation
+    * a wildcard column selection
+
+    Parameters
+    ----------
+
+    name
+        If given this function will apply a bitwise & on the columns.
+
+    Examples
+    --------
+
+    >>> # sum all columns
+    >>> df.select(pl.all().sum())
+
+
+    >>> df.select(pl.all([col(name).is_not_null() for name in df.columns]))
     """
+    if name is None:
+        return col("*")
     if isinstance(name, list):
         return fold(lit(0), lambda a, b: a & b, name).alias("all")
     return col(name).cast(bool).sum() == col(name).count()
@@ -520,13 +570,12 @@ def arange(
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
 
-    # Example
+     Examples
+     --------
 
-    ```python
-    (df.lazy()
+    >>> (df.lazy()
         .filter(pl.col("foo") < pl.arange(0, 100))
         .collect())
-    ```
 
     Parameters
     ----------

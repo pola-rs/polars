@@ -10,17 +10,16 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import polars as pl
 
+try:
+    from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
+
 from ..datatypes import DataType, pytype_to_polars_type
 from ..utils import _process_null_values
 from .expr import UDF, Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
-
-try:
-    from ..polars import PyExpr, PyLazyFrame, PyLazyGroupBy
-except ImportError:
-    import warnings
-
-    warnings.warn("Binary files missing.")
-    __pdoc__ = {"wrap_ldf": False}
 
 __all__ = [
     "LazyFrame",
@@ -193,7 +192,7 @@ class LazyFrame:
 
     def sort(
         self,
-        by_columns: Union[str, "Expr", tp.List["Expr"]],
+        by: Union[str, "Expr", tp.List["Expr"]],
         reverse: Union[bool, tp.List[bool]] = False,
     ) -> "LazyFrame":
         """
@@ -205,19 +204,19 @@ class LazyFrame:
 
         Parameters
         ----------
-        by_columns
+        by
             Column (expressions) to sort by.
         reverse
             Whether or not to sort in reverse order.
         """
-        if type(by_columns) is str:
-            return wrap_ldf(self._ldf.sort(by_columns, reverse))
+        if type(by) is str:
+            return wrap_ldf(self._ldf.sort(by, reverse))
         if type(reverse) is bool:
             reverse = [reverse]
 
-        by_columns = expr_to_lit_or_expr(by_columns, str_to_lit=False)
-        by_columns = _selection_to_pyexpr_list(by_columns)
-        return wrap_ldf(self._ldf.sort_by_exprs(by_columns, reverse))
+        by = expr_to_lit_or_expr(by, str_to_lit=False)
+        by = _selection_to_pyexpr_list(by)
+        return wrap_ldf(self._ldf.sort_by_exprs(by, reverse))
 
     def collect(
         self,
@@ -320,6 +319,27 @@ class LazyFrame:
             string_cache,
         )
         return pl.eager.frame.wrap_df(ldf.fetch(n_rows))
+
+    @property
+    def columns(self) -> tp.List[str]:
+        """
+        Get or set column names.
+
+        Examples
+        --------
+
+        >>> df = (pl.DataFrame({
+        >>>    "foo": [1, 2, 3],
+        >>>    "bar": [6, 7, 8],
+        >>>    "ham": ['a', 'b', 'c']
+        >>>    }).lazy()
+        >>>     .select(["foo", "bar"]))
+
+        >>> df.columns
+        ["foo", "bar"]
+
+        """
+        return self._ldf.columns()
 
     def cache(
         self,
@@ -677,12 +697,68 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.quantile(quantile))
 
-    def explode(self, columns: Union[str, tp.List[str]]) -> "LazyFrame":
+    def explode(
+        self, columns: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+    ) -> "LazyFrame":
         """
         Explode lists to long format.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
+        >>>     "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]]
+        >>> })
+        >>> df
+        shape: (6, 2)
+        ╭─────────┬────────────╮
+        │ letters ┆ nrs        │
+        │ ---     ┆ ---        │
+        │ str     ┆ list [i64] │
+        ╞═════════╪════════════╡
+        │ "c"     ┆ [1, 2]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "c"     ┆ [1, 3]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "a"     ┆ [4, 3]     │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "c"     ┆ [5, 5, 5]  │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "a"     ┆ [6]        │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "b"     ┆ [2, 1, 2]  │
+        ╰─────────┴────────────╯
+        >>> df.explode("nrs")
+        shape: (13, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ ...     ┆ ... │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 6   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 2   │
+        ╰─────────┴─────╯
+
         """
-        if isinstance(columns, str):
-            columns = [columns]
+        columns = _selection_to_pyexpr_list(columns)
         return wrap_ldf(self._ldf.explode(columns))
 
     def drop_duplicates(
@@ -771,20 +847,137 @@ class LazyGroupBy:
         aggs
             Single/ Multiple aggregation expression(s).
 
-        # Example
+        Examples
+        --------
 
-        ```python
-        (pl.scan_csv("data.csv")
+        >>> (pl.scan_csv("data.csv")
             .groupby("groups")
             .agg([
                     pl.col("name").n_unique().alias("unique_names"),
                     pl.max("values")
                 ])
         )
-        ```
         """
         aggs = _selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
+
+    def head(self, n: int = 5) -> "LazyFrame":
+        """
+        Return first n rows of each group.
+
+        Parameters
+        ----------
+        n
+            Number of values of the group to select
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
+        >>>     "nrs": [1, 2, 3, 4, 5, 6]
+        >>> })
+        >>> df
+        shape: (6, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 4   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 6   │
+        ╰─────────┴─────╯
+        >>> (df.groupby("letters")
+        >>>  .head(2)
+        >>>  .sort("letters")
+        >>> )
+        shape: (5, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "a"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 6   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ╰─────────┴─────╯
+
+        """
+        return wrap_ldf(self.lgb.head(n))
+
+    def tail(self, n: int = 5) -> "LazyFrame":
+        """
+        Return last n rows of each group.
+
+        Parameters
+        ----------
+        n
+            Number of values of the group to select
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
+        >>>     "nrs": [1, 2, 3, 4, 5, 6]
+        >>> })
+        >>> df
+        shape: (6, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "c"     ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 4   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 6   │
+        ╰─────────┴─────╯
+        >>> (df.groupby("letters")
+        >>>  .tail(2)
+        >>>  .sort("letters")
+        >>> )
+        shape: (5, 2)
+        ╭─────────┬─────╮
+        │ letters ┆ nrs │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ "a"     ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "a"     ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "b"     ┆ 6   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "c"     ┆ 4   │
+        ╰─────────┴─────╯
+
+        """
+        return wrap_ldf(self.lgb.tail(n))
 
     def apply(self, f: Callable[["pl.DataFrame"], "pl.DataFrame"]) -> "LazyFrame":
         """

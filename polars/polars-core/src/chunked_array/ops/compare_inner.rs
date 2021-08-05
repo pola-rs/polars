@@ -2,10 +2,12 @@
 //! Used to speed up PartialEq and PartialOrd of elements within an array
 //!
 
-use super::take_random::{
+use crate::chunked_array::ops::take::take_random::{
     BoolTakeRandom, BoolTakeRandomSingleChunk, NumTakeRandomChunked, NumTakeRandomCont,
     NumTakeRandomSingleChunk, Utf8TakeRandom, Utf8TakeRandomSingleChunk,
 };
+#[cfg(feature = "object")]
+use crate::chunked_array::ops::take::take_random::{ObjectTakeRandom, ObjectTakeRandomSingleChunk};
 use crate::prelude::*;
 use std::cmp::{Ordering, PartialEq};
 
@@ -282,5 +284,48 @@ impl<'a> IntoPartialOrdInner<'a> for &'a ListChunked {
 impl<'a> IntoPartialOrdInner<'a> for &'a CategoricalChunked {
     fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner> {
         unimplemented!()
+    }
+}
+
+#[cfg(feature = "object")]
+impl<'a, T> PartialEqInner for ObjectTakeRandom<'a, T>
+where
+    T: PolarsObject,
+{
+    #[inline]
+    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
+        self.get(idx_a) == self.get(idx_b)
+    }
+}
+
+#[cfg(feature = "object")]
+impl<'a, T> PartialEqInner for ObjectTakeRandomSingleChunk<'a, T>
+where
+    T: PolarsObject,
+{
+    #[inline]
+    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
+        self.get(idx_a) == self.get(idx_b)
+    }
+}
+
+#[cfg(feature = "object")]
+impl<'a, T: PolarsObject> IntoPartialEqInner<'a> for &'a ObjectChunked<T> {
+    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
+        match self.chunks.len() {
+            1 => {
+                let arr = self.downcast_iter().next().unwrap();
+                let t = ObjectTakeRandomSingleChunk { arr };
+                Box::new(t)
+            }
+            _ => {
+                let chunks = self.downcast_chunks();
+                let t = ObjectTakeRandom {
+                    chunks,
+                    chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
+                };
+                Box::new(t)
+            }
+        }
     }
 }

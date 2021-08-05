@@ -1,8 +1,12 @@
+use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
+use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
+use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
+use ahash::RandomState;
 use arrow::array::{ArrayData, ArrayRef};
 use arrow::buffer::Buffer;
 use std::any::Any;
@@ -33,6 +37,21 @@ where
             None => Cow::Borrowed("null"),
             Some(val) => Cow::Owned(format!("{}", val)),
         }
+    }
+    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
+        (&self.0).into_partial_eq_inner()
+    }
+
+    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+        self.0.vec_hash(random_state)
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
+        self.0.vec_hash_combine(build_hasher, hashes)
+    }
+
+    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+        IntoGroupTuples::group_tuples(&self.0, multithreaded)
     }
 }
 #[cfg(feature = "object")]
@@ -92,11 +111,11 @@ where
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
-        ChunkTake::take(&self.0, iter.into()).into_series()
+    fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
+        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
+    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
@@ -109,14 +128,12 @@ where
         Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
     }
 
-    unsafe fn take_opt_iter_unchecked(
-        &self,
-        iter: &mut dyn Iterator<Item = Option<usize>>,
-    ) -> Series {
-        ChunkTake::take_unchecked(&self.0, SeriesWrap(iter).into()).into_series()
+    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
+        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
-    fn take_opt_iter(&self, _iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
+    #[cfg(feature = "take_opt_iter")]
+    fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
         todo!()
     }
 
@@ -242,9 +259,8 @@ where
         ObjectChunked::sample_frac(&self.0, frac, with_replacement).map(|ca| ca.into_series())
     }
 
-    fn get_as_any(&self, index: usize) -> &dyn Any {
-        debug_assert!(index < self.0.len());
-        unsafe { ObjectChunked::get_as_any(&self.0, index) }
+    fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
+        ObjectChunked::<T>::get_object(&self.0, index)
     }
 
     fn as_any(&self) -> &dyn Any {

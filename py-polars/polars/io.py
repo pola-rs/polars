@@ -59,27 +59,27 @@ def _process_http_file(path: str) -> BytesIO:
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, List[str], Path, BinaryIO], **kwargs: Any
+    file: Union[str, List[str], Path, BinaryIO, bytes], **kwargs: Any
 ) -> ContextManager[Union[str, BinaryIO]]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, TextIO, Path, BinaryIO], **kwargs: Any
+    file: Union[str, TextIO, Path, BinaryIO, bytes], **kwargs: Any
 ) -> ContextManager[Union[str, BinaryIO]]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
+    file: Union[str, List[str], TextIO, Path, BinaryIO, bytes], **kwargs: Any
 ) -> ContextManager[Union[str, List[str], BinaryIO, List[BinaryIO]]]:
     ...
 
 
 def _prepare_file_arg(
-    file: Union[str, List[str], TextIO, Path, BinaryIO], **kwargs: Any
+    file: Union[str, List[str], TextIO, Path, BinaryIO, bytes], **kwargs: Any
 ) -> ContextManager[Union[str, BinaryIO, List[str], List[BinaryIO]]]:
     """
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
@@ -123,7 +123,7 @@ def _prepare_file_arg(
 
 
 def read_csv(
-    file: Union[str, TextIO, Path, BinaryIO],
+    file: Union[str, TextIO, Path, BinaryIO, bytes],
     infer_schema_length: int = 100,
     batch_size: int = 8192,
     has_headers: bool = True,
@@ -209,6 +209,8 @@ def read_csv(
     -------
     DataFrame
     """
+    if isinstance(file, bytes) and len(file) == 0:
+        raise ValueError("no date in bytes")
 
     storage_options = storage_options or {}
 
@@ -326,8 +328,7 @@ def scan_csv(
         Start reading after `skip_rows`.
     stop_after_n_rows
         After n rows are read from the CSV, it stops reading.
-        During multi-threaded parsing, an upper bound of `n` rows
-        cannot be guaranteed.
+        During multi-threaded parsing, an upper bound of `n` rows cannot be guaranteed.
     cache
         Cache the result after reading.
     dtype
@@ -388,7 +389,7 @@ def scan_parquet(
 
 
 def read_ipc(
-    file: Union[str, BinaryIO, Path],
+    file: Union[str, BinaryIO, Path, bytes],
     use_pyarrow: bool = True,
     storage_options: Optional[Dict] = None,
 ) -> "pl.DataFrame":
@@ -418,7 +419,7 @@ def read_ipc(
 
 
 def read_parquet(
-    source: Union[str, List[str], Path, BinaryIO],
+    source: Union[str, List[str], Path, BinaryIO, bytes],
     use_pyarrow: bool = True,
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
@@ -511,9 +512,7 @@ def read_sql(
     ## Source not supported?
     If a database source is not supported, pandas can be used to load the query:
 
-    ```python
-    df = pl.from_pandas(pd.read_sql(sql, engine))
-    ```
+    >>>> df = pl.from_pandas(pd.read_sql(sql, engine))
 
     Parameters
     ----------
@@ -530,34 +529,29 @@ def read_sql(
       how many partition to generate.
 
 
-    # Examples
+    Examples
+    --------
 
     ## Single threaded
     Read a DataFrame from a SQL using a single thread:
 
-    ```python
-    uri = "postgresql://username:password@server:port/database"
-    query = "SELECT * FROM lineitem"
-    pl.read_sql(query, uri)
-    ```
+    >>> uri = "postgresql://username:password@server:port/database"
+    >>> query = "SELECT * FROM lineitem"
+    >>> pl.read_sql(query, uri)
 
     ## Using 10 threads
     Read a DataFrame parallelly using 10 threads by automatically partitioning the provided SQL on the partition column:
 
-    ```python
-    uri = "postgresql://username:password@server:port/database"
-    query = "SELECT * FROM lineitem"
-    read_sql(query, uir, partition_on="partition_col", partition_num=10)
-    ```
+    >>> uri = "postgresql://username:password@server:port/database"
+    >>> query = "SELECT * FROM lineitem"
+    >>> read_sql(query, uir, partition_on="partition_col", partition_num=10)
 
     ## Using
     Read a DataFrame parallel using 2 threads by manually providing two partition SQLs:
 
-    ```python
-    uri = "postgresql://username:password@server:port/database"
-    queries = ["SELECT * FROM lineitem WHERE partition_col <= 10", "SELECT * FROM lineitem WHERE partition_col > 10"]
-    read_sql(uri, queries)
-    ```
+    >>> uri = "postgresql://username:password@server:port/database"
+    >>> queries = ["SELECT * FROM lineitem WHERE partition_col <= 10", "SELECT * FROM lineitem WHERE partition_col > 10"]
+    >>> read_sql(uri, queries)
 
     """
     if _WITH_CX:

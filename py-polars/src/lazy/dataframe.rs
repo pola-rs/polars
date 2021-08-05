@@ -24,6 +24,16 @@ impl PyLazyGroupBy {
         lgb.agg(aggs).into()
     }
 
+    pub fn head(&mut self, n: usize) -> PyLazyFrame {
+        let lgb = self.lgb.take().unwrap();
+        lgb.head(Some(n)).into()
+    }
+
+    pub fn tail(&mut self, n: usize) -> PyLazyFrame {
+        let lgb = self.lgb.take().unwrap();
+        lgb.tail(Some(n)).into()
+    }
+
     pub fn apply(&mut self, lambda: PyObject) -> PyLazyFrame {
         let lgb = self.lgb.take().unwrap();
 
@@ -321,10 +331,10 @@ impl PyLazyFrame {
         ldf.quantile(quantile).into()
     }
 
-    pub fn explode(&self, column: Vec<String>) -> Self {
+    pub fn explode(&self, column: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
-        let column = column.into_iter().map(|s| col(&s)).collect::<Vec<_>>();
-        ldf.explode(&column).into()
+        let column = py_exprs_to_exprs(column);
+        ldf.explode(column).into()
     }
 
     pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
@@ -401,5 +411,14 @@ impl PyLazyFrame {
 
     pub fn clone(&self) -> PyLazyFrame {
         self.ldf.clone().into()
+    }
+
+    pub fn columns(&self) -> Vec<String> {
+        self.ldf
+            .schema()
+            .fields()
+            .iter()
+            .map(|fld| fld.name().to_string())
+            .collect()
     }
 }

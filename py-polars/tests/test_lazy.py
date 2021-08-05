@@ -9,7 +9,6 @@ def test_lazy():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
 
-    print(ldf.collect())
     # test if it executes
     new = (
         df.lazy()
@@ -18,6 +17,9 @@ def test_lazy():
         )
         .collect()
     )
+
+    # test if pl.list is available, this is `to_list` re-exported as list
+    df.groupby("a").agg(pl.list("b"))
 
 
 def test_apply():
@@ -250,3 +252,102 @@ def test_fold_filter():
     )
 
     assert out.shape == (3, 2)
+
+
+def test_head_groupby():
+    commodity_prices = {
+        "commodity": [
+            "Wheat",
+            "Wheat",
+            "Wheat",
+            "Wheat",
+            "Corn",
+            "Corn",
+            "Corn",
+            "Corn",
+            "Corn",
+        ],
+        "location": [
+            "StPaul",
+            "StPaul",
+            "StPaul",
+            "Chicago",
+            "Chicago",
+            "Chicago",
+            "Chicago",
+            "Chicago",
+            "Chicago",
+        ],
+        "seller": [
+            "Bob",
+            "Charlie",
+            "Susan",
+            "Paul",
+            "Ed",
+            "Mary",
+            "Paul",
+            "Charlie",
+            "Norman",
+        ],
+        "price": [1.0, 0.7, 0.8, 0.55, 2.0, 3.0, 2.4, 1.8, 2.1],
+    }
+    df = pl.DataFrame(commodity_prices)
+
+    # this query flexes the wildcard exclusion quite a bit.
+    keys = ["commodity", "location"]
+    out = (
+        df.sort(by="price")
+        .groupby(keys)
+        .agg([col("*").exclude(keys).head(2).list().keep_name()])
+        .explode(col("*").exclude(keys))
+    )
+
+    assert out.shape == (5, 4)
+
+    df = pl.DataFrame(
+        {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
+    )
+
+    out = df.groupby("letters").tail(2).sort("letters")
+    assert out.frame_equal(
+        pl.DataFrame({"str": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]})
+    )
+    out = df.groupby("letters").head(2).sort("letters")
+    assert out.frame_equal(
+        pl.DataFrame({"str": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]})
+    )
+
+
+def test_drop_nulls():
+    df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
+    assert df.select(col("nrs").drop_nulls()).shape == (5, 1)
+
+
+def test_all_expr():
+    df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
+    assert df[[pl.all()]].frame_equal(df)
+
+
+def test_lazy_columns():
+    df = pl.DataFrame(
+        {
+            "a": [1],
+            "b": [1],
+            "c": [1],
+        }
+    ).lazy()
+
+    assert df.select(["a", "c"]).columns == ["a", "c"]
+
+
+def test_regex_selection():
+    df = pl.DataFrame(
+        {
+            "foo": [1],
+            "fooey": [1],
+            "foobar": [1],
+            "bar": [1],
+        }
+    ).lazy()
+
+    assert df.select([col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]

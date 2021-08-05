@@ -444,19 +444,19 @@ macro_rules! impl_dyn_series {
                 try_physical_dispatch!(self, filter, filter)
             }
 
-            fn take(&self, indices: &UInt32Chunked) -> Series {
-                physical_dispatch!(self, take, indices)
+            fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+                try_physical_dispatch!(self, take, indices)
             }
 
-            fn take_iter(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
-                physical_dispatch!(self, take_iter, iter)
+            fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
+                try_physical_dispatch!(self, take_iter, iter)
             }
 
             fn take_every(&self, n: usize) -> Series {
                 physical_dispatch!(self, take_every, n)
             }
 
-            unsafe fn take_iter_unchecked(&self, iter: &mut dyn Iterator<Item = usize>) -> Series {
+            unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
                 physical_dispatch!(self, take_iter_unchecked, iter)
             }
 
@@ -464,15 +464,13 @@ macro_rules! impl_dyn_series {
                 try_physical_dispatch!(self, take_unchecked, idx)
             }
 
-            unsafe fn take_opt_iter_unchecked(
-                &self,
-                iter: &mut dyn Iterator<Item = Option<usize>>,
-            ) -> Series {
+            unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
                 physical_dispatch!(self, take_opt_iter_unchecked, iter)
             }
 
-            fn take_opt_iter(&self, iter: &mut dyn Iterator<Item = Option<usize>>) -> Series {
-                physical_dispatch!(self, take_opt_iter, iter)
+            #[cfg(feature = "take_opt_iter")]
+            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
+                try_physical_dispatch!(self, take_opt_iter, iter)
             }
 
             fn len(&self) -> usize {

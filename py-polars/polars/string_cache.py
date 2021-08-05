@@ -2,12 +2,11 @@ from types import TracebackType
 from typing import Optional, Type
 
 try:
-    from .polars import toggle_string_cache as pytoggle_string_cache
+    from polars.polars import toggle_string_cache as pytoggle_string_cache
+
+    _DOCUMENTING = False
 except ImportError:
-    import warnings
-
-    warnings.warn("binary files missing")
-
+    _DOCUMENTING = True
 
 __all__ = [
     "StringCache",

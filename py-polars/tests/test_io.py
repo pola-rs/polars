@@ -4,6 +4,7 @@ import zlib
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import polars as pl
 
@@ -146,3 +147,9 @@ a,b,c
     out = pl.read_csv(f)
     expected = pl.DataFrame({"a": [1], "b": [2]})
     assert out.frame_equal(expected)
+
+
+def test_empty_bytes():
+    b = b""
+    with pytest.raises(ValueError):
+        pl.read_csv(b)
