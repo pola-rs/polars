@@ -155,9 +155,9 @@ docs-selection = [
 ]
 
 [dependencies]
-polars-core = {version = "0.14.8", path = "./polars-core", features= ["docs", "private"], default-features = false}
-polars-io = {version = "0.14.8", path = "./polars-io", features = ["private"], default-features = false, optional=true}
-polars-lazy = {version = "0.14.8", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
+polars-core = {version = "0.15.0", path = "./polars-core", features= ["docs", "private"], default-features = false}
+polars-io = {version = "0.15.0", path = "./polars-io", features = ["private"], default-features = false, optional=true}
+polars-lazy = {version = "0.15.0", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
 
 [dev-dependencies]
 criterion = "0.3"
