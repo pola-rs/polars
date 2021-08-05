@@ -4,6 +4,7 @@ use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
+use std::borrow::Cow;
 use std::ops::Deref;
 
 pub struct LiteralExpr(pub LiteralValue, Expr);
@@ -82,6 +83,16 @@ impl PhysicalExpr for LiteralExpr {
             Series(series) => series.deref().clone(),
         };
         Ok(s)
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        Ok((self.evaluate(df, state)?, Cow::Borrowed(groups)))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
