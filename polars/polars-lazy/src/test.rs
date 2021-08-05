@@ -1395,3 +1395,26 @@ fn test_regex_selection() -> Result<()> {
     assert_eq!(out.get_column_names(), &["anton", "arnold schwars"]);
     Ok(())
 }
+
+#[test]
+fn test_filter_in_groupby_agg() -> Result<()> {
+    // This tests if the fitler is correctly handled by the binary expression.
+    // This could lead to UB if it were not the case. The filter creates an empty column.
+    // but the group tuples could still be untouched leading to out of bounds aggregation.
+    let df = df![
+        "a" => [1, 1, 2],
+        "b" => [1, 2, 3]
+    ]?;
+
+    let out = df
+        .lazy()
+        .groupby(vec![col("a")])
+        .agg(vec![
+            (col("b").filter(col("b").eq(lit(100))) * lit(2)).mean()
+        ])
+        .collect()?;
+
+    assert_eq!(out.column("b_mean")?.null_count(), 2);
+
+    Ok(())
+}

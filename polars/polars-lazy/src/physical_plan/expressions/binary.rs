@@ -3,7 +3,33 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::{prelude::*, POOL};
+use std::borrow::Cow;
 use std::sync::Arc;
+
+/// In the aggregation of a binary expression, only one expression can modify the size of the groups
+/// with a filter operation otherwise the aggregations will produce flawed results.
+pub(crate) fn binary_check_group_tuples<'a>(
+    out: Series,
+    groups_a: Cow<'a, GroupTuples>,
+    groups_b: Cow<'a, GroupTuples>,
+) -> Result<(Series, Cow<'a, GroupTuples>)> {
+    match (groups_a, groups_b) {
+        (Cow::Owned(_), Cow::Owned(_)) => Err(PolarsError::InvalidOperation(
+            "Cannot apply two filters in a binary expression".into(),
+        )),
+        (Cow::Borrowed(a), Cow::Borrowed(b)) => {
+            if !std::ptr::eq(a, b) {
+                Err(PolarsError::ValueError(
+                    "filter predicates do not originate from same filter operation".into(),
+                ))
+            } else {
+                Ok((out, Cow::Borrowed(a)))
+            }
+        }
+        (Cow::Owned(a), _) => Ok((out, Cow::Owned(a))),
+        (_, Cow::Owned(a)) => Ok((out, Cow::Owned(a))),
+    }
+}
 
 pub struct BinaryExpr {
     pub(crate) left: Arc<dyn PhysicalExpr>,
@@ -60,6 +86,27 @@ impl PhysicalExpr for BinaryExpr {
         });
         apply_operator(&lhs?, &rhs?, self.op)
     }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+        state: &ExecutionState,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        let (result_a, result_b) = POOL.install(|| {
+            rayon::join(
+                || self.left.evaluate_on_groups(df, groups, state),
+                || self.right.evaluate_on_groups(df, groups, state),
+            )
+        });
+        let (series_a, groups_a) = result_a?;
+        let (series_b, groups_b) = result_b?;
+
+        let out = apply_operator(&series_a, &series_b, self.op)?;
+        binary_check_group_tuples(out, groups_a, groups_b)
+    }
+
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         todo!()
     }
