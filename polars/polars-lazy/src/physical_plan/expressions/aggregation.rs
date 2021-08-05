@@ -6,6 +6,7 @@ use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::utils::NoNull;
 use polars_core::{prelude::*, POOL};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub(crate) struct AggregationExpr {
@@ -21,6 +22,15 @@ impl AggregationExpr {
 
 impl PhysicalExpr for AggregationExpr {
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+        unimplemented!()
+    }
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        _df: &DataFrame,
+        _groups: &'a GroupTuples,
+        _state: &ExecutionState,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
         unimplemented!()
     }
 
@@ -261,6 +271,15 @@ impl AggQuantileExpr {
 
 impl PhysicalExpr for AggQuantileExpr {
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
+        unimplemented!()
+    }
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        _df: &DataFrame,
+        _groups: &'a GroupTuples,
+        _state: &ExecutionState,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
         unimplemented!()
     }
 
