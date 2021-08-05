@@ -49,15 +49,15 @@ pub trait PhysicalExpr: Send + Sync {
     /// the `Series`.
     ///
     // we allow this because we pass the vec to the Cow
+    // Note to self: Don't be smart and dispatch to evaluate as default implementation
+    // this means filters will be incorrect and lead to invalid results down the line
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        self.evaluate(df, state).map(|s| (s, Cow::Borrowed(groups)))
-    }
+    ) -> Result<(Series, Cow<'a, GroupTuples>)>;
 
     /// Get the output field of this expr
     fn to_field(&self, input_schema: &Schema) -> Result<Field>;
