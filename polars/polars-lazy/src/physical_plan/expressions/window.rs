@@ -1,9 +1,10 @@
 use crate::logical_plan::Context;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupBy;
+use polars_core::frame::groupby::{GroupBy, GroupTuples};
 use polars_core::frame::hash_join::private_left_join_multiple_keys;
 use polars_core::prelude::*;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct WindowExpr {
@@ -114,5 +115,15 @@ impl PhysicalExpr for WindowExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.function.to_field(input_schema, Context::Default)
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups<'a>(
+        &self,
+        _df: &DataFrame,
+        _groups: &'a GroupTuples,
+        _state: &ExecutionState,
+    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        panic!("window expression not allowed in aggregation")
     }
 }
