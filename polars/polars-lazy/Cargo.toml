@@ -48,6 +48,7 @@ private = []
 ahash = "0.7"
 rayon = "1.5"
 itertools = "0.10"
+regex = {version = "1.4", optional = true}
 
 polars-io = {version = "0.14.8", path = "../polars-io", features = ["lazy", "csv-file"], default-features=false}
 polars-core = {version = "0.14.8", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features=false}

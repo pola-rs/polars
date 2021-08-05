@@ -91,6 +91,7 @@
 //! The opt-in features are (not including dtype features):
 //!
 //! * `lazy` - Lazy API
+//!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types

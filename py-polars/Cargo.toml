@@ -62,7 +62,8 @@ features = [
     "reinterpret",
     "decompress",
     "mode",
-    "extract_jsonpath"
+    "extract_jsonpath",
+    "lazy_regex"
 ]
 
 #[patch.crates-io]

@@ -1180,6 +1180,28 @@ impl Expr {
 }
 
 /// Create a Column Expression based on a column name.
+///
+/// # Arguments
+///
+/// * `name` - A string slice that holds the name of the column
+///
+/// # Examples
+///
+/// ```ignore
+/// // select a column name
+/// col("foo")
+/// ```
+///
+/// ```ignore
+/// // select all columns by using a wildcard
+/// col("*")
+/// ```
+///
+/// ```ignore
+/// // select specific column by writing a regular expression that starts with `^` and ends with `$`
+/// // only if regex features is activated
+/// col("^foo.*$")
+/// ```
 pub fn col(name: &str) -> Expr {
     match name {
         "*" => Expr::Wildcard,
