@@ -1380,3 +1380,18 @@ fn test_exclude() -> Result<()> {
     assert_eq!(out.get_column_names(), &["a", "c"]);
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "regex")]
+fn test_regex_selection() -> Result<()> {
+    let df = df![
+    "anton" => [1, 2, 3],
+    "arnold schwars" => [1, 2, 3],
+    "annie" => [1, 2, 3]
+    ]?;
+
+    let out = df.lazy().select(vec![col("^a.*o.*$")]).collect()?;
+
+    assert_eq!(out.get_column_names(), &["anton", "arnold schwars"]);
+    Ok(())
+}

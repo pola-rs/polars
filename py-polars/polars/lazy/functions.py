@@ -61,6 +61,76 @@ __all__ = [
 def col(name: str) -> "pl.Expr":
     """
     A column in a DataFrame.
+    Can be used to select:
+
+     * a single column by name
+     * all columns by using a wildcard `"*"`
+     * column by regular expression if the regex starts with `^` and ends with `$`
+
+    Parameters
+    col
+        A string that holds the name of the column
+
+    Examples
+    -------
+
+    >>> df = pl.DataFrame({
+    >>> "ham": [1, 2, 3],
+    >>> "hamburger": [11, 22, 33],
+    >>> "foo": [3, 2, 1]})
+    >>> df.select(col("foo"))
+    shape: (3, 1)
+    ╭─────╮
+    │ foo │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 3   │
+    ├╌╌╌╌╌┤
+    │ 2   │
+    ├╌╌╌╌╌┤
+    │ 1   │
+    ╰─────╯
+    >>> df.select(col("*"))
+    shape: (3, 3)
+    ╭─────┬───────────┬─────╮
+    │ ham ┆ hamburger ┆ foo │
+    │ --- ┆ ---       ┆ --- │
+    │ i64 ┆ i64       ┆ i64 │
+    ╞═════╪═══════════╪═════╡
+    │ 1   ┆ 11        ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 22        ┆ 2   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 33        ┆ 1   │
+    ╰─────┴───────────┴─────╯
+    >>> df.select(col("^ham.*$"))
+    shape: (3, 2)
+    ╭─────┬───────────╮
+    │ ham ┆ hamburger │
+    │ --- ┆ ---       │
+    │ i64 ┆ i64       │
+    ╞═════╪═══════════╡
+    │ 1   ┆ 11        │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ 22        │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ 33        │
+    ╰─────┴───────────╯
+    >>> df.select(col("*").exclude("ham"))
+    shape: (3, 2)
+    ╭───────────┬─────╮
+    │ hamburger ┆ foo │
+    │ ---       ┆ --- │
+    │ i64       ┆ i64 │
+    ╞═══════════╪═════╡
+    │ 11        ┆ 3   │
+    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 22        ┆ 2   │
+    ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 33        ┆ 1   │
+    ╰───────────┴─────╯
+
     """
     return pl.lazy.expr.wrap_expr(pycol(name))
 

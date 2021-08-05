@@ -338,3 +338,16 @@ def test_lazy_columns():
     ).lazy()
 
     assert df.select(["a", "c"]).columns == ["a", "c"]
+
+
+def test_regex_selection():
+    df = pl.DataFrame(
+        {
+            "foo": [1],
+            "fooey": [1],
+            "foobar": [1],
+            "bar": [1],
+        }
+    ).lazy()
+
+    assert df.select([col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
