@@ -1407,6 +1407,7 @@ fn test_filter_in_groupby_agg() -> Result<()> {
     ]?;
 
     let out = df
+        .clone()
         .lazy()
         .groupby(vec![col("a")])
         .agg(vec![
@@ -1414,6 +1415,16 @@ fn test_filter_in_groupby_agg() -> Result<()> {
         ])
         .collect()?;
 
+    assert_eq!(out.column("b_mean")?.null_count(), 2);
+
+    let out = df
+        .lazy()
+        .groupby(vec![col("a")])
+        .agg(vec![(col("b")
+            .filter(col("b").eq(lit(100)))
+            .map(|s| Ok(s), None))
+        .mean()])
+        .collect()?;
     assert_eq!(out.column("b_mean")?.null_count(), 2);
 
     Ok(())
