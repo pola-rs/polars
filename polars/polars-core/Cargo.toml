@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.14.8"
+version = "0.15.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -110,9 +110,9 @@ docs-selection = [
 ]
 
 [dependencies]
-#arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "decee2176fcdf4e985d9cc2607e6f3f996da805c", default-features = false, features=["compute"]}
-arrow = { package = "arrow2", version = "0.2", default-features = false, features=["compute"]}
-polars-arrow = {version = "0.14.8", path = "../polars-arrow"}
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "d545253e30fa9060e1f74b973df378ef2d82fec2", default-features = false, features=["compute"]}
+#arrow = { package = "arrow2", version = "0.2", default-features = false, features=["compute"]}
+polars-arrow = {version = "0.15.0", path = "../polars-arrow"}
 thiserror = "1.0"
 num = "^0.4"
 itertools = "0.10"

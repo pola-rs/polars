@@ -64,22 +64,32 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70586af497bb464c82348a7e411d7026cefa3d3698e682aaa43f0214c3158ab2"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=d545253e30fa9060e1f74b973df378ef2d82fec2#d545253e30fa9060e1f74b973df378ef2d82fec2"
 dependencies = [
+ "ahash",
  "base64",
  "chrono",
  "csv",
  "flatbuffers",
  "futures",
  "hash_hasher",
+ "hex",
+ "indexmap",
+ "itertools",
  "lazy_static",
  "lexical-core",
+ "lz4",
  "multiversion",
  "num",
  "packed_simd_2",
  "parquet2",
+ "prettytable-rs",
+ "rand 0.8.4",
  "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "zstd",
 ]
 
 [[package]]
@@ -572,6 +582,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "indexmap"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1047,9 +1063,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cab3c2da3dc2e9e5e62fbf409d2c635ac5389ea9fdd5280e3660ae0f900e000"
+checksum = "b50de05bf09185870980353a9734df91b617750439b2bded36fb975f39abfb50"
 dependencies = [
  "bitpacking",
  "brotli",
@@ -1105,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.14.8"
+version = "0.15.0"
 dependencies = [
  "arrow2",
  "num",
@@ -1114,7 +1130,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.14.8"
+version = "0.15.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1129,7 +1145,7 @@ dependencies = [
  "num_cpus",
  "polars-arrow",
  "prettytable-rs",
- "rand",
+ "rand 0.7.3",
  "rand_distr",
  "rayon",
  "regex",
@@ -1141,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.14.8"
+version = "0.15.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1163,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.14.8"
+version = "0.15.0"
 dependencies = [
  "ahash",
  "itertools",
@@ -1297,9 +1313,21 @@ checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
 dependencies = [
  "getrandom 0.1.16",
  "libc",
- "rand_chacha",
- "rand_core",
- "rand_hc",
+ "rand_chacha 0.2.2",
+ "rand_core 0.5.1",
+ "rand_hc 0.2.0",
+]
+
+[[package]]
+name = "rand"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e7573632e6454cf6b99d7aac4ccca54be06da05aca2ef7423d22d27d4d4bcd8"
+dependencies = [
+ "libc",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.3",
+ "rand_hc 0.3.1",
 ]
 
 [[package]]
@@ -1309,7 +1337,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c8ed856279c9737206bf725bf36935d8666ead7aa69b52be55af369d193402"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.6.3",
 ]
 
 [[package]]
@@ -1322,13 +1360,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_core"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d34f1408f55294453790c48b2f1ebbb1c5b4b7563eb1f418bcfcfdbb06ebb4e7"
+dependencies = [
+ "getrandom 0.2.3",
+]
+
+[[package]]
 name = "rand_distr"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9e9532ada3929fb8b2e9dbe28d1e06c9b2cc65813f074fcb6bd5fbefeff9d56"
 dependencies = [
  "num-traits",
- "rand",
+ "rand 0.7.3",
 ]
 
 [[package]]
@@ -1337,7 +1384,16 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
- "rand_core",
+ "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_hc"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d51e9f596de227fda2ea6c84607f5558e196eeaf43c986b724ba4fb8fdf497e7"
+dependencies = [
+ "rand_core 0.6.3",
 ]
 
 [[package]]
@@ -1703,18 +1759,18 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "zstd"
-version = "0.6.1+zstd.1.4.9"
+version = "0.9.0+zstd.1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de55e77f798f205d8561b8fe2ef57abfb6e0ff2abe7fd3c089e119cdb5631a3"
+checksum = "07749a5dc2cb6b36661290245e350f15ec3bbb304e493db54a1d354480522ccd"
 dependencies = [
  "zstd-safe",
 ]
 
 [[package]]
 name = "zstd-safe"
-version = "3.0.1+zstd.1.4.9"
+version = "4.1.1+zstd.1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1387cabcd938127b30ce78c4bf00b30387dddf704e3f0881dbc4ff62b5566f8c"
+checksum = "c91c90f2c593b003603e5e0493c837088df4469da25aafff8bce42ba48caf079"
 dependencies = [
  "libc",
  "zstd-sys",
@@ -1722,9 +1778,9 @@ dependencies = [
 
 [[package]]
 name = "zstd-sys"
-version = "1.4.20+zstd.1.4.9"
+version = "1.6.1+zstd.1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebd5b733d7cf2d9447e2c3e76a5589b4f5e5ae065c22a2bc0b023cbc331b6c8e"
+checksum = "615120c7a2431d16cf1cf979e7fc31ba7a5b5e5707b29c8a99e5dbf8a8392a33"
 dependencies = [
  "cc",
  "libc",
