@@ -1,5 +1,6 @@
 import datetime
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 
@@ -31,3 +32,17 @@ def test_from_pandas_datetime():
 def test_arrow_list_roundtrip():
     # https://github.com/pola-rs/polars/issues/1064
     pl.from_arrow(pa.table({"a": [1], "b": [[1, 2]]})).to_arrow()
+
+
+def test_arrow_dict_to_polars():
+    pa_dict = pa.DictionaryArray.from_arrays(
+        indices=np.array([0, 1, 2, 3, 1, 0, 2, 3, 3, 2]),
+        dictionary=np.array(["AAA", "BBB", "CCC", "DDD"]),
+    ).cast(pa.large_utf8())
+
+    s = pl.Series(
+        name="s",
+        values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
+    )
+
+    assert s.series_equal(pl.Series("pa_dict", pa_dict))
