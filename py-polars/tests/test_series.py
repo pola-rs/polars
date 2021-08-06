@@ -19,10 +19,14 @@ def test_init_inputs():
     pl.Series(name="a", values=[1, 2])
     pl.Series(values=[1, 2], name="a")
 
-    pl.Series([1, 2])
-    pl.Series(values=[1, 2])
-    pl.Series()
-    pl.Series("a")
+    assert pl.Series([1, 2]).dtype == pl.Int64
+    assert pl.Series(values=[1, 2]).dtype == pl.Int64
+    assert pl.Series("a").dtype == pl.Float32  # f32 type used in case of no data
+    assert pl.Series().dtype == pl.Float32
+    assert pl.Series(values=[True, False]).dtype == pl.Boolean
+    assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
+    assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.Utf8
+    assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
 
     # Bad inputs
     with pytest.raises(ValueError):
