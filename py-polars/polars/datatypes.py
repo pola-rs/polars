@@ -308,7 +308,7 @@ if not _DOCUMENTING:
         np.uint32: PySeries.new_u32,
         np.uint64: PySeries.new_u64,
         np.str_: PySeries.new_str,
-        bool: PySeries.new_bool,
+        np.bool_: PySeries.new_bool,
     }
 
 
