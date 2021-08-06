@@ -32,9 +32,9 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
 
     # simplest solution is to cast to (large)-string arrays
     # this is copy and expensive
-    elif isinstance(array, pa.DictionaryArray):
-        if array.dictionary.type == pa.string():
-            array = pa.compute.cast(pa.compute.cast(array, pa.utf8()), pa.large_utf8())
+    elif isinstance(array.type, pa.DictionaryType):
+        if pa.types.is_string(array.type.value_type):
+            array = pa.compute.cast(array, pa.large_utf8())
         else:
             raise ValueError(
                 "polars does not support dictionary encoded types other than strings"
