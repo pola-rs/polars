@@ -974,3 +974,14 @@ def test_hashing_on_python_objects():
 def test_drop_duplicates_unit_rows():
     # simply test if we don't panic.
     pl.DataFrame({"a": [1], "b": [None]}).drop_duplicates(subset="a")
+
+
+def test_panic():
+    # may contain some tests that yielded a panic in polars or arrow
+    # https://github.com/pola-rs/polars/issues/1110
+    a = pl.DataFrame(
+        {
+            "col1": ["a"] * 500 + ["b"] * 500,
+        }
+    )
+    a.filter(pl.col("col1") != "b")
