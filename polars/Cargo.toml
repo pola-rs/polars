@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.15.0"
+version = "0.15.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -154,9 +154,9 @@ docs-selection = [
 ]
 
 [dependencies]
-polars-core = {version = "0.15.0", path = "./polars-core", features= ["docs", "private"], default-features = false}
-polars-io = {version = "0.15.0", path = "./polars-io", features = ["private"], default-features = false, optional=true}
-polars-lazy = {version = "0.15.0", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
+polars-core = {version = "0.15.1", path = "./polars-core", features= ["docs", "private"], default-features = false}
+polars-io = {version = "0.15.1", path = "./polars-io", features = ["private"], default-features = false, optional=true}
+polars-lazy = {version = "0.15.1", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
 
 [dev-dependencies]
 criterion = "0.3"
