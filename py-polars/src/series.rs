@@ -1,5 +1,3 @@
-use std::ops::{BitAnd, BitOr};
-
 use crate::apply::series::ApplyLambda;
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
@@ -8,8 +6,9 @@ use crate::error::PyPolarsEr;
 use crate::utils::{downsample_str_to_rule, reinterpret, str_to_polarstype};
 use crate::{arrow_interop, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
-use pyo3::types::{PyList, PyTuple};
+use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
+use std::ops::{BitAnd, BitOr};
 
 #[pyclass]
 #[repr(transparent)]
@@ -1134,6 +1133,20 @@ impl PySeries {
     pub fn mode(&self) -> PyResult<Self> {
         let s = self.series.mode().map_err(PyPolarsEr::from)?;
         Ok(s.into())
+    }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok(PyBytes::new(py, &bincode::serialize(&self.series).unwrap()).to_object(py))
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.series = bincode::deserialize(s.as_bytes()).unwrap();
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 

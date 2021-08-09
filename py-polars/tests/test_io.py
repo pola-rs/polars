@@ -1,5 +1,6 @@
 import gzip
 import io
+import pickle
 import zlib
 
 import numpy as np
@@ -153,3 +154,14 @@ def test_empty_bytes():
     b = b""
     with pytest.raises(ValueError):
         pl.read_csv(b)
+
+
+def test_pickle():
+    a = pl.Series("a", [1, 2])
+    b = pickle.dumps(a)
+    out = pickle.loads(b)
+    assert a.series_equal(out)
+    df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
+    b = pickle.dumps(df)
+    out = pickle.loads(b)
+    assert df.frame_equal(out, null_equal=True)
