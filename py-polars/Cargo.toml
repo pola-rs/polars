@@ -24,6 +24,7 @@ ndarray = "0.15"
 mimalloc = { version = "*", default-features = false}
 serde_json = { version = "1", optional = true }
 ahash = "0.7"
+bincode = "1.3"
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]

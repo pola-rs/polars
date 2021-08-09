@@ -799,6 +799,12 @@ class DataFrame:
             [self.select_at_idx(i).to_numpy() for i in range(self.width)]
         ).T
 
+    def __getstate__(self):  # type: ignore
+        return self.get_columns()
+
+    def __setstate__(self, state):  # type: ignore
+        self._df = DataFrame(state)._df
+
     def __mul__(self, other: Any) -> "DataFrame":
         other = _prepare_other_arg(other)
         return wrap_df(self._df.mul(other._s))
