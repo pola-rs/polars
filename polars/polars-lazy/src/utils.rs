@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[cfg(feature = "private")]
 pub(crate) fn equal_aexprs(left: &[Node], right: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     left.iter()
         .zip(right.iter())
