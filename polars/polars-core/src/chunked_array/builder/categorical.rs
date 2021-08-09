@@ -191,17 +191,15 @@ mod test {
     fn test_categorical_rev() -> Result<()> {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
-        let ca = Utf8Chunked::new_from_opt_slice(
-            "a",
-            &[
-                Some("foo"),
-                None,
-                Some("bar"),
-                Some("foo"),
-                Some("foo"),
-                Some("bar"),
-            ],
-        );
+        let slice = &[
+            Some("foo"),
+            None,
+            Some("bar"),
+            Some("foo"),
+            Some("foo"),
+            Some("bar"),
+        ];
+        let ca = Utf8Chunked::new_from_opt_slice("a", slice);
         let out = ca.cast::<CategoricalType>()?;
         assert_eq!(out.categorical_map.unwrap().len(), 2);
 
@@ -213,6 +211,14 @@ mod test {
         // full global cache
         let out = ca.cast::<CategoricalType>()?;
         assert_eq!(out.categorical_map.unwrap().len(), 2);
+
+        // Check that we don't panic if we append two categorical arrays
+        // build under the same string cache
+        // https://github.com/pola-rs/polars/issues/1115
+        let mut ca1 = Utf8Chunked::new_from_opt_slice("a", slice).cast::<CategoricalType>()?;
+        let ca2 = Utf8Chunked::new_from_opt_slice("a", slice).cast::<CategoricalType>()?;
+        ca1.append(&ca2);
+
         Ok(())
     }
 }
