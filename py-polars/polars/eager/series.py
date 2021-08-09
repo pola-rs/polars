@@ -263,6 +263,13 @@ class Series:
     def inner(self) -> "PySeries":
         return self._s
 
+    def __getstate__(self):  # type: ignore
+        return self._s.__getstate__()
+
+    def __setstate__(self, state):  # type: ignore
+        self._s = sequence_to_pyseries("", [], Float32)
+        self._s.__setstate__(state)
+
     def __str__(self) -> str:
         return self._s.as_str()
 
