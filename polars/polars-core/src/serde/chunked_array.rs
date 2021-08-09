@@ -1,6 +1,6 @@
 use super::DeDataType;
 use crate::prelude::*;
-use serde::ser::SerializeStruct;
+use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use std::cell::RefCell;
 
@@ -53,11 +53,11 @@ where
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("series", 3)?;
-        state.serialize_field("name", self.name())?;
+        let mut state = serializer.serialize_map(Some(3))?;
+        state.serialize_entry("name", self.name())?;
         let dtype: DeDataType = self.dtype().into();
-        state.serialize_field("datatype", &dtype)?;
-        state.serialize_field("values", &IterSer::new(self.into_iter()))?;
+        state.serialize_entry("datatype", &dtype)?;
+        state.serialize_entry("values", &IterSer::new(self.into_iter()))?;
         state.end()
     }
 }
@@ -72,11 +72,11 @@ macro_rules! impl_serialize {
             where
                 S: Serializer,
             {
-                let mut state = serializer.serialize_struct("series", 3)?;
-                state.serialize_field("name", self.name())?;
+                let mut state = serializer.serialize_map(Some(3))?;
+                state.serialize_entry("name", self.name())?;
                 let dtype: DeDataType = self.dtype().into();
-                state.serialize_field("datatype", &dtype)?;
-                state.serialize_field("values", &IterSer::new(self.into_iter()))?;
+                state.serialize_entry("datatype", &dtype)?;
+                state.serialize_entry("values", &IterSer::new(self.into_iter()))?;
                 state.end()
             }
         }
