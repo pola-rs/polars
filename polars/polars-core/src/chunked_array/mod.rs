@@ -453,11 +453,16 @@ impl<T> ChunkedArray<T> {
     where
         Self: std::marker::Sized,
     {
-        if matches!(self.dtype(), DataType::Categorical) && !self.is_empty() {
-            assert!(Arc::ptr_eq(
-                self.categorical_map.as_ref().unwrap(),
-                other.categorical_map.as_ref().unwrap()
-            ));
+        if let (Some(rev_map_l), Some(rev_map_r)) = (
+            self.categorical_map.as_ref(),
+            other.categorical_map.as_ref(),
+        ) {
+            // first assertion checks if the global string cache is equal,
+            // the second checks if we append a slice from this array to self
+            if !rev_map_l.same_src(rev_map_r) && !Arc::ptr_eq(rev_map_l, rev_map_r) {
+                panic!("Appending categorical data can only be done if they are made under the same global string cache. \
+                Consider using a global string cache.")
+            }
         }
 
         // replace an empty array
