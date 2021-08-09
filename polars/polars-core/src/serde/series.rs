@@ -69,66 +69,23 @@ impl<'de> Deserialize<'de> for Series {
             where
                 A: MapAccess<'de>,
             {
-                enum Field {
-                    Name,
-                    DataType,
-                    Values,
-                }
-
-                impl<'de> Deserialize<'de> for Field {
-                    fn deserialize<D>(
-                        deserializer: D,
-                    ) -> std::result::Result<Self, <D as Deserializer<'de>>::Error>
-                    where
-                        D: Deserializer<'de>,
-                    {
-                        struct FieldVisitor;
-
-                        impl<'de> Visitor<'de> for FieldVisitor {
-                            type Value = Field;
-
-                            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                                formatter.write_str("'name', 'datatype', or 'values'")
-                            }
-
-                            fn visit_str<E>(
-                                self,
-                                value: &str,
-                            ) -> std::result::Result<Self::Value, E>
-                            where
-                                E: serde::de::Error,
-                            {
-                                match value {
-                                    "name" => Ok(Field::Name),
-                                    "datatype" => Ok(Field::DataType),
-                                    "values" => Ok(Field::Values),
-
-                                    _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
-                                }
-                            }
-                        }
-
-                        deserializer.deserialize_identifier(FieldVisitor)
-                    }
-                }
-
                 let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
                 let mut values_set = false;
                 let mut count = 0;
-                while let Some(key) = map.next_key()? {
+                while let Some(key) = map.next_key().unwrap() {
                     count += 1;
                     match key {
-                        Field::Name => {
+                        "name" => {
                             name = match map.next_value::<&str>() {
                                 Ok(s) => Some(Cow::Borrowed(s)),
                                 Err(_) => Some(Cow::Owned(map.next_value::<String>()?)),
                             };
                         }
-                        Field::DataType => {
+                        "datatype" => {
                             dtype = Some(map.next_value()?);
                         }
-                        Field::Values => {
+                        "values" => {
                             // we delay calling next_value until we know the dtype
                             values_set = true;
                             if count != 3 {
@@ -138,6 +95,7 @@ impl<'de> Deserialize<'de> for Series {
                             }
                             break;
                         }
+                        fld => return Err(de::Error::unknown_field(fld, FIELDS)),
                     }
                 }
                 if !values_set {
