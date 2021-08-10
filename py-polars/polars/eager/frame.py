@@ -1840,6 +1840,12 @@ class DataFrame:
         """
         return wrap_df(self._df.clone())
 
+    def __copy__(self) -> "DataFrame":
+        return self.clone()
+
+    def __deepcopy__(self, memodict={}) -> "DataFrame":  # type: ignore
+        return self.clone()
+
     def get_columns(self) -> tp.List["pl.Series"]:
         """
         Get the DataFrame as a List of Series.
