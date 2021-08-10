@@ -39,7 +39,7 @@ impl<T: MmapBytesReader + ?Sized> MmapBytesReader for Box<T> {
 }
 
 // Handle various forms of input bytes
-pub(crate) enum ReaderBytes<'a> {
+pub enum ReaderBytes<'a> {
     Borrowed(&'a [u8]),
     Owned(Vec<u8>),
     Mapped(memmap::Mmap),

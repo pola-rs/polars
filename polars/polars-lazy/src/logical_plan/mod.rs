@@ -27,6 +27,7 @@ use crate::utils::{
 };
 use crate::{prelude::*, utils};
 use polars_io::csv::NullValues;
+use polars_io::csv_core::utils::get_reader_bytes;
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;
@@ -919,10 +920,11 @@ impl LogicalPlanBuilder {
     ) -> Self {
         let path = path.into();
         let mut file = std::fs::File::open(&path).expect("could not open file");
+        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
         let schema = schema.unwrap_or_else(|| {
             let (schema, _) = infer_file_schema(
-                &mut file,
+                &reader_bytes,
                 delimiter,
                 Some(100),
                 has_header,
