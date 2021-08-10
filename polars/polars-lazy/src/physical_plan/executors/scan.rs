@@ -1,38 +1,9 @@
 use super::*;
 use crate::logical_plan::CsvParserOptions;
 use crate::utils::try_path_to_str;
-use polars_io::mmap::MmapBytesReader;
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
 use std::mem;
-
-trait FinishScanOps {
-    /// Read the file and create the DataFrame. Used from lazy execution
-    fn finish_with_scan_ops(
-        self,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
-    ) -> Result<DataFrame>;
-}
-
-impl<'a, R: 'static + Seek + Sync + Send + MmapBytesReader> FinishScanOps for CsvReader<'a, R> {
-    fn finish_with_scan_ops(
-        self,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
-        aggregate: Option<&[ScanAggregation]>,
-    ) -> Result<DataFrame> {
-        let predicate =
-            predicate.map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
-
-        let rechunk = self.rechunk;
-        let mut csv_reader = self.build_inner_reader()?;
-        let df = csv_reader.as_df(predicate, aggregate)?;
-        match rechunk {
-            true => Ok(df.agg_chunks()),
-            false => Ok(df),
-        }
-    }
-}
 
 #[cfg(feature = "parquet")]
 pub struct ParquetExec {
@@ -158,8 +129,18 @@ impl Executor for CsvExec {
             with_columns = None;
         }
         let stop_after_n_rows = set_n_rows(self.options.stop_after_n_rows);
+        let predicate = self
+            .predicate
+            .clone()
+            .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
 
-        let reader = CsvReader::from_path(&self.path)
+        let aggregate = if self.aggregate.is_empty() {
+            None
+        } else {
+            Some(self.aggregate.as_slice())
+        };
+
+        let df = CsvReader::from_path(&self.path)
             .unwrap()
             .has_header(self.options.has_header)
             .with_schema(&self.schema)
@@ -170,15 +151,10 @@ impl Executor for CsvExec {
             .with_columns(with_columns)
             .low_memory(self.options.low_memory)
             .with_null_values(self.options.null_values.clone())
-            .with_encoding(CsvEncoding::LossyUtf8);
-
-        let aggregate = if self.aggregate.is_empty() {
-            None
-        } else {
-            Some(self.aggregate.as_slice())
-        };
-
-        let df = reader.finish_with_scan_ops(self.predicate.clone(), aggregate)?;
+            .with_predicate(predicate)
+            .with_aggregate(aggregate)
+            .with_encoding(CsvEncoding::LossyUtf8)
+            .finish()?;
 
         if self.options.cache {
             state.store_cache(state_key, df.clone());

@@ -40,9 +40,7 @@ pub(crate) fn get_file_chunks(
     offsets
 }
 
-pub(crate) fn get_reader_bytes<R: Read + MmapBytesReader>(
-    reader: &mut R,
-) -> Result<ReaderBytes<'_>> {
+pub fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<ReaderBytes<'_>> {
     // we have a file so we can mmap
     if let Some(file) = reader.to_file() {
         let mmap = unsafe { memmap::Mmap::map(file)? };
@@ -111,8 +109,8 @@ pub(crate) fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> 
 /// If `max_read_records` is not set, the whole file is read to infer its schema.
 ///
 /// Return inferred schema and number of records used for inference.
-pub fn infer_file_schema<R: Read + MmapBytesReader>(
-    reader: &mut R,
+pub fn infer_file_schema(
+    reader_bytes: &ReaderBytes,
     delimiter: u8,
     max_read_records: Option<usize>,
     has_header: bool,
@@ -124,8 +122,7 @@ pub fn infer_file_schema<R: Read + MmapBytesReader>(
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
-    let reader_bytes = get_reader_bytes(reader)?;
-    let bytes = &skip_line_ending(skip_whitespace(skip_bom(&reader_bytes)).0).0;
+    let bytes = &skip_line_ending(skip_whitespace(skip_bom(reader_bytes)).0).0;
     let mut lines = SplitLines::new(bytes, b'\n').skip(skip_rows);
 
     // get or create header names
@@ -272,28 +269,6 @@ pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
     } else {
         None
     }
-}
-
-#[cfg(feature = "decompress")]
-/// Schema inference needs to be done again after decompression
-pub(crate) fn bytes_to_schema(
-    bytes: &[u8],
-    delimiter: u8,
-    has_header: bool,
-    skip_rows: usize,
-    comment_char: Option<u8>,
-) -> Result<Schema> {
-    let mut r = std::io::Cursor::new(&bytes);
-    Ok(infer_file_schema(
-        &mut r,
-        delimiter,
-        Some(100),
-        has_header,
-        None,
-        skip_rows,
-        comment_char,
-    )?
-    .0)
 }
 
 #[cfg(test)]
