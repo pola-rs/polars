@@ -1214,6 +1214,12 @@ class Series:
         """
         return wrap_s(self._s.clone())
 
+    def __copy__(self) -> "Series":  # type: ignore
+        return self.clone()
+
+    def __deepcopy__(self, memodict={}) -> "Series":  # type: ignore
+        return self.clone()
+
     def fill_none(self, strategy: str) -> "Series":
         """
         Fill null values with a filling strategy.

@@ -1,3 +1,4 @@
+import copy
 import gzip
 import io
 import pickle
@@ -165,3 +166,13 @@ def test_pickle():
     b = pickle.dumps(df)
     out = pickle.loads(b)
     assert df.frame_equal(out, null_equal=True)
+
+
+def test_copy():
+    df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
+    copy.copy(df).frame_equal(df, True)
+    copy.deepcopy(df).frame_equal(df, True)
+
+    a = pl.Series("a", [1, 2])
+    copy.copy(a).series_equal(a, True)
+    copy.deepcopy(a).series_equal(a, True)
