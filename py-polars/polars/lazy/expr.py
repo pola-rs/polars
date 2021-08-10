@@ -28,6 +28,8 @@ def _selection_to_pyexpr_list(
     pyexpr_list: tp.List[PyExpr]
     if isinstance(exprs, str):
         pyexpr_list = [col(exprs)._pyexpr]
+    elif isinstance(exprs, (bool, int, float)):
+        pyexpr_list = [lit(exprs)._pyexpr]
     elif isinstance(exprs, Expr):
         pyexpr_list = [exprs._pyexpr]
     else:
@@ -35,6 +37,8 @@ def _selection_to_pyexpr_list(
         for expr in exprs:
             if isinstance(expr, str):
                 expr = col(expr)
+            elif isinstance(expr, (bool, int, float)):
+                expr = lit(expr)
             pyexpr_list.append(expr._pyexpr)
     return pyexpr_list
 
