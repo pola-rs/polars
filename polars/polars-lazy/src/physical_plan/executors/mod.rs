@@ -17,7 +17,6 @@ use crate::logical_plan::FETCH_ROWS;
 use itertools::Itertools;
 use polars_core::POOL;
 use rayon::prelude::*;
-use std::io::Seek;
 use std::path::PathBuf;
 
 const POLARS_VERBOSE: &str = "POLARS_VERBOSE";

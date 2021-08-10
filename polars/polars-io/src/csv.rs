@@ -41,10 +41,11 @@
 //! }
 //! ```
 //!
-use crate::csv_core::csv::{build_csv_reader, CoreReader};
+use crate::csv_core::csv::build_csv_reader;
+use crate::csv_core::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
 use crate::utils::{resolve_homedir, to_arrow_compatible_df};
-use crate::{SerReader, SerWriter};
+use crate::{PhysicalIoExpr, ScanAggregation, SerReader, SerWriter};
 pub use arrow::csv::WriterBuilder;
 use polars_core::prelude::*;
 use std::fs::File;
@@ -183,7 +184,7 @@ where
     /// File or Stream object
     reader: R,
     /// Aggregates chunk afterwards to a single chunk.
-    pub rechunk: bool,
+    rechunk: bool,
     /// Stop reading from the csv after this number of rows is reached
     stop_after_n_rows: Option<usize>,
     // used by error ignore logic
@@ -206,11 +207,13 @@ where
     low_memory: bool,
     comment_char: Option<u8>,
     null_values: Option<NullValues>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    aggregate: Option<&'a [ScanAggregation]>,
 }
 
 impl<'a, R> CsvReader<'a, R>
 where
-    R: MmapBytesReader,
+    R: 'a + MmapBytesReader,
 {
     /// Sets the chunk size used by the parser. This influences performance
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
@@ -344,28 +347,15 @@ where
         self
     }
 
-    pub fn build_inner_reader(self) -> Result<CoreReader<'a, R>> {
-        build_csv_reader(
-            self.reader,
-            self.stop_after_n_rows,
-            self.skip_rows,
-            self.projection,
-            self.max_records,
-            self.delimiter,
-            self.has_header,
-            self.ignore_parser_errors,
-            self.schema,
-            self.columns,
-            self.encoding,
-            self.n_threads,
-            self.path,
-            self.schema_overwrite,
-            self.sample_size,
-            self.chunk_size,
-            self.low_memory,
-            self.comment_char,
-            self.null_values,
-        )
+    #[cfg(feature = "private")]
+    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+        self.predicate = predicate;
+        self
+    }
+
+    pub fn with_aggregate(mut self, aggregate: Option<&'a [ScanAggregation]>) -> Self {
+        self.aggregate = aggregate;
+        self
     }
 }
 
@@ -405,11 +395,13 @@ where
             low_memory: false,
             comment_char: None,
             null_values: None,
+            predicate: None,
+            aggregate: None,
         }
     }
 
     /// Read the file and create the DataFrame.
-    fn finish(self) -> Result<DataFrame> {
+    fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
 
         let mut df = if let Some(schema) = self.schema_overwrite {
@@ -441,8 +433,9 @@ where
             // we cannot overwrite self, because the lifetime is already instantiated with `a, and
             // the lifetime that accompanies this scope is shorter.
             // So we just build_csv_reader from here
+            let reader_bytes = get_reader_bytes(&mut self.reader)?;
             let mut csv_reader = build_csv_reader(
-                self.reader,
+                reader_bytes,
                 self.stop_after_n_rows,
                 self.skip_rows,
                 self.projection,
@@ -454,15 +447,16 @@ where
                 self.columns,
                 self.encoding,
                 self.n_threads,
-                self.path,
                 Some(&schema),
                 self.sample_size,
                 self.chunk_size,
                 self.low_memory,
                 self.comment_char,
                 self.null_values,
+                self.predicate,
+                self.aggregate,
             )?;
-            let mut df = csv_reader.as_df(None, None)?;
+            let mut df = csv_reader.as_df()?;
 
             // cast to the original dtypes in the schema
             for fld in to_cast {
@@ -470,8 +464,30 @@ where
             }
             df
         } else {
-            let mut csv_reader = self.build_inner_reader()?;
-            csv_reader.as_df(None, None)?
+            let reader_bytes = get_reader_bytes(&mut self.reader)?;
+            let mut csv_reader = build_csv_reader(
+                reader_bytes,
+                self.stop_after_n_rows,
+                self.skip_rows,
+                self.projection,
+                self.max_records,
+                self.delimiter,
+                self.has_header,
+                self.ignore_parser_errors,
+                self.schema,
+                self.columns,
+                self.encoding,
+                self.n_threads,
+                self.schema,
+                self.sample_size,
+                self.chunk_size,
+                self.low_memory,
+                self.comment_char,
+                self.null_values,
+                self.predicate,
+                self.aggregate,
+            )?;
+            csv_reader.as_df()?
         };
 
         // Important that this rechunk is never done in parallel.
