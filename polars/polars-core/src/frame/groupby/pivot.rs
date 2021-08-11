@@ -260,6 +260,8 @@ where
         agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         // TODO: save an allocation by creating a random access struct for the Groupable utility type.
+
+        // Note: we also create pivot_vec with unique values, otherwise we have quadratic behavior
         let mut pivot_series = pivot_series.clone();
         let mut pivot_unique = pivot_series.unique()?;
         let iter = pivot_unique.as_groupable_iter()?;
@@ -338,17 +340,22 @@ fn pivot_count_impl<'a, CA: TakeRandom>(
     groups: &[(u32, Vec<u32>)],
 ) -> Result<DataFrame> {
     let mut pivot_series = pivot_series.clone();
+    let mut pivot_unique = pivot_series.unique()?;
+    let iter = pivot_unique.as_groupable_iter()?;
+    let pivot_vec_unique: Vec<_> = iter.collect();
     let iter = pivot_series.as_groupable_iter()?;
     let pivot_vec: Vec<_> = iter.collect();
     // create a hash map that will be filled with the results of the aggregation.
-    let mut columns_agg_map_main = create_new_column_builder_map::<UInt32Type>(&pivot_vec, groups);
+    let mut columns_agg_map_main =
+        create_new_column_builder_map::<UInt32Type>(&pivot_vec_unique, groups);
 
     // iterate over the groups that need to be aggregated
     // idxes are the indexes of the groups in the keys, pivot, and values columns
     for (_first, idx) in groups {
         // for every group do the aggregation by adding them to the vector belonging by that column
         // the columns are hashed with the pivot values
-        let mut columns_agg_map_group = create_column_values_map::<CA::Item>(&pivot_vec, idx.len());
+        let mut columns_agg_map_group =
+            create_column_values_map::<CA::Item>(&pivot_vec_unique, idx.len());
         for &i in idx {
             let i = i as usize;
             let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
