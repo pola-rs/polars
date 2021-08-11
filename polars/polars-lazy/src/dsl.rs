@@ -808,9 +808,8 @@ impl Expr {
 
     /// Shift the valus in the array by some period and fill the resulting empty values.
     pub fn shift_and_fill(self, periods: i64, fill_value: Expr) -> Self {
-        // let name = output_name(&self).unwrap();
         // Note:
-        // The order of the then | otherwise is im
+        // The order of the then | otherwise is important
         if periods > 0 {
             when(self.clone().map(
                 move |s: Series| {
@@ -821,7 +820,6 @@ impl Expr {
             ))
             .then(self.shift(periods))
             .otherwise(fill_value)
-            // .alias(&name)
         } else {
             when(self.clone().map(
                 move |s: Series| {
@@ -835,7 +833,6 @@ impl Expr {
             ))
             .then(self.shift(periods))
             .otherwise(fill_value)
-            // .alias(&name)
         }
     }
 

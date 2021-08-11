@@ -182,7 +182,7 @@ def test_window_function():
     out = q.collect()
     assert out["cars_max_B"] == [5, 4, 5, 5, 5]
 
-    out = df[[pl.first("B").over(["fruits", "cars"])]]
+    out = df[[pl.first("B").over(["fruits", "cars"]).alias("B_first")]]
     assert out["B_first"] == [5, 4, 3, 3, 5]
 
 
