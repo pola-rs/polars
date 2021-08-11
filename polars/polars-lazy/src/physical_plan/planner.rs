@@ -390,12 +390,27 @@ impl DefaultPlanner {
                     self.create_physical_expr(function, Context::Aggregation, expr_arena)?;
                 let mut out_name = None;
                 let mut apply_columns = aexpr_to_root_names(function, expr_arena);
-                if apply_columns.len() > 1 {
-                    return Err(PolarsError::ValueError(
-                        "Binary/Ternary function not yet supported in window expressions".into(),
-                    ));
+                // sort and then dedup removes consecutive duplicates == all duplicates
+                apply_columns.sort();
+                apply_columns.dedup();
+
+                if apply_columns.is_empty() {
+                    if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
+                        return Err(PolarsError::ValueError(
+                            "Cannot apply a window function over literals".into(),
+                        ));
+                    } else {
+                        let e = node_to_exp(function, expr_arena);
+                        return Err(PolarsError::ValueError(
+                            format!(
+                                "Cannot apply a window function, did not find a root column. \
+                            This is likely due to a syntax error in this expression: {:?}",
+                                e
+                            )
+                            .into(),
+                        ));
+                    }
                 }
-                let apply_column = apply_columns.pop().unwrap();
 
                 if let Alias(expr, name) = expr_arena.get(function) {
                     function = *expr;
@@ -405,7 +420,7 @@ impl DefaultPlanner {
 
                 Ok(Arc::new(WindowExpr {
                     group_by,
-                    apply_column,
+                    apply_columns,
                     out_name,
                     function,
                     phys_function,

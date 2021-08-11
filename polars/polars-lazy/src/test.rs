@@ -1429,3 +1429,42 @@ fn test_filter_in_groupby_agg() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_shift_and_fill_window_function() -> Result<()> {
+    let df = df!(
+            "A"=> [1, 2, 3, 4, 5],
+            "fruits"=> ["banana", "banana", "apple", "apple", "banana"],
+            "B"=> [5, 4, 3, 2, 1],
+            "cars"=> ["beetle", "audi", "beetle", "beetle", "beetle"]
+    )?;
+
+    // a ternary expression with a final list aggregation
+    let out1 = df
+        .clone()
+        .lazy()
+        .select(vec![
+            col("fruits"),
+            col("B")
+                .shift_and_fill(-1, lit(-1))
+                .list()
+                .over(vec![col("fruits")]),
+        ])
+        .collect()?;
+
+    // same expression, no final list aggregation
+    let out2 = df
+        .clone()
+        .lazy()
+        .select(vec![
+            col("fruits"),
+            col("B")
+                .shift_and_fill(-1, lit(-1))
+                .over(vec![col("fruits")]),
+        ])
+        .collect()?;
+
+    assert!(out1.frame_equal(&out2));
+
+    Ok(())
+}

@@ -11,7 +11,7 @@ pub struct WindowExpr {
     /// the root column that the Function will be applied on.
     /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) apply_column: Arc<String>,
+    pub(crate) apply_columns: Vec<Arc<String>>,
     pub(crate) out_name: Option<Arc<String>>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
@@ -41,52 +41,37 @@ impl PhysicalExpr for WindowExpr {
         let groups = std::mem::take(gb.get_groups_mut());
 
         // 2. create GroupBy object and apply aggregation
-        let gb = GroupBy::new(
-            df,
-            groupby_columns.clone(),
-            groups,
-            Some(vec![&self.apply_column]),
-        );
 
-        let out = match &self.function {
-            Expr::Function { .. } => {
-                let agg_expr = self.phys_function.as_agg_expr()?;
-                match agg_expr.aggregate(df, gb.get_groups(), state)? {
-                    Some(mut s) => {
-                        s.rename(&self.apply_column);
-                        let mut cols = gb.keys();
-                        cols.push(s);
-                        Ok(DataFrame::new_no_checks(cols))
-                    }
-                    None => Err(PolarsError::Other(
-                        "aggregation did not return a column".into(),
-                    )),
+        let apply_columns = self.apply_columns.iter().map(|s| s.as_str()).collect();
+        let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
+
+        let out = match self.phys_function.as_agg_expr() {
+            // this branch catches all aggregation expressions
+            // this is list, sum, etc. but also binary functions that are evaluated on groups
+            Ok(agg_expr) => match agg_expr.aggregate(df, gb.get_groups(), state)? {
+                Some(mut s) => {
+                    s.rename(&self.apply_columns[0]);
+                    let mut cols = gb.keys();
+                    cols.push(s);
+                    Ok(DataFrame::new_no_checks(cols))
                 }
-            }
-            Expr::Agg(agg) => match agg {
-                AggExpr::Median(_) => gb.median(),
-                AggExpr::Mean(_) => gb.mean(),
-                AggExpr::Max(_) => gb.max(),
-                AggExpr::Min(_) => gb.min(),
-                AggExpr::Sum(_) => gb.sum(),
-                AggExpr::First(_) => gb.first(),
-                AggExpr::Last(_) => gb.last(),
-                AggExpr::Count(_) => gb.count(),
-                AggExpr::NUnique(_) => gb.n_unique(),
-                AggExpr::Quantile { quantile, .. } => gb.quantile(*quantile),
-                AggExpr::List(_) => gb.agg_list(),
-                AggExpr::AggGroups(_) => gb.groups(),
-                AggExpr::Std(_) => gb.std(),
-                AggExpr::Var(_) => gb.var(),
+                None => Err(PolarsError::Other(
+                    "aggregation did not return a column".into(),
+                )),
             },
-            _ => Err(PolarsError::Other(
-                format!(
-                    "{:?} function not supported in window operation.\
-                Note that you should use an aggregation",
-                    self.function
-                )
-                .into(),
-            )),
+            // if we have a function that is not a final aggregation, we can always evaluate the
+            // function in groupby context and aggregate the result to a list
+            Err(_) => {
+                let (s, groups) =
+                    self.phys_function
+                        .evaluate_on_groups(df, gb.get_groups(), state)?;
+                let mut cols = gb.keys();
+                let out = s.agg_list(&groups).ok_or_else(|| {
+                    PolarsError::Other("aggregation did not return a column".into())
+                })?;
+                cols.push(out);
+                Ok(DataFrame::new_no_checks(cols))
+            }
         }?;
 
         // 3. get the join tuples and use them to take the new Series
