@@ -341,66 +341,6 @@ impl<'a> AsU64 for StrHash<'a> {
     }
 }
 
-impl From<u64> for NThreads {
-    fn from(n: u64) -> Self {
-        use NThreads::*;
-        match n {
-            2 => T2,
-            4 => T4,
-            8 => T8,
-            10 => T10,
-            12 => T12,
-            16 => T16,
-            20 => T20,
-            32 => T32,
-            40 => T40,
-            64 => T64,
-            _ => Other(n),
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum NThreads {
-    T2,
-    T4,
-    T8,
-    T10,
-    T12,
-    T16,
-    T20,
-    T32,
-    T40,
-    T64,
-    Other(u64),
-}
-
-impl NThreads {
-    #[inline]
-    fn modulo(&self, h: u64) -> u64 {
-        use NThreads::*;
-        match self {
-            T2 => h % 2,
-            T4 => h % 4,
-            T8 => h % 8,
-            T10 => h % 10,
-            T12 => h % 12,
-            T16 => h % 16,
-            T20 => h % 20,
-            T32 => h % 32,
-            T40 => h % 20,
-            T64 => h % 64,
-            Other(n) => h % n,
-        }
-    }
-}
-
-/// Check if a hash should be processed in that thread.
-#[inline]
-pub fn this_thread(h: u64, thread_no: u64, n_threads: NThreads) -> bool {
-    n_threads.modulo(h + thread_no) == 0
-}
-
 #[inline]
 /// For partitions that are a power of 2 we can use a bitshift instead of a modulo.
 pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
@@ -415,21 +355,23 @@ where
     I: Iterator<Item = T> + Send,
     T: Send + Hash + Eq + Sync + Copy,
 {
-    let n_threads = iters.len();
+    let n_partitions = iters.len();
+    assert!(n_partitions.is_power_of_two());
+
     let (hashes_and_keys, build_hasher) = create_hash_and_keys_threaded_vectorized(iters, None);
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
-        (0..n_threads).into_par_iter().map(|thread_no| {
+        (0..n_partitions).into_par_iter().map(|partition_no| {
             let build_hasher = build_hasher.clone();
             let hashes_and_keys = &hashes_and_keys;
-            let thread_no = thread_no as u64;
+            let partition_no = partition_no as u64;
             let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
                 HashMap::with_hasher(build_hasher);
 
-            let n_threads = (n_threads as u64).into();
+            let n_threads = n_partitions as u64;
             let mut offset = 0;
             for hashes_and_keys in hashes_and_keys {
                 let len = hashes_and_keys.len();
@@ -440,7 +382,7 @@ where
                         let idx = idx as u32;
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
-                        if this_thread(*h, thread_no, n_threads) {
+                        if this_partition(*h, partition_no, n_threads) {
                             let idx = idx + offset;
                             let entry = hash_tbl
                                 .raw_entry_mut()
