@@ -315,23 +315,31 @@ where
         + One
         + Zero
         + Rem<Output = T::Native>
-        + Sub<Output = T::Native>,
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Num,
     N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(divide_scalar(arr, rhs).unwrap()))
+        match (self.len(), T::get_dtype()) {
+            // only do this optimization on arrays that are not singletons
+            (a, DataType::Float32) | (a, DataType::Float64) if a > 1 => {
+                let inverse: T::Native = T::Native::one() / rhs;
+                self * inverse
+            }
+            _ => self.apply_kernel(|arr| Arc::new(divide_scalar(arr, rhs).unwrap())),
+        }
     }
 }
 
 impl<T, N> Mul<N> for &ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast,
+    T::Native: NumCast + Mul<Output = T::Native>,
     N: Num + ToPrimitive,
-    T::Native: Mul<Output = T::Native>,
 {
     type Output = ChunkedArray<T>;
 
@@ -393,7 +401,9 @@ where
         + One
         + Zero
         + Sub<Output = T::Native>
-        + Rem<Output = T::Native>,
+        + Rem<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Num,
     N: Num + ToPrimitive,
 {
     type Output = ChunkedArray<T>;
