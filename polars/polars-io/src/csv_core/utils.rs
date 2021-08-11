@@ -258,7 +258,7 @@ pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
 
     if bytes.starts_with(&gzip) {
         let mut out = Vec::with_capacity(bytes.len());
-        let mut decoder = flate2::read::GzDecoder::new(bytes);
+        let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
         decoder.read_to_end(&mut out).ok()?;
         Some(out)
     } else if bytes.starts_with(&zlib0) || bytes.starts_with(&zlib1) || bytes.starts_with(&zlib2) {
