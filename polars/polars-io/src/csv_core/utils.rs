@@ -65,7 +65,7 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<Rea
 }
 
 lazy_static! {
-    static ref DECIMAL_RE: Regex = Regex::new(r"^\s*-?(\d+\.\d+)$").unwrap();
+    static ref FLOAT_RE: Regex = Regex::new(r"^\s*-?(\d+\.\d+[e\+\d]*)$").unwrap();
     static ref INTEGER_RE: Regex = Regex::new(r"^\s*-?(\d+)$").unwrap();
     static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^\s*(true)$|^(false)$")
         .case_insensitive(true)
@@ -83,7 +83,7 @@ fn infer_field_schema(string: &str) -> DataType {
     // match regex in a particular order
     if BOOLEAN_RE.is_match(string) {
         DataType::Boolean
-    } else if DECIMAL_RE.is_match(string) {
+    } else if FLOAT_RE.is_match(string) {
         DataType::Float64
     } else if INTEGER_RE.is_match(string) {
         DataType::Int64
