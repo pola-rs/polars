@@ -106,10 +106,13 @@ impl PyDataFrame {
         });
 
         let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {
-            overwrite_dtype.iter().map(|dt| {
-                let str_repr = dt.str().unwrap().to_str().unwrap();
-                str_to_polarstype(str_repr)
-            }).collect::<Vec<_>>()
+            overwrite_dtype
+                .iter()
+                .map(|dt| {
+                    let str_repr = dt.str().unwrap().to_str().unwrap();
+                    str_to_polarstype(str_repr)
+                })
+                .collect::<Vec<_>>()
         });
 
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
