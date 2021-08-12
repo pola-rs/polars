@@ -114,7 +114,7 @@ a,n/a,c"""
     assert df[1, "b"] is None
 
 
-def test_dtype_overwrite():
+def test_partial_dtype_overwrite():
     csv = """
 a,b,c
 1,2,3
@@ -123,6 +123,19 @@ a,b,c
     f = io.StringIO(csv)
     df = pl.read_csv(f, dtype=[pl.Utf8])
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64]
+
+
+def test_partial_column_rename():
+    csv = """
+a,b,c
+1,2,3
+1,2,3
+"""
+    f = io.StringIO(csv)
+    for use in [True, False]:
+        f.seek(0)
+        df = pl.read_csv(f, new_columns=["foo"], use_pyarrow=use)
+        assert df.columns == ["foo", "b", "c"]
 
 
 def test_compressed_csv():
