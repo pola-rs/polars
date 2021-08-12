@@ -202,6 +202,7 @@ where
     n_threads: Option<usize>,
     path: Option<PathBuf>,
     schema_overwrite: Option<&'a Schema>,
+    dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
@@ -289,6 +290,13 @@ where
     /// of the total schema.
     pub fn with_dtypes(mut self, schema: Option<&'a Schema>) -> Self {
         self.schema_overwrite = schema;
+        self
+    }
+
+    /// Overwrite the dtypes in the schema in the order of the slice that's given.
+    /// This is useful if you don't know the column names beforehand
+    pub fn with_dtypes_slice(mut self, dtypes: Option<&'a [DataType]>) -> Self {
+        self.dtype_overwrite = dtypes;
         self
     }
 
@@ -390,6 +398,7 @@ where
             n_threads: None,
             path: None,
             schema_overwrite: None,
+            dtype_overwrite: None,
             sample_size: 1024,
             chunk_size: 8192,
             low_memory: false,
@@ -448,6 +457,7 @@ where
                 self.encoding,
                 self.n_threads,
                 Some(&schema),
+                self.dtype_overwrite,
                 self.sample_size,
                 self.chunk_size,
                 self.low_memory,
@@ -479,6 +489,7 @@ where
                 self.encoding,
                 self.n_threads,
                 self.schema,
+                self.dtype_overwrite,
                 self.sample_size,
                 self.chunk_size,
                 self.low_memory,
