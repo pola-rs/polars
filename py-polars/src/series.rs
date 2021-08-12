@@ -1,7 +1,7 @@
 use std::ops::{BitAnd, BitOr};
 
 use numpy::PyArray1;
-use pyo3::types::{PyList, PyTuple, PyBytes};
+use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
 use polars::chunked_array::builder::get_bitmap;
@@ -1154,7 +1154,8 @@ impl PySeries {
             }
             Err(e) => Err(e),
         }
-    }}
+    }
+}
 
 macro_rules! impl_ufuncs {
     ($name:ident, $type:ty, $unsafe_from_ptr_method:ident) => {
