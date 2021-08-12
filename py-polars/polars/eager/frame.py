@@ -445,7 +445,7 @@ class DataFrame:
         rechunk: bool = True,
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
-        dtype: Optional[Dict[str, Type[DataType]]] = None,
+        dtype: Union[Dict[str, Type[DataType]], tp.List[Type[DataType]], None] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
@@ -520,10 +520,16 @@ class DataFrame:
                 file = file.getvalue().encode()
 
         dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
+        dtype_slice: Optional[tp.List[Type[DataType]]] = None
         if dtype is not None:
-            dtype_list = []
-            for k, v in dtype.items():
-                dtype_list.append((k, pytype_to_polars_type(v)))
+            if isinstance(dtype, dict):
+                dtype_list = []
+                for k, v in dtype.items():
+                    dtype_list.append((k, pytype_to_polars_type(v)))
+            elif isinstance(dtype, list):
+                dtype_slice = dtype
+            else:
+                raise ValueError("dtype arg should be list or dict")
 
         processed_null_values = _process_null_values(null_values)
 
@@ -543,6 +549,7 @@ class DataFrame:
             n_threads,
             path,
             dtype_list,
+            dtype_slice,
             low_memory,
             comment_char,
             processed_null_values,

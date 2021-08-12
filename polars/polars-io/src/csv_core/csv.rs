@@ -458,6 +458,7 @@ pub fn build_csv_reader<'a>(
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     schema_overwrite: Option<&'a Schema>,
+    dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
@@ -469,7 +470,7 @@ pub fn build_csv_reader<'a>(
     // check if schema should be inferred
     let delimiter = delimiter.unwrap_or(b',');
 
-    let schema = match schema {
+    let mut schema = match schema {
         Some(schema) => Cow::Borrowed(schema),
         None => {
             #[cfg(feature = "decompress")]
@@ -507,6 +508,14 @@ pub fn build_csv_reader<'a>(
             }
         }
     };
+    if let Some(dtypes) = dtype_overwrite {
+        let mut s = schema.into_owned();
+        let fields = s.fields_mut();
+        for (dt, field) in dtypes.iter().zip(fields) {
+            *field = Field::new(field.name(), dt.clone())
+        }
+        schema = Cow::Owned(s);
+    }
 
     let null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
 

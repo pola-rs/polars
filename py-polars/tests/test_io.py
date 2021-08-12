@@ -114,6 +114,17 @@ a,n/a,c"""
     assert df[1, "b"] is None
 
 
+def test_dtype_overwrite():
+    csv = """
+a,b,c
+1,2,3
+1,2,3
+"""
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, dtype=[pl.Utf8])
+    assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64]
+
+
 def test_compressed_csv():
     # gzip compression
     csv = """

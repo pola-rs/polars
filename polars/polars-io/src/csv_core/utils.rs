@@ -65,11 +65,7 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<Rea
 }
 
 lazy_static! {
-<<<<<<< HEAD
     static ref FLOAT_RE: Regex = Regex::new(r"^\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|inf|NaN$").unwrap();
-=======
-    static ref FLOAT_RE: Regex = Regex::new(r"^\s*-?(\d+\.\d+[e\+\-\d]*)$").unwrap();
->>>>>>> c1a43a985... python 0.8.21-beta.1
     static ref INTEGER_RE: Regex = Regex::new(r"^\s*-?(\d+)$").unwrap();
     static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^\s*(true)$|^(false)$")
         .case_insensitive(true)

@@ -76,6 +76,7 @@ impl PyDataFrame {
         n_threads: Option<usize>,
         path: Option<String>,
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
+        overwrite_dtype_slice: Option<Vec<&PyAny>>,
         low_memory: bool,
         comment_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
@@ -104,6 +105,13 @@ impl PyDataFrame {
             Schema::new(fields)
         });
 
+        let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {
+            overwrite_dtype.iter().map(|dt| {
+                let str_repr = dt.str().unwrap().to_str().unwrap();
+                str_to_polarstype(str_repr)
+            }).collect::<Vec<_>>()
+        });
+
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         let df = CsvReader::new(mmap_bytes_r)
             .infer_schema(Some(infer_schema_length))
@@ -120,6 +128,7 @@ impl PyDataFrame {
             .with_n_threads(n_threads)
             .with_path(path)
             .with_dtypes(overwrite_dtype.as_ref())
+            .with_dtypes_slice(overwrite_dtype_slice.as_ref().map(|s| s.as_slice()))
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_null_values(null_values)
