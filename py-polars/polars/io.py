@@ -122,6 +122,16 @@ def _prepare_file_arg(
     return managed_file(file)
 
 
+def update_columns(df: "pl.DataFrame", new_columns: List[str]) -> "pl.DataFrame":
+    if df.width > len(new_columns):
+        cols = df.columns
+        for i, name in enumerate(new_columns):
+            cols[i] = name
+        new_columns = cols
+    df.columns = new_columns
+    return df
+
+
 def read_csv(
     file: Union[str, TextIO, Path, BinaryIO, bytes],
     infer_schema_length: int = 100,
@@ -161,7 +171,7 @@ def read_csv(
         Number of lines to read into the buffer at once. Modify this to change performance.
     has_headers
         Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`,
-        `x` being an enumeration over every column in the dataset.
+        `x` being an enumeration over every column in the dataset starting at 1.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
     stop_after_n_rows
@@ -186,8 +196,8 @@ def read_csv(
     dtype
         Overwrite the dtypes during inference.
     new_columns
-        Rename columns to these right after parsing. Note that the length of this list must equal the width of the DataFrame
-        that's parsed.
+        Rename columns to these right after parsing. If the given list is shorted than the width of the DataFrame the
+        remaining columns will have their original name.
     use_pyarrow
         Try to use pyarrow's native CSV parser. This is not always possible. The set of arguments given to this function
         determine if it is possible to use pyarrows native parser. Note that pyarrow and polars may have a different
@@ -259,15 +269,16 @@ def read_csv(
                 ),
             )
 
-        if new_columns:
-            tbl = tbl.rename_columns(new_columns)
-        elif not has_headers:
+        if not has_headers:
             # Rename 'f0', 'f1', ... columns names autogenated by pyarrow to 'column_1', 'column_2', ...
             tbl = tbl.rename_columns(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        return from_arrow(tbl, rechunk)  # type: ignore[return-value]
+        df = from_arrow(tbl, rechunk)
+        if new_columns:
+            return update_columns(df, new_columns)  # type: ignore
+        return df  # type: ignore
 
     with _prepare_file_arg(file, **storage_options) as data:
         df = pl.DataFrame.read_csv(
@@ -291,7 +302,7 @@ def read_csv(
         )
 
     if new_columns:
-        df.columns = new_columns
+        return update_columns(df, new_columns)
     return df
 
 
