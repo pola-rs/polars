@@ -944,9 +944,10 @@ impl Expr {
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::fill_none).
     pub fn fill_none(self, fill_value: Expr) -> Self {
         let name = output_name(&self).unwrap();
-        when(self.is_null())
+        when(self.clone().is_null())
             .then(fill_value)
-            .otherwise(col(&*name))
+            // important that this is self!
+            .otherwise(self)
             .alias(&*name)
     }
     /// Count the values of the Series
