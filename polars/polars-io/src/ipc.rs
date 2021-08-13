@@ -94,7 +94,7 @@ where
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        let ipc_reader = read::FileReader::new(&mut self.reader, metadata);
+        let ipc_reader = read::FileReader::new(&mut self.reader, metadata, None);
         finish_reader(ipc_reader, rechunk, None, None, None)
     }
 }

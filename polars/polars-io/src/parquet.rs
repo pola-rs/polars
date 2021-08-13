@@ -51,6 +51,7 @@ where
             projection.map(|x| x.to_vec()),
             self.stop_after_n_rows,
             Arc::new(|_, _| true),
+            None,
         )?;
 
         finish_reader(
@@ -112,6 +113,7 @@ where
             None,
             self.stop_after_n_rows,
             Arc::new(|_, _| true),
+            None,
         )?;
         finish_reader(reader, rechunk, self.stop_after_n_rows, None, None)
     }
@@ -188,7 +190,7 @@ where
 
         let options = write::WriteOptions {
             write_statistics: false,
-            compression: write::CompressionCodec::Uncompressed,
+            compression: write::Compression::Uncompressed,
             version: write::Version::V2,
         };
         let schema = ArrowSchema::new(fields);
