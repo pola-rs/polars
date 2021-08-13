@@ -63,12 +63,13 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
 name = "arrow2"
-version = "0.2.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=d545253e30fa9060e1f74b973df378ef2d82fec2#d545253e30fa9060e1f74b973df378ef2d82fec2"
+version = "0.3.0"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=86edfd639b33d9fbc468e2f68bb6ce41de52f95e#86edfd639b33d9fbc468e2f68bb6ce41de52f95e"
 dependencies = [
  "ahash",
  "base64",
  "chrono",
+ "comfy-table 4.1.1",
  "csv",
  "flatbuffers",
  "futures",
@@ -83,13 +84,45 @@ dependencies = [
  "num",
  "packed_simd_2",
  "parquet2",
- "prettytable-rs",
  "rand 0.8.4",
  "regex",
  "serde",
  "serde_derive",
  "serde_json",
+ "strength_reduce",
  "zstd",
+]
+
+[[package]]
+name = "async-stream"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "171374e7e3b2504e0e5236e3b59260560f9fe94bfe9ac39ba5e4e929c5590625"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "648ed8c8d2ce5409ccd57453d9d1b214b342a0d69376a6feda1fd6cae3299308"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "async-trait"
+version = "0.1.51"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44318e776df68115a881de9a8fd1b9e53368d7a4a5ce4cc48517da3393233a5e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -230,8 +263,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52a488ea8a8e295a53c7a4514b78a2e54bcff33adf99c15aced97b2a2062d4f8"
 dependencies = [
  "crossterm",
- "strum",
- "strum_macros",
+ "strum 0.20.0",
+ "strum_macros 0.20.1",
+]
+
+[[package]]
+name = "comfy-table"
+version = "4.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11e95a3e867422fd8d04049041f5671f94d53c32a9dcd82e2be268714942f3f3"
+dependencies = [
+ "strum 0.21.0",
+ "strum_macros 0.21.1",
+ "unicode-width",
 ]
 
 [[package]]
@@ -640,9 +684,13 @@ dependencies = [
 
 [[package]]
 name = "integer-encoding"
-version = "1.1.7"
+version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48dc51180a9b377fd75814d0cc02199c20f8e99433d6762f650d39cdbbd3b56f"
+checksum = "90c11140ffea82edce8dcd74137ce9324ec24b3cf0175fc9d7e29164da9915b8"
+dependencies = [
+ "async-trait",
+ "futures-util",
+]
 
 [[package]]
 name = "inventory"
@@ -1062,29 +1110,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "parquet-format"
-version = "2.6.1"
+name = "parquet-format-async-temp"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5bc6b23543b5dedc8f6cce50758a35e5582e148e0cfa26bd0cacd569cda5b71"
+checksum = "cde63e74461b2c6c31166c6bcd205096074c8972a9b46becfff0a4eb8c4fabd8"
 dependencies = [
- "thrift",
+ "async-trait",
+ "byteorder",
+ "futures",
+ "integer-encoding",
+ "ordered-float",
 ]
 
 [[package]]
 name = "parquet2"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b50de05bf09185870980353a9734df91b617750439b2bded36fb975f39abfb50"
+checksum = "e6b9cfd5adabbb93efd417dcee71a2ebbb0f4978b1d8e65ab7fce84b72b966bc"
 dependencies = [
+ "async-stream",
  "bitpacking",
  "brotli",
  "flate2",
  "futures",
  "lz4",
- "parquet-format",
+ "parquet-format-async-temp",
  "snap",
  "streaming-iterator",
- "thrift",
  "zstd",
 ]
 
@@ -1145,7 +1197,7 @@ dependencies = [
  "anyhow",
  "arrow2",
  "chrono",
- "comfy-table",
+ "comfy-table 1.6.0",
  "hashbrown",
  "itertools",
  "jsonpath_lib",
@@ -1242,7 +1294,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.8.21-beta.2"
+version = "0.8.21"
 dependencies = [
  "ahash",
  "bincode",
@@ -1606,16 +1658,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "303235c177994a476226b80d076bd333b7b560fb05bd242a10609d11b07f81f5"
 
 [[package]]
+name = "strength_reduce"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3ff2f71c82567c565ba4b3009a9350a96a7269eaa4001ebedae926230bc2254"
+
+[[package]]
 name = "strum"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7318c509b5ba57f18533982607f24070a55d353e90d4cae30c467cdb2ad5ac5c"
 
 [[package]]
+name = "strum"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaf86bbcfd1fa9670b7a129f64fc0c9fcbbfe4f1bc4210e9e98fe71ffc12cde2"
+
+[[package]]
 name = "strum_macros"
 version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee8bc6b87a5112aeeab1f4a9f7ab634fe6cbefc4850006df31267f4cfb9e3149"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d06aaeeee809dbc59eb4556183dd927df67db1540de5be8d3ec0b6636358a5ec"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1663,28 +1739,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "threadpool"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
-dependencies = [
- "num_cpus",
-]
-
-[[package]]
-name = "thrift"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c6d965454947cc7266d22716ebfd07b18d84ebaf35eec558586bbb2a8cb6b5b"
-dependencies = [
- "byteorder",
- "integer-encoding",
- "log",
- "ordered-float",
- "threadpool",
 ]
 
 [[package]]
