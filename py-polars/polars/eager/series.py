@@ -1297,7 +1297,7 @@ class Series:
 
         return wrap_s(self._s.apply_lambda(func, return_dtype))
 
-    def shift(self, periods: int) -> "Series":
+    def shift(self, periods: int = 1) -> "Series":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with `Nones`.
