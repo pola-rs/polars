@@ -12,6 +12,13 @@ def create_series() -> pl.Series:
     return pl.Series("a", [1, 2])
 
 
+def test_cum_agg():
+    s = create_series()
+    assert s.cum_sum() == [1, 2]
+    assert s.cum_min() == [1, 1]
+    assert s.cum_max() == [1, 2]
+
+
 def test_init_inputs():
     # Good inputs
     pl.Series("a", [1, 2])

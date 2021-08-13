@@ -657,7 +657,7 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cum_sum(self, reverse: bool = False) -> Union[int, float]:
+    def cum_sum(self, reverse: bool = False) -> "Series":
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -666,9 +666,9 @@ class Series:
         reverse
             reverse the operation.
         """
-        return self._s.cum_sum(reverse)
+        return wrap_s(self._s.cum_sum(reverse))
 
-    def cum_min(self, reverse: bool = False) -> Union[int, float]:
+    def cum_min(self, reverse: bool = False) -> "Series":
         """
         Get an array with the cumulative min computed at every element.
 
@@ -677,9 +677,9 @@ class Series:
         reverse
             reverse the operation.
         """
-        return self._s.cum_min(reverse)
+        return wrap_s(self._s.cum_min(reverse))
 
-    def cum_max(self, reverse: bool = False) -> Union[int, float]:
+    def cum_max(self, reverse: bool = False) -> "Series":
         """
         Get an array with the cumulative max computed at every element.
 
@@ -688,7 +688,7 @@ class Series:
         reverse
             reverse the operation.
         """
-        return self._s.cum_max(reverse)
+        return wrap_s(self._s.cum_max(reverse))
 
     def limit(self, num_elements: int = 10) -> "Series":
         """
@@ -699,7 +699,7 @@ class Series:
         num_elements
             Amount of elements to take.
         """
-        return Series._from_pyseries(self._s.limit(num_elements))
+        return wrap_s(self._s.limit(num_elements))
 
     def slice(self, offset: int, length: int) -> "Series":
         """
@@ -712,7 +712,7 @@ class Series:
         length
             Length of the slice.
         """
-        return Series._from_pyseries(self._s.slice(offset, length))
+        return wrap_s(self._s.slice(offset, length))
 
     def append(self, other: "Series") -> None:
         """
@@ -736,7 +736,7 @@ class Series:
         """
         if isinstance(predicate, list):
             predicate = Series("", predicate)
-        return Series._from_pyseries(self._s.filter(predicate._s))
+        return wrap_s(self._s.filter(predicate._s))
 
     def head(self, length: Optional[int] = None) -> "Series":
         """
@@ -747,7 +747,7 @@ class Series:
         length
             Length of the head.
         """
-        return Series._from_pyseries(self._s.head(length))
+        return wrap_s(self._s.head(length))
 
     def tail(self, length: Optional[int] = None) -> "Series":
         """
@@ -758,7 +758,7 @@ class Series:
         length
             Length of the tail.
         """
-        return Series._from_pyseries(self._s.tail(length))
+        return wrap_s(self._s.tail(length))
 
     def take_every(self, n: int) -> "Series":
         """
@@ -811,7 +811,7 @@ class Series:
         """
         Get unique index as Series.
         """
-        return self._s.arg_unique()
+        return wrap_s(self._s.arg_unique())
 
     def arg_min(self) -> Optional[int]:
         """
