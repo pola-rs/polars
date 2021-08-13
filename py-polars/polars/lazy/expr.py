@@ -537,7 +537,7 @@ class Expr:
         index = expr_to_lit_or_expr(index, str_to_lit=False)
         return wrap_expr(self._pyexpr.take(index._pyexpr))
 
-    def shift(self, periods: int) -> "Expr":
+    def shift(self, periods: int = 1) -> "Expr":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with `Nones`.
