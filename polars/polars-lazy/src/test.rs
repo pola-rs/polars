@@ -529,7 +529,7 @@ fn test_lazy_shift_and_fill_all() {
         .unwrap();
     assert_eq!(
         Vec::from(out.column("output").unwrap().i32().unwrap()),
-        vec![Some(0), Some(2), Some(3)]
+        vec![Some(0), Some(1), Some(2)]
     );
 }
 
