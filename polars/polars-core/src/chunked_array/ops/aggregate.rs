@@ -70,7 +70,7 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_iter()
-            .map(|a| compute::aggregate::sum(a))
+            .map(|a| compute::aggregate::sum_primitive(a))
             .fold(None, |acc, v| match v {
                 Some(v) => match acc {
                     None => Some(v),
