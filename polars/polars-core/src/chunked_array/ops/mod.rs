@@ -754,11 +754,21 @@ impl ChunkFull<&Series> for ListChunked {
 
 impl ChunkFullNull for ListChunked {
     fn full_null(name: &str, length: usize) -> ListChunked {
-        let mut ca = (0..length)
-            .map::<Option<Series>, _>(|_| None)
-            .collect::<Self>();
-        ca.rename(name);
-        ca
+        let mut builder = ListBooleanChunkedBuilder::new(name, length, 0);
+        for _ in 0..length {
+            builder.append_null();
+        }
+        builder.finish()
+    }
+}
+
+impl ListChunked {
+    fn full_null_with_dtype(name: &str, length: usize, dt: &DataType) -> ListChunked {
+        let mut builder = get_list_builder(dt, 0, length, name);
+        for _ in 0..length {
+            builder.append_null();
+        }
+        builder.finish()
     }
 }
 

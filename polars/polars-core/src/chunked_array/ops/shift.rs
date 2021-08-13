@@ -69,7 +69,28 @@ impl ChunkShift<Utf8Type> for Utf8Chunked {
 
 impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
     fn shift_and_fill(&self, periods: i64, fill_value: Option<&Series>) -> ListChunked {
-        impl_shift_fill!(self, periods, fill_value)
+        // This has its own implementation because a ListChunked cannot have a full-null without
+        // knowing the inner type
+        let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
+        let slice_offset = (-periods).max(0) as i64;
+        let length = self.len() - abs(periods) as usize;
+        let mut slice = self.slice(slice_offset, length);
+
+        let fill_length = abs(periods) as usize;
+        let mut fill = match fill_value {
+            Some(val) => Self::full(self.name(), val, fill_length),
+            None => {
+                ListChunked::full_null_with_dtype(self.name(), fill_length, &self.inner_dtype())
+            }
+        };
+
+        if periods < 0 {
+            slice.append(&fill);
+            slice
+        } else {
+            fill.append(&slice);
+            fill
+        }
     }
 }
 
