@@ -45,26 +45,6 @@ pub trait VarAggSeries {
     fn std_as_series(&self) -> Series;
 }
 
-macro_rules! agg_float_with_nans {
-    ($self:ident, $agg_method:ident, $precision:ty) => {{
-        if $self.null_count() == 0 {
-            $self
-                .into_no_null_iter()
-                .map(|a| -> $precision { NumCast::from(a).unwrap() })
-                .fold_first_(|a, b| a.$agg_method(b))
-                .map(|a| NumCast::from(a).unwrap())
-        } else {
-            $self
-                .into_iter()
-                .filter(|opt| opt.is_some())
-                .map(|opt| opt.unwrap())
-                .map(|a| -> $precision { NumCast::from(a).unwrap() })
-                .fold_first_(|a, b| a.$agg_method(b))
-                .map(|a| NumCast::from(a).unwrap())
-        }
-    }};
-}
-
 macro_rules! impl_quantile {
     ($self:expr, $quantile:expr) => {{
         let null_count = $self.null_count();
@@ -101,25 +81,15 @@ where
     }
 
     fn min(&self) -> Option<T::Native> {
-        match T::get_dtype() {
-            DataType::Float32 => agg_float_with_nans!(self, min, f32),
-            DataType::Float64 => agg_float_with_nans!(self, min, f64),
-            _ => self
-                .downcast_iter()
-                .filter_map(|a| compute::aggregate::min_primitive(a))
-                .fold_first_(|acc, v| if acc < v { acc } else { v }),
-        }
+        self.downcast_iter()
+            .filter_map(|a| compute::aggregate::min_primitive(a))
+            .fold_first_(|acc, v| if acc < v { acc } else { v })
     }
 
     fn max(&self) -> Option<T::Native> {
-        match T::get_dtype() {
-            DataType::Float32 => agg_float_with_nans!(self, max, f32),
-            DataType::Float64 => agg_float_with_nans!(self, max, f64),
-            _ => self
-                .downcast_iter()
-                .filter_map(|a| compute::aggregate::max_primitive(a))
-                .fold_first_(|acc, v| if acc > v { acc } else { v }),
-        }
+        self.downcast_iter()
+            .filter_map(|a| compute::aggregate::max_primitive(a))
+            .fold_first_(|acc, v| if acc > v { acc } else { v })
     }
 
     fn mean(&self) -> Option<f64> {
