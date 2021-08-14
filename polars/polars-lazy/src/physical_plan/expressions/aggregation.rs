@@ -27,11 +27,14 @@ impl PhysicalExpr for AggregationExpr {
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
-        _df: &DataFrame,
-        _groups: &'a GroupTuples,
-        _state: &ExecutionState,
+        df: &DataFrame,
+        groups: &'a GroupTuples,
+        state: &ExecutionState,
     ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        unimplemented!()
+        let out = self
+            .aggregate(df, groups, state)?
+            .ok_or_else(|| PolarsError::Other("Aggregation did not return a Series".into()))?;
+        Ok((out, Cow::Borrowed(groups)))
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {

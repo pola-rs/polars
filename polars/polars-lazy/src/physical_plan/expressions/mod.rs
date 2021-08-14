@@ -10,6 +10,7 @@ pub(crate) mod is_not_null;
 pub(crate) mod is_null;
 pub(crate) mod literal;
 pub(crate) mod not;
+pub(crate) mod shift;
 pub(crate) mod slice;
 pub(crate) mod sort;
 pub(crate) mod sortby;
@@ -36,7 +37,7 @@ pub trait PhysicalExpr: Send + Sync {
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series>;
 
     /// Some expression that are not aggregations can be done per group
-    /// Think of sort, slice, filter, etc.
+    /// Think of sort, slice, filter, shift, etc.
     /// defaults to ignoring the group
     ///
     /// This method is called by an aggregation function.
@@ -44,6 +45,12 @@ pub trait PhysicalExpr: Send + Sync {
     /// In case of a simple expr, like 'column', the groups are ignored and the column is returned.
     /// In case of an expr where group behavior makes sense, this method is called.
     /// For a filter operation for instance, a Series is created per groups and filtered.
+    ///
+    /// An implementation of this method may apply an aggregation on the groups only. For instance
+    /// on a shift, the groups are first aggregated to a `ListChunked` and the shift is applied per
+    /// group. The implementation then has to return the `Series` exploded (because a later aggregation
+    /// will use the group tuples to aggregate). The group tuples also have to be updated, because
+    /// aggregation to a list sorts the exploded `Series` by group.
     ///
     /// This has some gotcha's. An implementation may also change the group tuples instead of
     /// the `Series`.

@@ -1460,9 +1460,12 @@ fn test_shift_and_fill_window_function() -> Result<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(-1, lit(-1))
+                .list()
                 .over(vec![col("fruits")]),
         ])
         .collect()?;
+
+    dbg!(&out1, &out2);
 
     assert!(out1.frame_equal(&out2));
 

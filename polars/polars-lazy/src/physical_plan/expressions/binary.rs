@@ -12,12 +12,11 @@ pub(crate) fn binary_check_group_tuples<'a>(
     out: Series,
     groups_a: Cow<'a, GroupTuples>,
     groups_b: Cow<'a, GroupTuples>,
+    lhs_len: usize,
+    rhs_len: usize,
 ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-    match (groups_a, groups_b) {
-        (Cow::Owned(_), Cow::Owned(_)) => Err(PolarsError::InvalidOperation(
-            "Cannot apply two filters in a binary expression".into(),
-        )),
-        (Cow::Borrowed(a), Cow::Borrowed(b)) => {
+    match (groups_a, groups_b, lhs_len, rhs_len) {
+        (Cow::Borrowed(a), Cow::Borrowed(b), _, _) => {
             if !std::ptr::eq(a, b) {
                 Err(PolarsError::ValueError(
                     "filter predicates do not originate from same filter operation".into(),
@@ -26,8 +25,14 @@ pub(crate) fn binary_check_group_tuples<'a>(
                 Ok((out, Cow::Borrowed(a)))
             }
         }
-        (Cow::Owned(a), _) => Ok((out, Cow::Owned(a))),
-        (_, Cow::Owned(a)) => Ok((out, Cow::Owned(a))),
+        (Cow::Owned(a), Cow::Borrowed(_), _, 1) => Ok((out, Cow::Owned(a))),
+        (Cow::Borrowed(_), Cow::Owned(a), 1, _) => Ok((out, Cow::Owned(a))),
+        _ => Err(PolarsError::InvalidOperation(
+            "Cannot apply two operation that modify the expression order in a binary expression\
+            This happens due to `.filter()`, `.sort()`, `.shift()` etc.
+            "
+            .into(),
+        )),
     }
 }
 
@@ -104,7 +109,7 @@ impl PhysicalExpr for BinaryExpr {
         let (series_b, groups_b) = result_b?;
 
         let out = apply_operator(&series_a, &series_b, self.op)?;
-        binary_check_group_tuples(out, groups_a, groups_b)
+        binary_check_group_tuples(out, groups_a, groups_b, series_a.len(), series_b.len())
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -124,29 +129,6 @@ impl PhysicalAggregation for BinaryExpr {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         match (self.left.as_agg_expr(), self.right.as_agg_expr()) {
-            (Ok(left), Err(_)) => {
-                let (opt_agg, rhs) = POOL.install(|| {
-                    rayon::join(
-                        || left.aggregate(df, groups, state),
-                        || self.right.evaluate(df, state),
-                    )
-                });
-                opt_agg?
-                    .map(|agg| apply_operator(&agg, &rhs?, self.op))
-                    .transpose()
-            }
-            (Err(_), Ok(right)) => {
-                let (opt_agg, lhs) = POOL.install(|| {
-                    rayon::join(
-                        || right.aggregate(df, groups, state),
-                        || self.left.evaluate(df, state),
-                    )
-                });
-
-                opt_agg?
-                    .map(|agg| apply_operator(&lhs?, &agg, self.op))
-                    .transpose()
-            }
             (Ok(left), Ok(right)) => {
                 let (left_agg, right_agg) = POOL.install(|| {
                     rayon::join(
@@ -160,7 +142,13 @@ impl PhysicalAggregation for BinaryExpr {
                     .transpose()
             }
             (_, _) => Err(PolarsError::Other(
-                "both expressions could not be used in an aggregation context.".into(),
+                format!(
+                    "this binary expression is not an aggregation: {:?}
+                pherhaps you should add an aggregation like, '.sum()', '.min()', '.mean()', etc.
+                if you really want to collect this binary expression, use `.list()`",
+                    self.expr
+                )
+                .into(),
             )),
         }
     }

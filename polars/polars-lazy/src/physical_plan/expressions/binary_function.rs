@@ -58,6 +58,8 @@ impl PhysicalExpr for BinaryFunctionExpr {
         });
         let (series_a, groups_a) = series_a?;
         let (series_b, groups_b) = series_b?;
+        let lhs_len = series_a.len();
+        let rhs_len = series_b.len();
 
         let name = self
             .output_field
@@ -74,7 +76,7 @@ impl PhysicalExpr for BinaryFunctionExpr {
             s.rename(&name);
             s
         })?;
-        binary_check_group_tuples(out, groups_a, groups_b)
+        binary_check_group_tuples(out, groups_a, groups_b, lhs_len, rhs_len)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {

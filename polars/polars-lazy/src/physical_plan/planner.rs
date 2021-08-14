@@ -1,5 +1,6 @@
 use super::expressions as phys_expr;
 use crate::logical_plan::Context;
+use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
 use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr};
 use ahash::RandomState;
@@ -857,17 +858,7 @@ impl DefaultPlanner {
             }
             Shift { input, periods } => {
                 let input = self.create_physical_expr(input, ctxt, expr_arena)?;
-                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
-                    let s = std::mem::take(&mut s[0]);
-                    Ok(s.shift(periods))
-                }) as Arc<dyn SeriesUdf>);
-                Ok(Arc::new(ApplyExpr {
-                    inputs: vec![input],
-                    function,
-                    output_type: None,
-                    expr: node_to_exp(expression, expr_arena),
-                    collect_groups: false,
-                }))
+                Ok(Arc::new(ShiftExpr { input, periods }))
             }
             Slice {
                 input,

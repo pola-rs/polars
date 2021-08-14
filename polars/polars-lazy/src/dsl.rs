@@ -806,7 +806,7 @@ impl Expr {
         }
     }
 
-    /// Shift the valus in the array by some period and fill the resulting empty values.
+    /// Shift the values in the array by some period and fill the resulting empty values.
     pub fn shift_and_fill(self, periods: i64, fill_value: Expr) -> Self {
         // Note:
         // The order of the then | otherwise is important
