@@ -811,7 +811,7 @@ impl Expr {
         // Note:
         // The order of the then | otherwise is important
         if periods > 0 {
-            when(self.clone().map(
+            when(self.clone().apply(
                 move |s: Series| {
                     let ca: BooleanChunked = (0..s.len() as i64).map(|i| i >= periods).collect();
                     Ok(ca.into_series())
@@ -821,7 +821,7 @@ impl Expr {
             .then(self.shift(periods))
             .otherwise(fill_value)
         } else {
-            when(self.clone().map(
+            when(self.clone().apply(
                 move |s: Series| {
                     let length = s.len() as i64;
                     // periods is negative, so subtraction.

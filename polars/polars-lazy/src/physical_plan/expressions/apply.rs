@@ -40,6 +40,39 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupTuples,
         state: &ExecutionState,
     ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+        if !self.collect_groups {
+            let mut owned_count = 0;
+            let mut inputs = Vec::with_capacity(self.inputs.len());
+            let mut groups_vec = Vec::with_capacity(self.inputs.len());
+            let mut owned_group = None;
+
+            self.inputs.iter().try_for_each::<_, Result<_>>(|e| {
+                let (s, groups_) = e.evaluate_on_groups(df, groups, state)?;
+                inputs.push(s);
+                if let Cow::Owned(_) = &groups_ {
+                    owned_group = Some(groups_);
+                    owned_count += 1;
+                    return Ok(());
+                }
+                groups_vec.push(groups_);
+                Ok(())
+            })?;
+
+            let in_name = inputs[0].name().to_string();
+            let mut out = self.function.call_udf(&mut inputs)?;
+            if in_name != out.name() {
+                out.rename(&in_name);
+            }
+
+            return match owned_count {
+                0 => Ok((out, groups_vec.pop().unwrap())),
+                1 => Ok((out, owned_group.unwrap())),
+                _ => Err(PolarsError::ValueError(
+                    "Function may only have one input that contains a filter expression".into(),
+                )),
+            };
+        }
+
         let mut owned_count = 0;
         let mut inputs = Vec::with_capacity(self.inputs.len());
         let mut groups_vec = Vec::with_capacity(self.inputs.len());
@@ -47,7 +80,11 @@ impl PhysicalExpr for ApplyExpr {
 
         self.inputs.iter().try_for_each::<_, Result<_>>(|e| {
             let (s, groups_) = e.evaluate_on_groups(df, groups, state)?;
-            inputs.push(s);
+            inputs.push(
+                s.agg_list(groups).ok_or_else(|| {
+                    PolarsError::Other("aggregation did not return a column".into())
+                })?,
+            );
             if let Cow::Owned(_) = &groups_ {
                 owned_group = Some(groups_);
                 owned_count += 1;
@@ -58,7 +95,76 @@ impl PhysicalExpr for ApplyExpr {
         })?;
 
         let in_name = inputs[0].name().to_string();
-        let mut out = self.function.call_udf(&mut inputs)?;
+
+        let mut out = if inputs.len() == self.inputs.len() {
+            if inputs.len() == 1 {
+                let s = inputs.pop().unwrap();
+
+                match s.list() {
+                    Ok(ca) => {
+                        let mut container = vec![Default::default()];
+                        let name = s.name();
+
+                        let mut ca: ListChunked = ca
+                            .into_iter()
+                            .map(|opt_s| {
+                                opt_s.and_then(|s| {
+                                    container[0] = s;
+                                    self.function.call_udf(&mut container).ok()
+                                })
+                            })
+                            .collect();
+                        ca.rename(name);
+                        let out = ca.into_series();
+                        let mut count = 0u32;
+                        let groups = groups
+                            .iter()
+                            .map(|g| {
+                                let add = g.1.len() as u32;
+                                let new_count = count + add;
+                                let out = (count, (count..new_count).collect::<Vec<_>>());
+                                count = new_count;
+                                out
+                            })
+                            .collect();
+
+                        // we explode again, because the final aggregation needs the group tuples to aggregate
+                        return Ok((out.explode()?, Cow::Owned(groups)));
+                    }
+                    _ => unimplemented!(),
+                }
+            } else {
+                // container that will hold the arguments &[Series]
+                let mut args = Vec::with_capacity(inputs.len());
+                let takers: Vec<_> = inputs
+                    .iter()
+                    .map(|s| s.list().unwrap().take_rand())
+                    .collect();
+                let mut ca: ListChunked = (0..inputs[0].len())
+                    .map(|i| {
+                        args.clear();
+
+                        takers.iter().for_each(|taker| {
+                            if let Some(s) = taker.get(i) {
+                                args.push(s);
+                            }
+                        });
+                        if args.len() == takers.len() {
+                            self.function.call_udf(&mut args).ok()
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                ca.rename(inputs[0].name());
+                Ok(ca.into_series())
+            }
+        } else {
+            Err(PolarsError::InvalidOperation(
+                "not all inputs were able to yield a column".into(),
+            ))
+        }?;
+
         if in_name != out.name() {
             out.rename(&in_name);
         }

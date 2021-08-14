@@ -45,6 +45,7 @@ impl PhysicalExpr for TernaryExpr {
             (Cow::Owned(_), Cow::Borrowed(_), Cow::Borrowed(_)) => mask_groups,
             (Cow::Borrowed(_), Cow::Owned(_), Cow::Borrowed(_)) => truthy_groups,
             (Cow::Borrowed(_), Cow::Borrowed(_), Cow::Owned(_)) => falsy_groups,
+            _ => truthy_groups,
             _ => return Err(PolarsError::InvalidOperation(
                 "Only one aggregation allowed in ternary expression. This error can be caused by a \
                 filter operation in ternary expressions or multiple aggregations like `shift()`, `.sort()`,".into(),

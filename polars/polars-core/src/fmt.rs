@@ -350,7 +350,7 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            _ => unimplemented!(),
+            dt => panic!("{:?} not impl", dt),
         }
     }
 }
