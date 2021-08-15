@@ -1,11 +1,9 @@
 use crate::logical_plan::Context;
-use crate::physical_plan::expressions::binary::binary_check_group_tuples;
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::{prelude::*, POOL};
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub(crate) struct BinaryFunctionExpr {

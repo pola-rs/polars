@@ -2,7 +2,6 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct TernaryExpr {
@@ -49,7 +48,7 @@ impl PhysicalExpr for TernaryExpr {
         }
 
         let out = ac_truthy.flat().zip_with(mask, ac_falsy.flat().as_ref())?;
-        ac_truthy.combine_groups(ac_falsy).with_series(out);
+        ac_truthy.with_series(out);
 
         Ok(ac_truthy)
     }

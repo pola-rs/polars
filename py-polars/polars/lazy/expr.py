@@ -760,6 +760,7 @@ class Expr:
         self,
         f: Union["UDF", Callable[["pl.Series"], "pl.Series"]],
         return_dtype: Optional[Type[DataType]] = None,
+        agg_list: bool = False,
     ) -> "Expr":
         """
         Apply a custom python function. This function must produce a `Series`. Any other value will be stored as
@@ -785,7 +786,7 @@ class Expr:
             return_dtype = Float64
         elif return_dtype == bool:
             return_dtype = Boolean
-        return wrap_expr(self._pyexpr.map(f, return_dtype))
+        return wrap_expr(self._pyexpr.map(f, return_dtype, agg_list))
 
     def apply(
         self,
@@ -843,7 +844,7 @@ class Expr:
         def wrap_f(x: "pl.Series") -> "pl.Series":
             return x.apply(f, return_dtype=return_dtype)
 
-        return self.map(wrap_f)
+        return self.map(wrap_f, agg_list=True)
 
     def explode(self) -> "Expr":
         """

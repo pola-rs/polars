@@ -56,7 +56,7 @@ impl PhysicalExpr for FilterExpr {
                 .collect()
         });
 
-        let ac = AggregationContext::new(s, Cow::Owned(groups)).is_original_len(false);
+        let ac = AggregationContext::new(s, Cow::Owned(groups)).set_original_len(false);
         Ok(ac)
     }
 

@@ -414,7 +414,7 @@ impl PyExpr {
         self.clone().inner.nanosecond().into()
     }
 
-    pub fn map(&self, lambda: PyObject, output_type: &PyAny) -> PyExpr {
+    pub fn map(&self, lambda: PyObject, output_type: &PyAny, agg_list: bool) -> PyExpr {
         let output_type = match output_type.is_none() {
             true => None,
             false => {
@@ -451,7 +451,11 @@ impl PyExpr {
             Ok(pyseries.series)
         };
 
-        self.clone().inner.map(function, output_type).into()
+        if agg_list {
+            self.clone().inner.map_list(function, output_type).into()
+        } else {
+            self.clone().inner.map(function, output_type).into()
+        }
     }
 
     pub fn dot(&self, other: PyExpr) -> PyExpr {

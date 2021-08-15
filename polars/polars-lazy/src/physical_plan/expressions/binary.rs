@@ -3,38 +3,7 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::{prelude::*, POOL};
-use std::borrow::Cow;
 use std::sync::Arc;
-
-/// In the aggregation of a binary expression, only one expression can modify the size of the groups
-/// with a filter operation otherwise the aggregations will produce flawed results.
-pub(crate) fn binary_check_group_tuples<'a>(
-    out: Series,
-    groups_a: Cow<'a, GroupTuples>,
-    groups_b: Cow<'a, GroupTuples>,
-    lhs_len: usize,
-    rhs_len: usize,
-) -> Result<(Series, Cow<'a, GroupTuples>)> {
-    match (groups_a, groups_b, lhs_len, rhs_len) {
-        (Cow::Borrowed(a), Cow::Borrowed(b), _, _) => {
-            if !std::ptr::eq(a, b) {
-                Err(PolarsError::ValueError(
-                    "filter predicates do not originate from same filter operation".into(),
-                ))
-            } else {
-                Ok((out, Cow::Borrowed(a)))
-            }
-        }
-        (Cow::Owned(a), Cow::Borrowed(_), _, 1) => Ok((out, Cow::Owned(a))),
-        (Cow::Borrowed(_), Cow::Owned(a), 1, _) => Ok((out, Cow::Owned(a))),
-        _ => Err(PolarsError::InvalidOperation(
-            "Cannot apply two operation that modify the expression order in a binary expression\
-            This happens due to `.filter()`, `.sort()`, `.shift()` etc.
-            "
-            .into(),
-        )),
-    }
-}
 
 pub struct BinaryExpr {
     pub(crate) left: Arc<dyn PhysicalExpr>,
@@ -106,7 +75,7 @@ impl PhysicalExpr for BinaryExpr {
             )
         });
         let mut ac_l = result_a?;
-        let mut ac_r = result_b?;
+        let ac_r = result_b?;
 
         if !ac_l.can_combine(&ac_r) {
             return Err(PolarsError::InvalidOperation(

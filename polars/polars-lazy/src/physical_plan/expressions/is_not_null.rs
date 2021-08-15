@@ -2,7 +2,6 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct IsNotNullExpr {

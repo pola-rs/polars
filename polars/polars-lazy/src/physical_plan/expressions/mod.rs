@@ -86,11 +86,8 @@ impl<'a> AggregationContext<'a> {
     }
 
     pub(crate) fn combine_groups(&mut self, other: AggregationContext) -> &mut Self {
-        match (&self.groups, other.groups) {
-            (Cow::Borrowed(_), Cow::Owned(a)) => {
-                self.groups = Cow::Owned(a);
-            }
-            _ => {}
+        if let (Cow::Borrowed(_), Cow::Owned(a)) = (&self.groups, other.groups) {
+            self.groups = Cow::Owned(a);
         };
         self
     }
@@ -109,12 +106,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    pub(crate) fn is_sorted(mut self, sorted: bool) -> Self {
-        self.sorted = sorted;
-        self
-    }
-
-    pub(crate) fn is_original_len(mut self, original_len: bool) -> Self {
+    pub(crate) fn set_original_len(mut self, original_len: bool) -> Self {
         self.original_len = original_len;
         self
     }
@@ -147,6 +139,11 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
         match &self.series {
             AggState::Flat(s) => {
+                let out = Cow::Owned(
+                    s.agg_list(&self.groups)
+                        .expect("should be able to aggregate this to list"),
+                );
+
                 if !self.sorted {
                     // the groups are unordered
                     // and the series is aggregated with this groups
@@ -164,13 +161,10 @@ impl<'a> AggregationContext<'a> {
                             out
                         })
                         .collect();
+                    self.sorted = true;
                     self.groups = Cow::Owned(groups);
-                }
-
-                Cow::Owned(
-                    s.agg_list(&self.groups)
-                        .expect("should be able to aggregate this to list"),
-                )
+                };
+                out
             }
             AggState::List(s) => Cow::Borrowed(s),
             AggState::None => unreachable!(),

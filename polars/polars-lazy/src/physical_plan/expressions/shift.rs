@@ -2,7 +2,6 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct ShiftExpr {
@@ -54,7 +53,7 @@ impl PhysicalAggregation for ShiftExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let ac = self.input.evaluate_on_groups(df, groups, state)?;
         let s = ac
             .aggregated_final()
             .list()

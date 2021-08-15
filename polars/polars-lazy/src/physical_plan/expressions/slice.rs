@@ -3,7 +3,6 @@ use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use polars_core::utils::slice_offsets;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct SliceExpr {
@@ -55,7 +54,7 @@ impl PhysicalAggregation for SliceExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
+        let ac = self.evaluate_on_groups(df, groups, state)?;
         let s = ac.aggregated_final().into_owned();
         Ok(Some(s))
     }

@@ -4,7 +4,6 @@ use crate::prelude::*;
 use polars_core::frame::groupby::{GroupBy, GroupTuples};
 use polars_core::frame::hash_join::private_left_join_multiple_keys;
 use polars_core::prelude::*;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct WindowExpr {

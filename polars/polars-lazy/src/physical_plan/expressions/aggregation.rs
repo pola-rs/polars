@@ -103,7 +103,7 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(Some(agg_s))
             }
             GroupByMethod::NUnique => {
-                let mut opt_agg = ac.flat().agg_n_unique(ac.groups.as_ref());
+                let opt_agg = ac.flat().agg_n_unique(ac.groups.as_ref());
                 let opt_agg = opt_agg.map(|mut agg| {
                     agg.rename(&new_name);
                     agg.into_series()
