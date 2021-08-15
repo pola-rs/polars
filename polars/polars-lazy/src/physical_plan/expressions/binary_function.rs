@@ -57,7 +57,7 @@ impl PhysicalExpr for BinaryFunctionExpr {
             )
         });
         let mut ac_l = series_a?;
-        let ac_r = series_b?;
+        let mut ac_r = series_b?;
 
         if !ac_l.can_combine(&ac_r) {
             return Err(PolarsError::InvalidOperation(
@@ -67,26 +67,38 @@ impl PhysicalExpr for BinaryFunctionExpr {
             ));
         }
 
-        let name = self
-            .output_field
-            .get_field(
-                &df.schema(),
-                Context::Default,
-                &Field::new(ac_l.series().name(), ac_l.series().dtype().clone()),
-                &Field::new(ac_r.series().name(), ac_l.series().dtype().clone()),
-            )
-            .map(|fld| fld.name().clone())
-            .unwrap_or_else(|| "binary_function".to_string());
+        // keep track of the output lengths. If they are all unit length,
+        // we can explode the array as it would have the same length as the no. of groups
+        // if it is not all unit length it should remain a listarray
+        let mut all_unit_length = true;
 
-        let out = self
-            .function
-            .call_udf(ac_l.flat().into_owned(), ac_r.flat().into_owned())
-            .map(|mut s| {
-                s.rename(&name);
-                s
-            })?;
+        let ca = ac_l
+            .aggregated()
+            .list()
+            .unwrap()
+            .into_iter()
+            .zip(ac_r.aggregated().list().unwrap())
+            .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
+                (Some(a), Some(b)) => {
+                    let out = self.function.call_udf(a, b).ok();
 
-        ac_l.combine_groups(ac_r).with_series(out);
+                    if let Some(s) = &out {
+                        if s.len() != 1 {
+                            all_unit_length = false;
+                        }
+                    }
+                    out
+                }
+                _ => None,
+            })
+            .collect::<ListChunked>();
+
+        ac_l.combine_groups(ac_r);
+        if all_unit_length {
+            ac_l.with_series(ca.explode()?);
+            return Ok(ac_l);
+        }
+        ac_l.with_series(ca.into_series());
         Ok(ac_l)
     }
 

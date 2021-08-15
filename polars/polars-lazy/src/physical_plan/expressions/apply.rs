@@ -40,7 +40,47 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupTuples,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        todo!()
+        dbg!("HIER");
+
+        if self.inputs.len() > 1 {
+            return Err(PolarsError::InvalidOperation(
+                "function with multiple inputs not yet supported in aggregation context".into(),
+            ));
+        }
+        let mut ac = if let Ok(ae) = self.inputs[0].as_agg_expr() {
+            AggregationContext::new(
+                ae.aggregate(df, groups, state)?.unwrap(),
+                Cow::Borrowed(groups),
+            )
+        } else {
+            self.inputs[0].evaluate_on_groups(df, groups, state)?
+        };
+
+        if self.collect_groups {
+            let mut container = vec![Default::default()];
+            let name = ac.series().name();
+
+            let mut ca: ListChunked = ac
+                .aggregated_final()
+                .list()
+                .unwrap()
+                .into_iter()
+                .map(|opt_s| {
+                    opt_s.and_then(|s| {
+                        container[0] = s;
+                        self.function.call_udf(&mut container).ok()
+                    })
+                })
+                .collect();
+            ca.rename(name);
+            ac.with_series(ca.into_series());
+            Ok(ac)
+        } else {
+            let s = self.function.call_udf(&mut [ac.take()])?;
+            ac.with_series(s);
+            Ok(ac)
+        }
+
         // if !self.collect_groups {
         //     let mut owned_count = 0;
         //     let mut inputs = Vec::with_capacity(self.inputs.len());
@@ -199,95 +239,53 @@ impl PhysicalAggregation for ApplyExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        todo!()
-        //     // two possible paths
-        //     // all inputs may be final aggregations
-        //     // or they may be expression that can work on groups but not yet produce an aggregation
-        //
-        //     // we first collect the inputs
-        //     // if any of the input aggregations yields None, we return None as well
-        //     // we check this by comparing the length of the inputs before and after aggregation
-        //     let mut inputs: Vec<_> = match self.inputs[0].as_agg_expr() {
-        //         Ok(_) => {
-        //             let inputs = self
-        //                 .inputs
-        //                 .par_iter()
-        //                 .map(|e| {
-        //                     let e = e.as_agg_expr()?;
-        //                     e.aggregate(df, groups, state)
-        //                 })
-        //                 .collect::<Result<Vec<_>>>()?;
-        //             inputs.into_iter().flatten().collect()
-        //         }
-        //         _ => {
-        //             let inputs = self
-        //                 .inputs
-        //                 .par_iter()
-        //                 .map(|e| {
-        //                     let (s, groups) = e.evaluate_on_groups(df, groups, state)?;
-        //                     Ok(s.agg_list(&groups))
-        //                 })
-        //                 .collect::<Result<Vec<_>>>()?;
-        //             inputs.into_iter().flatten().collect()
-        //         }
-        //     };
-        //
-        //     if inputs.len() == self.inputs.len() {
-        //         if inputs.len() == 1 {
-        //             let s = inputs.pop().unwrap();
-        //
-        //             match (s.list(), self.collect_groups) {
-        //                 (Ok(ca), true) => {
-        //                     let mut container = vec![Default::default()];
-        //                     let name = s.name();
-        //
-        //                     let mut ca: ListChunked = ca
-        //                         .into_iter()
-        //                         .map(|opt_s| {
-        //                             opt_s.and_then(|s| {
-        //                                 container[0] = s;
-        //                                 self.function.call_udf(&mut container).ok()
-        //                             })
-        //                         })
-        //                         .collect();
-        //                     ca.rename(name);
-        //                     Ok(Some(ca.into_series()))
-        //                 }
-        //                 _ => self.function.call_udf(&mut [s]).map(Some),
-        //             }
-        //         } else {
-        //             match (inputs[0].list(), self.collect_groups) {
-        //                 (Ok(_), true) => {
-        //                     // container that will hold the arguments &[Series]
-        //                     let mut args = Vec::with_capacity(inputs.len());
-        //                     let takers: Vec<_> = inputs
-        //                         .iter()
-        //                         .map(|s| s.list().unwrap().take_rand())
-        //                         .collect();
-        //                     let mut ca: ListChunked = (0..inputs[0].len())
-        //                         .map(|i| {
-        //                             args.clear();
-        //
-        //                             takers.iter().for_each(|taker| {
-        //                                 if let Some(s) = taker.get(i) {
-        //                                     args.push(s);
-        //                                 }
-        //                             });
-        //                             if args.len() == takers.len() {
-        //                                 self.function.call_udf(&mut args).ok()
-        //                             } else {
-        //                                 None
-        //                             }
-        //                         })
-        //                         .collect();
-        //                     ca.rename(inputs[0].name());
-        //                     Ok(Some(ca.into_series()))
-        //                 }
-        //                 _ => self.function.call_udf(&mut inputs).map(Some),
-        //             }
-        //         }
-        //     } else {
-        //         Ok(None)
-        //     }
+        if self.inputs.len() > 1 {
+            return Err(PolarsError::InvalidOperation(
+                "function with multiple inputs not yet supported in aggregation context".into(),
+            ));
+        }
+        let mut ac = if let Ok(ae) = self.inputs[0].as_agg_expr() {
+            AggregationContext::new(
+                ae.aggregate(df, groups, state)?.unwrap(),
+                Cow::Borrowed(groups),
+            )
+        } else {
+            self.inputs[0].evaluate_on_groups(df, groups, state)?
+        };
+
+        if self.collect_groups {
+            let mut container = vec![Default::default()];
+            let name = ac.series().name();
+
+            let mut all_unit_length = true;
+
+            let mut ca: ListChunked = ac
+                .aggregated_final()
+                .list()
+                .unwrap()
+                .into_iter()
+                .map(|opt_s| {
+                    opt_s.and_then(|s| {
+                        container[0] = s;
+                        let out = self.function.call_udf(&mut container).ok();
+
+                        if let Some(s) = &out {
+                            if s.len() != 1 {
+                                all_unit_length = false;
+                            }
+                        }
+                        out
+                    })
+                })
+                .collect();
+            dbg!(&ca);
+            dbg!(all_unit_length);
+            if all_unit_length {
+                return Ok(Some(ca.explode()?));
+            }
+            Ok(Some(ca.into_series()))
+        } else {
+            self.function.call_udf(&mut [ac.take()]).map(Some)
+        }
     }
 }
