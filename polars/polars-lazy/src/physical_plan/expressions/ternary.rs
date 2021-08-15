@@ -33,26 +33,24 @@ impl PhysicalExpr for TernaryExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (mask_series, mask_groups) = self.predicate.evaluate_on_groups(df, groups, state)?;
-        let mask = mask_series.bool()?;
-        let (truthy, truthy_groups) = self.truthy.evaluate_on_groups(df, groups, state)?;
-        let (falsy, falsy_groups) = self.falsy.evaluate_on_groups(df, groups, state)?;
+    ) -> Result<AggregationContext<'a>> {
+        let ac_mask = self.predicate.evaluate_on_groups(df, groups, state)?;
+        let mask_s = ac_mask.flat();
+        let mask = mask_s.bool()?;
+        let mut ac_truthy = self.truthy.evaluate_on_groups(df, groups, state)?;
+        let ac_falsy = self.falsy.evaluate_on_groups(df, groups, state)?;
 
-        let groups = match (&mask_groups, &truthy_groups, &falsy_groups) {
-            // all equal just pick one
-            (Cow::Borrowed(_), Cow::Borrowed(_), Cow::Borrowed(_)) => mask_groups,
-            (Cow::Owned(_), Cow::Borrowed(_), Cow::Borrowed(_)) => mask_groups,
-            (Cow::Borrowed(_), Cow::Owned(_), Cow::Borrowed(_)) => truthy_groups,
-            (Cow::Borrowed(_), Cow::Borrowed(_), Cow::Owned(_)) => falsy_groups,
-            _ => truthy_groups,
-            _ => return Err(PolarsError::InvalidOperation(
-                "Only one aggregation allowed in ternary expression. This error can be caused by a \
-                filter operation in ternary expressions or multiple aggregations like `shift()`, `.sort()`,".into(),
-            )),
-        };
+        if !ac_truthy.can_combine(&ac_falsy) {
+            return Err(PolarsError::InvalidOperation(
+                "\
+            cannot combine this ternary expression, the groups do not match"
+                    .into(),
+            ));
+        }
 
-        // all groups are equal does not matter wich one we return
-        Ok((truthy.zip_with(mask, &falsy)?, groups))
+        let out = ac_truthy.flat().zip_with(mask, ac_falsy.flat().as_ref())?;
+        ac_truthy.combine_groups(ac_falsy).with_series(out);
+
+        Ok(ac_truthy)
     }
 }

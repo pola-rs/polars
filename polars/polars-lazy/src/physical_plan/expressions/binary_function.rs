@@ -49,34 +49,45 @@ impl PhysicalExpr for BinaryFunctionExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+    ) -> Result<AggregationContext<'a>> {
         let (series_a, series_b) = POOL.install(|| {
             rayon::join(
                 || self.input_a.evaluate_on_groups(df, groups, state),
                 || self.input_b.evaluate_on_groups(df, groups, state),
             )
         });
-        let (series_a, groups_a) = series_a?;
-        let (series_b, groups_b) = series_b?;
-        let lhs_len = series_a.len();
-        let rhs_len = series_b.len();
+        let mut ac_l = series_a?;
+        let ac_r = series_b?;
+
+        if !ac_l.can_combine(&ac_r) {
+            return Err(PolarsError::InvalidOperation(
+                "\
+            cannot combine this binary function, the groups do not match"
+                    .into(),
+            ));
+        }
 
         let name = self
             .output_field
             .get_field(
                 &df.schema(),
                 Context::Default,
-                &Field::new(series_a.name(), series_a.dtype().clone()),
-                &Field::new(series_b.name(), series_b.dtype().clone()),
+                &Field::new(ac_l.series().name(), ac_l.series().dtype().clone()),
+                &Field::new(ac_r.series().name(), ac_l.series().dtype().clone()),
             )
             .map(|fld| fld.name().clone())
             .unwrap_or_else(|| "binary_function".to_string());
 
-        let out = self.function.call_udf(series_a, series_b).map(|mut s| {
-            s.rename(&name);
-            s
-        })?;
-        binary_check_group_tuples(out, groups_a, groups_b, lhs_len, rhs_len)
+        let out = self
+            .function
+            .call_udf(ac_l.flat().into_owned(), ac_r.flat().into_owned())
+            .map(|mut s| {
+                s.rename(&name);
+                s
+            })?;
+
+        ac_l.combine_groups(ac_r).with_series(out);
+        Ok(ac_l)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {

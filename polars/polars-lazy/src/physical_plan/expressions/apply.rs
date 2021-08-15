@@ -39,143 +39,144 @@ impl PhysicalExpr for ApplyExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        if !self.collect_groups {
-            let mut owned_count = 0;
-            let mut inputs = Vec::with_capacity(self.inputs.len());
-            let mut groups_vec = Vec::with_capacity(self.inputs.len());
-            let mut owned_group = None;
-
-            self.inputs.iter().try_for_each::<_, Result<_>>(|e| {
-                let (s, groups_) = e.evaluate_on_groups(df, groups, state)?;
-                inputs.push(s);
-                if let Cow::Owned(_) = &groups_ {
-                    owned_group = Some(groups_);
-                    owned_count += 1;
-                    return Ok(());
-                }
-                groups_vec.push(groups_);
-                Ok(())
-            })?;
-
-            let in_name = inputs[0].name().to_string();
-            let mut out = self.function.call_udf(&mut inputs)?;
-            if in_name != out.name() {
-                out.rename(&in_name);
-            }
-
-            return match owned_count {
-                0 => Ok((out, groups_vec.pop().unwrap())),
-                1 => Ok((out, owned_group.unwrap())),
-                _ => Err(PolarsError::ValueError(
-                    "Function may only have one input that contains a filter expression".into(),
-                )),
-            };
-        }
-
-        let mut owned_count = 0;
-        let mut inputs = Vec::with_capacity(self.inputs.len());
-        let mut groups_vec = Vec::with_capacity(self.inputs.len());
-        let mut owned_group = None;
-
-        self.inputs.iter().try_for_each::<_, Result<_>>(|e| {
-            let (s, groups_) = e.evaluate_on_groups(df, groups, state)?;
-            inputs.push(
-                s.agg_list(groups).ok_or_else(|| {
-                    PolarsError::Other("aggregation did not return a column".into())
-                })?,
-            );
-            if let Cow::Owned(_) = &groups_ {
-                owned_group = Some(groups_);
-                owned_count += 1;
-                return Ok(());
-            }
-            groups_vec.push(groups_);
-            Ok(())
-        })?;
-
-        let in_name = inputs[0].name().to_string();
-
-        let mut out = if inputs.len() == self.inputs.len() {
-            if inputs.len() == 1 {
-                let s = inputs.pop().unwrap();
-
-                match s.list() {
-                    Ok(ca) => {
-                        let mut container = vec![Default::default()];
-                        let name = s.name();
-
-                        let mut ca: ListChunked = ca
-                            .into_iter()
-                            .map(|opt_s| {
-                                opt_s.and_then(|s| {
-                                    container[0] = s;
-                                    self.function.call_udf(&mut container).ok()
-                                })
-                            })
-                            .collect();
-                        ca.rename(name);
-                        let out = ca.into_series();
-                        let mut count = 0u32;
-                        let groups = groups
-                            .iter()
-                            .map(|g| {
-                                let add = g.1.len() as u32;
-                                let new_count = count + add;
-                                let out = (count, (count..new_count).collect::<Vec<_>>());
-                                count = new_count;
-                                out
-                            })
-                            .collect();
-
-                        // we explode again, because the final aggregation needs the group tuples to aggregate
-                        return Ok((out.explode()?, Cow::Owned(groups)));
-                    }
-                    _ => unimplemented!(),
-                }
-            } else {
-                // container that will hold the arguments &[Series]
-                let mut args = Vec::with_capacity(inputs.len());
-                let takers: Vec<_> = inputs
-                    .iter()
-                    .map(|s| s.list().unwrap().take_rand())
-                    .collect();
-                let mut ca: ListChunked = (0..inputs[0].len())
-                    .map(|i| {
-                        args.clear();
-
-                        takers.iter().for_each(|taker| {
-                            if let Some(s) = taker.get(i) {
-                                args.push(s);
-                            }
-                        });
-                        if args.len() == takers.len() {
-                            self.function.call_udf(&mut args).ok()
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                ca.rename(inputs[0].name());
-                Ok(ca.into_series())
-            }
-        } else {
-            Err(PolarsError::InvalidOperation(
-                "not all inputs were able to yield a column".into(),
-            ))
-        }?;
-
-        if in_name != out.name() {
-            out.rename(&in_name);
-        }
-
-        match owned_count {
-            0 => Ok((out, groups_vec.pop().unwrap())),
-            1 => Ok((out, owned_group.unwrap())),
-            _ => Err(PolarsError::ValueError(
-                "Function may only have one input that contains a filter expression".into(),
-            )),
-        }
+    ) -> Result<AggregationContext<'a>> {
+        todo!()
+        // if !self.collect_groups {
+        //     let mut owned_count = 0;
+        //     let mut inputs = Vec::with_capacity(self.inputs.len());
+        //     let mut groups_vec = Vec::with_capacity(self.inputs.len());
+        //     let mut owned_group = None;
+        //
+        //     self.inputs.iter().try_for_each::<_, Result<_>>(|e| {
+        //         let acc = e.evaluate_on_groups(df, groups, state)?;
+        //         inputs.push(s);
+        //         if let Cow::Owned(_) = &ac.groups {
+        //             owned_group = Some(groups_);
+        //             owned_count += 1;
+        //             return Ok(());
+        //         }
+        //         groups_vec.push(groups_);
+        //         Ok(())
+        //     })?;
+        //
+        //     let in_name = inputs[0].name().to_string();
+        //     let mut out = self.function.call_udf(&mut inputs)?;
+        //     if in_name != out.name() {
+        //         out.rename(&in_name);
+        //     }
+        //
+        //     return match owned_count {
+        //         0 => Ok((out, groups_vec.pop().unwrap())),
+        //         1 => Ok((out, owned_group.unwrap())),
+        //         _ => Err(PolarsError::ValueError(
+        //             "Function may only have one input that contains a filter expression".into(),
+        //         )),
+        //     };
+        // }
+        //
+        // let mut owned_count = 0;
+        // let mut inputs = Vec::with_capacity(self.inputs.len());
+        // let mut groups_vec = Vec::with_capacity(self.inputs.len());
+        // let mut owned_group = None;
+        //
+        // self.inputs.iter().try_for_each::<_, Result<_>>(|e| {
+        //     let (s, groups_) = e.evaluate_on_groups(df, groups, state)?;
+        //     inputs.push(
+        //         s.agg_list(groups).ok_or_else(|| {
+        //             PolarsError::Other("aggregation did not return a column".into())
+        //         })?,
+        //     );
+        //     if let Cow::Owned(_) = &groups_ {
+        //         owned_group = Some(groups_);
+        //         owned_count += 1;
+        //         return Ok(());
+        //     }
+        //     groups_vec.push(groups_);
+        //     Ok(())
+        // })?;
+        //
+        // let in_name = inputs[0].name().to_string();
+        //
+        // let mut out = if inputs.len() == self.inputs.len() {
+        //     if inputs.len() == 1 {
+        //         let s = inputs.pop().unwrap();
+        //
+        //         match s.list() {
+        //             Ok(ca) => {
+        //                 let mut container = vec![Default::default()];
+        //                 let name = s.name();
+        //
+        //                 let mut ca: ListChunked = ca
+        //                     .into_iter()
+        //                     .map(|opt_s| {
+        //                         opt_s.and_then(|s| {
+        //                             container[0] = s;
+        //                             self.function.call_udf(&mut container).ok()
+        //                         })
+        //                     })
+        //                     .collect();
+        //                 ca.rename(name);
+        //                 let out = ca.into_series();
+        //                 let mut count = 0u32;
+        //                 let groups = groups
+        //                     .iter()
+        //                     .map(|g| {
+        //                         let add = g.1.len() as u32;
+        //                         let new_count = count + add;
+        //                         let out = (count, (count..new_count).collect::<Vec<_>>());
+        //                         count = new_count;
+        //                         out
+        //                     })
+        //                     .collect();
+        //
+        //                 // we explode again, because the final aggregation needs the group tuples to aggregate
+        //                 return Ok((out.explode()?, Cow::Owned(groups)));
+        //             }
+        //             _ => unimplemented!(),
+        //         }
+        //     } else {
+        //         // container that will hold the arguments &[Series]
+        //         let mut args = Vec::with_capacity(inputs.len());
+        //         let takers: Vec<_> = inputs
+        //             .iter()
+        //             .map(|s| s.list().unwrap().take_rand())
+        //             .collect();
+        //         let mut ca: ListChunked = (0..inputs[0].len())
+        //             .map(|i| {
+        //                 args.clear();
+        //
+        //                 takers.iter().for_each(|taker| {
+        //                     if let Some(s) = taker.get(i) {
+        //                         args.push(s);
+        //                     }
+        //                 });
+        //                 if args.len() == takers.len() {
+        //                     self.function.call_udf(&mut args).ok()
+        //                 } else {
+        //                     None
+        //                 }
+        //             })
+        //             .collect();
+        //         ca.rename(inputs[0].name());
+        //         Ok(ca.into_series())
+        //     }
+        // } else {
+        //     Err(PolarsError::InvalidOperation(
+        //         "not all inputs were able to yield a column".into(),
+        //     ))
+        // }?;
+        //
+        // if in_name != out.name() {
+        //     out.rename(&in_name);
+        // }
+        //
+        // match owned_count {
+        //     0 => Ok((out, groups_vec.pop().unwrap())),
+        //     1 => Ok((out, owned_group.unwrap())),
+        //     _ => Err(PolarsError::ValueError(
+        //         "Function may only have one input that contains a filter expression".into(),
+        //     )),
+        // }
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         match &self.output_type {
@@ -198,94 +199,95 @@ impl PhysicalAggregation for ApplyExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        // two possible paths
-        // all inputs may be final aggregations
-        // or they may be expression that can work on groups but not yet produce an aggregation
-
-        // we first collect the inputs
-        // if any of the input aggregations yields None, we return None as well
-        // we check this by comparing the length of the inputs before and after aggregation
-        let mut inputs: Vec<_> = match self.inputs[0].as_agg_expr() {
-            Ok(_) => {
-                let inputs = self
-                    .inputs
-                    .par_iter()
-                    .map(|e| {
-                        let e = e.as_agg_expr()?;
-                        e.aggregate(df, groups, state)
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                inputs.into_iter().flatten().collect()
-            }
-            _ => {
-                let inputs = self
-                    .inputs
-                    .par_iter()
-                    .map(|e| {
-                        let (s, groups) = e.evaluate_on_groups(df, groups, state)?;
-                        Ok(s.agg_list(&groups))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                inputs.into_iter().flatten().collect()
-            }
-        };
-
-        if inputs.len() == self.inputs.len() {
-            if inputs.len() == 1 {
-                let s = inputs.pop().unwrap();
-
-                match (s.list(), self.collect_groups) {
-                    (Ok(ca), true) => {
-                        let mut container = vec![Default::default()];
-                        let name = s.name();
-
-                        let mut ca: ListChunked = ca
-                            .into_iter()
-                            .map(|opt_s| {
-                                opt_s.and_then(|s| {
-                                    container[0] = s;
-                                    self.function.call_udf(&mut container).ok()
-                                })
-                            })
-                            .collect();
-                        ca.rename(name);
-                        Ok(Some(ca.into_series()))
-                    }
-                    _ => self.function.call_udf(&mut [s]).map(Some),
-                }
-            } else {
-                match (inputs[0].list(), self.collect_groups) {
-                    (Ok(_), true) => {
-                        // container that will hold the arguments &[Series]
-                        let mut args = Vec::with_capacity(inputs.len());
-                        let takers: Vec<_> = inputs
-                            .iter()
-                            .map(|s| s.list().unwrap().take_rand())
-                            .collect();
-                        let mut ca: ListChunked = (0..inputs[0].len())
-                            .map(|i| {
-                                args.clear();
-
-                                takers.iter().for_each(|taker| {
-                                    if let Some(s) = taker.get(i) {
-                                        args.push(s);
-                                    }
-                                });
-                                if args.len() == takers.len() {
-                                    self.function.call_udf(&mut args).ok()
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        ca.rename(inputs[0].name());
-                        Ok(Some(ca.into_series()))
-                    }
-                    _ => self.function.call_udf(&mut inputs).map(Some),
-                }
-            }
-        } else {
-            Ok(None)
-        }
+        todo!()
+        //     // two possible paths
+        //     // all inputs may be final aggregations
+        //     // or they may be expression that can work on groups but not yet produce an aggregation
+        //
+        //     // we first collect the inputs
+        //     // if any of the input aggregations yields None, we return None as well
+        //     // we check this by comparing the length of the inputs before and after aggregation
+        //     let mut inputs: Vec<_> = match self.inputs[0].as_agg_expr() {
+        //         Ok(_) => {
+        //             let inputs = self
+        //                 .inputs
+        //                 .par_iter()
+        //                 .map(|e| {
+        //                     let e = e.as_agg_expr()?;
+        //                     e.aggregate(df, groups, state)
+        //                 })
+        //                 .collect::<Result<Vec<_>>>()?;
+        //             inputs.into_iter().flatten().collect()
+        //         }
+        //         _ => {
+        //             let inputs = self
+        //                 .inputs
+        //                 .par_iter()
+        //                 .map(|e| {
+        //                     let (s, groups) = e.evaluate_on_groups(df, groups, state)?;
+        //                     Ok(s.agg_list(&groups))
+        //                 })
+        //                 .collect::<Result<Vec<_>>>()?;
+        //             inputs.into_iter().flatten().collect()
+        //         }
+        //     };
+        //
+        //     if inputs.len() == self.inputs.len() {
+        //         if inputs.len() == 1 {
+        //             let s = inputs.pop().unwrap();
+        //
+        //             match (s.list(), self.collect_groups) {
+        //                 (Ok(ca), true) => {
+        //                     let mut container = vec![Default::default()];
+        //                     let name = s.name();
+        //
+        //                     let mut ca: ListChunked = ca
+        //                         .into_iter()
+        //                         .map(|opt_s| {
+        //                             opt_s.and_then(|s| {
+        //                                 container[0] = s;
+        //                                 self.function.call_udf(&mut container).ok()
+        //                             })
+        //                         })
+        //                         .collect();
+        //                     ca.rename(name);
+        //                     Ok(Some(ca.into_series()))
+        //                 }
+        //                 _ => self.function.call_udf(&mut [s]).map(Some),
+        //             }
+        //         } else {
+        //             match (inputs[0].list(), self.collect_groups) {
+        //                 (Ok(_), true) => {
+        //                     // container that will hold the arguments &[Series]
+        //                     let mut args = Vec::with_capacity(inputs.len());
+        //                     let takers: Vec<_> = inputs
+        //                         .iter()
+        //                         .map(|s| s.list().unwrap().take_rand())
+        //                         .collect();
+        //                     let mut ca: ListChunked = (0..inputs[0].len())
+        //                         .map(|i| {
+        //                             args.clear();
+        //
+        //                             takers.iter().for_each(|taker| {
+        //                                 if let Some(s) = taker.get(i) {
+        //                                     args.push(s);
+        //                                 }
+        //                             });
+        //                             if args.len() == takers.len() {
+        //                                 self.function.call_udf(&mut args).ok()
+        //                             } else {
+        //                                 None
+        //                             }
+        //                         })
+        //                         .collect();
+        //                     ca.rename(inputs[0].name());
+        //                     Ok(Some(ca.into_series()))
+        //                 }
+        //                 _ => self.function.call_udf(&mut inputs).map(Some),
+        //             }
+        //         }
+        //     } else {
+        //         Ok(None)
+        //     }
     }
 }

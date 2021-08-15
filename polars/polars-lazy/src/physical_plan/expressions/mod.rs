@@ -25,6 +25,175 @@ use polars_core::prelude::*;
 use polars_io::PhysicalIoExpr;
 use std::borrow::Cow;
 
+pub(crate) enum AggState {
+    List(Series),
+    Flat(Series),
+    None,
+}
+
+impl Default for AggState {
+    fn default() -> Self {
+        AggState::None
+    }
+}
+
+pub struct AggregationContext<'a> {
+    /// Can be in one of two states
+    /// 1. already aggregated as list
+    /// 2. flat (still needs the grouptuples to aggregate)
+    series: AggState,
+    /// group tuples for AggState
+    pub(crate) groups: Cow<'a, GroupTuples>,
+    /// if the group tuples are already used in a level above
+    /// and the series is exploded, the group tuples are sorted
+    /// e.g. the exploded Series is grouped per group.
+    sorted: bool,
+    /// This is true when the Series and GroupTuples still have all
+    /// their original values. Not the case when filtered
+    original_len: bool,
+}
+
+impl<'a> AggregationContext<'a> {
+    /// Check if this contexts group tuples can be combined with that of other.
+    pub(crate) fn can_combine(&self, other: &AggregationContext) -> bool {
+        match (
+            &self.groups,
+            self.sorted,
+            self.original_len,
+            &other.groups,
+            other.sorted,
+            other.original_len,
+        ) {
+            (Cow::Borrowed(_), _, _, Cow::Borrowed(_), _, _) => true,
+            (Cow::Owned(_), _, _, Cow::Borrowed(_), _, _) => true,
+            (Cow::Borrowed(_), _, _, Cow::Owned(_), _, _) => true,
+            (Cow::Owned(_), true, true, Cow::Owned(_), true, true) => true,
+            (Cow::Owned(_), true, false, Cow::Owned(_), true, true) => false,
+            (Cow::Owned(_), true, true, Cow::Owned(_), true, false) => false,
+            (Cow::Owned(_), true, _, Cow::Owned(_), true, _) => {
+                self.groups.len() == other.groups.len()
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn series(&self) -> &Series {
+        match &self.series {
+            AggState::List(s) => s,
+            AggState::Flat(s) => s,
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn combine_groups(&mut self, other: AggregationContext) -> &mut Self {
+        match (&self.groups, other.groups) {
+            (Cow::Borrowed(_), Cow::Owned(a)) => {
+                self.groups = Cow::Owned(a);
+            }
+            _ => {}
+        };
+        self
+    }
+
+    pub(crate) fn new(series: Series, groups: Cow<'a, GroupTuples>) -> AggregationContext<'a> {
+        let series = match series.list() {
+            Ok(_) => AggState::List(series),
+            Err(_) => AggState::Flat(series),
+        };
+
+        Self {
+            series,
+            groups,
+            sorted: false,
+            original_len: true,
+        }
+    }
+
+    pub(crate) fn is_sorted(mut self, sorted: bool) -> Self {
+        self.sorted = sorted;
+        self
+    }
+
+    pub(crate) fn is_original_len(mut self, original_len: bool) -> Self {
+        self.original_len = original_len;
+        self
+    }
+
+    pub(crate) fn with_series(&mut self, series: Series) -> &mut Self {
+        self.series = match series.list() {
+            Ok(_) => AggState::List(series),
+            Err(_) => AggState::Flat(series),
+        };
+        self
+    }
+
+    pub(crate) fn with_groups(&mut self, groups: GroupTuples) -> &mut Self {
+        self.groups = Cow::Owned(groups);
+        self
+    }
+
+    /// Same as aggregated, but does not update group tuples, any call after this is invalid
+    pub(crate) fn aggregated_final(&self) -> Cow<'_, Series> {
+        match &self.series {
+            AggState::Flat(s) => Cow::Owned(
+                s.agg_list(&self.groups)
+                    .expect("should be able to aggregate this to list"),
+            ),
+            AggState::List(s) => Cow::Borrowed(s),
+            AggState::None => unreachable!(),
+        }
+    }
+
+    pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
+        match &self.series {
+            AggState::Flat(s) => {
+                if !self.sorted {
+                    // the groups are unordered
+                    // and the series is aggregated with this groups
+                    // so we need to recreate new grouptuples that
+                    // match the exploded Series
+                    let mut count = 0u32;
+                    let groups: GroupTuples = self
+                        .groups
+                        .iter()
+                        .map(|g| {
+                            let add = g.1.len() as u32;
+                            let new_count = count + add;
+                            let out = (count, (count..new_count).collect::<Vec<_>>());
+                            count = new_count;
+                            out
+                        })
+                        .collect();
+                    self.groups = Cow::Owned(groups);
+                }
+
+                Cow::Owned(
+                    s.agg_list(&self.groups)
+                        .expect("should be able to aggregate this to list"),
+                )
+            }
+            AggState::List(s) => Cow::Borrowed(s),
+            AggState::None => unreachable!(),
+        }
+    }
+
+    pub(crate) fn flat(&self) -> Cow<'_, Series> {
+        match &self.series {
+            AggState::Flat(s) => Cow::Borrowed(s),
+            AggState::List(s) => Cow::Owned(s.explode().unwrap()),
+            AggState::None => unreachable!(),
+        }
+    }
+
+    pub(crate) fn take(&mut self) -> Series {
+        match std::mem::take(&mut self.series) {
+            AggState::Flat(s) => s,
+            AggState::List(s) => s,
+            AggState::None => panic!("implementation error"),
+        }
+    }
+}
+
 /// Take a DataFrame and evaluate the expressions.
 /// Implement this for Column, lt, eq, etc
 pub trait PhysicalExpr: Send + Sync {
@@ -64,7 +233,7 @@ pub trait PhysicalExpr: Send + Sync {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)>;
+    ) -> Result<AggregationContext<'a>>;
 
     /// Get the output field of this expr
     fn to_field(&self, input_schema: &Schema) -> Result<Field>;

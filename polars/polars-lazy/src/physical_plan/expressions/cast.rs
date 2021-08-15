@@ -42,9 +42,11 @@ impl PhysicalExpr for CastExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (series, groups) = self.input.evaluate_on_groups(df, groups, state)?;
-        Ok((self.finish(series)?, groups))
+    ) -> Result<AggregationContext<'a>> {
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let s = ac.take();
+        ac.with_series(self.finish(s)?);
+        Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {

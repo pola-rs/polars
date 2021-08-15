@@ -37,9 +37,12 @@ impl PhysicalExpr for NotExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (series, groups) = self.0.evaluate_on_groups(df, groups, state)?;
-        Ok((self.finish(series)?, groups))
+    ) -> Result<AggregationContext<'a>> {
+        let mut ac = self.0.evaluate_on_groups(df, groups, state)?;
+        let s = ac.flat();
+        ac.with_series(self.finish(s.into_owned())?);
+
+        Ok(ac)
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {

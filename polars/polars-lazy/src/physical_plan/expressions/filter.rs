@@ -34,7 +34,7 @@ impl PhysicalExpr for FilterExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+    ) -> Result<AggregationContext<'a>> {
         let s = self.input.evaluate(df, state)?;
         let predicate_s = self.by.evaluate(df, state)?;
         let predicate = predicate_s.bool()?;
@@ -56,7 +56,8 @@ impl PhysicalExpr for FilterExpr {
                 .collect()
         });
 
-        Ok((s, Cow::Owned(groups)))
+        let ac = AggregationContext::new(s, Cow::Owned(groups)).is_original_len(false);
+        Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {

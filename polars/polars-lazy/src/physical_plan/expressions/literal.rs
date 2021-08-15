@@ -91,8 +91,9 @@ impl PhysicalExpr for LiteralExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        Ok((self.evaluate(df, state)?, Cow::Borrowed(groups)))
+    ) -> Result<AggregationContext<'a>> {
+        let s = self.evaluate(df, state)?;
+        Ok(AggregationContext::new(s, Cow::Borrowed(groups)))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {

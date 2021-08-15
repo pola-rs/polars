@@ -98,18 +98,26 @@ impl PhysicalExpr for BinaryExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+    ) -> Result<AggregationContext<'a>> {
         let (result_a, result_b) = POOL.install(|| {
             rayon::join(
                 || self.left.evaluate_on_groups(df, groups, state),
                 || self.right.evaluate_on_groups(df, groups, state),
             )
         });
-        let (series_a, groups_a) = result_a?;
-        let (series_b, groups_b) = result_b?;
+        let mut ac_l = result_a?;
+        let mut ac_r = result_b?;
 
-        let out = apply_operator(&series_a, &series_b, self.op)?;
-        binary_check_group_tuples(out, groups_a, groups_b, series_a.len(), series_b.len())
+        if !ac_l.can_combine(&ac_r) {
+            return Err(PolarsError::InvalidOperation(
+                "\
+            cannot combine this binary expression, the groups do not match"
+                    .into(),
+            ));
+        }
+        let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
+        ac_l.combine_groups(ac_r).with_series(out);
+        Ok(ac_l)
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {

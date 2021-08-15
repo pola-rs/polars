@@ -37,10 +37,12 @@ impl PhysicalExpr for SortExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (series, groups) = self.physical_expr.evaluate_on_groups(df, groups, state)?;
+    ) -> Result<AggregationContext<'a>> {
+        let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
+        let series = ac.flat().into_owned();
 
-        let groups = groups
+        let groups = ac
+            .groups
             .iter()
             .map(|(_first, idx)| {
                 // Safety:
@@ -63,7 +65,9 @@ impl PhysicalExpr for SortExpr {
             })
             .collect();
 
-        Ok((series, Cow::Owned(groups)))
+        ac.with_groups(groups);
+
+        Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
@@ -82,16 +86,15 @@ impl PhysicalAggregation for SortExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let (s, groups) = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let agg_s = s.agg_list(&groups);
-        let out = agg_s.map(|s| {
-            s.list()
-                .unwrap()
-                .into_iter()
-                .map(|opt_s| opt_s.map(|s| s.sort(self.reverse)))
-                .collect::<ListChunked>()
-                .into_series()
-        });
-        Ok(out)
+        let ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
+        let agg_s = ac.aggregated_final();
+        let agg_s = agg_s
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|opt_s| opt_s.map(|s| s.sort(self.reverse)))
+            .collect::<ListChunked>()
+            .into_series();
+        Ok(Some(agg_s))
     }
 }

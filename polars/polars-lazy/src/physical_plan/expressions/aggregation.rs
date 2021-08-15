@@ -30,11 +30,11 @@ impl PhysicalExpr for AggregationExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+    ) -> Result<AggregationContext<'a>> {
         let out = self
             .aggregate(df, groups, state)?
             .ok_or_else(|| PolarsError::Other("Aggregation did not return a Series".into()))?;
-        Ok((out, Cow::Borrowed(groups)))
+        Ok(AggregationContext::new(out, Cow::Borrowed(groups)))
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
@@ -62,48 +62,48 @@ impl PhysicalAggregation for AggregationExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let (series, groups) = self.expr.evaluate_on_groups(df, groups, state)?;
-        let new_name = fmt_groupby_column(series.name(), self.agg_type);
+        let ac = self.expr.evaluate_on_groups(df, groups, state)?;
+        let new_name = fmt_groupby_column(ac.series().name(), self.agg_type);
 
         match self.agg_type {
             GroupByMethod::Min => {
-                let agg_s = series.agg_min(&groups);
+                let agg_s = ac.flat().agg_min(ac.groups.as_ref());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Max => {
-                let agg_s = series.agg_max(&groups);
+                let agg_s = ac.flat().agg_max(ac.groups.as_ref());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Median => {
-                let agg_s = series.agg_median(&groups);
+                let agg_s = ac.flat().agg_median(ac.groups.as_ref());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Mean => {
-                let agg_s = series.agg_mean(&groups);
+                let agg_s = ac.flat().agg_mean(ac.groups.as_ref());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Sum => {
-                let agg_s = series.agg_sum(&groups);
+                let agg_s = ac.flat().agg_sum(ac.groups.as_ref());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
                 let mut ca: NoNull<UInt32Chunked> =
-                    groups.iter().map(|(_, g)| g.len() as u32).collect();
+                    ac.groups.iter().map(|(_, g)| g.len() as u32).collect();
                 ca.rename(&new_name);
                 Ok(Some(ca.into_inner().into_series()))
             }
             GroupByMethod::First => {
-                let mut agg_s = series.agg_first(&groups);
+                let mut agg_s = ac.flat().agg_first(ac.groups.as_ref());
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::Last => {
-                let mut agg_s = series.agg_last(&groups);
+                let mut agg_s = ac.flat().agg_last(ac.groups.as_ref());
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::NUnique => {
-                let opt_agg = series.agg_n_unique(&groups);
+                let mut opt_agg = ac.flat().agg_n_unique(ac.groups.as_ref());
                 let opt_agg = opt_agg.map(|mut agg| {
                     agg.rename(&new_name);
                     agg.into_series()
@@ -111,11 +111,12 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(opt_agg)
             }
             GroupByMethod::List => {
-                let opt_agg = series.agg_list(&groups);
-                Ok(rename_option_series(opt_agg, &new_name))
+                let agg = ac.aggregated_final().into_owned();
+                Ok(rename_option_series(Some(agg), &new_name))
             }
             GroupByMethod::Groups => {
-                let mut column: ListChunked = groups
+                let mut column: ListChunked = ac
+                    .groups
                     .iter()
                     .map(|(_first, idx)| {
                         let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
@@ -127,11 +128,11 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(Some(column.into_series()))
             }
             GroupByMethod::Std => {
-                let agg_s = series.agg_std(&groups);
+                let agg_s = ac.flat().agg_std(ac.groups.as_ref());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Var => {
-                let agg_s = series.agg_var(&groups);
+                let agg_s = ac.flat().agg_var(ac.groups.as_ref());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Quantile(_) => {
@@ -282,7 +283,7 @@ impl PhysicalExpr for AggQuantileExpr {
         _df: &DataFrame,
         _groups: &'a GroupTuples,
         _state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+    ) -> Result<AggregationContext<'a>> {
         unimplemented!()
     }
 
