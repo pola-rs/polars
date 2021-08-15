@@ -113,11 +113,22 @@ where
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ApplyOption {
+    /// Collect groups to a list and apply the function over the groups.
+    /// This can be important in aggregation context.
+    ApplyGroups,
+    // collect groups to a list and then apply
+    ApplyList,
+    // do not collect before apply
+    ApplyFlat,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct FunctionOptions {
-    /// Collect groups to a list before applying a function.
+    /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    pub(crate) collect_groups: bool,
+    pub(crate) collect_groups: ApplyOption,
     /// There can be two ways of expanding wildcards:
     ///
     /// Say the schema is 'a', 'b' and there is a function f
@@ -730,7 +741,31 @@ impl Expr {
             function: NoEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: false,
+                collect_groups: ApplyOption::ApplyFlat,
+                input_wildcard_expansion: false,
+            },
+        }
+    }
+
+    /// Apply a function/closure once the logical plan get executed.
+    ///
+    /// This function is very similar to [apply](Expr::apply), but differs in how it handles aggregations.
+    ///
+    ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+    ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+    ///  * `map_list` should be used when the function expects a list aggregated series.
+    pub fn map_list<F>(self, function: F, output_type: Option<DataType>) -> Self
+    where
+        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+    {
+        let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
+
+        Expr::Function {
+            input: vec![self],
+            function: NoEq::new(Arc::new(f)),
+            output_type,
+            options: FunctionOptions {
+                collect_groups: ApplyOption::ApplyList,
                 input_wildcard_expansion: false,
             },
         }
@@ -756,7 +791,7 @@ impl Expr {
             function: NoEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: true,
+                collect_groups: ApplyOption::ApplyGroups,
                 input_wildcard_expansion: false,
             },
         }
@@ -806,12 +841,12 @@ impl Expr {
         }
     }
 
-    /// Shift the valus in the array by some period and fill the resulting empty values.
+    /// Shift the values in the array by some period and fill the resulting empty values.
     pub fn shift_and_fill(self, periods: i64, fill_value: Expr) -> Self {
         // Note:
         // The order of the then | otherwise is important
         if periods > 0 {
-            when(self.clone().map(
+            when(self.clone().apply(
                 move |s: Series| {
                     let ca: BooleanChunked = (0..s.len() as i64).map(|i| i >= periods).collect();
                     Ok(ca.into_series())
@@ -821,7 +856,7 @@ impl Expr {
             .then(self.shift(periods))
             .otherwise(fill_value)
         } else {
-            when(self.clone().map(
+            when(self.clone().apply(
                 move |s: Series| {
                     let length = s.len() as i64;
                     // periods is negative, so subtraction.
@@ -1307,7 +1342,7 @@ where
             function,
             output_type: None,
             options: FunctionOptions {
-                collect_groups: false,
+                collect_groups: ApplyOption::ApplyFlat,
                 input_wildcard_expansion: true,
             },
         }

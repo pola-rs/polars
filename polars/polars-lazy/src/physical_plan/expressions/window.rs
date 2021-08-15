@@ -4,7 +4,6 @@ use crate::prelude::*;
 use polars_core::frame::groupby::{GroupBy, GroupTuples};
 use polars_core::frame::hash_join::private_left_join_multiple_keys;
 use polars_core::prelude::*;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct WindowExpr {
@@ -62,13 +61,11 @@ impl PhysicalExpr for WindowExpr {
             // if we have a function that is not a final aggregation, we can always evaluate the
             // function in groupby context and aggregate the result to a list
             Err(_) => {
-                let (s, groups) =
-                    self.phys_function
-                        .evaluate_on_groups(df, gb.get_groups(), state)?;
+                let acc = self
+                    .phys_function
+                    .evaluate_on_groups(df, gb.get_groups(), state)?;
                 let mut cols = gb.keys();
-                let out = s.agg_list(&groups).ok_or_else(|| {
-                    PolarsError::Other("aggregation did not return a column".into())
-                })?;
+                let out = acc.aggregated_final().into_owned();
                 cols.push(out);
                 Ok(DataFrame::new_no_checks(cols))
             }
@@ -108,7 +105,9 @@ impl PhysicalExpr for WindowExpr {
         _df: &DataFrame,
         _groups: &'a GroupTuples,
         _state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        panic!("window expression not allowed in aggregation")
+    ) -> Result<AggregationContext<'a>> {
+        Err(PolarsError::InvalidOperation(
+            "window expression not allowed in aggregation".into(),
+        ))
     }
 }

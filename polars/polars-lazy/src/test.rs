@@ -329,19 +329,7 @@ fn test_lazy_query_4() {
         .agg(vec![
             col("day").list().alias("day"),
             col("cumcases")
-                .map(
-                    |s: Series| {
-                        // determine the diff per column
-                        let a: ListChunked = s
-                            .list()
-                            .unwrap()
-                            .into_iter()
-                            .map(|opt_s| opt_s.map(|s| &s - &(s.shift(1))))
-                            .collect();
-                        Ok(a.into_series())
-                    },
-                    None,
-                )
+                .apply(|s: Series| Ok(&s - &(s.shift(1))), None)
                 .alias("diff_cases"),
         ])
         .explode(vec![col("day"), col("diff_cases")])
@@ -835,15 +823,8 @@ fn test_lazy_groupby_apply() {
 
     df.lazy()
         .groupby(vec![col("fruits")])
-        .agg(vec![col("cars").map(
-            |s: Series| {
-                let ca: UInt32Chunked = s
-                    .list()?
-                    .into_iter()
-                    .map(|opt_s| opt_s.map(|s| s.len() as u32))
-                    .collect();
-                Ok(ca.into_series())
-            },
+        .agg(vec![col("cars").apply(
+            |s: Series| Ok(Series::new("", &[s.len() as u32])),
             None,
         )])
         .collect()
@@ -1134,6 +1115,8 @@ fn test_groupby_cumsum() -> Result<()> {
         .agg(vec![col("vals").cum_sum(false)])
         .sort("groups", false)
         .collect()?;
+
+    dbg!(&out);
 
     assert_eq!(
         Vec::from(out.column("vals")?.explode()?.i32()?),
@@ -1447,7 +1430,6 @@ fn test_shift_and_fill_window_function() -> Result<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(-1, lit(-1))
-                .list()
                 .over(vec![col("fruits")]),
         ])
         .collect()?;
@@ -1460,9 +1442,12 @@ fn test_shift_and_fill_window_function() -> Result<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(-1, lit(-1))
+                .list()
                 .over(vec![col("fruits")]),
         ])
         .collect()?;
+
+    dbg!(&out1, &out2);
 
     assert!(out1.frame_equal(&out2));
 
