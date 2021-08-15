@@ -2,7 +2,6 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct IsNotNullExpr {
@@ -34,9 +33,13 @@ impl PhysicalExpr for IsNotNullExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (series, groups) = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        Ok((series.is_not_null().into_series(), groups))
+    ) -> Result<AggregationContext<'a>> {
+        let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
+        let s = ac.flat();
+        let s = s.is_not_null().into_series();
+        ac.with_series(s);
+
+        Ok(ac)
     }
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         Ok(Field::new("is_not_null", DataType::Boolean))

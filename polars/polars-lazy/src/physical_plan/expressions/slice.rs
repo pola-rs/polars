@@ -3,7 +3,6 @@ use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use polars_core::utils::slice_offsets;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct SliceExpr {
@@ -23,10 +22,11 @@ impl PhysicalExpr for SliceExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (s, groups) = self.input.evaluate_on_groups(df, groups, state)?;
+    ) -> Result<AggregationContext<'a>> {
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
 
-        let groups = groups
+        let groups = ac
+            .groups
             .iter()
             .map(|(first, idx)| {
                 let (offset, len) = slice_offsets(self.offset, self.len, idx.len());
@@ -34,7 +34,8 @@ impl PhysicalExpr for SliceExpr {
             })
             .collect();
 
-        Ok((s, Cow::Owned(groups)))
+        ac.with_groups(groups);
+        Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
@@ -53,7 +54,8 @@ impl PhysicalAggregation for SliceExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let (s, groups) = self.evaluate_on_groups(df, groups, state)?;
-        Ok(s.agg_list(&groups))
+        let ac = self.evaluate_on_groups(df, groups, state)?;
+        let s = ac.aggregated_final().into_owned();
+        Ok(Some(s))
     }
 }

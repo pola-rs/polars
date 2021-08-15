@@ -3,33 +3,7 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::{prelude::*, POOL};
-use std::borrow::Cow;
 use std::sync::Arc;
-
-/// In the aggregation of a binary expression, only one expression can modify the size of the groups
-/// with a filter operation otherwise the aggregations will produce flawed results.
-pub(crate) fn binary_check_group_tuples<'a>(
-    out: Series,
-    groups_a: Cow<'a, GroupTuples>,
-    groups_b: Cow<'a, GroupTuples>,
-) -> Result<(Series, Cow<'a, GroupTuples>)> {
-    match (groups_a, groups_b) {
-        (Cow::Owned(_), Cow::Owned(_)) => Err(PolarsError::InvalidOperation(
-            "Cannot apply two filters in a binary expression".into(),
-        )),
-        (Cow::Borrowed(a), Cow::Borrowed(b)) => {
-            if !std::ptr::eq(a, b) {
-                Err(PolarsError::ValueError(
-                    "filter predicates do not originate from same filter operation".into(),
-                ))
-            } else {
-                Ok((out, Cow::Borrowed(a)))
-            }
-        }
-        (Cow::Owned(a), _) => Ok((out, Cow::Owned(a))),
-        (_, Cow::Owned(a)) => Ok((out, Cow::Owned(a))),
-    }
-}
 
 pub struct BinaryExpr {
     pub(crate) left: Arc<dyn PhysicalExpr>,
@@ -93,18 +67,26 @@ impl PhysicalExpr for BinaryExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
+    ) -> Result<AggregationContext<'a>> {
         let (result_a, result_b) = POOL.install(|| {
             rayon::join(
                 || self.left.evaluate_on_groups(df, groups, state),
                 || self.right.evaluate_on_groups(df, groups, state),
             )
         });
-        let (series_a, groups_a) = result_a?;
-        let (series_b, groups_b) = result_b?;
+        let mut ac_l = result_a?;
+        let ac_r = result_b?;
 
-        let out = apply_operator(&series_a, &series_b, self.op)?;
-        binary_check_group_tuples(out, groups_a, groups_b)
+        if !ac_l.can_combine(&ac_r) {
+            return Err(PolarsError::InvalidOperation(
+                "\
+            cannot combine this binary expression, the groups do not match"
+                    .into(),
+            ));
+        }
+        let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
+        ac_l.combine_groups(ac_r).with_series(out);
+        Ok(ac_l)
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -124,29 +106,6 @@ impl PhysicalAggregation for BinaryExpr {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         match (self.left.as_agg_expr(), self.right.as_agg_expr()) {
-            (Ok(left), Err(_)) => {
-                let (opt_agg, rhs) = POOL.install(|| {
-                    rayon::join(
-                        || left.aggregate(df, groups, state),
-                        || self.right.evaluate(df, state),
-                    )
-                });
-                opt_agg?
-                    .map(|agg| apply_operator(&agg, &rhs?, self.op))
-                    .transpose()
-            }
-            (Err(_), Ok(right)) => {
-                let (opt_agg, lhs) = POOL.install(|| {
-                    rayon::join(
-                        || right.aggregate(df, groups, state),
-                        || self.left.evaluate(df, state),
-                    )
-                });
-
-                opt_agg?
-                    .map(|agg| apply_operator(&lhs?, &agg, self.op))
-                    .transpose()
-            }
             (Ok(left), Ok(right)) => {
                 let (left_agg, right_agg) = POOL.install(|| {
                     rayon::join(
@@ -160,7 +119,13 @@ impl PhysicalAggregation for BinaryExpr {
                     .transpose()
             }
             (_, _) => Err(PolarsError::Other(
-                "both expressions could not be used in an aggregation context.".into(),
+                format!(
+                    "this binary expression is not an aggregation: {:?}
+                pherhaps you should add an aggregation like, '.sum()', '.min()', '.mean()', etc.
+                if you really want to collect this binary expression, use `.list()`",
+                    self.expr
+                )
+                .into(),
             )),
         }
     }

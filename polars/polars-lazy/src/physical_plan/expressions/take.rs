@@ -2,7 +2,6 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct TakeExpr {
@@ -34,9 +33,11 @@ impl PhysicalExpr for TakeExpr {
         df: &DataFrame,
         groups: &'a GroupTuples,
         state: &ExecutionState,
-    ) -> Result<(Series, Cow<'a, GroupTuples>)> {
-        let (series, groups) = self.expr.evaluate_on_groups(df, groups, state)?;
-        Ok((self.finish(df, state, series)?, groups))
+    ) -> Result<AggregationContext<'a>> {
+        let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
+        let out = self.finish(df, state, ac.flat().into_owned())?;
+        ac.with_series(out);
+        Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
