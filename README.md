@@ -17,11 +17,11 @@ Polars is a blazingly fast DataFrames library implemented in Rust using Apache A
 
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
-## Performance
+## Performance 🚀🚀
 Polars is very fast, and in fact is one of the best performing solutions available. 
 See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
 
-# Rust setup
+## Rust setup
 You can take latest release from `crates.io`, or if you want to use the latest features/ performance improvements
 point to the `master` branch of this repo.
 
@@ -31,7 +31,7 @@ polars = {git = "https://github.com/ritchie46/polars", rev = "<optional git tag>
 ## Rust version
 Required Rust version `>=1.52`
 
-# Python users read this!
+## Python users read this!
 Polars is currently transitioning from `py-polars` to `polars`. Some docs may still refer the old name. 
 
 Install the latest polars version with: 
@@ -77,3 +77,7 @@ helping to reduce the compiler bloat.
 Development of Polars is proudly powered by
 
 [![Xomnia](https://raw.githubusercontent.com/ritchie46/img/master/polars/xomnia_logo.png)](https://www.xomnia.com)
+
+## Sponsors
+* [Xomnia](https://www.xomnia.com)
+* [Jetbrains](https://www.jetbrains.com/company/brand/img/jetbrains_logo.png)
