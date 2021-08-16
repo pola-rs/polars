@@ -64,6 +64,51 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_mean(
+                &self,
+                window_size: u32,
+                weight: Option<&[f64]>,
+                ignore_null: bool,
+                min_periods: u32,
+            ) -> Result<Series> {
+                ChunkWindow::rolling_mean(&self.0, window_size, weight, ignore_null, min_periods)
+                    .map(|ca| ca.into_series())
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_sum(
+                &self,
+                window_size: u32,
+                weight: Option<&[f64]>,
+                ignore_null: bool,
+                min_periods: u32,
+            ) -> Result<Series> {
+                ChunkWindow::rolling_sum(&self.0, window_size, weight, ignore_null, min_periods)
+                    .map(|ca| ca.into_series())
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_min(
+                &self,
+                window_size: u32,
+                weight: Option<&[f64]>,
+                ignore_null: bool,
+                min_periods: u32,
+            ) -> Result<Series> {
+                ChunkWindow::rolling_min(&self.0, window_size, weight, ignore_null, min_periods)
+                    .map(|ca| ca.into_series())
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_max(
+                &self,
+                window_size: u32,
+                weight: Option<&[f64]>,
+                ignore_null: bool,
+                min_periods: u32,
+            ) -> Result<Series> {
+                ChunkWindow::rolling_max(&self.0, window_size, weight, ignore_null, min_periods)
+                    .map(|ca| ca.into_series())
+            }
+
             #[cfg(feature = "cum_agg")]
             fn _cum_max(&self, reverse: bool) -> Series {
                 self.0.cum_max(reverse).into_series()
@@ -766,46 +811,6 @@ macro_rules! impl_dyn_series {
             }
             fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
                 ChunkAggSeries::quantile_as_series(&self.0, quantile)
-            }
-            fn rolling_mean(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                ChunkWindow::rolling_mean(&self.0, window_size, weight, ignore_null, min_periods)
-                    .map(|ca| ca.into_series())
-            }
-            fn rolling_sum(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                ChunkWindow::rolling_sum(&self.0, window_size, weight, ignore_null, min_periods)
-                    .map(|ca| ca.into_series())
-            }
-            fn rolling_min(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                ChunkWindow::rolling_min(&self.0, window_size, weight, ignore_null, min_periods)
-                    .map(|ca| ca.into_series())
-            }
-            fn rolling_max(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                ChunkWindow::rolling_max(&self.0, window_size, weight, ignore_null, min_periods)
-                    .map(|ca| ca.into_series())
             }
 
             fn fmt_list(&self) -> String {
