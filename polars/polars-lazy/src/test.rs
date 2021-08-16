@@ -1483,3 +1483,44 @@ fn test_cumsum_agg_as_key() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_auto_list_agg() -> Result<()> {
+    let df = df!(
+            "A"=> [1, 2, 3, 4, 5],
+            "fruits"=> ["banana", "banana", "apple", "apple", "banana"],
+            "B"=> [5, 4, 3, 2, 1],
+            "cars"=> ["beetle", "audi", "beetle", "beetle", "beetle"]
+    )?;
+
+    // test if alias executor adds a list after shift and fill
+    let out = df
+        .clone()
+        .lazy()
+        .groupby(vec![col("fruits")])
+        .agg(vec![col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
+        .collect()?;
+
+    assert!(matches!(out.column("foo")?.dtype(), DataType::List(_)));
+
+    // test if it runs and groupby executor thus implements a list after shift_and_fill
+    let out = df
+        .clone()
+        .lazy()
+        .groupby(vec![col("fruits")])
+        .agg(vec![col("B").shift_and_fill(-1, lit(-1))])
+        .collect()?;
+
+    // test if window expr executor adds list
+    let out = df
+        .clone()
+        .lazy()
+        .select(vec![col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
+        .collect()?;
+
+    let out = df
+        .lazy()
+        .select(vec![col("B").shift_and_fill(-1, lit(-1))])
+        .collect()?;
+    Ok(())
+}
