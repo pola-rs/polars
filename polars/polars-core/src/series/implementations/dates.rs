@@ -107,6 +107,21 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            #[cfg(feature = "cum_agg")]
+            fn _cum_max(&self, reverse: bool) -> Series {
+                physical_dispatch!(self, cum_max, reverse)
+            }
+
+            #[cfg(feature = "cum_agg")]
+            fn _cum_min(&self, reverse: bool) -> Series {
+                physical_dispatch!(self, cum_min, reverse)
+            }
+
+            #[cfg(feature = "cum_agg")]
+            fn _cum_sum(&self, _reverse: bool) -> Series {
+                panic!("cannot sum dates")
+            }
+
             #[cfg(feature = "asof_join")]
             fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
                 cast_and_apply!(self, join_asof, other)
@@ -292,18 +307,6 @@ macro_rules! impl_dyn_series {
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
-            fn cum_max(&self, reverse: bool) -> Series {
-                physical_dispatch!(self, cum_max, reverse)
-            }
-
-            fn cum_min(&self, reverse: bool) -> Series {
-                physical_dispatch!(self, cum_min, reverse)
-            }
-
-            fn cum_sum(&self, _reverse: bool) -> Series {
-                panic!("cannot sum dates")
-            }
-
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);
             }

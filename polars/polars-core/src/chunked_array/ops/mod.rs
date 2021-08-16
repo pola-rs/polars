@@ -18,6 +18,7 @@ pub(crate) mod apply;
 pub(crate) mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
+#[cfg(feature = "cum_agg")]
 pub(crate) mod cum_agg;
 pub(crate) mod downcast;
 pub(crate) mod explode;
@@ -70,6 +71,7 @@ pub trait ChunkAnyValue {
     fn get_any_value(&self, index: usize) -> AnyValue;
 }
 
+#[cfg(feature = "cum_agg")]
 pub trait ChunkCumAgg<T> {
     /// Get an array with the cumulative max computed at every element
     fn cum_max(&self, _reverse: bool) -> ChunkedArray<T> {
