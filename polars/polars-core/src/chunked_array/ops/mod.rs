@@ -34,6 +34,7 @@ pub(crate) mod shift;
 pub(crate) mod sort;
 pub(crate) mod take;
 pub(crate) mod unique;
+#[cfg(feature = "rolling_window")]
 pub(crate) mod window;
 #[cfg(feature = "zip_with")]
 pub(crate) mod zip;
@@ -106,6 +107,7 @@ pub trait ChunkBytes {
 }
 
 /// Rolling window functions
+#[cfg(feature = "rolling_window")]
 pub trait ChunkWindow {
     /// apply a rolling sum (moving sum) over the values in this array.
     /// a window of length `window_size` will traverse the array. the values that fill this window
@@ -223,6 +225,7 @@ pub trait ChunkWindow {
 }
 
 /// Custom rolling window functions
+#[cfg(feature = "rolling_window")]
 pub trait ChunkWindowCustom<T> {
     /// Apply a rolling aggregation over the values in this array.
     ///
