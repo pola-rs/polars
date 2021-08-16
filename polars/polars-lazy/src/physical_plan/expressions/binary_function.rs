@@ -121,12 +121,12 @@ impl PhysicalAggregation for BinaryFunctionExpr {
         let (agg_a, agg_b): (Result<Series>, Result<Series>) = POOL.install(|| {
             rayon::join(
                 || {
-                    let a = self.input_a.evaluate(df, state)?;
-                    Ok(a.agg_list(groups).expect("no data"))
+                    let mut ac = self.input_a.evaluate_on_groups(df, groups, state)?;
+                    Ok(ac.aggregated().into_owned())
                 },
                 || {
-                    let b = self.input_b.evaluate(df, state)?;
-                    Ok(b.agg_list(groups).expect("no data"))
+                    let mut ac = self.input_b.evaluate_on_groups(df, groups, state)?;
+                    Ok(ac.aggregated().into_owned())
                 },
             )
         });
