@@ -57,6 +57,24 @@ pub(crate) mod private {
     }
 
     pub trait PrivateSeries {
+        /// Get an array with the cumulative max computed at every element
+        #[cfg(feature = "cum_agg")]
+        fn _cum_max(&self, _reverse: bool) -> Series {
+            panic!("operation cum_max not supported for this dtype")
+        }
+
+        /// Get an array with the cumulative min computed at every element
+        #[cfg(feature = "cum_agg")]
+        fn _cum_min(&self, _reverse: bool) -> Series {
+            panic!("operation cum_min not supported for this dtype")
+        }
+
+        /// Get an array with the cumulative sum computed at every element
+        #[cfg(feature = "cum_agg")]
+        fn _cum_sum(&self, _reverse: bool) -> Series {
+            panic!("operation cum_sum not supported for this dtype")
+        }
+
         #[cfg(feature = "asof_join")]
         fn join_asof(&self, _other: &Series) -> Result<Vec<Option<u32>>> {
             unimplemented!()
@@ -203,21 +221,6 @@ pub(crate) mod private {
 pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
-    /// Get an array with the cumulative max computed at every element
-    fn cum_max(&self, _reverse: bool) -> Series {
-        panic!("operation cum_max not supported for this dtype")
-    }
-
-    /// Get an array with the cumulative min computed at every element
-    fn cum_min(&self, _reverse: bool) -> Series {
-        panic!("operation cum_min not supported for this dtype")
-    }
-
-    /// Get an array with the cumulative sum computed at every element
-    fn cum_sum(&self, _reverse: bool) -> Series {
-        panic!("operation cum_sum not supported for this dtype")
-    }
-
     /// Rename the Series.
     fn rename(&mut self, name: &str);
 
@@ -1515,14 +1518,61 @@ impl Series {
     }
 
     #[cfg(feature = "dot_product")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
     pub fn dot(&self, other: &Series) -> Option<f64> {
         (self * other).sum::<f64>()
     }
 
     #[cfg(feature = "row_hash")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "row_hash")))]
     /// Get a hash of this Series
     pub fn hash(&self, build_hasher: ahash::RandomState) -> UInt64Chunked {
         UInt64Chunked::new_from_aligned_vec(self.name(), self.0.vec_hash(build_hasher))
+    }
+
+    /// Get an array with the cumulative max computed at every element
+    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
+    pub fn cum_max(&self, reverse: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            self._cum_max(reverse)
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
+    }
+
+    /// Get an array with the cumulative min computed at every element
+    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
+    pub fn cum_min(&self, reverse: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            self._cum_min(reverse)
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
+    }
+
+    /// Get an array with the cumulative sum computed at every element
+    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
+    pub fn cum_sum(&self, reverse: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            match self.dtype() {
+                DataType::Boolean => self
+                    .cast_with_dtype(&DataType::UInt32)
+                    .unwrap()
+                    .cum_sum(reverse),
+                _ => self._cum_sum(reverse),
+            }
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
     }
 }
 
