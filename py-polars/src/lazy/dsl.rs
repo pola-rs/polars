@@ -395,6 +395,12 @@ impl PyExpr {
     pub fn month(&self) -> PyExpr {
         self.clone().inner.month().into()
     }
+    pub fn week(&self) -> PyExpr {
+        self.clone().inner.week().into()
+    }
+    pub fn weekday(&self) -> PyExpr {
+        self.clone().inner.weekday().into()
+    }
     pub fn day(&self) -> PyExpr {
         self.clone().inner.day().into()
     }
@@ -412,6 +418,15 @@ impl PyExpr {
     }
     pub fn nanosecond(&self) -> PyExpr {
         self.clone().inner.nanosecond().into()
+    }
+    pub fn timestamp(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                |s| s.timestamp().map(|ca| ca.into_series()),
+                Some(DataType::Int64),
+            )
+            .into()
     }
 
     pub fn map(&self, lambda: PyObject, output_type: &PyAny, agg_list: bool) -> PyExpr {
