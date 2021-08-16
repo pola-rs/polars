@@ -2,7 +2,10 @@ use super::expressions as phys_expr;
 use crate::logical_plan::Context;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr};
+use crate::{
+    logical_plan::iterator::ArenaExprIter,
+    utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr},
+};
 use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::prelude::*;
@@ -251,6 +254,12 @@ impl DefaultPlanner {
                 let mut partitionable = true;
 
                 if keys.len() == 1 {
+                    // complex expressions in the groupby itself are also not partitionable
+                    // in this case anything more than col("foo")
+                    if (&*expr_arena).iter(keys[0]).count() > 1 {
+                        partitionable = false;
+                    }
+
                     for agg in &aggs {
                         // make sure that we don't have a binary expr in the expr tree
                         let matches =

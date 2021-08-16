@@ -85,7 +85,7 @@ take_opt_iter = ["polars-core/take_opt_iter"]
 extract_jsonpath = ["polars-core/extract_jsonpath", "polars-core/strings"]
 groupby_list = ["polars-core/groupby_list"]
 lazy_regex = ["polars-lazy/regex"]
-cum_agg = ["polars-core/cum_agg"]
+cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
 
 # don't use this
 private = []
