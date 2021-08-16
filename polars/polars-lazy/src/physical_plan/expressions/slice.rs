@@ -24,9 +24,9 @@ impl PhysicalExpr for SliceExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let groups = ac.groups();
 
-        let groups = ac
-            .groups
+        let groups = groups
             .iter()
             .map(|(first, idx)| {
                 let (offset, len) = slice_offsets(self.offset, self.len, idx.len());
@@ -35,6 +35,9 @@ impl PhysicalExpr for SliceExpr {
             .collect();
 
         ac.with_groups(groups);
+        // let ac = AggregationContext::new(s, Cow::Owned(groups))
+        //     .set_original_len(ac.original_len);
+
         Ok(ac)
     }
 
@@ -54,8 +57,8 @@ impl PhysicalAggregation for SliceExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated_final().into_owned();
+        let mut ac = self.evaluate_on_groups(df, groups, state)?;
+        let s = ac.aggregated().into_owned();
         Ok(Some(s))
     }
 }
