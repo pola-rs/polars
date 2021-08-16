@@ -67,6 +67,8 @@ extract_jsonpath = ["serde_json", "jsonpath_lib"]
 groupby_list = []
 # cum_sum, cum_min, etc.
 cum_agg = []
+# rolling window functions
+rolling_window = []
 
 
 # opt-in datatypes for Series
@@ -109,7 +111,8 @@ docs-selection = [
     "row_hash",
     "mode",
     "extract_jsonpath",
-    "cum_agg"
+    "cum_agg",
+    "rolling_window"
 ]
 
 [dependencies]

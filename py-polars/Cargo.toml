@@ -65,7 +65,8 @@ features = [
     "mode",
     "extract_jsonpath",
     "lazy_regex",
-    "cum_agg"
+    "cum_agg",
+    "rolling_window"
 ]
 
 #[patch.crates-io]
