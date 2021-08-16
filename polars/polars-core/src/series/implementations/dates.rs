@@ -105,6 +105,65 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_mean(
+                &self,
+                _window_size: u32,
+                _weight: Option<&[f64]>,
+                _ignore_null: bool,
+                _min_periods: u32,
+            ) -> Result<Series> {
+                Err(PolarsError::Other(
+                    "cannot compute rolling mean of dates".into(),
+                ))
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_sum(
+                &self,
+                _window_size: u32,
+                _weight: Option<&[f64]>,
+                _ignore_null: bool,
+                _min_periods: u32,
+            ) -> Result<Series> {
+                Err(PolarsError::Other(
+                    "cannot compute rolling sum of dates".into(),
+                ))
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_min(
+                &self,
+                window_size: u32,
+                weight: Option<&[f64]>,
+                ignore_null: bool,
+                min_periods: u32,
+            ) -> Result<Series> {
+                try_physical_dispatch!(
+                    self,
+                    rolling_min,
+                    window_size,
+                    weight,
+                    ignore_null,
+                    min_periods
+                )
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_max(
+                &self,
+                window_size: u32,
+                weight: Option<&[f64]>,
+                ignore_null: bool,
+                min_periods: u32,
+            ) -> Result<Series> {
+                try_physical_dispatch!(
+                    self,
+                    rolling_max,
+                    window_size,
+                    weight,
+                    ignore_null,
+                    min_periods
+                )
+            }
+
             #[cfg(feature = "cum_agg")]
             fn _cum_max(&self, reverse: bool) -> Series {
                 physical_dispatch!(self, cum_max, reverse)
@@ -607,65 +666,6 @@ macro_rules! impl_dyn_series {
             }
             fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
                 try_physical_dispatch!(self, quantile_as_series, quantile)
-            }
-            fn rolling_mean(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                try_physical_dispatch!(
-                    self,
-                    rolling_mean,
-                    window_size,
-                    weight,
-                    ignore_null,
-                    min_periods
-                )
-            }
-            fn rolling_sum(
-                &self,
-                _window_size: u32,
-                _weight: Option<&[f64]>,
-                _ignore_null: bool,
-                _min_periods: u32,
-            ) -> Result<Series> {
-                Err(PolarsError::Other(
-                    "cannot compute rolling sum of dates".into(),
-                ))
-            }
-            fn rolling_min(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                try_physical_dispatch!(
-                    self,
-                    rolling_min,
-                    window_size,
-                    weight,
-                    ignore_null,
-                    min_periods
-                )
-            }
-            fn rolling_max(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                try_physical_dispatch!(
-                    self,
-                    rolling_max,
-                    window_size,
-                    weight,
-                    ignore_null,
-                    min_periods
-                )
             }
 
             fn fmt_list(&self) -> String {

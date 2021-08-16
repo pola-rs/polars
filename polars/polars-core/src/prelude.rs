@@ -11,7 +11,7 @@ pub use crate::{
         },
         comparison::NumComp,
         iterator::{IntoNoNullIterator, PolarsIterator},
-        ops::{aggregate::*, chunkops::ChunkOps, window::InitFold, *},
+        ops::{aggregate::*, chunkops::ChunkOps, *},
         ChunkedArray,
     },
     datatypes,
@@ -40,3 +40,6 @@ pub use crate::chunked_array::object::PolarsObject;
 pub use crate::chunked_array::temporal::conversion::*;
 #[cfg(feature = "checked_arithmetic")]
 pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
+
+#[cfg(feature = "rolling_window")]
+pub use crate::chunked_array::ops::window::InitFold;
