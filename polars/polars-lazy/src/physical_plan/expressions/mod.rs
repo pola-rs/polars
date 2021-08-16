@@ -16,6 +16,7 @@ pub(crate) mod sort;
 pub(crate) mod sortby;
 pub(crate) mod take;
 pub(crate) mod ternary;
+pub(crate) mod utils;
 pub(crate) mod window;
 
 use crate::physical_plan::state::ExecutionState;

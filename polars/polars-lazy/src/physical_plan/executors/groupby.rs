@@ -1,5 +1,6 @@
 use super::*;
 use crate::logical_plan::Context;
+use crate::prelude::utils::as_aggregated;
 use crate::utils::rename_aexpr_root_name;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
@@ -49,15 +50,14 @@ fn groupby_helper(
         let get_agg = || aggs
             .par_iter()
             .map(|expr| {
-                let agg_expr = expr.as_agg_expr()?;
-                let opt_agg = agg_expr.aggregate(&df, groups, state)?;
+                let opt_agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
                 if let Some(agg) = &opt_agg {
                     if agg.len() != groups.len() {
-                        panic!(
-                            "returned aggregation is a different length: {} than the group lengths: {}",
+                        return Err(PolarsError::Other(
+                            format!("returned aggregation is a different length: {} than the group lengths: {}",
                             agg.len(),
-                            groups.len()
-                        )
+                            groups.len()).into()
+                        ))
                     }
                 };
                 Ok(opt_agg)
