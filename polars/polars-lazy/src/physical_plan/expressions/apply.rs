@@ -115,14 +115,7 @@ impl PhysicalAggregation for ApplyExpr {
                 "function with multiple inputs not yet supported in aggregation context".into(),
             ));
         }
-        let mut ac = if let Ok(ae) = self.inputs[0].as_agg_expr() {
-            AggregationContext::new(
-                ae.aggregate(df, groups, state)?.unwrap(),
-                Cow::Borrowed(groups),
-            )
-        } else {
-            self.inputs[0].evaluate_on_groups(df, groups, state)?
-        };
+        let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
         match self.collect_groups {
             ApplyOption::ApplyGroups => {
