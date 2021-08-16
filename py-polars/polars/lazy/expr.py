@@ -981,6 +981,19 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
+    def inspect(self, fmt: str = "{}") -> "pl.Expr":  # type: ignore
+        """
+        Prints the value that this expression evaluates to and passes on the value.
+
+        >>> df.select(col("foo").cum_sum().inspect("value is: {}").alias("bar"))
+        """
+
+        def inspect(s: "pl.Series") -> "pl.Series":
+            print(fmt.format(s))  # type: ignore
+            return s
+
+        return self.map(inspect, return_dtype=None, agg_list=True)
+
 
 class ExprStringNameSpace:
     """
