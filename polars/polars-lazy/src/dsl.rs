@@ -1074,6 +1074,27 @@ impl Expr {
         let function = move |s: Series| s.month().map(|ca| ca.into_series());
         self.map(function, Some(DataType::UInt32))
     }
+    /// Extract the week from the underlying Date representation.
+    /// Can be performed on Date32 and Date64
+
+    /// Returns the ISO week number starting from 1.
+    /// The return value ranges from 1 to 53. (The last week of year differs by years.)
+    #[cfg(feature = "temporal")]
+    pub fn week(self) -> Expr {
+        let function = move |s: Series| s.week().map(|ca| ca.into_series());
+        self.map(function, Some(DataType::UInt32))
+    }
+
+    /// Extract the week day from the underlying Date representation.
+    /// Can be performed on Date32 and Date64.
+
+    /// Returns the weekday number where monday = 0 and sunday = 6
+    #[cfg(feature = "temporal")]
+    pub fn weekday(self) -> Expr {
+        let function = move |s: Series| s.weekday().map(|ca| ca.into_series());
+        self.map(function, Some(DataType::UInt32))
+    }
+
     /// Get the month of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn day(self) -> Expr {
