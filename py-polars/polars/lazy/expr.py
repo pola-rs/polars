@@ -1172,6 +1172,33 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.month())
 
+    def week(self) -> Expr:
+        """
+        Extract the week from the underlying Date representation.
+        Can be performed on Date32 and Date64
+
+        Returns the ISO week number starting from 1.
+        The return value ranges from 1 to 53. (The last week of year differs by years.)
+
+        Returns
+        -------
+        Week number as UInt32
+        """
+        return wrap_expr(self._pyexpr.week())
+
+    def weekday(self) -> Expr:
+        """
+        Extract the week day from the underlying Date representation.
+        Can be performed on Date32 and Date64.
+
+        Returns the weekday number where monday = 0 and sunday = 6
+
+        Returns
+        -------
+        Week day as UInt32
+        """
+        return wrap_expr(self._pyexpr.weekday())
+
     def day(self) -> Expr:
         """
         Extract day from underlying Date representation.
@@ -1274,6 +1301,18 @@ class ExprDateTimeNameSpace:
             Number of units (e.g. 5 "day", 15 "minute".
         """
         return wrap_expr(self._pyexpr).map(lambda s: s.dt.round(rule, n), None)
+
+    def to_python_datetime(self) -> Expr:
+        """
+        Go from Date32/Date64 to python DateTime objects
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.to_python_datetime(), return_dtype=pl.Object
+        )
+
+    def timestamp(self) -> Expr:
+        """Return timestamp in ms as Int64 type."""
+        return wrap_expr(self._pyexpr.timestamp())
 
 
 def expr_to_lit_or_expr(

@@ -185,6 +185,8 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.strftime
     ExprDateTimeNameSpace.year
     ExprDateTimeNameSpace.month
+    ExprDateTimeNameSpace.week
+    ExprDateTimeNameSpace.weekday
     ExprDateTimeNameSpace.day
     ExprDateTimeNameSpace.ordinal_day
     ExprDateTimeNameSpace.hour
@@ -192,6 +194,8 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.second
     ExprDateTimeNameSpace.nanosecond
     ExprDateTimeNameSpace.round
+    ExprDateTimeNameSpace.to_python_datetime
+    ExprDateTimeNameSpace.timestamp
 
 Strings
 -------
