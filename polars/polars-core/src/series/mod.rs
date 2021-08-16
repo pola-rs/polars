@@ -1576,7 +1576,7 @@ impl Series {
                 DataType::Boolean => self
                     .cast_with_dtype(&DataType::UInt32)
                     .unwrap()
-                    .cum_sum(reverse),
+                    ._cum_sum(reverse),
                 _ => self._cum_sum(reverse),
             }
         }
