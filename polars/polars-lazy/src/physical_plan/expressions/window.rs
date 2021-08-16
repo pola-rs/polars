@@ -61,11 +61,11 @@ impl PhysicalExpr for WindowExpr {
             // if we have a function that is not a final aggregation, we can always evaluate the
             // function in groupby context and aggregate the result to a list
             Err(_) => {
-                let acc = self
+                let mut acc = self
                     .phys_function
                     .evaluate_on_groups(df, gb.get_groups(), state)?;
                 let mut cols = gb.keys();
-                let out = acc.aggregated_final().into_owned();
+                let out = acc.aggregated().into_owned();
                 cols.push(out);
                 Ok(DataFrame::new_no_checks(cols))
             }

@@ -85,8 +85,8 @@ impl PhysicalAggregation for SortExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let agg_s = ac.aggregated_final();
+        let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
+        let agg_s = ac.aggregated();
         let agg_s = agg_s
             .list()
             .unwrap()

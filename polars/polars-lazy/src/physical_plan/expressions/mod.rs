@@ -43,17 +43,45 @@ pub struct AggregationContext<'a> {
     /// 2. flat (still needs the grouptuples to aggregate)
     series: AggState,
     /// group tuples for AggState
-    pub(crate) groups: Cow<'a, GroupTuples>,
+    groups: Cow<'a, GroupTuples>,
     /// if the group tuples are already used in a level above
     /// and the series is exploded, the group tuples are sorted
     /// e.g. the exploded Series is grouped per group.
     sorted: bool,
+    /// This is used to determined if we need to update the groups
+    /// into a sorted groups. We do this lazily, so that this work only is
+    /// done when the groups are needed
+    update_groups: bool,
     /// This is true when the Series and GroupTuples still have all
     /// their original values. Not the case when filtered
     original_len: bool,
 }
 
 impl<'a> AggregationContext<'a> {
+    pub(crate) fn groups(&mut self) -> &Cow<'a, GroupTuples> {
+        if self.update_groups {
+            // the groups are unordered
+            // and the series is aggregated with this groups
+            // so we need to recreate new grouptuples that
+            // match the exploded Series
+            let mut count = 0u32;
+            let groups: GroupTuples = self
+                .groups
+                .iter()
+                .map(|g| {
+                    let add = g.1.len() as u32;
+                    let new_count = count + add;
+                    let out = (count, (count..new_count).collect::<Vec<_>>());
+                    count = new_count;
+                    out
+                })
+                .collect();
+            self.groups = Cow::Owned(groups);
+            self.update_groups = false;
+        }
+        &self.groups
+    }
+
     /// Check if this contexts group tuples can be combined with that of other.
     pub(crate) fn can_combine(&self, other: &AggregationContext) -> bool {
         match (
@@ -102,11 +130,12 @@ impl<'a> AggregationContext<'a> {
             series,
             groups,
             sorted: false,
+            update_groups: false,
             original_len: true,
         }
     }
 
-    pub(crate) fn set_original_len(mut self, original_len: bool) -> Self {
+    pub(crate) fn set_original_len(&mut self, original_len: bool) -> &mut Self {
         self.original_len = original_len;
         self
     }
@@ -124,18 +153,6 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
-    /// Same as aggregated, but does not update group tuples, any call after this is invalid
-    pub(crate) fn aggregated_final(&self) -> Cow<'_, Series> {
-        match &self.series {
-            AggState::Flat(s) => Cow::Owned(
-                s.agg_list(&self.groups)
-                    .expect("should be able to aggregate this to list"),
-            ),
-            AggState::List(s) => Cow::Borrowed(s),
-            AggState::None => unreachable!(),
-        }
-    }
-
     pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
         match &self.series {
             AggState::Flat(s) => {
@@ -145,24 +162,8 @@ impl<'a> AggregationContext<'a> {
                 );
 
                 if !self.sorted {
-                    // the groups are unordered
-                    // and the series is aggregated with this groups
-                    // so we need to recreate new grouptuples that
-                    // match the exploded Series
-                    let mut count = 0u32;
-                    let groups: GroupTuples = self
-                        .groups
-                        .iter()
-                        .map(|g| {
-                            let add = g.1.len() as u32;
-                            let new_count = count + add;
-                            let out = (count, (count..new_count).collect::<Vec<_>>());
-                            count = new_count;
-                            out
-                        })
-                        .collect();
                     self.sorted = true;
-                    self.groups = Cow::Owned(groups);
+                    self.update_groups = true;
                 };
                 out
             }
