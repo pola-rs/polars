@@ -62,48 +62,48 @@ impl PhysicalAggregation for AggregationExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let ac = self.expr.evaluate_on_groups(df, groups, state)?;
+        let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
         let new_name = fmt_groupby_column(ac.series().name(), self.agg_type);
 
         match self.agg_type {
             GroupByMethod::Min => {
-                let agg_s = ac.flat().agg_min(ac.groups.as_ref());
+                let agg_s = ac.flat().into_owned().agg_min(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Max => {
-                let agg_s = ac.flat().agg_max(ac.groups.as_ref());
+                let agg_s = ac.flat().into_owned().agg_max(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Median => {
-                let agg_s = ac.flat().agg_median(ac.groups.as_ref());
+                let agg_s = ac.flat().into_owned().agg_median(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Mean => {
-                let agg_s = ac.flat().agg_mean(ac.groups.as_ref());
+                let agg_s = ac.flat().into_owned().agg_mean(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Sum => {
-                let agg_s = ac.flat().agg_sum(ac.groups.as_ref());
+                let agg_s = ac.flat().into_owned().agg_sum(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
                 let mut ca: NoNull<UInt32Chunked> =
-                    ac.groups.iter().map(|(_, g)| g.len() as u32).collect();
+                    ac.groups().iter().map(|(_, g)| g.len() as u32).collect();
                 ca.rename(&new_name);
                 Ok(Some(ca.into_inner().into_series()))
             }
             GroupByMethod::First => {
-                let mut agg_s = ac.flat().agg_first(ac.groups.as_ref());
+                let mut agg_s = ac.flat().into_owned().agg_first(ac.groups());
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::Last => {
-                let mut agg_s = ac.flat().agg_last(ac.groups.as_ref());
+                let mut agg_s = ac.flat().into_owned().agg_last(ac.groups());
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::NUnique => {
-                let opt_agg = ac.flat().agg_n_unique(ac.groups.as_ref());
+                let opt_agg = ac.flat().into_owned().agg_n_unique(ac.groups());
                 let opt_agg = opt_agg.map(|mut agg| {
                     agg.rename(&new_name);
                     agg.into_series()
@@ -111,12 +111,12 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(opt_agg)
             }
             GroupByMethod::List => {
-                let agg = ac.aggregated_final().into_owned();
+                let agg = ac.aggregated().into_owned();
                 Ok(rename_option_series(Some(agg), &new_name))
             }
             GroupByMethod::Groups => {
                 let mut column: ListChunked = ac
-                    .groups
+                    .groups()
                     .iter()
                     .map(|(_first, idx)| {
                         let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
@@ -128,11 +128,11 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(Some(column.into_series()))
             }
             GroupByMethod::Std => {
-                let agg_s = ac.flat().agg_std(ac.groups.as_ref());
+                let agg_s = ac.flat().into_owned().agg_std(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Var => {
-                let agg_s = ac.flat().agg_var(ac.groups.as_ref());
+                let agg_s = ac.flat().into_owned().agg_var(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Quantile(_) => {

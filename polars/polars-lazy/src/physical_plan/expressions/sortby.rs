@@ -50,19 +50,17 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
-        let ac_sort_by = self.by.evaluate_on_groups(df, groups, state)?;
+        let mut ac_sort_by = self.by.evaluate_on_groups(df, groups, state)?;
+        let sort_by_s = ac_sort_by.flat().into_owned();
+        let groups = ac_sort_by.groups();
 
-        let groups = ac_sort_by
-            .groups
+        let groups = groups
             .iter()
             .map(|(_first, idx)| {
                 // Safety:
                 // Group tuples are always in bounds
-                let group = unsafe {
-                    ac_sort_by
-                        .flat()
-                        .take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
-                };
+                let group =
+                    unsafe { sort_by_s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
 
                 let sorted_idx = group.argsort(self.reverse);
 
