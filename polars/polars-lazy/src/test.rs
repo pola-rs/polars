@@ -1453,3 +1453,33 @@ fn test_shift_and_fill_window_function() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_cumsum_agg_as_key() -> Result<()> {
+    let df = df![
+        "depth" => &[0i32, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "soil" => &["peat", "peat", "peat", "silt", "silt", "silt", "sand", "sand", "peat", "peat"]
+    ]?;
+    // this checks if the grouper can work with the complex query as a key
+
+    let out = df
+        .lazy()
+        .groupby(vec![col("soil")
+            .neq(col("soil").shift_and_fill(1, col("soil").first()))
+            .cum_sum(false)
+            .alias("key")])
+        .agg(vec![col("depth").max().keep_name()])
+        .sort("depth", false)
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.column("key")?.u32()?),
+        &[Some(0), Some(1), Some(2), Some(3)]
+    );
+    assert_eq!(
+        Vec::from(out.column("depth")?.i32()?),
+        &[Some(2), Some(5), Some(7), Some(9)]
+    );
+
+    Ok(())
+}

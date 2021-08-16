@@ -40,6 +40,7 @@ cross_join = ["polars-core/cross_join"]
 dot_product = ["polars-core/dot_product"]
 concat_str = ["polars-core/concat_str"]
 mode = ["polars-core/mode"]
+cum_agg = ["polars-core/cum_agg"]
 
 # no guarantees whatsoever
 private = []
