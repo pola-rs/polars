@@ -65,6 +65,8 @@ mode = []
 extract_jsonpath = ["serde_json", "jsonpath_lib"]
 # allow groupby operation on list type
 groupby_list = []
+# cum_sum, cum_min, etc.
+cum_agg = []
 
 
 # opt-in datatypes for Series
@@ -104,7 +106,8 @@ docs-selection = [
     "concat_str",
     "row_hash",
     "mode",
-    "extract_jsonpath"
+    "extract_jsonpath",
+    "cum_agg"
 ]
 
 [dependencies]

@@ -64,6 +64,21 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            #[cfg(feature = "cum_agg")]
+            fn _cum_max(&self, reverse: bool) -> Series {
+                self.0.cum_max(reverse).into_series()
+            }
+
+            #[cfg(feature = "cum_agg")]
+            fn _cum_min(&self, reverse: bool) -> Series {
+                self.0.cum_min(reverse).into_series()
+            }
+
+            #[cfg(feature = "cum_agg")]
+            fn _cum_sum(&self, reverse: bool) -> Series {
+                self.0.cum_sum(reverse).into_series()
+            }
+
             #[cfg(feature = "asof_join")]
             fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
                 self.0.join_asof(other.as_ref().as_ref())
@@ -221,18 +236,6 @@ macro_rules! impl_dyn_series {
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
-            fn cum_max(&self, reverse: bool) -> Series {
-                self.0.cum_max(reverse).into_series()
-            }
-
-            fn cum_min(&self, reverse: bool) -> Series {
-                self.0.cum_min(reverse).into_series()
-            }
-
-            fn cum_sum(&self, reverse: bool) -> Series {
-                self.0.cum_sum(reverse).into_series()
-            }
-
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);
             }
