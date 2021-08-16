@@ -154,6 +154,14 @@ impl<'a> AggregationContext<'a> {
     }
 
     pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
+        // we do this here because of mutable borrow overlaps.
+        // The groups are determined lazily and in case of a flat
+        // series we use the groups to aggregate the list
+        // because this is lazy, we first must to update the groups
+        // by calling .groups()
+        if let AggState::Flat(_) = self.series {
+            self.groups();
+        }
         match &self.series {
             AggState::Flat(s) => {
                 let out = Cow::Owned(
