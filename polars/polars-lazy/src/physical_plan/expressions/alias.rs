@@ -1,3 +1,4 @@
+use crate::physical_plan::expressions::utils::as_aggregated;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
@@ -69,8 +70,7 @@ impl PhysicalAggregation for AliasExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let agg_expr = self.physical_expr.as_agg_expr()?;
-        let opt_agg = agg_expr.aggregate(df, groups, state)?;
+        let opt_agg = as_aggregated(self.physical_expr.as_ref(), df, groups, state)?;
         Ok(opt_agg.map(|mut agg| {
             agg.rename(&self.name);
             agg
