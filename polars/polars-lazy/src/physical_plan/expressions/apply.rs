@@ -57,10 +57,10 @@ impl PhysicalExpr for ApplyExpr {
         match self.collect_groups {
             ApplyOption::ApplyGroups => {
                 let mut container = vec![Default::default()];
-                let name = ac.series().name();
+                let name = ac.series().name().to_string();
 
                 let mut ca: ListChunked = ac
-                    .aggregated_final()
+                    .aggregated()
                     .list()
                     .unwrap()
                     .into_iter()
@@ -71,7 +71,7 @@ impl PhysicalExpr for ApplyExpr {
                         })
                     })
                     .collect();
-                ca.rename(name);
+                ca.rename(&name);
                 ac.with_series(ca.into_series());
                 Ok(ac)
             }
@@ -127,12 +127,12 @@ impl PhysicalAggregation for ApplyExpr {
         match self.collect_groups {
             ApplyOption::ApplyGroups => {
                 let mut container = vec![Default::default()];
-                let name = ac.series().name();
+                let name = ac.series().name().to_string();
 
                 let mut all_unit_length = true;
 
                 let mut ca: ListChunked = ac
-                    .aggregated_final()
+                    .aggregated()
                     .list()
                     .unwrap()
                     .into_iter()
@@ -150,7 +150,7 @@ impl PhysicalAggregation for ApplyExpr {
                         })
                     })
                     .collect();
-                ca.rename(name);
+                ca.rename(&name);
                 if all_unit_length {
                     return Ok(Some(ca.explode()?));
                 }
@@ -159,7 +159,7 @@ impl PhysicalAggregation for ApplyExpr {
             ApplyOption::ApplyFlat => self.function.call_udf(&mut [ac.take()]).map(Some),
             ApplyOption::ApplyList => self
                 .function
-                .call_udf(&mut [ac.aggregated_final().into_owned()])
+                .call_udf(&mut [ac.aggregated().into_owned()])
                 .map(Some),
         }
     }
