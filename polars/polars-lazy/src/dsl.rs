@@ -1234,6 +1234,13 @@ impl Expr {
             .collect();
         Expr::Exclude(Box::new(self), v)
     }
+
+    // Interpolate None values
+    #[cfg(feature = "interpolate")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
+    pub fn interpolate(self) -> Expr {
+        self.apply(|s| Ok(s.interpolate()), None)
+    }
 }
 
 /// Create a Column Expression based on a column name.

@@ -364,6 +364,11 @@ macro_rules! impl_dyn_series {
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
+            #[cfg(feature = "interpolate")]
+            fn interpolate(&self) -> Series {
+                physical_dispatch!(self, interpolate,)
+            }
+
             fn rename(&mut self, name: &str) {
                 self.0.rename(name);
             }

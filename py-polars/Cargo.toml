@@ -66,7 +66,8 @@ features = [
     "extract_jsonpath",
     "lazy_regex",
     "cum_agg",
-    "rolling_window"
+    "rolling_window",
+    "interpolate"
 ]
 
 #[patch.crates-io]

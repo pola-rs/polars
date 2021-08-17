@@ -69,6 +69,7 @@ groupby_list = []
 cum_agg = []
 # rolling window functions
 rolling_window = []
+interpolate = []
 
 
 # opt-in datatypes for Series
@@ -112,7 +113,8 @@ docs-selection = [
     "mode",
     "extract_jsonpath",
     "cum_agg",
-    "rolling_window"
+    "rolling_window",
+    "interpolate"
 ]
 
 [dependencies]

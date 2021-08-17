@@ -994,6 +994,12 @@ class Expr:
 
         return self.map(inspect, return_dtype=None, agg_list=True)
 
+    def interpolate(self) -> "pl.Expr":
+        """
+        Interpolate intermediate values. The interpolation method is linear.
+        """
+        return wrap_expr(self._pyexpr.interpolate())
+
 
 class ExprStringNameSpace:
     """

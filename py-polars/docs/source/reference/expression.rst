@@ -139,6 +139,7 @@ Manipulation/ selection
     Expr.tail
     Expr.reinterpret
     Expr.drop_nulls
+    Expr.interpolate
 
 Column names
 ------------
