@@ -110,6 +110,7 @@ Manipulation/ selection
     DataFrame.rechunk
     DataFrame.pipe
     DataFrame.join
+    DataFrame.interpolate
 
 Apply
 -----

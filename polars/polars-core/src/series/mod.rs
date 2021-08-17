@@ -271,6 +271,9 @@ pub(crate) mod private {
 pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
+    #[cfg(feature = "interpolate")]
+    fn interpolate(&self) -> Series;
+
     /// Rename the Series.
     fn rename(&mut self, name: &str);
 

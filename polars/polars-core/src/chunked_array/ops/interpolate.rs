@@ -1,5 +1,8 @@
 use crate::prelude::*;
-use num::FromPrimitive;
+use crate::utils::arrow::buffer::MutableBuffer;
+use crate::utils::arrow::util::bit_util;
+use crate::utils::arrow::util::bit_util::unset_bit;
+use num::{FromPrimitive, Zero};
 use std::ops::{Add, Div, Mul, Sub};
 
 fn linear_itp<T>(low: T, step: T, diff: T, steps_n: T) -> T
@@ -16,14 +19,42 @@ where
         + Mul<Output = T::Native>
         + Add<Output = T::Native>
         + Div<Output = T::Native>
-        + FromPrimitive,
+        + FromPrimitive
+        + Zero,
 {
     fn interpolate(&self) -> Self {
+        // This implementation differs from pandas as that boundary None's are not removed
+        // this prevents a lot of errors due to expressions leading to different lengths
         if self.null_count() == 0 || self.null_count() == self.len() {
             return self.clone();
         }
+
+        // we first find the first and last so that we can set the null buffer
+        let mut first = 0;
+        let mut last = self.len();
+        // find first non None
+        for i in 0..self.len() {
+            // Safety: we just bound checked
+            if unsafe { self.get_unchecked(i).is_some() } {
+                first = i;
+                break;
+            }
+        }
+
+        // find last non None
+        for i in (0..self.len()).rev() {
+            if unsafe { self.get_unchecked(i).is_some() } {
+                last = i + 1;
+                break;
+            }
+        }
+
+        // fill av with first
         let mut av = AlignedVec::with_capacity(self.len());
         let mut iter = self.into_iter();
+        for _ in 0..first {
+            av.push(Zero::zero())
+        }
 
         let mut low_val = None;
         loop {
@@ -68,7 +99,25 @@ where
                 }
             }
         }
-        Self::new_from_aligned_vec(self.name(), av)
+        if first != 0 || last != self.len() {
+            let num_bytes = bit_util::ceil(self.len(), 8);
+            let mut validity = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
+            let validity_slice = validity.as_slice_mut();
+
+            for i in 0..first {
+                unset_bit(validity_slice, i)
+            }
+
+            for i in last..self.len() {
+                unset_bit(validity_slice, i);
+                av.push(Zero::zero())
+            }
+
+            let array = av.into_primitive_array::<T>(Some(validity.into()));
+            Self::new_from_chunks(self.name(), vec![Arc::new(array)])
+        } else {
+            Self::new_from_aligned_vec(self.name(), av)
+        }
     }
 }
 
@@ -76,28 +125,7 @@ macro_rules! interpolate {
     ($ca:ty) => {
         impl Interpolate for $ca {
             fn interpolate(&self) -> Self {
-                if self.null_count() == 0 || self.null_count() == self.len() {
-                    return self.clone();
-                }
-                let mut first = 0;
-                let mut last = self.len();
-                // find first non None
-                for i in 0..self.len() {
-                    // Safety: we just bound checked
-                    if unsafe { self.get_unchecked(i).is_some() } {
-                        first = i;
-                        break;
-                    }
-                }
-
-                // find last non None
-                for i in (0..self.len()).rev() {
-                    if unsafe { self.get_unchecked(i).is_some() } {
-                        last = i;
-                        break;
-                    }
-                }
-                self.slice(first as i64, last)
+                self.clone()
             }
         }
     };
@@ -108,30 +136,10 @@ interpolate!(ListChunked);
 interpolate!(BooleanChunked);
 interpolate!(CategoricalChunked);
 
+#[cfg(feature = "object")]
 impl<T: PolarsObject> Interpolate for ObjectChunked<T> {
     fn interpolate(&self) -> Self {
-        if self.null_count() == 0 || self.null_count() == self.len() {
-            return self.clone();
-        }
-        let mut first = 0;
-        let mut last = self.len();
-        // find first non None
-        for i in 0..self.len() {
-            // Safety: we just bound checked
-            if unsafe { self.get_unchecked(i).is_some() } {
-                first = i;
-                break;
-            }
-        }
-
-        // find last non None
-        for i in (0..self.len()).rev() {
-            if unsafe { self.get_unchecked(i).is_some() } {
-                last = i;
-                break;
-            }
-        }
-        self.slice(first as i64, last)
+        self.clone()
     }
 }
 
@@ -148,13 +156,33 @@ mod test {
             &[Some(1), Some(2), Some(3), Some(4), Some(5)]
         );
 
+        let ca =
+            UInt32Chunked::new_from_opt_slice("", &[None, Some(1), None, None, Some(4), Some(5)]);
+        let out = ca.interpolate();
+        assert_eq!(
+            Vec::from(&out),
+            &[None, Some(1), Some(2), Some(3), Some(4), Some(5)]
+        );
+
+        let ca = UInt32Chunked::new_from_opt_slice(
+            "",
+            &[None, Some(1), None, None, Some(4), Some(5), None],
+        );
+        let out = ca.interpolate();
+        assert_eq!(
+            Vec::from(&out),
+            &[None, Some(1), Some(2), Some(3), Some(4), Some(5), None]
+        );
+
         let ca = Utf8Chunked::new_from_opt_slice(
             "",
             &[None, Some("foo"), None, None, Some("bar"), None, None],
         );
 
         let out = ca.interpolate();
-        assert_eq!(Vec::from(&out), &[Some("foo"), None, None, Some("bar")]);
-        dbg!(out);
+        assert_eq!(
+            Vec::from(&out),
+            &[None, Some("foo"), None, None, Some("bar"), None, None]
+        );
     }
 }

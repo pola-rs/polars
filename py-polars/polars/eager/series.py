@@ -1572,6 +1572,12 @@ class Series:
         """
         return wrap_s(self._s.reinterpret(signed))
 
+    def interpolate(self) -> "Series":
+        """
+        Interpolate intermediate values. The interpolation method is linear.
+        """
+        return wrap_s(self._s.interpolate())
+
 
 class StringNameSpace:
     """

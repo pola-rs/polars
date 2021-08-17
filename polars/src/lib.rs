@@ -135,6 +135,7 @@
 //!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
 //!     - `cum_agg` - [cum_sum, cum_min, cum_max aggregation](crate::chunked_array::ops::CumAgg)
 //!     - `rolling_window` [rolling window functions, like rolling_mean](crate::chunked_array::ops::ChunkWindow)
+//!     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)

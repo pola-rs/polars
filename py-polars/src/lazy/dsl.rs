@@ -505,6 +505,9 @@ impl PyExpr {
     pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
         self.inner.clone().exclude(&columns).into()
     }
+    pub fn interpolate(&self) -> PyExpr {
+        self.inner.clone().interpolate().into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
