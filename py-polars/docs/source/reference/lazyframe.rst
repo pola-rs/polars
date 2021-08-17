@@ -55,6 +55,7 @@ Manipulation/ selection
     LazyFrame.drop_nulls
     LazyFrame.sort
     LazyFrame.melt
+    LazyFrame.interpolate
 
 Apply
 -----

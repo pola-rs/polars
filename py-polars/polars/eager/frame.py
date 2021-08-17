@@ -1397,6 +1397,8 @@ class DataFrame:
         length
             Length of the slice.
         """
+        if length < 0:
+            length = self.height - offset + length
         return wrap_df(self._df.slice(offset, length))
 
     def limit(self, length: int = 5) -> "DataFrame":
@@ -2321,6 +2323,12 @@ class DataFrame:
             seed parameter
         """
         return pl.eager.series.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
+
+    def interpolate(self) -> "DataFrame":
+        """
+        Interpolate intermediate values. The interpolation method is linear.
+        """
+        return self.select(pl.col("*").interpolate())  # type: ignore
 
 
 class GroupBy:

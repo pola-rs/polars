@@ -23,6 +23,7 @@ pub(crate) mod downcast;
 pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
+#[cfg(feature = "interpolate")]
 pub(crate) mod interpolate;
 #[cfg(feature = "is_in")]
 pub(crate) mod is_in;
@@ -39,6 +40,7 @@ pub(crate) mod window;
 #[cfg(feature = "zip_with")]
 pub(crate) mod zip;
 
+#[cfg(feature = "interpolate")]
 pub trait Interpolate {
     fn interpolate(&self) -> Self;
 }
