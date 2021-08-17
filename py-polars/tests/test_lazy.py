@@ -365,3 +365,11 @@ def test_to_python_datetime():
         == pl.Object
     )
     assert df.select(col("a").cast(pl.Date64).dt.timestamp())["a"].dtype == pl.Int64
+
+
+def test_interpolate():
+    df = pl.DataFrame({"a": [1, None, 3]})
+    assert df.select(col("a").interpolate())["a"] == [1, 2, 3]
+    assert df["a"].interpolate() == [1, 2, 3]
+    assert df.interpolate()["a"] == [1, 2, 3]
+    assert df.lazy().interpolate().collect()["a"] == [1, 2, 3]

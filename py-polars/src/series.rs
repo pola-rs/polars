@@ -1142,6 +1142,11 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn interpolate(&self) -> Self {
+        let s = self.series.interpolate();
+        s.into()
+    }
+
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         Ok(PyBytes::new(py, &bincode::serialize(&self.series).unwrap()).to_object(py))
     }

@@ -829,6 +829,12 @@ class LazyFrame:
             projection_pushdown = False
         return wrap_ldf(self._ldf.map(f, predicate_pushdown, projection_pushdown))
 
+    def interpolate(self) -> "LazyFrame":
+        """
+        Interpolate intermediate values. The interpolation method is linear.
+        """
+        return self.select(pl.col("*").interpolate())  # type: ignore
+
 
 class LazyGroupBy:
     """

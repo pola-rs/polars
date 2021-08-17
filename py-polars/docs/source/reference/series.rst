@@ -131,6 +131,7 @@ Manipulation/ selection
     Series.set_at_idx
     Series.fill_none
     Series.zip_with
+    Series.interpolate
 
 Various
 --------
