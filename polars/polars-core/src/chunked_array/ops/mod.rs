@@ -24,6 +24,7 @@ pub(crate) mod downcast;
 pub(crate) mod explode;
 pub(crate) mod fill_none;
 pub(crate) mod filter;
+pub(crate) mod interpolate;
 #[cfg(feature = "is_in")]
 pub(crate) mod is_in;
 pub(crate) mod peaks;
@@ -38,6 +39,10 @@ pub(crate) mod unique;
 pub(crate) mod window;
 #[cfg(feature = "zip_with")]
 pub(crate) mod zip;
+
+pub trait Interpolate {
+    fn interpolate(&self) -> Self;
+}
 
 #[cfg(feature = "reinterpret")]
 pub trait Reinterpret {
