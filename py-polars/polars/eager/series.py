@@ -466,6 +466,8 @@ class Series:
         return out
 
     def __setitem__(self, key: Any, value: Any) -> None:
+        if isinstance(value, list):
+            raise ValueError("cannot set with a list as value, use a primitive value")
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
