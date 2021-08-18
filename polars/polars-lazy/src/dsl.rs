@@ -1200,7 +1200,7 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
-        self.map(
+        self.apply(
             |s| s.is_first().map(|ca| ca.into_series()),
             Some(DataType::Boolean),
         )
@@ -1218,9 +1218,9 @@ impl Expr {
 
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
-    /// Compute the mode(s) of this column. These is the most occurring value.
+    /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
-        self.map(|s| s.mode().map(|ca| ca.into_series()), None)
+        self.apply(|s| s.mode().map(|ca| ca.into_series()), None)
     }
 
     /// Keep the original root name

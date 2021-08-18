@@ -5,6 +5,19 @@ use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
+macro_rules! try_apply {
+    ($self:expr, $f:expr) => {{
+        if $self.null_count() == 0 {
+            $self.into_no_null_iter().map($f).collect()
+        } else {
+            $self
+                .into_iter()
+                .map(|opt_v| opt_v.map($f).transpose())
+                .collect()
+        }
+    }};
+}
+
 macro_rules! apply {
     ($self:expr, $f:expr) => {{
         if $self.null_count() == 0 {
@@ -92,6 +105,23 @@ where
             })
             .collect();
         ChunkedArray::<T>::new_from_chunks(self.name(), chunks)
+    }
+
+    fn try_apply<F>(&'a self, f: F) -> Result<Self>
+    where
+        F: Fn(T::Native) -> Result<T::Native> + Copy,
+    {
+        let mut ca: ChunkedArray<T> = self
+            .data_views()
+            .into_iter()
+            .zip(self.null_bits())
+            .map(|(slice, (_null_count, opt_buffer))| {
+                let vec: Result<AlignedVec<_>> = slice.iter().copied().map(f).collect();
+                Ok((vec?, opt_buffer.cloned()))
+            })
+            .collect::<Result<_>>()?;
+        ca.rename(self.name());
+        Ok(ca)
     }
 
     fn apply_on_opt<F>(&'a self, f: F) -> Self
@@ -193,6 +223,13 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         apply!(self, f)
     }
 
+    fn try_apply<F>(&self, f: F) -> Result<Self>
+    where
+        F: Fn(bool) -> Result<bool> + Copy,
+    {
+        try_apply!(self, f)
+    }
+
     fn apply_on_opt<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<bool>) -> Option<bool> + Copy,
@@ -273,6 +310,13 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
         apply!(self, f)
+    }
+
+    fn try_apply<F>(&'a self, f: F) -> Result<Self>
+    where
+        F: Fn(&'a str) -> Result<Cow<'a, str>> + Copy,
+    {
+        try_apply!(self, f)
     }
 
     fn apply_on_opt<F>(&'a self, f: F) -> Self
@@ -435,13 +479,29 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
     where
         F: Fn(Series) -> Series + Copy,
     {
+        if self.is_empty() {
+            return self.clone();
+        }
         apply!(self, f)
+    }
+
+    fn try_apply<F>(&'a self, f: F) -> Result<Self>
+    where
+        F: Fn(Series) -> Result<Series> + Copy,
+    {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+        try_apply!(self, f)
     }
 
     fn apply_on_opt<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<Series>) -> Option<Series> + Copy,
     {
+        if self.is_empty() {
+            return self.clone();
+        }
         self.into_iter().map(f).collect_trusted()
     }
 
@@ -450,6 +510,9 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
     where
         F: Fn((usize, Series)) -> Series + Copy,
     {
+        if self.is_empty() {
+            return self.clone();
+        }
         apply_enumerate!(self, f)
     }
 
@@ -458,6 +521,9 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
     where
         F: Fn((usize, Option<Series>)) -> Option<Series> + Copy,
     {
+        if self.is_empty() {
+            return self.clone();
+        }
         self.into_iter().enumerate().map(f).collect_trusted()
     }
 
@@ -510,6 +576,13 @@ where
         let mut ca: ObjectChunked<T> = self.into_iter().map(|opt_v| opt_v.map(f)).collect();
         ca.rename(self.name());
         ca
+    }
+
+    fn try_apply<F>(&'a self, _f: F) -> Result<Self>
+    where
+        F: Fn(&'a T) -> Result<T> + Copy,
+    {
+        todo!()
     }
 
     fn apply_on_opt<F>(&'a self, f: F) -> Self

@@ -451,6 +451,11 @@ pub trait ChunkApply<'a, A, B> {
     where
         F: Fn(A) -> B + Copy;
 
+    fn try_apply<F>(&'a self, f: F) -> Result<Self>
+    where
+        F: Fn(A) -> Result<B> + Copy,
+        Self: Sized;
+
     /// Apply a closure elementwise including null values.
     fn apply_on_opt<F>(&'a self, f: F) -> Self
     where
