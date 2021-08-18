@@ -456,6 +456,13 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Fill NaN values in the DataFrame
+    pub fn fill_nan(self, fill_value: Expr) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().fill_nan(fill_value).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Caches the result into a new LazyFrame. This should be used to prevent computations
     /// running multiple times
     pub fn cache(self) -> Self {

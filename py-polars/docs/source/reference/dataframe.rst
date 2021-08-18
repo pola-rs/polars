@@ -90,6 +90,7 @@ Manipulation/ selection
     DataFrame.clone
     DataFrame.get_columns
     DataFrame.fill_none
+    DataFrame.fill_nan
     DataFrame.explode
     DataFrame.melt
     DataFrame.shift
