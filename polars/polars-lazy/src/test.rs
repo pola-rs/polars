@@ -1542,3 +1542,24 @@ fn test_exploded_window_function() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn test_reverse_in_groups() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .sort("fruits", false)
+        .select(vec![col("B")
+            .reverse()
+            .over(vec![col("fruits")])
+            .explode()
+            .alias("rev")])
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.column("rev")?.i32()?),
+        &[Some(2), Some(3), Some(1), Some(4), Some(5)]
+    );
+    Ok(())
+}

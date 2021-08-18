@@ -32,6 +32,18 @@ pub(crate) enum AggState {
     None,
 }
 
+// lazy update strategy
+pub(crate) enum UpdateGroups {
+    /// don't update groups
+    No,
+    /// use the length of the current groups to determine new sorted indexes, preferred
+    WithGroupsLen,
+    /// use the series list offsets to determine the new group lengths
+    /// this one should be used when the length has changed. Note that
+    /// the series should be aggregated state or else it will panic.
+    WithSeriesLen,
+}
+
 impl Default for AggState {
     fn default() -> Self {
         AggState::None
@@ -52,7 +64,7 @@ pub struct AggregationContext<'a> {
     /// This is used to determined if we need to update the groups
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
-    update_groups: bool,
+    update_groups: UpdateGroups,
     /// This is true when the Series and GroupTuples still have all
     /// their original values. Not the case when filtered
     original_len: bool,
@@ -60,25 +72,46 @@ pub struct AggregationContext<'a> {
 
 impl<'a> AggregationContext<'a> {
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupTuples> {
-        if self.update_groups {
-            // the groups are unordered
-            // and the series is aggregated with this groups
-            // so we need to recreate new grouptuples that
-            // match the exploded Series
-            let mut count = 0u32;
-            let groups: GroupTuples = self
-                .groups
-                .iter()
-                .map(|g| {
-                    let add = g.1.len() as u32;
-                    let new_count = count + add;
-                    let out = (count, (count..new_count).collect::<Vec<_>>());
-                    count = new_count;
-                    out
-                })
-                .collect();
-            self.groups = Cow::Owned(groups);
-            self.update_groups = false;
+        match self.update_groups {
+            UpdateGroups::No => {}
+            UpdateGroups::WithGroupsLen => {
+                // the groups are unordered
+                // and the series is aggregated with this groups
+                // so we need to recreate new grouptuples that
+                // match the exploded Series
+                let mut count = 0u32;
+                let groups: GroupTuples = self
+                    .groups
+                    .iter()
+                    .map(|g| {
+                        let add = g.1.len() as u32;
+                        let new_count = count + add;
+                        let out = (count, (count..new_count).collect::<Vec<_>>());
+                        count = new_count;
+                        out
+                    })
+                    .collect();
+                self.groups = Cow::Owned(groups);
+                self.update_groups = UpdateGroups::No;
+            }
+            UpdateGroups::WithSeriesLen => {
+                let mut count = 0u32;
+                let groups: GroupTuples = self
+                    .series()
+                    .list()
+                    .expect("impl error, should be a list at this point")
+                    .into_no_null_iter()
+                    .map(|s| {
+                        let add = s.len() as u32;
+                        let new_count = count + add;
+                        let out = (count, (count..new_count).collect::<Vec<_>>());
+                        count = new_count;
+                        out
+                    })
+                    .collect();
+                self.groups = Cow::Owned(groups);
+                self.update_groups = UpdateGroups::No;
+            }
         }
         &self.groups
     }
@@ -131,13 +164,18 @@ impl<'a> AggregationContext<'a> {
             series,
             groups,
             sorted: false,
-            update_groups: false,
+            update_groups: UpdateGroups::No,
             original_len: true,
         }
     }
 
     pub(crate) fn set_original_len(&mut self, original_len: bool) -> &mut Self {
         self.original_len = original_len;
+        self
+    }
+
+    pub(crate) fn with_update_groups(&mut self, update: UpdateGroups) -> &mut Self {
+        self.update_groups = update;
         self
     }
 
@@ -172,7 +210,7 @@ impl<'a> AggregationContext<'a> {
 
                 if !self.sorted {
                     self.sorted = true;
-                    self.update_groups = true;
+                    self.update_groups = UpdateGroups::WithGroupsLen;
                 };
                 out
             }

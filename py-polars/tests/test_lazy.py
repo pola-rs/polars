@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import polars as pl
 from polars.datatypes import *
@@ -379,3 +380,22 @@ def test_fill_nan():
     df = pl.DataFrame({"a": [1.0, np.nan, 3.0]})
     assert df.fill_nan(2.0)["a"] == [1.0, 2.0, 3.0]
     assert df.lazy().fill_nan(2.0).collect()["a"] == [1.0, 2.0, 3.0]
+
+
+def test_take(fruits_cars):
+    df = fruits_cars
+
+    # out of bounds error
+    with pytest.raises(RuntimeError):
+        (
+            df.sort("fruits").select(
+                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
+            )
+        )
+
+    out = df.sort("fruits").select(
+        [col("B").reverse().take([0, 1]).list().over("fruits"), "fruits"]
+    )
+
+    out[0, "B"] == [2, 3]
+    out[4, "B"] == [1, 4]
