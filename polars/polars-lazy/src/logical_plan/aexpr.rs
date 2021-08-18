@@ -83,6 +83,7 @@ pub enum AExpr {
         function: Node,
         partition_by: Vec<Node>,
         order_by: Option<Node>,
+        options: WindowOptions,
     },
     Wildcard,
     Slice {
