@@ -14,6 +14,16 @@ fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(path.to_string()).finish()
 }
 
+fn fruits_cars() -> DataFrame {
+    df!(
+            "A"=> [1, 2, 3, 4, 5],
+            "fruits"=> ["banana", "banana", "apple", "apple", "banana"],
+            "B"=> [5, 4, 3, 2, 1],
+            "cars"=> ["beetle", "audi", "beetle", "beetle", "beetle"]
+    )
+    .unwrap()
+}
+
 #[test]
 fn test_lazy_ternary() {
     let df = get_df()
@@ -813,13 +823,7 @@ fn test_lazy_partition_agg() {
 
 #[test]
 fn test_lazy_groupby_apply() {
-    let df = df! {
-        "A" => &[1, 2, 3, 4, 5],
-        "fruits" => &["banana", "banana", "apple", "apple", "banana"],
-        "B" => &[5, 4, 3, 2, 1],
-        "cars" => &["beetle", "audi", "beetle", "beetle", "beetle"]
-    }
-    .unwrap();
+    let df = fruits_cars();
 
     df.lazy()
         .groupby(vec![col("fruits")])
@@ -1415,12 +1419,7 @@ fn test_filter_in_groupby_agg() -> Result<()> {
 
 #[test]
 fn test_shift_and_fill_window_function() -> Result<()> {
-    let df = df!(
-            "A"=> [1, 2, 3, 4, 5],
-            "fruits"=> ["banana", "banana", "apple", "apple", "banana"],
-            "B"=> [5, 4, 3, 2, 1],
-            "cars"=> ["beetle", "audi", "beetle", "beetle", "beetle"]
-    )?;
+    let df = fruits_cars();
 
     // a ternary expression with a final list aggregation
     let out1 = df
@@ -1486,12 +1485,7 @@ fn test_cumsum_agg_as_key() -> Result<()> {
 
 #[test]
 fn test_auto_list_agg() -> Result<()> {
-    let df = df!(
-            "A"=> [1, 2, 3, 4, 5],
-            "fruits"=> ["banana", "banana", "apple", "apple", "banana"],
-            "B"=> [5, 4, 3, 2, 1],
-            "cars"=> ["beetle", "audi", "beetle", "beetle", "beetle"]
-    )?;
+    let df = fruits_cars();
 
     // test if alias executor adds a list after shift and fill
     let out = df
@@ -1522,5 +1516,29 @@ fn test_auto_list_agg() -> Result<()> {
         .lazy()
         .select(vec![col("B").shift_and_fill(-1, lit(-1))])
         .collect()?;
+    Ok(())
+}
+
+#[test]
+fn test_exploded_window_function() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .sort("fruits", false)
+        .select(vec![
+            col("fruits"),
+            col("B")
+                .shift(1)
+                .over(vec![col("fruits")])
+                .explode()
+                .alias("shifted"),
+        ])
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.column("shifted")?.i32()?),
+        &[None, Some(3), None, Some(5), Some(4)]
+    );
     Ok(())
 }
