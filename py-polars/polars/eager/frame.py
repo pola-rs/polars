@@ -1012,6 +1012,18 @@ class DataFrame:
         elif isinstance(key, int):
             assert isinstance(value, pl.Series)
             self.replace_at_idx(key, value)
+        # df[["C", "D"]]
+        elif isinstance(key, list):
+            value = np.array(value)
+            if len(value.shape) != 2:
+                raise ValueError("can only set multiple columns with 2D matrix")
+            if value.shape[1] != len(key):
+                raise ValueError(
+                    "matrix columns should be equal to list use to determine column names"
+                )
+            for (i, name) in enumerate(key):
+                self[name] = value[:, i]
+
         # df[a, b]
         elif isinstance(key, tuple):
             row_selection, col_selection = key
