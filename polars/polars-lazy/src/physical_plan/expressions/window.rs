@@ -15,6 +15,7 @@ pub struct WindowExpr {
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
+    pub(crate) options: WindowOptions,
 }
 
 impl PhysicalExpr for WindowExpr {
@@ -37,10 +38,14 @@ impl PhysicalExpr for WindowExpr {
             .collect::<Result<Vec<_>>>()?;
 
         let mut gb = df.groupby_with_series(groupby_columns.clone(), true)?;
-        let groups = std::mem::take(gb.get_groups_mut());
+        let mut groups = std::mem::take(gb.get_groups_mut());
+
+        // if we flatten this column we need to make sure the groups are sorted.
+        if self.options.explode {
+            groups.sort_unstable_by_key(|t| t.0);
+        }
 
         // 2. create GroupBy object and apply aggregation
-
         let apply_columns = self.apply_columns.iter().map(|s| s.as_str()).collect();
         let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
@@ -73,6 +78,13 @@ impl PhysicalExpr for WindowExpr {
 
         // 3. get the join tuples and use them to take the new Series
         let out_column = out.select_at_idx(out.width() - 1).unwrap();
+        if self.options.explode {
+            let mut out = out_column.clone();
+            if let Some(name) = &self.out_name {
+                out.rename(name.as_str());
+            }
+            return Ok(out);
+        }
 
         let opt_join_tuples = if groupby_columns.len() == 1 {
             // group key from right column

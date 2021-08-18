@@ -846,6 +846,19 @@ class Expr:
 
         return self.map(wrap_f, agg_list=True)
 
+    def flatten(self) -> "Expr":
+        """
+        Alias for explode.
+
+        Explode a list or utf8 Series. This means that every item is expanded to a new row.
+
+        Returns
+        -------
+        Exploded Series of same dtype
+        """
+
+        return wrap_expr(self._pyexpr.explode())
+
     def explode(self) -> "Expr":
         """
         Explode a list or utf8 Series. This means that every item is expanded to a new row.

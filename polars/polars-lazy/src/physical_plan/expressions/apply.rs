@@ -12,7 +12,7 @@ pub struct ApplyExpr {
     pub function: NoEq<Arc<dyn SeriesUdf>>,
     pub output_type: Option<DataType>,
     pub expr: Expr,
-    pub collect_groups: ApplyOption,
+    pub collect_groups: ApplyOptions,
 }
 
 impl PhysicalExpr for ApplyExpr {
@@ -55,7 +55,7 @@ impl PhysicalExpr for ApplyExpr {
         };
 
         match self.collect_groups {
-            ApplyOption::ApplyGroups => {
+            ApplyOptions::ApplyGroups => {
                 let mut container = vec![Default::default()];
                 let name = ac.series().name().to_string();
 
@@ -75,12 +75,12 @@ impl PhysicalExpr for ApplyExpr {
                 ac.with_series(ca.into_series());
                 Ok(ac)
             }
-            ApplyOption::ApplyFlat => {
+            ApplyOptions::ApplyFlat => {
                 let s = self.function.call_udf(&mut [ac.take()])?;
                 ac.with_series(s);
                 Ok(ac)
             }
-            ApplyOption::ApplyList => {
+            ApplyOptions::ApplyList => {
                 let s = self
                     .function
                     .call_udf(&mut [ac.aggregated().into_owned()])?;
@@ -118,7 +118,7 @@ impl PhysicalAggregation for ApplyExpr {
         let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
         match self.collect_groups {
-            ApplyOption::ApplyGroups => {
+            ApplyOptions::ApplyGroups => {
                 let mut container = vec![Default::default()];
                 let name = ac.series().name().to_string();
 
@@ -149,8 +149,8 @@ impl PhysicalAggregation for ApplyExpr {
                 }
                 Ok(Some(ca.into_series()))
             }
-            ApplyOption::ApplyFlat => self.function.call_udf(&mut [ac.take()]).map(Some),
-            ApplyOption::ApplyList => self
+            ApplyOptions::ApplyFlat => self.function.call_udf(&mut [ac.take()]).map(Some),
+            ApplyOptions::ApplyList => self
                 .function
                 .call_udf(&mut [ac.aggregated().into_owned()])
                 .map(Some),
