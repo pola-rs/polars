@@ -1863,7 +1863,7 @@ class DataFrame:
 
     def fill_none(self, strategy: Union[str, "pl.Expr"]) -> "DataFrame":
         """
-        Fill None values by a filling strategy or an Expression evaluation.
+        Fill None/missing values by a filling strategy or an Expression evaluation.
 
         Parameters
         ----------
@@ -1883,10 +1883,30 @@ class DataFrame:
             DataFrame with None replaced with the filling strategy.
         """
         if isinstance(strategy, pl.Expr):
-            return self.lazy().fill_none(strategy).collect()
+            return self.lazy().fill_none(strategy).collect(no_optimization=True)
         if not isinstance(strategy, str):
             return self.fill_none(pl.lit(strategy))
         return wrap_df(self._df.fill_none(strategy))
+
+    def fill_nan(self, fill_value: "pl.Expr") -> "DataFrame":
+        """
+        Fill None/missing values by a an Expression evaluation.
+
+        ..warning::
+
+            NOTE that floating point NaN (No a Number) are not missing values!
+            to replace missing values, use `fill_none`.
+
+        Parameters
+        ----------
+        fill_value
+            value to fill NaN with
+
+        Returns
+        -------
+            DataFrame with NaN replaced with fill_value
+        """
+        return self.lazy().fill_nan(fill_value).collect(no_optimization=True)
 
     def explode(
         self, columns: Union[str, tp.List[str], "pl.Expr", tp.List["pl.Expr"]]
