@@ -894,7 +894,7 @@ impl DefaultPlanner {
                     function,
                     output_type: None,
                     expr: node_to_exp(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyFlat,
+                    collect_groups: ApplyOptions::ApplyGroups,
                 }))
             }
             Duplicated(expr) => {
@@ -908,7 +908,7 @@ impl DefaultPlanner {
                     function,
                     output_type: None,
                     expr: node_to_exp(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyFlat,
+                    collect_groups: ApplyOptions::ApplyGroups,
                 }))
             }
             IsUnique(expr) => {
@@ -922,7 +922,7 @@ impl DefaultPlanner {
                     function,
                     output_type: None,
                     expr: node_to_exp(expression, expr_arena),
-                    collect_groups: ApplyOptions::ApplyFlat,
+                    collect_groups: ApplyOptions::ApplyGroups,
                 }))
             }
             Explode(expr) => {

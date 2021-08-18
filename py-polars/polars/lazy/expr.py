@@ -2,6 +2,8 @@ import typing as tp
 from datetime import datetime
 from typing import Any, Callable, Optional, Sequence, Type, Union
 
+import numpy as np
+
 import polars as pl
 
 try:
@@ -521,7 +523,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by._pyexpr, reverse))
 
-    def take(self, index: "Expr") -> "Expr":
+    def take(self, index: Union[tp.List[int], "Expr", "pl.Series"]) -> "Expr":
         """
         Take values by index.
 
@@ -534,8 +536,13 @@ class Expr:
         -------
         Values taken by index
         """
-        index = expr_to_lit_or_expr(index, str_to_lit=False)
-        return wrap_expr(self._pyexpr.take(index._pyexpr))
+        if isinstance(index, (list, np.ndarray)):
+            index = pl.lit(pl.Series("", index, dtype=pl.UInt32))  # type: ignore
+        elif isinstance(index, pl.Series):
+            index = pl.lit(index)  # type: ignore
+        else:
+            index = expr_to_lit_or_expr(index, str_to_lit=False)  # type: ignore
+        return wrap_expr(self._pyexpr.take(index._pyexpr))  # type: ignore
 
     def shift(self, periods: int = 1) -> "Expr":
         """

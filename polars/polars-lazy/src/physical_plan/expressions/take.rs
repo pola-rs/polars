@@ -35,8 +35,17 @@ impl PhysicalExpr for TakeExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
-        let out = self.finish(df, state, ac.flat().into_owned())?;
-        ac.with_series(out);
+        let idx = self.idx.evaluate(df, state)?;
+        let idx_ca = idx.u32()?;
+
+        let taken = ac
+            .aggregated()
+            .list()
+            .unwrap()
+            .try_apply(|s| s.take(idx_ca))?;
+
+        ac.with_update_groups(UpdateGroups::WithSeriesLen)
+            .with_series(taken.into_series());
         Ok(ac)
     }
 
