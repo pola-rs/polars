@@ -114,7 +114,7 @@ where
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ApplyOption {
+pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
     ApplyGroups,
@@ -124,11 +124,18 @@ pub enum ApplyOption {
     ApplyFlat,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct WindowOptions {
+    /// Explode the aggregated list and just do a hstack instead of a join
+    /// this requires the groups to be sorted to make any sense
+    pub(crate) explode: bool,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    pub(crate) collect_groups: ApplyOption,
+    pub(crate) collect_groups: ApplyOptions,
     /// There can be two ways of expanding wildcards:
     ///
     /// Say the schema is 'a', 'b' and there is a function f
@@ -256,6 +263,7 @@ pub enum Expr {
         function: Box<Expr>,
         partition_by: Vec<Expr>,
         order_by: Option<Box<Expr>>,
+        options: WindowOptions,
     },
     Wildcard,
     Slice {
@@ -295,6 +303,7 @@ impl fmt::Debug for Expr {
                 function,
                 partition_by,
                 order_by,
+                ..
             } => write!(
                 f,
                 "{:?} OVER (PARTITION BY {:?} ORDER BY {:?}",
@@ -635,9 +644,33 @@ impl Expr {
         AggExpr::AggGroups(Box::new(self)).into()
     }
 
+    /// Alias for explode
+    pub fn flatten(self) -> Self {
+        self.explode()
+    }
+
     /// Explode the utf8/ list column
     pub fn explode(self) -> Self {
-        Expr::Explode(Box::new(self))
+        // if we explode right after a window function we don't self join, but just flatten
+        // the expression
+        if let Expr::Window {
+            function,
+            partition_by,
+            order_by,
+            mut options,
+        } = self
+        {
+            options.explode = true;
+
+            Expr::Explode(Box::new(Expr::Window {
+                function,
+                partition_by,
+                order_by,
+                options,
+            }))
+        } else {
+            Expr::Explode(Box::new(self))
+        }
     }
 
     /// Slice the Series.
@@ -741,7 +774,7 @@ impl Expr {
             function: NoEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOption::ApplyFlat,
+                collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
             },
         }
@@ -765,7 +798,7 @@ impl Expr {
             function: NoEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOption::ApplyList,
+                collect_groups: ApplyOptions::ApplyList,
                 input_wildcard_expansion: false,
             },
         }
@@ -791,7 +824,7 @@ impl Expr {
             function: NoEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOption::ApplyGroups,
+                collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
             },
         }
@@ -976,6 +1009,7 @@ impl Expr {
             function: Box::new(self),
             partition_by,
             order_by: None,
+            options: WindowOptions { explode: false },
         }
     }
 
@@ -1373,7 +1407,7 @@ where
             function,
             output_type: None,
             options: FunctionOptions {
-                collect_groups: ApplyOption::ApplyFlat,
+                collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,
             },
         }

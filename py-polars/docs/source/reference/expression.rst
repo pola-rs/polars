@@ -120,6 +120,7 @@ Manipulation/ selection
 
     Expr.slice
     Expr.explode
+    Expr.flatten
     Expr.take_every
     Expr.repeat_by
     Expr.round

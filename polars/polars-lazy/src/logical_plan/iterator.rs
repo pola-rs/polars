@@ -65,6 +65,7 @@ macro_rules! push_expr {
                 function,
                 partition_by,
                 order_by,
+                ..
             } => {
                 $push(function);
                 for e in partition_by {
@@ -218,6 +219,7 @@ impl AExpr {
                 function,
                 partition_by,
                 order_by,
+                options: _,
             } => {
                 push(function);
                 for e in partition_by {
