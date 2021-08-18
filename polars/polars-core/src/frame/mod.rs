@@ -1668,6 +1668,7 @@ impl DataFrame {
 
     /// Hash and combine the row values
     #[cfg(feature = "row_hash")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "row_hash")))]
     pub fn hash_rows(&self, hasher_builder: Option<RandomState>) -> Result<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
         let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder);
@@ -1678,6 +1679,14 @@ impl DataFrame {
             acc_ca.append(&ca);
         }
         Ok(acc_ca.rechunk())
+    }
+
+    /// Aggregate the column horizontally to their max values
+    #[cfg(feature = "interpolate")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
+    pub fn interpolate(&self) -> Self {
+        let columns = self.columns.par_iter().map(|s| s.interpolate()).collect();
+        DataFrame::new_no_checks(columns)
     }
 }
 
