@@ -373,3 +373,9 @@ def test_interpolate():
     assert df["a"].interpolate() == [1, 2, 3]
     assert df.interpolate()["a"] == [1, 2, 3]
     assert df.lazy().interpolate().collect()["a"] == [1, 2, 3]
+
+
+def test_fill_nan():
+    df = pl.DataFrame({"a": [1.0, np.nan, 3.0]})
+    assert df.fill_nan(2.0)["a"] == [1.0, 2.0, 3.0]
+    assert df.lazy().fill_nan(2.0).collect()["a"] == [1.0, 2.0, 3.0]

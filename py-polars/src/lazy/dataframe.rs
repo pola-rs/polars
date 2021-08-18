@@ -291,6 +291,11 @@ impl PyLazyFrame {
         ldf.fill_none(fill_value.inner).into()
     }
 
+    pub fn fill_nan(&self, fill_value: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.fill_nan(fill_value.inner).into()
+    }
+
     pub fn min(&self) -> Self {
         let ldf = self.ldf.clone();
         ldf.min().into()
