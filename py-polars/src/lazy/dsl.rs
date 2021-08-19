@@ -502,6 +502,12 @@ impl PyExpr {
     pub fn keep_name(&self) -> PyExpr {
         self.inner.clone().keep_name().into()
     }
+    pub fn prefix(&self, prefix: &str) -> PyExpr {
+        self.inner.clone().prefix(prefix).into()
+    }
+    pub fn suffix(&self, suffix: &str) -> PyExpr {
+        self.inner.clone().suffix(suffix).into()
+    }
     pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
         self.inner.clone().exclude(&columns).into()
     }

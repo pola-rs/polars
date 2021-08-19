@@ -158,6 +158,8 @@ Column names
 
     Expr.alias
     Expr.keep_name
+    Expr.prefix
+    Expr.suffix
     Expr.exclude
 
 Apply
