@@ -14,6 +14,7 @@ use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::sync::Arc;
+use unsafe_unwrap::UnsafeUnwrap;
 
 pub trait ChunkedBuilder<N, T> {
     fn append_value(&mut self, val: N);
@@ -84,13 +85,17 @@ where
     /// Appends a value of type `T` into the builder
     #[inline]
     fn append_value(&mut self, v: T::Native) {
-        self.array_builder.append_value(v).unwrap()
+        // Safety:
+        // never errors
+        unsafe { self.array_builder.append_value(v).unsafe_unwrap() }
     }
 
     /// Appends a null slot into the builder
     #[inline]
     fn append_null(&mut self) {
-        self.array_builder.append_null().unwrap()
+        // Safety:
+        // never errors
+        unsafe { self.array_builder.append_null().unsafe_unwrap() }
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
@@ -142,13 +147,17 @@ impl Utf8ChunkedBuilder {
     /// Appends a value of type `T` into the builder
     #[inline]
     pub fn append_value<S: AsRef<str>>(&mut self, v: S) {
-        self.builder.append_value(v.as_ref()).unwrap();
+        // Safety:
+        // never errors
+        unsafe { self.builder.append_value(v.as_ref()).unsafe_unwrap() };
     }
 
     /// Appends a null slot into the builder
     #[inline]
     pub fn append_null(&mut self) {
-        self.builder.append_null().unwrap();
+        // Safety:
+        // never errors
+        unsafe { self.builder.append_null().unsafe_unwrap() };
     }
 
     #[inline]
@@ -297,11 +306,15 @@ where
     S: AsRef<str>,
 {
     fn new_from_slice(name: &str, v: &[S]) -> Self {
-        let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
+        let bytes_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
 
-        let mut builder = LargeStringBuilder::with_capacity(values_size, v.len());
+        let mut builder = LargeStringBuilder::with_capacity(v.len(), bytes_size);
         v.iter().for_each(|val| {
-            builder.append_value(val.as_ref()).unwrap();
+            // Safety:
+            // never errors
+            unsafe {
+                builder.append_value(val.as_ref()).unsafe_unwrap();
+            }
         });
 
         let field = Arc::new(Field::new(name, DataType::Utf8));
