@@ -467,7 +467,11 @@ impl DefaultPlanner {
             Take { expr, idx } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 let phys_idx = self.create_physical_expr(idx, ctxt, expr_arena)?;
-                Ok(Arc::new(TakeExpr::new(phys_expr, phys_idx)))
+                Ok(Arc::new(TakeExpr {
+                    phys_expr,
+                    idx: phys_idx,
+                    expr: node_to_exp(expression, expr_arena),
+                }))
             }
             SortBy { expr, by, reverse } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
@@ -820,7 +824,11 @@ impl DefaultPlanner {
             }
             Cast { expr, data_type } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                Ok(Arc::new(CastExpr::new(phys_expr, data_type)))
+                Ok(Arc::new(CastExpr {
+                    input: phys_expr,
+                    data_type,
+                    expr: node_to_exp(expression, expr_arena),
+                }))
             }
             Ternary {
                 predicate,
@@ -865,11 +873,16 @@ impl DefaultPlanner {
                     input_b,
                     function,
                     output_field,
+                    expr: node_to_exp(expression, expr_arena),
                 }))
             }
             Shift { input, periods } => {
                 let input = self.create_physical_expr(input, ctxt, expr_arena)?;
-                Ok(Arc::new(ShiftExpr { input, periods }))
+                Ok(Arc::new(ShiftExpr {
+                    input,
+                    periods,
+                    expr: node_to_exp(expression, expr_arena),
+                }))
             }
             Slice {
                 input,
@@ -881,6 +894,7 @@ impl DefaultPlanner {
                     input,
                     offset,
                     len: length,
+                    expr: node_to_exp(expression, expr_arena),
                 }))
             }
             Reverse(expr) => {
