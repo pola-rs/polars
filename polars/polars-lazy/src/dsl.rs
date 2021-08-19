@@ -283,6 +283,11 @@ pub enum Expr {
     Exclude(Box<Expr>, Vec<Arc<String>>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
+    SufPreFix {
+        is_suffix: bool,
+        value: String,
+        expr: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -376,6 +381,7 @@ impl fmt::Debug for Expr {
             Wildcard => write!(f, "*"),
             Exclude(column, names) => write!(f, "{:?}, EXCEPT {:?}", column, names),
             KeepName(e) => write!(f, "KEEP NAME {:?}", e),
+            SufPreFix { expr, .. } => write!(f, "SUF-PREFIX {:?}", expr),
         }
     }
 }
@@ -1239,6 +1245,24 @@ impl Expr {
     /// ```
     pub fn keep_name(self) -> Expr {
         Expr::KeepName(Box::new(self))
+    }
+
+    /// Add a suffix to the root column name.
+    pub fn suffix(self, suffix: &str) -> Expr {
+        Expr::SufPreFix {
+            is_suffix: true,
+            value: suffix.to_string(),
+            expr: Box::new(self),
+        }
+    }
+
+    /// Add a prefix to the root column name.
+    pub fn prefix(self, prefix: &str) -> Expr {
+        Expr::SufPreFix {
+            is_suffix: false,
+            value: prefix.to_string(),
+            expr: Box::new(self),
+        }
     }
 
     /// Exclude a column from a wildcard selection
