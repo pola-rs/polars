@@ -95,7 +95,7 @@ pub fn concat_str(s: Vec<Expr>, delimiter: &str) -> Expr {
         output_type: Some(DataType::Utf8),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
-            input_wildcard_expansion: false,
+            input_wildcard_expansion: true,
         },
     }
 }
