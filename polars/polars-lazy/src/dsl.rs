@@ -148,6 +148,8 @@ pub struct FunctionOptions {
     ///     f('a'), f('b')
     ///
     /// setting this to true, will lead to behavior 1.
+    ///
+    /// this also accounts for regex expansion
     pub(crate) input_wildcard_expansion: bool,
 }
 
