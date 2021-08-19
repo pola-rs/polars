@@ -42,6 +42,11 @@ fn col(name: &str) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn cols(names: Vec<String>) -> dsl::PyExpr {
+    dsl::cols(names)
+}
+
+#[pyfunction]
 fn lit(value: &PyAny) -> dsl::PyExpr {
     dsl::lit(value)
 }
@@ -140,6 +145,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
