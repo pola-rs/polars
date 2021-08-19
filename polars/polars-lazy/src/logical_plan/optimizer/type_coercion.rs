@@ -48,14 +48,25 @@ impl OptimizationRule for TypeCoercionRule {
                         None
                     } else {
                         let st = get_supertype(&type_true, &type_false).expect("supertype");
-                        let new_node_truthy = expr_arena.add(AExpr::Cast {
-                            expr: truthy_node,
-                            data_type: st.clone(),
-                        });
-                        let new_node_falsy = expr_arena.add(AExpr::Cast {
-                            expr: falsy_node,
-                            data_type: st,
-                        });
+
+                        let new_node_truthy = if type_true != st {
+                            expr_arena.add(AExpr::Cast {
+                                expr: truthy_node,
+                                data_type: st.clone(),
+                            })
+                        } else {
+                            truthy_node
+                        };
+
+                        let new_node_falsy = if type_false != st {
+                            expr_arena.add(AExpr::Cast {
+                                expr: falsy_node,
+                                data_type: st,
+                            })
+                        } else {
+                            falsy_node
+                        };
+
                         Some(AExpr::Ternary {
                             truthy: new_node_truthy,
                             falsy: new_node_falsy,
@@ -110,14 +121,27 @@ impl OptimizationRule for TypeCoercionRule {
                     } else {
                         let st = get_supertype(&type_left, &type_right)
                             .expect("could not find supertype of binary expr");
-                        let new_node_left = expr_arena.add(AExpr::Cast {
-                            expr: node_left,
-                            data_type: st.clone(),
-                        });
-                        let new_node_right = expr_arena.add(AExpr::Cast {
-                            expr: node_right,
-                            data_type: st,
-                        });
+
+                        // only cast if the type is not already the super type.
+                        // this can prevent an expensive flattening and subsequent aggregation
+                        // in a groupby context. To be able to cast the groups need to be
+                        // flattened
+                        let new_node_left = if type_left != st {
+                            expr_arena.add(AExpr::Cast {
+                                expr: node_left,
+                                data_type: st.clone(),
+                            })
+                        } else {
+                            node_left
+                        };
+                        let new_node_right = if type_right != st {
+                            expr_arena.add(AExpr::Cast {
+                                expr: node_right,
+                                data_type: st,
+                            })
+                        } else {
+                            node_right
+                        };
 
                         Some(AExpr::BinaryExpr {
                             left: new_node_left,
