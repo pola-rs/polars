@@ -744,24 +744,45 @@ fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<String>],
 }
 
 #[cfg(feature = "regex")]
-fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &str) {
-    let re = regex::Regex::new(pattern)
-        .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
-    for field in schema.fields() {
-        let name = field.name();
-        if re.is_match(name) {
-            let mut new_expr = expr.clone();
+fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: Option<&str>) {
+    match pattern {
+        Some(pattern) => {
+            let re = regex::Regex::new(pattern)
+                .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
+            for field in schema.fields() {
+                let name = field.name();
+                if re.is_match(name) {
+                    let mut new_expr = expr.clone();
 
-            new_expr.mutate().apply(|e| match &e {
-                Expr::Column(_) => {
-                    *e = Expr::Column(Arc::new(name.clone()));
-                    false
+                    new_expr.mutate().apply(|e| match &e {
+                        Expr::Column(_) => {
+                            *e = Expr::Column(Arc::new(name.clone()));
+                            false
+                        }
+                        _ => true,
+                    });
+
+                    let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+                    result.push(new_expr)
                 }
-                _ => true,
-            });
-
-            let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
-            result.push(new_expr)
+            }
+        }
+        None => {
+            let roots = expr_to_root_column_names(expr);
+            // only in simple expression (no binary expression)
+            // we pattern match regex columns
+            if roots.len() == 1 {
+                let name = &**roots[0];
+                if name.starts_with('^') && name.ends_with('$') {
+                    replace_regex(expr, result, schema, Some(name))
+                } else {
+                    let expr = rewrite_keep_name_and_sufprefix(expr.clone());
+                    result.push(expr)
+                }
+            } else {
+                let expr = rewrite_keep_name_and_sufprefix(expr.clone());
+                result.push(expr)
+            }
         }
     }
 }
@@ -770,7 +791,6 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: 
 fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
     for name in names {
         let mut new_expr = expr.clone();
-        dbg!(&new_expr);
         new_expr.mutate().apply(|e| {
             if let Expr::Columns(_) = &e {
                 *e = Expr::Column(Arc::new(name.clone()));
@@ -778,7 +798,6 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
             // always keep iterating all inputs
             true
         });
-        dbg!(&new_expr);
 
         let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
         result.push(new_expr)
@@ -787,7 +806,7 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
+pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
 
     for mut expr in exprs {
@@ -828,7 +847,7 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             // this path prepares the wildcard as input for the Function Expr
             if has_expr(
                 &expr,
-                |e| matches!(e, Expr::Function { input, options,  .. } if options.input_wildcard_expansion && input.iter().any(has_wildcard)),
+                |e| matches!(e, Expr::Function { options,  .. } if options.input_wildcard_expansion),
             ) {
                 expr.mutate().apply(|e| {
                     if let Expr::Function { input, .. } = e {
@@ -836,9 +855,16 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
 
                         input.iter_mut().for_each(|e| {
                             if has_wildcard(e) {
-                                replace_wilcard(e, &mut new_inputs, &[], schema)
+                                replace_wilcard(e, &mut new_inputs, &exclude, schema)
                             } else {
-                                new_inputs.push(e.clone())
+                                #[cfg(feature = "regex")]
+                                {
+                                    replace_regex(e, &mut new_inputs, schema, None)
+                                }
+                                #[cfg(not(feature = "regex"))]
+                                {
+                                    new_inputs.push(e.clone())
+                                }
                             }
                         });
 
@@ -857,21 +883,7 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             if push_current {
                 #[cfg(feature = "regex")]
                 {
-                    // only in simple expression (no binary expression)
-                    // we patter match regex columns
-                    let roots = expr_to_root_column_names(&expr);
-                    if roots.len() == 1 {
-                        let name = &**roots[0];
-                        if name.starts_with('^') && name.ends_with('$') {
-                            replace_regex(&expr, &mut result, schema, name)
-                        } else {
-                            let expr = rewrite_keep_name_and_sufprefix(expr);
-                            result.push(expr)
-                        }
-                    } else {
-                        let expr = rewrite_keep_name_and_sufprefix(expr);
-                        result.push(expr)
-                    }
+                    replace_regex(&expr, &mut result, schema, None)
                 }
                 #[cfg(not(feature = "regex"))]
                 {
