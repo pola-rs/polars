@@ -691,6 +691,8 @@ fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<String>) -> Exp
 }
 
 fn rewrite_keep_name_and_sufprefix(expr: Expr) -> Expr {
+    // the blocks are added by cargo fmt
+    #[allow(clippy::blocks_in_if_conditions)]
     if has_expr(&expr, |e| {
         matches!(e, Expr::KeepName(_) | Expr::SufPreFix { .. })
     }) {
@@ -764,12 +766,42 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: 
     }
 }
 
+/// replace columns(["A", "B"]).. with col("A").., col("B")..
+fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
+    for name in names {
+        let mut new_expr = expr.clone();
+        dbg!(&new_expr);
+        new_expr.mutate().apply(|e| {
+            if let Expr::Columns(_) = &e {
+                *e = Expr::Column(Arc::new(name.clone()));
+            }
+            // always keep iterating all inputs
+            true
+        });
+        dbg!(&new_expr);
+
+        let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+        result.push(new_expr)
+    }
+}
+
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
 
     for mut expr in exprs {
+        // in case of multiple cols, we still want to check wildcard for function input,
+        // but in case of no wildcard, we don't want this expr pushed to results.
+        let mut push_current = true;
+        // has multiple column names
+        if let Some(e) = expr.into_iter().find(|e| matches!(e, Expr::Columns(_))) {
+            if let Expr::Columns(names) = e {
+                expand_columns(&expr, &mut result, names)
+            }
+            push_current = false;
+        }
+
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
             let mut exclude = vec![];
@@ -821,28 +853,31 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             }
             replace_wilcard(&expr, &mut result, &exclude, schema);
         } else {
-            #[cfg(feature = "regex")]
-            {
-                // only in simple expression (no binary expression)
-                // we patter match regex columns
-                let roots = expr_to_root_column_names(&expr);
-                if roots.len() == 1 {
-                    let name = &**roots[0];
-                    if name.starts_with('^') && name.ends_with('$') {
-                        replace_regex(&expr, &mut result, schema, name)
+            #[allow(clippy::collapsible_else_if)]
+            if push_current {
+                #[cfg(feature = "regex")]
+                {
+                    // only in simple expression (no binary expression)
+                    // we patter match regex columns
+                    let roots = expr_to_root_column_names(&expr);
+                    if roots.len() == 1 {
+                        let name = &**roots[0];
+                        if name.starts_with('^') && name.ends_with('$') {
+                            replace_regex(&expr, &mut result, schema, name)
+                        } else {
+                            let expr = rewrite_keep_name_and_sufprefix(expr);
+                            result.push(expr)
+                        }
                     } else {
                         let expr = rewrite_keep_name_and_sufprefix(expr);
                         result.push(expr)
                     }
-                } else {
+                }
+                #[cfg(not(feature = "regex"))]
+                {
                     let expr = rewrite_keep_name_and_sufprefix(expr);
                     result.push(expr)
                 }
-            }
-            #[cfg(not(feature = "regex"))]
-            {
-                let expr = rewrite_keep_name_and_sufprefix(expr);
-                result.push(expr)
             }
         };
     }
