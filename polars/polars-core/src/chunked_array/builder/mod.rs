@@ -284,7 +284,7 @@ where
     fn new_from_slice(name: &str, v: &[S]) -> Self {
         let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
 
-        let mut builder = MutableUtf8Array::<i64>::with_capacities(values_size, v.len());
+        let mut builder = MutableUtf8Array::<i64>::with_capacities(v.len(), values_size);
         v.iter().for_each(|val| {
             builder.push(Some(val.as_ref()));
         });
@@ -305,7 +305,7 @@ where
             Some(s) => acc + s.as_ref().len(),
             None => acc,
         });
-        let mut builder = Utf8ChunkedBuilder::new(name, values_size, opt_v.len());
+        let mut builder = Utf8ChunkedBuilder::new(name, opt_v.len(), values_size);
 
         opt_v.iter().for_each(|opt| match opt {
             Some(v) => builder.append_value(v.as_ref()),
