@@ -690,16 +690,37 @@ fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<String>) -> Exp
     expr
 }
 
-fn rewrite_keep_name(expr: Expr) -> Expr {
-    if has_expr(&expr, |e| matches!(e, Expr::KeepName(_))) {
-        if let Expr::KeepName(expr) = expr {
-            let roots = expr_to_root_column_names(&expr);
-            let name = roots
-                .get(0)
-                .expect("expected root column to keep expression name");
-            Expr::Alias(expr, name.clone())
-        } else {
-            panic!("keep_name should be last expression")
+fn rewrite_keep_name_and_sufprefix(expr: Expr) -> Expr {
+    if has_expr(&expr, |e| {
+        matches!(e, Expr::KeepName(_) | Expr::SufPreFix { .. })
+    }) {
+        match expr {
+            Expr::KeepName(expr) => {
+                let roots = expr_to_root_column_names(&expr);
+                let name = roots
+                    .get(0)
+                    .expect("expected root column to keep expression name");
+                Expr::Alias(expr, name.clone())
+            }
+            Expr::SufPreFix {
+                is_suffix,
+                value,
+                expr,
+            } => {
+                let roots = expr_to_root_column_names(&expr);
+                let name = roots
+                    .get(0)
+                    .expect("expected root column to keep expression name");
+
+                let name = if is_suffix {
+                    format!("{}{}", name, value)
+                } else {
+                    format!("{}{}", value, name)
+                };
+
+                Expr::Alias(expr, Arc::new(name))
+            }
+            _ => panic!("`keep_name`, `suffix`, `prefix` should be last expression"),
         }
     } else {
         expr
@@ -714,7 +735,7 @@ fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<String>],
         let name = field.name();
         if !exclude.iter().any(|exluded| &**exluded == name) {
             let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
-            let new_expr = rewrite_keep_name(new_expr);
+            let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
             result.push(new_expr)
         }
     }
@@ -737,7 +758,7 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: 
                 _ => true,
             });
 
-            let new_expr = rewrite_keep_name(new_expr);
+            let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
             result.push(new_expr)
         }
     }
@@ -810,17 +831,17 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
                     if name.starts_with('^') && name.ends_with('$') {
                         replace_regex(&expr, &mut result, schema, name)
                     } else {
-                        let expr = rewrite_keep_name(expr);
+                        let expr = rewrite_keep_name_and_sufprefix(expr);
                         result.push(expr)
                     }
                 } else {
-                    let expr = rewrite_keep_name(expr);
+                    let expr = rewrite_keep_name_and_sufprefix(expr);
                     result.push(expr)
                 }
             }
             #[cfg(not(feature = "regex"))]
             {
-                let expr = rewrite_keep_name(expr);
+                let expr = rewrite_keep_name_and_sufprefix(expr);
                 result.push(expr)
             }
         };
