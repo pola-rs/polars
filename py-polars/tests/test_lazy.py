@@ -399,3 +399,10 @@ def test_take(fruits_cars):
 
     out[0, "B"] == [2, 3]
     out[4, "B"] == [1, 4]
+
+
+def test_select_by_col_list(fruits_cars):
+    df = fruits_cars
+    out = df.select(col(["A", "B"]).sum())
+    out.columns == ["A", "B"]
+    out.shape == (1, 2)

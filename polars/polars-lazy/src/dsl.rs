@@ -202,6 +202,7 @@ impl From<AggExpr> for Expr {
 pub enum Expr {
     Alias(Box<Expr>, Arc<String>),
     Column(Arc<String>),
+    Columns(Vec<String>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Box<Expr>,
@@ -382,6 +383,7 @@ impl fmt::Debug for Expr {
             Exclude(column, names) => write!(f, "{:?}, EXCEPT {:?}", column, names),
             KeepName(e) => write!(f, "KEEP NAME {:?}", e),
             SufPreFix { expr, .. } => write!(f, "SUF-PREFIX {:?}", expr),
+            Columns(names) => write!(f, "COLUMNS({:?})", names),
         }
     }
 }
@@ -1329,6 +1331,11 @@ pub fn col(name: &str) -> Expr {
         "*" => Expr::Wildcard,
         _ => Expr::Column(Arc::new(name.to_owned())),
     }
+}
+
+/// Select multiple columns by name
+pub fn cols(names: Vec<String>) -> Expr {
+    Expr::Columns(names)
 }
 
 /// Count the number of values in this Expression.

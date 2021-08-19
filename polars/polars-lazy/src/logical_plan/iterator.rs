@@ -4,7 +4,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Column(_) | Literal(_) | Wildcard => {}
+            Column(_) | Literal(_) | Wildcard | Columns(_) => {}
             Alias(e, _) => $push(e),
             Not(e) => $push(e),
             BinaryExpr { left, op: _, right } => {
