@@ -1308,7 +1308,7 @@ fn test_fold_wildcard() -> Result<()> {
     );
 
     // test if we don't panic due to wildcard
-    let out = df1
+    let _out = df1
         .lazy()
         .select(vec![all_exprs(vec![col("*").is_not_null()])])
         .collect()?;
@@ -1498,7 +1498,7 @@ fn test_auto_list_agg() -> Result<()> {
     assert!(matches!(out.column("foo")?.dtype(), DataType::List(_)));
 
     // test if it runs and groupby executor thus implements a list after shift_and_fill
-    let out = df
+    let _out = df
         .clone()
         .lazy()
         .groupby(vec![col("fruits")])
@@ -1506,13 +1506,13 @@ fn test_auto_list_agg() -> Result<()> {
         .collect()?;
 
     // test if window expr executor adds list
-    let out = df
+    let _out = df
         .clone()
         .lazy()
         .select(vec![col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
         .collect()?;
 
-    let out = df
+    let _out = df
         .lazy()
         .select(vec![col("B").shift_and_fill(-1, lit(-1))])
         .collect()?;
@@ -1561,5 +1561,22 @@ fn test_reverse_in_groups() -> Result<()> {
         Vec::from(out.column("rev")?.i32()?),
         &[Some(2), Some(3), Some(1), Some(4), Some(5)]
     );
+    Ok(())
+}
+#[test]
+fn test_take_in_groups() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .sort("fruits", false)
+        .select(vec![col("B")
+            .take(lit(Series::new("", &[0u32])))
+            .over(vec![col("fruits")])
+            .explode()
+            .alias("taken")])
+        .collect()?;
+
+    assert_eq!(Vec::from(out.column("taken")?.i32()?), &[Some(3), Some(5)]);
     Ok(())
 }

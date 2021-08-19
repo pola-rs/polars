@@ -7,13 +7,10 @@ use std::sync::Arc;
 pub struct CastExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) data_type: DataType,
+    pub(crate) expr: Expr,
 }
 
 impl CastExpr {
-    pub fn new(input: Arc<dyn PhysicalExpr>, data_type: DataType) -> Self {
-        Self { input, data_type }
-    }
-
     fn finish(&self, input: Series) -> Result<Series> {
         // this is quite dirty
         // We use the booleanarray as null series, because we have no null array.
@@ -30,6 +27,10 @@ impl CastExpr {
 }
 
 impl PhysicalExpr for CastExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.input.evaluate(df, state)?;
         self.finish(series)
