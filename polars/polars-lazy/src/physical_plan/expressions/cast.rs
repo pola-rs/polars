@@ -11,7 +11,7 @@ pub struct CastExpr {
 }
 
 impl CastExpr {
-    fn finish(&self, input: Series) -> Result<Series> {
+    fn finish(&self, input: &Series) -> Result<Series> {
         // this is quite dirty
         // We use the booleanarray as null series, because we have no null array.
         // in a ternary or binary operation, we then do type coercion to matching supertype.
@@ -33,7 +33,7 @@ impl PhysicalExpr for CastExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.input.evaluate(df, state)?;
-        self.finish(series)
+        self.finish(&series)
     }
 
     #[allow(clippy::ptr_arg)]
@@ -44,8 +44,9 @@ impl PhysicalExpr for CastExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-        let s = ac.take();
-        ac.with_series(self.finish(s)?);
+        let s = ac.flat();
+        let s = self.finish(s.as_ref())?;
+        ac.with_series(s);
         Ok(ac)
     }
 
