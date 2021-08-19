@@ -122,4 +122,8 @@ impl PhysicalExpr for WindowExpr {
             "window expression not allowed in aggregation".into(),
         ))
     }
+
+    fn as_expression(&self) -> &Expr {
+        todo!()
+    }
 }

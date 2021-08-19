@@ -7,9 +7,14 @@ use std::sync::Arc;
 pub struct ShiftExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) periods: i64,
+    pub(crate) expr: Expr,
 }
 
 impl PhysicalExpr for ShiftExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.input.evaluate(df, state)?;
         Ok(series.shift(self.periods))

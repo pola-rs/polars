@@ -9,9 +9,14 @@ pub struct SliceExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) offset: i64,
     pub(crate) len: usize,
+    pub(crate) expr: Expr,
 }
 
 impl PhysicalExpr for SliceExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.input.evaluate(df, state)?;
         Ok(series.slice(self.offset, self.len))

@@ -11,9 +11,14 @@ pub(crate) struct BinaryFunctionExpr {
     pub(crate) input_b: Arc<dyn PhysicalExpr>,
     pub(crate) function: NoEq<Arc<dyn SeriesBinaryUdf>>,
     pub(crate) output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
+    pub(crate) expr: Expr,
 }
 
 impl PhysicalExpr for BinaryFunctionExpr {
+    fn as_expression(&self) -> &Expr {
+        &self.expr
+    }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let (series_a, series_b) = POOL.install(|| {
             rayon::join(

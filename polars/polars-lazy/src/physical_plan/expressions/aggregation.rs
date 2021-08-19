@@ -21,6 +21,10 @@ impl AggregationExpr {
 }
 
 impl PhysicalExpr for AggregationExpr {
+    fn as_expression(&self) -> &Expr {
+        unimplemented!()
+    }
+
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         unimplemented!()
     }
@@ -274,6 +278,10 @@ impl AggQuantileExpr {
 }
 
 impl PhysicalExpr for AggQuantileExpr {
+    fn as_expression(&self) -> &Expr {
+        unimplemented!()
+    }
+
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         unimplemented!()
     }
