@@ -497,6 +497,7 @@ def fold(
         Expressions to aggregate over. May also be a wildcard expression.
     """
     # in case of pl.col("*")
+    acc = pl.lazy.expr.expr_to_lit_or_expr(acc, str_to_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
