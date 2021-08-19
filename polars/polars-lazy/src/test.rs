@@ -768,7 +768,8 @@ fn test_type_coercion() {
     if let LogicalPlan::Projection { expr, .. } = lp {
         if let Expr::BinaryExpr { left, right, .. } = &expr[0] {
             assert!(matches!(&**left, Expr::Cast { .. }));
-            assert!(matches!(&**right, Expr::Cast { .. }));
+            // bar is already float, does not have to be coerced
+            assert!(matches!(&**right, Expr::Column { .. }));
         } else {
             panic!()
         }
@@ -1524,6 +1525,7 @@ fn test_exploded_window_function() -> Result<()> {
     let df = fruits_cars();
 
     let out = df
+        .clone()
         .lazy()
         .sort("fruits", false)
         .select(vec![
@@ -1539,6 +1541,25 @@ fn test_exploded_window_function() -> Result<()> {
     assert_eq!(
         Vec::from(out.column("shifted")?.i32()?),
         &[None, Some(3), None, Some(5), Some(4)]
+    );
+
+    // this tests if cast succeeds in aggregation context
+    let out = df
+        .lazy()
+        .sort("fruits", false)
+        .select(vec![
+            col("fruits"),
+            col("B")
+                .shift_and_fill(1, lit(-1.0))
+                .over(vec![col("fruits")])
+                .explode()
+                .alias("shifted"),
+        ])
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.column("shifted")?.f64()?),
+        &[Some(-1.0), Some(3.0), Some(-1.0), Some(5.0), Some(4.0)]
     );
     Ok(())
 }
