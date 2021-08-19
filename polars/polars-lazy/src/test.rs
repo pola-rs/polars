@@ -1601,3 +1601,28 @@ fn test_take_in_groups() -> Result<()> {
     assert_eq!(Vec::from(out.column("taken")?.i32()?), &[Some(3), Some(5)]);
     Ok(())
 }
+
+#[test]
+fn test_sort_by_in_groups() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .sort("cars", false)
+        .select(vec![
+            col("fruits"),
+            col("cars"),
+            col("A")
+                .sort_by(col("B"), false)
+                .over(vec![col("cars")])
+                .explode()
+                .alias("sorted_A_by_B"),
+        ])
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.column("sorted_A_by_B")?.i32()?),
+        &[Some(2), Some(5), Some(4), Some(3), Some(1)]
+    );
+    Ok(())
+}
