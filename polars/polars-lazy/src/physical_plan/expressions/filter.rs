@@ -37,7 +37,8 @@ impl PhysicalExpr for FilterExpr {
         let mut ac_s = self.input.evaluate_on_groups(df, groups, state)?;
         let ac_predicate = self.by.evaluate_on_groups(df, groups, state)?;
         let groups = ac_s.groups();
-        let predicate = ac_predicate.series().bool()?;
+        let predicate_s = ac_predicate.flat();
+        let predicate = predicate_s.bool()?;
 
         let groups = POOL.install(|| {
             groups
