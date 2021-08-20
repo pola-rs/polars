@@ -1479,6 +1479,13 @@ class Series:
     def is_numeric(self) -> bool:
         """
         Check if this Series datatype is numeric.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.is_numeric()
+        True
+
         """
         return self.dtype in (
             Int8,
@@ -1496,18 +1503,38 @@ class Series:
     def is_float(self) -> bool:
         """
         Check if this Series has floating point numbers.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
+        >>> s.is_float()
+        True
+
         """
         return self.dtype in (Float32, Float64)
 
     def is_boolean(self) -> bool:
         """
         Check if this Series is a Boolean.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [True, False, True])
+        >>> s.is_boolean()
+        True
+
         """
         return self.dtype is Boolean
 
     def is_utf8(self) -> bool:
         """
         Checks if this Series datatype is a Utf8.
+
+        Examples
+        --------
+        >>> s = pl.Series("x", ["a", "b", "c"])
+        >>> s.is_utf8()
+        True
         """
         return self.dtype is Utf8
 
@@ -1574,6 +1601,15 @@ class Series:
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.to_numpy()
+        >>> s
+        [1 2 3]
+        >>> type(s)
+        <class 'numpy.ndarray'>
+
         Parameters
         ----------
         args
@@ -1591,6 +1627,20 @@ class Series:
         """
         Get the underlying arrow array. If the Series contains only a single chunk
         this operation is zero copy.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.to_arrow()
+        >>> s
+        [
+        1,
+        2,
+        3
+        ]
+        >>> type(s)
+        <class 'pyarrow.lib.Int64Array'>
+
         """
         return self._s.to_arrow()
 
@@ -1661,6 +1711,28 @@ class Series:
         """
         Fill null values with a filling strategy.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, None])
+        >>> s.fill_none('forward'))
+        shape: (4,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
+                3
+        ]
+        >>> s.fill_none('min'))
+        shape: (4,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                1
+        ]
+
         Parameters
         ----------
         strategy
@@ -1678,6 +1750,18 @@ class Series:
         """
         Round underlying floating point data by `decimals` digits.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
+        >>> s.round(2)
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                1.12
+                2.57
+                3.9
+        ]
+
         Parameters
         ----------
         decimals
@@ -1689,6 +1773,13 @@ class Series:
         """
         Compute the dot/inner product between two Series
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s2 = pl.Series("b", [4.0, 5.0, 6.0])
+        >>> s.dot(s2)
+        32.0
+
         Parameters
         ----------
         other
@@ -1699,6 +1790,17 @@ class Series:
     def mode(self) -> "Series":
         """
         Compute the most occurring value(s). Can return multiple Values
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.mode()
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+                2
+        ]
+
         """
         return wrap_s(self._s.mode())
 
@@ -1919,6 +2021,17 @@ class Series:
         """
         Sample from this Series by setting either `n` or `frac`.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.sample(2)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                1
+                5
+        ]
+
         Parameters
         ----------
         n
@@ -1935,6 +2048,21 @@ class Series:
     def peak_max(self) -> "Series":
         """
         Get a boolean mask of the local maximum peaks.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.peak_max()
+        shape: (5,)
+        Series: '' [bool]
+        [
+                false
+                false
+                false
+                false
+                true
+        ]
+
         """
         return wrap_s(self._s.peak_max())
 
@@ -1947,6 +2075,13 @@ class Series:
     def n_unique(self) -> int:
         """
         Count the number of unique values in this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.n_unique()
+        3
+
         """
         return self._s.n_unique()
 
