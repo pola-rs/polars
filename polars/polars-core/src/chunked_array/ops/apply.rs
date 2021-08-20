@@ -115,9 +115,9 @@ where
             .data_views()
             .into_iter()
             .zip(self.null_bits())
-            .map(|(slice, (_null_count, opt_buffer))| {
+            .map(|(slice, (_null_count, validity))| {
                 let vec: Result<AlignedVec<_>> = slice.iter().copied().map(f).collect();
-                Ok((vec?, opt_buffer.cloned()))
+                Ok((vec?, validity.clone()))
             })
             .collect::<Result<_>>()?;
         ca.rename(self.name());
