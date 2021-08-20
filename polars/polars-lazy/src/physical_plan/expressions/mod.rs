@@ -188,6 +188,8 @@ impl<'a> AggregationContext<'a> {
     }
 
     pub(crate) fn with_groups(&mut self, groups: GroupTuples) -> &mut Self {
+        // In case of new groups, a series always needs to be flattened
+        self.with_series(self.flat().into_owned());
         self.groups = Cow::Owned(groups);
         self
     }
