@@ -661,6 +661,8 @@ impl Expr {
 
     /// Explode the utf8/ list column
     pub fn explode(self) -> Self {
+        let has_filter = has_expr(&self, |e| matches!(e, Expr::Filter { .. }));
+
         // if we explode right after a window function we don't self join, but just flatten
         // the expression
         if let Expr::Window {
@@ -670,6 +672,12 @@ impl Expr {
             mut options,
         } = self
         {
+            if has_filter {
+                panic!("A Filter of a window function is not allowed in combination with explode/flatten.\
+                The resulting column may not fit the DataFrame/ or the groups
+                ")
+            }
+
             options.explode = true;
 
             Expr::Explode(Box::new(Expr::Window {
