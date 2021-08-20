@@ -112,6 +112,7 @@ Manipulation/ selection
     DataFrame.pipe
     DataFrame.join
     DataFrame.interpolate
+    DataFrame.transpose
 
 Apply
 -----
