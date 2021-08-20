@@ -706,7 +706,7 @@ class DataFrame:
         >>>     "bar": [6, 7, 8, 9, 10],
         >>>     "ham": ['a', 'b', 'c', 'd','e']
         >>>     })
-        
+
         >>> df.to_csv('new_file.csv', sep=',')
 
         """
@@ -1244,7 +1244,7 @@ class DataFrame:
 
         >>> df.dtypes
         [polars.datatypes.Int64, polars.datatypes.Float64, polars.datatypes.Utf8]
-        
+
         >>> df
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -1337,7 +1337,7 @@ class DataFrame:
         >>>     })
 
         >>> x = pl.Series("apple", [10, 20, 30])
-        
+
         >>> df.replace_at_idx(0, x)
         shape: (3, 3)
         ╭───────┬─────┬─────╮
@@ -1381,7 +1381,7 @@ class DataFrame:
         >>>     "bar": [6.0, 7.0, 8.0],
         >>>     "ham": ['a', 'b', 'c']
         >>>     })
-        
+
         >>> df.sort('foo', reverse=True)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -1436,16 +1436,16 @@ class DataFrame:
         >>>     "bar": [6.0, 7.0, 8.0],
         >>>     "ham": ['a', 'b', 'c']
         >>>     })
-        
+
         >>> df2 = pl.DataFrame({
         >>>     "foo": [3, 2, 1],
         >>>     "bar": [8.0, 7.0, 6.0],
         >>>     "ham": ['c', 'b', 'a']
         >>>     })
-        
+
         >>> df1.frame_equal(df1)
         True
-        
+
         >>> df1.frame_equal(df2)
         False
 
@@ -1530,7 +1530,7 @@ class DataFrame:
         >>>     "bar": [6, 7, 8, 9, 10],
         >>>     "ham": ['a', 'b', 'c', 'd','e']
         >>>     })
-        
+
         >>> df.head(3)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -1564,7 +1564,7 @@ class DataFrame:
         >>>     "bar": [6, 7, 8, 9, 10],
         >>>     "ham": ['a', 'b', 'c', 'd','e']
         >>>     })
-        
+
         >>> df.tail(3)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -1623,7 +1623,7 @@ class DataFrame:
         >>>     "b": [1, 2, 3, 4, 5, 6],
         >>>     "c": [6, 5, 4, 3, 2, 1],
         >>>     })
-        
+
         >>> assert (
         >>>     df.groupby("a")["b"]
         >>>     .sum()
@@ -1739,12 +1739,12 @@ class DataFrame:
         >>>     "bar": [6.0, 7.0, 8.0],
         >>>     "ham": ['a', 'b', 'c']
         >>>     })
-        
+
         >>> other_df = pl.DataFrame({
         >>>     "apple": ['x', 'y', 'z'],
         >>>     "ham": ['a', 'b', 'd']
         >>>     })
-        
+
         >>> df.join(other_df, on='ham')
         shape: (2, 4)
         ╭─────┬─────┬─────┬───────╮
@@ -1954,7 +1954,7 @@ class DataFrame:
         >>>    "bar": [6.0, 7.0, 8.0],
         >>>    "ham": ['a', 'b', 'c']
         >>>    })
-        
+
         >>> df.drop('ham')
         shape: (3, 2)
         ╭─────┬─────╮
@@ -2029,7 +2029,7 @@ class DataFrame:
         >>>     "bar": [6, 7, 8],
         >>>     "ham": ['a', 'b', 'c']
         >>>     })
-    
+
         >>> df.select_at_idx(1))
         shape: (3,)
         Series: 'bar' [i64]
@@ -2542,7 +2542,7 @@ class DataFrame:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 0     ┆ 0     ┆ 1     ┆ 0     ┆ ... ┆ 1     ┆ 0     ┆ 0     ┆ 1     │
         ╰───────┴───────┴───────┴───────┴─────┴───────┴───────┴───────┴───────╯
-        
+
         """
         return wrap_df(self._df.to_dummies())
 
@@ -2638,7 +2638,7 @@ class DataFrame:
         >>>    "b": [1, 2, 3],
         >>>    "c": [1.0, 2.0, 3.0]
         >>>     })
-        
+
         >>> df.fold(lambda s1, s2: s1 + s2)
         Series: 'a' [f64]
         [
@@ -2653,7 +2653,7 @@ class DataFrame:
         >>>    "b": [1, 2, 3],
         >>>    "c": [1.0, 2.0, 3.0]
         >>>     })
-        
+
         >>> df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2))
         Series: 'a' [f64]
         [
@@ -2668,7 +2668,7 @@ class DataFrame:
         >>>    "b": [1, 2, 3],
         >>>    "c": [1.0, 2.0, 3.0]
         >>>     })
-        
+
         >>> df.fold(lambda s1, s2: s1 + s2)
         Series: '' [f64]
         [
