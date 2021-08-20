@@ -166,6 +166,7 @@ class Series:
             2
             3
     ]
+
     """
 
     def __init__(
@@ -493,6 +494,28 @@ class Series:
     def to_frame(self) -> "pl.DataFrame":
         """
         Cast this Series to a DataFrame.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> df = s.to_frame()
+        >>> df
+        shape: (3, 1)
+        ╭─────╮
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        ╰─────╯
+
+        >>> type(df)
+        <class 'polars.eager.frame.DataFrame'>
+
         """
         return pl.eager.frame.wrap_df(PyDataFrame([self._s]))
 
@@ -500,6 +523,13 @@ class Series:
     def dtype(self) -> Type[DataType]:
         """
         Get the data type of this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.dtype
+        <class 'polars.datatypes.Int64'>
+
         """
         return DTYPES[self._s.dtype()]
 
@@ -513,7 +543,6 @@ class Series:
 
         Examples
         --------
-
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
         {'min': 1,
@@ -550,24 +579,52 @@ class Series:
     def sum(self) -> Union[int, float]:
         """
         Reduce this Series to the sum value.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.sum()
+        6
+
         """
         return self._s.sum()
 
     def mean(self) -> Union[int, float]:
         """
         Reduce this Series to the mean value.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.mean()
+        2.0
+
         """
         return self._s.mean()
 
     def min(self) -> Union[int, float]:
         """
         Get the minimal value in this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.min()
+        1
+
         """
         return self._s.min()
 
     def max(self) -> Union[int, float]:
         """
         Get the maximum value in this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.min()
+        3
+
         """
         return self._s.max()
 
@@ -581,6 +638,13 @@ class Series:
             “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
             where N represents the number of elements.
             By default ddof is 1.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.std()
+        1.0
+
         """
         return np.std(self.drop_nulls().view(), ddof=ddof)
 
@@ -594,30 +658,87 @@ class Series:
             “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
             where N represents the number of elements.
             By default ddof is 1.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.var()
+        1.0
+
         """
         return np.var(self.drop_nulls().view(), ddof=ddof)
 
     def median(self) -> float:
         """
         Get the median of this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.median()
+        2.0
+
         """
         return self._s.median()
 
     def quantile(self, quantile: float) -> float:
         """
         Get the quantile value of this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.quantile(0.5)
+        2
+
         """
         return self._s.quantile(quantile)
 
     def to_dummies(self) -> "pl.DataFrame":
         """
         Get dummy variables.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.to_dummies()
+        shape: (3, 3)
+        ╭─────┬─────┬─────╮
+        │ a_1 ┆ a_2 ┆ a_3 │
+        │ --- ┆ --- ┆ --- │
+        │ u8  ┆ u8  ┆ u8  │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 0   ┆ 0   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0   ┆ 1   ┆ 0   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0   ┆ 0   ┆ 1   │
+        ╰─────┴─────┴─────╯
+
         """
         return pl.eager.frame.wrap_df(self._s.to_dummies())
 
     def value_counts(self) -> "pl.DataFrame":
         """
         Count the unique values in a Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.value_counts()
+        shape: (3, 2)
+        ╭─────┬────────╮
+        │ a   ┆ counts │
+        │ --- ┆ ---    │
+        │ i64 ┆ u32    │
+        ╞═════╪════════╡
+        │ 2   ┆ 2      │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 1   ┆ 1      │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 1      │
+        ╰─────┴────────╯
+
         """
         return pl.eager.frame.wrap_df(self._s.value_counts())
 
@@ -638,6 +759,19 @@ class Series:
             New name.
         in_place
             Modify the Series in-place.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.rename('b')
+        shape: (3,)
+        Series: 'b' [i64]
+        [
+                1
+                2
+                3
+        ]
+
         """
         if in_place:
             self._s.rename(name)
@@ -667,6 +801,19 @@ class Series:
         ----------
         reverse
             reverse the operation.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.cum_sum()
+        shape: (3,)
+        Series: 'b' [i64]
+        [
+                1
+                3
+                6
+        ]
+
         """
         return wrap_s(self._s.cum_sum(reverse))
 
@@ -678,6 +825,19 @@ class Series:
         ----------
         reverse
             reverse the operation.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.cum_min()
+        shape: (3,)
+        Series: 'b' [i64]
+        [
+                1
+                1
+                1
+        ]
+
         """
         return wrap_s(self._s.cum_min(reverse))
 
@@ -689,6 +849,19 @@ class Series:
         ----------
         reverse
             reverse the operation.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.cum_max()
+        shape: (3,)
+        Series: 'b' [i64]
+        [
+                1
+                2
+                3
+        ]
+
         """
         return wrap_s(self._s.cum_max(reverse))
 
@@ -700,6 +873,18 @@ class Series:
         ----------
         num_elements
             Amount of elements to take.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.limit(2)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+        ]
+
         """
         return wrap_s(self._s.limit(num_elements))
 
@@ -724,6 +909,23 @@ class Series:
         ----------
         other
             Series to append.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s2 = pl.Series("b", [4, 5, 6])
+        >>> s.append(s2)
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+                6
+        ]
+
         """
         self._s.append(other._s)
 
@@ -748,6 +950,18 @@ class Series:
         ----------
         length
             Length of the head.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.head(2)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+        ]
+
         """
         return wrap_s(self._s.head(length))
 
@@ -759,12 +973,36 @@ class Series:
         ----------
         length
             Length of the tail.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.tail(2)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                2
+                3
+        ]
+
         """
         return wrap_s(self._s.tail(length))
 
     def take_every(self, n: int) -> "Series":
         """
         Take every nth value in the Series and return as new Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4])
+        >>> s.take_every(2))
+        shape: (2,)
+        Series: '' [i64]
+        [
+                1
+                3
+        ]
+
         """
         return wrap_s(self._s.take_every(n))
 
@@ -778,6 +1016,29 @@ class Series:
             Sort in place.
         reverse
             Reverse sort.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 3, 4, 2])
+        >>> s.sort()
+        shape: (4,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+        ]
+        >>> s.sort(reverse=True)
+        shape: (4,)
+        Series: 'a' [i64]
+        [
+                4
+                3
+                2
+                1
+        ]
+
         """
         if in_place:
             self._s.sort_in_place(reverse)
@@ -830,6 +1091,19 @@ class Series:
     def unique(self) -> "Series":
         """
         Get unique elements in series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.unique()
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+        ]
+
         """
         return wrap_s(self._s.unique())
 
@@ -841,6 +1115,18 @@ class Series:
         ----------
         indices
             Index location used for selection.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4])
+        >>> s.take([1, 3])
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                2
+                4
+        ]
+
         """
         if isinstance(indices, list):
             indices = np.array(indices)
@@ -859,6 +1145,20 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, None])
+        >>> s.is_null()
+        shape: (4,)
+        Series: 'is_null' [bool]
+        [
+                false
+                false
+                false
+                true
+        ]
+
         """
         return Series._from_pyseries(self._s.is_null())
 
@@ -869,6 +1169,20 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, None])
+        >>> s.is_not_null()
+        shape: (4,)
+        Series: 'is_not_null' [bool]
+        [
+                true
+                true
+                true
+                false
+        ]
+
         """
         return Series._from_pyseries(self._s.is_not_null())
 
@@ -879,6 +1193,19 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
+        >>> s.is_finite()
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+                true
+                true
+                true
+        ]
+
         """
         return Series._from_pyseries(self._s.is_finite())
 
@@ -889,6 +1216,19 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
+        >>> s.is_infinite()
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+                false
+                false
+                false
+        ]
+
         """
         return Series._from_pyseries(self._s.is_infinite())
 
@@ -899,6 +1239,19 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
+        >>> s.take([1, 3])
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                2
+                4
+        ]
+
         """
         return Series._from_pyseries(self._s.is_nan())
 
@@ -909,6 +1262,21 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
+        >>> s.is_not_nan()
+        shape: (4,)
+        Series: 'a' [bool]
+        [
+                true
+                true
+                true
+                false
+        ]
+
         """
         return Series._from_pyseries(self._s.is_not_nan())
 
@@ -919,6 +1287,19 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s2 = pl.Series("b", [2, 4])
+        >>> s2.is_in(s)
+        shape: (2,)
+        Series: 'b' [bool]
+        [
+                true
+                false
+        ]
+
         """
         if type(other) is list:
             other = Series("", other)
@@ -941,6 +1322,20 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.is_unique()
+        shape: (4,)
+        Series: 'a' [bool]
+        [
+                true
+                false
+                false
+                true
+        ]
+
         """
         return wrap_s(self._s.is_unique())
 
@@ -961,6 +1356,20 @@ class Series:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.is_duplicated()
+        shape: (4,)
+        Series: 'a' [bool]
+        [
+                false
+                true
+                true
+                false
+        ]
+
         """
         return wrap_s(self._s.is_duplicated())
 
@@ -984,12 +1393,29 @@ class Series:
             Series to compare with.
         null_equal
             Consider null values as equal.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s2 = pl.Series("b", [4, 5, 6])
+        >>> s.series_equal(s))
+        True
+        >>> s.series_equal(s2))
+        False
+
         """
         return self._s.series_equal(other._s, null_equal)
 
     def len(self) -> int:
         """
         Length of this Series.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.len()
+        3
+
         """
         return self._s.len()
 
@@ -1018,6 +1444,15 @@ class Series:
     def to_list(self) -> tp.List[Optional[Any]]:
         """
         Convert this Series to a Python List. This operation clones data.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.to_list()
+        [1, 2, 3]
+        >>> type(s)
+        <class 'list'>
+
         """
         if self.dtype != Object:
             return self.to_arrow().to_pylist()
