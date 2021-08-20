@@ -504,7 +504,8 @@ impl PredicatePushDown {
                         );
                         filter_right = true;
                     }
-                    if !(filter_left & filter_right) {
+                    // if not pushed down on of the tables we have to do it locally.
+                    if !(filter_left | filter_right) {
                         local_predicates.push(predicate);
                         continue;
                     }
