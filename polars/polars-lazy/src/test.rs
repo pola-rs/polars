@@ -1626,3 +1626,51 @@ fn test_sort_by_in_groups() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn test_filter_after_shift_in_groups() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .select(vec![
+            col("fruits"),
+            col("B")
+                .shift(1)
+                .filter(col("B").shift(1).gt(lit(4)))
+                .over(vec![col("fruits")])
+                .alias("filtered"),
+        ])
+        .collect()?;
+
+    assert_eq!(
+        out.column("filtered")?
+            .list()?
+            .get(0)
+            .unwrap()
+            .i32()?
+            .get(0)
+            .unwrap(),
+        5
+    );
+    assert_eq!(
+        out.column("filtered")?
+            .list()?
+            .get(1)
+            .unwrap()
+            .i32()?
+            .get(0)
+            .unwrap(),
+        5
+    );
+    assert!(out
+        .column("filtered")?
+        .list()?
+        .get(2)
+        .unwrap()
+        .i32()?
+        .get(0)
+        .is_some());
+
+    Ok(())
+}
