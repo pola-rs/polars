@@ -734,6 +734,26 @@ class DataFrame:
 
         self._df.to_ipc(file)
 
+    def transpose(self, df: "pl.DataFrame") -> "pl.DataFrame":
+        """
+        Transpose a DataFrame over the diagonal.
+
+        syntactic sugar for:
+
+        >>> pl.DataFrame(df.rows())
+
+        Parameters
+        ----------
+        df
+            DataFrame
+
+        Returns
+        -------
+        DataFrame
+
+        """
+        return pl.DataFrame(df.rows())
+
     def to_parquet(
         self,
         file: Union[str, Path],
