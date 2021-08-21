@@ -198,6 +198,7 @@
 //!
 //! * `POLARS_PAR_SORT_BOUND` -> sets the lower bound of rows at which Polars will use a parallel sorting algorithm.
 //!                              Default is 1M rows.
+//! * `POLARS_FMT_NO_UTF8` -> use ascii tables in favor of utf8.
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
 //! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
