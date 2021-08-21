@@ -12,9 +12,7 @@ use std::{
 const LIMIT: usize = 25;
 
 #[cfg(feature = "pretty_fmt")]
-use comfy_table::modifiers::UTF8_ROUND_CORNERS;
-#[cfg(feature = "pretty_fmt")]
-use comfy_table::presets::UTF8_FULL;
+use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
 #[cfg(feature = "pretty_fmt")]
 use comfy_table::*;
 
@@ -439,10 +437,15 @@ impl Display for DataFrame {
         #[cfg(feature = "pretty_fmt")]
         {
             let mut table = Table::new();
+            let preset = if std::env::var("POLARS_FMT_NO_UTF8").is_ok() {
+                ASCII_FULL
+            } else {
+                UTF8_FULL
+            };
+
             table
-                .load_preset(UTF8_FULL)
+                .load_preset(preset)
                 .set_content_arrangement(ContentArrangement::Dynamic)
-                .apply_modifier(UTF8_ROUND_CORNERS)
                 .set_table_width(
                     std::env::var("POLARS_TABLE_WIDTH")
                         .map(|s| {

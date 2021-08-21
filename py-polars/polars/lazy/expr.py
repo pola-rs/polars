@@ -862,7 +862,7 @@ class Expr:
     def filter(self, predicate: "Expr") -> "Expr":
         """
         Filter a single column.
-        Should be used in aggregation context. If you want to filter on a DataFrame level, use `LazyFrame.filter`.
+        Mostly useful in in aggregation context. If you want to filter on a DataFrame level, use `LazyFrame.filter`.
 
         Parameters
         ----------
@@ -870,6 +870,10 @@ class Expr:
             Boolean expression.
         """
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
+
+    def where(self, predicate: "Expr") -> "Expr":
+        "alias for filter"
+        return self.filter(predicate)
 
     def map(
         self,
