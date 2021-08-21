@@ -125,7 +125,7 @@ where
     Ptr: PolarsAsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = Utf8Array::<i64>::from_iter_values(iter);
+        let arr = Utf8Array::<i64>::from_iter_values(iter.into_iter());
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }

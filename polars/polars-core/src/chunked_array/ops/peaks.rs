@@ -1,10 +1,11 @@
 use crate::prelude::*;
+use arrow::compute::comparison::Simd8;
 use num::Zero;
 
 impl<T> ChunkPeaks for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumComp + Zero,
+    T::Native: NumComp + Zero + Simd8,
 {
     /// Get a boolean mask of the local maximum peaks.
     fn peak_max(&self) -> BooleanChunked {
