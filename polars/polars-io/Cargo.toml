@@ -28,7 +28,7 @@ decompress = ["flate2"]
 private = []
 
 [dependencies]
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "fa3b003759d5a98200a98ed93facb8751f3aa6a0", --default-features=false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "83256a8040f1524f4f85d3e326fbcb3fe7262fb5", --default-features=false }
 polars-core = {version = "0.15.1", path = "../polars-core", features = ["private"], default-features=false}
 polars-arrow = {version = "0.15.1", path = "../polars-arrow"}
 lexical = {version = "5.2", optional = true}
