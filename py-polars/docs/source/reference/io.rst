@@ -6,7 +6,7 @@ Input/output
 
 
 CSV
-~~~~~~~~~
+~~~
 .. autosummary::
    :toctree: api/
 
