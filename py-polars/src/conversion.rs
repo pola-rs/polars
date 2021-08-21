@@ -1,3 +1,4 @@
+use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::prelude::*;
 use crate::series::PySeries;
@@ -30,10 +31,16 @@ impl<T> From<T> for Wrap<T> {
     }
 }
 
-fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
+pub(crate) fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
     let seq = <PySequence as PyTryFrom>::try_from(obj)?;
     let len = seq.len()? as usize;
     Ok((seq, len))
+}
+
+// extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
+pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
+    let pydf = obj.getattr("_df")?;
+    Ok(pydf.extract::<PyDataFrame>()?.df)
 }
 
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
