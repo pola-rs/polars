@@ -514,6 +514,43 @@ impl PyExpr {
     pub fn interpolate(&self) -> PyExpr {
         self.inner.clone().interpolate().into()
     }
+
+    pub fn rolling_sum(
+        &self,
+        window_size: u32,
+        weight: Option<Vec<f64>>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> PyExpr {
+        self.inner.clone().rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods).into()
+    }
+    pub fn rolling_min(
+        &self,
+        window_size: u32,
+        weight: Option<Vec<f64>>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Self {
+        self.inner.clone().rolling_min(window_size, weight.as_deref(), ignore_null, min_periods).into()
+    }
+    pub fn rolling_max(
+        &self,
+        window_size: u32,
+        weight: Option<Vec<f64>>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Self {
+        self.inner.clone().rolling_max(window_size, weight.as_deref(), ignore_null, min_periods).into()
+    }
+    pub fn rolling_mean(
+        &self,
+        window_size: u32,
+        weight: Option<Vec<f64>>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Self {
+        self.inner.clone().rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
