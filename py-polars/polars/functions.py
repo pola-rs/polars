@@ -4,6 +4,13 @@ import pyarrow as pa
 
 import polars as pl
 
+try:
+    from polars.polars import concat_df as _concat_df
+
+    _DOCUMENTING = False
+except ImportError:
+    _DOCUMENTING = True
+
 __all__ = [
     "get_dummies",
     "concat",
@@ -35,14 +42,10 @@ def concat(dfs: Sequence["pl.DataFrame"], rechunk: bool = True) -> "pl.DataFrame
     rechunk
         rechunk the final DataFrame.
     """
-    assert len(dfs) > 0
-    df = dfs[0].clone()
-    for i in range(1, len(dfs)):
-        try:
-            df = df.vstack(dfs[i], in_place=False)  # type: ignore[assignment]
-        # could have a double borrow (one mutable one ref)
-        except RuntimeError:
-            df.vstack(dfs[i].clone(), in_place=True)
+    if not len(dfs) > 0:
+        raise ValueError("cannot concat empty list")
+
+    df = pl.wrap_df(_concat_df(dfs))
 
     if rechunk:
         return df.rechunk()

@@ -28,6 +28,8 @@ pub mod prelude;
 pub mod series;
 pub mod utils;
 
+use crate::conversion::{get_df, get_pyseq};
+use crate::error::PyPolarsEr;
 use crate::utils::str_to_polarstype;
 use mimalloc::MiMalloc;
 use polars::prelude::*;
@@ -110,6 +112,22 @@ fn concat_str(s: Vec<dsl::PyExpr>, delimiter: &str) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
+    let (seq, _len) = get_pyseq(dfs)?;
+    let mut iter = seq.iter()?;
+    let first = iter.next().unwrap()?;
+
+    let mut df = get_df(first)?;
+
+    for res in iter {
+        let item = res?;
+        let other = get_df(item)?;
+        df.vstack_mut(&other).map_err(PyPolarsEr::from)?;
+    }
+    Ok(df.into())
+}
+
+#[pyfunction]
 fn series_from_range(low: i64, high: i64, step_by: usize, dtype: &PyAny) -> PySeries {
     let str_repr = dtype.str().unwrap().to_str().unwrap();
     let dtype = str_to_polarstype(str_repr);
@@ -159,5 +177,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(series_from_range)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
     Ok(())
 }
