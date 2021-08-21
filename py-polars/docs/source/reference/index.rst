@@ -15,3 +15,4 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
    dataframe
    expression
    lazyframe
+   config
