@@ -1311,6 +1311,78 @@ impl Expr {
     pub fn interpolate(self) -> Expr {
         self.apply(|s| Ok(s.interpolate()), None)
     }
+
+    /// Apply a rolling min See:
+    /// [ChunkedArray::rolling_min](polars::prelude::ChunkWindow::rolling_min).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_min(
+        self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Expr {
+        let weight = weight.map(|v| v.to_vec());
+        self.apply(
+            move |s| s.rolling_min(window_size, weight.as_deref(), ignore_null, min_periods),
+            None,
+        )
+    }
+
+    /// Apply a rolling max See:
+    /// [ChunkedArray::rolling_max](polars::prelude::ChunkWindow::rolling_max).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_max(
+        self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Expr {
+        let weight = weight.map(|v| v.to_vec());
+        self.apply(
+            move |s| s.rolling_max(window_size, weight.as_deref(), ignore_null, min_periods),
+            None,
+        )
+    }
+
+    /// Apply a rolling mean See:
+    /// [ChunkedArray::rolling_mean](polars::prelude::ChunkWindow::rolling_mean).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_mean(
+        self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Expr {
+        let weight = weight.map(|v| v.to_vec());
+        self.apply(
+            move |s| s.rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods),
+            None,
+        )
+    }
+
+    /// Apply a rolling sum See:
+    /// [ChunkedArray::rolling_sum](polars::prelude::ChunkWindow::rolling_sum).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_sum(
+        self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Expr {
+        let weight = weight.map(|v| v.to_vec());
+        self.apply(
+            move |s| s.rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods),
+            None,
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.

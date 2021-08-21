@@ -86,7 +86,7 @@ extract_jsonpath = ["polars-core/extract_jsonpath", "polars-core/strings"]
 groupby_list = ["polars-core/groupby_list"]
 lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
-rolling_window = ["polars-core/rolling_window"]
+rolling_window = ["polars-core/rolling_window", "polars-lazy/rolling_window"]
 interpolate = ["polars-core/interpolate", "polars-lazy/interpolate"]
 
 # don't use this

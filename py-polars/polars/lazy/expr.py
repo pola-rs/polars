@@ -1132,6 +1132,134 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.interpolate())
 
+    def rolling_min(
+        self,
+        window_size: int,
+        weight: Optional[tp.List[float]] = None,
+        ignore_null: bool = True,
+        min_periods: Optional[int] = None,
+    ) -> "Expr":
+        """
+        apply a rolling min (moving min) over the values in this array.
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
+
+        window_size
+            The length of the window.
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        """
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_expr(
+            self._pyexpr.rolling_min(window_size, weight, ignore_null, min_periods)
+        )
+
+    def rolling_max(
+        self,
+        window_size: int,
+        weight: Optional[tp.List[float]] = None,
+        ignore_null: bool = True,
+        min_periods: Optional[int] = None,
+    ) -> "Expr":
+        """
+        Apply a rolling max (moving max) over the values in this array.
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
+
+        window_size
+            The length of the window.
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        """
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_expr(
+            self._pyexpr.rolling_max(window_size, weight, ignore_null, min_periods)
+        )
+
+    def rolling_mean(
+        self,
+        window_size: int,
+        weight: Optional[tp.List[float]] = None,
+        ignore_null: bool = True,
+        min_periods: Optional[int] = None,
+    ) -> "Expr":
+        """
+        Apply a rolling mean (moving mean) over the values in this array.
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
+
+        window_size
+            The length of the window.
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        """
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_expr(
+            self._pyexpr.rolling_mean(window_size, weight, ignore_null, min_periods)
+        )
+
+    def rolling_sum(
+        self,
+        window_size: int,
+        weight: Optional[tp.List[float]] = None,
+        ignore_null: bool = True,
+        min_periods: Optional[int] = None,
+    ) -> "Expr":
+        """
+        Apply a rolling sum (moving sum) over the values in this array.
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
+
+        window_size
+            The length of the window.
+        weight
+            An optional slice with the same length of the window that will be multiplied
+            elementwise with the values in the window.
+        ignore_null
+            Toggle behavior of aggregation regarding null values in the window.
+              `True` -> Null values will be ignored.
+              `False` -> Any Null in the window leads to a Null in the aggregation result.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        """
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_expr(
+            self._pyexpr.rolling_sum(window_size, weight, ignore_null, min_periods)
+        )
+
 
 class ExprStringNameSpace:
     """
