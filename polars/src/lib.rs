@@ -51,7 +51,7 @@
 //! `ChunkedArray<T>` are wrappers around an arrow array, that can contain multiples chunks, e.g.
 //! `Vec<dyn ArrowArray>`. These are the root data structures of Polars, and implement many operations.
 //! Most operations are implemented by traits defined in [chunked_array::ops](crate::chunked_array::ops),
-//! or on the [ChunkedArray struct](crate::chunked_array::ops).
+//! or on the [ChunkedArray struct](crate::chunked_array::ChunkedArray).
 //!
 //! ## SIMD
 //! Polars / Arrow uses packed_simd to speed up kernels with SIMD operations. SIMD is an optional
