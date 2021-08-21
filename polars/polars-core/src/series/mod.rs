@@ -1591,7 +1591,7 @@ impl Series {
         }
     }
     /// Apply a rolling sum to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_sum).
+    /// [ChunkedArray::rolling_sum](crate::prelude::ChunkWindow::rolling_sum).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_sum(
         &self,
@@ -1610,7 +1610,7 @@ impl Series {
         }
     }
     /// Apply a rolling min to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_min).
+    /// [ChunkedArray::rolling_min](crate::prelude::ChunkWindow::rolling_min).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_min(
         &self,
@@ -1629,7 +1629,7 @@ impl Series {
         }
     }
     /// Apply a rolling max to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_max).
+    /// [ChunkedArray::rolling_max](crate::prelude::ChunkWindow::rolling_max).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_max(
         &self,
