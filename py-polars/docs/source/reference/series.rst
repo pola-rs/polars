@@ -96,6 +96,7 @@ Computations
     Series.rolling_max
     Series.rolling_mean
     Series.rolling_sum
+    Series.rolling_apply
     Series.hash
     Series.peak_max
     Series.peak_min

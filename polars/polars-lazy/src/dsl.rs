@@ -1383,6 +1383,18 @@ impl Expr {
             None,
         )
     }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    /// Apply a custom function over a rolling/ moving window of the array.
+    /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
+    pub fn rolling_apply(
+        self,
+        window_size: usize,
+        f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
+    ) -> Expr {
+        self.apply(move |s| s.rolling_apply(window_size, f.as_ref()), None)
+    }
 }
 
 /// Create a Column Expression based on a column name.

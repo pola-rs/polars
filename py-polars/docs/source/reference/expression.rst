@@ -115,6 +115,7 @@ Computations
     Expr.rolling_max
     Expr.rolling_mean
     Expr.rolling_sum
+    Expr.rolling_apply
     Expr.hash
 
 Manipulation/ selection
