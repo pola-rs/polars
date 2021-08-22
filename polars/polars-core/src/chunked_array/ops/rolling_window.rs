@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use arrow::array::{Array, PrimitiveArray};
 use num::{Bounded, NumCast, One, Zero};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
@@ -329,6 +330,8 @@ where
     }
 }
 
+/// This is similar to how rolling_min, sum, max, mean
+/// is implemented. It takes a window, weights it and applies a fold aggregator
 impl<T> ChunkWindowCustom<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -402,6 +405,53 @@ impl ChunkWindow for BooleanChunked {}
 impl ChunkWindow for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkWindow for ObjectChunked<T> {}
+
+impl<T> ChunkRollApply for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Zero,
+    Self: IntoSeries,
+{
+    fn rolling_apply(&self, window_size: usize, f: &dyn Fn(&Series) -> Series) -> Result<Self> {
+        let ca = self.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+
+        let series_container =
+            ChunkedArray::<T>::new_from_slice("", &[T::Native::zero()]).into_series();
+        let array_ptr = &series_container.chunks()[0];
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
+        for _ in 0..window_size - 1 {
+            builder.append_null();
+        }
+
+        for offset in 0..self.len() + 1 - window_size {
+            let arr_window = arr.slice(offset, window_size);
+
+            // Safety.
+            // ptr is not dropped as we are in scope
+            // We are also the only owner of the contents of the Arc
+            // we do this to reduce heap allocs.
+            unsafe {
+                let ptr =
+                    Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
+                *ptr = arr_window;
+            }
+
+            let s = f(&series_container);
+            let out = self.unpack_series_matching_type(&s)?;
+            builder.append_option(out.get(0));
+        }
+
+        Ok(builder.finish())
+    }
+}
+
+impl ChunkRollApply for ListChunked {}
+impl ChunkRollApply for Utf8Chunked {}
+impl ChunkRollApply for BooleanChunked {}
+impl ChunkRollApply for CategoricalChunked {}
+#[cfg(feature = "object")]
+impl<T> ChunkRollApply for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
@@ -478,6 +528,36 @@ mod test {
                 Some(2.0),
                 Some(5.0),
                 Some(5.5)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rolling_apply() {
+        let ca = Float64Chunked::new_from_opt_slice(
+            "foo",
+            &[
+                Some(0.0),
+                Some(1.0),
+                Some(2.0),
+                None,
+                None,
+                Some(5.0),
+                Some(6.0),
+            ],
+        );
+
+        let out = ca.rolling_apply(3, &|s| s.sum_as_series()).unwrap();
+        assert_eq!(
+            Vec::from(&out),
+            &[
+                None,
+                None,
+                Some(3.0),
+                Some(3.0),
+                Some(2.0),
+                Some(5.0),
+                Some(11.0)
             ]
         );
     }
