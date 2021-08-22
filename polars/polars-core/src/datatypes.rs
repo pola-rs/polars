@@ -33,7 +33,9 @@ pub struct ListType {}
 pub struct CategoricalType {}
 
 pub trait PolarsDataType: Send + Sync {
-    fn get_dtype() -> DataType;
+    fn get_dtype() -> DataType
+    where
+        Self: Sized;
 }
 
 macro_rules! impl_polars_datatype {
@@ -191,6 +193,31 @@ impl PolarsIntegerType for DurationMillisecondType {}
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
+
+pub trait ToPolarsType {
+    fn to_polars_type() -> &'static dyn PolarsDataType;
+}
+
+macro_rules! to_polars_type {
+    ($native:ty, $polars:ident) => {
+        impl ToPolarsType for $native {
+            fn to_polars_type() -> &'static dyn PolarsDataType {
+                &$polars {}
+            }
+        }
+    };
+}
+
+to_polars_type!(i8, Int8Type);
+to_polars_type!(i16, Int16Type);
+to_polars_type!(i32, Int32Type);
+to_polars_type!(i64, Int64Type);
+to_polars_type!(u8, UInt8Type);
+to_polars_type!(u16, UInt16Type);
+to_polars_type!(u32, UInt32Type);
+to_polars_type!(u64, UInt64Type);
+to_polars_type!(f32, Float32Type);
+to_polars_type!(f64, Float64Type);
 
 #[derive(Debug, Clone)]
 pub enum AnyValue<'a> {
