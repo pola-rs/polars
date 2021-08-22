@@ -1260,6 +1260,58 @@ class Expr:
             self._pyexpr.rolling_sum(window_size, weight, ignore_null, min_periods)
         )
 
+    def rolling_apply(
+        self, window_size: int, function: Callable[["pl.Series"], Any]
+    ) -> "Expr":
+        """
+        Allows a custom rolling window function.
+        Prefer the specific rolling window fucntions over this one, as they are faster.
+
+        Prefer:
+            * rolling_min
+            * rolling_max
+            * rolling_mean
+            * rolling_sum
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        function
+            Aggregation function
+
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        >>>     {
+        >>>         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
+        >>>     }
+        >>> )
+        >>> df.select([
+        >>>     col("A").rolling_apply(3, lambda s: s.std())
+        >>> ])
+        shape: (5, 1)
+        ┌────────────────────┐
+        │ A                  │
+        │ ---                │
+        │ f64                │
+        ╞════════════════════╡
+        │ null               │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null               │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 4.358898943540674  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 4.041451884327381  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5.5677643628300215 │
+        └────────────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.rolling_apply(window_size, function))
+
 
 class ExprStringNameSpace:
     """
