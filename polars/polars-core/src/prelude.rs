@@ -43,4 +43,4 @@ pub use crate::{
 };
 
 #[cfg(feature = "rolling_window")]
-pub use crate::chunked_array::ops::window::InitFold;
+pub use crate::chunked_array::ops::rolling_window::InitFold;
