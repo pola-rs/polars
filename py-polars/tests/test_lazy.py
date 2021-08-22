@@ -427,3 +427,11 @@ def test_rolling(fruits_cars):
             }
         )
     )
+
+
+def test_rolling_apply():
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
+    out = s.rolling_apply(window_size=3, function=lambda s: s.std())
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 4.358898943540674

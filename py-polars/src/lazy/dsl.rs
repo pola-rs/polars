@@ -8,6 +8,29 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
 
+fn call_lambda_with_series(
+    py: Python,
+    s: Series,
+    lambda: &PyObject,
+    polars_module: &PyObject,
+) -> PyObject {
+    let pypolars = polars_module.cast_as::<PyModule>(py).unwrap();
+
+    // create a PySeries struct/object for Python
+    let pyseries = PySeries::new(s);
+    // Wrap this PySeries object in the python side Series wrapper
+    let python_series_wrapper = pypolars
+        .getattr("wrap_s")
+        .unwrap()
+        .call1((pyseries,))
+        .unwrap();
+    // call the lambda and get a python side Series wrapper
+    match lambda.call1(py, (python_series_wrapper,)) {
+        Ok(pyobj) => pyobj,
+        Err(e) => panic!("python apply failed: {}", e.pvalue(py).to_string()),
+    }
+}
+
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
@@ -429,7 +452,126 @@ impl PyExpr {
             .into()
     }
 
-    pub fn map(&self, lambda: PyObject, output_type: &PyAny, agg_list: bool) -> PyExpr {
+    pub fn rolling_apply(&self, py: Python, window_size: usize, lambda: PyObject) -> PyExpr {
+        // get the pypolars module
+        // do the import outside of the function.
+        let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
+
+        let function = move |s: &Series| {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+
+            let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars);
+            match out.getattr(py, "_s") {
+                Ok(pyseries) => {
+                    let pyseries = pyseries.extract::<PySeries>(py).unwrap();
+                    pyseries.series
+                }
+                Err(_) => {
+                    let obj = out;
+                    let is_float = obj.as_ref(py).is_instance::<PyFloat>().unwrap();
+
+                    let dtype = s.dtype();
+
+                    use DataType::*;
+                    let result = match dtype {
+                        UInt8 => {
+                            if is_float {
+                                let v = obj.extract::<f64>(py).unwrap();
+                                Ok(UInt8Chunked::new_from_slice("", &[v as u8]).into_series())
+                            } else {
+                                obj.extract::<u8>(py)
+                                    .map(|v| UInt8Chunked::new_from_slice("", &[v]).into_series())
+                            }
+                        }
+                        UInt16 => {
+                            if is_float {
+                                let v = obj.extract::<f64>(py).unwrap();
+                                Ok(UInt16Chunked::new_from_slice("", &[v as u16]).into_series())
+                            } else {
+                                obj.extract::<u16>(py)
+                                    .map(|v| UInt16Chunked::new_from_slice("", &[v]).into_series())
+                            }
+                        }
+                        UInt32 => {
+                            if is_float {
+                                let v = obj.extract::<f64>(py).unwrap();
+                                Ok(UInt32Chunked::new_from_slice("", &[v as u32]).into_series())
+                            } else {
+                                obj.extract::<u32>(py)
+                                    .map(|v| UInt32Chunked::new_from_slice("", &[v]).into_series())
+                            }
+                        }
+                        UInt64 => {
+                            if is_float {
+                                let v = obj.extract::<f64>(py).unwrap();
+                                Ok(UInt64Chunked::new_from_slice("", &[v as u64]).into_series())
+                            } else {
+                                obj.extract::<u64>(py)
+                                    .map(|v| UInt64Chunked::new_from_slice("", &[v]).into_series())
+                            }
+                        }
+                        Int8 => {
+                            if is_float {
+                                let v = obj.extract::<f64>(py).unwrap();
+                                Ok(Int8Chunked::new_from_slice("", &[v as i8]).into_series())
+                            } else {
+                                obj.extract::<i8>(py)
+                                    .map(|v| Int8Chunked::new_from_slice("", &[v]).into_series())
+                            }
+                        }
+                        Int16 => {
+                            if is_float {
+                                let v = obj.extract::<f64>(py).unwrap();
+                                Ok(Int16Chunked::new_from_slice("", &[v as i16]).into_series())
+                            } else {
+                                obj.extract::<i16>(py)
+                                    .map(|v| Int16Chunked::new_from_slice("", &[v]).into_series())
+                            }
+                        }
+                        Int32 => {
+                            if is_float {
+                                let v = obj.extract::<f64>(py).unwrap();
+                                Ok(Int32Chunked::new_from_slice("", &[v as i32]).into_series())
+                            } else {
+                                obj.extract::<i32>(py)
+                                    .map(|v| Int32Chunked::new_from_slice("", &[v]).into_series())
+                            }
+                        }
+                        Int64 => {
+                            if is_float {
+                                let v = obj.extract::<f64>(py).unwrap();
+                                Ok(Int64Chunked::new_from_slice("", &[v as i64]).into_series())
+                            } else {
+                                obj.extract::<i64>(py)
+                                    .map(|v| Int64Chunked::new_from_slice("", &[v]).into_series())
+                            }
+                        }
+                        Float32 => obj
+                            .extract::<f32>(py)
+                            .map(|v| Float32Chunked::new_from_slice("", &[v]).into_series()),
+                        Float64 => obj
+                            .extract::<f64>(py)
+                            .map(|v| Float64Chunked::new_from_slice("", &[v]).into_series()),
+                        dt => panic!("{:?} not implemented", dt),
+                    };
+
+                    match result {
+                        Ok(s) => s,
+                        Err(e) => {
+                            panic!("{:?}", e)
+                        }
+                    }
+                }
+            }
+        };
+        self.clone()
+            .inner
+            .rolling_apply(window_size, Arc::new(function))
+            .into()
+    }
+
+    pub fn map(&self, py: Python, lambda: PyObject, output_type: &PyAny, agg_list: bool) -> PyExpr {
         let output_type = match output_type.is_none() {
             true => None,
             false => {
@@ -437,27 +579,18 @@ impl PyExpr {
                 Some(str_to_polarstype(str_repr))
             }
         };
+        // get the pypolars module
+        // do the import outside of the function to prevent import side effects in a hot loop.
+        let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
 
         let function = move |s: Series| {
             let gil = Python::acquire_gil();
             let py = gil.python();
-            // get the pypolars module
-            let pypolars = PyModule::import(py, "polars").unwrap();
-            // create a PySeries struct/object for Python
-            let pyseries = PySeries::new(s);
-            // Wrap this PySeries object in the python side Series wrapper
-            let python_series_wrapper = pypolars
-                .getattr("wrap_s")
-                .unwrap()
-                .call1((pyseries,))
-                .unwrap();
-            // call the lambda and get a python side Series wrapper
-            let result_series_wrapper = match lambda.call1(py, (python_series_wrapper,)) {
-                Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
-            };
+
+            // this is a python Series
+            let out = call_lambda_with_series(py, s, &lambda, &pypolars);
             // unpack the wrapper in a PySeries
-            let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
+            let py_pyseries = out.getattr(py, "_s").expect(
                 "Could net get series attribute '_s'. Make sure that you return a Series object.",
             );
             // Downcast to Rust
@@ -522,7 +655,10 @@ impl PyExpr {
         ignore_null: bool,
         min_periods: u32,
     ) -> PyExpr {
-        self.inner.clone().rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods).into()
+        self.inner
+            .clone()
+            .rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods)
+            .into()
     }
     pub fn rolling_min(
         &self,
@@ -531,7 +667,10 @@ impl PyExpr {
         ignore_null: bool,
         min_periods: u32,
     ) -> Self {
-        self.inner.clone().rolling_min(window_size, weight.as_deref(), ignore_null, min_periods).into()
+        self.inner
+            .clone()
+            .rolling_min(window_size, weight.as_deref(), ignore_null, min_periods)
+            .into()
     }
     pub fn rolling_max(
         &self,
@@ -540,7 +679,10 @@ impl PyExpr {
         ignore_null: bool,
         min_periods: u32,
     ) -> Self {
-        self.inner.clone().rolling_max(window_size, weight.as_deref(), ignore_null, min_periods).into()
+        self.inner
+            .clone()
+            .rolling_max(window_size, weight.as_deref(), ignore_null, min_periods)
+            .into()
     }
     pub fn rolling_mean(
         &self,
@@ -549,7 +691,10 @@ impl PyExpr {
         ignore_null: bool,
         min_periods: u32,
     ) -> Self {
-        self.inner.clone().rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods).into()
+        self.inner
+            .clone()
+            .rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods)
+            .into()
     }
 }
 

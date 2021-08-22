@@ -1077,8 +1077,16 @@ pub trait SeriesTrait:
 
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
+    /// Compute the most occurring element in the array.
     fn mode(&self) -> Result<Series> {
         unimplemented!()
+    }
+
+    #[cfg(feature = "rolling_window")]
+    /// Apply a custom function over a rolling/ moving window of the array.
+    /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
+    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
+        panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
     }
 }
 
