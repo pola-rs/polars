@@ -1,7 +1,7 @@
 //! Domain specific language for the Lazy api.
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{has_expr, has_wildcard, output_name};
+use crate::utils::{has_expr, has_wildcard};
 use polars_core::prelude::*;
 
 #[cfg(feature = "temporal")]
@@ -1033,12 +1033,25 @@ impl Expr {
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::fill_none).
     pub fn fill_none(self, fill_value: Expr) -> Self {
-        let name = output_name(&self).unwrap();
-        when(self.clone().is_null())
-            .then(fill_value)
-            // important that this is self!
-            .otherwise(self)
-            .alias(&*name)
+        map_binary_lazy_field(
+            self,
+            fill_value,
+            |a, b| {
+                if a.null_count() == 0 {
+                    Ok(a)
+                } else {
+                    let st = get_supertype(a.dtype(), b.dtype())?;
+                    let a = a.cast_with_dtype(&st)?;
+                    let b = b.cast_with_dtype(&st)?;
+                    let mask = a.is_not_null();
+                    a.zip_with_same_type(&mask, &b)
+                }
+            },
+            |_schema, _ctx, a, b| {
+                let st = get_supertype(a.data_type(), b.data_type()).unwrap();
+                Some(Field::new(a.name(), st))
+            },
+        )
     }
     /// Count the values of the Series
     /// or
