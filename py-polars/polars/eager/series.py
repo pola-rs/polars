@@ -2150,6 +2150,47 @@ class Series:
         """
         return wrap_s(self._s.interpolate())
 
+    def rolling_apply(
+        self, window_size: int, function: Callable[["pl.Series"], Any]
+    ) -> "pl.Series":
+        """
+        Allows a custom rolling window function.
+        Prefer the specific rolling window fucntions over this one, as they are faster.
+
+        Prefer:
+            * rolling_min
+            * rolling_max
+            * rolling_mean
+            * rolling_sum
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        function
+            Aggregation function
+
+
+        Examples
+        --------
+
+        >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
+        >>> s.rolling_apply(window_size=3, function=lambda s: s.std())
+        shape: (5,)
+        Series: 'A' [f64]
+        [
+            null
+            null
+            4.358898943540674
+            4.041451884327381
+            5.5677643628300215
+        ]
+
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_apply(window_size, function)  # type: ignore
+        )[self.name]
+
 
 class StringNameSpace:
     """
