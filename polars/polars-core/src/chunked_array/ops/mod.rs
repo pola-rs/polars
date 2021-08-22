@@ -31,13 +31,13 @@ pub(crate) mod is_in;
 pub(crate) mod peaks;
 #[cfg(feature = "repeat_by")]
 pub(crate) mod repeat_by;
+#[cfg(feature = "rolling_window")]
+pub(crate) mod rolling_window;
 pub(crate) mod set;
 pub(crate) mod shift;
 pub(crate) mod sort;
 pub(crate) mod take;
 pub(crate) mod unique;
-#[cfg(feature = "rolling_window")]
-pub(crate) mod window;
 #[cfg(feature = "zip_with")]
 pub(crate) mod zip;
 
@@ -261,6 +261,21 @@ pub trait ChunkWindowCustom<T> {
     where
         F: Fn(Option<T>, Option<T>) -> Option<T> + Copy,
         Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+}
+
+/// This differs from ChunkWindowCustom and ChunkWindow
+/// by not using a fold aggregator, but reusing a `Series` wrapper and calling `Series` aggregators.
+/// This likely is a bit slower than ChunkWindow
+#[cfg(feature = "rolling_window")]
+pub trait ChunkRollApply {
+    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Self>
+    where
+        Self: Sized,
     {
         Err(PolarsError::InvalidOperation(
             "rolling mean not supported for this datatype".into(),
