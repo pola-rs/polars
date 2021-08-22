@@ -111,6 +111,10 @@ Computations
     Expr.arg_unique
     Expr.unique
     Expr.pow
+    Expr.rolling_min
+    Expr.rolling_max
+    Expr.rolling_mean
+    Expr.rolling_sum
     Expr.hash
 
 Manipulation/ selection
