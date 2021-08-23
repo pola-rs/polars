@@ -323,7 +323,17 @@ impl fmt::Debug for Expr {
             Reverse(expr) => write!(f, "REVERSE {:?}", expr),
             Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
             Column(name) => write!(f, "{}", name),
-            Literal(v) => write!(f, "{:?}", v),
+            Literal(v) => {
+                match v {
+                    LiteralValue::Utf8(v) => {
+                        // dot breaks with debug fmt due to \"
+                        write!(f, "Utf8({})", v)
+                    }
+                    _ => {
+                        write!(f, "{:?}", v)
+                    }
+                }
+            }
             BinaryExpr { left, op, right } => write!(f, "[({:?}) {:?} ({:?})]", left, op, right),
             Not(expr) => write!(f, "NOT {:?}", expr),
             IsNull(expr) => write!(f, "{:?} IS NULL", expr),
