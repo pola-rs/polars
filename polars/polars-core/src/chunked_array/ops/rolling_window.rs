@@ -419,6 +419,7 @@ where
         let series_container =
             ChunkedArray::<T>::new_from_slice("", &[T::Native::zero()]).into_series();
         let array_ptr = &series_container.chunks()[0];
+        let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T>;
         let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
         for _ in 0..window_size - 1 {
             builder.append_null();
@@ -431,10 +432,7 @@ where
             // ptr is not dropped as we are in scope
             // We are also the only owner of the contents of the Arc
             // we do this to reduce heap allocs.
-            unsafe {
-                let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T>;
-                *ptr = PrimitiveArray::from(ad)
-            }
+            unsafe { *ptr = PrimitiveArray::from(ad) }
 
             let s = f(&series_container);
             let out = self.unpack_series_matching_type(&s)?;

@@ -70,6 +70,8 @@ cum_agg = []
 # rolling window functions
 rolling_window = []
 interpolate = []
+# additional list utils
+list = []
 
 
 # opt-in datatypes for Series

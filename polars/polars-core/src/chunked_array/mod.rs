@@ -44,6 +44,8 @@ pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
 
+pub(crate) mod list;
+
 use arrow::array::{
     Array, ArrayData, Date32Array, DurationMillisecondArray, DurationNanosecondArray,
     LargeListArray, PrimitiveArray,

@@ -40,7 +40,7 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
     let mut validity = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
     let validity_slice = validity.as_slice_mut();
 
-    let arr = if let Some(validity_indices) = indices.data_ref().null_buffer() {
+    if let Some(validity_indices) = indices.data_ref().null_buffer() {
         index_values.iter().enumerate().for_each(|(i, idx)| {
             // i is iteration count
             // idx is the index that we take from the values array.
@@ -51,7 +51,6 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
                 unset_bit(validity_slice, i)
             }
         });
-        values.into_primitive_array(Some(validity.into()))
     } else {
         index_values.iter().enumerate().for_each(|(i, idx)| {
             let idx = *idx as usize;
@@ -59,8 +58,8 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
                 unset_bit(validity_slice, i)
             }
         });
-        values.into_primitive_array(Some(validity.into()))
     };
+    let arr = values.into_primitive_array(Some(validity.into()));
 
     Arc::new(arr)
 }
