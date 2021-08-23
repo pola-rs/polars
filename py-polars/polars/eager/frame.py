@@ -733,25 +733,20 @@ class DataFrame:
 
         self._df.to_ipc(file)
 
-    def transpose(self, df: "pl.DataFrame") -> "pl.DataFrame":
+    def transpose(self) -> "pl.DataFrame":
         """
         Transpose a DataFrame over the diagonal.
 
-        syntactic sugar for:
-
-        >>> pl.DataFrame(df.rows())
-
-        Parameters
-        ----------
-        df
-            DataFrame
+        Notes
+        -----
+        This is a very expensive operation. Perhaps you can do it differently.
 
         Returns
         -------
         DataFrame
 
         """
-        return pl.DataFrame(df.rows())
+        return wrap_df(self._df.transpose())
 
     def to_parquet(
         self,
@@ -2081,10 +2076,10 @@ class DataFrame:
         """
         Fill None/missing values by a an Expression evaluation.
 
-        ..warning::
-
-            NOTE that floating point NaN (No a Number) are not missing values!
-            to replace missing values, use `fill_none`.
+        Warnings
+        --------
+        NOTE that floating point NaN (No a Number) are not missing values!
+        to replace missing values, use `fill_none`.
 
         Parameters
         ----------

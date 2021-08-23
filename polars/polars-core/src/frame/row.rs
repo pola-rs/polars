@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::utils::get_supertype;
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
@@ -47,7 +48,15 @@ impl DataFrame {
     /// as this is a lot slower than creating the `Series` in a columnar fashion
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> Result<Self> {
-        let capacity = rows.len();
+        Self::from_rows_iter_and_schema(rows.iter(), schema)
+    }
+
+    fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> Result<Self>
+    where
+        I: Iterator<Item = &'a Row<'a>>,
+    {
+        let capacity = rows.size_hint().0;
+
         let mut buffers: Vec<_> = schema
             .fields()
             .iter()
@@ -57,7 +66,7 @@ impl DataFrame {
             })
             .collect();
 
-        rows.iter().try_for_each::<_, Result<()>>(|row| {
+        rows.try_for_each::<_, Result<()>>(|row| {
             for (value, buf) in row.0.iter().zip(&mut buffers) {
                 buf.add(value.clone())?
             }
@@ -90,6 +99,53 @@ impl DataFrame {
             ));
         }
         Self::from_rows_and_schema(rows, &schema)
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
+    /// Transpose a DataFrame. This is a very expensive operation.
+    pub fn transpose(&self) -> Result<DataFrame> {
+        // TODO: if needed we could optimize this to specialized builders. Now we use AnyValue even though
+        // we cast all Series to same dtype. So we could patter match en create at once.
+
+        let height = self.height();
+        if height == 0 || self.width() == 0 {
+            return Err(PolarsError::NoData("empty dataframe".into()));
+        }
+
+        let dtype = self
+            .columns
+            .iter()
+            .map(|s| Ok(s.dtype().clone()))
+            .reduce(|a, b| get_supertype(&a?, &b?))
+            .unwrap()?;
+
+        let schema = Schema::new(
+            (0..height)
+                .map(|i| Field::new(format!("column_{}", i).as_ref(), dtype.clone()))
+                .collect(),
+        );
+
+        let row_container = vec![AnyValue::Null; height];
+        let mut row = Row(row_container);
+        let row_ptr = &row as *const Row;
+
+        let columns = self
+            .columns
+            .iter()
+            .map(|s| s.cast_with_dtype(&dtype))
+            .collect::<Result<Vec<_>>>()?;
+
+        let iter = columns.iter().map(|s| {
+            (0..s.len()).zip(row.0.iter_mut()).for_each(|(i, av)| {
+                *av = s.get(i);
+            });
+            // borrow checkery does not allow row borrow, so we deref from raw ptr.
+            // we do all this to amortize allocs
+            // Safety:
+            // row is still alive
+            unsafe { &*row_ptr }
+        });
+        Self::from_rows_iter_and_schema(iter, &schema)
     }
 }
 
