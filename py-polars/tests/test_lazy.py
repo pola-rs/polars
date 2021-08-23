@@ -356,7 +356,7 @@ def test_regex_selection():
 
 def test_literal_projection():
     df = pl.DataFrame({"a": [1, 2]})
-    assert df.select([True, 1, 2.0]).dtypes == [pl.Boolean, pl.Int64, pl.Float64]
+    assert df.select([True, 1, 2.0]).dtypes == [pl.Boolean, pl.Int32, pl.Float64]
 
 
 def test_to_python_datetime():
