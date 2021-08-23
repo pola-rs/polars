@@ -533,11 +533,11 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (UInt8, Int32) => Some(Int32),
         (UInt8, Int64) => Some(Int64),
 
-        (UInt16, Int16) => Some(Int16),
+        (UInt16, Int16) => Some(Int32),
         (UInt16, Int32) => Some(Int32),
         (UInt16, Int64) => Some(Int64),
 
-        (UInt32, Int32) => Some(Int32),
+        (UInt32, Int32) => Some(Int64),
         (UInt32, Int64) => Some(Int64),
 
         (UInt64, Int64) => Some(Int64),
