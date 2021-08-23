@@ -903,6 +903,11 @@ impl PyDataFrame {
         let hash = self.df.hash_rows(Some(hb)).map_err(PyPolarsEr::from)?;
         Ok(hash.into_series().into())
     }
+
+    pub fn transpose(&self) -> PyResult<Self> {
+        let df = self.df.transpose().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
