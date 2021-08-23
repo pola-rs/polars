@@ -879,7 +879,13 @@ pub fn lit(value: &PyAny) -> PyExpr {
         dsl::lit(val).into()
     } else if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();
-        dsl::lit(val).into()
+
+        if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
+            dsl::lit(val as i32).into()
+        }  else {
+            dsl::lit(val).into()
+        }
+
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
         dsl::lit(val).into()

@@ -47,8 +47,27 @@ impl OptimizationRule for TypeCoercionRule {
                     if type_true == type_false {
                         None
                     } else {
-                        let st = get_supertype(&type_true, &type_false).expect("supertype");
+                        let mut st = get_supertype(&type_true, &type_false).expect("supertype");
 
+                        match (truthy, falsy) {
+                            // do nothing and use supertype
+                            (AExpr::Literal(_), AExpr::Literal(_)) => {}
+                            // cast literal to right type
+                            (AExpr::Literal(_), _) => {
+                                st = type_false.clone();
+                            }
+                            // cast literal to left type
+                            (_, AExpr::Literal(_)) => {
+                                st = type_true.clone();
+                            }
+                            // do nothing
+                            _ => {}
+                        }
+
+                        // only cast if the type is not already the super type.
+                        // this can prevent an expensive flattening and subsequent aggregation
+                        // in a groupby context. To be able to cast the groups need to be
+                        // flattened
                         let new_node_truthy = if type_true != st {
                             expr_arena.add(AExpr::Cast {
                                 expr: truthy_node,
@@ -119,8 +138,23 @@ impl OptimizationRule for TypeCoercionRule {
                     if type_left == type_right || compare_cat_to_string {
                         None
                     } else {
-                        let st = get_supertype(&type_left, &type_right)
+                        let mut st = get_supertype(&type_left, &type_right)
                             .expect("could not find supertype of binary expr");
+
+                        match (left, right) {
+                            // do nothing and use supertype
+                            (AExpr::Literal(_), AExpr::Literal(_)) => {}
+                            // cast literal to right type
+                            (AExpr::Literal(_), _) => {
+                                st = type_right.clone();
+                            }
+                            // cast literal to left type
+                            (_, AExpr::Literal(_)) => {
+                                st = type_left.clone();
+                            }
+                            // do nothing
+                            _ => {}
+                        }
 
                         // only cast if the type is not already the super type.
                         // this can prevent an expensive flattening and subsequent aggregation
