@@ -1544,6 +1544,7 @@ fn test_exploded_window_function() -> Result<()> {
     );
 
     // this tests if cast succeeds in aggregation context
+    // we implicitly also test that a literal does not upcast a column
     let out = df
         .lazy()
         .sort("fruits", false)
@@ -1558,8 +1559,8 @@ fn test_exploded_window_function() -> Result<()> {
         .collect()?;
 
     assert_eq!(
-        Vec::from(out.column("shifted")?.f64()?),
-        &[Some(-1.0), Some(3.0), Some(-1.0), Some(5.0), Some(4.0)]
+        Vec::from(out.column("shifted")?.i32()?),
+        &[Some(-1), Some(3), Some(-1), Some(5), Some(4)]
     );
     Ok(())
 }
