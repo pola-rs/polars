@@ -419,6 +419,7 @@ where
         let series_container =
             ChunkedArray::<T>::new_from_slice("", &[T::Native::zero()]).into_series();
         let array_ptr = &series_container.chunks()[0];
+        let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
         let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
         for _ in 0..window_size - 1 {
             builder.append_null();
@@ -432,8 +433,6 @@ where
             // We are also the only owner of the contents of the Arc
             // we do this to reduce heap allocs.
             unsafe {
-                let ptr =
-                    Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
                 *ptr = arr_window;
             }
 
