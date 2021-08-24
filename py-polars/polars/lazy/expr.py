@@ -1080,6 +1080,13 @@ class Expr:
         """
         return ExprStringNameSpace(self)
 
+    @property
+    def arr(self) -> "ExprListNameSpace":
+        """
+        Create an object namespace of all datetime related methods.
+        """
+        return ExprListNameSpace(self)
+
     def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pl.Expr":
         """
         Hash the Series.
@@ -1311,6 +1318,45 @@ class Expr:
 
         """
         return wrap_expr(self._pyexpr.rolling_apply(window_size, function))
+
+
+class ExprListNameSpace:
+    """
+    Namespace for list related expressions
+    """
+
+    def __init__(self, expr: Expr):
+        self._pyexpr = expr._pyexpr
+
+    def sum(self) -> "Expr":
+        """
+        Sum all the arrays in the list
+        """
+        return wrap_expr(self._pyexpr.lst_sum())
+
+    def max(self) -> "Expr":
+        """
+        Compute the max value of the arrays in the list
+        """
+        return wrap_expr(self._pyexpr.lst_max())
+
+    def min(self) -> "Expr":
+        """
+        Compute the min value of the arrays in the list
+        """
+        return wrap_expr(self._pyexpr.lst_min())
+
+    def mean(self) -> "Expr":
+        """
+        Compute the mean value of the arrays in the list
+        """
+        return wrap_expr(self._pyexpr.lst_mean())
+
+    def sort(self, reverse: bool) -> "Expr":
+        """
+        Sort the arrays in the list
+        """
+        return wrap_expr(self._pyexpr.lst_sort(reverse))
 
 
 class ExprStringNameSpace:

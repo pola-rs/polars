@@ -2105,6 +2105,13 @@ class Series:
         return DateTimeNameSpace(self)
 
     @property
+    def arr(self) -> "ListNameSpace":
+        """
+        Create an object namespace of all list related methods.
+        """
+        return ListNameSpace(self)
+
+    @property
     def str(self) -> "StringNameSpace":
         """
         Create an object namespace of all string related methods.
@@ -2347,6 +2354,50 @@ class StringNameSpace:
         Series of Utf8 type
         """
         return wrap_s(self._s.str_slice(start, length))
+
+
+class ListNameSpace:
+    """
+    Series.dt namespace.
+    """
+
+    def __init__(self, series: Series):
+        self._s = series._s
+
+    def sum(self) -> Series:
+        """
+        Sum all the arrays in the list
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pl.col(s.name).arr.sum())  # type: ignore
+
+    def max(self) -> Series:
+        """
+        Compute the max value of the arrays in the list
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pl.col(s.name).arr.max())  # type: ignore
+
+    def min(self) -> Series:
+        """
+        Compute the min value of the arrays in the list
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pl.col(s.name).arr.min())  # type: ignore
+
+    def mean(self) -> Series:
+        """
+        Compute the mean value of the arrays in the list
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pl.col(s.name).arr.min())  # type: ignore
+
+    def sort(self, reverse: bool) -> Series:
+        """
+        Sort the arrays in the list
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pl.col(s.name).arr.sort(reverse))  # type: ignore
 
 
 class DateTimeNameSpace:

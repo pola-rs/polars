@@ -195,3 +195,19 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.rstrip
     StringNameSpace.lstrip
     StringNameSpace.slice
+
+Lists
+-----
+
+The following methods are available under the `Series.arr` attribute.
+
+.. currentmodule:: polars.eager.series
+
+.. autosummary::
+   :toctree: api/
+
+    ListNameSpace.sum
+    ListNameSpace.min
+    ListNameSpace.max
+    ListNameSpace.mean
+    ListNameSpace.sort
