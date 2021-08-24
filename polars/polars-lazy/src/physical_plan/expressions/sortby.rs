@@ -108,8 +108,8 @@ impl PhysicalAggregation for SortByExpr {
         let agg_s = agg_s
             .list()
             .unwrap()
-            .into_iter()
-            .zip(s_sort_by.list().unwrap())
+            .amortized_iter()
+            .zip(s_sort_by.list().unwrap().amortized_iter())
             .map(|(opt_s, opt_sort_by)| {
                 match (opt_s, opt_sort_by) {
                     (Some(s), Some(sort_by)) => {

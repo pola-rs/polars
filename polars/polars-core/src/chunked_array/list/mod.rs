@@ -2,24 +2,39 @@
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
 use arrow::array::ArrayRef;
+use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::pin::Pin;
 
-/// A wrapper type that should make it a bit more clear that we should not clone T
-pub(crate) struct NoClone<T>(T);
+/// A wrapper type that should make it a bit more clear that we should not clone Series
+#[derive(Debug)]
+#[cfg(feature = "private")]
+pub struct UnsafeSeries<'a>(&'a Series);
 
-impl<T> Deref for NoClone<T> {
-    type Target = T;
+impl Deref for UnsafeSeries<'_> {
+    type Target = Series;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 
 type ArrayBox = Box<dyn Array>;
 
-pub(crate) struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
+impl UnsafeSeries<'_> {
+    pub fn clone(&self) {
+        panic!("don't clone this type, use deep_clone")
+    }
+
+    pub fn deep_clone(&self) -> Series {
+        let array_ref = self.0.chunks()[0].clone();
+        Series::try_from((self.0.name(), array_ref)).unwrap()
+    }
+}
+
+#[cfg(feature = "private")]
+pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     series_container: Pin<Box<Series>>,
     inner: *mut ArrayRef,
     lifetime: PhantomData<&'a ArrayRef>,
@@ -27,7 +42,7 @@ pub(crate) struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
 }
 
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
-    type Item = Option<NoClone<&'a Series>>;
+    type Item = Option<UnsafeSeries<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|opt_val| {
@@ -37,11 +52,14 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                 // we cannot control the lifetime of an iterators `next` method.
                 // but as long as self is alive the reference to the series container is valid
                 let refer = &*self.series_container;
-                NoClone(unsafe { std::mem::transmute::<&Series, &'a Series>(refer) })
+                UnsafeSeries(unsafe { std::mem::transmute::<&Series, &'a Series>(refer) })
             })
         })
     }
 }
+
+#[cfg(feature = "private")]
+unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
 
 impl ListChunked {
     /// This is an iterator over a ListChunked that save allocations.
@@ -60,10 +78,8 @@ impl ListChunked {
     /// this function still needs precautions. The returned should never be cloned or taken longer
     /// than a single iteration, as every call on `next` of the iterator will change the contents of
     /// that Series.
-    #[allow(dead_code)]
-    pub(crate) fn amortized_iter(
-        &self,
-    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    #[cfg(feature = "private")]
+    pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         let series_container = if self.is_empty() {
             // in case of no data, the actual Series does not matter
             Box::pin(Series::new("", &[true]))
@@ -83,6 +99,32 @@ impl ListChunked {
                 .flatten()
                 .trust_my_length(self.len()),
         }
+    }
+
+    /// Apply a closure `F` elementwise.
+    #[cfg(feature = "private")]
+    pub fn apply_amortized<'a, F>(&'a self, f: F) -> Self
+    where
+        F: Fn(UnsafeSeries<'a>) -> Series + Copy,
+    {
+        if self.is_empty() {
+            return self.clone();
+        }
+        self.amortized_iter()
+            .map(|opt_v| opt_v.map(f))
+            .collect_trusted()
+    }
+
+    pub fn try_apply_amortized<'a, F>(&'a self, f: F) -> Result<Self>
+    where
+        F: Fn(UnsafeSeries<'a>) -> Result<Series> + Copy,
+    {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+        self.amortized_iter()
+            .map(|opt_v| opt_v.map(f).transpose())
+            .collect()
     }
 }
 
