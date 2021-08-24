@@ -91,7 +91,7 @@ impl<T> Deref for NoEq<T> {
 pub trait BinaryUdfOutputField: Send + Sync {
     fn get_field(
         &self,
-        _input_schema: &Schema,
+        input_schema: &Schema,
         cntxt: Context,
         field_a: &Field,
         field_b: &Field,
@@ -110,6 +110,41 @@ where
         field_b: &Field,
     ) -> Option<Field> {
         self(input_schema, cntxt, field_a, field_b)
+    }
+}
+
+pub trait FunctionOutputField: Send + Sync {
+    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
+}
+
+pub(crate) type GetOutput = NoEq<Arc<dyn FunctionOutputField>>;
+
+impl Default for GetOutput {
+    fn default() -> Self {
+        NoEq::new(Arc::new(
+            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| fields[0].clone(),
+        ))
+    }
+}
+
+impl GetOutput {
+    pub(crate) fn same_type() -> Self {
+        Default::default()
+    }
+
+    pub(crate) fn from_type(dt: DataType) -> Self {
+        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+            Field::new(flds[0].name(), dt.clone())
+        }))
+    }
+}
+
+impl<F> FunctionOutputField for F
+where
+    F: Fn(&Schema, Context, &[Field]) -> Field + Send + Sync,
+{
+    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field {
+        self(input_schema, cntxt, fields)
     }
 }
 
@@ -245,7 +280,7 @@ pub enum Expr {
         /// function to apply
         function: NoEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
-        output_type: Option<DataType>,
+        output_type: GetOutput,
         options: FunctionOptions,
     },
     Shift {
@@ -726,7 +761,7 @@ impl Expr {
         if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
             panic!("wildcard not supperted in unique expr");
         }
-        self.apply(|s: Series| s.unique(), None)
+        self.apply(|s: Series| s.unique(), GetOutput::same_type())
     }
 
     /// Get the first index of unique values of this expression.
@@ -736,7 +771,7 @@ impl Expr {
         }
         self.apply(
             |s: Series| s.arg_unique().map(|ca| ca.into_series()),
-            Some(DataType::UInt32),
+            GetOutput::from_type(DataType::UInt32),
         )
     }
 
@@ -747,7 +782,7 @@ impl Expr {
         }
         self.apply(
             move |s: Series| Ok(s.argsort(reverse).into_series()),
-            Some(DataType::UInt32),
+            GetOutput::from_type(DataType::UInt32),
         )
     }
 
@@ -791,7 +826,7 @@ impl Expr {
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
-    pub fn map<F>(self, function: F, output_type: Option<DataType>) -> Self
+    pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
     where
         F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
     {
@@ -815,7 +850,7 @@ impl Expr {
     ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
     ///  * `map_list` should be used when the function expects a list aggregated series.
-    pub fn map_list<F>(self, function: F, output_type: Option<DataType>) -> Self
+    pub fn map_list<F>(self, function: F, output_type: GetOutput) -> Self
     where
         F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
     {
@@ -841,7 +876,7 @@ impl Expr {
     ///
     /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-    pub fn apply<F>(self, function: F, output_type: Option<DataType>) -> Self
+    pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
     where
         F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
     {
@@ -863,7 +898,7 @@ impl Expr {
     pub fn is_finite(self) -> Self {
         self.map(
             |s: Series| s.is_finite().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -872,7 +907,7 @@ impl Expr {
     pub fn is_infinite(self) -> Self {
         self.map(
             |s: Series| s.is_infinite().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -881,7 +916,7 @@ impl Expr {
     pub fn is_nan(self) -> Self {
         self.map(
             |s: Series| s.is_nan().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -890,7 +925,7 @@ impl Expr {
     pub fn is_not_nan(self) -> Self {
         self.map(
             |s: Series| s.is_not_nan().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -912,7 +947,7 @@ impl Expr {
                     let ca: BooleanChunked = (0..s.len() as i64).map(|i| i >= periods).collect();
                     Ok(ca.into_series())
                 },
-                Some(DataType::Boolean),
+                GetOutput::from_type(DataType::Boolean),
             ))
             .then(self.shift(periods))
             .otherwise(fill_value)
@@ -925,7 +960,7 @@ impl Expr {
                     let ca: BooleanChunked = (0..length).map(|i| i < tipping_point).collect();
                     Ok(ca.into_series())
                 },
-                Some(DataType::Boolean),
+                GetOutput::from_type(DataType::Boolean),
             ))
             .then(self.shift(periods))
             .otherwise(fill_value)
@@ -935,26 +970,35 @@ impl Expr {
     /// Get an array with the cumulative sum computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cum_sum(self, reverse: bool) -> Self {
-        self.apply(move |s: Series| Ok(s.cum_sum(reverse)), None)
+        self.apply(
+            move |s: Series| Ok(s.cum_sum(reverse)),
+            GetOutput::same_type(),
+        )
     }
 
     /// Get an array with the cumulative min computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cum_min(self, reverse: bool) -> Self {
-        self.apply(move |s: Series| Ok(s.cum_min(reverse)), None)
+        self.apply(
+            move |s: Series| Ok(s.cum_min(reverse)),
+            GetOutput::same_type(),
+        )
     }
 
     /// Get an array with the cumulative max computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cum_max(self, reverse: bool) -> Self {
-        self.apply(move |s: Series| Ok(s.cum_max(reverse)), None)
+        self.apply(
+            move |s: Series| Ok(s.cum_max(reverse)),
+            GetOutput::same_type(),
+        )
     }
 
     /// Fill missing value with next non-null.
     pub fn backward_fill(self) -> Self {
         self.apply(
             move |s: Series| s.fill_none(FillNoneStrategy::Backward),
-            None,
+            GetOutput::same_type(),
         )
     }
 
@@ -962,7 +1006,7 @@ impl Expr {
     pub fn forward_fill(self) -> Self {
         self.apply(
             move |s: Series| s.fill_none(FillNoneStrategy::Forward),
-            None,
+            GetOutput::same_type(),
         )
     }
 
@@ -970,7 +1014,7 @@ impl Expr {
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn round(self, decimals: u32) -> Self {
-        self.apply(move |s: Series| s.round(decimals), None)
+        self.apply(move |s: Series| s.round(decimals), GetOutput::same_type())
     }
 
     /// Apply window function over a subgroup.
@@ -1104,7 +1148,10 @@ impl Expr {
 
     /// Raise expression to the power `exponent`
     pub fn pow(self, exponent: f64) -> Self {
-        self.map(move |s: Series| s.pow(exponent), Some(DataType::Float64))
+        self.map(
+            move |s: Series| s.pow(exponent),
+            GetOutput::from_type(DataType::Float64),
+        )
     }
 
     /// Filter a single column
@@ -1143,14 +1190,14 @@ impl Expr {
     #[cfg(feature = "temporal")]
     pub fn year(self) -> Expr {
         let function = move |s: Series| s.year().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Get the month of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn month(self) -> Expr {
         let function = move |s: Series| s.month().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Extract the week from the underlying Date representation.
     /// Can be performed on Date32 and Date64
@@ -1160,7 +1207,7 @@ impl Expr {
     #[cfg(feature = "temporal")]
     pub fn week(self) -> Expr {
         let function = move |s: Series| s.week().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Extract the week day from the underlying Date representation.
@@ -1170,45 +1217,45 @@ impl Expr {
     #[cfg(feature = "temporal")]
     pub fn weekday(self) -> Expr {
         let function = move |s: Series| s.weekday().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Get the month of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn day(self) -> Expr {
         let function = move |s: Series| s.day().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Get the ordinal_day of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn ordinal_day(self) -> Expr {
         let function = move |s: Series| s.ordinal_day().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Get the hour of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn hour(self) -> Expr {
         let function = move |s: Series| s.hour().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Get the minute of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn minute(self) -> Expr {
         let function = move |s: Series| s.minute().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Get the second of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn second(self) -> Expr {
         let function = move |s: Series| s.second().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Get the nanosecond of a Time64
     #[cfg(feature = "temporal")]
     pub fn nanosecond(self) -> Expr {
         let function = move |s: Series| s.nanosecond().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Sort this column by the ordering of another column.
@@ -1243,7 +1290,7 @@ impl Expr {
     pub fn is_first(self) -> Expr {
         self.apply(
             |s| s.is_first().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -1261,7 +1308,10 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
     /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
-        self.apply(|s| s.mode().map(|ca| ca.into_series()), None)
+        self.apply(
+            |s| s.mode().map(|ca| ca.into_series()),
+            GetOutput::same_type(),
+        )
     }
 
     /// Keep the original root name
@@ -1332,7 +1382,7 @@ impl Expr {
     #[cfg(feature = "interpolate")]
     #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
     pub fn interpolate(self) -> Expr {
-        self.apply(|s| Ok(s.interpolate()), None)
+        self.apply(|s| Ok(s.interpolate()), GetOutput::same_type())
     }
 
     /// Apply a rolling min See:
@@ -1349,7 +1399,7 @@ impl Expr {
         let weight = weight.map(|v| v.to_vec());
         self.apply(
             move |s| s.rolling_min(window_size, weight.as_deref(), ignore_null, min_periods),
-            None,
+            GetOutput::same_type(),
         )
     }
 
@@ -1367,7 +1417,7 @@ impl Expr {
         let weight = weight.map(|v| v.to_vec());
         self.apply(
             move |s| s.rolling_max(window_size, weight.as_deref(), ignore_null, min_periods),
-            None,
+            GetOutput::same_type(),
         )
     }
 
@@ -1385,7 +1435,7 @@ impl Expr {
         let weight = weight.map(|v| v.to_vec());
         self.apply(
             move |s| s.rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods),
-            None,
+            GetOutput::same_type(),
         )
     }
 
@@ -1403,7 +1453,7 @@ impl Expr {
         let weight = weight.map(|v| v.to_vec());
         self.apply(
             move |s| s.rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods),
-            None,
+            GetOutput::same_type(),
         )
     }
 
@@ -1416,7 +1466,10 @@ impl Expr {
         window_size: usize,
         f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
     ) -> Expr {
-        self.apply(move |s| s.rolling_apply(window_size, f.as_ref()), None)
+        self.apply(
+            move |s| s.rolling_apply(window_size, f.as_ref()),
+            GetOutput::same_type(),
+        )
     }
 }
 
@@ -1550,10 +1603,11 @@ where
             Ok(acc)
         }) as Arc<dyn SeriesUdf>);
 
+        // Todo! make sure that output type is correct
         Expr::Function {
             input: exprs,
             function,
-            output_type: None,
+            output_type: GetOutput::same_type(),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,

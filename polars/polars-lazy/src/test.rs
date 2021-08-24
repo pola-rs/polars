@@ -130,7 +130,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select(&[col("sepal.width").map(|s| Ok(s * 200.0), None)])
+        .select(&[col("sepal.width").map(|s| Ok(s * 200.0), GetOutput::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
@@ -304,7 +304,11 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(s * 2), None).alias("foo"))
+        .with_column(
+            col("a")
+                .map(|s| Ok(s * 2), GetOutput::same_type())
+                .alias("foo"),
+        )
         .filter(col("a").lt(lit(2)))
         .select(&[col("b"), col("a")]);
 
@@ -339,7 +343,7 @@ fn test_lazy_query_4() {
         .agg(vec![
             col("day").list().alias("day"),
             col("cumcases")
-                .apply(|s: Series| Ok(&s - &(s.shift(1))), None)
+                .apply(|s: Series| Ok(&s - &(s.shift(1))), GetOutput::same_type())
                 .alias("diff_cases"),
         ])
         .explode(vec![col("day"), col("diff_cases")])
@@ -604,7 +608,7 @@ fn test_lazy_filter_and_rename() {
         .with_column_renamed("a", "x")
         .filter(col("x").map(
             |s: Series| Ok(s.gt(3).into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         ))
         .select(&[col("x")]);
 
@@ -617,7 +621,7 @@ fn test_lazy_filter_and_rename() {
     // now we check if the column is rename or added when we don't select
     let lf = df.lazy().with_column_renamed("a", "x").filter(col("x").map(
         |s: Series| Ok(s.gt(3).into_series()),
-        Some(DataType::Boolean),
+        GetOutput::from_type(DataType::Boolean),
     ));
 
     assert_eq!(lf.collect().unwrap().get_column_names(), &["x", "b", "c"]);
@@ -830,7 +834,7 @@ fn test_lazy_groupby_apply() {
         .groupby(vec![col("fruits")])
         .agg(vec![col("cars").apply(
             |s: Series| Ok(Series::new("", &[s.len() as u32])),
-            None,
+            GetOutput::same_type(),
         )])
         .collect()
         .unwrap();
@@ -1410,7 +1414,7 @@ fn test_filter_in_groupby_agg() -> Result<()> {
         .groupby(vec![col("a")])
         .agg(vec![(col("b")
             .filter(col("b").eq(lit(100)))
-            .map(|s| Ok(s), None))
+            .map(|s| Ok(s), GetOutput::same_type()))
         .mean()])
         .collect()?;
     assert_eq!(out.column("b_mean")?.null_count(), 2);
