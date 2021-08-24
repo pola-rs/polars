@@ -1048,8 +1048,6 @@ class Series:
 
     def argsort(self, reverse: bool = False) -> "Series":
         """
-        ..deprecate::
-
         Index location of the sorted variant of this Series.
 
         Returns
@@ -1061,6 +1059,8 @@ class Series:
 
     def arg_sort(self, reverse: bool = False) -> "Series":
         """
+        ..deprecate::
+
         Index location of the sorted variant of this Series.
 
         Returns
