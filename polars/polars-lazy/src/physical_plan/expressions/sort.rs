@@ -90,7 +90,7 @@ impl PhysicalAggregation for SortExpr {
         let agg_s = agg_s
             .list()
             .unwrap()
-            .apply_amortized(|s| s.sort(self.reverse))
+            .apply_amortized(|s| s.as_ref().sort(self.reverse))
             .into_series();
         Ok(Some(agg_s))
     }

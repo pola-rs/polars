@@ -696,6 +696,44 @@ impl PyExpr {
             .rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods)
             .into()
     }
+
+    fn lst_max(&self) -> Self {
+        self.inner
+            .clone()
+            .map(|s| Ok(s.list()?.lst_max()), None)
+            .into()
+    }
+
+    fn lst_min(&self) -> Self {
+        self.inner
+            .clone()
+            .map(|s| Ok(s.list()?.lst_min()), None)
+            .into()
+    }
+
+    fn lst_sum(&self) -> Self {
+        self.inner
+            .clone()
+            .map(|s| Ok(s.list()?.lst_sum()), None)
+            .into()
+    }
+
+    fn lst_mean(&self) -> Self {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.list()?.lst_sum().into_series()),
+                Some(DataType::Float64),
+            )
+            .into()
+    }
+
+    fn lst_sort(&self, reverse: bool) -> Self {
+        self.inner
+            .clone()
+            .map(move |s| Ok(s.list()?.lst_sort(reverse).into_series()), None)
+            .into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
@@ -882,10 +920,9 @@ pub fn lit(value: &PyAny) -> PyExpr {
 
         if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
             dsl::lit(val as i32).into()
-        }  else {
+        } else {
             dsl::lit(val).into()
         }
-
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
         dsl::lit(val).into()
