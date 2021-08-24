@@ -629,11 +629,7 @@ where
             }
 
             let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            let sorted_idx_ca = group_vals.argsort(false);
-            let sorted_idx = sorted_idx_ca.downcast_iter().next().unwrap().values();
-            let quant_idx = (quantile * (sorted_idx.len() - 1) as f64) as usize;
-            let value_idx = sorted_idx[quant_idx];
-            group_vals.get(value_idx as usize)
+            group_vals.quantile(quantile).unwrap()
         })
     }
 
