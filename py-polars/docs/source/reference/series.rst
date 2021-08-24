@@ -101,6 +101,7 @@ Computations
     Series.peak_max
     Series.peak_min
     Series.dot
+    Series.abs
 
 Manipulation/ selection
 -----------------------

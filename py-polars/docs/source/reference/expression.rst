@@ -117,6 +117,7 @@ Computations
     Expr.rolling_sum
     Expr.rolling_apply
     Expr.hash
+    Expr.abs
 
 Manipulation/ selection
 -----------------------
