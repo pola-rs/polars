@@ -1,10 +1,11 @@
 //! Special list utility methods
+mod namespace;
+
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
 use arrow::array::ArrayRef;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
-use std::ops::Deref;
 use std::pin::Pin;
 
 /// A wrapper type that should make it a bit more clear that we should not clone Series
@@ -12,10 +13,9 @@ use std::pin::Pin;
 #[cfg(feature = "private")]
 pub struct UnsafeSeries<'a>(&'a Series);
 
-impl Deref for UnsafeSeries<'_> {
-    type Target = Series;
-
-    fn deref(&self) -> &Self::Target {
+/// We don't implement Deref so that the caller is aware of converting to Series
+impl AsRef<Series> for UnsafeSeries<'_> {
+    fn as_ref(&self) -> &Series {
         self.0
     }
 }
@@ -146,7 +146,7 @@ mod test {
         ca.amortized_iter()
             .zip(ca.into_iter())
             .for_each(|(s1, s2)| {
-                assert!(s1.unwrap().series_equal(&s2.unwrap()));
+                assert!(s1.unwrap().as_ref().series_equal(&s2.unwrap()));
             });
     }
 }

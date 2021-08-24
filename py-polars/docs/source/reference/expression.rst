@@ -225,3 +225,18 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.replace
     ExprStringNameSpace.replace_all
     ExprStringNameSpace.slice
+
+Lists
+-----
+The following methods are available under the `expr.arr` attribute.
+
+.. currentmodule:: polars.lazy.expr
+
+.. autosummary::
+   :toctree: api/
+
+    ExprListNameSpace.sum
+    ExprListNameSpace.min
+    ExprListNameSpace.max
+    ExprListNameSpace.mean
+    ExprListNameSpace.sort
