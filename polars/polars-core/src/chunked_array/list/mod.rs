@@ -1,5 +1,6 @@
 //! Special list utility methods
-mod namespace;
+#[cfg(feature = "list")]
+pub mod namespace;
 
 use crate::prelude::*;
 use crate::utils::CustomIterTools;

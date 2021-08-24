@@ -2399,6 +2399,20 @@ class ListNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pl.col(s.name).arr.sort(reverse))  # type: ignore
 
+    def reverse(self) -> Series:
+        """
+        Reverse the arrays in the list
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pl.col(s.name).arr.reverse())  # type: ignore
+
+    def unique(self) -> Series:
+        """
+        Get the unique/distinct values in the list
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pl.col(s.name).arr.unique())  # type: ignore
+
 
 class DateTimeNameSpace:
     """
