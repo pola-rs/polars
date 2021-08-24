@@ -2198,6 +2198,12 @@ class Series:
             pl.col(self.name).rolling_apply(window_size, function)  # type: ignore
         )[self.name]
 
+    def abs(self) -> "Series":
+        """
+        Take absolute values
+        """
+        return np.abs(self)  # type: ignore
+
 
 class StringNameSpace:
     """
