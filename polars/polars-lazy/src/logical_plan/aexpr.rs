@@ -72,7 +72,7 @@ pub enum AExpr {
     Function {
         input: Vec<Node>,
         function: NoEq<Arc<dyn SeriesUdf>>,
-        output_type: Option<DataType>,
+        output_type: GetOutput,
         options: FunctionOptions,
     },
     Shift {
@@ -291,13 +291,13 @@ impl AExpr {
             Ternary { truthy, .. } => arena.get(*truthy).to_field(schema, ctxt, arena),
             Function {
                 output_type, input, ..
-            } => match output_type {
-                None => arena.get(input[0]).to_field(schema, ctxt, arena),
-                Some(output_type) => {
-                    let input_field = arena.get(input[0]).to_field(schema, ctxt, arena)?;
-                    Ok(Field::new(input_field.name(), output_type.clone()))
-                }
-            },
+            } => {
+                let fields = input
+                    .iter()
+                    .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(output_type.get_field(schema, ctxt, &fields))
+            }
             BinaryFunction {
                 input_a,
                 input_b,

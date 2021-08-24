@@ -539,7 +539,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -561,7 +560,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -583,7 +581,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -605,7 +602,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -627,7 +623,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -651,7 +646,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -673,7 +667,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -695,7 +688,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -717,7 +709,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -756,7 +747,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: Some(DataType::UInt32),
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -779,7 +769,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -813,7 +802,6 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: Some(DataType::UInt32),
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
                                 }))
@@ -848,14 +836,14 @@ impl DefaultPlanner {
             Function {
                 input,
                 function,
-                output_type,
+                output_type: _,
                 options,
             } => {
                 let input = self.create_physical_expressions(&input, ctxt, expr_arena)?;
+
                 Ok(Arc::new(ApplyExpr {
                     inputs: input,
                     function,
-                    output_type,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: options.collect_groups,
                 }))
@@ -906,7 +894,6 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: vec![input],
                     function,
-                    output_type: None,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: ApplyOptions::ApplyGroups,
                 }))
@@ -920,7 +907,6 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: vec![input],
                     function,
-                    output_type: None,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: ApplyOptions::ApplyGroups,
                 }))
@@ -934,7 +920,6 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: vec![input],
                     function,
-                    output_type: None,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: ApplyOptions::ApplyGroups,
                 }))
@@ -948,7 +933,6 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: vec![input],
                     function,
-                    output_type: None,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: ApplyOptions::ApplyFlat,
                 }))
