@@ -1473,6 +1473,27 @@ class DataFrame:
             Offset index.
         length
             Length of the slice.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6.0, 7.0, 8.0],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.slice(1, 2)
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 2   ┆ 7   ┆ "b" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   ┆ "c" │
+        └─────┴─────┴─────┘
+
         """
         if length < 0:
             length = self.height - offset + length
@@ -1580,6 +1601,26 @@ class DataFrame:
     def drop_nulls(self, subset: Optional[tp.List[str]] = None) -> "DataFrame":
         """
         Return a new DataFrame where the null values are dropped.
+
+         Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, 7, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.drop_nulls()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ "a" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   ┆ "c" │
+        └─────┴─────┴─────┘
+
         """
         if subset is not None and isinstance(subset, str):
             subset = [subset]
@@ -2196,6 +2237,41 @@ class DataFrame:
         ----------
         periods
             Number of places to shift (may be negative).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, 7, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.shift(periods=1)
+        shape: (3, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 1    ┆ 6    ┆ "a"  │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2    ┆ 7    ┆ "b"  │
+        └──────┴──────┴──────┘
+        >>> df.shift(periods=-1)
+        shape: (3, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ 2    ┆ 7    ┆ "b"  │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3    ┆ 8    ┆ "c"  │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
+
         """
         return wrap_df(self._df.shift(periods))
 
@@ -2212,6 +2288,28 @@ class DataFrame:
             Number of places to shift (may be negative).
         fill_value
             fill None values with this value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, 7, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.shift_and_fill(periods=1, fill_value=0)
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 0   ┆ 0   ┆ "0" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1   ┆ 6   ┆ "a" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7   ┆ "b" │
+        └─────┴─────┴─────┘
+
         """
         return (
             self.lazy()
@@ -2257,6 +2355,28 @@ class DataFrame:
         ----------
         exprs
             Column or columns to select.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, 7, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.select('foo')
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+
         """
         return (
             self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
@@ -2545,6 +2665,24 @@ class DataFrame:
     def null_count(self) -> "DataFrame":
         """
         Create a new DataFrame that shows the null counts per column.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, None, 3],
+        >>>     "bar": [6, 7, None],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.null_count()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 1   ┆ 0   │
+        └─────┴─────┴─────┘
+
         """
         return wrap_df(self._df.null_count())
 
@@ -2677,6 +2815,17 @@ class DataFrame:
     def rows(self) -> tp.List[Tuple[Any]]:
         """
         Convert columnar data to rows as python tuples.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, 7, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.row(2)
+        (3, 8, 'c')
+
         """
         return self._df.row_tuples()
 
@@ -2710,6 +2859,22 @@ class DataFrame:
             seed parameter
         k3
             seed parameter
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, 7, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.hash(k0=42)
+        shape: (3,)
+        Series: '' [u64]
+        [
+                1208206736888326229
+                8040480609798856146
+                18282897888575762835
+        ]
         """
         return pl.eager.series.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
