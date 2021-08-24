@@ -10,7 +10,6 @@ use std::sync::Arc;
 pub struct ApplyExpr {
     pub inputs: Vec<Arc<dyn PhysicalExpr>>,
     pub function: NoEq<Arc<dyn SeriesUdf>>,
-    pub output_type: Option<DataType>,
     pub expr: Expr,
     pub collect_groups: ApplyOptions,
 }
@@ -90,14 +89,9 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        match &self.output_type {
-            Some(output_type) => {
-                let input_field = self.inputs[0].to_field(input_schema)?;
-                Ok(Field::new(input_field.name(), output_type.clone()))
-            }
-            None => self.inputs[0].to_field(input_schema),
-        }
+        self.inputs[0].to_field(input_schema)
     }
+
     fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
