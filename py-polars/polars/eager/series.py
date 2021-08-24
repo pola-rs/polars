@@ -1977,7 +1977,7 @@ class Series:
                 200
                 300
         ]
-    
+
         """
         if min_periods is None:
             min_periods = window_size
@@ -2219,7 +2219,7 @@ class Series:
                 true
                 false
         ]
-    
+
         """
         return wrap_s(self._s.peak_min())
 
