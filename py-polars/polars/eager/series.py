@@ -898,6 +898,18 @@ class Series:
             Offset index.
         length
             Length of the slice.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.slice(1, 2)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                2
+                3
+        ]
+
         """
         return wrap_s(self._s.slice(offset, length))
 
@@ -1377,6 +1389,18 @@ class Series:
         """
         Explode a list or utf8 Series. This means that every item is expanded to a new row.
 
+        Examples
+        --------
+        >>> s = pl.Series('1', ['x' 'y', 'z'])
+        >>> s.explode()
+        shape: (3,)
+        Series: '1' [str]
+        [
+                "x"
+                "y"
+                "z"
+        ]
+
         Returns
         -------
         Exploded Series of same dtype
@@ -1814,6 +1838,18 @@ class Series:
 
         If the function returns another datatype, the return_dtype arg should be set, otherwise the method will fail.
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.apply(lambda x: x + 10)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                11
+                12
+                13
+        ]
+
         Parameters
         ----------
         func
@@ -1840,6 +1876,26 @@ class Series:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with `Nones`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.shift(periods=1)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                null
+                1
+                2
+        ]
+        >>> s.shift(periods=-1)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                2
+                3
+                null
+        ]
 
         Parameters
         ----------
@@ -1897,6 +1953,31 @@ class Series:
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [100, 200, 300, 400, 500])
+        >>> s.rolling_min(window_size=3)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                null
+                null
+                100
+                200
+                300
+        ]
+        >>> s.rolling_min(window_size=3, min_periods=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                null
+                null
+                100
+                200
+                300
+        ]
+    
         """
         if min_periods is None:
             min_periods = window_size
@@ -1929,6 +2010,31 @@ class Series:
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [100, 200, 300, 400, 500])
+        >>> s.rolling_max(window_size=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                null
+                null
+                300
+                400
+                500
+        ]
+        >>> s.rolling_max(window_size=3, min_periods=2))
+        shape: (5,)
+        Series: '' [i64]
+        [
+                null
+                200
+                300
+                400
+                500
+        ]
+
         """
         if min_periods is None:
             min_periods = window_size
@@ -1961,6 +2067,21 @@ class Series:
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [100, 200, 300, 400, 500])
+        >>> s.rolling_mean(window_size=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                null
+                150
+                250
+                350
+                450
+        ]
+
         """
         if min_periods is None:
             min_periods = window_size
@@ -1993,6 +2114,21 @@ class Series:
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.rolling_sum(window_size=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                null
+                3
+                5
+                7
+                9
+        ]
+
         """
         if min_periods is None:
             min_periods = window_size
@@ -2069,6 +2205,21 @@ class Series:
     def peak_min(self) -> "Series":
         """
         Get a boolean mask of the local minimum peaks.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [4, 1, 3, 2, 5])
+        >>> s.peak_min()
+        shape: (5,)
+        Series: '' [bool]
+        [
+                false
+                true
+                false
+                true
+                false
+        ]
+    
         """
         return wrap_s(self._s.peak_min())
 
@@ -2124,6 +2275,18 @@ class Series:
 
         The hash value is of type `UInt64`
 
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.hash(k0=42)
+        shape: (3,)
+        Series: 'a' [u64]
+        [
+                18040498172617206516
+                5352755651785478209
+                3939059409923356085
+        ]
+
         Parameters
         ----------
         k0
@@ -2154,6 +2317,21 @@ class Series:
     def interpolate(self) -> "Series":
         """
         Interpolate intermediate values. The interpolation method is linear.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None, None, 5])
+        >>> s.interpolate()
+        shape: (5,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+                4
+                5
+        ]
+
         """
         return wrap_s(self._s.interpolate())
 
