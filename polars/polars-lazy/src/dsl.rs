@@ -117,7 +117,7 @@ pub trait FunctionOutputField: Send + Sync {
     fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
 }
 
-pub(crate) type GetOutput = NoEq<Arc<dyn FunctionOutputField>>;
+pub type GetOutput = NoEq<Arc<dyn FunctionOutputField>>;
 
 impl Default for GetOutput {
     fn default() -> Self {
@@ -128,13 +128,19 @@ impl Default for GetOutput {
 }
 
 impl GetOutput {
-    pub(crate) fn same_type() -> Self {
+    pub fn same_type() -> Self {
         Default::default()
     }
 
-    pub(crate) fn from_type(dt: DataType) -> Self {
+    pub fn from_type(dt: DataType) -> Self {
         NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             Field::new(flds[0].name(), dt.clone())
+        }))
+    }
+
+    pub fn map_field<F: 'static + Fn(&Field) -> Field + Send + Sync>(f: F) -> Self {
+        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+            f(&flds[0])
         }))
     }
 }
