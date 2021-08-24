@@ -67,7 +67,8 @@ features = [
     "lazy_regex",
     "cum_agg",
     "rolling_window",
-    "interpolate"
+    "interpolate",
+    "list"
 ]
 
 #[patch.crates-io]

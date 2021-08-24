@@ -240,3 +240,5 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.max
     ExprListNameSpace.mean
     ExprListNameSpace.sort
+    ExprListNameSpace.reverse
+    ExprListNameSpace.unique

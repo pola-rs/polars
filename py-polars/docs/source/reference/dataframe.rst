@@ -34,6 +34,7 @@ Conversion
     DataFrame.to_ipc
     DataFrame.to_parquet
     DataFrame.to_numpy
+    DataFrame.to_dict
 
 Aggregation
 -----------

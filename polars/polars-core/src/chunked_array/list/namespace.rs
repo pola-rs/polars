@@ -31,4 +31,12 @@ impl ListChunked {
     pub fn lst_sort(&self, reverse: bool) -> ListChunked {
         self.apply_amortized(|s| s.as_ref().sort(reverse))
     }
+
+    pub fn lst_reverse(&self) -> ListChunked {
+        self.apply_amortized(|s| s.as_ref().reverse())
+    }
+
+    pub fn lst_unique(&self) -> Result<ListChunked> {
+        self.try_apply_amortized(|s| s.as_ref().unique())
+    }
 }
