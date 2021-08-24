@@ -36,7 +36,7 @@ impl PhysicalExpr for ShiftExpr {
             .aggregated()
             .list()
             .unwrap()
-            .apply(|s| s.shift(self.periods).into_series())
+            .apply_amortized(|s| s.shift(self.periods).into_series())
             .into_series();
         ac.with_series(s);
         Ok(ac)
