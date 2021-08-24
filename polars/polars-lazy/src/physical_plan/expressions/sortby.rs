@@ -113,10 +113,10 @@ impl PhysicalAggregation for SortByExpr {
             .map(|(opt_s, opt_sort_by)| {
                 match (opt_s, opt_sort_by) {
                     (Some(s), Some(sort_by)) => {
-                        let sorted_idx = sort_by.argsort(self.reverse);
+                        let sorted_idx = sort_by.as_ref().argsort(self.reverse);
                         // Safety:
                         // sorted index are within bounds
-                        unsafe { s.take_unchecked(&sorted_idx) }.ok()
+                        unsafe { s.as_ref().take_unchecked(&sorted_idx) }.ok()
                     }
                     _ => None,
                 }
