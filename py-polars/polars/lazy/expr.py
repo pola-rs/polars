@@ -1325,6 +1325,16 @@ class Expr:
         """
         return self.map(lambda s: s.abs())
 
+    def argsort(self, reverse: bool = False) -> "Expr":
+        """
+        Index location of the sorted variant of this Series.
+        Parameters
+        ----------
+        reverse
+            Reverse the ordering. Default is from low to high.
+        """
+        return pl.argsort_by([self], [reverse])  # type: ignore
+
 
 class ExprListNameSpace:
     """
