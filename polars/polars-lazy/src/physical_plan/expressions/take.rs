@@ -44,7 +44,7 @@ impl PhysicalExpr for TakeExpr {
             .aggregated()
             .list()
             .unwrap()
-            .try_apply(|s| s.take(idx_ca))?;
+            .try_apply_amortized(|s| s.take(idx_ca))?;
 
         ac.with_update_groups(UpdateGroups::WithSeriesLen)
             .with_series(taken.into_series());
