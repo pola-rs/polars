@@ -1319,6 +1319,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rolling_apply(window_size, function))
 
+    def abs(self) -> "Expr":
+        """
+        Take absolute values
+        """
+        return self.map(lambda s: s.abs())
+
 
 class ExprListNameSpace:
     """
