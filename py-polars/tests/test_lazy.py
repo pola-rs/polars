@@ -435,3 +435,46 @@ def test_rolling_apply():
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 4.358898943540674
+
+
+def test_arr_namespace(fruits_cars):
+    df = fruits_cars
+    out = df.select(
+        [
+            "fruits",
+            col("B").over("fruits").arr.min().alias("B_by_fruits_min1"),
+            col("B").min().over("fruits").alias("B_by_fruits_min2"),
+            col("B").over("fruits").arr.max().alias("B_by_fruits_max1"),
+            col("B").max().over("fruits").alias("B_by_fruits_max2"),
+            col("B").over("fruits").arr.sum().alias("B_by_fruits_sum1"),
+            col("B").sum().over("fruits").alias("B_by_fruits_sum2"),
+            col("B").over("fruits").arr.mean().alias("B_by_fruits_mean1"),
+            col("B").mean().over("fruits").alias("B_by_fruits_mean2"),
+        ]
+    )
+    expected = pl.DataFrame(
+        {
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B_by_fruits_min1": [1, 1, 2, 2, 1],
+            "B_by_fruits_min2": [1, 1, 2, 2, 1],
+            "B_by_fruits_max1": [5, 5, 3, 3, 5],
+            "B_by_fruits_max2": [5, 5, 3, 3, 5],
+            "B_by_fruits_sum1": [10, 10, 5, 5, 10],
+            "B_by_fruits_sum2": [10, 10, 5, 5, 10],
+            "B_by_fruits_mean1": [
+                3.3333333333333335,
+                3.3333333333333335,
+                2.5,
+                2.5,
+                3.3333333333333335,
+            ],
+            "B_by_fruits_mean2": [
+                3.3333333333333335,
+                3.3333333333333335,
+                2.5,
+                2.5,
+                3.3333333333333335,
+            ],
+        }
+    )
+    assert out.frame_equal(expected, null_equal=True)

@@ -87,6 +87,7 @@ lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
 rolling_window = ["polars-core/rolling_window", "polars-lazy/rolling_window"]
 interpolate = ["polars-core/interpolate", "polars-lazy/interpolate"]
+list = ["polars-core/list"]
 
 # don't use this
 private = []

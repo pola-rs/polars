@@ -1358,6 +1358,18 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_sort(reverse))
 
+    def reverse(self) -> "Expr":
+        """
+        Reverse the arrays in the list
+        """
+        return wrap_expr(self._pyexpr.lst_reverse())
+
+    def unique(self) -> "Expr":
+        """
+        Get the unique/distinct values in the list
+        """
+        return wrap_expr(self._pyexpr.lst_unique())
+
 
 class ExprStringNameSpace:
     """
