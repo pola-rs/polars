@@ -138,7 +138,7 @@
 //!             Ok(Series::new("", &[6.0f32, 6.0, 6.0, 6.0, 6.0]))
 //!         },
 //!         // return type of the closure
-//!         Some(DataType::Float64)).alias("new_column")
+//!         GetOutput::from_type(DataType::Float64)).alias("new_column")
 //!     )
 //!     .collect()
 //!     .unwrap();
