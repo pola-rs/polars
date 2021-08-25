@@ -59,6 +59,7 @@ fn combine_lp_nodes(
                 keys: keys_l,
                 aggs: aggs_l,
                 apply: apply_l,
+                maintain_order: maintain_l,
                 ..
             },
             Aggregate {
@@ -66,6 +67,7 @@ fn combine_lp_nodes(
                 keys: keys_r,
                 aggs: aggs_r,
                 apply: apply_r,
+                maintain_order: maintain_r,
                 ..
             },
             // skip if we have custom functions
@@ -74,9 +76,11 @@ fn combine_lp_nodes(
                 && apply_r.is_none()
                 // check if aggregation keys can be combined.
                 && equal_aexprs(keys_l, keys_r, expr_arena)
+                && maintain_l == maintain_r
         }
         =>
             {
+                let maintain_order = *maintain_l;
                 let keys = keys_l.clone();
                 let aggs = aggs_l
                     .iter()
@@ -88,7 +92,7 @@ fn combine_lp_nodes(
                     .map(|input| {
                         let node = lp_arena.add(input);
                         ALogicalPlanBuilder::new(node, expr_arena, lp_arena)
-                            .groupby(keys, aggs, None)
+                            .groupby(keys, aggs, None, maintain_order)
                             .build()
 
                     })

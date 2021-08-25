@@ -493,6 +493,7 @@ impl ProjectionPushDown {
                 aggs,
                 apply,
                 schema,
+                maintain_order,
             } => {
                 // the custom function may need all columns so we do the projections here.
                 if let Some(f) = apply {
@@ -502,6 +503,7 @@ impl ProjectionPushDown {
                         aggs,
                         schema,
                         apply: Some(f),
+                        maintain_order,
                     };
                     let input = lp_arena.add(lp);
 
@@ -535,8 +537,12 @@ impl ProjectionPushDown {
                         expr_arena,
                     )?;
 
-                    let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
-                        .groupby(keys, aggs, apply);
+                    let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).groupby(
+                        keys,
+                        aggs,
+                        apply,
+                        maintain_order,
+                    );
                     Ok(builder.build())
                 }
             }

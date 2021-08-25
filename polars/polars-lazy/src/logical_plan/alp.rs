@@ -80,6 +80,7 @@ pub enum ALogicalPlan {
         aggs: Vec<Node>,
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
+        maintain_order: bool,
     },
     Join {
         input_left: Node,
@@ -263,6 +264,7 @@ impl ALogicalPlan {
                 keys,
                 schema,
                 apply,
+                maintain_order,
                 ..
             } => Aggregate {
                 input: inputs[0],
@@ -270,6 +272,7 @@ impl ALogicalPlan {
                 aggs: exprs[keys.len()..].to_vec(),
                 schema: schema.clone(),
                 apply: apply.clone(),
+                maintain_order: *maintain_order,
             },
             Join {
                 schema,
@@ -626,6 +629,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         keys: Vec<Node>,
         aggs: Vec<Node>,
         apply: Option<Arc<dyn DataFrameUdf>>,
+        maintain_order: bool,
     ) -> Self {
         debug_assert!(!keys.is_empty());
         let current_schema = self.schema();
@@ -644,6 +648,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             aggs,
             schema: Arc::new(schema),
             apply,
+            maintain_order,
         };
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)

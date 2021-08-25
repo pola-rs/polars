@@ -245,7 +245,8 @@ impl DefaultPlanner {
                 keys,
                 aggs,
                 apply,
-                ..
+                schema: _,
+                maintain_order,
             } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
 
@@ -253,7 +254,12 @@ impl DefaultPlanner {
                 // TODO: fix this brittle/ buggy state and implement partitioned groupby's in eager
                 let mut partitionable = true;
 
-                if keys.len() == 1 {
+                // checks:
+                //      1. complex expressions in the groupby itself are also not partitionable
+                //          in this case anything more than col("foo")
+                //      2. a custom funciton cannot be partitioned
+                //      3. maintain order is likely cheaper in default groupby
+                if keys.len() == 1 && apply.is_none() && !maintain_order {
                     // complex expressions in the groupby itself are also not partitionable
                     // in this case anything more than col("foo")
                     if (&*expr_arena).iter(keys[0]).count() > 1 {
@@ -293,10 +299,6 @@ impl DefaultPlanner {
                 } else {
                     partitionable = false;
                 }
-                // a custom function cannot be partitioned.
-                if apply.is_some() {
-                    partitionable = false;
-                }
                 let mut phys_keys =
                     self.create_physical_expressions(&keys, Context::Default, expr_arena)?;
 
@@ -313,7 +315,11 @@ impl DefaultPlanner {
                     )))
                 } else {
                     Ok(Box::new(GroupByExec::new(
-                        input, phys_keys, phys_aggs, apply,
+                        input,
+                        phys_keys,
+                        phys_aggs,
+                        apply,
+                        maintain_order,
                     )))
                 }
             }

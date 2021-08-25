@@ -214,10 +214,14 @@ impl PyLazyFrame {
         ldf.select(exprs).into()
     }
 
-    pub fn groupby(&mut self, by: Vec<PyExpr>) -> PyLazyGroupBy {
+    pub fn groupby(&mut self, by: Vec<PyExpr>, maintain_order: bool) -> PyLazyGroupBy {
         let ldf = self.ldf.clone();
         let by = py_exprs_to_exprs(by);
-        let lazy_gb = ldf.groupby(by);
+        let lazy_gb = if maintain_order {
+            ldf.stable_groupby(by)
+        } else {
+            ldf.groupby(by)
+        };
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
