@@ -212,6 +212,7 @@ pub enum LogicalPlan {
         aggs: Vec<Expr>,
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
+        maintain_order: bool,
     },
     /// Join operation
     Join {
@@ -1141,6 +1142,7 @@ impl LogicalPlanBuilder {
         keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
         apply: Option<Arc<dyn DataFrameUdf>>,
+        maintain_order: bool,
     ) -> Self {
         debug_assert!(!keys.is_empty());
         let current_schema = self.0.schema();
@@ -1156,6 +1158,7 @@ impl LogicalPlanBuilder {
             aggs,
             schema: Arc::new(schema),
             apply,
+            maintain_order,
         }
         .into()
     }

@@ -156,22 +156,22 @@ pub(crate) mod private {
             unimplemented!()
         }
         fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
             unimplemented!()
@@ -180,20 +180,20 @@ pub(crate) mod private {
             unimplemented!()
         }
         fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-            unimplemented!()
+            None
         }
         fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         #[cfg(feature = "lazy")]
         fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         #[cfg(feature = "pivot")]
         fn pivot<'a>(
