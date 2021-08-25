@@ -8,7 +8,7 @@ use std::fmt::Debug;
 
 trait ToPolarsError: Debug {
     fn to_polars_err(&self) -> PolarsError {
-        PolarsError::Other(
+        PolarsError::ComputeError(
             format!(
                 "Could not parse primitive type during csv parsing: {:?}.\
                 This can occur when a column was inferred as integer type but we stumbled upon a floating point value\
@@ -151,10 +151,10 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         // first check utf8 validity
         #[cfg(feature = "simdutf8")]
         let parse_result = simdutf8::basic::from_utf8(bytes)
-            .map_err(|_| PolarsError::Other("invalid utf8 data".into()));
+            .map_err(|_| PolarsError::ComputeError("invalid utf8 data".into()));
         #[cfg(not(feature = "simdutf8"))]
-        let parse_result =
-            std::str::from_utf8(bytes).map_err(|_| PolarsError::Other("invalid utf8 data".into()));
+        let parse_result = std::str::from_utf8(bytes)
+            .map_err(|_| PolarsError::ComputeError("invalid utf8 data".into()));
         let data_len = self.data.len();
 
         // check if field fits in the str data buffer
@@ -240,7 +240,7 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
         } else if ignore_errors || bytes.is_empty() {
             self.append_null();
         } else {
-            return Err(PolarsError::Other(
+            return Err(PolarsError::ComputeError(
                 format!(
                     "Error while parsing value {} at byte position {} as boolean",
                     start_pos,
@@ -305,7 +305,7 @@ pub(crate) fn init_buffers(
                     delimiter,
                 )),
                 other => {
-                    return Err(PolarsError::Other(
+                    return Err(PolarsError::ComputeError(
                         format!("Unsupported data type {:?} when reading a csv", other).into(),
                     ))
                 }

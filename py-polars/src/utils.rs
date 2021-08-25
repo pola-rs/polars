@@ -53,7 +53,7 @@ pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::Result<Series> 
             Ok(ca.reinterpret_unsigned().into_series())
         }
         (DataType::Int64, true) => Ok(s.clone()),
-        _ => Err(PolarsError::Other(
+        _ => Err(PolarsError::ComputeError(
             "reinterpret is only allowed for 64bit integers dtype, use cast otherwise".into(),
         )),
     }

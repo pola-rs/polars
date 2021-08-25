@@ -488,7 +488,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
     match _get_supertype(l, r) {
         Some(dt) => Ok(dt),
         None => _get_supertype(r, l).ok_or_else(|| {
-            PolarsError::Other(
+            PolarsError::ComputeError(
                 format!("Failed to determine supertype of {:?} and {:?}", l, r).into(),
             )
         }),

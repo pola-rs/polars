@@ -258,7 +258,7 @@ impl Utf8Chunked {
                 return Ok(pattern);
             }
         }
-        Err(PolarsError::Other(
+        Err(PolarsError::ComputeError(
             "Could not find an appropriate format to parse dates, please define a fmt".into(),
         ))
     }
@@ -270,7 +270,7 @@ impl Utf8Chunked {
                 return Ok(pattern);
             }
         }
-        Err(PolarsError::Other(
+        Err(PolarsError::ComputeError(
             "Could not find an appropriate format to parse dates, please define a fmt".into(),
         ))
     }

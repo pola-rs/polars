@@ -111,7 +111,7 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
             _ => {}
         }
     }
-    Err(PolarsError::Other(
+    Err(PolarsError::ComputeError(
         format!(
             "No root column name could be found for expr {:?} in output name utillity",
             expr
@@ -136,9 +136,11 @@ pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<String>> {
 pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<String>> {
     let mut roots = expr_to_root_column_exprs(expr);
     match roots.len() {
-        0 => Err(PolarsError::Other("no root column name found".into())),
+        0 => Err(PolarsError::ComputeError(
+            "no root column name found".into(),
+        )),
         1 => match roots.pop().unwrap() {
-            Expr::Wildcard => Err(PolarsError::Other(
+            Expr::Wildcard => Err(PolarsError::ComputeError(
                 "wildcard has not root column name".into(),
             )),
             Expr::Column(name) => Ok(name),
@@ -146,7 +148,7 @@ pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<String>> {
                 unreachable!();
             }
         },
-        _ => Err(PolarsError::Other(
+        _ => Err(PolarsError::ComputeError(
             "found more than one root column name".into(),
         )),
     }
@@ -237,7 +239,7 @@ pub(crate) fn agg_source_paths(
 
 pub(crate) fn try_path_to_str(path: &Path) -> Result<&str> {
     path.to_str().ok_or_else(|| {
-        PolarsError::Other(format!("Non-UTF8 file path: {}", path.to_string_lossy()).into())
+        PolarsError::ComputeError(format!("Non-UTF8 file path: {}", path.to_string_lossy()).into())
     })
 }
 
@@ -252,9 +254,11 @@ pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<S
 pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Result<Arc<String>> {
     let mut roots = aexpr_to_root_nodes(root, arena);
     match roots.len() {
-        0 => Err(PolarsError::Other("no root column name found".into())),
+        0 => Err(PolarsError::ComputeError(
+            "no root column name found".into(),
+        )),
         1 => match arena.get(roots.pop().unwrap()) {
-            AExpr::Wildcard => Err(PolarsError::Other(
+            AExpr::Wildcard => Err(PolarsError::ComputeError(
                 "wildcard has not root column name".into(),
             )),
             AExpr::Column(name) => Ok(name.clone()),
@@ -262,7 +266,7 @@ pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Res
                 unreachable!();
             }
         },
-        _ => Err(PolarsError::Other(
+        _ => Err(PolarsError::ComputeError(
             "found more than one root column name".into(),
         )),
     }

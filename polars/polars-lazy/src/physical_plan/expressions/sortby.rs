@@ -101,7 +101,9 @@ impl PhysicalAggregation for SortByExpr {
         let s_sort_by = self.by.evaluate(df, state)?;
 
         let s_sort_by = s_sort_by.agg_list(groups).ok_or_else(|| {
-            PolarsError::Other(format!("cannot aggregate {:?} as list array", self.expr).into())
+            PolarsError::ComputeError(
+                format!("cannot aggregate {:?} as list array", self.expr).into(),
+            )
         })?;
 
         let agg_s = ac_in.aggregated();
