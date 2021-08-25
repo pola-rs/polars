@@ -419,7 +419,7 @@ impl DataFrame {
     /// The groups are ordered by their smallest row index.
     pub fn groupby_stable<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
         let mut gb = self.groupby(by)?;
-        gb.groups.sort();
+        gb.groups.sort_unstable_by_key(|t|t.0);
         Ok(gb)
     }
 }
