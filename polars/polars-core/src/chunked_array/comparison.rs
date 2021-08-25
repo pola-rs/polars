@@ -463,9 +463,7 @@ where
         op: comparison::Operator,
     ) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        self.apply_kernel_cast(|arr| {
-            Arc::new(comparison::primitive_compare_scalar(arr, rhs, op).unwrap())
-        })
+        self.apply_kernel_cast(|arr| Arc::new(comparison::primitive_compare_scalar(arr, rhs, op)))
     }
 }
 

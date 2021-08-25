@@ -1,4 +1,5 @@
 use polars::prelude::PolarsError;
+use polars_core::error::ArrowError;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use thiserror::Error;
 
@@ -8,6 +9,8 @@ pub enum PyPolarsEr {
     Any(#[from] PolarsError),
     #[error("{0}")]
     Other(String),
+    #[error(transparent)]
+    ArrowError(#[from] ArrowError),
 }
 
 impl std::convert::From<PyPolarsEr> for PyErr {
