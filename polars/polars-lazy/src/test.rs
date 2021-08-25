@@ -1679,3 +1679,25 @@ fn test_filter_after_shift_in_groups() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_lazy_ternary_predicate_pushdown() -> Result<()> {
+    let df = df![
+        "a" => &[10, 1, 2, 3]
+    ]?;
+
+    let out = df
+        .lazy()
+        .select(vec![when(col("a").eq(lit(10)))
+            .then(Null {}.lit())
+            .otherwise(col("a"))])
+        .drop_nulls(None)
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.get_columns()[0].i32()?),
+        &[Some(1), Some(2), Some(3)]
+    );
+
+    Ok(())
+}

@@ -273,20 +273,19 @@ pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Res
 }
 
 /// check if a selection/projection can be done on the downwards schema
-pub(crate) fn check_down_node(node: Node, down_schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
-    let roots = aexpr_to_root_nodes(node, expr_arena);
-
-    match roots.is_empty() {
-        true => false,
-        false => roots
-            .iter()
-            .map(|e| {
-                expr_arena
-                    .get(*e)
-                    .to_field(down_schema, Context::Default, expr_arena)
-                    .is_ok()
-            })
-            .all(|b| b),
+pub(crate) fn check_input_node(
+    node: Node,
+    input_schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    // first determine output field, and then check if that output field could be selected
+    // on the input schema.
+    match expr_arena
+        .get(node)
+        .to_field(input_schema, Context::Default, expr_arena)
+    {
+        Ok(output_expr) => input_schema.field_with_name(output_expr.name()).is_ok(),
+        Err(_) => false,
     }
 }
 

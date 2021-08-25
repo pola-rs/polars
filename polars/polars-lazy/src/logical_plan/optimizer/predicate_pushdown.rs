@@ -1,9 +1,10 @@
+use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::optimizer::ALogicalPlanBuilder;
 use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
-use crate::utils::rename_aexpr_root_name;
 use crate::utils::{
-    aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_down_node, has_aexpr,
+    aexpr_to_root_column_name, aexpr_to_root_names, aexprs_to_schema, check_input_node, has_aexpr,
+    rename_aexpr_root_name,
 };
 use polars_core::datatypes::{PlHashMap, PlHashSet};
 use polars_core::prelude::*;
@@ -247,42 +248,99 @@ impl PredicatePushDown {
                 // aliases change the column names and because we push the predicates downwards
                 // this may be problematic as the aliased column may not yet exist.
                 for node in &expr {
-                    let e = expr_arena.get(*node);
+                    // shifts | sorts are influenced by a filter so we do all predicates before the shift | sort
+                    let matches = |e: &AExpr| matches!(e, AExpr::Shift { .. } | AExpr::Sort { .. });
+                    if has_aexpr(*node, expr_arena, matches) {
+                        let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
+                            .project(expr)
+                            .build();
+                        // do all predicates here
+                        let local_predicates = acc_predicates.into_iter().map(|(_, v)| v).collect();
+                        return Ok(self.apply_predicate(
+                            lp,
+                            local_predicates,
+                            lp_arena,
+                            expr_arena,
+                        ));
+                    }
 
-                    if let AExpr::Alias(e, name) = e {
-                        // if this alias refers to one of the predicates in the upper nodes
-                        // we rename the column of the predicate before we push it downwards.
-                        if let Some(predicate) = acc_predicates.remove(&*name) {
-                            match aexpr_to_root_column_name(*e, &*expr_arena) {
-                                // we were able to rename the alias column with the root column name
-                                // before pushing down the predicate
-                                Ok(new_name) => {
-                                    rename_aexpr_root_name(predicate, expr_arena, new_name.clone())
+                    {
+                        let e = expr_arena.get(*node);
+                        if let AExpr::Alias(e, name) = e {
+                            // if this alias refers to one of the predicates in the upper nodes
+                            // we rename the column of the predicate before we push it downwards.
+                            if let Some(predicate) = acc_predicates.remove(&*name) {
+                                match aexpr_to_root_column_name(*e, &*expr_arena) {
+                                    // we were able to rename the alias column with the root column name
+                                    // before pushing down the predicate
+                                    Ok(new_name) => {
+                                        rename_aexpr_root_name(
+                                            predicate,
+                                            expr_arena,
+                                            new_name.clone(),
+                                        )
                                         .unwrap();
 
-                                    insert_and_combine_predicate(
-                                        &mut acc_predicates,
-                                        new_name,
-                                        predicate,
-                                        expr_arena,
-                                    );
+                                        insert_and_combine_predicate(
+                                            &mut acc_predicates,
+                                            new_name,
+                                            predicate,
+                                            expr_arena,
+                                        );
+                                    }
+                                    // this may be a complex binary function. The predicate may only be valid
+                                    // on this projected column so we do filter locally.
+                                    Err(_) => local_predicates.push(predicate),
                                 }
-                                // this may be a complex binary function. The predicate may only be valid
-                                // on this projected column so we do filter locally.
-                                Err(_) => local_predicates.push(predicate),
                             }
                         }
                     }
 
-                    // remove predicates that are based on an exploded column
+                    let e = expr_arena.get(*node);
+                    let input_schema = lp_arena.get(input).schema(lp_arena);
+
+                    // we check if predicates can be done on the input above
+                    // with the following conditions:
+
+                    // 1. predicate based on current column may only pushed down if simple projection, e.g. col() / col().alias()
+
+                    let expr_depth = (&*expr_arena).iter(*node).count();
+                    let is_computation = if let AExpr::Alias(_, _) = e {
+                        expr_depth > 2
+                    } else {
+                        expr_depth > 1
+                    };
+                    let output_field = e
+                        .to_field(input_schema, Context::Default, expr_arena)
+                        .unwrap();
+
+                    // remove predicates that cannot be done on the input above
+                    let to_local = acc_predicates
+                        .iter()
+                        .filter_map(|kv| {
+                            // if they can be executed on input node above its ok
+                            if check_input_node(*kv.1, input_schema, expr_arena)
+                                // if this predicate not equals a column that is a computation
+                                // it is ok
+                                && &**kv.0 != output_field.name() && !is_computation
+                            {
+                                None
+                            } else {
+                                Some(kv.0.clone())
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
+                    for name in to_local {
+                        let local = acc_predicates.remove(&name).unwrap();
+                        local_predicates.push(local);
+                    }
+
+                    // remove predicates that are based on column modifications
                     no_pushdown_preds(
                         *node,
                         expr_arena,
-                        |e| {
-                            matches!(e, AExpr::Explode(_))
-                                || matches!(e, AExpr::Shift { .. })
-                                || matches!(e, AExpr::Sort { .. })
-                        },
+                        |e| matches!(e, AExpr::Explode(_)) || matches!(e, AExpr::Ternary { .. }),
                         &mut local_predicates,
                         &mut acc_predicates,
                     );
@@ -343,7 +401,7 @@ impl PredicatePushDown {
                 // projection from a wildcard may be dropped if the schema changes due to the optimization
                 let expr: Vec<_> = expr
                     .into_iter()
-                    .filter(|e| check_down_node(*e, schema, expr_arena))
+                    .filter(|e| check_input_node(*e, schema, expr_arena))
                     .collect();
 
                 let schema = aexprs_to_schema(&expr, schema, Context::Default, expr_arena);
@@ -486,7 +544,7 @@ impl PredicatePushDown {
                     let mut filter_right = false;
 
                     // no else if. predicate can be in both tables.
-                    if check_down_node(predicate, schema_left, expr_arena) {
+                    if check_input_node(predicate, schema_left, expr_arena) {
                         let name = get_insertion_name(expr_arena, predicate, schema_left);
                         insert_and_combine_predicate(
                             &mut pushdown_left,
@@ -496,7 +554,7 @@ impl PredicatePushDown {
                         );
                         filter_left = true;
                     }
-                    if check_down_node(predicate, schema_right, expr_arena) {
+                    if check_input_node(predicate, schema_right, expr_arena) {
                         let name = get_insertion_name(expr_arena, predicate, schema_right);
                         insert_and_combine_predicate(
                             &mut pushdown_right,
@@ -543,10 +601,11 @@ impl PredicatePushDown {
                 // dependent on data we've added in this node.
 
                 let mut added_cols = PlHashSet::with_capacity(exprs.len());
-                for e in &exprs {
+                let mut local_predicates = vec![];
+                for node in &exprs {
                     // shifts | sorts are influenced by a filter so we do all predicates before the shift | sort
                     let matches = |e: &AExpr| matches!(e, AExpr::Shift { .. } | AExpr::Sort { .. });
-                    if has_aexpr(*e, expr_arena, matches) {
+                    if has_aexpr(*node, expr_arena, matches) {
                         let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                             .with_columns(exprs)
                             .build();
@@ -560,22 +619,36 @@ impl PredicatePushDown {
                         ));
                     }
 
-                    for name in aexpr_to_root_names(*e, expr_arena) {
-                        added_cols.insert(name);
-                    }
+                    // remove predicates that are based on an modified columns
+                    let e = expr_arena.get(*node);
+                    let input_schema = lp_arena.get(input).schema(lp_arena);
+                    let field = e
+                        .to_field(input_schema, Context::Default, expr_arena)
+                        .unwrap();
+                    added_cols.insert(field.name().clone());
+                    no_pushdown_preds(
+                        *node,
+                        expr_arena,
+                        |e| matches!(e, AExpr::Explode(_)) || matches!(e, AExpr::Ternary { .. }),
+                        &mut local_predicates,
+                        &mut acc_predicates,
+                    );
                 }
 
                 let condition = |name: Arc<String>| {
                     // remove predicates that are dependent on columns added in this HStack.
-                    added_cols.contains(&name)
+                    added_cols.contains(&**name)
                         || lp_arena
                             .get(input)
                             .schema(lp_arena)
                             .field_with_name(&*name)
                             .is_err()
                 };
-                let local_predicates =
-                    transfer_to_local(expr_arena, &mut acc_predicates, condition);
+                local_predicates.extend(transfer_to_local(
+                    expr_arena,
+                    &mut acc_predicates,
+                    condition,
+                ));
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
@@ -597,7 +670,7 @@ impl PredicatePushDown {
                     let mut pushdown_predicates = optimizer::init_hashmap();
                     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
                     for (_, predicate) in acc_predicates {
-                        if check_down_node(predicate, input_schema, expr_arena) {
+                        if check_input_node(predicate, input_schema, expr_arena) {
                             let name = get_insertion_name(expr_arena, predicate, input_schema);
                             insert_and_combine_predicate(
                                 &mut pushdown_predicates,
