@@ -1677,7 +1677,7 @@ class DataFrame:
         --------
         >>> df = pl.DataFrame({
         >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
+        >>>     "bar": [6, None, 8],
         >>>     "ham": ['a', 'b', 'c']
         >>>     })
         >>> df.drop_nulls()
@@ -2892,12 +2892,6 @@ class DataFrame:
         ----------
         index
             Row index.
-        """
-        return self._df.row_tuple(index)
-
-    def rows(self) -> tp.List[Tuple[Any]]:
-        """
-        Convert columnar data to rows as python tuples.
 
         Examples
         --------
@@ -2908,6 +2902,15 @@ class DataFrame:
         >>>     })
         >>> df.row(2)
         (3, 8, 'c')
+
+        """
+        return self._df.row_tuple(index)
+
+    def rows(self) -> tp.List[Tuple[Any]]:
+        """
+        Convert columnar data to rows as python tuples.
+
+
 
         """
         return self._df.row_tuples()

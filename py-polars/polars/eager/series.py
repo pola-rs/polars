@@ -1391,14 +1391,17 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series('1', ['x' 'y', 'z'])
+        >>> s = pl.Series('a', [[1, 2], [3, 4], [9, 10]])
         >>> s.explode()
-        shape: (3,)
-        Series: '1' [str]
+        shape: (6,)
+        Series: 'a' [i64]
         [
-                "x"
-                "y"
-                "z"
+                1
+                2
+                3
+                4
+                9
+                10
         ]
 
         Returns
@@ -1967,16 +1970,6 @@ class Series:
                 200
                 300
         ]
-        >>> s.rolling_min(window_size=3, min_periods=2)
-        shape: (5,)
-        Series: '' [i64]
-        [
-                null
-                null
-                100
-                200
-                300
-        ]
 
         """
         if min_periods is None:
@@ -2020,16 +2013,6 @@ class Series:
         [
                 null
                 null
-                300
-                400
-                500
-        ]
-        >>> s.rolling_max(window_size=3, min_periods=2))
-        shape: (5,)
-        Series: '' [i64]
-        [
-                null
-                200
                 300
                 400
                 500
