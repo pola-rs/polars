@@ -59,7 +59,7 @@ impl PhysicalExpr for WindowExpr {
                     cols.push(s);
                     Ok(DataFrame::new_no_checks(cols))
                 }
-                None => Err(PolarsError::Other(
+                None => Err(PolarsError::ComputeError(
                     "aggregation did not return a column".into(),
                 )),
             },

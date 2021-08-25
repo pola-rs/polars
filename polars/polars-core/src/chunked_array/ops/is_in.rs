@@ -91,7 +91,7 @@ where
                     DataType::UInt16 | DataType::Int16 => unsafe {
                         is_in_helper::<T, u16>(self, other)
                     },
-                    _ => Err(PolarsError::Other(
+                    _ => Err(PolarsError::ComputeError(
                         format!(
                             "Data type {:?} not supported in is_in operation",
                             self.dtype()
