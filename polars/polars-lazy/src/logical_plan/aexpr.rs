@@ -145,7 +145,7 @@ impl AExpr {
                 let field = schema.field_with_name(name).map(|f| f.clone())?;
                 Ok(field)
             }
-            Literal(sv) => Ok(Field::new("lit", sv.get_datatype())),
+            Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
             BinaryExpr { left, right, op } => {
                 let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
                 let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;

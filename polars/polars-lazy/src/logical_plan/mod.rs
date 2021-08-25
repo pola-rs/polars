@@ -1101,7 +1101,7 @@ impl LogicalPlanBuilder {
         let (exprs, _) = prepare_projection(exprs, schema);
 
         for e in &exprs {
-            let field = e.to_field(&schema, Context::Default).unwrap();
+            let field = e.to_field(schema, Context::Default).unwrap();
             match schema.index_of(field.name()) {
                 Ok(idx) => {
                     new_fields[idx] = field;
