@@ -1097,11 +1097,11 @@ impl LogicalPlanBuilder {
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
         let schema = self.0.schema();
-
         let mut new_fields = schema.fields().clone();
+        let (exprs, _) = prepare_projection(exprs, schema);
 
         for e in &exprs {
-            let field = e.to_field(schema, Context::Default).unwrap();
+            let field = e.to_field(&schema, Context::Default).unwrap();
             match schema.index_of(field.name()) {
                 Ok(idx) => {
                     new_fields[idx] = field;
