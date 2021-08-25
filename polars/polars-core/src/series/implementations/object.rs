@@ -32,6 +32,14 @@ impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
 {
+    fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
+        self.0.agg_first(_groups)
+    }
+
+    fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
+        self.0.agg_last(_groups)
+    }
+
     fn str_value(&self, index: usize) -> Cow<str> {
         match (&self.0).get(index) {
             None => Cow::Borrowed("null"),
