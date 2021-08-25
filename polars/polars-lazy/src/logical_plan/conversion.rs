@@ -278,6 +278,7 @@ pub(crate) fn to_alp(
             aggs,
             schema,
             apply,
+            maintain_order,
         } => {
             let i = to_alp(*input, expr_arena, lp_arena);
             let aggs_new = aggs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
@@ -292,6 +293,7 @@ pub(crate) fn to_alp(
                 aggs: aggs_new,
                 schema,
                 apply,
+                maintain_order,
             }
         }
         LogicalPlan::Join {
@@ -708,6 +710,7 @@ pub(crate) fn node_to_lp(
             aggs,
             schema,
             apply,
+            maintain_order,
         } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
 
@@ -717,6 +720,7 @@ pub(crate) fn node_to_lp(
                 aggs: nodes_to_exprs(&aggs, expr_arena),
                 schema,
                 apply,
+                maintain_order,
             }
         }
         ALogicalPlan::Join {

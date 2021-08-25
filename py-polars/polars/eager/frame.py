@@ -1671,7 +1671,9 @@ class DataFrame:
         """
         return func(self, *args, **kwargs)
 
-    def groupby(self, by: Union[str, tp.List[str]]) -> "GroupBy":
+    def groupby(
+        self, by: Union[str, tp.List[str]], maintain_order: bool = False
+    ) -> "GroupBy":
         """
         Start a groupby operation.
 
@@ -1679,6 +1681,9 @@ class DataFrame:
         ----------
         by
             Column(s) to group by.
+        maintain_order
+            Make sure that the order of the groups remain consistent. This is more expensive than a default groupby.
+            Note that this only works in expression aggregations.
 
         Examples
         --------
@@ -1733,7 +1738,7 @@ class DataFrame:
         """
         if isinstance(by, str):
             by = [by]
-        return GroupBy(self._df, by, downsample=False)
+        return GroupBy(self._df, by, maintain_order=maintain_order, downsample=False)
 
     def downsample(self, by: Union[str, tp.List[str]], rule: str, n: int) -> "GroupBy":
         """
@@ -1758,7 +1763,14 @@ class DataFrame:
         n
             Number of units (e.g. 5 "day", 15 "minute".
         """
-        return GroupBy(self._df, by, downsample=True, rule=rule, downsample_n=n)
+        return GroupBy(
+            self._df,
+            by,
+            maintain_order=False,
+            downsample=True,
+            rule=rule,
+            downsample_n=n,
+        )
 
     def join(
         self,
@@ -2808,12 +2820,14 @@ class GroupBy:
         self,
         df: "PyDataFrame",
         by: Union[str, tp.List[str]],
+        maintain_order: bool = False,
         downsample: bool = False,
         rule: Optional[str] = None,
         downsample_n: int = 0,
     ):
         self._df = df
         self.by = by
+        self.maintain_order = maintain_order
         self.downsample = downsample
         self.rule = rule
         self.downsample_n = downsample_n
@@ -2954,7 +2968,7 @@ class GroupBy:
                 return (
                     wrap_df(self._df)
                     .lazy()
-                    .groupby(self.by)
+                    .groupby(self.by, maintain_order=self.maintain_order)
                     .agg(column_to_agg)  # type: ignore[arg-type]
                     .collect(no_optimization=True, string_cache=False)
                 )
@@ -3039,7 +3053,7 @@ class GroupBy:
         return (
             wrap_df(self._df)
             .lazy()
-            .groupby(self.by)
+            .groupby(self.by, self.maintain_order)
             .head(n)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)
         )
@@ -3104,7 +3118,7 @@ class GroupBy:
         return (
             wrap_df(self._df)
             .lazy()
-            .groupby(self.by)
+            .groupby(self.by, self.maintain_order)
             .tail(n)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)
         )
