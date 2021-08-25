@@ -216,8 +216,13 @@ impl DataFrame {
         let mut key_phys = key.to_physical_repr();
         let mut key = key.clone();
         let key_name = key.name().to_string();
-        let wrong_key_dtype = || Err(PolarsError::Other("key should be date32 || date64".into()));
-        let wrong_key_dtype_date64 = || Err(PolarsError::Other("key should be date64".into()));
+        let wrong_key_dtype = || {
+            Err(PolarsError::ComputeError(
+                "key should be date32 || date64".into(),
+            ))
+        };
+        let wrong_key_dtype_date64 =
+            || Err(PolarsError::ComputeError("key should be date64".into()));
 
         // We add columns to group on. We need to make sure that we do not groupby seconds
         // that belong to another minute, or another day, year, etc. That's why we add all

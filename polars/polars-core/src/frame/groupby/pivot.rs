@@ -88,7 +88,7 @@ impl Series {
                 *self = s;
                 self.as_groupable_iter()
             }
-            dt => Err(PolarsError::Other(
+            dt => Err(PolarsError::ComputeError(
                 format!("Column with dtype {:?} is not groupable", dt).into(),
             )),
         }

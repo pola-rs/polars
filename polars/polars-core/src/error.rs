@@ -18,7 +18,7 @@ pub enum PolarsError {
     #[error("Lengths don't match: {0}")]
     ShapeMisMatch(ErrString),
     #[error("{0}")]
-    Other(ErrString),
+    ComputeError(ErrString),
     #[error("Out of bounds: {0}")]
     OutOfBounds(ErrString),
     #[error("Not contiguous or null values")]

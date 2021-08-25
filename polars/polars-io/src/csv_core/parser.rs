@@ -403,7 +403,7 @@ pub(crate) fn parse_lines(
                 } else {
                     buf.add(field, ignore_parser_errors, read, encoding, needs_escaping)
                         .map_err(|e| {
-                            PolarsError::Other(
+                            PolarsError::ComputeError(
                                 format!(
                                     "{:?} on thread line {}; on input: {}",
                                     e,

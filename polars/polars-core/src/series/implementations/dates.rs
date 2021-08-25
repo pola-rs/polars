@@ -113,7 +113,7 @@ macro_rules! impl_dyn_series {
                 _ignore_null: bool,
                 _min_periods: u32,
             ) -> Result<Series> {
-                Err(PolarsError::Other(
+                Err(PolarsError::ComputeError(
                     "cannot compute rolling mean of dates".into(),
                 ))
             }
@@ -125,7 +125,7 @@ macro_rules! impl_dyn_series {
                 _ignore_null: bool,
                 _min_periods: u32,
             ) -> Result<Series> {
-                Err(PolarsError::Other(
+                Err(PolarsError::ComputeError(
                     "cannot compute rolling sum of dates".into(),
                 ))
             }
@@ -319,7 +319,7 @@ macro_rules! impl_dyn_series {
                         let rhs = rhs.cast_with_dtype(&DataType::Int64).unwrap();
                         Ok(lhs.subtract(&rhs)?.into_series())
                     }
-                    (dtl, dtr) => Err(PolarsError::Other(
+                    (dtl, dtr) => Err(PolarsError::ComputeError(
                         format!(
                             "cannot do subtraction on these date types: {:?}, {:?}",
                             dtl, dtr
@@ -329,18 +329,22 @@ macro_rules! impl_dyn_series {
                 }
             }
             fn add_to(&self, _rhs: &Series) -> Result<Series> {
-                Err(PolarsError::Other("cannot do addition on dates".into()))
+                Err(PolarsError::ComputeError(
+                    "cannot do addition on dates".into(),
+                ))
             }
             fn multiply(&self, _rhs: &Series) -> Result<Series> {
-                Err(PolarsError::Other(
+                Err(PolarsError::ComputeError(
                     "cannot do multiplication on dates".into(),
                 ))
             }
             fn divide(&self, _rhs: &Series) -> Result<Series> {
-                Err(PolarsError::Other("cannot do division on dates".into()))
+                Err(PolarsError::ComputeError(
+                    "cannot do division on dates".into(),
+                ))
             }
             fn remainder(&self, _rhs: &Series) -> Result<Series> {
-                Err(PolarsError::Other(
+                Err(PolarsError::ComputeError(
                     "cannot do remainder operation on dates".into(),
                 ))
             }
@@ -694,7 +698,9 @@ macro_rules! impl_dyn_series {
             }
 
             fn pow(&self, _exponent: f64) -> Result<Series> {
-                Err(PolarsError::Other("cannot compute power of dates".into()))
+                Err(PolarsError::ComputeError(
+                    "cannot compute power of dates".into(),
+                ))
             }
 
             fn peak_max(&self) -> BooleanChunked {

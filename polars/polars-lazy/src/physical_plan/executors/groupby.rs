@@ -62,7 +62,7 @@ fn groupby_helper(
                 let opt_agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
                 if let Some(agg) = &opt_agg {
                     if agg.len() != groups.len() {
-                        return Err(PolarsError::Other(
+                        return Err(PolarsError::ComputeError(
                             format!("returned aggregation is a different length: {} than the group lengths: {}",
                             agg.len(),
                             groups.len()).into()

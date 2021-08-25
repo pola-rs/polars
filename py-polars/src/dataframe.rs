@@ -728,7 +728,7 @@ impl PyDataFrame {
             "median" => pivot.median(),
             "sum" => pivot.sum(),
             "count" => pivot.count(),
-            a => Err(PolarsError::Other(
+            a => Err(PolarsError::ComputeError(
                 format!("agg fn {} does not exists", a).into(),
             )),
         };
@@ -928,7 +928,7 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
         "groups" => gb.groups(),
         "std" => gb.std(),
         "var" => gb.var(),
-        a => Err(PolarsError::Other(
+        a => Err(PolarsError::ComputeError(
             format!("agg fn {} does not exists", a).into(),
         )),
     });
