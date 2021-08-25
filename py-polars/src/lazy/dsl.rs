@@ -359,7 +359,7 @@ impl PyExpr {
             let ca = s.utf8()?;
             match ca.replace(&pat, &val) {
                 Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
+                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }
         };
         self.clone()
@@ -373,7 +373,7 @@ impl PyExpr {
             let ca = s.utf8()?;
             match ca.replace_all(&pat, &val) {
                 Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
+                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }
         };
         self.clone()
@@ -387,7 +387,7 @@ impl PyExpr {
             let ca = s.utf8()?;
             match ca.contains(&pat) {
                 Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
+                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }
         };
         self.clone()
@@ -401,7 +401,7 @@ impl PyExpr {
             let ca = s.utf8()?;
             match ca.json_path_match(&pat) {
                 Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
+                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }
         };
         self.clone()

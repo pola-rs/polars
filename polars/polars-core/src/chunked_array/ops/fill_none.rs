@@ -89,18 +89,18 @@ where
         let ca = match strategy {
             FillNoneStrategy::Forward => fill_forward(self),
             FillNoneStrategy::Backward => fill_backward(self),
-            FillNoneStrategy::Min => self
-                .fill_none_with_value(self.min().ok_or_else(|| {
-                    PolarsError::Other("Could not determine fill value".into())
-                })?)?,
-            FillNoneStrategy::Max => self
-                .fill_none_with_value(self.max().ok_or_else(|| {
-                    PolarsError::Other("Could not determine fill value".into())
-                })?)?,
+            FillNoneStrategy::Min => self.fill_none_with_value(self.min().ok_or_else(|| {
+                PolarsError::ComputeError("Could not determine fill value".into())
+            })?)?,
+            FillNoneStrategy::Max => self.fill_none_with_value(self.max().ok_or_else(|| {
+                PolarsError::ComputeError("Could not determine fill value".into())
+            })?)?,
             FillNoneStrategy::Mean => self.fill_none_with_value(
                 self.mean()
                     .map(|v| NumCast::from(v).unwrap())
-                    .ok_or_else(|| PolarsError::Other("Could not determine fill value".into()))?,
+                    .ok_or_else(|| {
+                        PolarsError::ComputeError("Could not determine fill value".into())
+                    })?,
             )?,
             FillNoneStrategy::One => return self.fill_none_with_value(One::one()),
             FillNoneStrategy::Zero => return self.fill_none_with_value(Zero::zero()),
@@ -131,14 +131,14 @@ impl ChunkFillNone for BooleanChunked {
             FillNoneStrategy::Forward => impl_fill_forward!(self),
             FillNoneStrategy::Backward => impl_fill_backward!(self, BooleanChunked),
             FillNoneStrategy::Min => self.fill_none_with_value(
-                1 == self
-                    .min()
-                    .ok_or_else(|| PolarsError::Other("Could not determine fill value".into()))?,
+                1 == self.min().ok_or_else(|| {
+                    PolarsError::ComputeError("Could not determine fill value".into())
+                })?,
             ),
             FillNoneStrategy::Max => self.fill_none_with_value(
-                1 == self
-                    .max()
-                    .ok_or_else(|| PolarsError::Other("Could not determine fill value".into()))?,
+                1 == self.max().ok_or_else(|| {
+                    PolarsError::ComputeError("Could not determine fill value".into())
+                })?,
             ),
             FillNoneStrategy::Mean => Err(PolarsError::InvalidOperation(
                 "mean not supported on array of Boolean type".into(),

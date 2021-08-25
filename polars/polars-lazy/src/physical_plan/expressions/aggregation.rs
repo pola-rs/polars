@@ -35,9 +35,9 @@ impl PhysicalExpr for AggregationExpr {
         groups: &'a GroupTuples,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        let out = self
-            .aggregate(df, groups, state)?
-            .ok_or_else(|| PolarsError::Other("Aggregation did not return a Series".into()))?;
+        let out = self.aggregate(df, groups, state)?.ok_or_else(|| {
+            PolarsError::ComputeError("Aggregation did not return a Series".into())
+        })?;
         Ok(AggregationContext::new(out, Cow::Borrowed(groups)))
     }
 

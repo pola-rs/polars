@@ -201,7 +201,7 @@ impl Executor for DataFrameExec {
         if let Some(selection) = &self.selection {
             let s = selection.evaluate(&df, state)?;
             let mask = s.bool().map_err(|_| {
-                PolarsError::Other("filter predicate was not of type boolean".into())
+                PolarsError::ComputeError("filter predicate was not of type boolean".into())
             })?;
             df = df.filter(mask)?;
         }

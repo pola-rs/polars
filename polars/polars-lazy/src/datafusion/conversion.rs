@@ -30,7 +30,7 @@ pub fn to_datafusion_lit(lit: LiteralValue) -> Result<ScalarValue> {
         #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
         DateTime(v) => ScalarValue::Date64(Some(v.timestamp_millis())),
         lit => {
-            return Err(PolarsError::Other(
+            return Err(PolarsError::ComputeError(
                 format!("Literal conversion for literal {:?} not yet supported", lit).into(),
             ))
         }
@@ -130,7 +130,7 @@ pub fn to_datafusion_expr(expr: Expr) -> Result<DExpr> {
                                 },
                                 GroupByMethod::Mean,
                             ),
-                            _ => return Err(PolarsError::Other(
+                            _ => return Err(PolarsError::ComputeError(
                                 "this aggregation is not yet supported in polars to datafusion conversion"
                                     .into(),
                             )),
@@ -153,7 +153,7 @@ pub fn to_datafusion_expr(expr: Expr) -> Result<DExpr> {
         .unwrap(),
         Wildcard => DExpr::Wildcard,
         _ => {
-            return Err(PolarsError::Other(
+            return Err(PolarsError::ComputeError(
                 format!(
                     "expr {:?} not yet supported in polars to datafustion conversion",
                     expr
@@ -193,7 +193,7 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
             apply,
         } => {
             if apply.is_some() {
-                return Err(PolarsError::Other(
+                return Err(PolarsError::ComputeError(
                     "Custom functions not yet supported in Polars to DataFusion conversion".into(),
                 ));
             }
@@ -243,7 +243,7 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
                 JoinType::Inner => lpmod::JoinType::Inner,
                 JoinType::Left => lpmod::JoinType::Left,
                 JoinType::Outer => {
-                    return Err(PolarsError::Other(
+                    return Err(PolarsError::ComputeError(
                         "outer join not yet supported by DataFusion backend".into(),
                     ))
                 }
@@ -257,7 +257,7 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
                     .zip(right_on.into_iter())
                     .map(|(l, r)| match (l, r) {
                         (Expr::Column(l), Expr::Column(r)) => Ok((l.to_string(), r.to_string())),
-                        _ => Err(PolarsError::Other("can only join on columns".into())),
+                        _ => Err(PolarsError::ComputeError("can only join on columns".into())),
                     })
                     .collect::<Result<Vec<_>>>()?,
                 join_type,
@@ -300,7 +300,7 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
                 .delimiter(delimiter)
                 .schema(&schema);
             if ignore_errors || skip_rows > 0 {
-                return Err(PolarsError::Other("DataFusion does not support `ignore_errors`, `skip_rows`, `stop_after_n_rows`, `with_columns`".into()));
+                return Err(PolarsError::ComputeError("DataFusion does not support `ignore_errors`, `skip_rows`, `stop_after_n_rows`, `with_columns`".into()));
             }
             let builder =
                 LogicalPlanBuilder::scan_csv(try_path_to_str(&path)?, options, None).unwrap();

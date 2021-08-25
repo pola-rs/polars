@@ -24,7 +24,7 @@ where
         let mut rhs_iter = other.into_iter();
         let mut tuples = Vec::with_capacity(self.len());
         if self.null_count() > 0 {
-            return Err(PolarsError::Other(
+            return Err(PolarsError::ComputeError(
                 "keys of asof join should not have null values".into(),
             ));
         }
@@ -41,7 +41,7 @@ where
         for arr in self.downcast_iter() {
             for &lhs_val in arr.values() {
                 if lhs_val < previous_lhs_val {
-                    return Err(PolarsError::Other(
+                    return Err(PolarsError::ComputeError(
                         "left key of asof join must be sorted".into(),
                     ));
                 }

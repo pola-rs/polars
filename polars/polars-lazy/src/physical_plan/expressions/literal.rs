@@ -58,7 +58,7 @@ impl PhysicalExpr for LiteralExpr {
                 }
                 DataType::UInt32 => {
                     if *low >= 0 || *high <= u32::MAX as i64 {
-                        return Err(PolarsError::Other(
+                        return Err(PolarsError::ComputeError(
                             "range not within bounds of u32 type".into(),
                         ));
                     }
