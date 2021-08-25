@@ -362,7 +362,10 @@ impl PyExpr {
                 Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
             }
         };
-        self.clone().inner.map(function, GetOutput::same_type()).into()
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .into()
     }
 
     pub fn str_replace_all(&self, pat: String, val: String) -> PyExpr {
@@ -373,7 +376,10 @@ impl PyExpr {
                 Err(e) => Err(PolarsError::Other(format!("{:?}", e).into())),
             }
         };
-        self.clone().inner.map(function, GetOutput::same_type()).into()
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .into()
     }
 
     pub fn str_contains(&self, pat: String) -> PyExpr {
@@ -600,19 +606,27 @@ impl PyExpr {
         };
 
         if agg_list {
-            self.clone().inner.map_list(function, GetOutput::map_field(move |fld| {
-                match output_type {
-                    Some(ref dt) => Field::new(fld.name(), dt.clone()),
-                    None => fld.clone()
-                }
-            })).into()
+            self.clone()
+                .inner
+                .map_list(
+                    function,
+                    GetOutput::map_field(move |fld| match output_type {
+                        Some(ref dt) => Field::new(fld.name(), dt.clone()),
+                        None => fld.clone(),
+                    }),
+                )
+                .into()
         } else {
-            self.clone().inner.map(function, GetOutput::map_field(move |fld| {
-                match output_type {
-                    Some(ref dt) => Field::new(fld.name(), dt.clone()),
-                    None => fld.clone()
-                }
-            })).into()
+            self.clone()
+                .inner
+                .map(
+                    function,
+                    GetOutput::map_field(move |fld| match output_type {
+                        Some(ref dt) => Field::new(fld.name(), dt.clone()),
+                        None => fld.clone(),
+                    }),
+                )
+                .into()
         }
     }
 
@@ -637,7 +651,10 @@ impl PyExpr {
         } else {
             DataType::UInt64
         };
-        self.clone().inner.map(function, GetOutput::from_type(dt)).into()
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(dt))
+            .into()
     }
     pub fn mode(&self) -> PyExpr {
         self.inner.clone().mode().into()
@@ -710,42 +727,51 @@ impl PyExpr {
     fn lst_max(&self) -> Self {
         self.inner
             .clone()
-            .map(|s| Ok(s.list()?.lst_max()), GetOutput::map_field(|f| {
-                if let DataType::List(adt) = f.data_type() {
-                    Field::new(f.name(), adt.into())
-                } else {
-                    // inner type
-                    f.clone()
-                }
-            }))
+            .map(
+                |s| Ok(s.list()?.lst_max()),
+                GetOutput::map_field(|f| {
+                    if let DataType::List(adt) = f.data_type() {
+                        Field::new(f.name(), adt.into())
+                    } else {
+                        // inner type
+                        f.clone()
+                    }
+                }),
+            )
             .into()
     }
 
     fn lst_min(&self) -> Self {
         self.inner
             .clone()
-            .map(|s| Ok(s.list()?.lst_min()), GetOutput::map_field(|f| {
-                if let DataType::List(adt) = f.data_type() {
-                    Field::new(f.name(), adt.into())
-                } else {
-                    // inner type
-                    f.clone()
-                }
-            }))
+            .map(
+                |s| Ok(s.list()?.lst_min()),
+                GetOutput::map_field(|f| {
+                    if let DataType::List(adt) = f.data_type() {
+                        Field::new(f.name(), adt.into())
+                    } else {
+                        // inner type
+                        f.clone()
+                    }
+                }),
+            )
             .into()
     }
 
     fn lst_sum(&self) -> Self {
         self.inner
             .clone()
-            .map(|s| Ok(s.list()?.lst_sum()), GetOutput::map_field(|f| {
-                if let DataType::List(adt) = f.data_type() {
-                    Field::new(f.name(), adt.into())
-                } else {
-                    // inner type
-                    f.clone()
-                }
-            }))
+            .map(
+                |s| Ok(s.list()?.lst_sum()),
+                GetOutput::map_field(|f| {
+                    if let DataType::List(adt) = f.data_type() {
+                        Field::new(f.name(), adt.into())
+                    } else {
+                        // inner type
+                        f.clone()
+                    }
+                }),
+            )
             .into()
     }
 
@@ -762,21 +788,30 @@ impl PyExpr {
     fn lst_sort(&self, reverse: bool) -> Self {
         self.inner
             .clone()
-            .map(move |s| Ok(s.list()?.lst_sort(reverse).into_series()), GetOutput::same_type())
+            .map(
+                move |s| Ok(s.list()?.lst_sort(reverse).into_series()),
+                GetOutput::same_type(),
+            )
             .into()
     }
 
     fn lst_reverse(&self) -> Self {
         self.inner
             .clone()
-            .map(move |s| Ok(s.list()?.lst_reverse().into_series()), GetOutput::same_type())
+            .map(
+                move |s| Ok(s.list()?.lst_reverse().into_series()),
+                GetOutput::same_type(),
+            )
             .into()
     }
 
     fn lst_unique(&self) -> Self {
         self.inner
             .clone()
-            .map(move |s| Ok(s.list()?.lst_unique()?.into_series()), GetOutput::same_type())
+            .map(
+                move |s| Ok(s.list()?.lst_unique()?.into_series()),
+                GetOutput::same_type(),
+            )
             .into()
     }
 }
