@@ -43,6 +43,7 @@ mode = ["polars-core/mode"]
 cum_agg = ["polars-core/cum_agg"]
 interpolate = ["polars-core/interpolate"]
 rolling_window = ["polars-core/rolling_window"]
+rank = ["polars-core/rank"]
 
 # no guarantees whatsoever
 private = []
