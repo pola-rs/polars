@@ -1,3 +1,6 @@
+#[cfg(feature = "rank")]
+pub(crate) mod rank;
+
 use crate::chunked_array::builder::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
