@@ -156,6 +156,13 @@ impl OptimizationRule for TypeCoercionRule {
                             _ => {}
                         }
 
+                        let cat_str_arithmetic = (type_left == DataType::Categorical
+                            && type_right == DataType::Utf8)
+                            || (type_left == DataType::Utf8 && type_right == DataType::Categorical);
+                        if cat_str_arithmetic {
+                            st = DataType::Utf8
+                        }
+
                         // only cast if the type is not already the super type.
                         // this can prevent an expensive flattening and subsequent aggregation
                         // in a groupby context. To be able to cast the groups need to be
@@ -189,5 +196,61 @@ impl OptimizationRule for TypeCoercionRule {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
+    use crate::prelude::*;
+    use crate::utils::expr_to_root_column_names;
+    use polars_core::prelude::*;
+
+    fn optimize_expr(expr: Expr, schema: Schema) -> Expr {
+        // initialize arena's
+        let mut expr_arena = Arena::with_capacity(64);
+        let mut lp_arena = Arena::with_capacity(32);
+        let schema = Arc::new(schema);
+
+        // dummy input needed to put the schema
+        let input = Box::new(LogicalPlan::Projection {
+            expr: vec![],
+            input: Box::new(Default::default()),
+            schema: schema.clone(),
+        });
+
+        let lp = LogicalPlan::Projection {
+            expr: vec![expr],
+            input,
+            schema,
+        };
+
+        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+        let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
+
+        let opt = StackOptimizer {};
+        let lp_top = opt.optimize_loop(&mut rules, &mut expr_arena, &mut lp_arena, root);
+        if let LogicalPlan::Projection { mut expr, .. } =
+            node_to_lp(lp_top, &mut expr_arena, &mut lp_arena)
+        {
+            expr.pop().unwrap()
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn test_categorical_utf8() {
+        let schema = Schema::new(vec![Field::new("fruits", DataType::Categorical)]);
+
+        let expr = col("fruits").eq(lit("somestr"));
+        let out = optimize_expr(expr.clone(), schema.clone());
+        // we test that the fruits column is not casted to utf8 for the comparison
+        assert_eq!(out, expr);
+
+        let expr = col("fruits") + (lit("somestr"));
+        let out = optimize_expr(expr.clone(), schema);
+        let expected = col("fruits").cast(DataType::Utf8) + lit("somestr");
+        assert_eq!(out, expected);
     }
 }
