@@ -3,7 +3,9 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 use std::collections::VecDeque;
 
-fn get_exploded(series: &Series) -> Result<(Series, &[i64])> {
+/// # Safety
+/// lifetime bounded to returned Series (second). Don't store the &[i64]
+unsafe fn get_exploded(series: &Series) -> Result<(Series, &[i64], Series)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
@@ -88,7 +90,11 @@ impl DataFrame {
         }
 
         for (i, s) in columns.iter().enumerate() {
-            if let Ok((exploded, offsets)) = get_exploded(s) {
+            // Safety:
+            // offsets are not take longer than the Series.
+            if let Ok((exploded, offsets, _keep_offsets_valid_by_owning_me)) =
+                unsafe { get_exploded(s) }
+            {
                 let col_idx = self.name_to_idx(s.name())?;
 
                 // expand all the other columns based the exploded first column

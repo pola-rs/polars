@@ -221,7 +221,7 @@ impl PhysicalAggregation for AggregationExpr {
                     // Safety
                     // The indexes of the groupby operation are never out of bounds
                     let ca = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                    let s = ca.explode_and_offsets()?.0;
+                    let s = ca.explode()?;
                     builder.append_series(&s);
                 }
                 let out = builder.finish();
