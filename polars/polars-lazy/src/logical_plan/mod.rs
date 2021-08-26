@@ -355,7 +355,8 @@ impl fmt::Debug for LogicalPlan {
 
                 write!(
                     f,
-                    "TABLE: {:?}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    "TABLE: {:?}; PROJECT {}/{} COLUMNS; SELECTION: {:?}\\n
+                    PROJECTION: {:?}",
                     schema
                         .fields()
                         .iter()
@@ -364,11 +365,20 @@ impl fmt::Debug for LogicalPlan {
                         .collect::<Vec<_>>(),
                     n_columns,
                     total_columns,
-                    selection
+                    selection,
+                    projection
                 )
             }
             Projection { expr, input, .. } => {
-                write!(f, "SELECT {:?} COLUMNS \nFROM\n{:?}", expr.len(), input)
+                write!(
+                    f,
+                    "SELECT {:?} COLUMNS\n\
+                 {:?}
+                 \nFROM\n{:?}",
+                    expr.len(),
+                    expr,
+                    input
+                )
             }
             LocalProjection { expr, input, .. } => {
                 write!(
@@ -1453,48 +1463,6 @@ mod test {
             let df = lf.collect().unwrap();
             println!("{:?}", df);
         }
-        //
-        // // check if optimization succeeds with selection of the left and the right (renamed)
-        // // column due to the join
-        // {
-        //     let lf = left
-        //         .clone()
-        //         .lazy()
-        //         .left_join(right.clone().lazy(), col("days"), col("days"), None)
-        //         .select(&[col("temp"), col("rain"), col("rain_right")]);
-        //
-        //     print_plans(&lf);
-        //     let df = lf.collect().unwrap();
-        //     println!("{:?}", df);
-        // }
-        //
-        // // check if optimization succeeds with selection of the left and the right (renamed)
-        // // column due to the join and an extra alias
-        // {
-        //     let lf = left
-        //         .clone()
-        //         .lazy()
-        //         .left_join(right.clone().lazy(), col("days"), col("days"), None)
-        //         .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")]);
-        //
-        //     print_plans(&lf);
-        //     let df = lf.collect().unwrap();
-        //     println!("{:?}", df);
-        // }
-        //
-        // // check if optimization succeeds with selection of the left and the right (renamed)
-        // // column due to the join and an extra alias
-        // {
-        //     let lf = left
-        //         .lazy()
-        //         .left_join(right.lazy(), col("days"), col("days"), None)
-        //         .select(&[col("temp"), col("rain").alias("foo"), col("rain_right")])
-        //         .filter(col("foo").lt(lit(0.3)));
-        //
-        //     print_plans(&lf);
-        //     let df = lf.collect().unwrap();
-        //     println!("{:?}", df);
-        // }
     }
 
     #[test]

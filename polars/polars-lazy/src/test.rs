@@ -1701,3 +1701,22 @@ fn test_lazy_ternary_predicate_pushdown() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_categorical_addition() -> Result<()> {
+    let df = fruits_cars();
+
+    // test if we can do that arithmetic operation with utf8 and categorical
+    let out = df
+        .lazy()
+        .select(vec![
+            col("fruits").cast(DataType::Categorical),
+            col("cars").cast(DataType::Categorical),
+        ])
+        .select(vec![(col("fruits") + lit(" ") + col("cars")).alias("foo")])
+        .collect()?;
+
+    assert_eq!(out.column("foo")?.utf8()?.get(0).unwrap(), "banana beetle");
+
+    Ok(())
+}
