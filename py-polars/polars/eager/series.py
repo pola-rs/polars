@@ -1590,6 +1590,9 @@ class Series:
         array.setflags(write=False)
         return array
 
+    def __array__(self, dtype=None) -> np.ndarray:
+        return self.to_numpy().__array__(dtype)
+
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> "Series":
@@ -1614,9 +1617,18 @@ class Series:
             else:
                 dtype = self.dtype
 
-            f = get_ffi_func("apply_ufunc_<>", dtype, self._s)
-            series = f(lambda out: ufunc(*args, out=out, **kwargs))
-            return wrap_s(series)
+            try:
+                f = get_ffi_func("apply_ufunc_<>", dtype, self._s)
+                series = f(lambda out: ufunc(*args, out=out, **kwargs))
+                return wrap_s(series)
+            except TypeError as e:
+                # some integer to float ufuncs do not work, try on f64
+                s = self.cast(pl.Float64)
+                args[0] = s.view(ignore_nulls=True)
+                f = get_ffi_func("apply_ufunc_<>", pl.Float64, self._s)
+                series = f(lambda out: ufunc(*args, out=out, **kwargs))
+                return wrap_s(series)
+
         else:
             return NotImplemented
 
