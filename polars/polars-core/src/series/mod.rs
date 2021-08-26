@@ -10,6 +10,8 @@ pub(crate) mod iterator;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::{builder::get_list_builder, ChunkIdIter};
+#[cfg(feature = "rank")]
+use crate::prelude::unique::rank::{rank, RankMethod};
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};
@@ -1654,6 +1656,12 @@ impl Series {
         {
             panic!("activate 'rolling_window' feature")
         }
+    }
+
+    #[cfg(feature = "rank")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rank(&self, method: RankMethod) -> Series {
+        rank(self, method)
     }
 }
 

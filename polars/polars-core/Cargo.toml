@@ -72,6 +72,7 @@ rolling_window = []
 interpolate = []
 # additional list utils
 list = []
+rank = []
 
 
 # opt-in datatypes for Series
