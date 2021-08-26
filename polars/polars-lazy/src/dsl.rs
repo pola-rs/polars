@@ -1477,6 +1477,18 @@ impl Expr {
             GetOutput::same_type(),
         )
     }
+
+    #[cfg(feature = "rank")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
+    pub fn rank(self, method: RankMethod) -> Expr {
+        self.apply(
+            move |s| Ok(s.rank(method)),
+            GetOutput::map_field(move |fld| match method {
+                RankMethod::Average => Field::new(fld.name(), DataType::Float32),
+                _ => Field::new(fld.name(), DataType::UInt32),
+            }),
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.

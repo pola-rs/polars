@@ -483,3 +483,12 @@ def test_jsonpath_single():
         "2.1",
         "true",
     ]
+
+
+def test_rank_dispatch():
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+
+    assert s.rank("dense") == [2, 3, 4, 3, 3, 4, 1]
+
+    df = pl.DataFrame([s])
+    df.select(pl.col("a").rank("dense"))["a"] == [2, 3, 4, 3, 3, 4, 1]

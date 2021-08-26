@@ -13,6 +13,7 @@ use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use pyo3::exceptions::PyValueError;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -286,4 +287,16 @@ impl<'a, T: ArrowNativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Aligne
         }
         Ok(Wrap(v))
     }
+}
+
+pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
+    let method = match method {
+        "min" => RankMethod::Min,
+        "max" => RankMethod::Max,
+        "average" => RankMethod::Average,
+        "dense" => RankMethod::Dense,
+        "ordinal" => RankMethod::Ordinal,
+        _ => return Err(PyValueError::new_err("use one of 'avg, min, max, dense, ordinal'".to_string()))
+    };
+    Ok(method)
 }

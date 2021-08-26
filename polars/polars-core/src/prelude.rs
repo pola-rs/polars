@@ -44,3 +44,6 @@ pub use crate::{
 
 #[cfg(feature = "rolling_window")]
 pub use crate::chunked_array::ops::rolling_window::InitFold;
+
+#[cfg(feature = "rank")]
+pub use crate::chunked_array::ops::unique::rank::RankMethod;

@@ -68,7 +68,8 @@ features = [
     "cum_agg",
     "rolling_window",
     "interpolate",
-    "list"
+    "list",
+    "rank"
 ]
 
 #[patch.crates-io]
