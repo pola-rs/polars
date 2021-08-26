@@ -32,7 +32,9 @@ impl ChunkExplode for ListChunked {
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
         let offsets = listarr.offsets();
-        let values = listarr.values().clone();
+        let values = listarr
+            .values()
+            .slice(listarr.offset(), (offsets[offsets.len() - 1]) as usize);
 
         let s = Series::try_from((self.name(), values)).unwrap();
         Ok((s, offsets.clone()))
@@ -96,5 +98,34 @@ impl ChunkExplode for Utf8Chunked {
 
         let s = Series::try_from((self.name(), new_arr)).unwrap();
         Ok((s, old_offsets))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::chunked_array::builder::get_list_builder;
+
+    #[test]
+    fn test_explode_list() -> Result<()> {
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
+
+        builder.append_series(&Series::new("", &[1, 2, 3, 3]));
+        builder.append_series(&Series::new("", &[1]));
+        builder.append_series(&Series::new("", &[2]));
+
+        let ca = builder.finish();
+
+        // normal explode
+        let exploded = ca.explode()?;
+        let out: Vec<_> = exploded.i32()?.into_no_null_iter().collect();
+        assert_eq!(out, &[1, 2, 3, 3, 1, 2]);
+
+        // sliced explode
+        let exploded = ca.slice(0, 1).explode()?;
+        let out: Vec<_> = exploded.i32()?.into_no_null_iter().collect();
+        assert_eq!(out, &[1, 2, 3, 3]);
+
+        Ok(())
     }
 }
