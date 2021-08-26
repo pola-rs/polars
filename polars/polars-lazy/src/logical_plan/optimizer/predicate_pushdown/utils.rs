@@ -125,6 +125,11 @@ pub(super) fn is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> boo
             | AExpr::Explode {..}
             // A groupby needs all rows for aggregation
             | AExpr::Window {..}
+            | AExpr::Literal(LiteralValue::Range {..})
+        ) ||
+            // a series that is not a singleton would also have a different result
+            // if filter is applied earlier
+            matches!(e, AExpr::Literal(LiteralValue::Series(s)) if s.len() > 1
         )
     };
     has_aexpr(node, expr_arena, matches)
