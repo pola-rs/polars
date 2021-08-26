@@ -1153,6 +1153,11 @@ impl PySeries {
             Err(e) => Err(e),
         }
     }
+
+    pub fn rank(&self, method: &str) -> PyResult<Self> {
+        let method = str_to_rankmethod(method)?;
+        Ok(self.series.rank(method).into())
+    }
 }
 
 macro_rules! impl_ufuncs {
