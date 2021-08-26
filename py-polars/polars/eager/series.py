@@ -372,7 +372,7 @@ class Series:
             out_dtype = self.dtype
         else:
             out_dtype = Float64
-        return np.true_divide(self, other, dtype=out_dtype)  # type: ignore[call-overload]
+        return np.true_divide(self, other, dtype=out_dtype)  # type: ignore
 
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
@@ -1590,7 +1590,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array__(self, dtype=None) -> np.ndarray:
+    def __array__(self, dtype=None) -> np.ndarray:  # type: ignore
         return self.to_numpy().__array__(dtype)
 
     def __array_ufunc__(
@@ -1621,7 +1621,7 @@ class Series:
                 f = get_ffi_func("apply_ufunc_<>", dtype, self._s)
                 series = f(lambda out: ufunc(*args, out=out, **kwargs))
                 return wrap_s(series)
-            except TypeError as e:
+            except TypeError:
                 # some integer to float ufuncs do not work, try on f64
                 s = self.cast(pl.Float64)
                 args[0] = s.view(ignore_nulls=True)
