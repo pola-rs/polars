@@ -160,6 +160,9 @@ class Expr:
     def lt(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr.lt(other._pyexpr))
 
+    def __neg__(self) -> "Expr":
+        return pl.lit(0) - self  # type: ignore
+
     def alias(self, name: str) -> "Expr":
         """
         Rename the output of an expression.
