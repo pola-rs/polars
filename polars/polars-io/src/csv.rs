@@ -1026,4 +1026,21 @@ null-value,b,bar,
         assert!(df.get_columns()[0].null_count() > 0);
         Ok(())
     }
+
+    #[test]
+    fn test_no_newline_at_end() -> Result<()> {
+        let csv = r"a,b
+foo,foo
+bar,bar";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish()?;
+
+        use polars_core::df;
+        let expect = df![
+            "a" => ["foo", "bar"],
+            "b" => ["foo", "bar"]
+        ]?;
+        assert!(df.frame_equal(&expect));
+        Ok(())
+    }
 }
