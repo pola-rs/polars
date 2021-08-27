@@ -11,7 +11,7 @@
 //!
 //! * [Cookbooks](#cookbooks)
 //! * [Data structures](#data-structures)
-//!     - [DataFrame](#dtaframe)
+//!     - [DataFrame](#dataframe)
 //!     - [Series](#series)
 //!     - [ChunkedArray](#chunkedarray)
 //! * [SIMD](#simd)
