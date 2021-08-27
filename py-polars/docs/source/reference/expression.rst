@@ -125,6 +125,7 @@ Manipulation/ selection
 .. autosummary::
    :toctree: api/
 
+    Expr.inspect
     Expr.slice
     Expr.explode
     Expr.flatten

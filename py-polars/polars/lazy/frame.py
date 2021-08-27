@@ -190,6 +190,21 @@ class LazyFrame:
                 plt.show()
         return None
 
+    def inspect(self, fmt: str = "{}") -> "pl.Expr":  # type: ignore
+        """
+        Prints the value that this node in the computation graph evaluates to and passes on the value.
+
+        >>> (df.select(col("foo").cum_sum().alias("bar"))
+        >>>    .inspect()  # print the node before the filter
+        >>>    .filter(col("bar") == col("foo")))
+        """
+
+        def inspect(s: "pl.Series") -> "pl.Series":
+            print(fmt.format(s))  # type: ignore
+            return s
+
+        return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
+
     def sort(
         self,
         by: Union[str, "Expr", tp.List["Expr"]],
