@@ -190,7 +190,7 @@ class LazyFrame:
                 plt.show()
         return None
 
-    def inspect(self, fmt: str = "{}") -> "pl.Expr":  # type: ignore
+    def inspect(self, fmt: str = "{}") -> "pl.LazyFrame":  # type: ignore
         """
         Prints the value that this node in the computation graph evaluates to and passes on the value.
 
@@ -199,7 +199,7 @@ class LazyFrame:
         >>>    .filter(col("bar") == col("foo")))
         """
 
-        def inspect(s: "pl.Series") -> "pl.Series":
+        def inspect(s: "pl.DataFrame") -> "pl.DataFrame":
             print(fmt.format(s))  # type: ignore
             return s
 
