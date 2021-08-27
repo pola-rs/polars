@@ -202,28 +202,31 @@ impl<'a> Iterator for SplitLines<'a> {
         // denotes if we are in a string field, started with a quote
         let mut in_field = false;
         let mut pos = 0u32;
-        let mut need_remove_end_line_char = false;
-        for &c in self.v {
-            pos += 1;
-            if c == b'"' {
-                // toggle between string field enclosure
-                //      if we encounter a starting '"' -> in_field = true;
-                //      if we encounter a closing '"' -> in_field = false;
-                in_field = !in_field;
-            }
-            // if we are not in a string and we encounter '\n' we can stop at this position.
-            if c == self.end_line_char && !in_field {
-                need_remove_end_line_char = true;
-                break;
+        let mut iter = self.v.iter();
+        loop {
+            match iter.next() {
+                Some(&c) => {
+                    pos += 1;
+                    if c == b'"' {
+                        // toggle between string field enclosure
+                        //      if we encounter a starting '"' -> in_field = true;
+                        //      if we encounter a closing '"' -> in_field = false;
+                        in_field = !in_field;
+                    }
+                    // if we are not in a string and we encounter '\n' we can stop at this position.
+                    if c == self.end_line_char && !in_field {
+                        break;
+                    }
+                }
+                None => {
+                    // no new line found we are done
+                    // the rest will be done by last line specific code.
+                    return None;
+                }
             }
         }
         // return line up to this position
-        let end_pos = if need_remove_end_line_char {
-            pos - 1
-        } else {
-            pos
-        };
-        let ret = Some(&self.v[..(end_pos) as usize]);
+        let ret = Some(&self.v[..(pos - 1) as usize]);
         // skip the '\n' token and update slice.
         self.v = &self.v[pos as usize..];
         ret
