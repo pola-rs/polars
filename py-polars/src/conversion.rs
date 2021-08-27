@@ -8,12 +8,12 @@ use polars::prelude::AnyValue;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use pyo3::exceptions::PyValueError;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -296,7 +296,11 @@ pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
         "average" => RankMethod::Average,
         "dense" => RankMethod::Dense,
         "ordinal" => RankMethod::Ordinal,
-        _ => return Err(PyValueError::new_err("use one of 'avg, min, max, dense, ordinal'".to_string()))
+        _ => {
+            return Err(PyValueError::new_err(
+                "use one of 'avg, min, max, dense, ordinal'".to_string(),
+            ))
+        }
     };
     Ok(method)
 }

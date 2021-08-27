@@ -1,4 +1,5 @@
 use crate::lazy::utils::py_exprs_to_exprs;
+use crate::prelude::str_to_rankmethod;
 use crate::series::PySeries;
 use crate::utils::{reinterpret, str_to_polarstype};
 use polars::lazy::dsl;
@@ -7,7 +8,6 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
-use crate::prelude::str_to_rankmethod;
 
 fn call_lambda_with_series(
     py: Python,
@@ -818,8 +818,7 @@ impl PyExpr {
 
     fn rank(&self, method: &str) -> Self {
         let method = str_to_rankmethod(method).unwrap();
-        self.inner.clone()
-            .rank(method).into()
+        self.inner.clone().rank(method).into()
     }
 }
 
