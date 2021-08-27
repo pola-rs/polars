@@ -478,3 +478,37 @@ def test_arr_namespace(fruits_cars):
         }
     )
     assert out.frame_equal(expected, null_equal=True)
+
+
+def test_arithmetic():
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    out = df.select(
+        [
+            (col("a") % 2).alias("1"),
+            (2 % col("a")).alias("2"),
+            (1 / col("a")).alias("3"),
+            (1 * col("a")).alias("4"),
+            (1 + col("a")).alias("5"),
+            (1 - col("a")).alias("6"),
+            (col("a") / 2).alias("7"),
+            (col("a") * 2).alias("8"),
+            (col("a") + 2).alias("9"),
+            (col("a") - 2).alias("10"),
+        ]
+    )
+    expected = pl.DataFrame(
+        {
+            "1": [1, 0, 1],
+            "2": [0, 0, 2],
+            "3": [1, 0, 0],
+            "4": [1, 2, 3],
+            "5": [2, 3, 4],
+            "6": [0, -1, -2],
+            "7": [0, 1, 1],
+            "8": [2, 4, 6],
+            "9": [3, 4, 5],
+            "10": [-1, 0, 1],
+        }
+    )
+    assert out.frame_equal(expected)
