@@ -495,6 +495,7 @@ def test_arithmetic():
             (col("a") * 2).alias("8"),
             (col("a") + 2).alias("9"),
             (col("a") - 2).alias("10"),
+            -col("a").alias("11"),
         ]
     )
     expected = pl.DataFrame(
@@ -509,6 +510,7 @@ def test_arithmetic():
             "8": [2, 4, 6],
             "9": [3, 4, 5],
             "10": [-1, 0, 1],
+            "11": [-1, -2, -3],
         }
     )
     assert out.frame_equal(expected)
