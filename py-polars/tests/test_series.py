@@ -98,6 +98,9 @@ def test_arithmetic():
     # integer division
     assert ((1 / a) == [1.0, 0.5]).sum() == 2
     assert ((1 // a) == [1, 0]).sum() == 2
+    # modulo
+    assert ((1 % a) == [0, 1]).sum() == 2
+    assert ((a % 1) == [0, 0]).sum() == 2
 
 
 def test_various():

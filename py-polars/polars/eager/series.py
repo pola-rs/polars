@@ -390,6 +390,24 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
+    def __mod__(self, other: Any) -> "Series":
+        if isinstance(other, Series):
+            return Series._from_pyseries(self._s.rem(other._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("rem_<>", dtype, self._s)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
+
+    def __rmod__(self, other: Any) -> "Series":
+        if isinstance(other, Series):
+            return Series._from_pyseries(other._s.rem(self._s))
+        dtype = dtype_to_primitive(self.dtype)
+        f = get_ffi_func("rem_<>_rhs", dtype, self._s)
+        if f is None:
+            return NotImplemented
+        return wrap_s(f(other))
+
     def __radd__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
