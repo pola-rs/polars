@@ -461,6 +461,9 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
+    def __neg__(self) -> "Series":
+        return 0 - self
+
     def __getitem__(self, item: Any) -> Any:
         if isinstance(item, int):
             if item >= self.len():
