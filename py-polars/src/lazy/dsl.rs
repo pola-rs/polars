@@ -53,6 +53,9 @@ impl PyNumberProtocol for PyExpr {
     fn __truediv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
         Ok(dsl::binary_expr(lhs.inner, Operator::Divide, rhs.inner).into())
     }
+    fn __mod__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(lhs.inner, Operator::Modulus, rhs.inner).into())
+    }
 }
 
 #[pyproto]
