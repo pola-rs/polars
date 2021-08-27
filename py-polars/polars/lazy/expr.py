@@ -80,22 +80,46 @@ class Expr:
         return self.is_not()
 
     def __and__(self, other: "Expr") -> "Expr":
-        return wrap_expr(self._pyexpr._and(other._pyexpr))
+        return wrap_expr(self._pyexpr._and(self.__to_pyexpr(other)))
+
+    def __rand__(self, other: Any) -> "Expr":
+        return wrap_expr(self._pyexpr._and(self.__to_pyexpr(other)))
 
     def __or__(self, other: "Expr") -> "Expr":
-        return wrap_expr(self._pyexpr._or(other._pyexpr))
+        return wrap_expr(self._pyexpr._or(self.__to_pyexpr(other)))
+
+    def __ror__(self, other: Any) -> "Expr":
+        return wrap_expr(self.__to_pyexpr(other)._or(self._pyexpr))
 
     def __add__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr + self.__to_pyexpr(other))
 
+    def __radd__(self, other: Any) -> "Expr":
+        return wrap_expr(self.__to_pyexpr(other) + self._pyexpr)
+
     def __sub__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr - self.__to_pyexpr(other))
+
+    def __rsub__(self, other: Any) -> "Expr":
+        return wrap_expr(self.__to_pyexpr(other) - self._pyexpr)
 
     def __mul__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr * self.__to_pyexpr(other))
 
+    def __rmul__(self, other: Any) -> "Expr":
+        return wrap_expr(self.__to_pyexpr(other) * self._pyexpr)
+
     def __truediv__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr / self.__to_pyexpr(other))
+
+    def __rtruediv__(self, other: Any) -> "Expr":
+        return wrap_expr(self.__to_pyexpr(other) / self._pyexpr)
+
+    def __mod__(self, other: Any) -> "Expr":
+        return wrap_expr(self._pyexpr % self.__to_pyexpr(other))
+
+    def __rmod__(self, other: Any) -> "Expr":
+        return wrap_expr(self.__to_pyexpr(other) % self._pyexpr)
 
     def __pow__(self, power: float, modulo: None = None) -> "Expr":
         return self.pow(power)
