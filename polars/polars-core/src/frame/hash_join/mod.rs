@@ -1000,14 +1000,26 @@ impl DataFrame {
             return self.cross_join(other);
         }
 
-        let selected_left = self.select_series(left_on)?;
-        let selected_right = other.select_series(right_on)?;
-        assert_eq!(selected_right.len(), selected_left.len());
+        let mut selected_left = self.select_series(left_on)?;
+        let mut selected_right = other.select_series(right_on)?;
+        if selected_right.len() != selected_left.len() {
+            return Err(PolarsError::ValueError(
+                "the number of columns given as join key should be equal".into(),
+            ));
+        }
+        if selected_left
+            .iter()
+            .zip(&selected_right)
+            .any(|(l, r)| l.dtype() != r.dtype())
+        {
+            return Err(PolarsError::ValueError("the dtype of the join keys don't match. first cast your columns to the correct dtype".into()));
+        }
 
         for (l, r) in selected_left.iter().zip(&selected_right) {
             check_categorical_src(l, r)?
         }
 
+        // Single keys
         if selected_left.len() == 1 {
             return match how {
                 JoinType::Inner => {
@@ -1041,14 +1053,33 @@ impl DataFrame {
             new.unwrap()
         }
 
+        // hack for a macro
         impl DataFrame {
             fn len(&self) -> usize {
                 self.height()
             }
         }
 
-        // This is still single threaded and can create very large keys that are inserted in the
-        // hashmap. TODO: implement same hashing technique as in grouping.
+        // check if we have floats, in that case we have to coerce them
+        if selected_left
+            .iter()
+            .any(|s| matches!(s.dtype(), DataType::Float32 | DataType::Float64))
+        {
+            #[cfg(feature = "dtype-u64")]
+            for selected in &mut [&mut selected_left, &mut selected_right] {
+                selected.iter_mut().for_each(|s| match s.dtype().clone() {
+                    DataType::Float64 => *s = s.bit_repr_large().into_series(),
+                    DataType::Float32 => *s = s.bit_repr_small().into_series(),
+                    _ => {}
+                });
+            }
+            #[cfg(not(feature = "dtype-u64"))]
+            {
+                panic!("activate dtype-u64 feature to be able to join on floats")
+            }
+        }
+
+        // multiple keys
         match how {
             JoinType::Inner => {
                 let left = DataFrame::new_no_checks(selected_left);
@@ -1571,6 +1602,54 @@ mod test {
             "b_right" => [1]
         ]?;
         assert!(out.frame_equal(&expected));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_join_err() -> Result<()> {
+        let df1 = df![
+            "a" => [1, 2],
+            "b" => ["foo", "bar"]
+        ]?;
+
+        let df2 = df![
+            "a" => [1, 2, 3, 4],
+            "b" => [true, true, true, false]
+        ]?;
+
+        // dtypes don't match, error
+        assert!(df1
+            .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left)
+            .is_err());
+        // length of join keys don't match error
+        assert!(df1
+            .join(&df2, vec!["a"], vec!["a", "b"], JoinType::Left)
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    #[cfg(feature = "dtype-u64")]
+    fn test_join_floats() -> Result<()> {
+        let df_a = df! {
+            "a" => &[1.0, 2.0, 1.0, 1.0],
+            "b" => &["a", "b", "c", "c"],
+            "c" => &[0.0, 1.0, 2.0, 3.0]
+        }?;
+
+        let df_b = df! {
+            "foo" => &[1.0, 2.0, 1.0],
+            "bar" => &[1.0, 1.0, 1.0],
+            "ham" => &["let", "var", "const"]
+        }?;
+
+        let out = df_a.join(&df_b, vec!["a", "c"], vec!["foo", "bar"], JoinType::Left)?;
+        assert_eq!(
+            Vec::from(out.column("ham")?.utf8()?),
+            &[None, Some("var"), None, None]
+        );
         Ok(())
     }
 }
