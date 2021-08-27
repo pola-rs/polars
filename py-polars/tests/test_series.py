@@ -101,6 +101,8 @@ def test_arithmetic():
     # modulo
     assert ((1 % a) == [0, 1]).sum() == 2
     assert ((a % 1) == [0, 0]).sum() == 2
+    # negate
+    assert (-a == [-1, -2]).sum() == 2
 
 
 def test_various():
