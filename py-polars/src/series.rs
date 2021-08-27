@@ -348,6 +348,10 @@ impl PySeries {
         (&self.series / &other.series).into()
     }
 
+    pub fn rem(&self, other: &PySeries) -> Self {
+        (&self.series % &other.series).into()
+    }
+
     pub fn head(&self, length: Option<usize>) -> Self {
         (self.series.head(length)).into()
     }
@@ -1426,6 +1430,16 @@ impl_arithmetic!(mul_i32, i32, *);
 impl_arithmetic!(mul_i64, i64, *);
 impl_arithmetic!(mul_f32, f32, *);
 impl_arithmetic!(mul_f64, f64, *);
+impl_arithmetic!(rem_u8, u8, %);
+impl_arithmetic!(rem_u16, u16, %);
+impl_arithmetic!(rem_u32, u32, %);
+impl_arithmetic!(rem_u64, u64, %);
+impl_arithmetic!(rem_i8, i8, %);
+impl_arithmetic!(rem_i16, i16, %);
+impl_arithmetic!(rem_i32, i32, %);
+impl_arithmetic!(rem_i64, i64, %);
+impl_arithmetic!(rem_f32, f32, %);
+impl_arithmetic!(rem_f64, f64, %);
 
 macro_rules! impl_rhs_arithmetic {
     ($name:ident, $type:ty, $operand:ident) => {
@@ -1478,6 +1492,16 @@ impl_rhs_arithmetic!(mul_i32_rhs, i32, mul);
 impl_rhs_arithmetic!(mul_i64_rhs, i64, mul);
 impl_rhs_arithmetic!(mul_f32_rhs, f32, mul);
 impl_rhs_arithmetic!(mul_f64_rhs, f64, mul);
+impl_rhs_arithmetic!(rem_u8_rhs, u8, rem);
+impl_rhs_arithmetic!(rem_u16_rhs, u16, rem);
+impl_rhs_arithmetic!(rem_u32_rhs, u32, rem);
+impl_rhs_arithmetic!(rem_u64_rhs, u64, rem);
+impl_rhs_arithmetic!(rem_i8_rhs, i8, rem);
+impl_rhs_arithmetic!(rem_i16_rhs, i16, rem);
+impl_rhs_arithmetic!(rem_i32_rhs, i32, rem);
+impl_rhs_arithmetic!(rem_i64_rhs, i64, rem);
+impl_rhs_arithmetic!(rem_f32_rhs, f32, rem);
+impl_rhs_arithmetic!(rem_f64_rhs, f64, rem);
 
 macro_rules! impl_eq_num {
     ($name:ident, $type:ty) => {
