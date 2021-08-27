@@ -268,8 +268,9 @@ impl<'a> CoreReader<'a> {
                         let mut read = bytes_offset_thread;
                         let mut df: Option<DataFrame> = None;
 
+                        let mut last_read = usize::MAX;
                         loop {
-                            if read >= stop_at_nbytes {
+                            if read >= stop_at_nbytes || read == last_read {
                                 break;
                             }
 
@@ -295,6 +296,7 @@ impl<'a> CoreReader<'a> {
                                 self.encoding,
                                 chunk_size,
                             )?;
+                            last_read = read;
 
                             let mut local_df = DataFrame::new_no_checks(
                                 buffers.into_iter().map(|buf| buf.into_series()).collect(),
@@ -382,8 +384,9 @@ impl<'a> CoreReader<'a> {
                             self.delimiter,
                         )?;
 
+                        let mut last_read = usize::MAX;
                         loop {
-                            if read >= stop_at_nbytes {
+                            if read >= stop_at_nbytes || read == last_read {
                                 break;
                             }
                             let local_bytes = &bytes[read..stop_at_nbytes];
@@ -402,7 +405,9 @@ impl<'a> CoreReader<'a> {
                                 // less calls if we increase the size
                                 chunk_size * 320000,
                             )?;
+                            last_read = read;
                         }
+                        self.may_parse_last_line(read, bytes, projection, &mut buffers)?;
                         Ok(DataFrame::new_no_checks(
                             buffers.into_iter().map(|buf| buf.into_series()).collect(),
                         ))
@@ -411,6 +416,39 @@ impl<'a> CoreReader<'a> {
             })?;
             accumulate_dataframes_vertical(dfs.into_iter())
         }
+    }
+
+    // the parser and some unsafe code assumes '\n' char
+    fn may_parse_last_line(
+        &self,
+        read: usize,
+        bytes: &[u8],
+        projection: &[usize],
+        buffers: &mut [Buffer],
+    ) -> Result<()> {
+        let remaining = &bytes[read..];
+        let len = remaining.len();
+        // if there is no new line char we try to parse the last line
+        if len > 0 && !remaining.iter().any(|&c| c == b'\n') {
+            let mut last_line = Vec::with_capacity(len + 1);
+            last_line.extend_from_slice(remaining);
+            last_line.push(b'\n');
+
+            parse_lines(
+                &last_line,
+                0,
+                self.delimiter,
+                self.comment_char,
+                self.null_values.as_ref(),
+                projection,
+                buffers,
+                self.ignore_parser_errors,
+                self.encoding,
+                // does not matter
+                10,
+            )?;
+        }
+        Ok(())
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
