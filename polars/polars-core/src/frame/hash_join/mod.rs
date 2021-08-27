@@ -1000,7 +1000,9 @@ impl DataFrame {
             return self.cross_join(other);
         }
 
+        #[allow(unused_mut)]
         let mut selected_left = self.select_series(left_on)?;
+        #[allow(unused_mut)]
         let mut selected_right = other.select_series(right_on)?;
         if selected_right.len() != selected_left.len() {
             return Err(PolarsError::ValueError(
