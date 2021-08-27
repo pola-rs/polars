@@ -31,6 +31,7 @@ Manipulation/ selection
 .. autosummary::
    :toctree: api/
 
+    LazyFrame.inspect
     LazyFrame.filter
     LazyFrame.select
     LazyFrame.groupby
