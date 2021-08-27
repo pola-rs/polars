@@ -1,5 +1,6 @@
 use crate::utils::align_chunks_binary;
 use crate::{prelude::*, utils::NoNull};
+use arrow::compute::comparison::Simd8;
 use arrow::{
     array::{ArrayRef, BooleanArray, PrimitiveArray, Utf8Array},
     compute,
@@ -62,7 +63,7 @@ macro_rules! impl_eq_missing {
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumComp,
+    T::Native: NumComp + Simd8,
 {
     fn eq_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
@@ -454,7 +455,7 @@ impl NumComp for u64 {}
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + NumComp,
+    T::Native: NumCast + NumComp + Simd8,
 {
     fn primitive_compare_scalar<Rhs: NumComp + ToPrimitive>(
         &self,
@@ -462,16 +463,14 @@ where
         op: comparison::Operator,
     ) -> BooleanChunked {
         let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        self.apply_kernel_cast(|arr| {
-            Arc::new(comparison::primitive_compare_scalar(arr, rhs, op).unwrap())
-        })
+        self.apply_kernel_cast(|arr| Arc::new(comparison::primitive_compare_scalar(arr, rhs, op)))
     }
 }
 
 impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + NumComp,
+    T::Native: NumCast + NumComp + Simd8,
     Rhs: NumComp + ToPrimitive,
 {
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {

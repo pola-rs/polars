@@ -89,6 +89,8 @@ impl DataFrame {
         }
 
         for (i, s) in columns.iter().enumerate() {
+            // Safety:
+            // offsets are not take longer than the Series.
             if let Ok((exploded, offsets)) = get_exploded(s) {
                 let col_idx = self.name_to_idx(s.name())?;
 

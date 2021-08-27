@@ -10,6 +10,8 @@ pub(crate) mod iterator;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::{builder::get_list_builder, ChunkIdIter};
+#[cfg(feature = "rank")]
+use crate::prelude::unique::rank::{rank, RankMethod};
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};
@@ -156,22 +158,22 @@ pub(crate) mod private {
             unimplemented!()
         }
         fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
             unimplemented!()
@@ -180,20 +182,20 @@ pub(crate) mod private {
             unimplemented!()
         }
         fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-            unimplemented!()
+            None
         }
         fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
-            unimplemented!()
+            None
         }
         fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         #[cfg(feature = "lazy")]
         fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            unimplemented!()
+            None
         }
         #[cfg(feature = "pivot")]
         fn pivot<'a>(
@@ -1066,8 +1068,16 @@ pub trait SeriesTrait:
 
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
+    /// Compute the most occurring element in the array.
     fn mode(&self) -> Result<Series> {
         unimplemented!()
+    }
+
+    #[cfg(feature = "rolling_window")]
+    /// Apply a custom function over a rolling/ moving window of the array.
+    /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
+    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
+        panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
     }
 }
 
@@ -1325,13 +1335,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "is_nan not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
         }
     }
 
@@ -1340,13 +1344,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!(
-                    "is_nan not supported for series with dtype {:?}",
-                    self.dtype()
-                )
-                .into(),
-            )),
+            _ => Ok(BooleanChunked::full(self.name(), true, self.len())),
         }
     }
 
@@ -1603,7 +1601,7 @@ impl Series {
         }
     }
     /// Apply a rolling sum to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_sum).
+    /// [ChunkedArray::rolling_sum](crate::prelude::ChunkWindow::rolling_sum).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_sum(
         &self,
@@ -1622,7 +1620,7 @@ impl Series {
         }
     }
     /// Apply a rolling min to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_min).
+    /// [ChunkedArray::rolling_min](crate::prelude::ChunkWindow::rolling_min).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_min(
         &self,
@@ -1641,7 +1639,7 @@ impl Series {
         }
     }
     /// Apply a rolling max to a Series. See:
-    /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_max).
+    /// [ChunkedArray::rolling_max](crate::prelude::ChunkWindow::rolling_max).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_max(
         &self,
@@ -1658,6 +1656,12 @@ impl Series {
         {
             panic!("activate 'rolling_window' feature")
         }
+    }
+
+    #[cfg(feature = "rank")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rank(&self, method: RankMethod) -> Series {
+        rank(self, method)
     }
 }
 

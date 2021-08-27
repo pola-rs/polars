@@ -214,10 +214,14 @@ impl PyLazyFrame {
         ldf.select(exprs).into()
     }
 
-    pub fn groupby(&mut self, by: Vec<PyExpr>) -> PyLazyGroupBy {
+    pub fn groupby(&mut self, by: Vec<PyExpr>, maintain_order: bool) -> PyLazyGroupBy {
         let ldf = self.ldf.clone();
         let by = py_exprs_to_exprs(by);
-        let lazy_gb = ldf.groupby(by);
+        let lazy_gb = if maintain_order {
+            ldf.stable_groupby(by)
+        } else {
+            ldf.groupby(by)
+        };
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
@@ -289,6 +293,11 @@ impl PyLazyFrame {
     pub fn fill_none(&self, fill_value: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.fill_none(fill_value.inner).into()
+    }
+
+    pub fn fill_nan(&self, fill_value: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.fill_nan(fill_value.inner).into()
     }
 
     pub fn min(&self) -> Self {

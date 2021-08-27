@@ -91,7 +91,7 @@ macro_rules! cast_with_dtype {
             }
             List(_) => ChunkCast::cast::<ListType>($self).map(|ca| ca.into_series()),
             Categorical => ChunkCast::cast::<CategoricalType>($self).map(|ca| ca.into_series()),
-            dt => Err(PolarsError::Other(
+            dt => Err(PolarsError::ComputeError(
                 format!(
                     "Casting to {:?} is not supported. \
                 This error may occur because you did not activate a certain dtype feature",
@@ -290,7 +290,7 @@ impl ChunkCast for ListChunked {
                     std::mem::take(&mut ca.chunks),
                 ))
             }
-            _ => Err(PolarsError::Other("Cannot cast list type".into())),
+            _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
         }
     }
     fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
@@ -303,7 +303,7 @@ impl ChunkCast for ListChunked {
                 let ca = ListChunked::new_from_chunks(self.name(), chunks);
                 Ok(ca.into_series())
             }
-            _ => Err(PolarsError::Other("Cannot cast list type".into())),
+            _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
         }
     }
 }

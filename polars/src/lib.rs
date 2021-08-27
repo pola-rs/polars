@@ -51,7 +51,7 @@
 //! `ChunkedArray<T>` are wrappers around an arrow array, that can contain multiples chunks, e.g.
 //! `Vec<dyn ArrowArray>`. These are the root data structures of Polars, and implement many operations.
 //! Most operations are implemented by traits defined in [chunked_array::ops](crate::chunked_array::ops),
-//! or on the [ChunkedArray struct](crate::chunked_array::ops).
+//! or on the [ChunkedArray struct](crate::chunked_array::ChunkedArray).
 //!
 //! ## SIMD
 //! Polars / Arrow uses packed_simd to speed up kernels with SIMD operations. SIMD is an optional
@@ -137,6 +137,8 @@
 //!     - `rolling_window` [rolling window functions, like rolling_mean](crate::chunked_array::ops::ChunkWindow)
 //!     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
+//!     - `list` - [List utils](crate::chunked_array::list::namespace)
+//!     - `rank` - Ranking algorithms.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)
@@ -198,6 +200,7 @@
 //!
 //! * `POLARS_PAR_SORT_BOUND` -> sets the lower bound of rows at which Polars will use a parallel sorting algorithm.
 //!                              Default is 1M rows.
+//! * `POLARS_FMT_NO_UTF8` -> use ascii tables in favor of utf8.
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
 //! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.

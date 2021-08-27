@@ -456,6 +456,13 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Fill NaN values in the DataFrame
+    pub fn fill_nan(self, fill_value: Expr) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().fill_nan(fill_value).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Caches the result into a new LazyFrame. This should be used to prevent computations
     /// running multiple times
     pub fn cache(self) -> Self {
@@ -699,6 +706,18 @@ impl LazyFrame {
             logical_plan: self.logical_plan,
             opt_state,
             keys: by,
+            maintain_order: false,
+        }
+    }
+
+    /// Similar to groupby, but order of the DataFrame is maintained.
+    pub fn stable_groupby(self, by: Vec<Expr>) -> LazyGroupBy {
+        let opt_state = self.get_opt_state();
+        LazyGroupBy {
+            logical_plan: self.logical_plan,
+            opt_state,
+            keys: by,
+            maintain_order: true,
         }
     }
 
@@ -975,6 +994,7 @@ pub struct LazyGroupBy {
     pub(crate) logical_plan: LogicalPlan,
     opt_state: OptState,
     keys: Vec<Expr>,
+    maintain_order: bool,
 }
 
 impl LazyGroupBy {
@@ -1002,7 +1022,7 @@ impl LazyGroupBy {
     /// ```
     pub fn agg(self, aggs: Vec<Expr>) -> LazyFrame {
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(Arc::new(self.keys), aggs, None)
+            .groupby(Arc::new(self.keys), aggs, None, self.maintain_order)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -1040,7 +1060,12 @@ impl LazyGroupBy {
         F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
     {
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(Arc::new(self.keys), vec![], Some(Arc::new(f)))
+            .groupby(
+                Arc::new(self.keys),
+                vec![],
+                Some(Arc::new(f)),
+                self.maintain_order,
+            )
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }

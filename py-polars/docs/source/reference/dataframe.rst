@@ -34,6 +34,7 @@ Conversion
     DataFrame.to_ipc
     DataFrame.to_parquet
     DataFrame.to_numpy
+    DataFrame.to_dict
 
 Aggregation
 -----------
@@ -90,6 +91,7 @@ Manipulation/ selection
     DataFrame.clone
     DataFrame.get_columns
     DataFrame.fill_none
+    DataFrame.fill_nan
     DataFrame.explode
     DataFrame.melt
     DataFrame.shift
@@ -111,6 +113,7 @@ Manipulation/ selection
     DataFrame.pipe
     DataFrame.join
     DataFrame.interpolate
+    DataFrame.transpose
 
 Apply
 -----

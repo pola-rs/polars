@@ -1,5 +1,4 @@
 use crate::error::PyPolarsEr;
-use libc::uintptr_t;
 use polars_core::prelude::Arc;
 use polars_core::utils::arrow::{
     array::ArrayRef,
@@ -7,25 +6,27 @@ use polars_core::utils::arrow::{
     ffi,
     record_batch::RecordBatch,
 };
+use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 
 pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
-    let array = Arc::new(ffi::create_empty());
+    let array = Box::new(ffi::Ffi_ArrowArray::empty());
+    let schema = Box::new(ffi::Ffi_ArrowSchema::empty());
 
-    // non-owned mutable pointers.
-    let (array_ptr, schema_ptr) = array.references();
+    let array_ptr = &*array as *const ffi::Ffi_ArrowArray;
+    let schema_ptr = &*schema as *const ffi::Ffi_ArrowSchema;
 
     // make the conversion through PyArrow's private API
     // this changes the pointer's memory and is thus unsafe. In particular, `_export_to_c` can go out of bounds
     obj.call_method1(
         "_export_to_c",
-        (array_ptr as uintptr_t, schema_ptr as uintptr_t),
+        (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
-    // consume it to a `Box<dyn Array>`
-    let array = ffi::try_from(array).expect("arrow array").into();
-    Ok(array)
+    let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsEr::from)?;
+    let array = ffi::import_array_from_c(array, &field).map_err(PyPolarsEr::from)?;
+    Ok(array.into())
 }
 
 pub fn to_rust_rb(rb: &[&PyAny]) -> PyResult<Vec<RecordBatch>> {

@@ -4,7 +4,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Column(_) | Literal(_) | Wildcard => {}
+            Column(_) | Literal(_) | Wildcard | Columns(_) => {}
             Alias(e, _) => $push(e),
             Not(e) => $push(e),
             BinaryExpr { left, op: _, right } => {
@@ -65,6 +65,7 @@ macro_rules! push_expr {
                 function,
                 partition_by,
                 order_by,
+                ..
             } => {
                 $push(function);
                 for e in partition_by {
@@ -83,6 +84,7 @@ macro_rules! push_expr {
             }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
+            SufPreFix { expr, .. } => $push(expr),
         }
     }};
 }
@@ -218,6 +220,7 @@ impl AExpr {
                 function,
                 partition_by,
                 order_by,
+                options: _,
             } => {
                 push(function);
                 for e in partition_by {

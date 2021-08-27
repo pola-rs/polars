@@ -21,6 +21,10 @@ impl AggregationExpr {
 }
 
 impl PhysicalExpr for AggregationExpr {
+    fn as_expression(&self) -> &Expr {
+        unimplemented!()
+    }
+
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         unimplemented!()
     }
@@ -31,9 +35,9 @@ impl PhysicalExpr for AggregationExpr {
         groups: &'a GroupTuples,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        let out = self
-            .aggregate(df, groups, state)?
-            .ok_or_else(|| PolarsError::Other("Aggregation did not return a Series".into()))?;
+        let out = self.aggregate(df, groups, state)?.ok_or_else(|| {
+            PolarsError::ComputeError("Aggregation did not return a Series".into())
+        })?;
         Ok(AggregationContext::new(out, Cow::Borrowed(groups)))
     }
 
@@ -217,7 +221,7 @@ impl PhysicalAggregation for AggregationExpr {
                     // Safety
                     // The indexes of the groupby operation are never out of bounds
                     let ca = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                    let s = ca.explode_and_offsets()?.0;
+                    let s = ca.explode()?;
                     builder.append_series(&s);
                 }
                 let out = builder.finish();
@@ -274,6 +278,10 @@ impl AggQuantileExpr {
 }
 
 impl PhysicalExpr for AggQuantileExpr {
+    fn as_expression(&self) -> &Expr {
+        unimplemented!()
+    }
+
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
         unimplemented!()
     }

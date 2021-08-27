@@ -377,7 +377,9 @@ class LazyFrame:
         return wrap_ldf(self._ldf.select(exprs))
 
     def groupby(
-        self, by: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+        self,
+        by: Union[str, tp.List[str], "Expr", tp.List["Expr"]],
+        maintain_order: bool = False,
     ) -> "LazyGroupBy":
         """
         Start a groupby operation.
@@ -386,6 +388,8 @@ class LazyFrame:
         ----------
         by
             Column(s) to group by.
+        maintain_order
+            Make sure that the order of the groups remain consistent. This is more expensive than a default groupby.
         """
         new_by: tp.List[PyExpr]
         if isinstance(by, list):
@@ -398,7 +402,7 @@ class LazyFrame:
             new_by = [col(by)._pyexpr]
         elif isinstance(by, Expr):
             new_by = [by._pyexpr]
-        lgb = self._ldf.groupby(new_by)
+        lgb = self._ldf.groupby(new_by, maintain_order)
         return LazyGroupBy(lgb)
 
     def join(
@@ -645,9 +649,36 @@ class LazyFrame:
         return self.slice(0, 1)
 
     def fill_none(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
+        """
+        Fill missing values
+
+        Parameters
+        ----------
+        fill_value
+            Value to fill the missing values with
+        """
         if not isinstance(fill_value, Expr):
             fill_value = lit(fill_value)
         return wrap_ldf(self._ldf.fill_none(fill_value._pyexpr))
+
+    def fill_nan(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
+        """
+        Fill floating point NaN values.
+
+        ..warning::
+
+            NOTE that floating point NaN (No a Number) are not missing values!
+            to replace missing values, use `fill_none`.
+
+
+        Parameters
+        ----------
+        fill_value
+            Value to fill the NaN values with
+        """
+        if not isinstance(fill_value, Expr):
+            fill_value = lit(fill_value)
+        return wrap_ldf(self._ldf.fill_nan(fill_value._pyexpr))
 
     def std(self) -> "LazyFrame":
         """

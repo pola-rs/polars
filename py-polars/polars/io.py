@@ -555,7 +555,7 @@ def read_sql(
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
-    >>> read_sql(query, uir, partition_on="partition_col", partition_num=10)
+    >>> read_sql(query, uri, partition_on="partition_col", partition_num=10)
 
     ## Using
     Read a DataFrame parallel using 2 threads by manually providing two partition SQLs:

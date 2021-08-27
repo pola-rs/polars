@@ -101,22 +101,24 @@ impl PhysicalAggregation for SortByExpr {
         let s_sort_by = self.by.evaluate(df, state)?;
 
         let s_sort_by = s_sort_by.agg_list(groups).ok_or_else(|| {
-            PolarsError::Other(format!("cannot aggregate {:?} as list array", self.expr).into())
+            PolarsError::ComputeError(
+                format!("cannot aggregate {:?} as list array", self.expr).into(),
+            )
         })?;
 
         let agg_s = ac_in.aggregated();
         let agg_s = agg_s
             .list()
             .unwrap()
-            .into_iter()
-            .zip(s_sort_by.list().unwrap())
+            .amortized_iter()
+            .zip(s_sort_by.list().unwrap().amortized_iter())
             .map(|(opt_s, opt_sort_by)| {
                 match (opt_s, opt_sort_by) {
                     (Some(s), Some(sort_by)) => {
-                        let sorted_idx = sort_by.argsort(self.reverse);
+                        let sorted_idx = sort_by.as_ref().argsort(self.reverse);
                         // Safety:
                         // sorted index are within bounds
-                        unsafe { s.take_unchecked(&sorted_idx) }.ok()
+                        unsafe { s.as_ref().take_unchecked(&sorted_idx) }.ok()
                     }
                     _ => None,
                 }

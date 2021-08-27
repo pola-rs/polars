@@ -118,7 +118,7 @@ impl PhysicalAggregation for BinaryExpr {
                     .and_then(|left| right_agg.map(|right| apply_operator(&left, &right, self.op)))
                     .transpose()
             }
-            (_, _) => Err(PolarsError::Other(
+            (_, _) => Err(PolarsError::ComputeError(
                 format!(
                     "this binary expression is not an aggregation: {:?}
                 pherhaps you should add an aggregation like, '.sum()', '.min()', '.mean()', etc.

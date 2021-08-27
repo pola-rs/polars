@@ -245,7 +245,8 @@ impl DefaultPlanner {
                 keys,
                 aggs,
                 apply,
-                ..
+                schema: _,
+                maintain_order,
             } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
 
@@ -253,7 +254,12 @@ impl DefaultPlanner {
                 // TODO: fix this brittle/ buggy state and implement partitioned groupby's in eager
                 let mut partitionable = true;
 
-                if keys.len() == 1 {
+                // checks:
+                //      1. complex expressions in the groupby itself are also not partitionable
+                //          in this case anything more than col("foo")
+                //      2. a custom funciton cannot be partitioned
+                //      3. maintain order is likely cheaper in default groupby
+                if keys.len() == 1 && apply.is_none() && !maintain_order {
                     // complex expressions in the groupby itself are also not partitionable
                     // in this case anything more than col("foo")
                     if (&*expr_arena).iter(keys[0]).count() > 1 {
@@ -293,10 +299,6 @@ impl DefaultPlanner {
                 } else {
                     partitionable = false;
                 }
-                // a custom function cannot be partitioned.
-                if apply.is_some() {
-                    partitionable = false;
-                }
                 let mut phys_keys =
                     self.create_physical_expressions(&keys, Context::Default, expr_arena)?;
 
@@ -313,7 +315,11 @@ impl DefaultPlanner {
                     )))
                 } else {
                     Ok(Box::new(GroupByExec::new(
-                        input, phys_keys, phys_aggs, apply,
+                        input,
+                        phys_keys,
+                        phys_aggs,
+                        apply,
+                        maintain_order,
                     )))
                 }
             }
@@ -392,6 +398,7 @@ impl DefaultPlanner {
                 mut function,
                 partition_by,
                 order_by: _,
+                options,
             } => {
                 // TODO! Order by
                 let group_by =
@@ -434,6 +441,7 @@ impl DefaultPlanner {
                     out_name,
                     function,
                     phys_function,
+                    options,
                 }))
             }
             Literal(value) => Ok(Arc::new(LiteralExpr::new(
@@ -465,7 +473,11 @@ impl DefaultPlanner {
             Take { expr, idx } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 let phys_idx = self.create_physical_expr(idx, ctxt, expr_arena)?;
-                Ok(Arc::new(TakeExpr::new(phys_expr, phys_idx)))
+                Ok(Arc::new(TakeExpr {
+                    phys_expr,
+                    idx: phys_idx,
+                    expr: node_to_exp(expression, expr_arena),
+                }))
             }
             SortBy { expr, by, reverse } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
@@ -533,9 +545,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -555,9 +566,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -577,9 +587,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -599,9 +608,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -621,9 +629,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -645,9 +652,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -667,9 +673,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -689,9 +694,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -711,9 +715,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -750,9 +753,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: Some(DataType::UInt32),
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -773,9 +775,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: None,
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -807,9 +808,8 @@ impl DefaultPlanner {
                                 Ok(Arc::new(ApplyExpr {
                                     inputs: vec![input],
                                     function,
-                                    output_type: Some(DataType::UInt32),
                                     expr: node_to_exp(expression, expr_arena),
-                                    collect_groups: ApplyOption::ApplyFlat,
+                                    collect_groups: ApplyOptions::ApplyFlat,
                                 }))
                             }
                         }
@@ -818,7 +818,11 @@ impl DefaultPlanner {
             }
             Cast { expr, data_type } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                Ok(Arc::new(CastExpr::new(phys_expr, data_type)))
+                Ok(Arc::new(CastExpr {
+                    input: phys_expr,
+                    data_type,
+                    expr: node_to_exp(expression, expr_arena),
+                }))
             }
             Ternary {
                 predicate,
@@ -838,14 +842,14 @@ impl DefaultPlanner {
             Function {
                 input,
                 function,
-                output_type,
+                output_type: _,
                 options,
             } => {
                 let input = self.create_physical_expressions(&input, ctxt, expr_arena)?;
+
                 Ok(Arc::new(ApplyExpr {
                     inputs: input,
                     function,
-                    output_type,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: options.collect_groups,
                 }))
@@ -863,11 +867,16 @@ impl DefaultPlanner {
                     input_b,
                     function,
                     output_field,
+                    expr: node_to_exp(expression, expr_arena),
                 }))
             }
             Shift { input, periods } => {
                 let input = self.create_physical_expr(input, ctxt, expr_arena)?;
-                Ok(Arc::new(ShiftExpr { input, periods }))
+                Ok(Arc::new(ShiftExpr {
+                    input,
+                    periods,
+                    expr: node_to_exp(expression, expr_arena),
+                }))
             }
             Slice {
                 input,
@@ -879,6 +888,7 @@ impl DefaultPlanner {
                     input,
                     offset,
                     len: length,
+                    expr: node_to_exp(expression, expr_arena),
                 }))
             }
             Reverse(expr) => {
@@ -890,9 +900,8 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: vec![input],
                     function,
-                    output_type: None,
                     expr: node_to_exp(expression, expr_arena),
-                    collect_groups: ApplyOption::ApplyFlat,
+                    collect_groups: ApplyOptions::ApplyGroups,
                 }))
             }
             Duplicated(expr) => {
@@ -904,9 +913,8 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: vec![input],
                     function,
-                    output_type: None,
                     expr: node_to_exp(expression, expr_arena),
-                    collect_groups: ApplyOption::ApplyFlat,
+                    collect_groups: ApplyOptions::ApplyGroups,
                 }))
             }
             IsUnique(expr) => {
@@ -918,9 +926,8 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: vec![input],
                     function,
-                    output_type: None,
                     expr: node_to_exp(expression, expr_arena),
-                    collect_groups: ApplyOption::ApplyFlat,
+                    collect_groups: ApplyOptions::ApplyGroups,
                 }))
             }
             Explode(expr) => {
@@ -932,9 +939,8 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: vec![input],
                     function,
-                    output_type: None,
                     expr: node_to_exp(expression, expr_arena),
-                    collect_groups: ApplyOption::ApplyFlat,
+                    collect_groups: ApplyOptions::ApplyFlat,
                 }))
             }
             Wildcard => panic!("should be no wildcard at this point"),

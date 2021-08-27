@@ -14,7 +14,8 @@ from polars.eager.series import Series, wrap_s
 from polars.lazy.expr import Expr, wrap_expr
 from polars.lazy.frame import LazyFrame, wrap_ldf
 
-from . import convert, datatypes, eager, functions, io, lazy, string_cache
+from . import cfg, convert, datatypes, eager, functions, io, lazy, string_cache
+from .cfg import *
 from .convert import *
 from .datatypes import *
 from .eager import *
@@ -32,6 +33,7 @@ __all__ = (
     + io.__all__
     + lazy.__all__
     + string_cache.__all__
+    + cfg.__all__
 )
 
 __version__ = version()

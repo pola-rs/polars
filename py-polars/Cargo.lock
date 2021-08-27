@@ -63,8 +63,9 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
 name = "arrow2"
-version = "0.3.0"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=86edfd639b33d9fbc468e2f68bb6ce41de52f95e#86edfd639b33d9fbc468e2f68bb6ce41de52f95e"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b31cb11e1e5e036536ef3f535e082687bdc03ab65050e5703c7e89fb2e86c4d"
 dependencies = [
  "ahash",
  "base64",
@@ -1294,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.8.22"
+version = "0.8.27"
 dependencies = [
  "ahash",
  "bincode",

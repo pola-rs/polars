@@ -1,3 +1,4 @@
+use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::prelude::*;
 use crate::series::PySeries;
@@ -12,6 +13,7 @@ use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use pyo3::exceptions::PyValueError;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -30,10 +32,16 @@ impl<T> From<T> for Wrap<T> {
     }
 }
 
-fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
+pub(crate) fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
     let seq = <PySequence as PyTryFrom>::try_from(obj)?;
     let len = seq.len()? as usize;
     Ok((seq, len))
+}
+
+// extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
+pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
+    let pydf = obj.getattr("_df")?;
+    Ok(pydf.extract::<PyDataFrame>()?.df)
 }
 
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
@@ -279,4 +287,16 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<AlignedVec<
         }
         Ok(Wrap(v))
     }
+}
+
+pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
+    let method = match method {
+        "min" => RankMethod::Min,
+        "max" => RankMethod::Max,
+        "average" => RankMethod::Average,
+        "dense" => RankMethod::Dense,
+        "ordinal" => RankMethod::Ordinal,
+        _ => return Err(PyValueError::new_err("use one of 'avg, min, max, dense, ordinal'".to_string()))
+    };
+    Ok(method)
 }

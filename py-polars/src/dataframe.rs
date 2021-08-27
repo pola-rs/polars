@@ -728,7 +728,7 @@ impl PyDataFrame {
             "median" => pivot.median(),
             "sum" => pivot.sum(),
             "count" => pivot.count(),
-            a => Err(PolarsError::Other(
+            a => Err(PolarsError::ComputeError(
                 format!("agg fn {} does not exists", a).into(),
             )),
         };
@@ -903,6 +903,11 @@ impl PyDataFrame {
         let hash = self.df.hash_rows(Some(hb)).map_err(PyPolarsEr::from)?;
         Ok(hash.into_series().into())
     }
+
+    pub fn transpose(&self) -> PyResult<Self> {
+        let df = self.df.transpose().map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
@@ -923,7 +928,7 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {
         "groups" => gb.groups(),
         "std" => gb.std(),
         "var" => gb.var(),
-        a => Err(PolarsError::Other(
+        a => Err(PolarsError::ComputeError(
             format!("agg fn {} does not exists", a).into(),
         )),
     });

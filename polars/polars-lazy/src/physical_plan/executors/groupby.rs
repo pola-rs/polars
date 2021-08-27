@@ -12,6 +12,7 @@ pub struct GroupByExec {
     keys: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Arc<dyn PhysicalExpr>>,
     apply: Option<Arc<dyn DataFrameUdf>>,
+    maintain_order: bool,
 }
 
 impl GroupByExec {
@@ -20,12 +21,14 @@ impl GroupByExec {
         keys: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Arc<dyn PhysicalExpr>>,
         apply: Option<Arc<dyn DataFrameUdf>>,
+        maintain_order: bool,
     ) -> Self {
         Self {
             input,
             keys,
             aggs,
             apply,
+            maintain_order,
         }
     }
 }
@@ -36,8 +39,14 @@ fn groupby_helper(
     aggs: &[Arc<dyn PhysicalExpr>],
     apply: Option<&Arc<dyn DataFrameUdf>>,
     state: &ExecutionState,
+    maintain_order: bool,
 ) -> Result<DataFrame> {
-    let gb = df.groupby_with_series(keys, true)?;
+    let mut gb = df.groupby_with_series(keys, true)?;
+
+    if maintain_order {
+        gb.get_groups_mut().sort_unstable_by_key(|t| t.0)
+    }
+
     if let Some(f) = apply {
         return gb.apply(|df| f.call_udf(df));
     }
@@ -53,7 +62,7 @@ fn groupby_helper(
                 let opt_agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
                 if let Some(agg) = &opt_agg {
                     if agg.len() != groups.len() {
-                        return Err(PolarsError::Other(
+                        return Err(PolarsError::ComputeError(
                             format!("returned aggregation is a different length: {} than the group lengths: {}",
                             agg.len(),
                             groups.len()).into()
@@ -84,7 +93,14 @@ impl Executor for GroupByExec {
             .iter()
             .map(|e| e.evaluate(&df, state))
             .collect::<Result<_>>()?;
-        groupby_helper(df, keys, &self.aggs, self.apply.as_ref(), state)
+        groupby_helper(
+            df,
+            keys,
+            &self.aggs,
+            self.apply.as_ref(),
+            state,
+            self.maintain_order,
+        )
     }
 }
 
@@ -211,7 +227,7 @@ impl Executor for PartitionGroupByExec {
             if state.verbose {
                 eprintln!("POLARS_NO_PARTITION set: running default HASH AGGREGATION")
             }
-            return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
+            return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state, false);
         }
 
         // 0.5% is approximately the tipping point
@@ -250,7 +266,7 @@ impl Executor for PartitionGroupByExec {
                     (cardinality_frac * 100.0) as u32
                 );
             }
-            return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state);
+            return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state, false);
         }
         if state.verbose {
             eprintln!("run PARTITIONED HASH AGGREGATION")

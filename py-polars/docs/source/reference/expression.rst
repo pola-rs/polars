@@ -111,7 +111,14 @@ Computations
     Expr.arg_unique
     Expr.unique
     Expr.pow
+    Expr.rolling_min
+    Expr.rolling_max
+    Expr.rolling_mean
+    Expr.rolling_sum
+    Expr.rolling_apply
     Expr.hash
+    Expr.abs
+    Series.rank
 
 Manipulation/ selection
 -----------------------
@@ -120,6 +127,7 @@ Manipulation/ selection
 
     Expr.slice
     Expr.explode
+    Expr.flatten
     Expr.take_every
     Expr.repeat_by
     Expr.round
@@ -140,6 +148,7 @@ Manipulation/ selection
     Expr.reinterpret
     Expr.drop_nulls
     Expr.interpolate
+    Expr.argsort
 
 Column names
 ------------
@@ -157,6 +166,8 @@ Column names
 
     Expr.alias
     Expr.keep_name
+    Expr.prefix
+    Expr.suffix
     Expr.exclude
 
 Apply
@@ -217,3 +228,20 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.replace
     ExprStringNameSpace.replace_all
     ExprStringNameSpace.slice
+
+Lists
+-----
+The following methods are available under the `expr.arr` attribute.
+
+.. currentmodule:: polars.lazy.expr
+
+.. autosummary::
+   :toctree: api/
+
+    ExprListNameSpace.sum
+    ExprListNameSpace.min
+    ExprListNameSpace.max
+    ExprListNameSpace.mean
+    ExprListNameSpace.sort
+    ExprListNameSpace.reverse
+    ExprListNameSpace.unique

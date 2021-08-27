@@ -28,7 +28,7 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
     let mut validity = MutableBitmap::with_capacity(indices.len());
     validity.extend_constant(indices.len(), true);
 
-    let arr = if let Some(validity_indices) = indices.validity().as_ref() {
+    if let Some(validity_indices) = indices.validity().as_ref() {
         index_values.iter().enumerate().for_each(|(i, idx)| {
             // i is iteration count
             // idx is the index that we take from the values array.
@@ -37,11 +37,6 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
                 validity.set(i, false);
             }
         });
-        PrimitiveArray::from_data(
-            T::get_dtype().to_arrow(),
-            values.into(),
-            Some(validity.into()),
-        )
     } else {
         index_values.iter().enumerate().for_each(|(i, idx)| {
             let idx = *idx as usize;
@@ -49,12 +44,12 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
                 validity.set(i, false);
             }
         });
-        PrimitiveArray::from_data(
-            T::get_dtype().to_arrow(),
-            values.into(),
-            Some(validity.into()),
-        )
     };
+    let arr = PrimitiveArray::from_data(
+        T::get_dtype().to_arrow(),
+        values.into(),
+        Some(validity.into()),
+    );
 
     Arc::new(arr)
 }

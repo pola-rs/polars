@@ -90,9 +90,7 @@ impl PhysicalAggregation for SortExpr {
         let agg_s = agg_s
             .list()
             .unwrap()
-            .into_iter()
-            .map(|opt_s| opt_s.map(|s| s.sort(self.reverse)))
-            .collect::<ListChunked>()
+            .apply_amortized(|s| s.as_ref().sort(self.reverse))
             .into_series();
         Ok(Some(agg_s))
     }

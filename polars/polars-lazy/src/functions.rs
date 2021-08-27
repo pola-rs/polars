@@ -74,9 +74,9 @@ pub fn argsort_by(by: Vec<Expr>, reverse: &[bool]) -> Expr {
     Expr::Function {
         input: by,
         function,
-        output_type: Some(DataType::UInt32),
+        output_type: GetOutput::from_type(DataType::UInt32),
         options: FunctionOptions {
-            collect_groups: ApplyOption::ApplyFlat,
+            collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: false,
         },
     }
@@ -92,10 +92,10 @@ pub fn concat_str(s: Vec<Expr>, delimiter: &str) -> Expr {
     Expr::Function {
         input: s,
         function,
-        output_type: Some(DataType::Utf8),
+        output_type: GetOutput::from_type(DataType::Utf8),
         options: FunctionOptions {
-            collect_groups: ApplyOption::ApplyFlat,
-            input_wildcard_expansion: false,
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
         },
     }
 }

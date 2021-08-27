@@ -1,7 +1,7 @@
 //! Domain specific language for the Lazy api.
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{has_expr, has_wildcard, output_name};
+use crate::utils::{has_expr, has_wildcard};
 use polars_core::prelude::*;
 
 #[cfg(feature = "temporal")]
@@ -91,7 +91,7 @@ impl<T> Deref for NoEq<T> {
 pub trait BinaryUdfOutputField: Send + Sync {
     fn get_field(
         &self,
-        _input_schema: &Schema,
+        input_schema: &Schema,
         cntxt: Context,
         field_a: &Field,
         field_b: &Field,
@@ -113,8 +113,49 @@ where
     }
 }
 
+pub trait FunctionOutputField: Send + Sync {
+    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
+}
+
+pub type GetOutput = NoEq<Arc<dyn FunctionOutputField>>;
+
+impl Default for GetOutput {
+    fn default() -> Self {
+        NoEq::new(Arc::new(
+            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| fields[0].clone(),
+        ))
+    }
+}
+
+impl GetOutput {
+    pub fn same_type() -> Self {
+        Default::default()
+    }
+
+    pub fn from_type(dt: DataType) -> Self {
+        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+            Field::new(flds[0].name(), dt.clone())
+        }))
+    }
+
+    pub fn map_field<F: 'static + Fn(&Field) -> Field + Send + Sync>(f: F) -> Self {
+        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+            f(&flds[0])
+        }))
+    }
+}
+
+impl<F> FunctionOutputField for F
+where
+    F: Fn(&Schema, Context, &[Field]) -> Field + Send + Sync,
+{
+    fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field {
+        self(input_schema, cntxt, fields)
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ApplyOption {
+pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
     ApplyGroups,
@@ -124,11 +165,18 @@ pub enum ApplyOption {
     ApplyFlat,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct WindowOptions {
+    /// Explode the aggregated list and just do a hstack instead of a join
+    /// this requires the groups to be sorted to make any sense
+    pub(crate) explode: bool,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    pub(crate) collect_groups: ApplyOption,
+    pub(crate) collect_groups: ApplyOptions,
     /// There can be two ways of expanding wildcards:
     ///
     /// Say the schema is 'a', 'b' and there is a function f
@@ -141,6 +189,8 @@ pub struct FunctionOptions {
     ///     f('a'), f('b')
     ///
     /// setting this to true, will lead to behavior 1.
+    ///
+    /// this also accounts for regex expansion
     pub(crate) input_wildcard_expansion: bool,
 }
 
@@ -195,6 +245,7 @@ impl From<AggExpr> for Expr {
 pub enum Expr {
     Alias(Box<Expr>, Arc<String>),
     Column(Arc<String>),
+    Columns(Vec<String>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Box<Expr>,
@@ -235,7 +286,7 @@ pub enum Expr {
         /// function to apply
         function: NoEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
-        output_type: Option<DataType>,
+        output_type: GetOutput,
         options: FunctionOptions,
     },
     Shift {
@@ -256,6 +307,7 @@ pub enum Expr {
         function: Box<Expr>,
         partition_by: Vec<Expr>,
         order_by: Option<Box<Expr>>,
+        options: WindowOptions,
     },
     Wildcard,
     Slice {
@@ -275,6 +327,11 @@ pub enum Expr {
     Exclude(Box<Expr>, Vec<Arc<String>>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
+    SufPreFix {
+        is_suffix: bool,
+        value: String,
+        expr: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -295,6 +352,7 @@ impl fmt::Debug for Expr {
                 function,
                 partition_by,
                 order_by,
+                ..
             } => write!(
                 f,
                 "{:?} OVER (PARTITION BY {:?} ORDER BY {:?}",
@@ -306,7 +364,17 @@ impl fmt::Debug for Expr {
             Reverse(expr) => write!(f, "REVERSE {:?}", expr),
             Alias(expr, name) => write!(f, "{:?} AS {}", expr, name),
             Column(name) => write!(f, "{}", name),
-            Literal(v) => write!(f, "{:?}", v),
+            Literal(v) => {
+                match v {
+                    LiteralValue::Utf8(v) => {
+                        // dot breaks with debug fmt due to \"
+                        write!(f, "Utf8({})", v)
+                    }
+                    _ => {
+                        write!(f, "{:?}", v)
+                    }
+                }
+            }
             BinaryExpr { left, op, right } => write!(f, "[({:?}) {:?} ({:?})]", left, op, right),
             Not(expr) => write!(f, "NOT {:?}", expr),
             IsNull(expr) => write!(f, "{:?} IS NULL", expr),
@@ -367,6 +435,8 @@ impl fmt::Debug for Expr {
             Wildcard => write!(f, "*"),
             Exclude(column, names) => write!(f, "{:?}, EXCEPT {:?}", column, names),
             KeepName(e) => write!(f, "KEEP NAME {:?}", e),
+            SufPreFix { expr, .. } => write!(f, "SUF-PREFIX {:?}", expr),
+            Columns(names) => write!(f, "COLUMNS({:?})", names),
         }
     }
 }
@@ -635,9 +705,41 @@ impl Expr {
         AggExpr::AggGroups(Box::new(self)).into()
     }
 
+    /// Alias for explode
+    pub fn flatten(self) -> Self {
+        self.explode()
+    }
+
     /// Explode the utf8/ list column
     pub fn explode(self) -> Self {
-        Expr::Explode(Box::new(self))
+        let has_filter = has_expr(&self, |e| matches!(e, Expr::Filter { .. }));
+
+        // if we explode right after a window function we don't self join, but just flatten
+        // the expression
+        if let Expr::Window {
+            function,
+            partition_by,
+            order_by,
+            mut options,
+        } = self
+        {
+            if has_filter {
+                panic!("A Filter of a window function is not allowed in combination with explode/flatten.\
+                The resulting column may not fit the DataFrame/ or the groups
+                ")
+            }
+
+            options.explode = true;
+
+            Expr::Explode(Box::new(Expr::Window {
+                function,
+                partition_by,
+                order_by,
+                options,
+            }))
+        } else {
+            Expr::Explode(Box::new(self))
+        }
     }
 
     /// Slice the Series.
@@ -665,7 +767,7 @@ impl Expr {
         if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
             panic!("wildcard not supperted in unique expr");
         }
-        self.apply(|s: Series| s.unique(), None)
+        self.apply(|s: Series| s.unique(), GetOutput::same_type())
     }
 
     /// Get the first index of unique values of this expression.
@@ -675,7 +777,7 @@ impl Expr {
         }
         self.apply(
             |s: Series| s.arg_unique().map(|ca| ca.into_series()),
-            Some(DataType::UInt32),
+            GetOutput::from_type(DataType::UInt32),
         )
     }
 
@@ -686,7 +788,7 @@ impl Expr {
         }
         self.apply(
             move |s: Series| Ok(s.argsort(reverse).into_series()),
-            Some(DataType::UInt32),
+            GetOutput::from_type(DataType::UInt32),
         )
     }
 
@@ -730,7 +832,7 @@ impl Expr {
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
-    pub fn map<F>(self, function: F, output_type: Option<DataType>) -> Self
+    pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
     where
         F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
     {
@@ -741,7 +843,7 @@ impl Expr {
             function: NoEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOption::ApplyFlat,
+                collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
             },
         }
@@ -754,7 +856,7 @@ impl Expr {
     ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
     ///  * `map_list` should be used when the function expects a list aggregated series.
-    pub fn map_list<F>(self, function: F, output_type: Option<DataType>) -> Self
+    pub fn map_list<F>(self, function: F, output_type: GetOutput) -> Self
     where
         F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
     {
@@ -765,7 +867,7 @@ impl Expr {
             function: NoEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOption::ApplyList,
+                collect_groups: ApplyOptions::ApplyList,
                 input_wildcard_expansion: false,
             },
         }
@@ -780,7 +882,7 @@ impl Expr {
     ///
     /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-    pub fn apply<F>(self, function: F, output_type: Option<DataType>) -> Self
+    pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
     where
         F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
     {
@@ -791,7 +893,7 @@ impl Expr {
             function: NoEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOption::ApplyGroups,
+                collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
             },
         }
@@ -802,7 +904,7 @@ impl Expr {
     pub fn is_finite(self) -> Self {
         self.map(
             |s: Series| s.is_finite().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -811,7 +913,7 @@ impl Expr {
     pub fn is_infinite(self) -> Self {
         self.map(
             |s: Series| s.is_infinite().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -820,7 +922,7 @@ impl Expr {
     pub fn is_nan(self) -> Self {
         self.map(
             |s: Series| s.is_nan().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -829,7 +931,7 @@ impl Expr {
     pub fn is_not_nan(self) -> Self {
         self.map(
             |s: Series| s.is_not_nan().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -851,7 +953,7 @@ impl Expr {
                     let ca: BooleanChunked = (0..s.len() as i64).map(|i| i >= periods).collect();
                     Ok(ca.into_series())
                 },
-                Some(DataType::Boolean),
+                GetOutput::from_type(DataType::Boolean),
             ))
             .then(self.shift(periods))
             .otherwise(fill_value)
@@ -864,7 +966,7 @@ impl Expr {
                     let ca: BooleanChunked = (0..length).map(|i| i < tipping_point).collect();
                     Ok(ca.into_series())
                 },
-                Some(DataType::Boolean),
+                GetOutput::from_type(DataType::Boolean),
             ))
             .then(self.shift(periods))
             .otherwise(fill_value)
@@ -874,26 +976,35 @@ impl Expr {
     /// Get an array with the cumulative sum computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cum_sum(self, reverse: bool) -> Self {
-        self.apply(move |s: Series| Ok(s.cum_sum(reverse)), None)
+        self.apply(
+            move |s: Series| Ok(s.cum_sum(reverse)),
+            GetOutput::same_type(),
+        )
     }
 
     /// Get an array with the cumulative min computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cum_min(self, reverse: bool) -> Self {
-        self.apply(move |s: Series| Ok(s.cum_min(reverse)), None)
+        self.apply(
+            move |s: Series| Ok(s.cum_min(reverse)),
+            GetOutput::same_type(),
+        )
     }
 
     /// Get an array with the cumulative max computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cum_max(self, reverse: bool) -> Self {
-        self.apply(move |s: Series| Ok(s.cum_max(reverse)), None)
+        self.apply(
+            move |s: Series| Ok(s.cum_max(reverse)),
+            GetOutput::same_type(),
+        )
     }
 
     /// Fill missing value with next non-null.
     pub fn backward_fill(self) -> Self {
         self.apply(
             move |s: Series| s.fill_none(FillNoneStrategy::Backward),
-            None,
+            GetOutput::same_type(),
         )
     }
 
@@ -901,7 +1012,7 @@ impl Expr {
     pub fn forward_fill(self) -> Self {
         self.apply(
             move |s: Series| s.fill_none(FillNoneStrategy::Forward),
-            None,
+            GetOutput::same_type(),
         )
     }
 
@@ -909,7 +1020,7 @@ impl Expr {
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn round(self, decimals: u32) -> Self {
-        self.apply(move |s: Series| s.round(decimals), None)
+        self.apply(move |s: Series| s.round(decimals), GetOutput::same_type())
     }
 
     /// Apply window function over a subgroup.
@@ -976,17 +1087,31 @@ impl Expr {
             function: Box::new(self),
             partition_by,
             order_by: None,
+            options: WindowOptions { explode: false },
         }
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::fill_none).
     pub fn fill_none(self, fill_value: Expr) -> Self {
-        let name = output_name(&self).unwrap();
-        when(self.clone().is_null())
-            .then(fill_value)
-            // important that this is self!
-            .otherwise(self)
-            .alias(&*name)
+        map_binary_lazy_field(
+            self,
+            fill_value,
+            |a, b| {
+                if a.null_count() == 0 {
+                    Ok(a)
+                } else {
+                    let st = get_supertype(a.dtype(), b.dtype())?;
+                    let a = a.cast_with_dtype(&st)?;
+                    let b = b.cast_with_dtype(&st)?;
+                    let mask = a.is_not_null();
+                    a.zip_with_same_type(&mask, &b)
+                }
+            },
+            |_schema, _ctx, a, b| {
+                let st = get_supertype(a.data_type(), b.data_type()).unwrap();
+                Some(Field::new(a.name(), st))
+            },
+        )
     }
     /// Count the values of the Series
     /// or
@@ -1029,7 +1154,10 @@ impl Expr {
 
     /// Raise expression to the power `exponent`
     pub fn pow(self, exponent: f64) -> Self {
-        self.map(move |s: Series| s.pow(exponent), Some(DataType::Float64))
+        self.map(
+            move |s: Series| s.pow(exponent),
+            GetOutput::from_type(DataType::Float64),
+        )
     }
 
     /// Filter a single column
@@ -1068,14 +1196,14 @@ impl Expr {
     #[cfg(feature = "temporal")]
     pub fn year(self) -> Expr {
         let function = move |s: Series| s.year().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Get the month of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn month(self) -> Expr {
         let function = move |s: Series| s.month().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Extract the week from the underlying Date representation.
     /// Can be performed on Date32 and Date64
@@ -1085,7 +1213,7 @@ impl Expr {
     #[cfg(feature = "temporal")]
     pub fn week(self) -> Expr {
         let function = move |s: Series| s.week().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Extract the week day from the underlying Date representation.
@@ -1095,45 +1223,45 @@ impl Expr {
     #[cfg(feature = "temporal")]
     pub fn weekday(self) -> Expr {
         let function = move |s: Series| s.weekday().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Get the month of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn day(self) -> Expr {
         let function = move |s: Series| s.day().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Get the ordinal_day of a Date32/Date64
     #[cfg(feature = "temporal")]
     pub fn ordinal_day(self) -> Expr {
         let function = move |s: Series| s.ordinal_day().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Get the hour of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn hour(self) -> Expr {
         let function = move |s: Series| s.hour().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Get the minute of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn minute(self) -> Expr {
         let function = move |s: Series| s.minute().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Get the second of a Date64/Time64
     #[cfg(feature = "temporal")]
     pub fn second(self) -> Expr {
         let function = move |s: Series| s.second().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Get the nanosecond of a Time64
     #[cfg(feature = "temporal")]
     pub fn nanosecond(self) -> Expr {
         let function = move |s: Series| s.nanosecond().map(|ca| ca.into_series());
-        self.map(function, Some(DataType::UInt32))
+        self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
     /// Sort this column by the ordering of another column.
@@ -1166,9 +1294,9 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
-        self.map(
+        self.apply(
             |s| s.is_first().map(|ca| ca.into_series()),
-            Some(DataType::Boolean),
+            GetOutput::from_type(DataType::Boolean),
         )
     }
 
@@ -1184,9 +1312,12 @@ impl Expr {
 
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
-    /// Compute the mode(s) of this column. These is the most occurring value.
+    /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
-        self.map(|s| s.mode().map(|ca| ca.into_series()), None)
+        self.apply(
+            |s| s.mode().map(|ca| ca.into_series()),
+            GetOutput::same_type(),
+        )
     }
 
     /// Keep the original root name
@@ -1205,6 +1336,24 @@ impl Expr {
     /// ```
     pub fn keep_name(self) -> Expr {
         Expr::KeepName(Box::new(self))
+    }
+
+    /// Add a suffix to the root column name.
+    pub fn suffix(self, suffix: &str) -> Expr {
+        Expr::SufPreFix {
+            is_suffix: true,
+            value: suffix.to_string(),
+            expr: Box::new(self),
+        }
+    }
+
+    /// Add a prefix to the root column name.
+    pub fn prefix(self, prefix: &str) -> Expr {
+        Expr::SufPreFix {
+            is_suffix: false,
+            value: prefix.to_string(),
+            expr: Box::new(self),
+        }
     }
 
     /// Exclude a column from a wildcard selection
@@ -1239,7 +1388,106 @@ impl Expr {
     #[cfg(feature = "interpolate")]
     #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
     pub fn interpolate(self) -> Expr {
-        self.apply(|s| Ok(s.interpolate()), None)
+        self.apply(|s| Ok(s.interpolate()), GetOutput::same_type())
+    }
+
+    /// Apply a rolling min See:
+    /// [ChunkedArray::rolling_min](polars::prelude::ChunkWindow::rolling_min).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_min(
+        self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Expr {
+        let weight = weight.map(|v| v.to_vec());
+        self.apply(
+            move |s| s.rolling_min(window_size, weight.as_deref(), ignore_null, min_periods),
+            GetOutput::same_type(),
+        )
+    }
+
+    /// Apply a rolling max See:
+    /// [ChunkedArray::rolling_max](polars::prelude::ChunkWindow::rolling_max).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_max(
+        self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Expr {
+        let weight = weight.map(|v| v.to_vec());
+        self.apply(
+            move |s| s.rolling_max(window_size, weight.as_deref(), ignore_null, min_periods),
+            GetOutput::same_type(),
+        )
+    }
+
+    /// Apply a rolling mean See:
+    /// [ChunkedArray::rolling_mean](polars::prelude::ChunkWindow::rolling_mean).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_mean(
+        self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Expr {
+        let weight = weight.map(|v| v.to_vec());
+        self.apply(
+            move |s| s.rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods),
+            GetOutput::same_type(),
+        )
+    }
+
+    /// Apply a rolling sum See:
+    /// [ChunkedArray::rolling_sum](polars::prelude::ChunkWindow::rolling_sum).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_sum(
+        self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Expr {
+        let weight = weight.map(|v| v.to_vec());
+        self.apply(
+            move |s| s.rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods),
+            GetOutput::same_type(),
+        )
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    /// Apply a custom function over a rolling/ moving window of the array.
+    /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
+    pub fn rolling_apply(
+        self,
+        window_size: usize,
+        f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
+    ) -> Expr {
+        self.apply(
+            move |s| s.rolling_apply(window_size, f.as_ref()),
+            GetOutput::same_type(),
+        )
+    }
+
+    #[cfg(feature = "rank")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
+    pub fn rank(self, method: RankMethod) -> Expr {
+        self.apply(
+            move |s| Ok(s.rank(method)),
+            GetOutput::map_field(move |fld| match method {
+                RankMethod::Average => Field::new(fld.name(), DataType::Float32),
+                _ => Field::new(fld.name(), DataType::UInt32),
+            }),
+        )
     }
 }
 
@@ -1271,6 +1519,11 @@ pub fn col(name: &str) -> Expr {
         "*" => Expr::Wildcard,
         _ => Expr::Column(Arc::new(name.to_owned())),
     }
+}
+
+/// Select multiple columns by name
+pub fn cols(names: Vec<String>) -> Expr {
+    Expr::Columns(names)
 }
 
 /// Count the number of values in this Expression.
@@ -1368,12 +1621,13 @@ where
             Ok(acc)
         }) as Arc<dyn SeriesUdf>);
 
+        // Todo! make sure that output type is correct
         Expr::Function {
             input: exprs,
             function,
-            output_type: None,
+            output_type: GetOutput::same_type(),
             options: FunctionOptions {
-                collect_groups: ApplyOption::ApplyFlat,
+                collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,
             },
         }

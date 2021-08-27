@@ -115,10 +115,12 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             function,
             partition_by,
             order_by,
+            options,
         } => AExpr::Window {
             function: to_aexpr(*function, arena),
             partition_by: to_aexprs(partition_by, arena),
             order_by: order_by.map(|ob| to_aexpr(*ob, arena)),
+            options,
         },
         Expr::Slice {
             input,
@@ -132,6 +134,8 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Wildcard => AExpr::Wildcard,
         Expr::KeepName(_) => panic!("no keep_name expected at this point"),
         Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
+        Expr::SufPreFix { .. } => panic!("no `suffix/prefix` expected at this point"),
+        Expr::Columns { .. } => panic!("no `columns` expected at this point"),
     };
     arena.add(v)
 }
@@ -274,6 +278,7 @@ pub(crate) fn to_alp(
             aggs,
             schema,
             apply,
+            maintain_order,
         } => {
             let i = to_alp(*input, expr_arena, lp_arena);
             let aggs_new = aggs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
@@ -288,6 +293,7 @@ pub(crate) fn to_alp(
                 aggs: aggs_new,
                 schema,
                 apply,
+                maintain_order,
             }
         }
         LogicalPlan::Join {
@@ -553,6 +559,7 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             function,
             partition_by,
             order_by,
+            options,
         } => {
             let function = Box::new(node_to_exp(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
@@ -561,6 +568,7 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 function,
                 partition_by,
                 order_by,
+                options,
             }
         }
         AExpr::Slice {
@@ -702,6 +710,7 @@ pub(crate) fn node_to_lp(
             aggs,
             schema,
             apply,
+            maintain_order,
         } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
 
@@ -711,6 +720,7 @@ pub(crate) fn node_to_lp(
                 aggs: nodes_to_exprs(&aggs, expr_arena),
                 schema,
                 apply,
+                maintain_order,
             }
         }
         ALogicalPlan::Join {

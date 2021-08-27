@@ -616,7 +616,7 @@ impl PySeries {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
-        arrow_interop::to_py::to_py_array(&self.series.chunks()[0], py, pyarrow)
+        arrow_interop::to_py::to_py_array(self.series.chunks()[0].clone(), py, pyarrow)
     }
 
     #[cfg(feature = "is_in")]
@@ -1152,6 +1152,11 @@ impl PySeries {
             }
             Err(e) => Err(e),
         }
+    }
+
+    pub fn rank(&self, method: &str) -> PyResult<Self> {
+        let method = str_to_rankmethod(method)?;
+        Ok(self.series.rank(method).into())
     }
 }
 

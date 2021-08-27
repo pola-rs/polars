@@ -96,10 +96,13 @@ Computations
     Series.rolling_max
     Series.rolling_mean
     Series.rolling_sum
+    Series.rolling_apply
     Series.hash
     Series.peak_max
     Series.peak_min
     Series.dot
+    Series.abs
+    Series.rank
 
 Manipulation/ selection
 -----------------------
@@ -194,3 +197,21 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.rstrip
     StringNameSpace.lstrip
     StringNameSpace.slice
+
+Lists
+-----
+
+The following methods are available under the `Series.arr` attribute.
+
+.. currentmodule:: polars.eager.series
+
+.. autosummary::
+   :toctree: api/
+
+    ListNameSpace.sum
+    ListNameSpace.min
+    ListNameSpace.max
+    ListNameSpace.mean
+    ListNameSpace.sort
+    ListNameSpace.reverse
+    ListNameSpace.unique

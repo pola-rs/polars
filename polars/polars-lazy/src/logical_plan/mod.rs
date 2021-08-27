@@ -212,6 +212,7 @@ pub enum LogicalPlan {
         aggs: Vec<Expr>,
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
+        maintain_order: bool,
     },
     /// Join operation
     Join {
@@ -690,16 +691,39 @@ fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<String>) -> Exp
     expr
 }
 
-fn rewrite_keep_name(expr: Expr) -> Expr {
-    if has_expr(&expr, |e| matches!(e, Expr::KeepName(_))) {
-        if let Expr::KeepName(expr) = expr {
-            let roots = expr_to_root_column_names(&expr);
-            let name = roots
-                .get(0)
-                .expect("expected root column to keep expression name");
-            Expr::Alias(expr, name.clone())
-        } else {
-            panic!("keep_name should be last expression")
+fn rewrite_keep_name_and_sufprefix(expr: Expr) -> Expr {
+    // the blocks are added by cargo fmt
+    #[allow(clippy::blocks_in_if_conditions)]
+    if has_expr(&expr, |e| {
+        matches!(e, Expr::KeepName(_) | Expr::SufPreFix { .. })
+    }) {
+        match expr {
+            Expr::KeepName(expr) => {
+                let roots = expr_to_root_column_names(&expr);
+                let name = roots
+                    .get(0)
+                    .expect("expected root column to keep expression name");
+                Expr::Alias(expr, name.clone())
+            }
+            Expr::SufPreFix {
+                is_suffix,
+                value,
+                expr,
+            } => {
+                let roots = expr_to_root_column_names(&expr);
+                let name = roots
+                    .get(0)
+                    .expect("expected root column to keep expression name");
+
+                let name = if is_suffix {
+                    format!("{}{}", name, value)
+                } else {
+                    format!("{}{}", value, name)
+                };
+
+                Expr::Alias(expr, Arc::new(name))
+            }
+            _ => panic!("`keep_name`, `suffix`, `prefix` should be last expression"),
         }
     } else {
         expr
@@ -714,41 +738,90 @@ fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<String>],
         let name = field.name();
         if !exclude.iter().any(|exluded| &**exluded == name) {
             let new_expr = replace_wildcard_with_column(expr.clone(), Arc::new(name.clone()));
-            let new_expr = rewrite_keep_name(new_expr);
+            let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
             result.push(new_expr)
         }
     }
 }
 
 #[cfg(feature = "regex")]
-fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &str) {
-    let re = regex::Regex::new(pattern)
-        .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
-    for field in schema.fields() {
-        let name = field.name();
-        if re.is_match(name) {
-            let mut new_expr = expr.clone();
+fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: Option<&str>) {
+    match pattern {
+        Some(pattern) => {
+            let re = regex::Regex::new(pattern)
+                .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
+            for field in schema.fields() {
+                let name = field.name();
+                if re.is_match(name) {
+                    let mut new_expr = expr.clone();
 
-            new_expr.mutate().apply(|e| match &e {
-                Expr::Column(_) => {
-                    *e = Expr::Column(Arc::new(name.clone()));
-                    false
+                    new_expr.mutate().apply(|e| match &e {
+                        Expr::Column(_) => {
+                            *e = Expr::Column(Arc::new(name.clone()));
+                            false
+                        }
+                        _ => true,
+                    });
+
+                    let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+                    result.push(new_expr)
                 }
-                _ => true,
-            });
-
-            let new_expr = rewrite_keep_name(new_expr);
-            result.push(new_expr)
+            }
         }
+        None => {
+            let roots = expr_to_root_column_names(expr);
+            // only in simple expression (no binary expression)
+            // we pattern match regex columns
+            if roots.len() == 1 {
+                let name = &**roots[0];
+                if name.starts_with('^') && name.ends_with('$') {
+                    replace_regex(expr, result, schema, Some(name))
+                } else {
+                    let expr = rewrite_keep_name_and_sufprefix(expr.clone());
+                    result.push(expr)
+                }
+            } else {
+                let expr = rewrite_keep_name_and_sufprefix(expr.clone());
+                result.push(expr)
+            }
+        }
+    }
+}
+
+/// replace columns(["A", "B"]).. with col("A").., col("B")..
+fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
+    for name in names {
+        let mut new_expr = expr.clone();
+        new_expr.mutate().apply(|e| {
+            if let Expr::Columns(_) = &e {
+                *e = Expr::Column(Arc::new(name.clone()));
+            }
+            // always keep iterating all inputs
+            true
+        });
+
+        let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+        result.push(new_expr)
     }
 }
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
+pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
 
     for mut expr in exprs {
+        // in case of multiple cols, we still want to check wildcard for function input,
+        // but in case of no wildcard, we don't want this expr pushed to results.
+        let mut push_current = true;
+        // has multiple column names
+        if let Some(e) = expr.into_iter().find(|e| matches!(e, Expr::Columns(_))) {
+            if let Expr::Columns(names) = e {
+                expand_columns(&expr, &mut result, names)
+            }
+            push_current = false;
+        }
+
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
             let mut exclude = vec![];
@@ -775,7 +848,7 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             // this path prepares the wildcard as input for the Function Expr
             if has_expr(
                 &expr,
-                |e| matches!(e, Expr::Function { input, options,  .. } if options.input_wildcard_expansion && input.iter().any(has_wildcard)),
+                |e| matches!(e, Expr::Function { options,  .. } if options.input_wildcard_expansion),
             ) {
                 expr.mutate().apply(|e| {
                     if let Expr::Function { input, .. } = e {
@@ -783,9 +856,16 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
 
                         input.iter_mut().for_each(|e| {
                             if has_wildcard(e) {
-                                replace_wilcard(e, &mut new_inputs, &[], schema)
+                                replace_wilcard(e, &mut new_inputs, &exclude, schema)
                             } else {
-                                new_inputs.push(e.clone())
+                                #[cfg(feature = "regex")]
+                                {
+                                    replace_regex(e, &mut new_inputs, schema, None)
+                                }
+                                #[cfg(not(feature = "regex"))]
+                                {
+                                    new_inputs.push(e.clone())
+                                }
                             }
                         });
 
@@ -800,28 +880,17 @@ fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
             }
             replace_wilcard(&expr, &mut result, &exclude, schema);
         } else {
-            #[cfg(feature = "regex")]
-            {
-                // only in simple expression (no binary expression)
-                // we patter match regex columns
-                let roots = expr_to_root_column_names(&expr);
-                if roots.len() == 1 {
-                    let name = &**roots[0];
-                    if name.starts_with('^') && name.ends_with('$') {
-                        replace_regex(&expr, &mut result, schema, name)
-                    } else {
-                        let expr = rewrite_keep_name(expr);
-                        result.push(expr)
-                    }
-                } else {
-                    let expr = rewrite_keep_name(expr);
+            #[allow(clippy::collapsible_else_if)]
+            if push_current {
+                #[cfg(feature = "regex")]
+                {
+                    replace_regex(&expr, &mut result, schema, None)
+                }
+                #[cfg(not(feature = "regex"))]
+                {
+                    let expr = rewrite_keep_name_and_sufprefix(expr);
                     result.push(expr)
                 }
-            }
-            #[cfg(not(feature = "regex"))]
-            {
-                let expr = rewrite_keep_name(expr);
-                result.push(expr)
             }
         };
     }
@@ -1009,11 +1078,27 @@ impl LogicalPlanBuilder {
         self.project_local(exprs)
     }
 
+    pub fn fill_nan(self, fill_value: Expr) -> Self {
+        let schema = self.0.schema();
+        let exprs = schema
+            .fields()
+            .iter()
+            .map(|field| {
+                let name = field.name();
+                when(col(name).is_nan())
+                    .then(fill_value.clone())
+                    .otherwise(col(name))
+                    .alias(name)
+            })
+            .collect();
+        self.project_local(exprs)
+    }
+
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
         let schema = self.0.schema();
-
         let mut new_fields = schema.fields().clone();
+        let (exprs, _) = prepare_projection(exprs, schema);
 
         for e in &exprs {
             let field = e.to_field(schema, Context::Default).unwrap();
@@ -1057,6 +1142,7 @@ impl LogicalPlanBuilder {
         keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
         apply: Option<Arc<dyn DataFrameUdf>>,
+        maintain_order: bool,
     ) -> Self {
         debug_assert!(!keys.is_empty());
         let current_schema = self.0.schema();
@@ -1072,6 +1158,7 @@ impl LogicalPlanBuilder {
             aggs,
             schema: Arc::new(schema),
             apply,
+            maintain_order,
         }
         .into()
     }

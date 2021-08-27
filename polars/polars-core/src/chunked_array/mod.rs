@@ -36,6 +36,7 @@ pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
 use arrow::array::Array;
+pub(crate) mod list;
 
 use crate::chunked_array::builder::categorical::RevMapping;
 use crate::utils::{slice_offsets, CustomIterTools};

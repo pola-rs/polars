@@ -125,7 +125,7 @@ where
     Ptr: PolarsAsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = Utf8Array::<i64>::from_iter_values(iter);
+        let arr = Utf8Array::<i64>::from_iter_values(iter.into_iter());
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }
@@ -138,8 +138,11 @@ where
         let mut it = iter.into_iter();
         let capacity = get_iter_capacity(&it);
 
-        // first take one to get the dtype. We panic if we have an empty iterator
-        let v = it.next().unwrap();
+        // first take one to get the dtype.
+        let v = match it.next() {
+            Some(v) => v,
+            None => return ListChunked::full_null("", 0),
+        };
         // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
         let mut builder = get_list_builder(v.borrow().dtype(), capacity * 5, capacity, "collected");
 
@@ -174,7 +177,7 @@ where
                 // end of iterator
                 None => {
                     // type is not known
-                    panic!("Type of Series cannot be determined as they are all null")
+                    return ListChunked::full_null("", 0);
                 }
             }
         }

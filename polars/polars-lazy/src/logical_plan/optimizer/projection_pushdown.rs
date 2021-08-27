@@ -1,6 +1,6 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, check_down_node, has_aexpr};
+use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, check_input_node, has_aexpr};
 use polars_core::{datatypes::PlHashSet, prelude::*};
 
 fn init_vec() -> Vec<Node> {
@@ -46,7 +46,7 @@ fn split_acc_projections(
     } else {
         let (acc_projections, local_projections): (Vec<Node>, Vec<Node>) = acc_projections
             .into_iter()
-            .partition(|expr| check_down_node(*expr, down_schema, expr_arena));
+            .partition(|expr| check_input_node(*expr, down_schema, expr_arena));
         let mut names = init_set();
         for proj in &acc_projections {
             for name in aexpr_to_root_names(*proj, expr_arena) {
@@ -118,13 +118,13 @@ impl ProjectionPushDown {
         let root_projections = aexpr_to_root_nodes(proj, expr_arena);
 
         for (name, root_projection) in names.into_iter().zip(root_projections) {
-            if check_down_node(root_projection, schema_left, expr_arena)
+            if check_input_node(root_projection, schema_left, expr_arena)
                 && names_left.insert(name.clone())
             {
                 pushdown_left.push(proj);
                 pushed_at_least_one = true;
             }
-            if check_down_node(root_projection, schema_right, expr_arena)
+            if check_input_node(root_projection, schema_right, expr_arena)
                 && names_right.insert(name)
             {
                 pushdown_right.push(proj);
@@ -270,7 +270,7 @@ impl ProjectionPushDown {
                 // projection from a wildcard may be dropped if the schema changes due to the optimization
                 let proj = expr
                     .into_iter()
-                    .filter(|e| check_down_node(*e, schema, expr_arena))
+                    .filter(|e| check_input_node(*e, schema, expr_arena))
                     .collect();
                 Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                     .project_local(proj)
@@ -493,6 +493,7 @@ impl ProjectionPushDown {
                 aggs,
                 apply,
                 schema,
+                maintain_order,
             } => {
                 // the custom function may need all columns so we do the projections here.
                 if let Some(f) = apply {
@@ -502,6 +503,7 @@ impl ProjectionPushDown {
                         aggs,
                         schema,
                         apply: Some(f),
+                        maintain_order,
                     };
                     let input = lp_arena.add(lp);
 
@@ -535,8 +537,12 @@ impl ProjectionPushDown {
                         expr_arena,
                     )?;
 
-                    let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
-                        .groupby(keys, aggs, apply);
+                    let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).groupby(
+                        keys,
+                        aggs,
+                        apply,
+                        maintain_order,
+                    );
                     Ok(builder.build())
                 }
             }
