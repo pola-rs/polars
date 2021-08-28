@@ -170,13 +170,13 @@ impl DefaultPlanner {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
-                Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
+                Ok(Box::new(ProjectionExec::new(input, phys_expr)))
             }
             LocalProjection { expr, input, .. } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
-                Ok(Box::new(StandardExec::new("projection", input, phys_expr)))
+                Ok(Box::new(ProjectionExec::new(input, phys_expr)))
             }
             DataFrameScan {
                 df,

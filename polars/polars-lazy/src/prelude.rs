@@ -26,12 +26,12 @@ pub(crate) use crate::{
             groupby::{GroupByExec, PartitionGroupByExec},
             join::JoinExec,
             melt::MeltExec,
+            projection::ProjectionExec,
             scan::DataFrameExec,
             slice::SliceExec,
             sort::SortExec,
             stack::StackExec,
             udf::UdfExec,
-            various::StandardExec,
         },
         expressions::{
             aggregation::{AggQuantileExpr, AggregationExpr},
