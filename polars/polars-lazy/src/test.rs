@@ -1730,3 +1730,15 @@ fn test_error_duplicate_names() {
         .collect()
         .is_err());
 }
+
+#[test]
+fn test_filter_count() -> Result<()> {
+    let df = fruits_cars();
+    let out = df
+        .lazy()
+        .select(vec![
+            col("fruits").filter(col("fruits").eq(lit("banana"))).count()])
+        .collect()?;
+    assert_eq!(out.column("fruits")?.u32()?.get(0), Some(3));
+    Ok(())
+}
