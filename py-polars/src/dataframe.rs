@@ -24,6 +24,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use crate::prelude::str_to_none_strategy;
 
 #[pyclass]
 #[repr(transparent)]
@@ -801,8 +802,9 @@ impl PyDataFrame {
         self.df.median().into()
     }
 
-    pub fn hmean(&self) -> PyResult<Option<PySeries>> {
-        let s = self.df.hmean().map_err(PyPolarsEr::from)?;
+    pub fn hmean(&self, none_stategy: &str) -> PyResult<Option<PySeries>> {
+        let strategy = str_to_none_strategy(none_stategy)?;
+        let s = self.df.hmean(strategy).map_err(PyPolarsEr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
@@ -816,8 +818,9 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hsum(&self) -> PyResult<Option<PySeries>> {
-        let s = self.df.hsum().map_err(PyPolarsEr::from)?;
+    pub fn hsum(&self, none_strategy: &str) -> PyResult<Option<PySeries>> {
+        let strategy = str_to_none_strategy(none_strategy)?;
+        let s = self.df.hsum(strategy).map_err(PyPolarsEr::from)?;
         Ok(s.map(|s| s.into()))
     }
 

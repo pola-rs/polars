@@ -41,6 +41,12 @@ use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use std::hash::{BuildHasher, Hash, Hasher};
 
+#[derive(Copy, Clone, Debug)]
+pub enum NoneStrategy {
+    Ignore,
+    Propagate,
+}
+
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
@@ -1517,7 +1523,7 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their sum values
-    pub fn hsum(&self) -> Result<Option<Series>> {
+    pub fn hsum(&self, none_strategy: NoneStrategy) -> Result<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
             1 => Ok(Some(self.columns[0].clone())),
@@ -1530,11 +1536,13 @@ impl DataFrame {
                         let mut acc = acc.as_ref().clone();
                         let mut s = s.as_ref().clone();
 
-                        if acc.null_count() != 0 {
-                            acc = acc.fill_none(FillNoneStrategy::Zero)?;
-                        }
-                        if s.null_count() != 0 {
-                            s = s.fill_none(FillNoneStrategy::Zero)?;
+                        if let NoneStrategy::Ignore = none_strategy {
+                            if acc.null_count() != 0 {
+                                acc = acc.fill_none(FillNoneStrategy::Zero)?;
+                            }
+                            if s.null_count() != 0 {
+                                s = s.fill_none(FillNoneStrategy::Zero)?;
+                            }
                         }
                         Ok(Cow::Owned(&acc + &s))
                     })
@@ -1544,12 +1552,12 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their mean values
-    pub fn hmean(&self) -> Result<Option<Series>> {
+    pub fn hmean(&self, none_strategy: NoneStrategy) -> Result<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
             1 => Ok(Some(self.columns[0].clone())),
             _ => {
-                let sum = self.hsum()?;
+                let sum = self.hsum(none_strategy)?;
 
                 let first: Cow<Series> = Cow::Owned(
                     self.columns[0]
@@ -1850,6 +1858,7 @@ mod test {
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow::record_batch::RecordBatch;
 
+    use crate::frame::NoneStrategy;
     use crate::prelude::*;
 
     fn create_frame() -> DataFrame {
@@ -2068,11 +2077,23 @@ mod test {
 
         let df = DataFrame::new(vec![a, b, c]).unwrap();
         assert_eq!(
-            Vec::from(df.hmean().unwrap().unwrap().f64().unwrap()),
+            Vec::from(
+                df.hmean(NoneStrategy::Ignore)
+                    .unwrap()
+                    .unwrap()
+                    .f64()
+                    .unwrap()
+            ),
             &[Some(2.0), Some(2.0), Some(4.5)]
         );
         assert_eq!(
-            Vec::from(df.hsum().unwrap().unwrap().i32().unwrap()),
+            Vec::from(
+                df.hsum(NoneStrategy::Ignore)
+                    .unwrap()
+                    .unwrap()
+                    .i32()
+                    .unwrap()
+            ),
             &[Some(6), Some(2), Some(9)]
         );
         assert_eq!(
