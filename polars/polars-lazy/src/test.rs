@@ -1720,3 +1720,13 @@ fn test_categorical_addition() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_error_duplicate_names() {
+    let df = fruits_cars();
+    assert!(df
+        .lazy()
+        .select(vec![col("*"), col("*"),])
+        .collect()
+        .is_err());
+}

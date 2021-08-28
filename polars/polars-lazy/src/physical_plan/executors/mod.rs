@@ -5,16 +5,15 @@ pub mod filter;
 pub mod groupby;
 pub mod join;
 pub mod melt;
+pub mod projection;
 pub mod scan;
 pub mod slice;
 pub mod sort;
 pub mod stack;
 pub mod udf;
-pub mod various;
 
 use super::*;
 use crate::logical_plan::FETCH_ROWS;
-use itertools::Itertools;
 use polars_core::POOL;
 use rayon::prelude::*;
 use std::path::PathBuf;
@@ -34,30 +33,38 @@ pub(crate) fn evaluate_physical_expressions(
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
 ) -> Result<DataFrame> {
-    let height = df.height();
-    let mut selected_columns = POOL.install(|| {
+    let zero_length = df.height() == 0;
+    let selected_columns = POOL.install(|| {
         exprs
             .par_iter()
             .map(|expr| expr.evaluate(df, state))
             .collect::<Result<Vec<Series>>>()
     })?;
-
-    // If all series are the same length it is ok. If not we can broadcast Series of length one.
-    if selected_columns.len() > 1 {
-        let all_equal_len = selected_columns.iter().map(|s| s.len()).all_equal();
-        if !all_equal_len {
-            selected_columns = selected_columns
-                .into_iter()
-                .map(|series| {
-                    if series.len() == 1 && height > 1 {
-                        series.expand_at_index(0, height)
-                    } else {
-                        series
-                    }
-                })
-                .collect()
+    {
+        let mut names = PlHashSet::with_capacity(exprs.len());
+        for s in &selected_columns {
+            let name = s.name();
+            if !names.insert(name) {
+                return Err(PolarsError::Duplicate(
+                    format!("Column with name: '{}' has more than one occurrences", name).into(),
+                ));
+            }
         }
     }
 
-    Ok(DataFrame::new_no_checks(selected_columns))
+    let df = DataFrame::new_no_checks(selected_columns);
+
+    // a literal could be projected to a zero length dataframe.
+    // This prevents a panic.
+    let df = if zero_length {
+        let min = df.get_columns().iter().map(|s| s.len()).min();
+        if min.is_some() {
+            df.head(min)
+        } else {
+            df
+        }
+    } else {
+        df
+    };
+    Ok(df)
 }

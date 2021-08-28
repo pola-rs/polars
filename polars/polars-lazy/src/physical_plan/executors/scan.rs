@@ -194,6 +194,7 @@ impl Executor for DataFrameExec {
         let mut df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
 
         // projection should be before selection as those are free
+        // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
             df = evaluate_physical_expressions(&df, projection, state)?;
         }
