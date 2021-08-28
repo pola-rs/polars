@@ -718,16 +718,16 @@ def test_lazy_functions():
     assert pl.count(df["a"]) == 3
     out = df[
         [
-            pl.var("b"),
-            pl.std("b"),
-            pl.max("b"),
-            pl.min("b"),
-            pl.sum("b"),
-            pl.mean("b"),
-            pl.median("b"),
-            pl.n_unique("b"),
-            pl.first("b"),
-            pl.last("b"),
+            pl.var("b").alias("1"),
+            pl.std("b").alias("2"),
+            pl.max("b").alias("3"),
+            pl.min("b").alias("4"),
+            pl.sum("b").alias("5"),
+            pl.mean("b").alias("6"),
+            pl.median("b").alias("7"),
+            pl.n_unique("b").alias("8"),
+            pl.first("b").alias("9"),
+            pl.last("b").alias("10"),
         ]
     ]
     expected = 1.0
