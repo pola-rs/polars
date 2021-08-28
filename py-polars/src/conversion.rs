@@ -14,6 +14,7 @@ use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use polars::frame::NoneStrategy;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -303,4 +304,17 @@ pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
         }
     };
     Ok(method)
+}
+
+pub(crate) fn str_to_none_strategy(strategy: &str) -> PyResult<NoneStrategy> {
+    let strategy = match strategy {
+        "ignore" => NoneStrategy::Ignore,
+        "propagate" => NoneStrategy::Propagate,
+        _ => {
+            return Err(PyValueError::new_err(
+                "use one of 'ignore', 'propagate'".to_string(),
+            ))
+        }
+    };
+    Ok(strategy)
 }
