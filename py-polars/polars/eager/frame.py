@@ -1380,10 +1380,10 @@ class DataFrame:
 
         summary = pl.functions.concat(
             [
-                describe_cast(self.mean()),
+                describe_cast(self.mean()),  # type: ignore
                 describe_cast(self.std()),
-                describe_cast(self.min()),
-                describe_cast(self.max()),
+                describe_cast(self.min()),  # type: ignore
+                describe_cast(self.max()),  # type: ignore
                 describe_cast(self.median()),
             ]
         )
@@ -2488,7 +2488,7 @@ class DataFrame:
         """
         return self._df.n_chunks()
 
-    def max(self, axis: int = 0) -> "DataFrame":
+    def max(self, axis: int = 0) -> Union["DataFrame", "pl.Series"]:
         """
         Aggregate the columns of this DataFrame to their maximum value.
 
@@ -2513,10 +2513,10 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.max())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hmax()).to_frame()
+            return pl.eager.series.wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")
 
-    def min(self, axis: int = 0) -> "DataFrame":
+    def min(self, axis: int = 0) -> Union["DataFrame", "pl.Series"]:
         """
         Aggregate the columns of this DataFrame to their minimum value.
 
@@ -2541,12 +2541,22 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.min())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hmin()).to_frame()
+            return pl.eager.series.wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")
 
-    def sum(self, axis: int = 0) -> "DataFrame":
+    def sum(
+        self, axis: int = 0, none_strategy: str = "ignore"
+    ) -> Union["DataFrame", "pl.Series"]:
         """
         Aggregate the columns of this DataFrame to their sum value.
+
+        Parameters
+        ----------
+        axis
+            either 0 or 1
+        none_stategy
+            {'ignore', 'propagate'}
+            this argument is only used if axis == 1
 
         Examples
         --------
@@ -2569,12 +2579,22 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.sum())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hsum()).to_frame()
+            return pl.eager.series.wrap_s(self._df.hsum(none_strategy))
         raise ValueError("Axis should be 0 or 1.")
 
-    def mean(self, axis: int = 0) -> "DataFrame":
+    def mean(
+        self, axis: int = 0, none_strategy: str = "ignore"
+    ) -> Union["DataFrame", "pl.Series"]:
         """
         Aggregate the columns of this DataFrame to their mean value.
+
+        Parameters
+        ----------
+        axis
+            either 0 or 1
+        none_stategy
+            {'ignore', 'propagate'}
+            this argument is only used if axis == 1
 
         Examples
         --------
@@ -2597,7 +2617,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.mean())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hmean()).to_frame()
+            return pl.eager.series.wrap_s(self._df.hmean(none_strategy))
         raise ValueError("Axis should be 0 or 1.")
 
     def std(self) -> "DataFrame":
