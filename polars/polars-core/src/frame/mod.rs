@@ -32,17 +32,25 @@ mod upstream_traits;
 
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
+use crate::vector_hasher::boost_hash_combine;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
 use hashbrown::HashMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
     pub(crate) columns: Vec<Series>,
+}
+
+fn duplicate_err(name: &str) -> Result<()> {
+    Err(PolarsError::Duplicate(
+        format!("Column with name: '{}' has more than one occurrences", name).into(),
+    ))
 }
 
 impl DataFrame {
@@ -92,31 +100,70 @@ impl DataFrame {
     /// ```
     pub fn new<S: IntoSeries>(columns: Vec<S>) -> Result<Self> {
         let mut first_len = None;
-        let mut series_cols = Vec::with_capacity(columns.len());
-        let mut names = HashSet::with_hasher(RandomState::default());
 
-        // check for series length equality and convert into series in one pass
-        for s in columns {
-            let series = s.into_series();
-            match first_len {
-                Some(len) => {
-                    if series.len() != len {
-                        return Err(PolarsError::ShapeMisMatch("Could not create a new DataFrame from Series. The Series have different lengths".into()));
+        let shape_err = || {
+            Err(PolarsError::ShapeMisMatch(
+                "Could not create a new DataFrame from Series. The Series have different lengths"
+                    .into(),
+            ))
+        };
+
+        let series_cols = if S::is_series() {
+            // Safety:
+            // we are guarded by the type system here.
+            let series_cols = unsafe { std::mem::transmute::<Vec<S>, Vec<Series>>(columns) };
+            let mut names = PlHashSet::with_capacity(series_cols.len());
+
+            for s in &series_cols {
+                match first_len {
+                    Some(len) => {
+                        if s.len() != len {
+                            return shape_err();
+                        }
                     }
+                    None => first_len = Some(s.len()),
                 }
-                None => first_len = Some(series.len()),
-            }
-            let name = series.name().to_string();
+                let name = s.name();
 
-            if names.contains(&name) {
-                return Err(PolarsError::Duplicate(
-                    format!("Column with name: '{}' has more than one occurrences", name).into(),
-                ));
-            }
+                if names.contains(name) {
+                    duplicate_err(name)?
+                }
 
-            names.insert(name);
-            series_cols.push(series)
-        }
+                names.insert(name);
+            }
+            // we drop early as the brchk thinks the &str borrows are used when calling the drop
+            // of both `series_cols` and `names`
+            drop(names);
+            series_cols
+        } else {
+            let mut series_cols = Vec::with_capacity(columns.len());
+            let mut names = PlHashSet::with_capacity(columns.len());
+
+            // check for series length equality and convert into series in one pass
+            for s in columns {
+                let series = s.into_series();
+                match first_len {
+                    Some(len) => {
+                        if series.len() != len {
+                            return shape_err();
+                        }
+                    }
+                    None => first_len = Some(series.len()),
+                }
+                // we have aliasing borrows so we must allocate a string
+                let name = series.name().to_string();
+
+                if names.contains(&name) {
+                    duplicate_err(&name)?
+                }
+
+                series_cols.push(series);
+                names.insert(name);
+            }
+            drop(names);
+            series_cols
+        };
+
         let mut df = DataFrame {
             columns: series_cols,
         };
@@ -162,11 +209,33 @@ impl DataFrame {
 
     /// Ensure all the chunks in the DataFrame are aligned.
     pub fn rechunk(&mut self) -> &mut Self {
-        // TODO: remove vec allocation
+        let hb = RandomState::default();
+        let hb2 = RandomState::with_seeds(392498, 98132457, 0, 412059);
         if self
             .columns
             .iter()
-            .map(|s| s.chunk_lengths().collect_vec())
+            // The idea is that we creat a hash of the chunk lengths.
+            // Consisting of the combined hash + the sum (asumming collision probablility is nihil)
+            // if not, we can add more hashes.
+            // the old solution to this was clone all lengths to a vec and compare the vecs
+            .map(|s| {
+                s.chunk_lengths().map(|i| i as u64).fold(
+                    (0u64, 0u64, s.n_chunks()),
+                    |(lhash, lh2, n), rval| {
+                        let mut h = hb.build_hasher();
+                        rval.hash(&mut h);
+                        let rhash = h.finish();
+                        let mut h = hb2.build_hasher();
+                        rval.hash(&mut h);
+                        let rh2 = h.finish();
+                        (
+                            boost_hash_combine(lhash, rhash),
+                            boost_hash_combine(lh2, rh2),
+                            n,
+                        )
+                    },
+                )
+            })
             .all_equal()
         {
             self
@@ -571,9 +640,17 @@ impl DataFrame {
     where
         S: Selection<'a, J>,
     {
-        let selected = self.select_series(selection)?;
-        let df = DataFrame::new_no_checks(selected);
-        Ok(df)
+        let cols = selection.to_selection_vec();
+        {
+            let mut names = PlHashSet::with_capacity(cols.len());
+            for name in &cols {
+                if !names.insert(name) {
+                    duplicate_err(name)?
+                }
+            }
+        }
+        let selected = self.select_series_impl(&cols)?;
+        Ok(DataFrame::new_no_checks(selected))
     }
 
     /// Select column(s) from this DataFrame and return them into a Vector.

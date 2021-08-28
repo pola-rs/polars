@@ -438,7 +438,7 @@ where
 
 // hash combine from c++' boost lib
 #[inline]
-fn boost_hash_combine(l: u64, r: u64) -> u64 {
+pub(crate) fn boost_hash_combine(l: u64, r: u64) -> u64 {
     l ^ r.wrapping_add(0x9e3779b9u64.wrapping_add(l << 6).wrapping_add(r >> 2))
 }
 

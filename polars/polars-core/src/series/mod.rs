@@ -32,6 +32,10 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 pub trait IntoSeries {
+    fn is_series() -> bool {
+        false
+    }
+
     fn into_series(self) -> Series
     where
         Self: Sized;
@@ -1900,6 +1904,10 @@ impl IntoSeries for Arc<dyn SeriesTrait> {
 }
 
 impl IntoSeries for Series {
+    fn is_series() -> bool {
+        true
+    }
+
     fn into_series(self) -> Series {
         self
     }
