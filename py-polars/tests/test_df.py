@@ -997,6 +997,6 @@ def test_panic():
 def test_h_agg():
     df = pl.DataFrame({"a": [1, None, 3], "b": [1, 2, 3]})
 
-    assert df.sum(axis=1, none_strategy="ignore").to_list() == [2, 2, 6]
-    assert df.sum(axis=1, none_strategy="propagate").to_list() == [2, None, 6]
-    assert df.mean(axis=1, none_strategy="propagate")[1] is None
+    assert df.sum(axis=1, null_strategy="ignore").to_list() == [2, 2, 6]
+    assert df.sum(axis=1, null_strategy="propagate").to_list() == [2, None, 6]
+    assert df.mean(axis=1, null_strategy="propagate")[1] is None

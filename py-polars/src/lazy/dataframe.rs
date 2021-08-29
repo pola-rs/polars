@@ -290,9 +290,9 @@ impl PyLazyFrame {
         ldf.shift_and_fill(periods, fill_value.inner).into()
     }
 
-    pub fn fill_none(&self, fill_value: PyExpr) -> Self {
+    pub fn fill_null(&self, fill_value: PyExpr) -> Self {
         let ldf = self.ldf.clone();
-        ldf.fill_none(fill_value.inner).into()
+        ldf.fill_null(fill_value.inner).into()
     }
 
     pub fn fill_nan(&self, fill_value: PyExpr) -> Self {

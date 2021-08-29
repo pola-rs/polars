@@ -13,7 +13,7 @@
 //! * Temporal utilities
 //!     - Utf8Chunked to dat32 / date64
 //! * Lazy
-//!     - fill_none expression
+//!     - fill_null expression
 //!     - shift expression
 //!     - Series aggregations
 //!     - aggregations on DataFrame level
