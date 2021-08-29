@@ -14,7 +14,7 @@ except ImportError:
     _DOCUMENTING = True
 
 from ..datatypes import Boolean, DataType, Date32, Date64, Float64, Int64, Utf8
-from .functions import UDF, col, lit
+from .functions import col, lit
 
 __all__ = [
     "Expr",
@@ -904,7 +904,7 @@ class Expr:
 
     def map(
         self,
-        f: Union["UDF", Callable[["pl.Series"], "pl.Series"]],
+        f: Callable[["pl.Series"], "pl.Series"],
         return_dtype: Optional[Type[DataType]] = None,
         agg_list: bool = False,
     ) -> "Expr":
@@ -921,9 +921,6 @@ class Expr:
         return_dtype
             Dtype of the output Series.
         """
-        if isinstance(f, UDF):
-            return_dtype = f.return_dtype
-            f = f.f
         if return_dtype == str:
             return_dtype = Utf8
         elif return_dtype == int:
@@ -1468,17 +1465,6 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_parse_date64(fmt))
         else:
             raise NotImplementedError
-
-    def parse_date(
-        self,
-        datatype: Union[Date32, Date64],
-        fmt: Optional[str] = None,
-    ) -> Expr:
-        """
-        .. deprecated:: 0.8.7
-        use `strptime`
-        """
-        return self.strptime(datatype, fmt)
 
     def lengths(self) -> Expr:
         """
