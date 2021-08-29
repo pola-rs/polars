@@ -215,7 +215,7 @@ patch release to fix panic #1077
 ### polars 0.7.13 / 0.7.14 (patch) 2021-05-08
 
 * bug fix
-  - fix bug in cum_sum #604
+  - fix bug in cumsum #604
   
 * feature
   - DataFrame.describe method #606
