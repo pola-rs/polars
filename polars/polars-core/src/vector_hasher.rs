@@ -28,6 +28,17 @@ pub trait VecHash {
     }
 }
 
+fn get_null_hash_value(random_state: RandomState) -> u64 {
+    // we just start with a large prime number and hash that twice
+    // to get a constant hash value for null/None
+    let mut hasher = random_state.build_hasher();
+    3188347919usize.hash(&mut hasher);
+    let first = hasher.finish();
+    let mut hasher = random_state.build_hasher();
+    first.hash(&mut hasher);
+    hasher.finish()
+}
+
 impl<T> VecHash for ChunkedArray<T>
 where
     T: PolarsIntegerType,
@@ -50,13 +61,7 @@ where
             }));
         });
 
-        // We need a random number that will be our null hash value
-        // just take the memory addresses and hash those
-        let null_h = av.as_ptr() as u64 ^ self as *const Self as u64;
-        let mut hasher = random_state.build_hasher();
-        null_h.hash(&mut hasher);
-        let null_h = hasher.finish();
-
+        let null_h = get_null_hash_value(random_state);
         let hashes = av.as_mut_slice();
 
         let mut offset = 0;
@@ -78,12 +83,7 @@ where
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        // We need a random number that will be our null hash value
-        // just take the memory addresses and hash those
-        let null_h = hashes.as_ptr() as u64 ^ self as *const Self as u64;
-        let mut hasher = random_state.build_hasher();
-        null_h.hash(&mut hasher);
-        let null_h = hasher.finish();
+        let null_h = get_null_hash_value(random_state.clone());
 
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
