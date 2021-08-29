@@ -798,8 +798,8 @@ macro_rules! impl_dyn_series {
                 ChunkShift::shift(&self.0, periods).into_series()
             }
 
-            fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
-                ChunkFillNone::fill_none(&self.0, strategy).map(|ca| ca.into_series())
+            fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
+                ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
             }
 
             fn sum_as_series(&self) -> Series {

@@ -229,9 +229,9 @@ def test_set():
     a[mask] = False
 
 
-def test_fill_none():
+def test_fill_null():
     a = pl.Series("a", [1, 2, None], nullable=True)
-    b = a.fill_none("forward")
+    b = a.fill_null("forward")
     assert b == [1, 2, 2]
 
 

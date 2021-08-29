@@ -2169,7 +2169,7 @@ class DataFrame:
         """
         return list(map(lambda s: pl.eager.series.wrap_s(s), self._df.get_columns()))
 
-    def fill_none(self, strategy: Union[str, "pl.Expr"]) -> "DataFrame":
+    def fill_null(self, strategy: Union[str, "pl.Expr"]) -> "DataFrame":
         """
         Fill None/missing values by a filling strategy or an Expression evaluation.
 
@@ -2191,10 +2191,10 @@ class DataFrame:
             DataFrame with None replaced with the filling strategy.
         """
         if isinstance(strategy, pl.Expr):
-            return self.lazy().fill_none(strategy).collect(no_optimization=True)
+            return self.lazy().fill_null(strategy).collect(no_optimization=True)
         if not isinstance(strategy, str):
-            return self.fill_none(pl.lit(strategy))
-        return wrap_df(self._df.fill_none(strategy))
+            return self.fill_null(pl.lit(strategy))
+        return wrap_df(self._df.fill_null(strategy))
 
     def fill_nan(self, fill_value: "pl.Expr") -> "DataFrame":
         """
@@ -2203,7 +2203,7 @@ class DataFrame:
         Warnings
         --------
         NOTE that floating point NaN (No a Number) are not missing values!
-        to replace missing values, use `fill_none`.
+        to replace missing values, use `fill_null`.
 
         Parameters
         ----------
@@ -2545,7 +2545,7 @@ class DataFrame:
         raise ValueError("Axis should be 0 or 1.")
 
     def sum(
-        self, axis: int = 0, none_strategy: str = "ignore"
+        self, axis: int = 0, null_strategy: str = "ignore"
     ) -> Union["DataFrame", "pl.Series"]:
         """
         Aggregate the columns of this DataFrame to their sum value.
@@ -2554,7 +2554,7 @@ class DataFrame:
         ----------
         axis
             either 0 or 1
-        none_stategy
+        null_strategy
             {'ignore', 'propagate'}
             this argument is only used if axis == 1
 
@@ -2579,11 +2579,11 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.sum())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hsum(none_strategy))
+            return pl.eager.series.wrap_s(self._df.hsum(null_strategy))
         raise ValueError("Axis should be 0 or 1.")
 
     def mean(
-        self, axis: int = 0, none_strategy: str = "ignore"
+        self, axis: int = 0, null_strategy: str = "ignore"
     ) -> Union["DataFrame", "pl.Series"]:
         """
         Aggregate the columns of this DataFrame to their mean value.
@@ -2592,7 +2592,7 @@ class DataFrame:
         ----------
         axis
             either 0 or 1
-        none_stategy
+        null_strategy
             {'ignore', 'propagate'}
             this argument is only used if axis == 1
 
@@ -2617,7 +2617,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.mean())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hmean(none_strategy))
+            return pl.eager.series.wrap_s(self._df.hmean(null_strategy))
         raise ValueError("Axis should be 0 or 1.")
 
     def std(self) -> "DataFrame":

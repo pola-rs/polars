@@ -607,18 +607,18 @@ impl PySeries {
         self.series.drop_nulls().into()
     }
 
-    pub fn fill_none(&self, strategy: &str) -> PyResult<Self> {
+    pub fn fill_null(&self, strategy: &str) -> PyResult<Self> {
         let strat = match strategy {
-            "backward" => FillNoneStrategy::Backward,
-            "forward" => FillNoneStrategy::Forward,
-            "min" => FillNoneStrategy::Min,
-            "max" => FillNoneStrategy::Max,
-            "mean" => FillNoneStrategy::Mean,
-            "zero" => FillNoneStrategy::Zero,
-            "one" => FillNoneStrategy::One,
+            "backward" => FillNullStrategy::Backward,
+            "forward" => FillNullStrategy::Forward,
+            "min" => FillNullStrategy::Min,
+            "max" => FillNullStrategy::Max,
+            "mean" => FillNullStrategy::Mean,
+            "zero" => FillNullStrategy::Zero,
+            "one" => FillNullStrategy::One,
             s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
         };
-        let series = self.series.fill_none(strat).map_err(PyPolarsEr::from)?;
+        let series = self.series.fill_null(strat).map_err(PyPolarsEr::from)?;
         Ok(PySeries::new(series))
     }
 

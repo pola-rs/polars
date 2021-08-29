@@ -22,7 +22,7 @@ pub(crate) mod compare_inner;
 pub(crate) mod cum_agg;
 pub(crate) mod downcast;
 pub(crate) mod explode;
-pub(crate) mod fill_none;
+pub(crate) mod fill_null;
 pub(crate) mod filter;
 #[cfg(feature = "interpolate")]
 pub(crate) mod interpolate;
@@ -661,7 +661,7 @@ pub trait ChunkSort<T> {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum FillNoneStrategy {
+pub enum FillNullStrategy {
     /// previous value in array
     Backward,
     /// next value in array
@@ -683,21 +683,21 @@ pub enum FillNoneStrategy {
 }
 
 /// Replace None values with various strategies
-pub trait ChunkFillNone {
+pub trait ChunkFillNull {
     /// Replace None values with one of the following strategies:
     /// * Forward fill (replace None with the previous value)
     /// * Backward fill (replace None with the next value)
     /// * Mean fill (replace None with the mean of the whole array)
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
-    fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Self>
+    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self>
     where
         Self: Sized;
 }
 /// Replace None values with a value
-pub trait ChunkFillNoneValue<T> {
+pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.
-    fn fill_none_with_value(&self, value: T) -> Result<Self>
+    fn fill_null_with_values(&self, value: T) -> Result<Self>
     where
         Self: Sized;
 }

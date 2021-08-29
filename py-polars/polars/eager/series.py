@@ -1767,14 +1767,14 @@ class Series:
     def __deepcopy__(self, memodict={}) -> "Series":  # type: ignore
         return self.clone()
 
-    def fill_none(self, strategy: str) -> "Series":
+    def fill_null(self, strategy: str) -> "Series":
         """
         Fill null values with a filling strategy.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.fill_none('forward'))
+        >>> s.fill_null('forward'))
         shape: (4,)
         Series: '' [i64]
         [
@@ -1783,7 +1783,7 @@ class Series:
                 3
                 3
         ]
-        >>> s.fill_none('min'))
+        >>> s.fill_null('min'))
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -1804,7 +1804,7 @@ class Series:
                * "one"
                * "zero"
         """
-        return wrap_s(self._s.fill_none(strategy))
+        return wrap_s(self._s.fill_null(strategy))
 
     def round(self, decimals: int) -> "Series":
         """

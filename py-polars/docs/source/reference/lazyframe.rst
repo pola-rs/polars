@@ -50,7 +50,7 @@ Manipulation/ selection
     LazyFrame.tail
     LazyFrame.last
     LazyFrame.first
-    LazyFrame.fill_none
+    LazyFrame.fill_null
     LazyFrame.fill_nan
     LazyFrame.explode
     LazyFrame.drop_duplicates
