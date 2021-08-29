@@ -115,20 +115,20 @@ pub(crate) mod private {
 
         /// Get an array with the cumulative max computed at every element
         #[cfg(feature = "cum_agg")]
-        fn _cum_max(&self, _reverse: bool) -> Series {
-            panic!("operation cum_max not supported for this dtype")
+        fn _cummax(&self, _reverse: bool) -> Series {
+            panic!("operation cummax not supported for this dtype")
         }
 
         /// Get an array with the cumulative min computed at every element
         #[cfg(feature = "cum_agg")]
-        fn _cum_min(&self, _reverse: bool) -> Series {
-            panic!("operation cum_min not supported for this dtype")
+        fn _cummin(&self, _reverse: bool) -> Series {
+            panic!("operation cummin not supported for this dtype")
         }
 
         /// Get an array with the cumulative sum computed at every element
         #[cfg(feature = "cum_agg")]
-        fn _cum_sum(&self, _reverse: bool) -> Series {
-            panic!("operation cum_sum not supported for this dtype")
+        fn _cumsum(&self, _reverse: bool) -> Series {
+            panic!("operation cumsum not supported for this dtype")
         }
 
         #[cfg(feature = "asof_join")]
@@ -1553,10 +1553,10 @@ impl Series {
 
     /// Get an array with the cumulative max computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
-    pub fn cum_max(&self, _reverse: bool) -> Series {
+    pub fn cummax(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
-            self._cum_max(_reverse)
+            self._cummax(_reverse)
         }
         #[cfg(not(feature = "cum_agg"))]
         {
@@ -1566,10 +1566,10 @@ impl Series {
 
     /// Get an array with the cumulative min computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
-    pub fn cum_min(&self, _reverse: bool) -> Series {
+    pub fn cummin(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
-            self._cum_min(_reverse)
+            self._cummin(_reverse)
         }
         #[cfg(not(feature = "cum_agg"))]
         {
@@ -1579,15 +1579,15 @@ impl Series {
 
     /// Get an array with the cumulative sum computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
-    pub fn cum_sum(&self, _reverse: bool) -> Series {
+    pub fn cumsum(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
             match self.dtype() {
                 DataType::Boolean => self
                     .cast_with_dtype(&DataType::UInt32)
                     .unwrap()
-                    ._cum_sum(_reverse),
-                _ => self._cum_sum(_reverse),
+                    ._cumsum(_reverse),
+                _ => self._cumsum(_reverse),
             }
         }
         #[cfg(not(feature = "cum_agg"))]

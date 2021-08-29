@@ -282,14 +282,14 @@ impl PyExpr {
         self.clone().inner.pow(exponent).into()
     }
 
-    pub fn cum_sum(&self, reverse: bool) -> PyExpr {
-        self.clone().inner.cum_sum(reverse).into()
+    pub fn cumsum(&self, reverse: bool) -> PyExpr {
+        self.clone().inner.cumsum(reverse).into()
     }
-    pub fn cum_max(&self, reverse: bool) -> PyExpr {
-        self.clone().inner.cum_max(reverse).into()
+    pub fn cummax(&self, reverse: bool) -> PyExpr {
+        self.clone().inner.cummax(reverse).into()
     }
-    pub fn cum_min(&self, reverse: bool) -> PyExpr {
-        self.clone().inner.cum_min(reverse).into()
+    pub fn cummin(&self, reverse: bool) -> PyExpr {
+        self.clone().inner.cummin(reverse).into()
     }
 
     pub fn str_parse_date32(&self, fmt: Option<String>) -> PyExpr {

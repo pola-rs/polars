@@ -975,27 +975,27 @@ impl Expr {
 
     /// Get an array with the cumulative sum computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
-    pub fn cum_sum(self, reverse: bool) -> Self {
+    pub fn cumsum(self, reverse: bool) -> Self {
         self.apply(
-            move |s: Series| Ok(s.cum_sum(reverse)),
+            move |s: Series| Ok(s.cumsum(reverse)),
             GetOutput::same_type(),
         )
     }
 
     /// Get an array with the cumulative min computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
-    pub fn cum_min(self, reverse: bool) -> Self {
+    pub fn cummin(self, reverse: bool) -> Self {
         self.apply(
-            move |s: Series| Ok(s.cum_min(reverse)),
+            move |s: Series| Ok(s.cummin(reverse)),
             GetOutput::same_type(),
         )
     }
 
     /// Get an array with the cumulative max computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
-    pub fn cum_max(self, reverse: bool) -> Self {
+    pub fn cummax(self, reverse: bool) -> Self {
         self.apply(
-            move |s: Series| Ok(s.cum_max(reverse)),
+            move |s: Series| Ok(s.cummax(reverse)),
             GetOutput::same_type(),
         )
     }
