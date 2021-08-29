@@ -16,6 +16,7 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
+use crate::prelude::str_to_null_strategy;
 use crate::utils::{downsample_str_to_rule, str_to_polarstype};
 use crate::{
     arrow_interop,
@@ -24,7 +25,6 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
-use crate::prelude::str_to_null_strategy;
 
 #[pyclass]
 #[repr(transparent)]

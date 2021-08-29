@@ -54,8 +54,6 @@ __all__ = [
     "arange",
     "argsort_by",
     "concat_str",
-    "UDF",  # deprecated
-    "udf",  # deprecated
 ]
 
 
@@ -555,25 +553,6 @@ def quantile(column: str, quantile: float) -> "pl.Expr":
     Syntactic sugar for `column("foo").quantile(..)`.
     """
     return col(column).quantile(quantile)
-
-
-class UDF:
-    """
-    Deprecated: don't use me
-    """
-
-    def __init__(
-        self, f: Callable[["pl.Series"], "pl.Series"], return_dtype: Type[DataType]
-    ):
-        self.f = f
-        self.return_dtype = return_dtype
-
-
-def udf(f: Callable[["pl.Series"], "pl.Series"], return_dtype: Type[DataType]) -> UDF:
-    """
-    Deprecated: don't use me
-    """
-    return UDF(f, return_dtype)
 
 
 def arange(
