@@ -1003,7 +1003,7 @@ impl Expr {
     /// Fill missing value with next non-null.
     pub fn backward_fill(self) -> Self {
         self.apply(
-            move |s: Series| s.fill_none(FillNoneStrategy::Backward),
+            move |s: Series| s.fill_null(FillNullStrategy::Backward),
             GetOutput::same_type(),
         )
     }
@@ -1011,7 +1011,7 @@ impl Expr {
     /// Fill missing value with previous non-null.
     pub fn forward_fill(self) -> Self {
         self.apply(
-            move |s: Series| s.fill_none(FillNoneStrategy::Forward),
+            move |s: Series| s.fill_null(FillNullStrategy::Forward),
             GetOutput::same_type(),
         )
     }
@@ -1091,8 +1091,8 @@ impl Expr {
         }
     }
 
-    /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::fill_none).
-    pub fn fill_none(self, fill_value: Expr) -> Self {
+    /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::fill_null).
+    pub fn fill_null(self, fill_value: Expr) -> Self {
         map_binary_lazy_field(
             self,
             fill_value,

@@ -526,7 +526,7 @@ fn test_lazy_shift_and_fill_all() {
     let df = DataFrame::new(vec![Series::new("data", data)]).unwrap();
     let out = df
         .lazy()
-        .with_column(col("data").shift(1).fill_none(lit(0)).alias("output"))
+        .with_column(col("data").shift(1).fill_null(lit(0)).alias("output"))
         .collect()
         .unwrap();
     assert_eq!(
@@ -683,13 +683,13 @@ fn test_lazy_update_column() {
 }
 
 #[test]
-fn test_lazy_fill_none() {
+fn test_lazy_fill_null() {
     let df = df! {
         "a" => &[None, Some(2)],
         "b" => &[Some(1), None]
     }
     .unwrap();
-    let out = df.lazy().fill_none(lit(10.0)).collect().unwrap();
+    let out = df.lazy().fill_null(lit(10.0)).collect().unwrap();
     let correct = df! {
         "a" => &[Some(10.0), Some(2.0)],
         "b" => &[Some(1.0), Some(10.0)]

@@ -90,7 +90,7 @@ Manipulation/ selection
     DataFrame.select_at_idx
     DataFrame.clone
     DataFrame.get_columns
-    DataFrame.fill_none
+    DataFrame.fill_null
     DataFrame.fill_nan
     DataFrame.explode
     DataFrame.melt

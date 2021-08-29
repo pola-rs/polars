@@ -450,9 +450,9 @@ impl LazyFrame {
     }
 
     /// Fill none values in the DataFrame
-    pub fn fill_none(self, fill_value: Expr) -> LazyFrame {
+    pub fn fill_null(self, fill_value: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().fill_none(fill_value).build();
+        let lp = self.get_plan_builder().fill_null(fill_value).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

@@ -198,7 +198,7 @@ patch release to fix panic #1077
   - Make literals typed
 
 * bug fix
-  - Fix Expr.fill_none
+  - Fix Expr.fill_null
   - set offset in null buffers (fixes aggregation with null values)
 
 * performance

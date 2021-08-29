@@ -663,7 +663,7 @@ class LazyFrame:
         """
         return self.slice(0, 1)
 
-    def fill_none(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
+    def fill_null(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
         """
         Fill missing values
 
@@ -674,7 +674,7 @@ class LazyFrame:
         """
         if not isinstance(fill_value, Expr):
             fill_value = lit(fill_value)
-        return wrap_ldf(self._ldf.fill_none(fill_value._pyexpr))
+        return wrap_ldf(self._ldf.fill_null(fill_value._pyexpr))
 
     def fill_nan(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
         """
@@ -683,7 +683,7 @@ class LazyFrame:
         ..warning::
 
             NOTE that floating point NaN (No a Number) are not missing values!
-            to replace missing values, use `fill_none`.
+            to replace missing values, use `fill_null`.
 
 
         Parameters

@@ -794,7 +794,7 @@ pub trait SeriesTrait:
     /// * Max fill (replace None with the maximum of the whole array)
     ///
     /// *NOTE: If you want to fill the Nones with a value use the
-    /// [`fill_none` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkFillNone.html)*.
+    /// [`fill_null` operation on `ChunkedArray<T>`](../chunked_array/ops/trait.ChunkFillNull.html)*.
     ///
     /// # Example
     ///
@@ -803,26 +803,26 @@ pub trait SeriesTrait:
     /// fn example() -> Result<()> {
     ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
     ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Forward)?;
+    ///     let filled = s.fill_null(FillNullStrategy::Forward)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Backward)?;
+    ///     let filled = s.fill_null(FillNullStrategy::Backward)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
     ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Min)?;
+    ///     let filled = s.fill_null(FillNullStrategy::Min)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Max)?;
+    ///     let filled = s.fill_null(FillNullStrategy::Max)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
     ///
-    ///     let filled = s.fill_none(FillNoneStrategy::Mean)?;
+    ///     let filled = s.fill_null(FillNullStrategy::Mean)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
     ///     Ok(())
     /// }
     /// example();
     /// ```
-    fn fill_none(&self, _strategy: FillNoneStrategy) -> Result<Series> {
+    fn fill_null(&self, _strategy: FillNullStrategy) -> Result<Series> {
         unimplemented!()
     }
 
