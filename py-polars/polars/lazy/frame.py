@@ -19,7 +19,7 @@ except ImportError:
 
 from ..datatypes import DataType, pytype_to_polars_type
 from ..utils import _process_null_values
-from .expr import UDF, Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
+from .expr import Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
 
 __all__ = [
     "LazyFrame",
@@ -851,13 +851,13 @@ class LazyFrame:
 
     def map(
         self,
-        f: Union["UDF", Callable[["pl.DataFrame"], "pl.DataFrame"]],
+        f: Callable[["pl.DataFrame"], "pl.DataFrame"],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         no_optimizations: bool = False,
     ) -> "LazyFrame":
         """
-        Apply a custom UDF. It is important that the UDF returns a Polars DataFrame.
+        Apply a custom function. It is important that the function returns a Polars DataFrame.
 
         Parameters
         ----------
