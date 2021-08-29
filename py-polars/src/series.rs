@@ -216,16 +216,16 @@ impl PySeries {
         s.into()
     }
 
-    pub fn cum_sum(&self, reverse: bool) -> Self {
-        self.series.cum_sum(reverse).into()
+    pub fn cumsum(&self, reverse: bool) -> Self {
+        self.series.cumsum(reverse).into()
     }
 
-    pub fn cum_max(&self, reverse: bool) -> Self {
-        self.series.cum_max(reverse).into()
+    pub fn cummax(&self, reverse: bool) -> Self {
+        self.series.cummax(reverse).into()
     }
 
-    pub fn cum_min(&self, reverse: bool) -> Self {
-        self.series.cum_min(reverse).into()
+    pub fn cummin(&self, reverse: bool) -> Self {
+        self.series.cummin(reverse).into()
     }
 
     pub fn chunk_lengths(&self) -> Vec<usize> {

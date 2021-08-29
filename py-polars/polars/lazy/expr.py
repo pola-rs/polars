@@ -528,7 +528,7 @@ class Expr:
         """
         return self.filter(self.is_not_null())
 
-    def cum_sum(self, reverse: bool = False) -> "Expr":
+    def cumsum(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -537,9 +537,9 @@ class Expr:
         reverse
             Reverse the operation.
         """
-        return wrap_expr(self._pyexpr.cum_sum(reverse))
+        return wrap_expr(self._pyexpr.cumsum(reverse))
 
-    def cum_min(self, reverse: bool = False) -> "Expr":
+    def cummin(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative min computed at every element.
 
@@ -548,9 +548,9 @@ class Expr:
         reverse
             Reverse the operation.
         """
-        return wrap_expr(self._pyexpr.cum_min(reverse))
+        return wrap_expr(self._pyexpr.cummin(reverse))
 
-    def cum_max(self, reverse: bool = False) -> "Expr":
+    def cummax(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative max computed at every element.
 
@@ -559,7 +559,7 @@ class Expr:
         reverse
             Reverse the operation.
         """
-        return wrap_expr(self._pyexpr.cum_max(reverse))
+        return wrap_expr(self._pyexpr.cummax(reverse))
 
     def round(self, decimals: int) -> "Expr":
         """
@@ -1148,7 +1148,7 @@ class Expr:
         """
         Prints the value that this expression evaluates to and passes on the value.
 
-        >>> df.select(col("foo").cum_sum().inspect("value is: {}").alias("bar"))
+        >>> df.select(col("foo").cumsum().inspect("value is: {}").alias("bar"))
         """
 
         def inspect(s: "pl.Series") -> "pl.Series":

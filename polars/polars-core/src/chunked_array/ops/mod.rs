@@ -82,16 +82,16 @@ pub trait ChunkAnyValue {
 #[cfg(feature = "cum_agg")]
 pub trait ChunkCumAgg<T> {
     /// Get an array with the cumulative max computed at every element
-    fn cum_max(&self, _reverse: bool) -> ChunkedArray<T> {
-        panic!("operation cum_max not supported for this dtype")
+    fn cummax(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cummax not supported for this dtype")
     }
     /// Get an array with the cumulative min computed at every element
-    fn cum_min(&self, _reverse: bool) -> ChunkedArray<T> {
-        panic!("operation cum_min not supported for this dtype")
+    fn cummin(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cummin not supported for this dtype")
     }
     /// Get an array with the cumulative sum computed at every element
-    fn cum_sum(&self, _reverse: bool) -> ChunkedArray<T> {
-        panic!("operation cum_sum not supported for this dtype")
+    fn cumsum(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cumsum not supported for this dtype")
     }
 }
 

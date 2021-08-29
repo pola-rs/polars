@@ -85,9 +85,9 @@ Computations
 .. autosummary::
    :toctree: api/
 
-    Series.cum_sum
-    Series.cum_min
-    Series.cum_max
+    Series.cumsum
+    Series.cummin
+    Series.cummax
     Series.arg_sort
     Series.arg_true
     Series.arg_unique

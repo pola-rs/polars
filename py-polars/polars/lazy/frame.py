@@ -194,7 +194,7 @@ class LazyFrame:
         """
         Prints the value that this node in the computation graph evaluates to and passes on the value.
 
-        >>> (df.select(col("foo").cum_sum().alias("bar"))
+        >>> (df.select(col("foo").cumsum().alias("bar"))
         >>>    .inspect()  # print the node before the filter
         >>>    .filter(col("bar") == col("foo")))
         """

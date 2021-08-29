@@ -167,17 +167,17 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "cum_agg")]
-            fn _cum_max(&self, reverse: bool) -> Series {
-                physical_dispatch!(self, cum_max, reverse)
+            fn _cummax(&self, reverse: bool) -> Series {
+                physical_dispatch!(self, cummax, reverse)
             }
 
             #[cfg(feature = "cum_agg")]
-            fn _cum_min(&self, reverse: bool) -> Series {
-                physical_dispatch!(self, cum_min, reverse)
+            fn _cummin(&self, reverse: bool) -> Series {
+                physical_dispatch!(self, cummin, reverse)
             }
 
             #[cfg(feature = "cum_agg")]
-            fn _cum_sum(&self, _reverse: bool) -> Series {
+            fn _cumsum(&self, _reverse: bool) -> Series {
                 panic!("cannot sum dates")
             }
 

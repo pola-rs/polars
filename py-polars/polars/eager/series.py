@@ -788,7 +788,7 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cum_sum(self, reverse: bool = False) -> "Series":
+    def cumsum(self, reverse: bool = False) -> "Series":
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -800,7 +800,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cum_sum()
+        >>> s.cumsum()
         shape: (3,)
         Series: 'b' [i64]
         [
@@ -810,9 +810,9 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.cum_sum(reverse))
+        return wrap_s(self._s.cumsum(reverse))
 
-    def cum_min(self, reverse: bool = False) -> "Series":
+    def cummin(self, reverse: bool = False) -> "Series":
         """
         Get an array with the cumulative min computed at every element.
 
@@ -824,7 +824,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cum_min()
+        >>> s.cummin()
         shape: (3,)
         Series: 'b' [i64]
         [
@@ -834,9 +834,9 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.cum_min(reverse))
+        return wrap_s(self._s.cummin(reverse))
 
-    def cum_max(self, reverse: bool = False) -> "Series":
+    def cummax(self, reverse: bool = False) -> "Series":
         """
         Get an array with the cumulative max computed at every element.
 
@@ -848,7 +848,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cum_max()
+        >>> s.cummax()
         shape: (3,)
         Series: 'b' [i64]
         [
@@ -858,7 +858,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.cum_max(reverse))
+        return wrap_s(self._s.cummax(reverse))
 
     def limit(self, num_elements: int = 10) -> "Series":
         """
