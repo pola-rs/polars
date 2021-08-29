@@ -264,17 +264,6 @@ def test_shift():
     assert a.shift(-2) == [1, None, None]
 
 
-@pytest.mark.parametrize(
-    "dtype, fmt, null_values", [(Date32, "%d-%m-%Y", 0), (Date32, "%Y-%m-%d", 3)]
-)
-def test_parse_date(dtype, fmt, null_values):
-    dates = ["25-08-1988", "20-01-1993", "25-09-2020"]
-    result = pl.Series.parse_date("dates", dates, dtype, fmt)
-    # Why results Date64 into `nan`?
-    assert result.dtype == dtype
-    assert result.is_null().sum() == null_values
-
-
 def test_rolling():
     a = pl.Series("a", [1, 2, 3, 2, 1])
     assert a.rolling_min(2) == [None, 1, 2, 2, 1]

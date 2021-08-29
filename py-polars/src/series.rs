@@ -136,22 +136,6 @@ impl From<Series> for PySeries {
     }
 }
 
-macro_rules! parse_temporal_from_str_slice {
-    ($name:ident, $ca_type:ident) => {
-        #[pymethods]
-        impl PySeries {
-            #[staticmethod]
-            pub fn $name(name: &str, val: Vec<&str>, fmt: &str) -> Self {
-                let parsed = $ca_type::parse_from_str_slice(name, &val, fmt);
-                PySeries::new(parsed.into_series())
-            }
-        }
-    };
-}
-
-// TODO: add other temporals
-parse_temporal_from_str_slice!(parse_date32_from_str_slice, Date32Chunked);
-
 #[pymethods]
 #[allow(
     clippy::wrong_self_convention,
@@ -929,28 +913,6 @@ impl PySeries {
     pub fn timestamp(&self) -> PyResult<Self> {
         let ca = self.series.timestamp().map_err(PyPolarsEr::from)?;
         Ok(ca.into_series().into())
-    }
-
-    pub fn as_duration(&self) -> PyResult<Self> {
-        match self.series.dtype() {
-            DataType::Date64 => Ok(self
-                .series
-                .cast::<DurationMillisecondType>()
-                .unwrap()
-                .into_series()
-                .into()),
-            DataType::Date32 => {
-                let s = self.series.cast::<Date64Type>().unwrap() * 3600 * 24 * 1000;
-                Ok(s.cast::<DurationMillisecondType>()
-                    .unwrap()
-                    .into_series()
-                    .into())
-            }
-            _ => Err(PyPolarsEr::Other(
-                "Only date32 and date64 can be transformed as duration".into(),
-            )
-            .into()),
-        }
     }
 
     pub fn to_dummies(&self) -> PyResult<PyDataFrame> {

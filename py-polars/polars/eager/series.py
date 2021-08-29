@@ -235,32 +235,6 @@ class Series:
         """
         return cls._from_pyseries(pandas_to_pyseries(name, values))
 
-    @classmethod
-    def from_arrow(cls, name: str, array: pa.Array) -> "Series":
-        """
-        .. deprecated:: 0.8.13
-            `Series.from_arrow` will be removed in Polars 0.9.0. Use `pl.from_arrow`
-            instead, or call the Series constructor directly.
-
-        Create a Series from an arrow array.
-
-        Parameters
-        ----------
-        name
-            name of the Series.
-        array
-            Arrow array.
-        """
-        import warnings
-
-        warnings.warn(
-            "Series.from_arrow is deprecated, Use `pl.from_arrow` instead, "
-            "or call the Series constructor directly.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return cls._from_arrow(name, array)
-
     def inner(self) -> "PySeries":
         return self._s
 
@@ -1957,13 +1931,6 @@ class Series:
         """
         return wrap_s(self._s.zip_with(mask._s, other._s))
 
-    def as_duration(self) -> "Series":
-        """
-        .. deprecated::
-        If Series is a date32 or a date64 it can be turned into a duration.
-        """
-        return wrap_s(self._s.as_duration())
-
     def rolling_min(
         self,
         window_size: int,
@@ -2151,18 +2118,6 @@ class Series:
         return wrap_s(
             self._s.rolling_sum(window_size, weight, ignore_null, min_periods)
         )
-
-    @staticmethod
-    def parse_date(
-        name: str, values: Sequence[str], dtype: Type[DataType], fmt: str
-    ) -> "Series":
-        """
-        .. deprecated::
-        """
-        f = get_ffi_func("parse_<>_from_str_slice", dtype, PySeries)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(name, values, fmt))
 
     def sample(
         self,
