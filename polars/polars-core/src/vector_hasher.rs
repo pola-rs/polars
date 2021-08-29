@@ -1,5 +1,6 @@
 use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
+use crate::utils::arrow::array::Array;
 use crate::POOL;
 use ahash::RandomState;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
@@ -40,24 +41,77 @@ where
         let mut av = AlignedVec::with_capacity(self.len());
 
         self.downcast_iter().for_each(|arr| {
-            av.extend(arr.into_iter().map(|opt_v| {
+            av.extend(arr.values().as_slice().iter().map(|v| {
                 let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
+                v.hash(&mut hasher);
                 hasher.finish()
-            }))
+            }));
         });
+
+        // We need a random number that will be our null hash value
+        // just take the memory addresses and hash those
+        let null_h = av.as_ptr() as u64 ^ self as *const Self as u64;
+        let mut hasher = random_state.build_hasher();
+        null_h.hash(&mut hasher);
+        let null_h = hasher.finish();
+
+        let hashes = av.as_mut_slice();
+
+        let mut offset = 0;
+        self.downcast_iter().for_each(|arr| {
+            if let Some(validity) = arr.validity() {
+                validity
+                    .iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(valid, h)| {
+                        if !valid {
+                            *h = null_h;
+                        }
+                    })
+            }
+            offset += arr.len();
+        });
+
         av
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
-        self.apply_to_slice(
-            |opt_v, h| {
-                let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
-                boost_hash_combine(hasher.finish(), *h)
-            },
-            hashes,
-        )
+        // We need a random number that will be our null hash value
+        // just take the memory addresses and hash those
+        let null_h = hashes.as_ptr() as u64 ^ self as *const Self as u64;
+        let mut hasher = random_state.build_hasher();
+        null_h.hash(&mut hasher);
+        let null_h = hasher.finish();
+
+        let mut offset = 0;
+        self.downcast_iter().for_each(|arr| {
+            match arr.null_count() {
+                0 => arr
+                    .values()
+                    .as_slice()
+                    .iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(v, h)| {
+                        let mut hasher = random_state.build_hasher();
+                        v.hash(&mut hasher);
+                        *h = boost_hash_combine(hasher.finish(), *h)
+                    }),
+                _ => arr
+                    .iter()
+                    .zip(&mut hashes[offset..])
+                    .for_each(|(opt_v, h)| match opt_v {
+                        Some(v) => {
+                            let mut hasher = random_state.build_hasher();
+                            v.hash(&mut hasher);
+                            *h = boost_hash_combine(hasher.finish(), *h)
+                        }
+                        None => {
+                            *h = boost_hash_combine(null_h, *h);
+                        }
+                    }),
+            }
+            offset += arr.len();
+        });
     }
 }
 
