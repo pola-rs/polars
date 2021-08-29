@@ -537,8 +537,11 @@ where
                     // group tuples are in bounds
                     unsafe {
                         av.extend(idx.iter().map(|idx| *values.get_unchecked(*idx as usize)));
+
+                        // Safety:
+                        // the allocation of offsets is sufficiently large to fit all offset data
+                        offsets.push_unchecked(length_so_far);
                     }
-                    offsets.push(length_so_far);
                 });
                 let values = av.into_primitive_array::<T>(None);
 
