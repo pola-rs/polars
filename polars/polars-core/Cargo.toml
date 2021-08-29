@@ -65,7 +65,7 @@ mode = []
 extract_jsonpath = ["serde_json", "jsonpath_lib"]
 # allow groupby operation on list type
 groupby_list = []
-# cum_sum, cum_min, etc.
+# cumsum, cummin, etc.
 cum_agg = []
 # rolling window functions
 rolling_window = []

@@ -109,18 +109,18 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "cum_agg")]
-            fn _cum_max(&self, reverse: bool) -> Series {
-                self.0.cum_max(reverse).into_series()
+            fn _cummax(&self, reverse: bool) -> Series {
+                self.0.cummax(reverse).into_series()
             }
 
             #[cfg(feature = "cum_agg")]
-            fn _cum_min(&self, reverse: bool) -> Series {
-                self.0.cum_min(reverse).into_series()
+            fn _cummin(&self, reverse: bool) -> Series {
+                self.0.cummin(reverse).into_series()
             }
 
             #[cfg(feature = "cum_agg")]
-            fn _cum_sum(&self, reverse: bool) -> Series {
-                self.0.cum_sum(reverse).into_series()
+            fn _cumsum(&self, reverse: bool) -> Series {
+                self.0.cumsum(reverse).into_series()
             }
 
             #[cfg(feature = "asof_join")]

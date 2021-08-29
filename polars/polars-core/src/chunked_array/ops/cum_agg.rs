@@ -56,7 +56,7 @@ where
     T::Native: Bounded + PartialOrd + AddAssign + Add<Output = T::Native>,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    fn cum_max(&self, reverse: bool) -> ChunkedArray<T> {
+    fn cummax(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::min_value();
         let mut ca: Self = match reverse {
             false => self.into_iter().scan(init, det_max).collect(),
@@ -71,7 +71,7 @@ where
         }
     }
 
-    fn cum_min(&self, reverse: bool) -> ChunkedArray<T> {
+    fn cummin(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::max_value();
         let mut ca: Self = match reverse {
             false => self.into_iter().scan(init, det_min).collect(),
@@ -86,7 +86,7 @@ where
         }
     }
 
-    fn cum_sum(&self, reverse: bool) -> ChunkedArray<T> {
+    fn cumsum(&self, reverse: bool) -> ChunkedArray<T> {
         let init = None;
         let mut ca: Self = match reverse {
             false => self.into_iter().scan(init, det_sum).collect(),
@@ -115,29 +115,29 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_cum_max() {
+    fn test_cummax() {
         let ca = UInt8Chunked::new_from_opt_slice("foo", &[None, Some(1), Some(3), None, Some(1)]);
-        let out = ca.cum_max(true);
+        let out = ca.cummax(true);
         assert_eq!(Vec::from(&out), &[None, Some(3), Some(3), None, Some(1)]);
-        let out = ca.cum_max(false);
+        let out = ca.cummax(false);
         assert_eq!(Vec::from(&out), &[None, Some(1), Some(3), None, Some(3)]);
     }
 
     #[test]
-    fn test_cum_min() {
+    fn test_cummin() {
         let ca = UInt8Chunked::new_from_opt_slice("foo", &[None, Some(1), Some(3), None, Some(2)]);
-        let out = ca.cum_min(true);
+        let out = ca.cummin(true);
         assert_eq!(Vec::from(&out), &[None, Some(1), Some(2), None, Some(2)]);
-        let out = ca.cum_min(false);
+        let out = ca.cummin(false);
         assert_eq!(Vec::from(&out), &[None, Some(1), Some(1), None, Some(1)]);
     }
 
     #[test]
-    fn test_cum_sum() {
+    fn test_cumsum() {
         let ca = Int32Chunked::new_from_opt_slice("foo", &[None, Some(1), Some(3), None, Some(1)]);
-        let out = ca.cum_sum(true);
+        let out = ca.cumsum(true);
         assert_eq!(Vec::from(&out), &[None, Some(5), Some(4), None, Some(1)]);
-        let out = ca.cum_sum(false);
+        let out = ca.cumsum(false);
         assert_eq!(Vec::from(&out), &[None, Some(1), Some(4), None, Some(5)]);
 
         // just check if the trait bounds allow for floats
@@ -145,6 +145,6 @@ mod test {
             "foo",
             &[None, Some(1.0), Some(3.0), None, Some(1.0)],
         );
-        let _out = ca.cum_sum(false);
+        let _out = ca.cumsum(false);
     }
 }

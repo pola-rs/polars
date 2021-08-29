@@ -1121,7 +1121,7 @@ fn test_groupby_cumsum() -> Result<()> {
     let out = df
         .lazy()
         .groupby(vec![col("groups")])
-        .agg(vec![col("vals").cum_sum(false)])
+        .agg(vec![col("vals").cumsum(false)])
         .sort("groups", false)
         .collect()?;
 
@@ -1470,7 +1470,7 @@ fn test_cumsum_agg_as_key() -> Result<()> {
         .lazy()
         .groupby(vec![col("soil")
             .neq(col("soil").shift_and_fill(1, col("soil").first()))
-            .cum_sum(false)
+            .cumsum(false)
             .alias("key")])
         .agg(vec![col("depth").max().keep_name()])
         .sort("depth", false)

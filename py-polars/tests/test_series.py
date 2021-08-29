@@ -14,9 +14,9 @@ def create_series() -> pl.Series:
 
 def test_cum_agg():
     s = create_series()
-    assert s.cum_sum() == [1, 2]
-    assert s.cum_min() == [1, 1]
-    assert s.cum_max() == [1, 2]
+    assert s.cumsum() == [1, 2]
+    assert s.cummin() == [1, 1]
+    assert s.cummax() == [1, 2]
 
 
 def test_init_inputs():

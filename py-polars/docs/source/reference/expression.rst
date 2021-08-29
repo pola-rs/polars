@@ -102,9 +102,9 @@ Computations
 .. autosummary::
    :toctree: api/
 
-    Expr.cum_sum
-    Expr.cum_min
-    Expr.cum_max
+    Expr.cumsum
+    Expr.cummin
+    Expr.cummax
     Expr.dot
     Expr.mode
     Expr.n_unique
