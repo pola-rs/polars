@@ -15,6 +15,7 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::array::ArrayRef;
 use arrow::buffer::MutableBuffer;
+use polars_arrow::trusted_len::PushUnchecked;
 use std::convert::TryFrom;
 
 pub(crate) trait NumericAggSync {
@@ -541,8 +542,10 @@ where
                         list_values.extend_from_trusted_len_iter(
                             idx.iter().map(|idx| *values.get_unchecked(*idx as usize)),
                         );
+                        // Safety:
+                        // we know that offsets has allocated enough slots
+                        offsets.push_unchecked(length_so_far);
                     }
-                    offsets.push(length_so_far);
                 });
                 let array =
                     PrimitiveArray::from_data(T::get_dtype().to_arrow(), list_values.into(), None);
