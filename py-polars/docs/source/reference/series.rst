@@ -132,7 +132,7 @@ Manipulation/ selection
     Series.cast
     Series.round
     Series.set_at_idx
-    Series.fill_none
+    Series.fill_null
     Series.zip_with
     Series.interpolate
 

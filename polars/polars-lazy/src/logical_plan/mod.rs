@@ -1072,7 +1072,7 @@ impl LogicalPlanBuilder {
         }
     }
 
-    pub fn fill_none(self, fill_value: Expr) -> Self {
+    pub fn fill_null(self, fill_value: Expr) -> Self {
         let schema = self.0.schema();
         let exprs = schema
             .fields()

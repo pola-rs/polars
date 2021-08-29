@@ -648,8 +648,8 @@ macro_rules! impl_dyn_series {
                 physical_dispatch!(self, shift, periods)
             }
 
-            fn fill_none(&self, strategy: FillNoneStrategy) -> Result<Series> {
-                try_physical_dispatch!(self, fill_none, strategy)
+            fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
+                try_physical_dispatch!(self, fill_null, strategy)
             }
 
             fn sum_as_series(&self) -> Series {

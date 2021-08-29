@@ -24,7 +24,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
-use crate::prelude::str_to_none_strategy;
+use crate::prelude::str_to_null_strategy;
 
 #[pyclass]
 #[repr(transparent)]
@@ -366,18 +366,18 @@ impl PyDataFrame {
         format!("{:?}", self.df)
     }
 
-    pub fn fill_none(&self, strategy: &str) -> PyResult<Self> {
+    pub fn fill_null(&self, strategy: &str) -> PyResult<Self> {
         let strat = match strategy {
-            "backward" => FillNoneStrategy::Backward,
-            "forward" => FillNoneStrategy::Forward,
-            "min" => FillNoneStrategy::Min,
-            "max" => FillNoneStrategy::Max,
-            "mean" => FillNoneStrategy::Mean,
-            "one" => FillNoneStrategy::One,
-            "zero" => FillNoneStrategy::Zero,
+            "backward" => FillNullStrategy::Backward,
+            "forward" => FillNullStrategy::Forward,
+            "min" => FillNullStrategy::Min,
+            "max" => FillNullStrategy::Max,
+            "mean" => FillNullStrategy::Mean,
+            "one" => FillNullStrategy::One,
+            "zero" => FillNullStrategy::Zero,
             s => return Err(PyPolarsEr::Other(format!("Strategy {} not supported", s)).into()),
         };
-        let df = self.df.fill_none(strat).map_err(PyPolarsEr::from)?;
+        let df = self.df.fill_null(strat).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -802,8 +802,8 @@ impl PyDataFrame {
         self.df.median().into()
     }
 
-    pub fn hmean(&self, none_stategy: &str) -> PyResult<Option<PySeries>> {
-        let strategy = str_to_none_strategy(none_stategy)?;
+    pub fn hmean(&self, null_strategy: &str) -> PyResult<Option<PySeries>> {
+        let strategy = str_to_null_strategy(null_strategy)?;
         let s = self.df.hmean(strategy).map_err(PyPolarsEr::from)?;
         Ok(s.map(|s| s.into()))
     }
@@ -818,8 +818,8 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hsum(&self, none_strategy: &str) -> PyResult<Option<PySeries>> {
-        let strategy = str_to_none_strategy(none_strategy)?;
+    pub fn hsum(&self, null_strategy: &str) -> PyResult<Option<PySeries>> {
+        let strategy = str_to_null_strategy(null_strategy)?;
         let s = self.df.hsum(strategy).map_err(PyPolarsEr::from)?;
         Ok(s.map(|s| s.into()))
     }

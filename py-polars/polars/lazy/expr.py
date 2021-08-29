@@ -706,12 +706,12 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.shift_and_fill(periods, fill_value._pyexpr))
 
-    def fill_none(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
+    def fill_null(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
         """
         Fill none value with a fill value
         """
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
-        return wrap_expr(self._pyexpr.fill_none(fill_value._pyexpr))
+        return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
 
     def forward_fill(self) -> "Expr":
         """

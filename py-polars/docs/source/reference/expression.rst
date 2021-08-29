@@ -139,7 +139,7 @@ Manipulation/ selection
     Expr.take
     Expr.shift
     Expr.shift_and_fill
-    Expr.fill_none
+    Expr.fill_null
     Expr.forward_fill
     Expr.backward_fill
     Expr.reverse
