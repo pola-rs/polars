@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import numpy as np
 import pytest
 
@@ -522,3 +524,10 @@ def test_ufunc():
     df = pl.DataFrame({"a": [1, 2]})
     out = df.select(np.log(col("a")))
     assert out["a"][1] == 0.6931471805599453
+
+
+def test_datetime_consistency():
+    dt = datetime(2021, 1, 1)
+    df = pl.DataFrame({"date": [dt]})
+    df["date"].dt[0] == dt
+    df.select(lit(dt))["literal"].dt[0] == dt
