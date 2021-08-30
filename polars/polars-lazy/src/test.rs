@@ -1762,3 +1762,18 @@ fn test_groupby_small_ints() -> Result<()> {
     assert_eq!(Vec::from(out.column("foo")?.i16()?), &[Some(2), Some(1)]);
     Ok(())
 }
+
+#[test]
+fn test_when_then_schema() -> Result<()> {
+    let df = fruits_cars();
+
+    let schema = df
+        .lazy()
+        .select(vec![when(col("A").gt(lit(1)))
+            .then(Null {}.lit())
+            .otherwise(col("A"))])
+        .schema();
+    assert_ne!(schema.fields()[0].data_type(), &DataType::Null);
+
+    Ok(())
+}
