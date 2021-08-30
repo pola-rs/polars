@@ -330,15 +330,16 @@ impl DataFrame {
             ));
         };
 
-        // make sure that categorical is used as uint32 in value type
+        use DataType::*;
+        // make sure that categorical and small integers are used as uint32 in value type
         let keys_df = DataFrame::new(
             by.iter()
                 .map(|s| match s.dtype() {
-                    DataType::Categorical => s.cast::<UInt32Type>().unwrap(),
-                    DataType::Float32 => s.bit_repr_small().into_series(),
+                    Categorical | Int8 | UInt8 | Int16 | UInt16 => s.cast::<UInt32Type>().unwrap(),
+                    Float32 => s.bit_repr_small().into_series(),
                     // otherwise we use the vec hash for float
                     #[cfg(feature = "dtype-u64")]
-                    DataType::Float64 => s.bit_repr_large().into_series(),
+                    Float64 => s.bit_repr_large().into_series(),
                     _ => {
                         // is date like
                         if !s.is_numeric() && s.is_numeric_physical() {
