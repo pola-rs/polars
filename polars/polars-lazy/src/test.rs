@@ -1743,3 +1743,22 @@ fn test_filter_count() -> Result<()> {
     assert_eq!(out.column("fruits")?.u32()?.get(0), Some(3));
     Ok(())
 }
+
+#[test]
+fn test_groupby_small_ints() -> Result<()> {
+    let df = df![
+        "id_32" => [1i32, 2],
+        "id_16" => [1i16, 2]
+    ]?;
+
+    // https://github.com/pola-rs/polars/issues/1255
+    let out = df
+        .lazy()
+        .groupby(vec![col("id_16"), col("id_32")])
+        .agg(vec![col("id_16").sum().alias("foo")])
+        .sort("foo", true)
+        .collect()?;
+
+    assert_eq!(Vec::from(out.column("foo")?.i16()?), &[Some(2), Some(1)]);
+    Ok(())
+}
