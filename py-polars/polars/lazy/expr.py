@@ -1384,6 +1384,19 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rank(method))
 
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":  # type: ignore
+        """
+        Calculate the n-th discrete difference.
+
+        Parameters
+        ----------
+        n
+            number of slots to shift
+        null_behavior
+            {'ignore', 'drop'}
+        """
+        return wrap_expr(self._pyexpr.diff(n, null_behavior))
+
 
 class ExprListNameSpace:
     """

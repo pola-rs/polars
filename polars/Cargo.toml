@@ -89,6 +89,7 @@ rolling_window = ["polars-core/rolling_window", "polars-lazy/rolling_window"]
 interpolate = ["polars-core/interpolate", "polars-lazy/interpolate"]
 list = ["polars-core/list"]
 rank = ["polars-core/rank", "polars-lazy/rank"]
+diff = ["polars-core/diff", "polars-lazy/diff"]
 
 # don't use this
 private = []
@@ -158,7 +159,8 @@ docs-selection = [
     "extract_jsonpath",
     "cum_agg",
     "rolling_window",
-    "interpolate"
+    "interpolate",
+    "diff"
 ]
 
 [dependencies]
