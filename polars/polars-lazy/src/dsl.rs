@@ -16,6 +16,7 @@ use std::{
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
 use polars_core::frame::select::Selection;
+#[cfg(feature = "diff")]
 use polars_core::series::ops::diff::NullBehavior;
 use polars_core::utils::get_supertype;
 
