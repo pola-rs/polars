@@ -73,6 +73,7 @@ interpolate = []
 # additional list utils
 list = []
 rank = []
+diff = []
 
 
 # opt-in datatypes for Series
@@ -117,7 +118,8 @@ docs-selection = [
     "extract_jsonpath",
     "cum_agg",
     "rolling_window",
-    "interpolate"
+    "interpolate",
+    "diff"
 ]
 
 [dependencies]

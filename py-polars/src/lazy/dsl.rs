@@ -8,6 +8,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
+use crate::conversion::str_to_null_behavior;
 
 fn call_lambda_with_series(
     py: Python,
@@ -822,6 +823,11 @@ impl PyExpr {
     fn rank(&self, method: &str) -> Self {
         let method = str_to_rankmethod(method).unwrap();
         self.inner.clone().rank(method).into()
+    }
+
+    fn diff(&self, n: usize, null_behavior: &str) -> Self {
+        let null_behavior = str_to_null_behavior(null_behavior).unwrap();
+        self.inner.clone().diff(n, null_behavior).into()
     }
 }
 
