@@ -59,6 +59,16 @@ __all__ = [
 ]
 
 
+def match_dtype(value: Any, dtype: "Type[DataType]") -> Any:
+    """
+    In right hand side operation, make sure that the operand is coerced to the Series dtype
+    """
+    if dtype == Float32 or dtype == Float64:
+        return float(value)
+    else:
+        return int(value)
+
+
 def get_ffi_func(
     name: str,
     dtype: Type["DataType"],
@@ -377,6 +387,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.rem(self._s))
         dtype = dtype_to_primitive(self.dtype)
+        other = match_dtype(other, dtype)
         f = get_ffi_func("rem_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
@@ -386,6 +397,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
         dtype = dtype_to_primitive(self.dtype)
+        other = match_dtype(other, dtype)
         f = get_ffi_func("add_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
@@ -395,6 +407,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.sub(self._s))
         dtype = dtype_to_primitive(self.dtype)
+        other = match_dtype(other, dtype)
         f = get_ffi_func("sub_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
@@ -406,7 +419,6 @@ class Series:
         return NotImplemented
 
     def __rtruediv__(self, other: Any) -> np.ndarray:
-
         primitive = dtype_to_primitive(self.dtype)
         if self.dtype != primitive:
             self.__rfloordiv__(other)
@@ -421,6 +433,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.div(self._s))
         dtype = dtype_to_primitive(self.dtype)
+        other = match_dtype(other, dtype)
         f = get_ffi_func("div_<>_rhs", dtype, self._s)
         if f is None:
             return NotImplemented
@@ -430,6 +443,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
         dtype = dtype_to_primitive(self.dtype)
+        other = match_dtype(other, dtype)
         f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
             return NotImplemented
