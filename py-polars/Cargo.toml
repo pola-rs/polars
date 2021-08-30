@@ -69,7 +69,8 @@ features = [
     "rolling_window",
     "interpolate",
     "list",
-    "rank"
+    "rank",
+    "diff"
 ]
 
 #[patch.crates-io]

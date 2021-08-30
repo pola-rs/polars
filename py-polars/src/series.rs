@@ -1124,6 +1124,11 @@ impl PySeries {
         let method = str_to_rankmethod(method)?;
         Ok(self.series.rank(method).into())
     }
+
+    pub fn diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
+        let null_behavior = str_to_null_behavior(null_behavior)?;
+        Ok(self.series.diff(n, null_behavior).into())
+    }
 }
 
 macro_rules! impl_ufuncs {

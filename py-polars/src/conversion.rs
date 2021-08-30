@@ -15,6 +15,7 @@ use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use polars::series::ops::diff::NullBehavior;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -288,6 +289,19 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<AlignedVec<
         }
         Ok(Wrap(v))
     }
+}
+
+pub(crate) fn str_to_null_behavior(null_behavior: &str) -> PyResult<NullBehavior> {
+    let null_behavior = match null_behavior {
+        "drop" => NullBehavior::Drop,
+        "ignore" => NullBehavior::Ignore,
+        _ => {
+            return Err(PyValueError::new_err(
+                "use one of 'drop', 'ignore'".to_string(),
+            ))
+        }
+    };
+    Ok(null_behavior)
 }
 
 pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
