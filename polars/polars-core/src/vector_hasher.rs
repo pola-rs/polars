@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::utils::arrow::array::Array;
 use crate::POOL;
 use ahash::RandomState;
+use arrow::bitmap::utils::get_bit_unchecked;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -65,8 +66,9 @@ where
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
             if let Some(validity) = arr.validity() {
-                validity
-                    .iter()
+                let slice = validity.as_slice().0;
+                (0..validity.len())
+                    .map(|i| unsafe { get_bit_unchecked(slice, i) })
                     .zip(&mut hashes[offset..])
                     .for_each(|(valid, h)| {
                         if !valid {
