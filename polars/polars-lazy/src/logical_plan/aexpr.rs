@@ -288,7 +288,15 @@ impl AExpr {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                 Ok(Field::new(field.name(), data_type.clone()))
             }
-            Ternary { truthy, .. } => arena.get(*truthy).to_field(schema, ctxt, arena),
+            Ternary { truthy, falsy, .. } => {
+                let truthy = arena.get(*truthy).to_field(schema, ctxt, arena)?;
+                if let DataType::Null = *truthy.data_type() {
+                    let falsy = arena.get(*falsy).to_field(schema, ctxt, arena)?;
+                    Ok(Field::new(truthy.name(), falsy.data_type().clone()))
+                } else {
+                    Ok(truthy)
+                }
+            }
             Function {
                 output_type, input, ..
             } => {
