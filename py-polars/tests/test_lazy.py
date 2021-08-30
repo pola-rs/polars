@@ -516,3 +516,9 @@ def test_arithmetic():
         }
     )
     assert out.frame_equal(expected)
+
+
+def test_ufunc():
+    df = pl.DataFrame({"a": [1, 2]})
+    out = df.select(np.log(col("a")))
+    assert out["a"][1] == 0.6931471805599453
