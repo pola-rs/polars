@@ -103,6 +103,12 @@ def test_arithmetic():
     assert ((a % 1) == [0, 0]).sum() == 2
     # negate
     assert (-a == [-1, -2]).sum() == 2
+    # wrong dtypes in rhs operands
+    assert ((1.0 - a) == [0, -1]).sum() == 2
+    assert ((1.0 / a) == [1.0, 0.5]).sum() == 2
+    assert ((1.0 * a) == [1, 2]).sum() == 2
+    assert ((1.0 + a) == [2, 3]).sum() == 2
+    assert ((1.0 % a) == [0, 1]).sum() == 2
 
 
 def test_various():
