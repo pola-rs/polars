@@ -118,7 +118,8 @@ Computations
     Expr.rolling_apply
     Expr.hash
     Expr.abs
-    Series.rank
+    Expr.rank
+    Expr.diff
 
 Manipulation/ selection
 -----------------------

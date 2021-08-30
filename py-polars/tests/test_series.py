@@ -488,7 +488,17 @@ def test_jsonpath_single():
 def test_rank_dispatch():
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
-    assert s.rank("dense") == [2, 3, 4, 3, 3, 4, 1]
+    assert list(s.rank("dense")) == [2, 3, 4, 3, 3, 4, 1]
 
     df = pl.DataFrame([s])
     df.select(pl.col("a").rank("dense"))["a"] == [2, 3, 4, 3, 3, 4, 1]
+
+
+def test_diff_dispatch():
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+    expected = [1, 1, -1, 0, 1, -3]
+
+    assert list(s.diff(null_behavior="drop")) == expected
+
+    df = pl.DataFrame([s])
+    assert df.select(pl.col("a").diff())["a"].to_list() == [None, 1, 1, -1, 0, 1, -3]
