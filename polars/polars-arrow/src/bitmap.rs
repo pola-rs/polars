@@ -4,13 +4,13 @@ use arrow::bitmap::Bitmap;
 
 pub trait AddIterBitmap {
     /// constructs a new iterator
-    fn iter(&self) -> BitmapIter<'_>;
+    fn iter(&self, len: usize) -> BitmapIter<'_>;
 }
 
 impl AddIterBitmap for Bitmap {
-    fn iter(&self) -> BitmapIter<'_> {
+    fn iter(&self, len: usize) -> BitmapIter<'_> {
         let slice = self.buffer_ref().as_slice();
-        BitmapIter::new(slice, 0, self.len())
+        BitmapIter::new(slice, 0, len)
     }
 }
 

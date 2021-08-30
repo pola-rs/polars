@@ -68,7 +68,7 @@ where
         self.downcast_iter().for_each(|arr| {
             if let Some(validity) = arr.data_ref().null_bitmap() {
                 validity
-                    .iter()
+                    .iter(arr.len())
                     .zip(&mut hashes[offset..])
                     .for_each(|(valid, h)| {
                         if !valid {
