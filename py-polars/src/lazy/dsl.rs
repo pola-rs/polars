@@ -1,3 +1,4 @@
+use crate::conversion::str_to_null_behavior;
 use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::str_to_rankmethod;
 use crate::series::PySeries;
@@ -8,7 +9,6 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
-use crate::conversion::str_to_null_behavior;
 
 fn call_lambda_with_series(
     py: Python,

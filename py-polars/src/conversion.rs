@@ -6,6 +6,7 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
 use polars::frame::NullStrategy;
 use polars::prelude::AnyValue;
+use polars::series::ops::diff::NullBehavior;
 use polars_core::utils::arrow::datatypes::ArrowNativeType;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
@@ -15,7 +16,6 @@ use pyo3::types::PySequence;
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use polars::series::ops::diff::NullBehavior;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
