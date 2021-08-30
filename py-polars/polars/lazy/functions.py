@@ -22,7 +22,7 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-from ..datatypes import DataType, Date64, Int64
+from ..datatypes import DataType, Int64
 
 __all__ = [
     "col",
@@ -388,7 +388,7 @@ def lit(
     >>> lit(Series("a", [1, 2, 3])
     """
     if isinstance(value, datetime):
-        return lit(int(value.timestamp() * 1e3)).cast(Date64)
+        return lit(pl.Series("literal", [value]))
 
     if isinstance(value, pl.Series):
         name = value.name
