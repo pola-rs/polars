@@ -331,6 +331,8 @@ def test_assignment():
     df["foo"] = df["foo"]
     # make sure that assignment does not change column order
     assert df.columns == ["foo", "bar"]
+    df[df["foo"] > 1, "foo"] = 9
+    df["foo"].to_list() == [1, 9, 9]
 
 
 def test_slice():

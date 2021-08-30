@@ -163,6 +163,25 @@ class Expr:
     def __neg__(self) -> "Expr":
         return pl.lit(0) - self  # type: ignore
 
+    def __array_ufunc__(
+        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+    ) -> "Expr":
+        """
+        Numpy universal functions.
+        """
+        out_type = ufunc(np.array([1])).dtype
+        if "float" in str(out_type):
+            dtype = pl.Float64  # type: ignore
+        else:
+            dtype = None  # type: ignore
+
+        def function(s: "pl.Series") -> "pl.Series":
+            return ufunc(s, **kwargs)
+
+        if "dtype" in kwargs:
+            return self.map(function, return_dtype=kwargs["dtype"])
+        return self.map(function, return_dtype=dtype)
+
     def alias(self, name: str) -> "Expr":
         """
         Rename the output of an expression.
