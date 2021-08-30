@@ -16,6 +16,7 @@ use std::{
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
 use polars_core::frame::select::Selection;
+use polars_core::series::ops::diff::NullBehavior;
 use polars_core::utils::get_supertype;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
@@ -1487,6 +1488,15 @@ impl Expr {
                 RankMethod::Average => Field::new(fld.name(), DataType::Float32),
                 _ => Field::new(fld.name(), DataType::UInt32),
             }),
+        )
+    }
+
+    #[cfg(feature = "diff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
+    pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
+        self.apply(
+            move |s| Ok(s.diff(n, null_behavior)),
+            GetOutput::same_type(),
         )
     }
 }

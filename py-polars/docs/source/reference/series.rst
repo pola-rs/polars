@@ -103,6 +103,7 @@ Computations
     Series.dot
     Series.abs
     Series.rank
+    Series.diff
 
 Manipulation/ selection
 -----------------------

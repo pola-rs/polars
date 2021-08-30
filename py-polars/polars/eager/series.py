@@ -2378,6 +2378,19 @@ class Series:
         """
         return wrap_s(self._s.rank(method))
 
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":  # type: ignore
+        """
+        Calculate the n-th discrete difference.
+
+        Parameters
+        ----------
+        n
+            number of slots to shift
+        null_behavior
+            {'ignore', 'drop'}
+        """
+        return wrap_s(self._s.diff(n, null_behavior))
+
 
 class StringNameSpace:
     """

@@ -6,6 +6,7 @@ pub(crate) mod arithmetic;
 mod comparison;
 pub mod implementations;
 pub(crate) mod iterator;
+pub mod ops;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -1663,7 +1664,7 @@ impl Series {
     }
 
     #[cfg(feature = "rank")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
     pub fn rank(&self, method: RankMethod) -> Series {
         rank(self, method)
     }
