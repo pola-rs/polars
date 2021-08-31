@@ -5,8 +5,8 @@ use crate::POOL;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
-use itertools::Itertools;
 use polars_arrow::bitmap::AddIterBitmap;
+use polars_arrow::utils::CustomIterTools;
 use rayon::prelude::*;
 use std::convert::TryInto;
 use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
@@ -406,7 +406,7 @@ pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
 ) -> Vec<HashMap<T, Vec<u32>, RandomState>>
 where
-    I: Iterator<Item = T> + Send,
+    I: Iterator<Item = T> + Send + TrustedLen,
     T: Send + Hash + Eq + Sync + Copy,
 {
     let n_partitions = iters.len();
@@ -469,6 +469,7 @@ pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
 ) -> (Vec<Vec<(u64, T)>>, RandomState)
 where
     I: IntoIterator<Item = T> + Send,
+    I::IntoIter: TrustedLen,
     T: Send + Hash + Eq,
 {
     let build_hasher = build_hasher.unwrap_or_default();
@@ -483,7 +484,7 @@ where
                         val.hash(&mut hasher);
                         (hasher.finish(), val)
                     })
-                    .collect_vec()
+                    .collect_trusted::<Vec<_>>()
             })
             .collect()
     });
