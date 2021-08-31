@@ -1,4 +1,5 @@
 mod multiple_keys;
+use polars_arrow::utils::CustomIterTools;
 
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
@@ -373,8 +374,8 @@ fn hash_join_tuples_outer<T, I, J>(
     swap: bool,
 ) -> Vec<(Option<u32>, Option<u32>)>
 where
-    I: Iterator<Item = T> + Send,
-    J: Iterator<Item = T> + Send,
+    I: Iterator<Item = T> + Send + TrustedLen,
+    J: Iterator<Item = T> + Send + TrustedLen,
     T: Hash + Eq + Copy + Sync + Send,
 {
     // This function is partially multi-threaded.
@@ -594,11 +595,11 @@ where
         (0, 0, _, _) => {
             let keys_a = splitted_a
                 .iter()
-                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
+                .map(|ca| ca.into_no_null_iter().collect_trusted::<Vec<_>>())
                 .collect::<Vec<_>>();
             let keys_b = splitted_b
                 .iter()
-                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
+                .map(|ca| ca.into_no_null_iter().collect_trusted::<Vec<_>>())
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
         }
@@ -609,7 +610,8 @@ where
                     ca.downcast_iter()
                         .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .flatten()
-                        .collect::<Vec<_>>()
+                        .trust_my_length(ca.len())
+                        .collect_trusted::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
 
@@ -619,7 +621,8 @@ where
                     ca.downcast_iter()
                         .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .flatten()
-                        .collect::<Vec<_>>()
+                        .trust_my_length(ca.len())
+                        .collect_trusted::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
@@ -627,11 +630,19 @@ where
         _ => {
             let keys_a = splitted_a
                 .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|v| v.as_u64())
+                        .collect_trusted::<Vec<_>>()
+                })
                 .collect::<Vec<_>>();
             let keys_b = splitted_b
                 .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|v| v.as_u64())
+                        .collect_trusted::<Vec<_>>()
+                })
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
         }
@@ -857,8 +868,14 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
             _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
         }
