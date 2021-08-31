@@ -1003,12 +1003,13 @@ impl DataFrame {
                 }
             }
         };
-        if std::env::var("POLARS_VERT_PAR").is_ok() {
-            return Ok(unsafe { self.take_unchecked_vectical(&take) });
-        }
         // Safety:
         // the created indices are in bounds
-        let mut df = unsafe { self.take_unchecked(&take) };
+        let mut df = if std::env::var("POLARS_VERT_PAR").is_ok() {
+            unsafe { self.take_unchecked_vectical(&take) }
+        } else {
+            unsafe { self.take_unchecked(&take) }
+        };
         // Mark the first sort column as sorted
         df.apply(first_by_column, |s| {
             let mut s = s.clone();
