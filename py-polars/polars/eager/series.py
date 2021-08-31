@@ -550,7 +550,7 @@ class Series:
         """
         return DTYPES[self._s.dtype()]
 
-    def describe(self) -> Dict[str, Union[int, float]]:
+    def describe(self) -> "pl.DataFrame":
         """
         Quick summary statistics of a series. Series with mixed datatypes will return summary statistics for the datatype of the first value.
 
@@ -600,7 +600,7 @@ class Series:
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
         elif self.is_numeric():
-            self = self.cast(float)
+            self = self.cast(pl.Float64)
             _ = {
                 "min": self.min(),
                 "max": self.max(),
