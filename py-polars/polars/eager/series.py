@@ -632,7 +632,7 @@ class Series:
             raise TypeError("This type is not supported")
 
         return pl.DataFrame(
-            {f"Describe {self.name}": list(_.keys()), None: list(_.values())}
+            {f"statistic": list(_.keys()), "value": list(_.values())}
         )
 
     def sum(self) -> Union[int, float]:
