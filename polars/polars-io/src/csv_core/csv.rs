@@ -284,6 +284,7 @@ impl<'a> CoreReader<'a> {
 
                             let local_bytes = &bytes[read..stop_at_nbytes];
 
+                            last_read = read;
                             read = parse_lines(
                                 local_bytes,
                                 read,
@@ -296,8 +297,8 @@ impl<'a> CoreReader<'a> {
                                 self.encoding,
                                 chunk_size,
                             )?;
-                            last_read = read;
 
+                            self.may_parse_last_line(read, bytes, projection, &mut buffers)?;
                             let mut local_df = DataFrame::new_no_checks(
                                 buffers.into_iter().map(|buf| buf.into_series()).collect(),
                             );
@@ -391,6 +392,7 @@ impl<'a> CoreReader<'a> {
                             }
                             let local_bytes = &bytes[read..stop_at_nbytes];
 
+                            last_read = read;
                             read = parse_lines(
                                 local_bytes,
                                 read,
@@ -405,7 +407,6 @@ impl<'a> CoreReader<'a> {
                                 // less calls if we increase the size
                                 chunk_size * 320000,
                             )?;
-                            last_read = read;
                         }
                         self.may_parse_last_line(read, bytes, projection, &mut buffers)?;
                         Ok(DataFrame::new_no_checks(
