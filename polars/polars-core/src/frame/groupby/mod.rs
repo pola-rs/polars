@@ -4,7 +4,9 @@ use crate::frame::select::Selection;
 use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
-use crate::utils::{accumulate_dataframes_vertical, set_partition_size, split_ca, NoNull};
+use crate::utils::{
+    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca, NoNull,
+};
 use crate::vector_hasher::{AsU64, StrHash};
 use crate::POOL;
 use ahash::RandomState;
@@ -200,18 +202,18 @@ fn pack_u32_tuples(opt_l: Option<u32>, opt_r: Option<u32>) -> [u8; 9] {
     match (opt_l, opt_r) {
         (Some(l), Some(r)) => {
             // write to first 4 places
-            (&mut s[..4]).copy_from_slice(&l.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
             // write to second chunk of 4 places
-            (&mut s[4..8]).copy_from_slice(&r.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..8]) }
             // leave last byte as is
         }
         (Some(l), None) => {
-            (&mut s[..4]).copy_from_slice(&l.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
             // set right null bit
             s[8] = 1;
         }
         (None, Some(r)) => {
-            (&mut s[4..8]).copy_from_slice(&r.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..8]) }
             // set left null bit
             s[8] = 1 << 1;
         }
@@ -235,18 +237,18 @@ fn pack_u64_tuples(opt_l: Option<u64>, opt_r: Option<u64>) -> [u8; 17] {
     match (opt_l, opt_r) {
         (Some(l), Some(r)) => {
             // write to first 4 places
-            (&mut s[..8]).copy_from_slice(&l.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..8]) }
             // write to second chunk of 4 places
-            (&mut s[8..16]).copy_from_slice(&r.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[8..16]) }
             // leave last byte as is
         }
         (Some(l), None) => {
-            (&mut s[..8]).copy_from_slice(&l.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..8]) }
             // set right null bit
             s[16] = 1;
         }
         (None, Some(r)) => {
-            (&mut s[8..16]).copy_from_slice(&r.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[8..16]) }
             // set left null bit
             s[16] = 1 << 1;
         }
@@ -270,18 +272,18 @@ fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
     match (opt_l, opt_r) {
         (Some(l), Some(r)) => {
             // write to first 4 places
-            (&mut s[..4]).copy_from_slice(&l.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
             // write to second chunk of 4 places
-            (&mut s[4..12]).copy_from_slice(&r.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..12]) }
             // leave last byte as is
         }
         (Some(l), None) => {
-            (&mut s[..4]).copy_from_slice(&l.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
             // set right null bit
             s[12] = 1;
         }
         (None, Some(r)) => {
-            (&mut s[4..12]).copy_from_slice(&r.to_ne_bytes());
+            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..12]) }
             // set left null bit
             s[12] = 1 << 1;
         }
