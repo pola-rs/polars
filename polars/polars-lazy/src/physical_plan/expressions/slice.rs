@@ -2,7 +2,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
-use polars_core::utils::slice_offsets;
+use polars_core::utils::{slice_offsets, CustomIterTools};
 use std::sync::Arc;
 
 pub struct SliceExpr {
@@ -37,7 +37,7 @@ impl PhysicalExpr for SliceExpr {
                 let (offset, len) = slice_offsets(self.offset, self.len, idx.len());
                 (*first, idx[offset..offset + len].to_vec())
             })
-            .collect();
+            .collect_trusted();
 
         ac.with_groups(groups);
         // let ac = AggregationContext::new(s, Cow::Owned(groups))
