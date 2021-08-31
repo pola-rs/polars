@@ -1777,3 +1777,15 @@ fn test_when_then_schema() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_singleton_broadcast() -> Result<()> {
+    let df = fruits_cars();
+    let out = df.lazy().select(vec![
+        col("fruits"),
+        lit(1).alias("foo")
+    ]).collect()?;
+
+    assert!(out.column("foo")?.len() > 1);
+    Ok(())
+}
