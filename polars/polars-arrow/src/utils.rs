@@ -1,4 +1,4 @@
-use crate::trusted_len::TrustedLen;
+use crate::trusted_len::{PushUnchecked, TrustedLen};
 use arrow::array::{Array, ArrayData, BooleanArray};
 use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
@@ -143,4 +143,17 @@ pub trait FromTrustedLenIterator<A>: Sized {
     fn from_iter_trusted_length<T: IntoIterator<Item = A>>(iter: T) -> Self
     where
         T::IntoIter: TrustedLen;
+}
+
+impl<T> FromTrustedLenIterator<T> for Vec<T> {
+    fn from_iter_trusted_length<I: IntoIterator<Item = T>>(iter: I) -> Self
+    where
+        I::IntoIter: TrustedLen,
+    {
+        let iter = iter.into_iter();
+        let len = iter.size_hint().0;
+        let mut v = Vec::with_capacity(len);
+        v.extend_trusted_len(iter);
+        v
+    }
 }

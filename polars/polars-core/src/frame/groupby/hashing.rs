@@ -1,6 +1,7 @@
 use super::GroupTuples;
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
+use crate::utils::CustomIterTools;
 use crate::vector_hasher::{df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
 use crate::vector_hasher::{this_partition, AsU64};
 use crate::POOL;
@@ -36,7 +37,12 @@ where
         }
     });
 
-    hash_tbl.into_iter().map(|(_k, tpl)| tpl).collect()
+    let len = hash_tbl.len();
+    hash_tbl
+        .into_iter()
+        .map(|(_k, tpl)| tpl)
+        .trust_my_length(len)
+        .collect_trusted()
 }
 
 /// Determine group tuples over different threads. The hash of the key is used to determine the partitions.
@@ -93,7 +99,12 @@ where
                 });
                 offset += len;
             }
-            hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+            let len = hash_tbl.len();
+            hash_tbl
+                .into_iter()
+                .map(|(_k, v)| v)
+                .trust_my_length(len)
+                .collect_trusted::<Vec<_>>()
         })
     })
     .flatten()
