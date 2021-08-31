@@ -64,8 +64,7 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b31cb11e1e5e036536ef3f535e082687bdc03ab65050e5703c7e89fb2e86c4d"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=640ec4a2b08c4c60672706d5b3dea3ed5acb4e35#640ec4a2b08c4c60672706d5b3dea3ed5acb4e35"
 dependencies = [
  "ahash",
  "base64",
@@ -82,7 +81,7 @@ dependencies = [
  "lexical-core",
  "lz4",
  "multiversion",
- "num",
+ "num-traits",
  "packed_simd_2",
  "parquet2",
  "rand 0.8.4",
@@ -1112,9 +1111,9 @@ dependencies = [
 
 [[package]]
 name = "parquet-format-async-temp"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cde63e74461b2c6c31166c6bcd205096074c8972a9b46becfff0a4eb8c4fabd8"
+checksum = "03abc2f9c83fe9ceec83f47c76cc071bfd56caba33794340330f35623ab1f544"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1125,9 +1124,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6b9cfd5adabbb93efd417dcee71a2ebbb0f4978b1d8e65ab7fce84b72b966bc"
+checksum = "73758f76c8c842dfd846dfbc6ee05779aff626908531fffc3305a30cbccc55e7"
 dependencies = [
  "async-stream",
  "bitpacking",
