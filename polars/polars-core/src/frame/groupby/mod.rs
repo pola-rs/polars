@@ -190,6 +190,7 @@ where
 
 /// Used to tightly two 32 bit values and null information
 /// Only the bit values matter, not the meaning of the bits
+#[inline]
 fn pack_u32_tuples(opt_l: Option<u32>, opt_r: Option<u32>) -> [u8; 9] {
     // 4 bytes for first value
     // 4 bytes for second value
@@ -224,6 +225,7 @@ fn pack_u32_tuples(opt_l: Option<u32>, opt_r: Option<u32>) -> [u8; 9] {
 
 /// Used to tightly two 64 bit values and null information
 /// Only the bit values matter, not the meaning of the bits
+#[inline]
 fn pack_u64_tuples(opt_l: Option<u64>, opt_r: Option<u64>) -> [u8; 17] {
     // 8 bytes for first value
     // 8 bytes for second value
@@ -258,6 +260,7 @@ fn pack_u64_tuples(opt_l: Option<u64>, opt_r: Option<u64>) -> [u8; 17] {
 
 /// Used to tightly one 32 bit and a 64 bit valued type and null information
 /// Only the bit values matter, not the meaning of the bits
+#[inline]
 fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
     // 8 bytes for first value
     // 8 bytes for second value
@@ -292,6 +295,7 @@ fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
 
 impl DataFrame {
     pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
+        use polars_arrow::utils::CustomIterTools;
         macro_rules! finish_packed_bit_path {
             ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
                 let n_partitions = set_partition_size();
@@ -310,7 +314,8 @@ impl DataFrame {
                             ca0.into_iter()
                                 .zip(ca1.into_iter())
                                 .map(|(l, r)| $pack_fn(l, r))
-                                .collect::<Vec<_>>()
+                                .trust_my_length(ca0.len())
+                                .collect_trusted::<Vec<_>>()
                         })
                         .collect::<Vec<_>>()
                 });
