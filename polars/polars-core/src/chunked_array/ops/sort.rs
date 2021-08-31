@@ -12,7 +12,7 @@ use std::ops::{Deref, DerefMut};
 /// Sort with null values, to reverse, swap the arguments.
 fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     match (a, b) {
-        (Some(a), Some(b)) => a.partial_cmp(b).expect("could not compare"),
+        (Some(a), Some(b)) => order_default(a, b),
         (None, Some(_)) => Ordering::Less,
         (Some(_), None) => Ordering::Greater,
         (None, None) => Ordering::Equal,
@@ -122,8 +122,8 @@ macro_rules! argsort {
             vals.as_mut_slice(),
             sort_parallel,
             $reverse,
-            |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-            |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+            |(_, a), (_, b)| order_default_null(a, b),
+            |(_, a), (_, b)| order_reverse_null(a, b),
         );
         let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut ca = ca.into_inner();
@@ -222,8 +222,8 @@ where
                 vals.as_mut_slice(),
                 sort_parallel,
                 reverse,
-                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+                |(_, a), (_, b)| order_default_null(a, b),
+                |(_, a), (_, b)| order_reverse_null(a, b),
             );
             vals.into_iter().map(|(idx, _v)| idx).collect_trusted()
         };
