@@ -1,7 +1,7 @@
 import typing as tp
 from datetime import date, datetime
 from numbers import Number
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 import pyarrow as pa
