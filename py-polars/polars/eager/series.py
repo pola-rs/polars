@@ -575,23 +575,43 @@ class Series:
         'count': 4}
 
         """
-        if len(self) == 0:
+        if self.len() == 0:
             raise ValueError("Series must contain at least one value")
         elif self.is_numeric():
-            return {
+            self = self.cast(float)
+            _ = {
                 "min": self.min(),
                 "max": self.max(),
-                "sum": self.sum(),
-                "mean": self.mean(),
-                "std": self.std(),
-                "count": len(self),
+                "null_count": self.null_count(),
+                "mean": float("{0:.4g}".format(self.mean())),
+                "std": float("{0:.4g}".format(self.std())),
+                "count": self.len(),
             }
         elif self.is_boolean():
-            return {"sum": self.sum(), "count": len(self)}
+            _ = {
+                "sum": self.sum(),
+                "null_count": self.null_count(),
+                "count": self.len(),
+            }
         elif self.is_utf8():
-            return {"unique": len(self.unique()), "count": len(self)}
+            _ = {
+                "unique": len(self.unique()),
+                "null_count": self.null_count(),
+                "count": self.len(),
+            }
+        elif self.is_datetime():
+            _ = {
+                "min": str(self.dt.min()),
+                "max": str(self.dt.max()),
+                "null_count": str(self.null_count()),
+                "count": str(self.len()),
+            }
         else:
             raise TypeError("This type is not supported")
+
+        return pl.DataFrame(
+            {f"Describe {self.name}": list(_.keys()), None: list(_.values())}
+        )
 
     def sum(self) -> Union[int, float]:
         """
@@ -1550,6 +1570,19 @@ class Series:
             Float32,
             Float64,
         )
+
+    def is_datetime(self) -> bool:
+        """
+        Check if this Series datatype is a datetime.
+
+        Examples
+        --------
+        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
+        >>> s.is_datetime()
+        True
+
+        """
+        return self.dtype in (Date32, Date64)
 
     def is_float(self) -> bool:
         """

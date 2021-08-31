@@ -345,27 +345,15 @@ def test_describe():
     num_s = pl.Series([1, 2, 3])
     float_s = pl.Series([1.3, 4.6, 8.9])
     str_s = pl.Series(["abc", "pqr", "xyz"])
-    bool_s = pl.Series([True, False, True, True])
+    bool_s = pl.Series([True, False, None, True, True])
+    date_s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
     empty_s = pl.Series(np.empty(0))
 
-    assert num_s.describe() == {
-        "min": 1,
-        "max": 3,
-        "sum": 6,
-        "mean": 2.0,
-        "std": 1.0,
-        "count": 3,
-    }
-    assert float_s.describe() == {
-        "min": 1.3,
-        "max": 8.9,
-        "sum": 14.8,
-        "mean": 4.933333333333334,
-        "std": 3.8109491381194442,
-        "count": 3,
-    }
-    assert str_s.describe() == {"unique": 3, "count": 3}
-    assert bool_s.describe() == {"sum": 3, "count": 4}
+    assert num_s.describe().shape == (6, 2)
+    assert float_s.describe().shape == (6, 2)
+    assert str_s.describe().shape == (3, 2)
+    assert bool_s.describe().shape == (3, 2)
+    assert date_s.describe().shape == (4, 2)
 
     with pytest.raises(ValueError):
         assert empty_s.describe()
