@@ -556,23 +556,45 @@ class Series:
 
         Returns
         -------
-        Dictionary with summary statistics of a series.
+        Dictionary with summary statistics of a Series.
 
         Examples
         --------
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
-        {'min': 1,
-         'max': 5,
-         'sum': 15,
-         'mean': 3.0,
-         'std': 1.4142135623730951,
-         'count': 5}
+        shape: (6, 2)
+        ┌──────────────┬───────┐
+        │ Describe     ┆       │
+        │ ---          ┆ ---   │
+        │ str          ┆ f64   │
+        ╞══════════════╪═══════╡
+        │ "min"        ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "max"        ┆ 5     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "null_count" ┆ 0.0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "mean"       ┆ 3     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "std"        ┆ 1.581 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "count"      ┆ 5     │
+        └──────────────┴───────┘
 
-        >>> series_str = pl.Series(["a", "a", "b", "c"]
+        >>> series_str = pl.Series(["a", "a", None, "b", "c"])
         >>> series_str.describe()
-        {'unique': 3,
-        'count': 4}
+        shape: (3, 2)
+        ┌──────────────┬─────┐
+        │ Describe     ┆     │
+        │ ---          ┆ --- │
+        │ str          ┆ i64 │
+        ╞══════════════╪═════╡
+        │ "unique"     ┆ 4   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "null_count" ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ "count"      ┆ 5   │
+        └──────────────┴─────┘
 
         """
         if self.len() == 0:
