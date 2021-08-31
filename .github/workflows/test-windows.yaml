@@ -10,7 +10,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2021-07-29
+          toolchain: nightly-2021-08-30
           override: true
       - name: Run tests
         run: |
