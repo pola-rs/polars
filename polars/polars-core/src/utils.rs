@@ -867,3 +867,10 @@ pub(crate) fn index_to_chunked_index<
     }
     (current_chunk_idx, index_remainder)
 }
+
+/// # SAFETY
+/// `dst` must be valid for `dst.len()` elements, and `src` and `dst` may not overlap.
+#[inline]
+pub(crate) unsafe fn copy_from_slice_unchecked<T>(src: &[T], dst: &mut [T]) {
+    std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), dst.len());
+}
