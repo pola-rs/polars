@@ -34,15 +34,23 @@ pub(crate) fn evaluate_physical_expressions(
     state: &ExecutionState,
 ) -> Result<DataFrame> {
     let zero_length = df.height() == 0;
-    let selected_columns = POOL.install(|| {
+    let mut selected_columns = POOL.install(|| {
         exprs
             .par_iter()
             .map(|expr| expr.evaluate(df, state))
             .collect::<Result<Vec<Series>>>()
     })?;
+    let first_len = selected_columns[0].len();
+    let mut df_height = 0;
+    let mut all_equal_len = true;
     {
         let mut names = PlHashSet::with_capacity(exprs.len());
         for s in &selected_columns {
+            let len = s.len();
+            df_height = std::cmp::max(df_height, len);
+            if len != first_len {
+                all_equal_len = false;
+            }
             let name = s.name();
             if !names.insert(name) {
                 return Err(PolarsError::Duplicate(
@@ -50,6 +58,19 @@ pub(crate) fn evaluate_physical_expressions(
                 ));
             }
         }
+    }
+    // If all series are the same length it is ok. If not we can broadcast Series of length one.
+    if !all_equal_len {
+        selected_columns = selected_columns
+            .into_iter()
+            .map(|series| {
+                if series.len() == 1 && df_height > 1 {
+                    series.expand_at_index(0, df_height)
+                } else {
+                    series
+                }
+            })
+            .collect()
     }
 
     let df = DataFrame::new_no_checks(selected_columns);
