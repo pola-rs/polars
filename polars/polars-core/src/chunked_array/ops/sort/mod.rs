@@ -1,11 +1,14 @@
+mod par_argsort;
+
+use crate::chunked_array::ops::sort::par_argsort::par_mergesort;
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use itertools::Itertools;
 use polars_arrow::trusted_len::PushUnchecked;
+use polars_arrow::utils::FromTrustedLenIterator;
 use rayon::prelude::*;
 use std::cmp::Ordering;
-use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 
 /// Sort with null values, to reverse, swap the arguments.
@@ -81,17 +84,21 @@ fn argsort_branch<T, Fd, Fr>(
     reverse: bool,
     default_order_fn: Fd,
     reverse_order_fn: Fr,
-) where
+) -> AlignedVec<u32>
+where
     T: PartialOrd + Send,
     Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
     Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
 {
+    let mut av = AlignedVec::with_capacity(slice.len());
+    av.extend_trusted_len(0..slice.len() as u32);
+
+    // TODO: sort_parallel is not respected. It currently always sorts in parallel.
     match (sort_parallel, reverse) {
-        (true, true) => slice.par_sort_by(reverse_order_fn),
-        (true, false) => slice.par_sort_by(default_order_fn),
-        (false, true) => slice.sort_by(reverse_order_fn),
-        (false, false) => slice.sort_by(default_order_fn),
-    }
+        (_, true) => par_mergesort(slice, av.as_mut_slice(), reverse_order_fn),
+        (_, false) => par_mergesort(slice, av.as_mut_slice(), default_order_fn),
+    };
+    av
 }
 
 /// If the sort should be ran parallel or not.
@@ -105,30 +112,42 @@ fn sort_parallel<T>(ca: &ChunkedArray<T>) -> bool {
 macro_rules! argsort {
     ($self:expr, $reverse:expr) => {{
         let sort_parallel = sort_parallel($self);
-
         let mut vals = Vec::with_capacity($self.len());
-        let mut count: u32 = 0;
-        $self.downcast_iter().for_each(|arr| {
-            let iter = arr.iter().map(|v| {
-                let i = count;
-                count += 1;
-                (i, v)
-            });
-            vals.extend_trusted_len(iter);
-        });
+        $self
+            .downcast_iter()
+            .for_each(|arr| vals.extend_trusted_len(arr.iter()));
 
-        argsort_branch(
+        let av = argsort_branch(
             vals.as_mut_slice(),
             sort_parallel,
             $reverse,
-            |(_, a), (_, b)| order_default_null(a, b),
-            |(_, a), (_, b)| order_reverse_null(a, b),
+            |a, b| a.partial_cmp(b).unwrap(),
+            |a, b| b.partial_cmp(a).unwrap(),
         );
-        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-        let mut ca = ca.into_inner();
-        ca.rename($self.name());
-        ca
+
+        UInt32Chunked::new_from_aligned_vec($self.name(), av)
     }};
+}
+
+fn memcpy_values<T>(ca: &ChunkedArray<T>) -> AlignedVec<T::Native>
+where
+    T: PolarsNumericType,
+{
+    let len = ca.len();
+    let mut vals = AlignedVec::with_capacity(len);
+    // Safety:
+    // only primitives so no drop calls when writing
+    unsafe { vals.set_len(len) }
+    let vals_slice = vals.as_mut_slice();
+
+    let mut offset = 0;
+    ca.downcast_iter().for_each(|arr| {
+        let values = arr.values();
+        let len = arr.len();
+        (vals_slice[offset..len]).copy_from_slice(values);
+        offset += len;
+    });
+    vals
 }
 
 impl<T> ChunkSort<T> for ChunkedArray<T>
@@ -139,44 +158,32 @@ where
     fn sort(&self, reverse: bool) -> ChunkedArray<T> {
         let sort_parallel = sort_parallel(self);
 
-        if let Ok(vals) = self.cont_slice() {
-            // Copy the values to a new aligned vec. This can be mutably sorted.
-            let n = self.len();
-            let vals_ptr = vals.as_ptr();
-            // allocate aligned
-            let mut new = AlignedVec::<T::Native>::with_capacity(n);
-            let new_ptr = new.as_mut_ptr();
-
-            // memcopy
-            unsafe { std::ptr::copy_nonoverlapping(vals_ptr, new_ptr, n) };
-            // set len to copied bytes
-            unsafe { new.set_len(n) };
+        if self.null_count() == 0 {
+            let mut vals = memcpy_values(self);
 
             sort_branch(
-                new.as_mut_slice(),
+                vals.as_mut_slice(),
                 sort_parallel,
                 reverse,
                 order_default,
                 order_reverse,
             );
 
-            return ChunkedArray::new_from_aligned_vec(self.name(), new);
-        }
-
-        if self.null_count() == 0 {
-            // rechunk and call again, then it will fall in the contiguous slice path.
-            let ca = self.rechunk();
-            ca.sort(reverse)
+            return ChunkedArray::new_from_aligned_vec(self.name(), vals);
         } else {
-            let mut v = Vec::from_iter(self);
+            let mut vals = Vec::with_capacity(self.len());
+            self.downcast_iter().for_each(|arr| {
+                let iter = arr.iter();
+                vals.extend_trusted_len(iter);
+            });
             sort_branch(
-                v.as_mut_slice(),
+                vals.as_mut_slice(),
                 sort_parallel,
                 reverse,
                 order_default_null,
                 order_reverse_null,
             );
-            let mut ca: Self = v.into_iter().collect();
+            let mut ca: Self = vals.into_iter().collect_trusted();
             ca.rename(self.name());
             ca.set_sorted(reverse);
             ca
@@ -191,52 +198,34 @@ where
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         let sort_parallel = sort_parallel(self);
 
-        let ca: NoNull<UInt32Chunked> = if self.null_count() == 0 {
-            let mut vals = Vec::with_capacity(self.len());
-            let mut count: u32 = 0;
-            self.downcast_iter().for_each(|arr| {
-                let values = arr.values();
-                let iter = values.iter().map(|&v| {
-                    let i = count;
-                    count += 1;
-                    (i, v)
-                });
-                vals.extend_trusted_len(iter);
-            });
+        if self.null_count() == 0 {
+            let mut vals = memcpy_values(self);
 
-            argsort_branch(
+            let av = argsort_branch(
                 vals.as_mut_slice(),
                 sort_parallel,
                 reverse,
-                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+                |a, b| a.partial_cmp(b).unwrap(),
+                |a, b| b.partial_cmp(a).unwrap(),
             );
 
-            vals.into_iter().map(|(idx, _v)| idx).collect_trusted()
+            UInt32Chunked::new_from_aligned_vec(self.name(), av)
         } else {
             let mut vals = Vec::with_capacity(self.len());
-            let mut count: u32 = 0;
             self.downcast_iter().for_each(|arr| {
-                let iter = arr.iter().map(|v| {
-                    let i = count;
-                    count += 1;
-                    (i, v)
-                });
+                let iter = arr.iter();
                 vals.extend_trusted_len(iter);
             });
 
-            argsort_branch(
+            let av = argsort_branch(
                 vals.as_mut_slice(),
                 sort_parallel,
                 reverse,
-                |(_, a), (_, b)| order_default_null(a, b),
-                |(_, a), (_, b)| order_reverse_null(a, b),
+                |a, b| order_default_null(a, b),
+                |a, b| order_reverse_null(a, b),
             );
-            vals.into_iter().map(|(idx, _v)| idx).collect_trusted()
-        };
-        let mut ca = ca.into_inner();
-        ca.rename(self.name());
-        ca
+            UInt32Chunked::new_from_aligned_vec(self.name(), av)
+        }
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -328,7 +317,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     fn sort(&self, reverse: bool) -> Utf8Chunked {
         let sort_parallel = sort_parallel(self);
 
-        let mut v = Vec::from_iter(self);
+        let mut v = Vec::from_iter_trusted_length(self);
         sort_branch(
             v.as_mut_slice(),
             sort_parallel,
@@ -494,6 +483,26 @@ pub(crate) fn prepare_argsort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+
+    #[test]
+    fn test_argsort() -> Result<()> {
+        let ca = UInt32Chunked::new_from_slice(
+            "",
+            &[
+                75, 56, 20, 36, 7, 33, 47, 50, 93, 56, 18, 13, 4, 6, 23, 98, 90, 31, 64, 68, 54,
+                40, 92, 3, 48, 87, 14, 80, 15, 48,
+            ],
+        );
+
+        let expected = [
+            23, 12, 13, 4, 11, 26, 28, 10, 2, 14, 17, 5, 3, 21, 6, 24, 29, 7, 20, 1, 9, 18, 19, 0,
+            27, 25, 16, 22, 8, 15,
+        ];
+        let idx = ca.argsort(false);
+
+        assert_eq!(idx.cont_slice()?, expected);
+        Ok(())
+    }
 
     #[test]
     #[cfg(feature = "sort_multiple")]
