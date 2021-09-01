@@ -65,14 +65,22 @@ impl<T: Clone + ArrowNativeType> AlignedVec<T> {
         self.inner.resize(new_len, value)
     }
 
-    pub fn extend_from_slice(&mut self, other: &[T]) {
-        let remaining_cap = self.capacity() - self.len();
-        let needed_cap = other.len();
+    pub fn extend_memcpy(&mut self, other: &[T]) {
+        let self_len = self.len();
+
+        let remaining_cap = self.capacity() - self_len;
+        let extra_cap = other.len();
         // exponential allocation
-        if needed_cap > remaining_cap {
-            self.reserve(std::cmp::max(needed_cap, self.capacity()));
+        if extra_cap > remaining_cap {
+            self.reserve(std::cmp::max(extra_cap, self.capacity()));
         }
-        self.inner.extend_from_slice(other)
+        // Safety:
+        // we just made sure that we have allocated enough
+        // and we only work with primitive values so no drop of uninitialized memory
+        let new_len = self_len + extra_cap;
+        unsafe { self.inner.set_len(new_len) }
+
+        self.inner.as_mut_slice()[self_len..new_len].copy_from_slice(other)
     }
 }
 

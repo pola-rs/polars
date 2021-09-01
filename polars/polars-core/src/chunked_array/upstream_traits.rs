@@ -327,7 +327,7 @@ where
 
         let mut av = AlignedVec::with_capacity(capacity);
         for v in vectors {
-            av.extend_from_slice(&v)
+            av.extend_memcpy(&v)
         }
         let arr = av.into_primitive_array::<T>(None);
         NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
