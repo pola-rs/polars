@@ -2854,7 +2854,9 @@ def _to_python_datetime(
 ) -> Union[date, datetime]:
     if dtype == Date32:
         # days to seconds
-        return date.fromtimestamp(value * 3600 * 24)
+        # important to create from utc. Not doing this leads
+        # to inconsistencies dependent on the timezone you are in.
+        return datetime.utcfromtimestamp(value * 3600 * 24).date()
     elif dtype == Date64:
         # ms to seconds
         return datetime.utcfromtimestamp(value // 1000)
