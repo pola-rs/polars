@@ -132,6 +132,27 @@ macro_rules! argsort {
     }};
 }
 
+fn memcpy_values<T>(ca: &ChunkedArray<T>) -> AlignedVec<T::Native>
+where
+    T: PolarsNumericType,
+{
+    let len = ca.len();
+    let mut vals = AlignedVec::with_capacity(len);
+    // Safety:
+    // only primitives so no drop calls when writing
+    unsafe { vals.set_len(len) }
+    let vals_slice = vals.as_mut_slice();
+
+    let mut offset = 0;
+    ca.downcast_iter().for_each(|arr| {
+        let values = arr.values();
+        let len = arr.len();
+        (vals_slice[offset..len]).copy_from_slice(values);
+        offset += len;
+    });
+    vals
+}
+
 impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -140,36 +161,32 @@ where
     fn sort(&self, reverse: bool) -> ChunkedArray<T> {
         let sort_parallel = sort_parallel(self);
 
-        if let Ok(vals) = self.cont_slice() {
-            // Copy the values to a new aligned vec. This can be mutably sorted.
-            assert_eq!(vals.len(), self.len());
-            let mut new = AlignedVec::<T::Native>::from(vals);
+        if self.null_count() == 0 {
+            let mut vals = memcpy_values(self);
 
             sort_branch(
-                new.as_mut_slice(),
+                vals.as_mut_slice(),
                 sort_parallel,
                 reverse,
                 order_default,
                 order_reverse,
             );
 
-            return ChunkedArray::new_from_aligned_vec(self.name(), new);
-        }
-
-        if self.null_count() == 0 {
-            // rechunk and call again, then it will fall in the contiguous slice path.
-            let ca = self.rechunk();
-            ca.sort(reverse)
+            return ChunkedArray::new_from_aligned_vec(self.name(), vals);
         } else {
-            let mut v = Vec::from_iter(self);
+            let mut vals = Vec::with_capacity(self.len());
+            self.downcast_iter().for_each(|arr| {
+                let iter = arr.iter().map(|opt_v| opt_v.copied());
+                vals.extend_trusted_len(iter);
+            });
             sort_branch(
-                v.as_mut_slice(),
+                vals.as_mut_slice(),
                 sort_parallel,
                 reverse,
                 order_default_null,
                 order_reverse_null,
             );
-            let mut ca: Self = v.into_iter().collect();
+            let mut ca: Self = vals.into_iter().collect_trusted();
             ca.rename(self.name());
             ca.set_sorted(reverse);
             ca
