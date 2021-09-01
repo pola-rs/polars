@@ -423,7 +423,7 @@ pub(crate) unsafe fn take_utf8_unchecked(
                     values_capacity *= 2;
                 }
 
-                values_buf.extend_from_slice(s.as_bytes())
+                values_buf.extend_memcpy(s.as_bytes())
             });
         nulls = None;
     // THIS BRANCH LEAD TO UB if offset was non zero.
@@ -451,7 +451,7 @@ pub(crate) unsafe fn take_utf8_unchecked(
                         values_capacity *= 2;
                     }
 
-                    values_buf.extend_from_slice(s.as_bytes())
+                    values_buf.extend_memcpy(s.as_bytes())
                 }
                 *offset = length_so_far;
             });

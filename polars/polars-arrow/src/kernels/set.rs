@@ -24,7 +24,7 @@ where
             if truthy {
                 av.extend((lower..upper).map(|_| value))
             } else {
-                av.extend_from_slice(&values[lower..upper])
+                av.extend_memcpy(&values[lower..upper])
             }
         });
     // make sure that where the mask is set to true, the validity buffer is also set to valid

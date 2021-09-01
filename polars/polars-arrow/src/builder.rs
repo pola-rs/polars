@@ -1,11 +1,9 @@
 use crate::bit_util;
-use crate::vec::AlignedVec;
 pub use arrow::array::LargeStringBuilder;
-use arrow::array::{ArrayBuilder, ArrayData, ArrayRef, BooleanArray, LargeStringArray};
+use arrow::array::{ArrayBuilder, ArrayData, ArrayRef, BooleanArray};
 use arrow::buffer::{Buffer, MutableBuffer};
 use arrow::datatypes::DataType;
 use std::any::Any;
-use std::mem;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -225,74 +223,5 @@ impl ArrayBuilder for BooleanArrayBuilder {
     /// Builds the array and reset this builder.
     fn finish(&mut self) -> ArrayRef {
         Arc::new(self.finish())
-    }
-}
-
-#[derive(Debug)]
-pub struct NoNullLargeStringBuilder {
-    values: AlignedVec<u8>,
-    offsets: AlignedVec<i64>,
-}
-
-impl NoNullLargeStringBuilder {
-    pub fn with_capacity(values_capacity: usize, list_capacity: usize) -> Self {
-        let mut offsets = AlignedVec::with_capacity(list_capacity + 1);
-        offsets.push(0);
-        Self {
-            values: AlignedVec::with_capacity(values_capacity),
-            offsets,
-        }
-    }
-
-    /// Extends with values and offsets.
-    pub fn extend_from_slices(&mut self, values: &[u8], offsets: &[i64]) {
-        self.values.extend_from_slice(values);
-        self.offsets.extend_from_slice(offsets);
-    }
-
-    #[inline]
-    pub fn append_value(&mut self, value: &str) {
-        self.values.extend_from_slice(value.as_bytes());
-        self.offsets.push(self.values.len() as i64);
-    }
-
-    /// Builds the `StringArray` and reset this builder.
-    pub fn finish(&mut self) -> LargeStringArray {
-        // values are u8 typed
-        let values = mem::take(&mut self.values);
-        // offsets are i64 typed
-        let offsets = mem::take(&mut self.offsets);
-        let offsets_len = offsets.len() - 1;
-        // buffers are u8 typed
-        let buf_offsets = offsets.into_arrow_buffer();
-        let buf_values = values.into_arrow_buffer();
-        assert_eq!(buf_values.len(), buf_values.capacity());
-        assert_eq!(buf_offsets.len(), buf_offsets.capacity());
-
-        // note that the arrays are already shrunk when transformed to an arrow buffer.
-        let arraydata = ArrayData::builder(DataType::LargeUtf8)
-            .len(offsets_len)
-            .add_buffer(buf_offsets)
-            .add_buffer(buf_values)
-            .build();
-        LargeStringArray::from(arraydata)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use arrow::array::Array;
-    use arrow::datatypes::UInt32Type;
-
-    #[test]
-    fn test_string_builder() {
-        let mut builder = LargeStringBuilder::with_capacity(1, 3);
-        builder.append_value("foo").unwrap();
-        builder.append_null().unwrap();
-        builder.append_value("bar").unwrap();
-        let out = builder.finish();
-        let vals = out.iter().collect::<Vec<_>>();
-        assert_eq!(vals, &[Some("foo"), None, Some("bar")]);
     }
 }

@@ -187,7 +187,7 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
             let (_, _, n_written) = self.rdr.read_field(bytes, out_buf);
             n_written
         } else {
-            self.data.extend_from_slice(bytes);
+            self.data.extend_memcpy(bytes);
             bytes.len()
         };
 
@@ -206,7 +206,7 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
                     )
                     .into_owned();
                     let b = s.as_bytes();
-                    self.data.extend_from_slice(b);
+                    self.data.extend_memcpy(b);
                     self.offsets.push(self.data.len() as i64);
                     self.validity.append(true);
                 } else if ignore_errors {
