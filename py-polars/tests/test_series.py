@@ -512,3 +512,12 @@ def test_skew_dispatch():
 
     df = pl.DataFrame([s])
     assert np.isclose(df.select(pl.col("a").skew(False))["a"][0], -0.7717168360221258)
+
+
+def test_kurtosis_dispatch():
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+    expected = -0.6406250000000004
+
+    assert np.isclose(s.kurtosis(), expected)
+    df = pl.DataFrame([s])
+    assert np.isclose(df.select(pl.col("a").kurtosis())["a"][0], expected)
