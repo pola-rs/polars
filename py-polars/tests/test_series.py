@@ -502,3 +502,13 @@ def test_diff_dispatch():
 
     df = pl.DataFrame([s])
     assert df.select(pl.col("a").diff())["a"].to_list() == [None, 1, 1, -1, 0, 1, -3]
+
+
+def test_skew_dispatch():
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+
+    assert np.isclose(s.skew(True), -0.5953924651018018)
+    assert np.isclose(s.skew(False), -0.7717168360221258)
+
+    df = pl.DataFrame([s])
+    assert np.isclose(df.select(pl.col("a").skew(False))["a"][0], -0.7717168360221258)

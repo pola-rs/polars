@@ -74,6 +74,7 @@ interpolate = []
 list = []
 rank = []
 diff = []
+moment = []
 
 
 # opt-in datatypes for Series
@@ -119,7 +120,8 @@ docs-selection = [
     "cum_agg",
     "rolling_window",
     "interpolate",
-    "diff"
+    "diff",
+    "moment"
 ]
 
 [dependencies]

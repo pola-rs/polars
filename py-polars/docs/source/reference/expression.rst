@@ -120,6 +120,7 @@ Computations
     Expr.abs
     Expr.rank
     Expr.diff
+    Expr.skew
 
 Manipulation/ selection
 -----------------------
