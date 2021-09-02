@@ -1789,3 +1789,26 @@ fn test_singleton_broadcast() -> Result<()> {
     assert!(out.column("foo")?.len() > 1);
     Ok(())
 }
+
+#[test]
+fn test_sort_by_suffix() -> Result<()> {
+    let df = fruits_cars();
+    let out = df
+        .lazy()
+        .select(vec![col("*")
+            .sort_by(col("A"), false)
+            .over(vec![col("fruits")])
+            .flatten()
+            .suffix("_sorted")])
+        .collect()?;
+
+    let expected = df!(
+            "A_sorted"=> [1, 2, 5, 3, 4],
+            "fruits_sorted"=> ["banana", "banana", "banana", "apple", "apple"],
+            "B_sorted"=> [5, 4, 1, 3, 2],
+            "cars_sorted"=> ["beetle", "audi", "beetle", "beetle", "beetle"]
+    )?;
+
+    assert!(expected.frame_equal(&out));
+    Ok(())
+}
