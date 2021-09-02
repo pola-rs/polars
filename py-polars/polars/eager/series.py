@@ -2441,6 +2441,26 @@ class Series:
         """
         return self._s.skew(bias)
 
+    def kurtosis(self, fisher: bool = True, bias: bool = True) -> Optional[float]:
+        """Compute the kurtosis (Fisher or Pearson) of a dataset.
+        Kurtosis is the fourth central moment divided by the square of the
+        variance. If Fisher's definition is used, then 3.0 is subtracted from
+        the result to give 0.0 for a normal distribution.
+        If bias is False then the kurtosis is calculated using k statistics to
+        eliminate bias coming from biased moment estimators
+
+        See scipy.stats for more information
+
+        Parameters
+        ----------
+        fisher : bool, optional
+            If True, Fisher's definition is used (normal ==> 0.0). If False,
+            Pearson's definition is used (normal ==> 3.0).
+        bias : bool, optional
+            If False, then the calculations are corrected for statistical bias.
+        """
+        return self._s.kurtosis(fisher, bias)
+
 
 class StringNameSpace:
     """
