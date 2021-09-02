@@ -22,7 +22,7 @@ use polars_io::{parquet::ParquetReader, SerReader};
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::utils::{
-    combine_predicates_expr, expr_to_root_column_names, has_expr, has_wildcard,
+    combine_predicates_expr, expr_to_root_column_names, get_single_root, has_expr, has_wildcard,
     rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
@@ -720,11 +720,7 @@ fn rewrite_keep_name_and_sufprefix(expr: Expr) -> Expr {
                 value,
                 expr,
             } => {
-                let roots = expr_to_root_column_names(&expr);
-                let name = roots
-                    .get(0)
-                    .expect("expected root column to keep expression name");
-
+                let name = get_single_root(&expr).unwrap();
                 let name = if is_suffix {
                     format!("{}{}", name, value)
                 } else {

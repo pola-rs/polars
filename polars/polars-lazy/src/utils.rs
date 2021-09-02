@@ -124,6 +124,24 @@ pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
     Field::new(name, field.data_type().clone())
 }
 
+/// This function should be used to find the name of the start of an expression
+/// Normal iteration would just return the first root column it found
+pub(crate) fn get_single_root(expr: &Expr) -> Result<Arc<String>> {
+    for e in expr {
+        match e {
+            Expr::Filter { input, .. } => return get_single_root(input),
+            Expr::Take { expr, .. } => return get_single_root(expr),
+            Expr::SortBy { expr, .. } => return get_single_root(expr),
+            Expr::Window { function, .. } => return get_single_root(function),
+            Expr::Column(name) => return Ok(name.clone()),
+            _ => {}
+        }
+    }
+    Err(PolarsError::ComputeError(
+        format!("no root column found in {:?}", expr).into(),
+    ))
+}
+
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
 pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<String>> {
     expr_to_root_column_exprs(expr)
