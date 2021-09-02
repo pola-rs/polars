@@ -105,6 +105,7 @@ Computations
     Series.rank
     Series.diff
     Series.skew
+    Series.kurtosis
 
 Manipulation/ selection
 -----------------------

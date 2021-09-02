@@ -121,6 +121,7 @@ Computations
     Expr.rank
     Expr.diff
     Expr.skew
+    Expr.kurtosis
 
 Manipulation/ selection
 -----------------------

@@ -39,9 +39,17 @@ fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> Result<Optio
 }
 
 impl Series {
+    /// Compute the sample skewness of a data set.
+    ///
+    /// For normally distributed data, the skewness should be about zero. For
+    /// unimodal continuous distributions, a skewness value greater than zero means
+    /// that there is more weight in the right tail of the distribution. The
+    /// function `skewtest` can be used to determine if the skewness value
+    /// is close enough to zero, statistically speaking.
+    ///
+    /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024
     #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
     pub fn skew(&self, bias: bool) -> Result<Option<f64>> {
-        // see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024
         let mean = match self.mean() {
             Some(mean) => mean,
             None => return Ok(None),
@@ -55,6 +63,39 @@ impl Series {
         if !bias {
             let n = self.len() as f64;
             Ok(Some(((n - 1.0) * n).sqrt() / (n - 2.0) * m3 / m2.powf(1.5)))
+        } else {
+            Ok(Some(out))
+        }
+    }
+
+    /// Compute the kurtosis (Fisher or Pearson) of a dataset.
+    ///
+    /// Kurtosis is the fourth central moment divided by the square of the
+    /// variance. If Fisher's definition is used, then 3.0 is subtracted from
+    /// the result to give 0.0 for a normal distribution.
+    /// If bias is `false` then the kurtosis is calculated using k statistics to
+    /// eliminate bias coming from biased moment estimators
+    ///
+    /// see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1027
+    #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
+    pub fn kurtosis(&self, fisher: bool, bias: bool) -> Result<Option<f64>> {
+        let mean = match self.mean() {
+            Some(mean) => mean,
+            None => return Ok(None),
+        };
+        // we can unwrap because if it were None, we already return None above
+        let m2 = moment_precomputed_mean(self, 2, mean)?.unwrap();
+        let m4 = moment_precomputed_mean(self, 4, mean)?.unwrap();
+
+        let out = if !bias {
+            let n = self.len() as f64;
+            1.0 / (n - 2.0) / (n - 3.0)
+                * ((n.powf(2.0) - 1.0) * m4 / m2.powf(2.0) - 3.0 * (n - 1.0).powf(2.0))
+        } else {
+            m4 / m2.powf(2.0)
+        };
+        if fisher {
+            Ok(Some(out - 3.0))
         } else {
             Ok(Some(out))
         }
@@ -91,6 +132,14 @@ mod test {
         let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
         assert!(s.skew(false)?.unwrap() - 2.2905330058490514 < 0.0001);
         assert!(s.skew(true)?.unwrap() - 2.2905330058490514 < 0.0001);
+        Ok(())
+    }
+
+    #[test]
+    fn test_kurtosis() -> Result<()> {
+        let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
+        assert!(s.kurtosis(true, false)?.unwrap() - 5.400820058440946 < 0.0001);
+        assert!(s.kurtosis(true, true)?.unwrap() - 0.9945668771797536 < 0.0001);
         Ok(())
     }
 }
