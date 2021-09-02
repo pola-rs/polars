@@ -90,6 +90,7 @@ interpolate = ["polars-core/interpolate", "polars-lazy/interpolate"]
 list = ["polars-core/list"]
 rank = ["polars-core/rank", "polars-lazy/rank"]
 diff = ["polars-core/diff", "polars-lazy/diff"]
+moment = ["polars-core/moment", "polars-lazy/moment"]
 
 # don't use this
 private = []

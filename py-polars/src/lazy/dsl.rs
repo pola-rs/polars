@@ -829,6 +829,10 @@ impl PyExpr {
         let null_behavior = str_to_null_behavior(null_behavior).unwrap();
         self.inner.clone().diff(n, null_behavior).into()
     }
+
+    fn skew(&self, bias: bool) -> Self {
+        self.inner.clone().skew(bias).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

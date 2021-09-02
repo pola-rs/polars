@@ -1,10 +1,5 @@
 use crate::prelude::*;
-
-#[derive(Copy, Clone)]
-pub enum NullBehavior {
-    Drop,
-    Ignore,
-}
+use crate::series::ops::NullBehavior;
 
 impl Series {
     #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]

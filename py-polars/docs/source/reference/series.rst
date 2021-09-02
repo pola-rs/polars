@@ -19,7 +19,7 @@ Attributes
    Series.dtype
    Series.name
    Series.shape
-   Series.dtype
+   Series.dtyskew
    Series.dt
    Series.str
 
@@ -104,6 +104,7 @@ Computations
     Series.abs
     Series.rank
     Series.diff
+    Series.skew
 
 Manipulation/ selection
 -----------------------

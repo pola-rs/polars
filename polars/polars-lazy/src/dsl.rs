@@ -17,7 +17,7 @@ use std::{
 pub use crate::frame::IntoLazy;
 use polars_core::frame::select::Selection;
 #[cfg(feature = "diff")]
-use polars_core::series::ops::diff::NullBehavior;
+use polars_core::series::ops::NullBehavior;
 use polars_core::utils::get_supertype;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
@@ -1498,6 +1498,15 @@ impl Expr {
         self.apply(
             move |s| Ok(s.diff(n, null_behavior)),
             GetOutput::same_type(),
+        )
+    }
+
+    #[cfg(feature = "moment")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
+    pub fn skew(self, bias: bool) -> Expr {
+        self.apply(
+            move |s| s.skew(bias).map(|opt_v| Series::new(s.name(), &[opt_v])),
+            GetOutput::from_type(DataType::Float64),
         )
     }
 }
