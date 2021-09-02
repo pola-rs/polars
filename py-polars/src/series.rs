@@ -1129,6 +1129,11 @@ impl PySeries {
         let null_behavior = str_to_null_behavior(null_behavior)?;
         Ok(self.series.diff(n, null_behavior).into())
     }
+
+    pub fn skew(&self, bias: bool) -> PyResult<Option<f64>> {
+        let out = self.series.skew(bias).map_err(PyPolarsEr::from)?;
+        Ok(out)
+    }
 }
 
 macro_rules! impl_ufuncs {
