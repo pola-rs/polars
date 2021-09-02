@@ -70,7 +70,8 @@ features = [
     "interpolate",
     "list",
     "rank",
-    "diff"
+    "diff",
+    "moment"
 ]
 
 #[patch.crates-io]
