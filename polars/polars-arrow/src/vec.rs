@@ -69,18 +69,23 @@ impl<T: Clone + ArrowNativeType> AlignedVec<T> {
         let self_len = self.len();
 
         let remaining_cap = self.capacity() - self_len;
-        let extra_cap = other.len();
+        let additional = other.len();
         // exponential allocation
-        if extra_cap > remaining_cap {
-            self.reserve(std::cmp::max(extra_cap, self.capacity()));
+        if additional > remaining_cap {
+            self.reserve(std::cmp::max(additional, self.capacity()));
         }
+
         // Safety:
         // we just made sure that we have allocated enough
-        // and we only work with primitive values so no drop of uninitialized memory
-        let new_len = self_len + extra_cap;
-        unsafe { self.inner.set_len(new_len) }
+        // and we only work with primitive values so no memory leaks
+        unsafe {
+            let dst = self.as_ptr().add(self.len()) as *mut T;
+            let src = other.as_ptr();
+            std::ptr::copy_nonoverlapping(src, dst, additional);
 
-        self.inner.as_mut_slice()[self_len..new_len].copy_from_slice(other)
+            let new_len = self_len + additional;
+            self.inner.set_len(new_len)
+        }
     }
 }
 
