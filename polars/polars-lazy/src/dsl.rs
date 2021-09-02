@@ -1509,6 +1509,18 @@ impl Expr {
             GetOutput::from_type(DataType::Float64),
         )
     }
+
+    #[cfg(feature = "moment")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
+    pub fn kurtosis(self, fisher: bool, bias: bool) -> Expr {
+        self.apply(
+            move |s| {
+                s.kurtosis(fisher, bias)
+                    .map(|opt_v| Series::new(s.name(), &[opt_v]))
+            },
+            GetOutput::from_type(DataType::Float64),
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.

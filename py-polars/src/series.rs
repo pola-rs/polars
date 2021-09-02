@@ -1134,6 +1134,11 @@ impl PySeries {
         let out = self.series.skew(bias).map_err(PyPolarsEr::from)?;
         Ok(out)
     }
+
+    pub fn kurtosis(&self, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
+        let out = self.series.kurtosis(fisher, bias).map_err(PyPolarsEr::from)?;
+        Ok(out)
+    }
 }
 
 macro_rules! impl_ufuncs {

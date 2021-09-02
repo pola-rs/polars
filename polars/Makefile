@@ -40,3 +40,6 @@ miri:
 
 test-doc:
 	cargo test -p polars-lazy -p polars-io -p polars-core -p polars-arrow --doc
+
+
+pre-commit: fmt clippy clippy-default

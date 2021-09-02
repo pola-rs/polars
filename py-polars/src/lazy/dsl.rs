@@ -833,6 +833,9 @@ impl PyExpr {
     fn skew(&self, bias: bool) -> Self {
         self.inner.clone().skew(bias).into()
     }
+    fn kurtosis(&self, fisher: bool, bias: bool) -> Self {
+        self.inner.clone().kurtosis(fisher, bias).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
