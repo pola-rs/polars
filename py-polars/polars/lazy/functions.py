@@ -556,8 +556,8 @@ def quantile(column: str, quantile: float) -> "pl.Expr":
 
 
 def arange(
-    low: Union[int, "pl.Expr"],
-    high: Union[int, "pl.Expr"],
+    low: Union[int, "pl.Expr", "pl.Series"],
+    high: Union[int, "pl.Expr", "pl.Series"],
     step: int = 1,
     dtype: Optional[Type[DataType]] = None,
     eager: bool = False,
@@ -593,22 +593,35 @@ def arange(
         dtype = Int64
 
     def create_range(s1: "pl.Series", s2: "pl.Series") -> "pl.Series":
-        assert s1.len() == 1
-        assert s2.len() == 1
-        return pl.Series._from_pyseries(_series_from_range(s1[0], s2[0], step, dtype))
+        assert s1.len() == s2.len()
+        if s1.len() == 1:
+            s = pl.Series._from_pyseries(_series_from_range(s1[0], s2[0], step, dtype))
+        else:
+            list_vals = []
+            for (l, h) in zip(s1, s2):
+                list_vals.append(pl.arange(l, h, eager=True))  # type: ignore
+                s = pl.Series(list_vals)
+
+        return s.rename("arange")  # type: ignore
 
     # eager execution can only work if low and high are literals
     if eager:
-        if not (isinstance(low, int) and isinstance(high, int)):
-            raise ValueError(
-                "arguments low and high must be integers in eager execution"
-            )
-        return pl.Series._from_pyseries(_series_from_range(low, high, step, dtype))
+        if isinstance(low, int) and isinstance(high, int):
+            s = pl.Series._from_pyseries(_series_from_range(low, high, step, dtype))
+        elif isinstance(low, pl.Series) and isinstance(high, pl.Series):
+            s = create_range(low, high)
+        else:
+            raise ValueError("wrong arguments for low and high")
+
+        return s.rename("arange")  # type: ignore
 
     if isinstance(low, int):
         low = lit(low)
     if isinstance(high, int):
         high = lit(high)
+
+    if isinstance(low, pl.Series) or isinstance(high, pl.Series):
+        raise ValueError("low and high should be an expression")
 
     return map_binary(low, high, create_range, return_dtype=dtype)
 
