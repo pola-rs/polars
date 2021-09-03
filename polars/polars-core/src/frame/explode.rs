@@ -105,11 +105,11 @@ impl DataFrame {
                     // We just created indices that are in bounds.
                     df = unsafe { df.take_unchecked(&row_idx) };
                 }
-                if exploded.len() == df.height() {
+                if exploded.len() == df.height() || df.width() == 0 {
                     df.columns.insert(col_idx, exploded);
                 } else {
                     return Err(PolarsError::ShapeMisMatch(
-                        format!("The exploded columns don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
+                        format!("The exploded column(s) don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
                     ));
                 }
             } else {
@@ -227,8 +227,6 @@ mod test {
         let s1 = Series::new("C", [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
         let exploded = df.explode("foo").unwrap();
-        println!("{:?}", df);
-        println!("{:?}", exploded);
         assert_eq!(exploded.shape(), (9, 3));
         assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(8), Some(1));
         assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(8), Some(3));
@@ -240,14 +238,31 @@ mod test {
         let str = Series::new("foo", &["abc", "de", "fg"]);
         let df = DataFrame::new(vec![str, s0, s1]).unwrap();
         let exploded = df.explode("foo").unwrap();
-        println!("{:?}", df);
-        println!("{:?}", exploded);
         assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(6), Some(1));
         assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(6), Some(3));
         assert_eq!(
             exploded.column("foo").unwrap().utf8().unwrap().get(6),
             Some("g")
         );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_explode_single_col() -> Result<()> {
+        let s0 = Series::new("a", &[1i32, 2, 3]);
+        let s1 = Series::new("b", &[1i32, 1, 1]);
+        let list = Series::new("foo", &[s0, s1]);
+        let df = DataFrame::new(vec![list])?;
+
+        let out = df.explode(&["foo"])?;
+        let out = out
+            .column("foo")?
+            .i32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[1i32, 2, 3, 1, 1, 1]);
+
+        Ok(())
     }
 
     #[test]
