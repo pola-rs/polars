@@ -37,6 +37,7 @@ mod trusted_len;
 pub mod upstream_traits;
 use arrow::array::Array;
 pub(crate) mod list;
+use polars_arrow::prelude::*;
 
 use crate::chunked_array::builder::categorical::RevMapping;
 use crate::utils::{slice_offsets, CustomIterTools};
@@ -380,7 +381,7 @@ impl<T> ChunkedArray<T> {
                     .as_ref()
                     .map(|bitmap| !bitmap)
                     .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-                Arc::new(BooleanArray::from_data(bitmap, None)) as ArrayRef
+                Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_null", chunks)
@@ -399,7 +400,7 @@ impl<T> ChunkedArray<T> {
                     .validity()
                     .clone()
                     .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
-                Arc::new(BooleanArray::from_data(bitmap, None)) as ArrayRef
+                Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect_vec();
         BooleanChunked::new_from_chunks("is_not_null", chunks)

@@ -1136,7 +1136,10 @@ impl PySeries {
     }
 
     pub fn kurtosis(&self, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
-        let out = self.series.kurtosis(fisher, bias).map_err(PyPolarsEr::from)?;
+        let out = self
+            .series
+            .kurtosis(fisher, bias)
+            .map_err(PyPolarsEr::from)?;
         Ok(out)
     }
 }

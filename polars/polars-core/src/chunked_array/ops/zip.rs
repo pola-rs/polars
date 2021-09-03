@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::utils::align_chunks_ternary;
 use arrow::compute::if_then_else::if_then_else;
+use polars_arrow::array::default_arrays::FromData;
 
 fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
     if predicate {
@@ -18,7 +19,7 @@ fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
         // nulls are set to true meaning we take from the left in the zip/ if_then_else kernel
         Some(validity) => {
             let mask = mask.values() | &(!validity);
-            BooleanArray::from_data(mask, None)
+            BooleanArray::from_data_default(mask, None)
         }
         None => mask.clone(),
     }

@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
+use polars_arrow::prelude::FromDataUtf8;
 use std::convert::TryFrom;
 
 /// Convert Arrow array offsets to indexes of the original list
@@ -91,8 +92,9 @@ impl ChunkExplode for Utf8Chunked {
         } else {
             None
         };
-        let array =
-            unsafe { Utf8Array::<i64>::from_data_unchecked(offsets, values.clone(), validity) };
+        let array = unsafe {
+            Utf8Array::<i64>::from_data_unchecked_default(offsets, values.clone(), validity)
+        };
 
         let new_arr = Arc::new(array) as ArrayRef;
 
