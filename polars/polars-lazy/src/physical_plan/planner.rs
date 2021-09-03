@@ -728,9 +728,17 @@ impl DefaultPlanner {
                                 Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::List)))
                             }
                             Context::Default => {
-                                panic!(
-                                    "list expression is only supported in the aggregation context"
-                                )
+                                let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+                                    let s = &s[0];
+                                    s.to_list().map(|ca| ca.into_series())
+                                })
+                                    as Arc<dyn SeriesUdf>);
+                                Ok(Arc::new(ApplyExpr {
+                                    inputs: vec![input],
+                                    function,
+                                    expr: node_to_exp(expression, expr_arena),
+                                    collect_groups: ApplyOptions::ApplyFlat,
+                                }))
                             }
                         }
                     }

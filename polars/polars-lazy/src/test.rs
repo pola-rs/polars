@@ -7,6 +7,7 @@ use polars_core::{df, prelude::*};
 
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::prelude::*;
+use polars_core::chunked_array::builder::get_list_builder;
 use std::iter::FromIterator;
 
 fn scan_foods_csv() -> LazyFrame {
@@ -1810,5 +1811,22 @@ fn test_sort_by_suffix() -> Result<()> {
     )?;
 
     assert!(expected.frame_equal(&out));
+    Ok(())
+}
+
+#[test]
+fn test_list_in_select_context() -> Result<()> {
+    let s = Series::new("a", &[1, 2, 3]);
+    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name());
+    builder.append_series(&s);
+    let expected = builder.finish().into_series();
+
+    let df = DataFrame::new(vec![s])?;
+
+    let out = df.lazy().select(vec![col("a").list()]).collect()?;
+
+    let s = out.column("a")?;
+    assert!(s.series_equal(&expected));
+
     Ok(())
 }
