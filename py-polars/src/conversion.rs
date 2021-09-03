@@ -7,7 +7,7 @@ use polars::frame::row::Row;
 use polars::frame::NullStrategy;
 use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
-use polars_core::utils::arrow::datatypes::ArrowNativeType;
+use polars_core::utils::arrow::types::NativeType;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;

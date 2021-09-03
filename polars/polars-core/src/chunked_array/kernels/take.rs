@@ -3,6 +3,7 @@ use crate::utils::CustomIterTools;
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::{Buffer, MutableBuffer};
+use polars_arrow::prelude::FromDataUtf8;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -456,7 +457,7 @@ pub(crate) unsafe fn take_utf8_unchecked(
     }
 
     // Safety: all "values" are &str, and thus valid utf8
-    Arc::new(Utf8Array::<i64>::from_data_unchecked(
+    Arc::new(Utf8Array::<i64>::from_data_unchecked_default(
         offset_buf.into(),
         values_buf.into(),
         validity,

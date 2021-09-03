@@ -3,6 +3,7 @@ use crate::csv_core::csv::RunningSize;
 use crate::csv_core::parser::{drop_quotes, skip_whitespace};
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
+use polars_arrow::prelude::FromDataUtf8;
 use polars_core::prelude::*;
 use std::fmt::Debug;
 
@@ -340,18 +341,20 @@ impl Buffer {
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
-            Buffer::Utf8(mut v) => {
+            // Safety:
+            // We already checked utf8 validity during parsing
+            Buffer::Utf8(mut v) => unsafe {
                 v.offsets.shrink_to_fit();
                 v.data.shrink_to_fit();
 
-                let arr = Utf8Array::<i64>::from_data(
+                let arr = Utf8Array::<i64>::from_data_unchecked_default(
                     v.offsets.into(),
                     v.data.into(),
                     Some(v.validity.into()),
                 );
                 let ca = Utf8Chunked::new_from_chunks(&v.name, vec![Arc::new(arr)]);
                 ca.into_series()
-            }
+            },
         }
     }
 
