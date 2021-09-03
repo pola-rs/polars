@@ -164,10 +164,14 @@ impl PyExpr {
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
     }
-    pub fn cast(&self, data_type: &PyAny) -> PyExpr {
+    pub fn cast(&self, data_type: &PyAny, strict: bool) -> PyExpr {
         let str_repr = data_type.str().unwrap().to_str().unwrap();
         let dt = str_to_polarstype(str_repr);
-        let expr = self.inner.clone().cast(dt);
+        let expr = if strict {
+            self.inner.clone().strict_cast(dt)
+        } else {
+            self.inner.clone().cast(dt)
+        };
         expr.into()
     }
     pub fn sort(&self, reverse: bool) -> PyExpr {

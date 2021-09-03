@@ -533,3 +533,10 @@ def test_range():
     assert s[2:5].series_equal(s[range(2, 5)])
     df = pl.DataFrame([s])
     assert df[2:5].frame_equal(df[range(2, 5)])
+
+
+def test_strict_cast():
+    with pytest.raises(RuntimeError):
+        pl.Series("a", [2 ** 16]).cast(dtype=pl.Int16, strict=True)
+    with pytest.raises(RuntimeError):
+        pl.DataFrame({"a": [2 ** 16]}).select([pl.col("a").cast(pl.Int16, strict=True)])

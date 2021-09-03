@@ -260,6 +260,7 @@ pub enum Expr {
     Cast {
         expr: Box<Expr>,
         data_type: DataType,
+        strict: bool,
     },
     Sort {
         expr: Box<Expr>,
@@ -414,7 +415,9 @@ impl fmt::Debug for Expr {
                     Quantile { expr, .. } => write!(f, "AGG QUANTILE {:?}", expr),
                 }
             }
-            Cast { expr, data_type } => write!(f, "CAST {:?} TO {:?}", expr, data_type),
+            Cast {
+                expr, data_type, ..
+            } => write!(f, "CAST {:?} TO {:?}", expr, data_type),
             Ternary {
                 predicate,
                 truthy,
@@ -795,10 +798,21 @@ impl Expr {
     }
 
     /// Cast expression to another data type.
+    /// Throws an error if conversion had overflows
+    pub fn strict_cast(self, data_type: DataType) -> Self {
+        Expr::Cast {
+            expr: Box::new(self),
+            data_type,
+            strict: true,
+        }
+    }
+
+    /// Cast expression to another data type.
     pub fn cast(self, data_type: DataType) -> Self {
         Expr::Cast {
             expr: Box::new(self),
             data_type,
+            strict: false,
         }
     }
 
@@ -1815,6 +1829,7 @@ pub fn cast(expr: Expr, data_type: DataType) -> Expr {
     Expr::Cast {
         expr: Box::new(expr),
         data_type,
+        strict: false,
     }
 }
 

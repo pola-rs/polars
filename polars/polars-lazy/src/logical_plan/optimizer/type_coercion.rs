@@ -72,6 +72,7 @@ impl OptimizationRule for TypeCoercionRule {
                             expr_arena.add(AExpr::Cast {
                                 expr: truthy_node,
                                 data_type: st.clone(),
+                                strict: false,
                             })
                         } else {
                             truthy_node
@@ -81,6 +82,7 @@ impl OptimizationRule for TypeCoercionRule {
                             expr_arena.add(AExpr::Cast {
                                 expr: falsy_node,
                                 data_type: st,
+                                strict: false,
                             })
                         } else {
                             falsy_node
@@ -171,6 +173,7 @@ impl OptimizationRule for TypeCoercionRule {
                             expr_arena.add(AExpr::Cast {
                                 expr: node_left,
                                 data_type: st.clone(),
+                                strict: false,
                             })
                         } else {
                             node_left
@@ -179,6 +182,7 @@ impl OptimizationRule for TypeCoercionRule {
                             expr_arena.add(AExpr::Cast {
                                 expr: node_right,
                                 data_type: st,
+                                strict: false,
                             })
                         } else {
                             node_right

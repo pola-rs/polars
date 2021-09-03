@@ -1476,17 +1476,24 @@ class Series:
     def __len__(self) -> int:
         return self.len()
 
-    def cast(self, data_type: Type[DataType]) -> "Series":
-        if data_type == int:
-            data_type = Int64
-        elif data_type == str:
-            data_type = Utf8
-        elif data_type == float:
-            data_type = Float64
-        f = get_ffi_func("cast_<>", data_type, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f())
+    def cast(self, dtype: Type[DataType], strict: bool = True) -> "Series":
+        """
+        Cast between data types.
+
+        Parameters
+        ----------
+        dtype
+            DataType to cast to
+        strict
+            Throw an error if a cast could not be done for instance due to an overflow
+        """
+        if dtype == int:
+            dtype = Int64
+        elif dtype == str:
+            dtype = Utf8
+        elif dtype == float:
+            dtype = Float64
+        return wrap_s(self._s.cast(str(dtype), strict))
 
     def to_list(self) -> tp.List[Optional[Any]]:
         """
