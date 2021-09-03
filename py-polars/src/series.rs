@@ -1146,6 +1146,17 @@ impl PySeries {
         let out = self.series.kurtosis(fisher, bias).map_err(PyPolarsEr::from)?;
         Ok(out)
     }
+
+    pub fn cast(&self, dtype: &str, strict: bool) -> PyResult<Self> {
+        let dtype = str_to_polarstype(dtype);
+        let out = if strict {
+            self.series.strict_cast(&dtype)
+        } else {
+            self.series.cast_with_dtype(&dtype)
+        };
+        let out = out.map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
 }
 
 macro_rules! impl_ufuncs {
@@ -1326,35 +1337,6 @@ impl_unsafe_from_ptr!(unsafe_from_ptr_i8, Int8Type);
 impl_unsafe_from_ptr!(unsafe_from_ptr_i16, Int16Type);
 impl_unsafe_from_ptr!(unsafe_from_ptr_i32, Int32Type);
 impl_unsafe_from_ptr!(unsafe_from_ptr_i64, Int64Type);
-
-macro_rules! impl_cast {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            pub fn $name(&self) -> PyResult<PySeries> {
-                let s = self.series.cast::<$type>().map_err(PyPolarsEr::from)?;
-                Ok(PySeries::new(s))
-            }
-        }
-    };
-}
-
-impl_cast!(cast_u8, UInt8Type);
-impl_cast!(cast_u16, UInt16Type);
-impl_cast!(cast_u32, UInt32Type);
-impl_cast!(cast_u64, UInt64Type);
-impl_cast!(cast_i8, Int8Type);
-impl_cast!(cast_i16, Int16Type);
-impl_cast!(cast_i32, Int32Type);
-impl_cast!(cast_i64, Int64Type);
-impl_cast!(cast_f32, Float32Type);
-impl_cast!(cast_f64, Float64Type);
-impl_cast!(cast_date32, Date32Type);
-impl_cast!(cast_date64, Date64Type);
-impl_cast!(cast_time64ns, Time64NanosecondType);
-impl_cast!(cast_duration_ns, DurationNanosecondType);
-impl_cast!(cast_str, Utf8Type);
-impl_cast!(cast_categorical, CategoricalType);
 
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {
