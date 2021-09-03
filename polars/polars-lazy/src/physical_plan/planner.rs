@@ -824,12 +824,17 @@ impl DefaultPlanner {
                     }
                 }
             }
-            Cast { expr, data_type } => {
+            Cast {
+                expr,
+                data_type,
+                strict,
+            } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 Ok(Arc::new(CastExpr {
                     input: phys_expr,
                     data_type,
                     expr: node_to_exp(expression, expr_arena),
+                    strict,
                 }))
             }
             Ternary {

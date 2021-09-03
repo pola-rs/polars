@@ -1668,6 +1668,23 @@ impl Series {
     pub fn rank(&self, method: RankMethod) -> Series {
         rank(self, method)
     }
+
+    /// Cast throws an error if conversion had overflows
+    pub fn strict_cast(&self, data_type: &DataType) -> Result<Series> {
+        let s = self.cast_with_dtype(data_type)?;
+        if self.null_count() != s.null_count() {
+            Err(PolarsError::ComputeError(
+                format!(
+                    "strict conversion of cast from {:?} to {:?} failed. consider non-strict cast.",
+                    self.dtype(),
+                    data_type
+                )
+                .into(),
+            ))
+        } else {
+            Ok(s)
+        }
+    }
 }
 
 impl Deref for Series {
