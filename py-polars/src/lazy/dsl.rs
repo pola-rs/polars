@@ -164,10 +164,14 @@ impl PyExpr {
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
     }
-    pub fn cast(&self, data_type: &PyAny) -> PyExpr {
+    pub fn cast(&self, data_type: &PyAny, strict: bool) -> PyExpr {
         let str_repr = data_type.str().unwrap().to_str().unwrap();
         let dt = str_to_polarstype(str_repr);
-        let expr = self.inner.clone().cast(dt);
+        let expr = if strict {
+            self.inner.clone().strict_cast(dt)
+        } else {
+            self.inner.clone().cast(dt)
+        };
         expr.into()
     }
     pub fn sort(&self, reverse: bool) -> PyExpr {
@@ -971,7 +975,10 @@ fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<Series> {
     let result_series_wrapper =
         match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
             Ok(pyobj) => pyobj,
-            Err(e) => panic!("custom python function failed: {}", e.pvalue(py).to_string()),
+            Err(e) => panic!(
+                "custom python function failed: {}",
+                e.pvalue(py).to_string()
+            ),
         };
     // unpack the wrapper in a PySeries
     let py_pyseries = result_series_wrapper

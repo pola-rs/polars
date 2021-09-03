@@ -8,6 +8,7 @@ pub struct CastExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) data_type: DataType,
     pub(crate) expr: Expr,
+    pub(crate) strict: bool,
 }
 
 impl CastExpr {
@@ -22,7 +23,11 @@ impl CastExpr {
                 return Ok(ListChunked::full_null(input.name(), input.len()).into_series());
             }
         }
-        input.cast_with_dtype(&self.data_type)
+        if self.strict {
+            input.strict_cast(&self.data_type)
+        } else {
+            input.cast_with_dtype(&self.data_type)
+        }
     }
 }
 
