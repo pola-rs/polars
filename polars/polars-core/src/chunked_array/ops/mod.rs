@@ -41,6 +41,15 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub(crate) mod zip;
 
+#[cfg(feature = "to_list")]
+pub trait ToList<T: PolarsDataType> {
+    fn to_list(&self) -> Result<ListChunked> {
+        Err(PolarsError::InvalidOperation(
+            format!("to_list not supported for dtype: {:?}", T::get_dtype()).into(),
+        ))
+    }
+}
+
 #[cfg(feature = "interpolate")]
 pub trait Interpolate {
     fn interpolate(&self) -> Self;

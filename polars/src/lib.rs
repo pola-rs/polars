@@ -139,6 +139,7 @@
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - [List utils](crate::chunked_array::list::namespace)
 //!     - `rank` - Ranking algorithms.
+//!     - `moment` - kurtosis and skew statistics
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)
