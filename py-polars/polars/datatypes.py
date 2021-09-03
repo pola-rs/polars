@@ -285,7 +285,7 @@ if not _DOCUMENTING:
 
 def polars_type_to_constructor(
     dtype: Type[DataType],
-) -> Callable[[str, Sequence[Any]], "PySeries"]:
+) -> Callable[[str, Sequence[Any], bool], "PySeries"]:
     """
     Get the right PySeries constructor for the given Polars dtype.
     """

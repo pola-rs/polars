@@ -55,9 +55,7 @@ def arrow_to_pyseries(name: str, values: pa.Array) -> "PySeries":
 
 
 def numpy_to_pyseries(
-    name: str,
-    values: np.ndarray,
-    nullable: bool = True,
+    name: str, values: np.ndarray, nullable: bool = True, strict: bool = True
 ) -> "PySeries":
     """
     Construct a PySeries from a numpy array.
@@ -71,7 +69,7 @@ def numpy_to_pyseries(
         if dtype == np.float32 or dtype == np.float64:
             return constructor(name, values, nullable)
         else:
-            return constructor(name, values)
+            return constructor(name, values, strict)
     else:
         return PySeries.new_object(name, values)
 
@@ -89,6 +87,7 @@ def sequence_to_pyseries(
     name: str,
     values: Sequence[Any],
     dtype: Optional[Type[DataType]] = None,
+    strict: bool = True,
 ) -> "PySeries":
     """
     Construct a PySeries from a sequence.
@@ -99,7 +98,7 @@ def sequence_to_pyseries(
 
     if dtype is not None:
         constructor = polars_type_to_constructor(dtype)
-        pyseries = constructor(name, values)
+        pyseries = constructor(name, values, strict)
         if dtype == Date32:
             pyseries = pyseries.cast(str(pl.Date32), True)
         elif dtype == Date64:
@@ -133,7 +132,7 @@ def sequence_to_pyseries(
 
         else:
             constructor = py_type_to_constructor(dtype_)
-            return constructor(name, values)
+            return constructor(name, values, strict)
 
 
 def _pandas_series_to_arrow(values: Union["pd.Series", "pd.DatetimeIndex"]) -> pa.Array:
