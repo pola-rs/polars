@@ -33,7 +33,7 @@ macro_rules! init_method {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            pub fn $name(name: &str, val: &PyArray1<$type>) -> PySeries {
+            pub fn $name(name: &str, val: &PyArray1<$type>, _strict: bool) -> PySeries {
                 unsafe {
                     PySeries {
                         series: Series::new(name, val.as_slice().unwrap()),
@@ -99,36 +99,92 @@ impl PySeries {
     }
 }
 
+#[pymethods]
+impl PySeries {
+    #[staticmethod]
+    pub fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
+        let (seq, len) = get_pyseq(obj)?;
+        let mut builder = BooleanChunkedBuilder::new(name, len);
+
+        for res in seq.iter()? {
+            let item = res?;
+            if item.is_none() {
+                builder.append_null()
+            } else {
+                match item.extract::<bool>() {
+                    Ok(val) => builder.append_value(val),
+                    Err(e) => {
+                        if strict {
+                            return Err(e)
+                        }
+                        builder.append_null()
+                    }
+                }
+            }
+
+        }
+        let ca = builder.finish();
+
+
+        let s = ca.into_series();
+        Ok(PySeries { series: s })
+
+    }
+}
+
 // Init with lists that can contain Nones
 macro_rules! init_method_opt {
-    ($name:ident, $type:ty) => {
+    ($name:ident, $type:ty, $native: ty) => {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            pub fn $name(name: &str, val: Wrap<ChunkedArray<$type>>) -> PySeries {
-                let mut s = val.0.into_series();
-                s.rename(name);
-                PySeries { series: s }
+            pub fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
+
+                let (seq, len) = get_pyseq(obj)?;
+                let mut builder = PrimitiveChunkedBuilder::<$type>::new(name, len);
+
+                for res in seq.iter()? {
+                    let item = res?;
+
+                if item.is_none() {
+                    builder.append_null()
+                } else {
+
+                    match item.extract::<$native>() {
+                        Ok(val) => builder.append_value(val),
+                        Err(e) => {
+                            if strict {
+                                return Err(e)
+                            }
+                            builder.append_null()
+                        }
+                    }
+                }
+    }
+                let ca = builder.finish();
+
+
+                let s = ca.into_series();
+                Ok(PySeries { series: s })
             }
         }
     };
 }
 
-init_method_opt!(new_opt_u8, UInt8Type);
-init_method_opt!(new_opt_u16, UInt16Type);
-init_method_opt!(new_opt_u32, UInt32Type);
-init_method_opt!(new_opt_u64, UInt64Type);
-init_method_opt!(new_opt_i8, Int8Type);
-init_method_opt!(new_opt_i16, Int16Type);
-init_method_opt!(new_opt_i32, Int32Type);
-init_method_opt!(new_opt_i64, Int64Type);
-init_method_opt!(new_opt_f32, Float32Type);
-init_method_opt!(new_opt_f64, Float64Type);
-init_method_opt!(new_opt_bool, BooleanType);
-init_method_opt!(new_opt_date32, Int32Type);
-init_method_opt!(new_opt_date64, Int64Type);
-init_method_opt!(new_opt_duration_ns, Int64Type);
-init_method_opt!(new_opt_time_ns, Int64Type);
+init_method_opt!(new_opt_u8, UInt8Type, u8);
+init_method_opt!(new_opt_u16, UInt16Type, u16);
+init_method_opt!(new_opt_u32, UInt32Type, u32);
+init_method_opt!(new_opt_u64, UInt64Type, u64);
+init_method_opt!(new_opt_i8, Int8Type, i8);
+init_method_opt!(new_opt_i16, Int16Type, i16);
+init_method_opt!(new_opt_i32, Int32Type, i32);
+init_method_opt!(new_opt_i64, Int64Type, i64);
+init_method_opt!(new_opt_f32, Float32Type, f32);
+init_method_opt!(new_opt_f64, Float64Type, f64);
+init_method_opt!(new_opt_date32, Int32Type, i32);
+init_method_opt!(new_opt_date64, Int64Type, i64);
+init_method_opt!(new_opt_duration_ns, Int64Type, i64);
+init_method_opt!(new_opt_time_ns, Int64Type, i64);
 
 impl From<Series> for PySeries {
     fn from(s: Series) -> Self {
@@ -144,7 +200,7 @@ impl From<Series> for PySeries {
 )]
 impl PySeries {
     #[staticmethod]
-    pub fn new_str(name: &str, val: Wrap<Utf8Chunked>) -> Self {
+    pub fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
         let mut s = val.0.into_series();
         s.rename(name);
         PySeries::new(s)
