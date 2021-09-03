@@ -459,6 +459,17 @@ class Series:
         # assume it is boolean mask
         if isinstance(item, Series):
             return Series._from_pyseries(self._s.filter(item._s))
+
+        if isinstance(item, range):
+            step: Optional[int]
+            # maybe we can slice instead of take by indices
+            if item.step != 1:
+                step = item.step
+            else:
+                step = None
+            slc = slice(item.start, item.stop, step)
+            return self[slc]
+
         # slice
         if type(item) == slice:
             start, stop, stride = item.indices(self.len())
