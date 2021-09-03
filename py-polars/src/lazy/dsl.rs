@@ -971,7 +971,7 @@ fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<Series> {
     let result_series_wrapper =
         match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
             Ok(pyobj) => pyobj,
-            Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
+            Err(e) => panic!("custom python function failed: {}", e.pvalue(py).to_string()),
         };
     // unpack the wrapper in a PySeries
     let py_pyseries = result_series_wrapper
