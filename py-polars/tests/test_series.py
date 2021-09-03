@@ -41,6 +41,8 @@ def test_init_inputs():
         pl.Series([1, 2, 3], [1, 2, 3])
     with pytest.raises(ValueError):
         pl.Series({"a": [1, 2, 3]})
+    with pytest.raises(OverflowError):
+        pl.Series("bigint", [2 ** 64])
 
 
 def test_to_frame():

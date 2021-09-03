@@ -125,12 +125,11 @@ class Series:
         One-dimensional data in various forms. Supported are: Sequence, Series,
         pyarrow Array, and numpy ndarray.
     nullable : bool, default True
-        If set to True, Sequence values will be parsed with None interpreted as missing,
-        and numpy arrays will be parsed with NaN interpreted as missing. Note that
-        missing and NaN is not the same in Polars. If your data does not contain null
-        values, set to False to speed up Series creation.
+        deprecated: does not do a thing
     dtype : DataType, default None
         Polars dtype of the Series data. If not specified, the dtype is inferred.
+    strict
+        Throw error on numeric overflow
 
     Examples
     --------
@@ -185,6 +184,7 @@ class Series:
         values: Optional[ArrayLike] = None,
         nullable: bool = True,
         dtype: Optional[Type[DataType]] = None,
+        strict: bool = True,
     ):
         # Handle case where values are passed as the first argument
         if name is not None and not isinstance(name, str):
@@ -202,15 +202,12 @@ class Series:
             self._s = sequence_to_pyseries(name, [], dtype=dtype)
         elif isinstance(values, Series):
             self._s = series_to_pyseries(name, values)
-        elif isinstance(values, np.ndarray):
-            self._s = numpy_to_pyseries(name, values)
         elif isinstance(values, pa.Array):
             self._s = arrow_to_pyseries(name, values)
+        elif isinstance(values, np.ndarray):
+            self._s = numpy_to_pyseries(name, values, strict)
         elif isinstance(values, Sequence):
-            if nullable:
-                self._s = sequence_to_pyseries(name, values, dtype=dtype)
-            else:
-                self._s = numpy_to_pyseries(name, np.array(values))
+            self._s = sequence_to_pyseries(name, values, dtype=dtype, strict=strict)
         elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
             self._s = pandas_to_pyseries(name, values)
         else:
