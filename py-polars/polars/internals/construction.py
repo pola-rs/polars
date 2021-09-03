@@ -101,9 +101,9 @@ def sequence_to_pyseries(
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values)
         if dtype == Date32:
-            pyseries = pyseries.cast_date32()
+            pyseries = pyseries.cast(str(pl.Date32), True)
         elif dtype == Date64:
-            pyseries = pyseries.cast_date64()
+            pyseries = pyseries.cast(str(pl.Date64), True)
         return pyseries
 
     else:

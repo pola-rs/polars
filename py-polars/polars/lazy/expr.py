@@ -609,14 +609,16 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.mode())
 
-    def cast(self, dtype: Type[Any]) -> "Expr":
+    def cast(self, dtype: Type[Any], strict: bool = True) -> "Expr":
         """
-        Cast an expression to a different data types.
+        Cast between data types.
 
         Parameters
         ----------
-        dtype
-            Output data type.
+        data_type
+            DataType to cast to
+        strict
+            Throw an error if a cast could not be done for instance due to an overflow
         """
         if dtype == str:
             dtype = Utf8
@@ -626,7 +628,7 @@ class Expr:
             dtype = Float64
         elif dtype == int:
             dtype = Int64
-        return wrap_expr(self._pyexpr.cast(dtype))
+        return wrap_expr(self._pyexpr.cast(dtype, strict))
 
     def sort(self, reverse: bool = False) -> "Expr":
         """

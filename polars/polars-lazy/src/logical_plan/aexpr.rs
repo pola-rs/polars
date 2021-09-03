@@ -45,6 +45,7 @@ pub enum AExpr {
     Cast {
         expr: Node,
         data_type: DataType,
+        strict: bool,
     },
     Sort {
         expr: Node,
@@ -284,7 +285,9 @@ impl AExpr {
                 };
                 Ok(field)
             }
-            Cast { expr, data_type } => {
+            Cast {
+                expr, data_type, ..
+            } => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                 Ok(Field::new(field.name(), data_type.clone()))
             }
