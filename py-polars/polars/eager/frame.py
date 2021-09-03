@@ -1038,6 +1038,17 @@ class DataFrame:
         if isinstance(item, int):
             return self.slice(self._pos_idx(item, dim=0), 1)
 
+        # df[range(n)]
+        if isinstance(item, range):
+            step: Optional[int]
+            # maybe we can slice instead of take by indices
+            if item.step != 1:
+                step = item.step
+            else:
+                step = None
+            slc = slice(item.start, item.stop, step)
+            return self[slc]
+
         # df[:]
         if isinstance(item, slice):
             # special case df[::-1]
