@@ -34,6 +34,7 @@ def test_init_inputs():
     assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
     assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.Utf8
     assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
+    assert pl.Series("a", [pl.Series([1, 2, 4]), pl.Series([3, 2, 1])]).dtype == pl.List
 
     # Bad inputs
     with pytest.raises(ValueError):
@@ -394,6 +395,10 @@ def test_arange_expr():
     # eager arange
     out = pl.arange(0, 10, 2, eager=True)
     assert out == [0, 2, 4, 8, 8]
+
+    out = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), 2, eager=True)
+    assert out.dtype == pl.List
+    assert out[0].to_list() == [0, 1, 2]
 
 
 def test_strftime():

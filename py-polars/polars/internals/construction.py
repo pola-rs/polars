@@ -113,7 +113,7 @@ def sequence_to_pyseries(
         if dtype_ == date or dtype_ == datetime:
             return arrow_to_pyseries(name, pa.array(values))
 
-        elif dtype_ == list or dtype_ == tuple:
+        elif dtype_ == list or dtype_ == tuple or dtype_ == pl.Series:
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
 
