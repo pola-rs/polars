@@ -4,6 +4,7 @@ use polars_core::{datatypes::PlHashMap, prelude::*};
 pub(crate) mod aggregate_pushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 pub(crate) mod aggregate_scan_projections;
+pub(crate) mod drop_nulls;
 pub(crate) mod fast_projection;
 #[cfg(feature = "private")]
 pub(crate) mod join_pruning;
