@@ -105,34 +105,32 @@ where
         check_bounds!(self, mask);
 
         // Fast path uses the kernel in polars-arrow
-        if let Some(value) = value {
-            // kernel expects no null values in mask
-            if mask.null_count() == 0 {
-                let (left, mask) = align_chunks_binary(self, mask);
+        if let (Some(value), 0) = (value, mask.null_count()) {
+            let (left, mask) = align_chunks_binary(self, mask);
 
-                // apply binary kernel.
-                let chunks = left
-                    .downcast_iter()
-                    .into_iter()
-                    .zip(mask.downcast_iter())
-                    .map(|(arr, mask)| {
-                        let a = set_with_mask(arr, mask, value, T::get_dtype().to_arrow());
-                        Arc::new(a) as ArrayRef
-                    })
-                    .collect();
-                return Ok(ChunkedArray::new_from_chunks(self.name(), chunks));
-            }
+            // apply binary kernel.
+            let chunks = left
+                .downcast_iter()
+                .into_iter()
+                .zip(mask.downcast_iter())
+                .map(|(arr, mask)| {
+                    let a = set_with_mask(arr, mask, value, T::get_dtype().to_arrow());
+                    Arc::new(a) as ArrayRef
+                })
+                .collect();
+            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+        } else {
+            // slow path, could be optimized.
+            let ca = mask
+                .into_iter()
+                .zip(self.into_iter())
+                .map(|(mask_val, opt_val)| match mask_val {
+                    Some(true) => value,
+                    _ => opt_val,
+                })
+                .collect();
+            Ok(ca)
         }
-        // slow path, could be optimized.
-        let ca = mask
-            .into_iter()
-            .zip(self.into_iter())
-            .map(|(mask_val, opt_val)| match mask_val {
-                Some(true) => value,
-                _ => opt_val,
-            })
-            .collect();
-        Ok(ca)
     }
 
     fn set_with<F>(&'a self, mask: &BooleanChunked, f: F) -> Result<Self>
