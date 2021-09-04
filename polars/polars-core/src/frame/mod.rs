@@ -486,6 +486,11 @@ impl DataFrame {
             None => self.columns.iter(),
         };
 
+        // fast path for no nulls in df
+        if iter.clone().all(|s| s.null_count() == 0) {
+            return Ok(self.clone());
+        }
+
         let mask = iter
             .next()
             .ok_or_else(|| PolarsError::NoData("No data to drop nulls from".into()))?;
