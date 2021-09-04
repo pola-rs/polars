@@ -1,9 +1,33 @@
 use crate::error::{PolarsError, Result};
 use crate::kernels::BinaryMaskedSliceIterator;
 use crate::utils::{buffer_or, combine_null_buffers};
-use crate::vec::AlignedVec;
+use crate::{array::IsNull, vec::AlignedVec};
 use arrow::array::*;
 use arrow::datatypes::{ArrowNativeType, ArrowNumericType, ArrowPrimitiveType};
+
+/// Set values in a primitive array where the primitive array has null values.
+/// this is faster because we don't have to invert and combine bitmaps
+pub fn set_at_nulls<T>(array: &PrimitiveArray<T>, value: T::Native) -> PrimitiveArray<T>
+where
+    T: ArrowNumericType,
+    T::Native: ArrowNativeType,
+{
+    let values = array.values();
+    let validity = (array as &dyn Array).is_not_null_mask();
+
+    let mut av = AlignedVec::with_capacity(array.len());
+    BinaryMaskedSliceIterator::new(&validity)
+        .into_iter()
+        .for_each(|(lower, upper, truthy)| {
+            if truthy {
+                av.extend_memcpy(&values[lower..upper])
+            } else {
+                av.extend((lower..upper).map(|_| value))
+            }
+        });
+
+    av.into_primitive_array(None)
+}
 
 /// Set values in a primitive array based on a mask array. This is fast when large chunks of bits are set or unset.
 pub fn set_with_mask<T>(
