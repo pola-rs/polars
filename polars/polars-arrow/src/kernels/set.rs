@@ -1,9 +1,38 @@
+use crate::array::default_arrays::FromData;
 use crate::error::{PolarsError, Result};
 use crate::kernels::BinaryMaskedSliceIterator;
 use arrow::array::*;
 use arrow::buffer::MutableBuffer;
 use arrow::{datatypes::DataType, types::NativeType};
 use std::ops::BitOr;
+
+/// Set values in a primitive array where the primitive array has null values.
+/// this is faster because we don't have to invert and combine bitmaps
+pub fn set_at_nulls<T>(array: &PrimitiveArray<T>, value: T) -> PrimitiveArray<T>
+where
+    T: NativeType,
+{
+    let values = array.values();
+    if array.null_count() == 0 {
+        return array.clone();
+    }
+
+    let validity = array.validity().as_ref().unwrap();
+    let validity = BooleanArray::from_data_default(validity.clone(), None);
+
+    let mut av = MutableBuffer::with_capacity(array.len());
+    BinaryMaskedSliceIterator::new(&validity)
+        .into_iter()
+        .for_each(|(lower, upper, truthy)| {
+            if truthy {
+                av.extend_from_slice(&values[lower..upper])
+            } else {
+                av.extend((lower..upper).map(|_| value))
+            }
+        });
+
+    PrimitiveArray::from_data(array.data_type().clone(), av.into(), None)
+}
 
 /// Set values in a primitive array based on a mask array. This is fast when large chunks of bits are set or unset.
 pub fn set_with_mask<T: NativeType>(
