@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use num::{Bounded, Num, NumCast, One, Zero};
+use polars_arrow::kernels::set::set_at_nulls;
 use std::ops::{Add, Div};
 
 fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
@@ -121,7 +122,7 @@ where
     T::Native: Add<Output = T::Native> + PartialOrd + Div<Output = T::Native> + Num + NumCast,
 {
     fn fill_null_with_values(&self, value: T::Native) -> Result<Self> {
-        self.set(&self.is_null(), Some(value))
+        Ok(self.apply_kernel(|arr| Arc::new(set_at_nulls(arr, value))))
     }
 }
 
