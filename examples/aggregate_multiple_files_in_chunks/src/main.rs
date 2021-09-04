@@ -143,7 +143,7 @@ fn read_csv<P: AsRef<Path>>(path: P) -> PolarResult<DataFrame> {
     let file = File::open(path).expect("Cannot open file.");
 
     CsvReader::new(file)
-        .with_schema(Arc::new(schema))
+        .with_dtypes(Some(&Arc::new(schema)))
         .has_header(true)
         .finish()
 }
@@ -168,12 +168,12 @@ fn compute_mean(
     // Get the sum column from dataframe as float.
     let sum_column = dataframe
         .drop_in_place(sum_column_name)?
-        .cast_with_datatype(&DataType::Float64)?;
+        .cast_with_dtype(&DataType::Float64)?;
 
     // Get the count column from dataframe as float.
     let count_column = dataframe
         .drop_in_place(count_column_name)?
-        .cast_with_datatype(&DataType::Float64)?;
+        .cast_with_dtype(&DataType::Float64)?;
 
     // Compute the mean serie and rename to the `mean_column_name` provided
     // as input.
@@ -317,7 +317,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     mean_series
         .into_iter()
         .try_for_each(|serie| -> PolarResult<()> {
-            main_df.add_column(serie)?;
+            main_df.with_column(serie)?;
             Ok(())
         })?;
 
