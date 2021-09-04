@@ -9,5 +9,5 @@ edition = "2018"
 [workspace]
 
 [dependencies]
-polars = {path = "../../polars"}
+polars = {path = "../../polars",features = ["dtype-u64"]}
 rayon = "1.5"
