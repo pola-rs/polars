@@ -374,15 +374,22 @@ where
         match opt_v {
             Some(items) => {
                 let values = self.builder.mut_values();
-                // Safety:
-                // A slice is a trusted length iterator
-                unsafe { values.extend_trusted_len_unchecked(items.iter().map(Some)) }
+                values.extend_from_slice(items);
                 self.builder.try_push_valid().unwrap();
             }
             None => {
                 self.builder.push_null();
             }
         }
+    }
+    /// Appends from an iterator over values
+    #[inline]
+    pub fn append_iter_values<I: Iterator<Item = T::Native> + TrustedLen>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+        // Safety
+        // trusted len, trust the type system
+        unsafe { values.extend_trusted_len_values_unchecked(iter) };
+        self.builder.try_push_valid().unwrap();
     }
 
     pub fn append_null(&mut self) {
@@ -419,9 +426,14 @@ where
                 .as_any()
                 .downcast_ref::<PrimitiveArray<T::Native>>()
                 .unwrap();
-            // Safety:
-            // Arrow arrays are trusted length iterators.
-            unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
+
+            if arr.null_count() == 0 {
+                values.extend_from_slice(arr.values().as_slice())
+            } else {
+                // Safety:
+                // Arrow arrays are trusted length iterators.
+                unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
+            }
         });
         self.builder.try_push_valid().unwrap();
     }

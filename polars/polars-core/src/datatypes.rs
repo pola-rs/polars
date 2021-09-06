@@ -532,13 +532,13 @@ impl DataType {
             Utf8 => ArrowDataType::LargeUtf8,
             Date32 => ArrowDataType::Date32,
             Date64 => ArrowDataType::Date64,
-            Time64(tu) => ArrowDataType::Time64(tu.clone()),
+            Time64(tu) => ArrowDataType::Time64(*tu),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",
                 dt.clone(),
                 true,
             ))),
-            Duration(tu) => ArrowDataType::Duration(tu.clone()),
+            Duration(tu) => ArrowDataType::Duration(*tu),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
             Object(_) => panic!("cannot convert object to arrow"),
