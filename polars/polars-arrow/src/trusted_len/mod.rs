@@ -57,6 +57,7 @@ unsafe impl<T> TrustedLen for std::ops::Range<T> where std::ops::Range<T>: Itera
 unsafe impl TrustedLen for arrow::array::Utf8ValuesIter<'_, i64> {}
 unsafe impl<T, I: TrustedLen + Iterator<Item = T>> TrustedLen for ZipValidity<'_, T, I> {}
 unsafe impl TrustedLen for BitmapIter<'_> {}
+unsafe impl<A: TrustedLen> TrustedLen for std::iter::StepBy<A> {}
 
 impl<T: arrow::types::NativeType> FromTrustedLenIterator<T> for MutableBuffer<T> {
     fn from_iter_trusted_length<I: IntoIterator<Item = T>>(iter: I) -> Self {

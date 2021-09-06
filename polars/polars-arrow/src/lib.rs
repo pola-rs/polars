@@ -6,3 +6,4 @@ pub mod kernels;
 pub mod prelude;
 pub mod trusted_len;
 pub mod utils;
+pub use arrow;

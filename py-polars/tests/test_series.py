@@ -398,9 +398,9 @@ def test_arange_expr():
     out = pl.arange(0, 10, 2, eager=True)
     assert out == [0, 2, 4, 8, 8]
 
-    out = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), 2, eager=True)
+    out = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
     assert out.dtype == pl.List
-    assert out[0].to_list() == [0, 1, 2]
+    assert out[0].to_list() == [0, 2]
 
 
 def test_strftime():
