@@ -30,10 +30,7 @@ pub mod utils;
 
 use crate::conversion::{get_df, get_pyseq};
 use crate::error::PyPolarsEr;
-use crate::utils::str_to_polarstype;
 use mimalloc::MiMalloc;
-use polars::prelude::*;
-use std::iter::FromIterator;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;

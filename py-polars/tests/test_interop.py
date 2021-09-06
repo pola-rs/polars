@@ -46,3 +46,10 @@ def test_arrow_dict_to_polars():
     )
 
     assert s.series_equal(pl.Series("pa_dict", pa_dict))
+
+
+def test_arrow_list_chunked_array():
+    a = pa.array([[1, 2], [3, 4]])
+    ca = pa.chunked_array([a, a, a])
+    s = pl.from_arrow(ca)
+    assert s.dtype == pl.List
