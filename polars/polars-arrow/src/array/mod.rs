@@ -1,3 +1,5 @@
+pub mod builder;
+
 use crate::utils::CustomIterTools;
 use arrow::array::{
     Array, ArrayData, ArrayRef, BooleanArray, BooleanBufferBuilder, LargeListArray,

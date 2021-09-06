@@ -5,11 +5,11 @@ use crate::{
     utils::{get_iter_capacity, NoNull},
 };
 pub use arrow::alloc;
-use arrow::array::{ArrayData, PrimitiveArray, PrimitiveBuilder};
+use arrow::array::{ArrayData, PrimitiveArray};
 use arrow::array::{ArrayRef, LargeListBuilder};
 use arrow::{array::Array, buffer::Buffer};
 use num::Num;
-use polars_arrow::prelude::*;
+use polars_arrow::{array::builder::PrimitiveBuilder, prelude::*};
 use std::borrow::Cow;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
@@ -85,17 +85,13 @@ where
     /// Appends a value of type `T` into the builder
     #[inline]
     fn append_value(&mut self, v: T::Native) {
-        // Safety:
-        // never errors
-        unsafe { self.array_builder.append_value(v).unsafe_unwrap() }
+        self.array_builder.append_value(v)
     }
 
     /// Appends a null slot into the builder
     #[inline]
     fn append_null(&mut self) {
-        // Safety:
-        // never errors
-        unsafe { self.array_builder.append_null().unsafe_unwrap() }
+        self.array_builder.append_null()
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
@@ -400,7 +396,7 @@ where
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
         match opt_v {
             Some(v) => {
-                self.builder.values().append_slice(v).unwrap();
+                self.builder.values().append_slice(v);
                 self.builder.append(true).expect("should not fail");
             }
             None => {
@@ -432,7 +428,7 @@ where
     #[inline]
     fn append_null(&mut self) {
         let builder = self.builder.values();
-        builder.append_null().unwrap();
+        builder.append_null();
         self.builder.append(true).unwrap();
     }
 
@@ -442,7 +438,7 @@ where
         let arrays = s.chunks();
         if s.null_count() == s.len() {
             for _ in 0..s.len() {
-                builder.append_null().unwrap();
+                builder.append_null()
             }
         } else if s.is_empty() {
             return;
@@ -453,13 +449,13 @@ where
                 // however at the time of writing there is a bug in append_slice, because it does not update
                 // the null bitmap
                 if s.null_count() == 0 {
-                    builder.append_slice(values).unwrap();
+                    builder.append_slice(values);
                 } else {
                     values.iter().enumerate().for_each(|(idx, v)| {
                         if a.is_valid(idx) {
-                            builder.append_value(*v).unwrap();
+                            builder.append_value(*v);
                         } else {
-                            builder.append_null().unwrap();
+                            builder.append_null();
                         }
                     });
                 }
