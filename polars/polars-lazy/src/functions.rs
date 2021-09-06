@@ -83,6 +83,7 @@ pub fn argsort_by(by: Vec<Expr>, reverse: &[bool]) -> Expr {
 }
 
 #[cfg(feature = "concat_str")]
+#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Concat string columns in linear time
 pub fn concat_str(s: Vec<Expr>, delimiter: &str) -> Expr {
     let delimiter = delimiter.to_string();
@@ -97,5 +98,67 @@ pub fn concat_str(s: Vec<Expr>, delimiter: &str) -> Expr {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
         },
+    }
+}
+
+/// Create list entries that are range arrays
+/// - if `low` and `high` are a column, every element will expand into an array in a list column.
+/// - if `low` and `high` are literals the output will be of `Int64`.
+#[cfg(feature = "arange")]
+#[cfg_attr(docsrs, doc(cfg(feature = "arange")))]
+pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
+    if matches!(low, Expr::Literal(_)) || matches!(high, Expr::Literal(_)) {
+        let f = move |sa: Series, sb: Series| {
+            let sa = sa.cast_with_dtype(&DataType::Int64)?;
+            let sb = sb.cast_with_dtype(&DataType::Int64)?;
+            let low = sa
+                .i64()?
+                .get(0)
+                .ok_or_else(|| PolarsError::NoData("no data in `low` evaluation".into()))?;
+            let high = sb
+                .i64()?
+                .get(0)
+                .ok_or_else(|| PolarsError::NoData("no data in `high` evaluation".into()))?;
+
+            if step > 1 {
+                Ok(Int64Chunked::new_from_iter("arange", (low..high).step_by(step)).into_series())
+            } else {
+                Ok(Int64Chunked::new_from_iter("arange", low..high).into_series())
+            }
+        };
+        map_binary(low, high, f, Some(Field::new("arange", DataType::Int64)))
+    } else {
+        let f = move |sa: Series, sb: Series| {
+            let sa = sa.cast_with_dtype(&DataType::Int64)?;
+            let sb = sb.cast_with_dtype(&DataType::Int64)?;
+            let low = sa.i64()?;
+            let high = sb.i64()?;
+            let mut builder =
+                ListPrimitiveChunkedBuilder::<Int64Type>::new("arange", low.len(), low.len() * 3);
+
+            low.into_iter()
+                .zip(high.into_iter())
+                .for_each(|(opt_l, opt_h)| match (opt_l, opt_h) {
+                    (Some(l), Some(r)) => {
+                        if step > 1 {
+                            builder.append_iter_values((l..r).step_by(step));
+                        } else {
+                            builder.append_iter_values(l..r);
+                        }
+                    }
+                    _ => builder.append_null(),
+                });
+
+            Ok(builder.finish().into_series())
+        };
+        map_binary(
+            low,
+            high,
+            f,
+            Some(Field::new(
+                "arange",
+                DataType::List(DataType::Int64.to_arrow()),
+            )),
+        )
     }
 }
