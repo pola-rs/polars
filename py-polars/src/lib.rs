@@ -64,6 +64,11 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
+    polars::lazy::functions::arange(low.inner, high.inner, step).into()
+}
+
+#[pyfunction]
 fn binary_function(
     a: dsl::PyExpr,
     b: dsl::PyExpr,
@@ -127,34 +132,6 @@ fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     Ok(df.into())
 }
 
-#[pyfunction]
-fn series_from_range(low: i64, high: i64, step_by: usize, dtype: &PyAny) -> PySeries {
-    let str_repr = dtype.str().unwrap().to_str().unwrap();
-    let dtype = str_to_polarstype(str_repr);
-
-    if step_by == 1 {
-        match dtype {
-            DataType::UInt32 => Series::from_iter((low as u32)..(high as u32)).into(),
-            DataType::Int32 => Series::from_iter((low as i32)..(high as i32)).into(),
-            DataType::Int64 => Series::from_iter((low as i64)..(high as i64)).into(),
-            _ => unimplemented!(),
-        }
-    } else {
-        match dtype {
-            DataType::UInt32 => {
-                Series::from_iter(((low as u32)..(high as u32)).step_by(step_by)).into()
-            }
-            DataType::Int32 => {
-                Series::from_iter(((low as i32)..(high as i32)).step_by(step_by)).into()
-            }
-            DataType::Int64 => {
-                Series::from_iter(((low as i64)..(high as i64)).step_by(step_by)).into()
-            }
-            _ => unimplemented!(),
-        }
-    }
-}
-
 #[pymodule]
 fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -167,6 +144,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(arange)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_function)).unwrap();
     m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
@@ -175,7 +153,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(series_from_range)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
     Ok(())

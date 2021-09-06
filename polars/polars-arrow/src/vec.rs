@@ -262,10 +262,10 @@ impl<T: ArrowNativeType> AlignedVec<T> {
         PrimitiveArray::<A>::from(data)
     }
 
-    fn reserve_from_size_hint(&mut self, size: usize) {
-        let (extra_cap, overflow) = size.overflowing_sub(self.capacity());
-        if extra_cap > 0 && !overflow {
-            self.reserve(extra_cap);
+    #[inline]
+    fn check_reserve(&mut self, additional: usize) {
+        if (self.len() + additional) > self.capacity() {
+            self.reserve(additional);
         }
     }
 
@@ -274,7 +274,7 @@ impl<T: ArrowNativeType> AlignedVec<T> {
     pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         let iter = iter.into_iter();
         let cap = iter.size_hint().1.expect("a trusted length iterator");
-        self.reserve_from_size_hint(cap);
+        self.check_reserve(cap);
         let len_before = self.len();
         self.inner.extend(iter);
         let added = self.len() - len_before;
@@ -291,7 +291,7 @@ impl<T: ArrowNativeType> AlignedVec<T> {
     pub unsafe fn extend_trusted_len_unchecked<I: IntoIterator<Item = T>>(&mut self, iter: I) {
         let iter = iter.into_iter();
         let iter_len = iter.size_hint().1.expect("a trusted length iterator");
-        self.reserve_from_size_hint(iter_len);
+        self.check_reserve(iter_len);
 
         let mut dst = self.inner.as_ptr() as *mut T;
         dst = dst.add(self.len());
