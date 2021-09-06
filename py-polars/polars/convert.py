@@ -169,7 +169,7 @@ def from_arrow(
     """
     if isinstance(a, pa.Table):
         return pl.DataFrame._from_arrow(a, rechunk=rechunk)
-    elif isinstance(a, pa.Array):
+    elif isinstance(a, (pa.Array, pa.ChunkedArray)):
         return pl.Series._from_arrow("", a)
     else:
         raise ValueError(f"Expected Arrow table or array, got {type(a)}.")
