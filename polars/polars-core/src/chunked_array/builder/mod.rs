@@ -407,8 +407,12 @@ where
         }
     }
 
-    pub fn append_null(&mut self) {
-        self.builder.append(false).expect("should not fail");
+    pub fn append_iter_values<I>(&mut self, iter: I)
+    where
+        I: Iterator<Item = T::Native> + TrustedLen,
+    {
+        self.builder.values().append_iter_values(iter);
+        self.builder.append(true).expect("should not fail");
     }
 }
 
