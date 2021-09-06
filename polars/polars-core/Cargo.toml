@@ -125,7 +125,8 @@ docs-selection = [
 ]
 
 [dependencies]
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "37353bb09cd3d77b21f6b40d2195a3e68d1de6ae", default-features = false, features=["compute"]}
+#arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "37353bb09cd3d77b21f6b40d2195a3e68d1de6ae", default-features = false, features=["compute"]}
+arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", rev = "8aab4065eedfdee458ceb315b65e23cc8e9f06f5", default-features = false, features=["compute"] }
 #arrow = { package = "arrow2", version="0.4", default-features = false, features=["compute"]}
 polars-arrow = {version = "0.15.1", path = "../polars-arrow"}
 thiserror = "1.0"
