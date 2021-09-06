@@ -314,8 +314,11 @@ mod test {
 
     #[test]
     fn test_cast_list() -> Result<()> {
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", PrimitiveBuilder::new(10), 10);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            "a",
+            polars_arrow::array::builder::PrimitiveBuilder::new(10),
+            10,
+        );
         builder.append_slice(Some(&[1i32, 2, 3]));
         builder.append_slice(Some(&[1i32, 2, 3]));
         let ca = builder.finish();

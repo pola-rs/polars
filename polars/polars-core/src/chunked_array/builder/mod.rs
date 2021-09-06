@@ -364,6 +364,7 @@ pub trait ListBuilderTrait {
 pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
+    T::Native: Default,
 {
     pub builder: LargeListBuilder<PrimitiveBuilder<T>>,
     field: Field,
@@ -385,6 +386,7 @@ macro_rules! finish_list_builder {
 impl<T> ListPrimitiveChunkedBuilder<T>
 where
     T: PolarsPrimitiveType,
+    T::Native: Default,
 {
     pub fn new(name: &str, values_builder: PrimitiveBuilder<T>, capacity: usize) -> Self {
         let builder = LargeListBuilder::with_capacity(values_builder, capacity);

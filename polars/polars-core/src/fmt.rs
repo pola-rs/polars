@@ -679,7 +679,7 @@ mod test {
 
     #[test]
     fn test_fmt_list() {
-        let values_builder = PrimitiveBuilder::<UInt32Type>::new(10);
+        let values_builder = polars_arrow::array::builder::PrimitiveBuilder::<UInt32Type>::new(10);
         let mut builder = ListPrimitiveChunkedBuilder::new("a", values_builder, 10);
         builder.append_slice(Some(&[1, 2, 3]));
         builder.append_slice(None);
