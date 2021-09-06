@@ -58,6 +58,7 @@ unsafe impl<T> TrustedLen for std::ops::Range<T> where std::ops::Range<T>: Itera
 unsafe impl<T: ArrowPrimitiveType> TrustedLen for arrow::array::PrimitiveIter<'_, T> {}
 unsafe impl TrustedLen for arrow::array::GenericStringIter<'_, i64> {}
 unsafe impl TrustedLen for arrow::array::BooleanIter<'_> {}
+unsafe impl<I: TrustedLen> TrustedLen for std::iter::StepBy<I> {}
 
 ///
 /// unzips an iterator over an Option<T> into a given validity buffer and value buffer

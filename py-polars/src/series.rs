@@ -115,20 +115,17 @@ impl PySeries {
                     Ok(val) => builder.append_value(val),
                     Err(e) => {
                         if strict {
-                            return Err(e)
+                            return Err(e);
                         }
                         builder.append_null()
                     }
                 }
             }
-
         }
         let ca = builder.finish();
 
-
         let s = ca.into_series();
         Ok(PySeries { series: s })
-
     }
 }
 
@@ -139,30 +136,27 @@ macro_rules! init_method_opt {
         impl PySeries {
             #[staticmethod]
             pub fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
-
                 let (seq, len) = get_pyseq(obj)?;
                 let mut builder = PrimitiveChunkedBuilder::<$type>::new(name, len);
 
                 for res in seq.iter()? {
                     let item = res?;
 
-                if item.is_none() {
-                    builder.append_null()
-                } else {
-
-                    match item.extract::<$native>() {
-                        Ok(val) => builder.append_value(val),
-                        Err(e) => {
-                            if strict {
-                                return Err(e)
+                    if item.is_none() {
+                        builder.append_null()
+                    } else {
+                        match item.extract::<$native>() {
+                            Ok(val) => builder.append_value(val),
+                            Err(e) => {
+                                if strict {
+                                    return Err(e);
+                                }
+                                builder.append_null()
                             }
-                            builder.append_null()
                         }
                     }
                 }
-    }
                 let ca = builder.finish();
-
 
                 let s = ca.into_series();
                 Ok(PySeries { series: s })
@@ -1199,7 +1193,10 @@ impl PySeries {
     }
 
     pub fn kurtosis(&self, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
-        let out = self.series.kurtosis(fisher, bias).map_err(PyPolarsEr::from)?;
+        let out = self
+            .series
+            .kurtosis(fisher, bias)
+            .map_err(PyPolarsEr::from)?;
         Ok(out)
     }
 

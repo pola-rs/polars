@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 
 try:
+    from polars.polars import arange as pyarange
     from polars.polars import argsort_by as pyargsort_by
     from polars.polars import binary_function as pybinary_function
     from polars.polars import col as pycol
@@ -16,13 +17,12 @@ try:
     from polars.polars import fold as pyfold
     from polars.polars import lit as pylit
     from polars.polars import pearson_corr as pypearson_corr
-    from polars.polars import series_from_range as _series_from_range
 
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
 
-from ..datatypes import DataType, Int64
+from ..datatypes import DataType
 
 __all__ = [
     "col",
@@ -582,48 +582,18 @@ def arange(
     step
         Step size of the range
     dtype
-        DataType of the range. Valid dtypes:
-            * Int32
-            * Int64
-            * UInt32
+        deprecated, cast later
     eager
         If eager evaluation is `True`, a Series is returned instead of an Expr
     """
-    if dtype is None:
-        dtype = Int64
+    low = pl.lazy.expr_to_lit_or_expr(low, str_to_lit=False)
+    high = pl.lazy.expr_to_lit_or_expr(high, str_to_lit=False)
 
-    def create_range(s1: "pl.Series", s2: "pl.Series") -> "pl.Series":
-        assert s1.len() == s2.len()
-        if s1.len() == 1:
-            s = pl.Series._from_pyseries(_series_from_range(s1[0], s2[0], step, dtype))
-        else:
-            list_vals = []
-            for (l, h) in zip(s1, s2):
-                list_vals.append(pl.arange(l, h, eager=True))  # type: ignore
-                s = pl.Series(list_vals)
-
-        return s.rename("arange")  # type: ignore
-
-    # eager execution can only work if low and high are literals
     if eager:
-        if isinstance(low, int) and isinstance(high, int):
-            s = pl.Series._from_pyseries(_series_from_range(low, high, step, dtype))
-        elif isinstance(low, pl.Series) and isinstance(high, pl.Series):
-            s = create_range(low, high)
-        else:
-            raise ValueError("wrong arguments for low and high")
+        df = pl.DataFrame({"a": [1]})
+        return df.select(pl.arange(low, high, step).alias("arange"))["arange"]  # type: ignore
 
-        return s.rename("arange")  # type: ignore
-
-    if isinstance(low, int):
-        low = lit(low)
-    if isinstance(high, int):
-        high = lit(high)
-
-    if isinstance(low, pl.Series) or isinstance(high, pl.Series):
-        raise ValueError("low and high should be an expression")
-
-    return map_binary(low, high, create_range, return_dtype=dtype)
+    return pl.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
 
 
 def argsort_by(

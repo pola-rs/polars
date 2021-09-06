@@ -1849,7 +1849,8 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, int, float, str, tp.List[Expr]], str_to_lit: bool = True
+    expr: Union[Expr, int, float, str, tp.List[Expr], "pl.Series"],
+    str_to_lit: bool = True,
 ) -> Expr:
     """
     Helper function that converts args to expressions.
@@ -1868,7 +1869,7 @@ def expr_to_lit_or_expr(
     """
     if isinstance(expr, str) and not str_to_lit:
         return col(expr)
-    elif isinstance(expr, (int, float, str)) or expr is None:
+    elif isinstance(expr, (int, float, str, pl.Series)) or expr is None:
         return lit(expr)
     elif isinstance(expr, list):
         return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]
