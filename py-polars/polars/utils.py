@@ -7,6 +7,8 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute
 
+import polars as pl
+
 __all__ = [
     "coerce_arrow",
     "_process_null_values",
@@ -41,10 +43,18 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
             )
 
     if hasattr(array, "num_chunks") and array.num_chunks > 1:
+        # we have to coerce before combining chunks, because pyarrow panics if
+        # offsets overflow
         if pa.types.is_string(array.type):
             array = pa.compute.cast(array, pa.large_utf8())
         elif pa.types.is_list(array.type):
-            array = pa.compute.cast(array, pa.large_list())
+            # pyarrow does not seem to support casting from list to largelist
+            # so we use convert to large list ourselves and do the re-alloc on polars/arrow side
+            chunks = []
+            for arr in array.iterchunks():
+                chunks.append(pl.from_arrow(arr).to_arrow())
+            array = pa.chunked_array(chunks)
+
         array = array.combine_chunks()
     return array
 
