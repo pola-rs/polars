@@ -11,7 +11,7 @@ use crate::chunked_array::kernels::take_agg::{
 };
 use crate::prelude::*;
 use crate::utils::NoNull;
-use arrow::array::{Array, ArrayData, ArrayRef, LargeListArray, PrimitiveBuilder};
+use arrow::array::{Array, ArrayData, ArrayRef, LargeListArray};
 use arrow::buffer::MutableBuffer;
 use polars_arrow::builder::{BooleanArrayBuilder, LargeStringBuilder};
 use std::convert::TryFrom;
@@ -556,7 +556,8 @@ where
             }
             _ => {
                 let values_cap = self.len();
-                let values_builder = PrimitiveBuilder::<T>::new(values_cap);
+                let values_builder =
+                    polars_arrow::array::builder::PrimitiveBuilder::<T>::new(values_cap);
                 let mut builder =
                     ListPrimitiveChunkedBuilder::new(self.name(), values_builder, groups.len());
                 for (_first, idx) in groups {
