@@ -22,7 +22,6 @@ trait ToPolarsError: Debug {
 }
 
 impl ToPolarsError for lexical::Error {}
-impl ToPolarsError for fast_float::Error {}
 
 pub(crate) trait PrimitiveParser: PolarsPrimitiveType {
     fn parse(bytes: &[u8]) -> Result<Self::Native>;
@@ -31,14 +30,14 @@ pub(crate) trait PrimitiveParser: PolarsPrimitiveType {
 impl PrimitiveParser for Float32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Result<f32> {
-        let a = fast_float::parse(bytes).map_err(|e| e.to_polars_err())?;
+        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
     }
 }
 impl PrimitiveParser for Float64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Result<f64> {
-        let a = fast_float::parse(bytes).map_err(|e| e.to_polars_err())?;
+        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
         Ok(a)
     }
 }

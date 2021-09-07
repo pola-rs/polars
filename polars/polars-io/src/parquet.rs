@@ -50,7 +50,7 @@ where
             &mut self.reader,
             projection.map(|x| x.to_vec()),
             self.stop_after_n_rows,
-            Arc::new(|_, _| true),
+            None,
             None,
         )?;
 
@@ -112,7 +112,7 @@ where
             &mut self.reader,
             None,
             self.stop_after_n_rows,
-            Arc::new(|_, _| true),
+            None,
             None,
         )?;
         finish_reader(reader, rechunk, self.stop_after_n_rows, None, None)

@@ -16,30 +16,28 @@ json = ["arrow/io_json"]
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 #ipc = []
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet"]
+parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
 dtype-u64 = ["polars-core/dtype-u64"]
 dtype-date64 = ["polars-core/dtype-date64", "polars-core/temporal"]
 dtype-date32 = ["polars-core/dtype-date32"]
-csv-file = ["csv-core", "memmap", "fast-float", "lexical", "arrow/io_csv"]
-#csv-file = ["csv", "csv-core", "memmap", "fast-float", "lexical"]
+csv-file = ["csv-core", "memmap", "lexical", "arrow/io_csv"]
 fmt = ["polars-core/plain_fmt"]
 decompress = ["flate2"]
 # don't use this
 private = []
 
 [dependencies]
-#arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "37353bb09cd3d77b21f6b40d2195a3e68d1de6ae", --default-features=false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", rev = "8aab4065eedfdee458ceb315b65e23cc8e9f06f5", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "b9218a597591925ee9b513b4a980cb1e699beae0", --default-features=false }
+#arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", rev = "8aab4065eedfdee458ceb315b65e23cc8e9f06f5", default-features = false }
 #arrow = { package = "arrow2", version="0.4", --default-features=false }
 polars-core = {version = "0.15.1", path = "../polars-core", features = ["private"], default-features=false}
 polars-arrow = {version = "0.15.1", path = "../polars-arrow"}
-lexical = {version = "5.2", optional = true}
+lexical = {version = "6", optional = true}
 num_cpus = "1.13.0"
 csv-core = {version = "0.1.10", optional=true}
 regex = "1.4"
 lazy_static = "1.4"
 memmap = { package = "memmap2", version = "0.2.0", optional=true}
-fast-float = {version = "0.2", optional=true}
 anyhow = "1.0"
 rayon = "1.5"
 ahash = "0.7"
