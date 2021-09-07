@@ -242,6 +242,7 @@ The following methods are available under the `expr.arr` attribute.
 .. autosummary::
    :toctree: api/
 
+    ExprListNameSpace.lengths
     ExprListNameSpace.sum
     ExprListNameSpace.min
     ExprListNameSpace.max
