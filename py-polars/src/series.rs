@@ -953,6 +953,12 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn arr_lengths(&self) -> PyResult<Self> {
+        let ca = self.series.list().map_err(PyPolarsEr::from)?;
+        let s = ca.lst_lengths().into_series();
+        Ok(PySeries::new(s))
+    }
+
     pub fn timestamp(&self) -> PyResult<Self> {
         let ca = self.series.timestamp().map_err(PyPolarsEr::from)?;
         Ok(ca.into_series().into())

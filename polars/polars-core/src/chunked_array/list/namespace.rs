@@ -39,4 +39,17 @@ impl ListChunked {
     pub fn lst_unique(&self) -> Result<ListChunked> {
         self.try_apply_amortized(|s| s.as_ref().unique())
     }
+
+    pub fn lst_lengths(&self) -> UInt32Chunked {
+        let mut lengths = AlignedVec::with_capacity(self.len());
+        self.downcast_iter().for_each(|arr| {
+            let offsets = arr.value_offsets();
+            let mut last = offsets[0];
+            for o in &offsets[1..] {
+                lengths.push((*o - last) as u32);
+                last = *o;
+            }
+        });
+        UInt32Chunked::new_from_aligned_vec(self.name(), lengths)
+    }
 }

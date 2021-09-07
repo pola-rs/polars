@@ -2642,6 +2642,12 @@ class ListNameSpace:
     def __init__(self, series: Series):
         self._s = series._s
 
+    def lengths(self) -> Series:
+        """
+        Get the length of the arrays as UInt32.
+        """
+        return wrap_s(self._s.arr_lengths())
+
     def sum(self) -> Series:
         """
         Sum all the arrays in the list

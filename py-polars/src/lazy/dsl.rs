@@ -427,6 +427,17 @@ impl PyExpr {
             .into()
     }
 
+    pub fn arr_lengths(&self) -> PyExpr {
+        let function = |s: Series| {
+            let ca = s.list()?;
+            Ok(ca.lst_lengths().into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::UInt32))
+            .into()
+    }
+
     pub fn year(&self) -> PyExpr {
         self.clone().inner.year().into()
     }
