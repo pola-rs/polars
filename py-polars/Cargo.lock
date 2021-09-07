@@ -64,7 +64,7 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.4.0"
-source = "git+https://github.com/ritchie46/arrow2?rev=8aab4065eedfdee458ceb315b65e23cc8e9f06f5#8aab4065eedfdee458ceb315b65e23cc8e9f06f5"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=b9218a597591925ee9b513b4a980cb1e699beae0#b9218a597591925ee9b513b4a980cb1e699beae0"
 dependencies = [
  "base64",
  "chrono",
@@ -73,7 +73,7 @@ dependencies = [
  "futures",
  "hash_hasher",
  "lazy_static",
- "lexical-core 0.8.0",
+ "lexical-core",
  "lz4",
  "multiversion",
  "num-traits",
@@ -426,12 +426,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
-name = "fast-float"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95765f67b4b18863968b4a1bd5bb576f732b29a4a28c7cd84c09fa3e2875f33c"
-
-[[package]]
 name = "flatbuffers"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -731,25 +725,11 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "lexical"
-version = "5.2.2"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f404a90a744e32e8be729034fc33b90cf2a56418fbf594d69aa3c0214ad414e5"
+checksum = "23f26223deed22acc21a8aea097679f86af968272e29c4157696cdd8c983bf91"
 dependencies = [
- "cfg-if 1.0.0",
- "lexical-core 0.7.6",
-]
-
-[[package]]
-name = "lexical-core"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6607c62aa161d23d17a9072cc5da0be67cdfc89d3afb1e8d9c842bebc2525ffe"
-dependencies = [
- "arrayvec",
- "bitflags",
- "cfg-if 1.0.0",
- "ryu",
- "static_assertions",
+ "lexical-core",
 ]
 
 [[package]]
@@ -1264,7 +1244,6 @@ dependencies = [
  "arrow2",
  "csv-core",
  "dirs 3.0.2",
- "fast-float",
  "flate2",
  "lazy_static",
  "lexical",
