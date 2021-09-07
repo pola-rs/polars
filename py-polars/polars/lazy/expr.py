@@ -1483,6 +1483,12 @@ class ExprListNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
+    def lengths(self) -> Expr:
+        """
+        Get the length of the arrays as UInt32.
+        """
+        return wrap_expr(self._pyexpr.arr_lengths())
+
     def sum(self) -> "Expr":
         """
         Sum all the arrays in the list
