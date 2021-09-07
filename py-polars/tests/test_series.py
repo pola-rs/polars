@@ -530,6 +530,13 @@ def test_kurtosis_dispatch():
     assert np.isclose(df.select(pl.col("a").kurtosis())["a"][0], expected)
 
 
+def test_arr_lengths_dispatch():
+    s = pl.Series("a", [[1, 2], [1, 2, 3]])
+    assert s.arr.lengths().to_list() == [2, 3]
+    df = pl.DataFrame([s])
+    assert df.select(pl.col("a").arr.lengths())["a"].to_list() == [2, 3]
+
+
 def test_range():
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     assert s[2:5].series_equal(s[range(2, 5)])
