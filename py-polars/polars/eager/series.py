@@ -1,7 +1,7 @@
 import typing as tp
 from datetime import date, datetime
 from numbers import Number
-from typing import Any, Callable, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 import pyarrow as pa
@@ -563,66 +563,70 @@ class Series:
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
         shape: (6, 2)
-        ┌──────────────┬───────┐
-        │ Describe     ┆       │
-        │ ---          ┆ ---   │
-        │ str          ┆ f64   │
-        ╞══════════════╪═══════╡
-        │ "min"        ┆ 1     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ "max"        ┆ 5     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ "null_count" ┆ 0.0   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ "mean"       ┆ 3     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ "std"        ┆ 1.581 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ "count"      ┆ 5     │
-        └──────────────┴───────┘
+        ┌──────────────┬────────────────────┐
+        │ statistic    ┆ value              │
+        │ ---          ┆ ---                │
+        │ str          ┆ f64                │
+        ╞══════════════╪════════════════════╡
+        │ "min"        ┆ 1                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "max"        ┆ 5                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "null_count" ┆ 0.0                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "mean"       ┆ 3                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "std"        ┆ 1.5811388300841898 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "count"      ┆ 5                  │
+        └──────────────┴────────────────────┘
 
         >>> series_str = pl.Series(["a", "a", None, "b", "c"])
         >>> series_str.describe()
         shape: (3, 2)
-        ┌──────────────┬─────┐
-        │ Describe     ┆     │
-        │ ---          ┆ --- │
-        │ str          ┆ i64 │
-        ╞══════════════╪═════╡
-        │ "unique"     ┆ 4   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "null_count" ┆ 1   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "count"      ┆ 5   │
-        └──────────────┴─────┘
+        ┌──────────────┬───────┐
+        │ statistic    ┆ value │
+        │ ---          ┆ ---   │
+        │ str          ┆ i64   │
+        ╞══════════════╪═══════╡
+        │ "unique"     ┆ 4     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "null_count" ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "count"      ┆ 5     │
+        └──────────────┴───────┘
 
         """
+        stats: Dict[str, Union[float, int, str]]
+
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
         elif self.is_numeric():
             self = self.cast(pl.Float64)
-            _ = {
+            stats = {
                 "min": self.min(),
                 "max": self.max(),
                 "null_count": self.null_count(),
-                "mean": float("{0:.4g}".format(self.mean())),
-                "std": float("{0:.4g}".format(self.std())),
+                "mean": self.mean(),
+                "std": self.std(),
                 "count": self.len(),
             }
         elif self.is_boolean():
-            _ = {
+            stats = {
                 "sum": self.sum(),
                 "null_count": self.null_count(),
                 "count": self.len(),
             }
         elif self.is_utf8():
-            _ = {
+            stats = {
                 "unique": len(self.unique()),
                 "null_count": self.null_count(),
                 "count": self.len(),
             }
         elif self.is_datetime():
-            _ = {
+            # we coerce all to string, because a polars column
+            # only has a single dtype and dates: datetime and count: int don't match
+            stats = {
                 "min": str(self.dt.min()),
                 "max": str(self.dt.max()),
                 "null_count": str(self.null_count()),
@@ -631,7 +635,9 @@ class Series:
         else:
             raise TypeError("This type is not supported")
 
-        return pl.DataFrame({"statistic": list(_.keys()), "value": list(_.values())})
+        return pl.DataFrame(
+            {"statistic": list(stats.keys()), "value": list(stats.values())}
+        )
 
     def sum(self) -> Union[int, float]:
         """
