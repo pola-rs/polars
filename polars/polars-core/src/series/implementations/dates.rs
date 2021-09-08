@@ -107,6 +107,10 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+                physical_dispatch!(self, explode_by_offsets, offsets)
+            }
+
             #[cfg(feature = "rolling_window")]
             fn _rolling_mean(
                 &self,

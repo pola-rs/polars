@@ -19,6 +19,7 @@ use crate::chunked_array::{
     ops::{
         aggregate::{ChunkAggSeries, VarAggSeries},
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
+        explode::ExplodeByOffsets,
     },
     AsSinglePtr, ChunkIdIter,
 };
@@ -64,6 +65,10 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
+            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+                self.0.explode_by_offsets(offsets)
+            }
+
             #[cfg(feature = "rolling_window")]
             fn _rolling_mean(
                 &self,

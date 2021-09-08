@@ -65,6 +65,10 @@ pub(crate) mod private {
     }
 
     pub trait PrivateSeries {
+        fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
+            unimplemented!()
+        }
+
         /// Apply a rolling mean to a Series. See:
         /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
         #[cfg(feature = "rolling_window")]
