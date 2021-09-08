@@ -1,4 +1,3 @@
-use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
@@ -6,7 +5,6 @@ use crate::prelude::*;
 use arrow::array::Array;
 use arrow::compute::concat;
 use itertools::Itertools;
-use polars_arrow::prelude::*;
 
 pub trait ChunkOps {
     /// Aggregate to contiguous memory.
@@ -71,17 +69,13 @@ impl ChunkOps for ListChunked {
         if self.chunks.len() == 1 {
             self.clone()
         } else {
-            let values_capacity = self.get_values_size();
-            if let DataType::List(dt) = self.dtype() {
-                let mut builder =
-                    get_list_builder(&dt.into(), values_capacity, self.len(), self.name());
-                for v in self {
-                    builder.append_opt_series(v.as_ref())
-                }
-                builder.finish()
-            } else {
-                unreachable!()
+            let chunks =
+                vec![concat(self.chunks.iter().map(|a| &**a).collect_vec().as_slice()).unwrap()];
+            let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
+            if self.can_fast_explode() {
+                ca.set_fast_explode()
             }
+            ca
         }
     }
 }

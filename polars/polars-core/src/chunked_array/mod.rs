@@ -155,8 +155,11 @@ pub struct ChunkedArray<T> {
     phantom: PhantomData<T>,
     /// maps categorical u32 indexes to String values
     pub(crate) categorical_map: Option<Arc<RevMapping>>,
-    // first bit: sorted
-    // second_bit: sorted reverse
+    /// first bit: sorted
+    /// second_bit: sorted reverse
+    /// third bit dtype list: fast_explode
+    ///     - unset: unknown or not all arrays have at least one value
+    ///     - set: all list arrays are filled (this allows for cheap explode)
     pub(crate) bit_settings: u8,
 }
 
@@ -814,7 +817,7 @@ impl<T> Clone for ChunkedArray<T> {
             chunks: self.chunks.clone(),
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
-            ..Default::default()
+            bit_settings: self.bit_settings,
         }
     }
 }
