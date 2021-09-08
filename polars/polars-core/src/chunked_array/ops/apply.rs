@@ -482,7 +482,19 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         if self.is_empty() {
             return self.clone();
         }
-        apply!(self, f)
+        let mut fast_explode = true;
+        let mut function = |s: Series| {
+            let out = f(s);
+            if out.is_empty() {
+                fast_explode = false;
+            }
+            out
+        };
+        let mut ca: ListChunked = apply!(self, &mut function);
+        if fast_explode {
+            ca.set_fast_explode()
+        }
+        ca
     }
 
     fn try_apply<F>(&'a self, f: F) -> Result<Self>
@@ -492,7 +504,23 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         if self.is_empty() {
             return Ok(self.clone());
         }
-        try_apply!(self, f)
+
+        let mut fast_explode = true;
+        let mut function = |s: Series| {
+            let out = f(s);
+            if let Ok(out) = &out {
+                if out.is_empty() {
+                    fast_explode = false;
+                }
+            }
+            out
+        };
+        let ca: Result<ListChunked> = try_apply!(self, &mut function);
+        let mut ca = ca?;
+        if fast_explode {
+            ca.set_fast_explode()
+        }
+        Ok(ca)
     }
 
     fn apply_on_opt<F>(&'a self, f: F) -> Self
@@ -513,7 +541,19 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         if self.is_empty() {
             return self.clone();
         }
-        apply_enumerate!(self, f)
+        let mut fast_explode = true;
+        let mut function = |(idx, s)| {
+            let out = f((idx, s));
+            if out.is_empty() {
+                fast_explode = false;
+            }
+            out
+        };
+        let mut ca: ListChunked = apply_enumerate!(self, function);
+        if fast_explode {
+            ca.set_fast_explode()
+        }
+        ca
     }
 
     /// Apply a closure elementwise. The closure gets the index of the element as first argument.
@@ -524,7 +564,21 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         if self.is_empty() {
             return self.clone();
         }
-        self.into_iter().enumerate().map(f).collect_trusted()
+        let mut fast_explode = true;
+        let function = |(idx, s)| {
+            let out = f((idx, s));
+            if let Some(out) = &out {
+                if out.is_empty() {
+                    fast_explode = false;
+                }
+            }
+            out
+        };
+        let mut ca: ListChunked = self.into_iter().enumerate().map(function).collect_trusted();
+        if fast_explode {
+            ca.set_fast_explode()
+        }
+        ca
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])

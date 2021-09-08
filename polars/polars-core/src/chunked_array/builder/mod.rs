@@ -343,6 +343,7 @@ where
 {
     pub builder: LargePrimitiveBuilder<T::Native>,
     field: Field,
+    fast_explode: bool,
 }
 
 macro_rules! finish_list_builder {
@@ -367,7 +368,11 @@ where
         let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
 
-        Self { builder, field }
+        Self {
+            builder,
+            field,
+            fast_explode: true,
+        }
     }
 
     pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
@@ -376,6 +381,10 @@ where
                 let values = self.builder.mut_values();
                 values.extend_from_slice(items);
                 self.builder.try_push_valid().unwrap();
+
+                if items.is_empty() {
+                    self.fast_explode = false;
+                }
             }
             None => {
                 self.builder.push_null();
@@ -386,6 +395,10 @@ where
     #[inline]
     pub fn append_iter_values<I: Iterator<Item = T::Native> + TrustedLen>(&mut self, iter: I) {
         let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
         // Safety
         // trusted len, trust the type system
         unsafe { values.extend_trusted_len_values_unchecked(iter) };
@@ -404,7 +417,9 @@ where
     #[inline]
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         match opt_s {
-            Some(s) => self.append_series(s),
+            Some(s) => {
+                self.append_series(s);
+            }
             None => {
                 self.builder.push_null();
             }
@@ -418,6 +433,9 @@ where
 
     #[inline]
     fn append_series(&mut self, s: &Series) {
+        if s.is_empty() {
+            self.fast_explode = false;
+        }
         let arrays = s.chunks();
         let values = self.builder.mut_values();
 
@@ -439,7 +457,11 @@ where
     }
 
     fn finish(&mut self) -> ListChunked {
-        finish_list_builder!(self)
+        let mut ca = finish_list_builder!(self);
+        if self.fast_explode {
+            ca.set_fast_explode();
+        }
+        ca
     }
 }
 
