@@ -35,5 +35,6 @@ jobs:
           cd tests/db-benchmark
           Rscript -e 'install.packages("data.table", repos="https://Rdatatable.github.io/data.table")'
           Rscript groupby-datagen.R 1e7 1e2 5 0
+          python main.py on_strings
           python main.py
 
