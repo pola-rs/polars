@@ -1,3 +1,4 @@
+import sys
 import time
 
 import numpy as np
@@ -17,9 +18,12 @@ x = pl.read_csv(
         "v3": pl.Float64,
     },
 )
-x["id1"] = x["id1"].cast(pl.Categorical)
-x["id2"] = x["id2"].cast(pl.Categorical)
-x["id3"] = x["id3"].cast(pl.Categorical)
+ON_STRINGS = sys.argv.pop() == "on_strings"
+
+if not ON_STRINGS:
+    x["id1"] = x["id1"].cast(pl.Categorical)
+    x["id2"] = x["id2"].cast(pl.Categorical)
+    x["id3"] = x["id3"].cast(pl.Categorical)
 df = x.clone()
 x = df.lazy()
 
@@ -227,6 +231,29 @@ print("advanced took:", time.time() - t0advanced, "s")
 total_time = time.time() - t00
 print("total took:", total_time, "s")
 assert out.shape == (9999995, 8)
-if total_time > 10:
-    print("query took longer than 10s, may be noise")
-    exit(1)
+
+if not ON_STRINGS:
+    if total_time > 10:
+        print("query took longer than 10s, may be noise")
+        exit(1)
+
+# Additional tests
+# the code below, does not belong to the db-benchmark
+# but it triggers other code paths so the checksums assertion
+# are a sort of integration tests
+out = (
+    x.filter(pl.col("id1") == pl.lit("id046"))
+    .select([pl.sum("id6"), pl.sum("v3")])
+    .collect()
+)
+assert out["id6"] == 430957682
+assert np.isclose(out["v3"], 4.724150165888001e6)
+
+out = (
+    x.filter(~(pl.col("id1") == pl.lit("id046")))
+    .select([pl.sum("id6"), pl.sum("v3")])
+    .collect()
+)
+
+assert out["id6"] == 2137755425
+assert np.isclose(out["v3"], 4.7040828499563754e8)
