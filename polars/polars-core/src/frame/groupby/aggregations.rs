@@ -13,10 +13,8 @@ use crate::chunked_array::kernels::take_agg::{
 };
 use crate::prelude::*;
 use crate::utils::NoNull;
-use arrow::array::ArrayRef;
 use arrow::buffer::MutableBuffer;
 use polars_arrow::trusted_len::PushUnchecked;
-use std::convert::TryFrom;
 
 pub(crate) trait NumericAggSync {
     fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -527,6 +525,7 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        let mut can_fast_explode = true;
         let arr = match self.cont_slice() {
             Ok(values) => {
                 let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
@@ -535,7 +534,12 @@ where
 
                 let mut list_values = MutableBuffer::<T::Native>::with_capacity(self.len());
                 groups.iter().for_each(|(_, idx)| {
-                    length_so_far += idx.len() as i64;
+                    let idx_len = idx.len();
+                    if idx_len == 0 {
+                        can_fast_explode = false;
+                    }
+
+                    length_so_far += idx_len as i64;
                     // Safety:
                     // group tuples are in bounds
                     unsafe {
@@ -565,8 +569,11 @@ where
                 return Some(builder.finish().into_series());
             }
         };
-
-        Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).ok()
+        let mut ca = ListChunked::new_from_chunks(self.name(), vec![Arc::new(arr)]);
+        if can_fast_explode {
+            ca.set_fast_explode()
+        }
+        Some(ca.into())
     }
 }
 
