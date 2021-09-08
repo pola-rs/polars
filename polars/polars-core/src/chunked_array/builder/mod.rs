@@ -349,13 +349,17 @@ where
 macro_rules! finish_list_builder {
     ($self:ident) => {{
         let arr = $self.builder.as_arc();
-        ListChunked {
+        let mut ca = ListChunked {
             field: Arc::new($self.field.clone()),
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
             ..Default::default()
+        };
+        if $self.fast_explode {
+            ca.set_fast_explode()
         }
+        ca
     }};
 }
 
@@ -457,11 +461,7 @@ where
     }
 
     fn finish(&mut self) -> ListChunked {
-        let mut ca = finish_list_builder!(self);
-        if self.fast_explode {
-            ca.set_fast_explode();
-        }
-        ca
+        finish_list_builder!(self)
     }
 }
 
@@ -472,6 +472,7 @@ type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
 pub struct ListUtf8ChunkedBuilder {
     builder: LargeListUtf8Builder,
     field: Field,
+    fast_explode: bool,
 }
 
 impl ListUtf8ChunkedBuilder {
@@ -480,7 +481,11 @@ impl ListUtf8ChunkedBuilder {
         let builder = LargeListUtf8Builder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(ArrowDataType::LargeUtf8));
 
-        ListUtf8ChunkedBuilder { builder, field }
+        ListUtf8ChunkedBuilder {
+            builder,
+            field,
+            fast_explode: true,
+        }
     }
 }
 
@@ -501,6 +506,9 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
 
     #[inline]
     fn append_series(&mut self, s: &Series) {
+        if s.is_empty() {
+            self.fast_explode = false;
+        }
         let ca = s.utf8().unwrap();
         let value_builder = self.builder.mut_values();
         value_builder.try_extend(ca).unwrap();
@@ -515,6 +523,7 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
 pub struct ListBooleanChunkedBuilder {
     builder: LargeListBooleanBuilder,
     field: Field,
+    fast_explode: bool,
 }
 
 impl ListBooleanChunkedBuilder {
@@ -523,7 +532,11 @@ impl ListBooleanChunkedBuilder {
         let builder = LargeListBooleanBuilder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(ArrowDataType::Boolean));
 
-        Self { builder, field }
+        Self {
+            builder,
+            field,
+            fast_explode: true,
+        }
     }
 }
 
@@ -545,6 +558,9 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
     #[inline]
     fn append_series(&mut self, s: &Series) {
         let ca = s.bool().unwrap();
+        if ca.is_empty() {
+            self.fast_explode = false;
+        }
         let value_builder = self.builder.mut_values();
         value_builder.extend(ca);
         self.builder.try_push_valid().unwrap();
