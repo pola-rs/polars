@@ -1,11 +1,10 @@
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::frame::select::Selection;
+use crate::prelude::explode::ExplodedOffsets;
 use crate::prelude::*;
 use std::collections::VecDeque;
 
-/// # Safety
-/// lifetime bounded to returned Series (second). Don't store the &[i64]
-unsafe fn get_exploded(series: &Series) -> Result<(Series, &[i64], Series)> {
+fn get_exploded(series: &Series) -> Result<(Series, ExplodedOffsets)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
@@ -92,9 +91,8 @@ impl DataFrame {
         for (i, s) in columns.iter().enumerate() {
             // Safety:
             // offsets are not take longer than the Series.
-            if let Ok((exploded, offsets, _keep_offsets_valid_by_owning_me)) =
-                unsafe { get_exploded(s) }
-            {
+            if let Ok((exploded, offsets)) = get_exploded(s) {
+                let offsets = offsets.value_offsets();
                 let col_idx = self.name_to_idx(s.name())?;
 
                 // expand all the other columns based the exploded first column

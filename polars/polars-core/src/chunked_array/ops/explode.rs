@@ -8,6 +8,25 @@ use arrow::{
 use itertools::Itertools;
 use std::convert::TryFrom;
 
+pub struct ExplodedOffsets {
+    buf: Buffer,
+    offset: usize,
+    len: usize,
+}
+
+impl ExplodedOffsets {
+    pub(crate) fn value_offsets(&self) -> &[i64] {
+        // Soundness
+        //     Buffer holds i64 data and offset and len are copied from ArrayData
+        unsafe {
+            std::slice::from_raw_parts(
+                (self.buf.as_ptr() as *const i64).add(self.offset),
+                self.len + 1,
+            )
+        }
+    }
+}
+
 /// Convert Arrow array offsets to indexes of the original list
 pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> AlignedVec<u32> {
     let mut idx = AlignedVec::with_capacity(capacity);
@@ -28,7 +47,7 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> AlignedVec
 }
 
 impl ChunkExplode for ListChunked {
-    unsafe fn explode_and_offsets(&self) -> Result<(Series, &[i64], Series)> {
+    fn explode_and_offsets(&self) -> Result<(Series, ExplodedOffsets)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -37,22 +56,24 @@ impl ChunkExplode for ListChunked {
             .downcast_iter()
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
+        let offsets_buf = listarr.data_ref().buffers()[0].clone();
         let offsets = listarr.value_offsets();
-
-        // This is unsafe in case of a rechunk, that's why we return ListChunked so that lifetime
-        // stay bounded to that ownership
-        let offsets = std::mem::transmute::<&[i64], &[i64]>(offsets);
         let values = listarr
             .values()
             .slice(listarr.offset(), (offsets[offsets.len() - 1]) as usize);
 
         let s = Series::try_from((self.name(), values)).unwrap();
-        Ok((s, offsets, ca.into_series()))
+        let offsets = ExplodedOffsets {
+            buf: offsets_buf,
+            offset: listarr.offset(),
+            len: listarr.len(),
+        };
+        Ok((s, offsets))
     }
 }
 
 impl ChunkExplode for Utf8Chunked {
-    unsafe fn explode_and_offsets(&self) -> Result<(Series, &[i64], Series)> {
+    fn explode_and_offsets(&self) -> Result<(Series, ExplodedOffsets)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
@@ -61,18 +82,14 @@ impl ChunkExplode for Utf8Chunked {
             .downcast_iter()
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
-        let list_data = stringarr.data();
+        let offsets_buf = stringarr.data().buffers()[0].clone();
         let str_values_buf = stringarr.value_data();
 
-        // We get the offsets of the strings in the original array
-        let offset_ptr = list_data.buffers()[0].as_ptr() as *const i64;
-        // offsets in the list array. These indicate where a new list starts
-        // This is unsafe in case of a rechunk
-        let offsets = std::slice::from_raw_parts(offset_ptr, self.len());
+        let offsets = stringarr.value_offsets();
 
         // Because the strings are u8 stored but really are utf8 data we need to traverse the utf8 to
         // get the chars indexes
-        let str_data = std::str::from_utf8_unchecked(str_values_buf.as_slice());
+        let str_data = unsafe { std::str::from_utf8_unchecked(str_values_buf.as_slice()) };
         // iterator over index and chars, we take only the index
         // todo! directly create a buffer from an aligned vec or a mutable buffer
         let mut new_offsets = str_data.char_indices().map(|t| t.0 as i64).collect_vec();
@@ -112,7 +129,12 @@ impl ChunkExplode for Utf8Chunked {
         let new_arr = Arc::new(LargeStringArray::from(arr_data)) as ArrayRef;
 
         let s = Series::try_from((self.name(), new_arr)).unwrap();
-        Ok((s, offsets, ca.into_series()))
+        let offsets = ExplodedOffsets {
+            buf: offsets_buf,
+            offset: stringarr.offset(),
+            len: stringarr.len(),
+        };
+        Ok((s, offsets))
     }
 }
 
