@@ -10,6 +10,7 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 
 pub use self::take::*;
+use crate::prelude::explode::ExplodedOffsets;
 use polars_arrow::builder::BooleanArrayBuilder;
 
 pub(crate) mod aggregate;
@@ -113,14 +114,9 @@ pub trait ChunkTakeEvery<T> {
 /// Explode/ flatten a
 pub trait ChunkExplode {
     fn explode(&self) -> Result<Series> {
-        unsafe { self.explode_and_offsets().map(|t| t.0) }
+        self.explode_and_offsets().map(|t| t.0)
     }
-
-    /// # Safety
-    /// lifetime bounded to returned Series. Don't store the &[i64]
-    /// Latest Series is only to keep ownership of &[i64] valid
-    /// TODO: fix this dirty hack and properly get offsets later.
-    unsafe fn explode_and_offsets(&self) -> Result<(Series, &[i64], Series)>;
+    fn explode_and_offsets(&self) -> Result<(Series, ExplodedOffsets)>;
 }
 
 pub trait ChunkBytes {
