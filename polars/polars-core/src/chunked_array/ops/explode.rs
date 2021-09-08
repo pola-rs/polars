@@ -1,12 +1,16 @@
 use crate::prelude::*;
-use arrow::array::{ArrayRef, BooleanBufferBuilder};
-use arrow::datatypes::ToByteSlice;
+use arrow::array::{ArrayRef, BooleanArray, BooleanBufferBuilder};
+use arrow::buffer::MutableBuffer;
+use arrow::datatypes::{ArrowNativeType, ToByteSlice};
+use arrow::util::bit_util::unset_bit_raw;
 use arrow::{
     array::{Array, ArrayData, LargeListArray, LargeStringArray},
     buffer::Buffer,
 };
 use itertools::Itertools;
+use polars_arrow::bit_util;
 use std::convert::TryFrom;
+use std::ops::Deref;
 
 pub struct ExplodedOffsets {
     buf: Buffer,
@@ -24,6 +28,139 @@ impl ExplodedOffsets {
                 self.len + 1,
             )
         }
+    }
+}
+
+pub(crate) trait ExplodeByOffsets {
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series;
+}
+
+impl<T> ExplodeByOffsets for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Default + ArrowNativeType,
+{
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        debug_assert_eq!(self.chunks.len(), 1);
+        let arr = self.downcast_iter().next().unwrap();
+        let values = arr.values();
+
+        let mut new_values = AlignedVec::with_capacity(((values.len() as f32) * 1.5) as usize);
+        let mut nulls = vec![];
+
+        let mut start = offsets[0] as usize;
+        let mut last = start;
+        for &o in &offsets[1..] {
+            let o = o as usize;
+            if o == last {
+                if start != last {
+                    new_values.extend_memcpy(&values[start..last])
+                }
+
+                nulls.push(o + nulls.len());
+                new_values.push(T::Native::default());
+                start = o;
+            }
+            last = o;
+        }
+        new_values.extend_memcpy(&values[start..]);
+
+        let num_bytes = bit_util::ceil(last, 8);
+        let mut validity = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
+        let validity_slice = validity.as_mut_ptr();
+
+        for i in nulls {
+            unsafe { unset_bit_raw(validity_slice, i) }
+        }
+        let arr = new_values.into_primitive_array::<T>(Some(validity.into()));
+        Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).unwrap()
+    }
+}
+
+impl ExplodeByOffsets for BooleanChunked {
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        debug_assert_eq!(self.chunks.len(), 1);
+        let arr = self.downcast_iter().next().unwrap();
+
+        let cap = ((arr.len() as f32) * 1.5) as usize;
+        let mut builder = BooleanChunkedBuilder::new(self.name(), cap);
+
+        let mut start = offsets[0] as usize;
+        let mut last = start;
+        for &o in &offsets[1..] {
+            let o = o as usize;
+            if o == last {
+                if start != last {
+                    let vals = arr.slice(start, last - start);
+                    let vals_ref = vals.as_any().downcast_ref::<BooleanArray>().unwrap();
+                    for val in vals_ref {
+                        builder.append_option(val)
+                    }
+                }
+                builder.append_null();
+                start = o;
+            }
+            last = o;
+        }
+        let vals = arr.slice(start, last - start);
+        let vals_ref = vals.as_any().downcast_ref::<BooleanArray>().unwrap();
+        for val in vals_ref {
+            builder.append_option(val)
+        }
+        builder.finish().into()
+    }
+}
+impl ExplodeByOffsets for ListChunked {
+    fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
+        panic!("cannot explode List of Lists")
+    }
+}
+impl ExplodeByOffsets for Utf8Chunked {
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        debug_assert_eq!(self.chunks.len(), 1);
+        let arr = self.downcast_iter().next().unwrap();
+
+        let cap = ((arr.len() as f32) * 1.5) as usize;
+        let bytes_size = self.get_values_size();
+        let mut builder = Utf8ChunkedBuilder::new(self.name(), cap, bytes_size);
+
+        let mut start = offsets[0] as usize;
+        let mut last = start;
+        for &o in &offsets[1..] {
+            let o = o as usize;
+            if o == last {
+                if start != last {
+                    let vals = arr.slice(start, last - start);
+                    let vals_ref = vals.as_any().downcast_ref::<LargeStringArray>().unwrap();
+                    for val in vals_ref {
+                        builder.append_option(val)
+                    }
+                }
+                builder.append_null();
+                start = o;
+            }
+            last = o;
+        }
+        let vals = arr.slice(start, last - start);
+        let vals_ref = vals.as_any().downcast_ref::<LargeStringArray>().unwrap();
+        for val in vals_ref {
+            builder.append_option(val)
+        }
+        builder.finish().into()
+    }
+}
+impl ExplodeByOffsets for CategoricalChunked {
+    #[inline(never)]
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        let ca: CategoricalChunked = self
+            .deref()
+            .explode_by_offsets(offsets)
+            .cast_with_dtype(&DataType::Categorical)
+            .unwrap()
+            .categorical()
+            .unwrap()
+            .clone();
+        ca.set_state(self).into()
     }
 }
 
@@ -56,13 +193,36 @@ impl ChunkExplode for ListChunked {
             .downcast_iter()
             .next()
             .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
-        let offsets_buf = listarr.data_ref().buffers()[0].clone();
         let offsets = listarr.value_offsets();
+        let offsets_buf = listarr.data_ref().buffers()[0].clone();
+
         let values = listarr
             .values()
             .slice(listarr.offset(), (offsets[offsets.len() - 1]) as usize);
 
-        let s = Series::try_from((self.name(), values)).unwrap();
+        let s = if ca.can_fast_explode() {
+            Series::try_from((self.name(), values)).unwrap()
+        } else {
+            // during tests
+            // test that this code branch is not hit with list arrays that could be fast exploded
+            #[cfg(test)]
+            {
+                let mut last = offsets[0];
+                let mut has_empty = false;
+                for &o in &offsets[1..] {
+                    if o == last {
+                        has_empty = true;
+                    }
+                    last = o;
+                }
+                if !has_empty {
+                    panic!()
+                }
+            }
+
+            let values = Series::try_from(("", values)).unwrap();
+            values.explode_by_offsets(offsets)
+        };
         let offsets = ExplodedOffsets {
             buf: offsets_buf,
             offset: listarr.offset(),
@@ -152,6 +312,7 @@ mod test {
         builder.append_series(&Series::new("", &[2]));
 
         let ca = builder.finish();
+        assert!(ca.can_fast_explode());
 
         // normal explode
         let exploded = ca.explode()?;
@@ -162,6 +323,79 @@ mod test {
         let exploded = ca.slice(0, 1).explode()?;
         let out: Vec<_> = exploded.i32()?.into_no_null_iter().collect();
         assert_eq!(out, &[1, 2, 3, 3]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_explode_empty_list_slot() -> Result<()> {
+        // primitive
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
+        builder.append_series(&Series::new("", &[1i32, 2]));
+        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Series::new("", &[3i32]));
+
+        let ca = builder.finish();
+        let exploded = ca.explode()?;
+        assert_eq!(
+            Vec::from(exploded.i32()?),
+            &[Some(1), Some(2), None, Some(3)]
+        );
+
+        // more primitive
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
+        builder.append_series(&Series::new("", &[1i32]));
+        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Series::new("", &[2i32]));
+        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Series::new("", &[3, 4i32]));
+
+        let ca = builder.finish();
+        let exploded = ca.explode()?;
+        assert_eq!(
+            Vec::from(exploded.i32()?),
+            &[Some(1), None, Some(2), None, Some(3), Some(4)]
+        );
+
+        // utf8
+        let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a");
+        builder.append_series(&Series::new("", &["abc"]));
+        builder.append_series(
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
+                .into_series(),
+        );
+        builder.append_series(&Series::new("", &["de"]));
+        builder.append_series(
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
+                .into_series(),
+        );
+        builder.append_series(&Series::new("", &["fg"]));
+        builder.append_series(
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
+                .into_series(),
+        );
+
+        let ca = builder.finish();
+        let exploded = ca.explode()?;
+        assert_eq!(
+            Vec::from(exploded.utf8()?),
+            &[Some("abc"), None, Some("de"), None, Some("fg"), None]
+        );
+
+        // boolean
+        let mut builder = get_list_builder(&DataType::Boolean, 5, 5, "a");
+        builder.append_series(&Series::new("", &[true]));
+        builder.append_series(&BooleanChunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Series::new("", &[false]));
+        builder.append_series(&BooleanChunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Series::new("", &[true, true]));
+
+        let ca = builder.finish();
+        let exploded = ca.explode()?;
+        assert_eq!(
+            Vec::from(exploded.bool()?),
+            &[Some(true), None, Some(false), None, Some(true), Some(true)]
+        );
 
         Ok(())
     }

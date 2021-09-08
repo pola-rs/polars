@@ -366,7 +366,7 @@ impl<T> ChunkedArray<T> {
             chunks,
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
-            ..Default::default()
+            bit_settings: self.bit_settings,
         }
     }
 
