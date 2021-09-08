@@ -550,48 +550,94 @@ class Series:
         """
         return DTYPES[self._s.dtype()]
 
-    def describe(self) -> Dict[str, Union[int, float]]:
+    def describe(self) -> "pl.DataFrame":
         """
         Quick summary statistics of a series. Series with mixed datatypes will return summary statistics for the datatype of the first value.
 
         Returns
         -------
-        Dictionary with summary statistics of a series.
+        Dictionary with summary statistics of a Series.
 
         Examples
         --------
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
-        {'min': 1,
-         'max': 5,
-         'sum': 15,
-         'mean': 3.0,
-         'std': 1.4142135623730951,
-         'count': 5}
+        shape: (6, 2)
+        ┌──────────────┬────────────────────┐
+        │ statistic    ┆ value              │
+        │ ---          ┆ ---                │
+        │ str          ┆ f64                │
+        ╞══════════════╪════════════════════╡
+        │ "min"        ┆ 1                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "max"        ┆ 5                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "null_count" ┆ 0.0                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "mean"       ┆ 3                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "std"        ┆ 1.5811388300841898 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ "count"      ┆ 5                  │
+        └──────────────┴────────────────────┘
 
-        >>> series_str = pl.Series(["a", "a", "b", "c"]
+        >>> series_str = pl.Series(["a", "a", None, "b", "c"])
         >>> series_str.describe()
-        {'unique': 3,
-        'count': 4}
+        shape: (3, 2)
+        ┌──────────────┬───────┐
+        │ statistic    ┆ value │
+        │ ---          ┆ ---   │
+        │ str          ┆ i64   │
+        ╞══════════════╪═══════╡
+        │ "unique"     ┆ 4     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "null_count" ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ "count"      ┆ 5     │
+        └──────────────┴───────┘
 
         """
-        if len(self) == 0:
+        stats: Dict[str, Union[float, int, str]]
+
+        if self.len() == 0:
             raise ValueError("Series must contain at least one value")
         elif self.is_numeric():
-            return {
+            self = self.cast(pl.Float64)
+            stats = {
                 "min": self.min(),
                 "max": self.max(),
-                "sum": self.sum(),
+                "null_count": self.null_count(),
                 "mean": self.mean(),
                 "std": self.std(),
-                "count": len(self),
+                "count": self.len(),
             }
         elif self.is_boolean():
-            return {"sum": self.sum(), "count": len(self)}
+            stats = {
+                "sum": self.sum(),
+                "null_count": self.null_count(),
+                "count": self.len(),
+            }
         elif self.is_utf8():
-            return {"unique": len(self.unique()), "count": len(self)}
+            stats = {
+                "unique": len(self.unique()),
+                "null_count": self.null_count(),
+                "count": self.len(),
+            }
+        elif self.is_datetime():
+            # we coerce all to string, because a polars column
+            # only has a single dtype and dates: datetime and count: int don't match
+            stats = {
+                "min": str(self.dt.min()),
+                "max": str(self.dt.max()),
+                "null_count": str(self.null_count()),
+                "count": str(self.len()),
+            }
         else:
             raise TypeError("This type is not supported")
+
+        return pl.DataFrame(
+            {"statistic": list(stats.keys()), "value": list(stats.values())}
+        )
 
     def sum(self) -> Union[int, float]:
         """
@@ -1550,6 +1596,19 @@ class Series:
             Float32,
             Float64,
         )
+
+    def is_datetime(self) -> bool:
+        """
+        Check if this Series datatype is a datetime.
+
+        Examples
+        --------
+        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
+        >>> s.is_datetime()
+        True
+
+        """
+        return self.dtype in (Date32, Date64)
 
     def is_float(self) -> bool:
         """
