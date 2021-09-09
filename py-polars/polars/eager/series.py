@@ -446,6 +446,9 @@ class Series:
             return NotImplemented
         return wrap_s(f(other))
 
+    def __pow__(self, power: float, modulo: None = None) -> "Series":
+        return np.power(self, power)  # type: ignore
+
     def __neg__(self) -> "Series":
         return 0 - self
 
@@ -501,6 +504,16 @@ class Series:
             self.__setitem__([key], value)
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
+
+    def sqrt(self) -> "Series":
+        """
+        Compute the square root of the elements
+
+        Syntactic sugar for
+
+        >>> pl.Series([1, 2]) ** 0.5
+        """
+        return self ** 0.5
 
     def drop_nulls(self) -> "Series":
         """

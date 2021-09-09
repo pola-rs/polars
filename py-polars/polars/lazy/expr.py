@@ -182,6 +182,12 @@ class Expr:
             return self.map(function, return_dtype=kwargs["dtype"])
         return self.map(function, return_dtype=dtype)
 
+    def sqrt(self) -> "Expr":
+        """
+        Compute the square root of the elements
+        """
+        return self ** 0.5
+
     def alias(self, name: str) -> "Expr":
         """
         Rename the output of an expression.
