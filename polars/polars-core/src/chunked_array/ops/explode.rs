@@ -9,6 +9,7 @@ use arrow::{
 };
 use itertools::Itertools;
 use polars_arrow::bit_util;
+use polars_arrow::is_valid::IsValid;
 use std::convert::TryFrom;
 use std::ops::Deref;
 
@@ -46,22 +47,66 @@ where
         let values = arr.values();
 
         let mut new_values = AlignedVec::with_capacity(((values.len() as f32) * 1.5) as usize);
+        let mut empty_row_idx = vec![];
         let mut nulls = vec![];
 
         let mut start = offsets[0] as usize;
         let mut last = start;
-        for &o in &offsets[1..] {
-            let o = o as usize;
-            if o == last {
-                if start != last {
-                    new_values.extend_memcpy(&values[start..last])
-                }
+        // we check all the offsets and in the case a consecutive offset is the same,
+        // e.g. 0, 1, 4, 4, 6
+        // the 4 4, means that that is an empty row.
+        // the empty row will be replaced with a None value.
+        //
+        // below we memcpy as much as possible and for the empty rows we add a default value
+        // that value will later be masked out by the validity bitmap
 
-                nulls.push(o + nulls.len());
-                new_values.push(T::Native::default());
-                start = o;
+        // in the case that the value array has got null values, we need to check every validity
+        // value and collect the indices.
+        // because the length of the array is not known, we first collect the null indexes, ofsetted
+        // with the insertion of empty rows (as None) and later create a validity bitmap
+        if arr.null_count() > 0 {
+            let validity_values = arr.data_ref().null_buffer().unwrap();
+            let offset = arr.offset();
+
+            for &o in &offsets[1..] {
+                let o = o as usize;
+                if o == last {
+                    if start != last {
+                        for i in start..last {
+                            if unsafe { validity_values.is_null_unchecked(i + offset) } {
+                                nulls.push(i + empty_row_idx.len());
+                            }
+                        }
+                        new_values.extend_memcpy(&values[start..last])
+                    }
+
+                    empty_row_idx.push(o + empty_row_idx.len());
+                    new_values.push(T::Native::default());
+                    start = o;
+                }
+                last = o;
             }
-            last = o;
+
+            // final null check
+            for i in start..last {
+                if unsafe { validity_values.is_null_unchecked(i + offset) } {
+                    nulls.push(i + empty_row_idx.len());
+                }
+            }
+        } else {
+            for &o in &offsets[1..] {
+                let o = o as usize;
+                if o == last {
+                    if start != last {
+                        new_values.extend_memcpy(&values[start..last])
+                    }
+
+                    empty_row_idx.push(o + empty_row_idx.len());
+                    new_values.push(T::Native::default());
+                    start = o;
+                }
+                last = o;
+            }
         }
         new_values.extend_memcpy(&values[start..]);
 
@@ -69,6 +114,9 @@ where
         let mut validity = MutableBuffer::new(num_bytes).with_bitset(num_bytes, true);
         let validity_slice = validity.as_mut_ptr();
 
+        for i in empty_row_idx {
+            unsafe { unset_bit_raw(validity_slice, i) }
+        }
         for i in nulls {
             unsafe { unset_bit_raw(validity_slice, i) }
         }
@@ -355,6 +403,30 @@ mod test {
         assert_eq!(
             Vec::from(exploded.i32()?),
             &[Some(1), None, Some(2), None, Some(3), Some(4)]
+        );
+
+        // primitive with nulls and empty rows
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
+        builder.append_series(&Series::new("", &[Some(1i32), None, Some(2)]));
+        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Series::new("", &[2i32]));
+        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Series::new("", &[3, 4i32]));
+
+        let ca = builder.finish();
+        let exploded = ca.explode()?;
+        assert_eq!(
+            Vec::from(exploded.i32()?),
+            &[
+                Some(1),
+                None,
+                Some(2),
+                None,
+                Some(2),
+                None,
+                Some(3),
+                Some(4)
+            ]
         );
 
         // utf8
