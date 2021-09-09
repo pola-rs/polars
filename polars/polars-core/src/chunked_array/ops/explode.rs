@@ -20,29 +20,70 @@ where
         let values = arr.values();
 
         let mut new_values = AlignedVec::with_capacity(((values.len() as f32) * 1.5) as usize);
+        let mut empty_row_idx = vec![];
         let mut nulls = vec![];
 
         let mut start = offsets[0] as usize;
         let mut last = start;
-        for &o in &offsets[1..] {
-            let o = o as usize;
-            if o == last {
-                if start != last {
-                    new_values.extend_from_slice(&values[start..last])
-                }
+        // we check all the offsets and in the case a consecutive offset is the same,
+        // e.g. 0, 1, 4, 4, 6
+        // the 4 4, means that that is an empty row.
+        // the empty row will be replaced with a None value.
+        //
+        // below we memcpy as much as possible and for the empty rows we add a default value
+        // that value will later be masked out by the validity bitmap
 
-                nulls.push(o + nulls.len());
-                new_values.push(T::Native::default());
-                start = o;
+        // in the case that the value array has got null values, we need to check every validity
+        // value and collect the indices.
+        // because the length of the array is not known, we first collect the null indexes, ofsetted
+        // with the insertion of empty rows (as None) and later create a validity bitmap
+        if arr.null_count() > 0 {
+            let validity_values = arr.validity().as_ref().unwrap();
+
+            for &o in &offsets[1..] {
+                let o = o as usize;
+                if o == last {
+                    if start != last {
+                        new_values.extend_from_slice(&values[start..last])
+                    }
+
+                    empty_row_idx.push(o + empty_row_idx.len());
+                    new_values.push(T::Native::default());
+                    start = o;
+                }
+                last = o;
             }
-            last = o;
+            // final null check
+            for i in start..last {
+                if unsafe { !validity_values.get_bit_unchecked(i) } {
+                    nulls.push(i + empty_row_idx.len());
+                }
+            }
+        } else {
+            for &o in &offsets[1..] {
+                let o = o as usize;
+                if o == last {
+                    if start != last {
+                        new_values.extend_from_slice(&values[start..last])
+                    }
+
+                    empty_row_idx.push(o + empty_row_idx.len());
+                    new_values.push(T::Native::default());
+                    start = o;
+                }
+                last = o;
+            }
         }
+
         new_values.extend_from_slice(&values[start..]);
 
         let mut validity = MutableBitmap::with_capacity(new_values.len());
         validity.extend_constant(new_values.len(), true);
         let validity_slice = validity.as_slice().as_ptr() as *mut u8;
 
+        for i in empty_row_idx {
+            unsafe { unset_bit_raw(validity_slice, i) }
+        }
         for i in nulls {
             unsafe { unset_bit_raw(validity_slice, i) }
         }
