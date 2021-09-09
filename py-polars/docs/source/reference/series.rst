@@ -85,6 +85,7 @@ Computations
 .. autosummary::
    :toctree: api/
 
+    Series.sqrt
     Series.cumsum
     Series.cummin
     Series.cummax

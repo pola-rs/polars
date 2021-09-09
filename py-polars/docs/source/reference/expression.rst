@@ -102,6 +102,7 @@ Computations
 .. autosummary::
    :toctree: api/
 
+    Expr.sqrt
     Expr.cumsum
     Expr.cummin
     Expr.cummax

@@ -525,6 +525,13 @@ def test_arr_lengths_dispatch():
     assert df.select(pl.col("a").arr.lengths())["a"].to_list() == [2, 3]
 
 
+def test_sqrt_dispatch():
+    s = pl.Series("a", [1, 2])
+    assert s.sqrt().to_list() == [1, np.sqrt(2)]
+    df = pl.DataFrame([s])
+    assert df.select(pl.col("a").sqrt())["a"].to_list() == [1, np.sqrt(2)]
+
+
 def test_range():
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     assert s[2:5].series_equal(s[range(2, 5)])
