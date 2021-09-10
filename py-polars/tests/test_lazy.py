@@ -531,3 +531,9 @@ def test_datetime_consistency():
     df = pl.DataFrame({"date": [dt]})
     df["date"].dt[0] == dt
     df.select(lit(dt))["literal"].dt[0] == dt
+
+
+def test_clip():
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    df.select(col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
+    pl.Series([1, 2, 3, 4, 5]).clip(2, 4).to_list() == [2, 2, 3, 4, 4]
