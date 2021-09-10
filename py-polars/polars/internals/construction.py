@@ -128,7 +128,7 @@ def sequence_to_pyseries(
                 return arrow_to_pyseries(name, arrow_values)
             # failure expected for mixed sequences like `[[12], "foo", 9]`
             except pa.lib.ArrowInvalid:
-                return PySeries.new_object(name, values)
+                return PySeries.new_object(name, values, strict)
 
         else:
             constructor = py_type_to_constructor(dtype_)
@@ -277,6 +277,12 @@ def sequence_to_pydf(
             if not s.name:  # TODO: Replace by `if s.name is None` once allowed
                 s.rename(f"column_{i}", in_place=True)
             data_series.append(s.inner())
+
+    elif isinstance(data[0], dict):
+        pydf = PyDataFrame.read_records(data)
+        if columns is not None:
+            pydf.set_column_names(columns)
+        return pydf
 
     elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
         # Infer orientation
