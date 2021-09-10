@@ -657,7 +657,10 @@ macro_rules! impl_dyn_series {
             }
 
             fn sum_as_series(&self) -> Series {
-                panic!("cannot compute sum of dates")
+                Int32Chunked::full_null(self.name(), 1)
+                    .cast_with_dtype(self.dtype())
+                    .unwrap()
+                    .into()
             }
             fn max_as_series(&self) -> Series {
                 physical_dispatch!(self, max_as_series,)
@@ -666,13 +669,22 @@ macro_rules! impl_dyn_series {
                 physical_dispatch!(self, min_as_series,)
             }
             fn mean_as_series(&self) -> Series {
-                panic!("cannot compute mean of dates")
+                Int32Chunked::full_null(self.name(), 1)
+                    .cast_with_dtype(self.dtype())
+                    .unwrap()
+                    .into()
             }
             fn median_as_series(&self) -> Series {
-                panic!("cannot compute median of dates")
+                Int32Chunked::full_null(self.name(), 1)
+                    .cast_with_dtype(self.dtype())
+                    .unwrap()
+                    .into()
             }
             fn var_as_series(&self) -> Series {
-                panic!("cannot compute variance of dates")
+                Int32Chunked::full_null(self.name(), 1)
+                    .cast_with_dtype(self.dtype())
+                    .unwrap()
+                    .into()
             }
             fn std_as_series(&self) -> Series {
                 physical_dispatch!(self, std_as_series,)
