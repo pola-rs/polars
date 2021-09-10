@@ -342,6 +342,8 @@ def test_assignment():
     df["foo"] = df["foo"]
     # make sure that assignment does not change column order
     assert df.columns == ["foo", "bar"]
+    df[df["foo"] > 1, "foo"] = 9
+    df["foo"].to_list() == [1, 9, 9]
 
 
 def test_slice():
@@ -378,54 +380,54 @@ def test_groupby():
     # use __getitem__ to map to select
     assert (
         df.groupby("a")["b"]
-        .sum()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+            .sum()
+            .sort(by="a")
+            .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
 
     assert (
         df.groupby("a")
-        .select("b")
-        .sum()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+            .select("b")
+            .sum()
+            .sort(by="a")
+            .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
     )
     assert (
         df.groupby("a")
-        .select("c")
-        .sum()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
+            .select("c")
+            .sum()
+            .sort(by="a")
+            .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
     )
     assert (
         df.groupby("a")
-        .select("b")
-        .min()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
+            .select("b")
+            .min()
+            .sort(by="a")
+            .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
     )
     assert (
         df.groupby("a")
-        .select("b")
-        .max()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
+            .select("b")
+            .max()
+            .sort(by="a")
+            .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     assert (
         df.groupby("a")
-        .select("b")
-        .mean()
-        .sort(by="a")
-        .frame_equal(
+            .select("b")
+            .mean()
+            .sort(by="a")
+            .frame_equal(
             pl.DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]})
         )
     )
     assert (
         df.groupby("a")
-        .select("b")
-        .last()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
+            .select("b")
+            .last()
+            .sort(by="a")
+            .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
     )
     # check if it runs
     (df.groupby("a").select("b").n_unique())
@@ -604,17 +606,17 @@ def test_custom_groupby():
     assert df.groupby("A").select("B").apply(
         lambda x: pl.Series("", np.array(x))
     ).shape == (
-        2,
-        2,
-    )
+               2,
+               2,
+           )
 
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
 
     out = (
         df.lazy()
-        .groupby("b")
-        .agg([col("a").apply(lambda x: x.sum(), return_dtype=int)])
-        .collect()
+            .groupby("b")
+            .agg([col("a").apply(lambda x: x.sum(), return_dtype=int)])
+            .collect()
     )
     assert out.shape == (3, 2)
 
@@ -860,9 +862,9 @@ def test_literal_series():
     )
     out = (
         df.lazy()
-        .with_column(pl.Series("e", [2, 1, 3]))
-        .with_column(pl.col("e").cast(pl.Float32))
-        .collect()
+            .with_column(pl.Series("e", [2, 1, 3]))
+            .with_column(pl.col("e").cast(pl.Float32))
+            .collect()
     )
     assert out["e"] == [2, 1, 3]
 
@@ -919,8 +921,8 @@ def test_join_dates():
     )
     dts = (
         pl.from_pandas(date_times)
-        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
-        .cast(pl.Date64)
+            .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
+            .cast(pl.Date64)
     )
 
     # some df with sensor id, (randomish) datetime and some value
@@ -1030,4 +1032,22 @@ def test_filter_date():
 
     # filter out the data to match only records from the previous year
     assert df.filter(col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
-    assert not df.filter(col("date") <= pl.lit_date(datetime(2020, 1, 3))).is_empty()
+
+
+def test_slicing():
+    # https://github.com/pola-rs/polars/issues/1322
+    n = 20
+
+    df = pl.DataFrame(
+        {
+            "d": ["u", "u", "d", "c", "c", "d", "d"] * n,
+            "v1": [None, "help", None, None, None, None, None] * n,
+            "v2": [None, "help", None, None, None, None, None] * n,
+            "v3": [None, "help", None, None, None, None, None] * n,
+        }
+    )
+
+    assert (df.filter(pl.col("d") != "d").select([pl.col("v1").unique()])).shape == (
+        2,
+        1,
+    )
