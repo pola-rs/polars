@@ -197,7 +197,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_object(name: &str, val: Vec<ObjectValue>) -> Self {
+    pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
         s.into()
     }

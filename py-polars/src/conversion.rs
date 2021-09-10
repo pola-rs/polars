@@ -12,7 +12,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PySequence;
+use pyo3::types::{PyDict, PySequence};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -331,4 +331,34 @@ pub(crate) fn str_to_null_strategy(strategy: &str) -> PyResult<NullStrategy> {
         }
     };
     Ok(strategy)
+}
+
+pub(crate) fn records_to_rows(records: &PyAny) -> PyResult<Vec<Row>> {
+    let (records, len) = get_pyseq(records)?;
+    let mut rows = Vec::with_capacity(len);
+
+    let mut iter = records.iter()?;
+    let record = iter.next().unwrap()?;
+    let record = record.downcast::<PyDict>()?;
+    let vals = record.values();
+    let row = vals.extract::<Wrap<Row>>()?.0;
+    rows.push(row);
+
+    let keys = record.keys();
+    let width = keys.len();
+
+    for record in iter {
+        let record = record?;
+        let record = record.downcast::<PyDict>()?;
+
+        let mut row = Vec::with_capacity(width);
+
+        for k in keys {
+            let val = record.get_item(k).unwrap();
+            let val = val.extract::<Wrap<AnyValue>>()?.0;
+            row.push(val)
+        }
+        rows.push(Row(row))
+    }
+    Ok(rows)
 }

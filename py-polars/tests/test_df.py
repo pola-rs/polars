@@ -194,6 +194,17 @@ def test_init_errors():
         pl.DataFrame(0)
 
 
+def test_init_records():
+    records = [
+        {"a": 1, "b": 2},
+        {"b": 1, "a": 2},
+        {"a": 1, "b": 2},
+    ]
+    df = pl.DataFrame(records)
+    expected = pl.DataFrame({"a": [1, 2, 1], "b": [2, 1, 2]})
+    assert df.frame_equal(expected)
+
+
 def test_selection():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
@@ -968,6 +979,15 @@ def test_hash_rows():
     assert df.hash_rows().dtype == pl.UInt64
     assert df["a"].hash().dtype == pl.UInt64
     assert df[[col("a").hash().alias("foo")]]["foo"].dtype == pl.UInt64
+
+
+def test_create_df_from_object():
+    class Foo:
+        def __init__(self):
+            pass
+
+    df = pl.DataFrame({"a": [Foo(), Foo()]})
+    assert df["a"].dtype == pl.Object
 
 
 def test_hashing_on_python_objects():

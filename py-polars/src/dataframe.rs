@@ -16,7 +16,7 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::prelude::str_to_null_strategy;
+use crate::prelude::{records_to_rows, str_to_null_strategy};
 use crate::utils::{downsample_str_to_rule, str_to_polarstype};
 use crate::{
     arrow_interop,
@@ -36,6 +36,23 @@ pub struct PyDataFrame {
 impl PyDataFrame {
     pub(crate) fn new(df: DataFrame) -> Self {
         PyDataFrame { df }
+    }
+
+    fn finish_from_rows(rows: Vec<Row>) -> PyResult<Self> {
+        // replace inferred nulls with boolean
+        let schema = rows_to_schema(&rows);
+        let fields = schema
+            .fields()
+            .iter()
+            .map(|fld| match fld.data_type() {
+                DataType::Null => Field::new(fld.name(), DataType::Boolean),
+                _ => fld.clone(),
+            })
+            .collect();
+        let schema = Schema::new(fields);
+
+        let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
     }
 }
 
@@ -132,7 +149,7 @@ impl PyDataFrame {
             .with_n_threads(n_threads)
             .with_path(path)
             .with_dtypes(overwrite_dtype.as_ref())
-            .with_dtypes_slice(overwrite_dtype_slice.as_ref().map(|s| s.as_slice()))
+            .with_dtypes_slice(overwrite_dtype_slice.as_deref())
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_null_values(null_values)
@@ -203,21 +220,13 @@ impl PyDataFrame {
         // safety:
         // wrap is transparent
         let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
+        Self::finish_from_rows(rows)
+    }
 
-        // replace inferred nulls with boolean
-        let schema = rows_to_schema(&rows);
-        let fields = schema
-            .fields()
-            .iter()
-            .map(|fld| match fld.data_type() {
-                DataType::Null => Field::new(fld.name(), DataType::Boolean),
-                _ => fld.clone(),
-            })
-            .collect();
-        let schema = Schema::new(fields);
-
-        let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsEr::from)?;
-        Ok(df.into())
+    #[staticmethod]
+    pub fn read_records(records: &PyAny) -> PyResult<Self> {
+        let rows = records_to_rows(records)?;
+        Self::finish_from_rows(rows)
     }
 
     pub fn to_csv(&self, py_f: PyObject, has_headers: bool, delimiter: u8) -> PyResult<()> {

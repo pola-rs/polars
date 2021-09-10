@@ -113,7 +113,6 @@ fn concat_str(s: Vec<dsl::PyExpr>, delimiter: &str) -> dsl::PyExpr {
     polars::lazy::functions::concat_str(s, delimiter).into()
 }
 
-
 #[pyfunction]
 fn concat_lst(s: Vec<dsl::PyExpr>) -> dsl::PyExpr {
     let s = s.into_iter().map(|e| e.inner).collect();
