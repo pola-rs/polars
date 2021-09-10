@@ -125,6 +125,7 @@ Computations
     Expr.diff
     Expr.skew
     Expr.kurtosis
+    Expr.sqrt
 
 Manipulation/ selection
 -----------------------
