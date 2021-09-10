@@ -1030,3 +1030,4 @@ def test_filter_date():
 
     # filter out the data to match only records from the previous year
     assert df.filter(col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
+    assert not df.filter(col("date") <= pl.lit_date(datetime(2020, 1, 3))).is_empty()
