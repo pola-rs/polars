@@ -537,3 +537,15 @@ def test_clip():
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     df.select(col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
     pl.Series([1, 2, 3, 4, 5]).clip(2, 4).to_list() == [2, 2, 3, 4, 4]
+
+
+def test_argminmax():
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    out = df.select(
+        [
+            pl.col("a").arg_min().alias("min"),
+            pl.col("a").arg_max().alias("max"),
+        ]
+    )
+    assert out["max"][0] == 4
+    assert out["min"][0] == 0
