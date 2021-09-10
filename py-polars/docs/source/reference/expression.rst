@@ -155,6 +155,7 @@ Manipulation/ selection
     Expr.drop_nulls
     Expr.interpolate
     Expr.argsort
+    Expr.clip
 
 Column names
 ------------
