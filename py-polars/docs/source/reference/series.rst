@@ -139,6 +139,7 @@ Manipulation/ selection
     Series.fill_null
     Series.zip_with
     Series.interpolate
+    Series.clip
 
 Various
 --------
