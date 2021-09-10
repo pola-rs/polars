@@ -40,6 +40,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    arange
    argsort_by
    concat_str
+   concat_list
    when
 
 Constructor
@@ -243,6 +244,7 @@ The following methods are available under the `expr.arr` attribute.
 .. autosummary::
    :toctree: api/
 
+    ExprListNameSpace.concat
     ExprListNameSpace.lengths
     ExprListNameSpace.sum
     ExprListNameSpace.min
