@@ -212,6 +212,7 @@ The following methods are available under the `Series.arr` attribute.
 .. autosummary::
    :toctree: api/
 
+    ListNameSpace.concat
     ListNameSpace.lengths
     ListNameSpace.sum
     ListNameSpace.min
