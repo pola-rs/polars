@@ -1,5 +1,6 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use polars_arrow::prelude::ValueSize;
 
 impl ListChunked {
     pub fn lst_max(&self) -> Series {
