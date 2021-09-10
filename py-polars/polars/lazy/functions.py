@@ -12,6 +12,7 @@ try:
     from polars.polars import binary_function as pybinary_function
     from polars.polars import col as pycol
     from polars.polars import cols as pycols
+    from polars.polars import concat_lst as _concat_lst
     from polars.polars import concat_str as _concat_str
     from polars.polars import cov as pycov
     from polars.polars import fold as pyfold
@@ -54,6 +55,7 @@ __all__ = [
     "arange",
     "argsort_by",
     "concat_str",
+    "concat_list",
 ]
 
 
@@ -632,3 +634,16 @@ def concat_str(exprs: tp.List["pl.Expr"], delimiter: str = "") -> "pl.Expr":
     """
     exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
     return pl.lazy.expr.wrap_expr(_concat_str(exprs, delimiter))
+
+
+def concat_list(exprs: tp.List["pl.Expr"], delimiter: str = "") -> "pl.Expr":
+    """
+    Concat the arrays in a Series dtype List in linear time.
+
+    Parameters
+    ----------
+    exprs
+        Columns to concat into a List Series
+    """
+    exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
+    return pl.lazy.expr.wrap_expr(_concat_lst(exprs))

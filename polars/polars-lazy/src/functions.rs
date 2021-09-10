@@ -101,6 +101,28 @@ pub fn concat_str(s: Vec<Expr>, delimiter: &str) -> Expr {
     }
 }
 
+/// Concat lists entries.
+#[cfg(feature = "list")]
+#[cfg_attr(docsrs, doc(cfg(feature = "list")))]
+pub fn concat_lst(s: Vec<Expr>) -> Expr {
+    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+        let first = std::mem::take(&mut s[0]);
+        let other = &s[1..];
+
+        let first_ca = first.list()?;
+        first_ca.lst_concat(other).map(|ca| ca.into_series())
+    }) as Arc<dyn SeriesUdf>);
+    Expr::Function {
+        input: s,
+        function,
+        output_type: GetOutput::from_type(DataType::Utf8),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+        },
+    }
+}
+
 /// Create list entries that are range arrays
 /// - if `low` and `high` are a column, every element will expand into an array in a list column.
 /// - if `low` and `high` are literals the output will be of `Int64`.
