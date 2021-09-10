@@ -1032,3 +1032,22 @@ def test_filter_date():
 
     # filter out the data to match only records from the previous year
     assert df.filter(col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
+
+
+def test_slicing():
+    # https://github.com/pola-rs/polars/issues/1322
+    n = 20
+
+    df = pl.DataFrame(
+        {
+            "d": ["u", "u", "d", "c", "c", "d", "d"] * n,
+            "v1": [None, "help", None, None, None, None, None] * n,
+            "v2": [None, "help", None, None, None, None, None] * n,
+            "v3": [None, "help", None, None, None, None, None] * n,
+        }
+    )
+
+    assert (df.filter(pl.col("d") != "d").select([pl.col("v1").unique()])).shape == (
+        2,
+        1,
+    )
