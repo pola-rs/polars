@@ -1830,3 +1830,21 @@ fn test_list_in_select_context() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_round_after_agg() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .groupby(vec![col("fruits")])
+        .agg(vec![col("A")
+            .cast(DataType::Float32)
+            .mean()
+            .round(2)
+            .alias("foo")])
+        .collect()?;
+
+    assert!(out.column("foo")?.f64().is_ok());
+    Ok(())
+}
