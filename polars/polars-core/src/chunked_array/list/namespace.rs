@@ -1,3 +1,4 @@
+use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 
 impl ListChunked {
@@ -51,5 +52,54 @@ impl ListChunked {
             }
         });
         UInt32Chunked::new_from_aligned_vec(self.name(), lengths)
+    }
+
+    pub fn lst_concat(&self, other: &[Series]) -> Result<ListChunked> {
+        let mut iters = Vec::with_capacity(other.len() + 1);
+        let dtype = self.dtype();
+        let length = self.len();
+        for s in other {
+            if s.dtype() != dtype {
+                return Err(PolarsError::DataTypeMisMatch(
+                    format!("cannot concat {:?} into a list of {:?}", s.dtype(), dtype).into(),
+                ));
+            }
+            if s.len() != length {
+                return Err(PolarsError::ShapeMisMatch(
+                    format!("length {} does not match {}", s.len(), length).into(),
+                ));
+            }
+            iters.push(s.list()?.amortized_iter())
+        }
+        let mut first_iter = self.into_iter();
+        let mut builder = get_list_builder(
+            &self.inner_dtype(),
+            self.get_values_size() * (other.len() + 1),
+            self.len(),
+            self.name(),
+        );
+
+        for _ in 0..self.len() {
+            let mut acc = match first_iter.next().unwrap() {
+                Some(s) => s,
+                None => {
+                    builder.append_null();
+                    continue;
+                }
+            };
+            for it in &mut iters {
+                match it.next().unwrap() {
+                    Some(s) => {
+                        acc.append(s.as_ref())?;
+                    }
+                    None => {
+                        builder.append_null();
+                        continue;
+                    }
+                }
+            }
+            builder.append_series(&acc);
+        }
+        Ok(builder.finish())
     }
 }
