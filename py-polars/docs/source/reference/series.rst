@@ -106,6 +106,7 @@ Computations
     Series.diff
     Series.skew
     Series.kurtosis
+    Series.sqrt
 
 Manipulation/ selection
 -----------------------
