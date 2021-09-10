@@ -182,16 +182,22 @@ impl PyExpr {
         self.clone().inner.arg_sort(reverse).into()
     }
     pub fn arg_max(&self) -> PyExpr {
-        self.clone().inner.apply(
-            |s| Ok(Series::new(s.name(), &[s.arg_max().map(|idx| idx as u32)])),
-            GetOutput::from_type(DataType::UInt32)
-        ).into()
+        self.clone()
+            .inner
+            .apply(
+                |s| Ok(Series::new(s.name(), &[s.arg_max().map(|idx| idx as u32)])),
+                GetOutput::from_type(DataType::UInt32),
+            )
+            .into()
     }
     pub fn arg_min(&self) -> PyExpr {
-        self.clone().inner.apply(
-            |s| Ok(Series::new(s.name(), &[s.arg_min().map(|idx| idx as u32)])),
-            GetOutput::from_type(DataType::UInt32)
-        ).into()
+        self.clone()
+            .inner
+            .apply(
+                |s| Ok(Series::new(s.name(), &[s.arg_min().map(|idx| idx as u32)])),
+                GetOutput::from_type(DataType::UInt32),
+            )
+            .into()
     }
 
     pub fn take(&self, idx: PyExpr) -> PyExpr {
