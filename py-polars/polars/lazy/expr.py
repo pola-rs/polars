@@ -176,8 +176,13 @@ class Expr:
         else:
             dtype = None  # type: ignore
 
+        args = []
+        for inp in inputs:
+            if not isinstance(inp, Expr):
+                args.append(inp)
+
         def function(s: "pl.Series") -> "pl.Series":
-            return ufunc(s, **kwargs)
+            return ufunc(s, *args, **kwargs)
 
         if "dtype" in kwargs:
             return self.map(function, return_dtype=kwargs["dtype"])
@@ -1475,27 +1480,24 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, a_min: Union[int, float], a_max: Union[int, float]) -> "Expr":
+    def clip(self, min_val: Union[int, float], max_val: Union[int, float]) -> "Expr":
         """
         Clip (limit) the values in an array.
-        Given an interval, values outside the interval are clipped to the interval edges.
-        For example, if an interval of [0, 1] is specified, values smaller than 0 become 0, and values larger than 1 become 1.
-
-        No check is performed to ensure a_min < a_max.
-
-        Notes
-        -----
-
-        This is just a dispatch to numpy.clip
 
         Parameters
         ----------
-        a_min, a_max
+        min_val, max_val
             Minimum and maximum value.
-            If None, clipping is not performed on the corresponding edge. Only one of a_min and a_max may be None.
-            Both are broadcast against a
         """
-        return np.clip(self, a_min, a_max)  # type: ignore
+        min_val = pl.lit(min_val)  # type: ignore
+        max_val = pl.lit(max_val)  # type: ignore
+        return (
+            pl.when(self < min_val)  # type: ignore
+            .then(min_val)
+            .when(self > max_val)
+            .then(max_val)
+            .otherwise(self)
+        ).keep_name()
 
 
 class ExprListNameSpace:
