@@ -113,6 +113,13 @@ fn concat_str(s: Vec<dsl::PyExpr>, delimiter: &str) -> dsl::PyExpr {
     polars::lazy::functions::concat_str(s, delimiter).into()
 }
 
+
+#[pyfunction]
+fn concat_lst(s: Vec<dsl::PyExpr>) -> dsl::PyExpr {
+    let s = s.into_iter().map(|e| e.inner).collect();
+    polars::lazy::functions::concat_lst(s).into()
+}
+
 #[pyfunction]
 fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let (seq, _len) = get_pyseq(dfs)?;
@@ -151,6 +158,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(concat_lst)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
     Ok(())
 }

@@ -1,3 +1,4 @@
+import copy
 import typing as tp
 from datetime import datetime
 from typing import Any, Callable, Optional, Sequence, Type, Union
@@ -1536,6 +1537,23 @@ class ExprListNameSpace:
         Get the unique/distinct values in the list
         """
         return wrap_expr(self._pyexpr.lst_unique())
+
+    def concat(self, other: Union[tp.List[Expr], Expr, str, tp.List[str]]) -> "Expr":
+        """
+        Concat the arrays in a Series dtype List in linear time.
+
+        Parameters
+        ----------
+        other
+            Columns to concat into a List Series
+        """
+        if not isinstance(other, list):
+            other = [other]  # type: ignore
+        else:
+            other = copy.copy(other)
+        # mypy does not understand we have a list by now
+        other.insert(0, wrap_expr(self._pyexpr))  # type: ignore
+        return pl.concat_list(other)  # type: ignore
 
 
 class ExprStringNameSpace:
