@@ -1,5 +1,5 @@
 import typing as tp
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional, Type, Union
 
 import numpy as np
@@ -354,7 +354,7 @@ def lit_date(dt: datetime) -> "pl.Expr":
     dt
         datetime.datetime
     """
-    return lit(int(dt.timestamp() * 1e3))
+    return lit(int((dt.replace(tzinfo=timezone.utc)).timestamp() * 1e3))
 
 
 def lit(

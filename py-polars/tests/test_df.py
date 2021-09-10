@@ -1022,3 +1022,13 @@ def test_h_agg():
     assert df.sum(axis=1, null_strategy="ignore").to_list() == [2, 2, 6]
     assert df.sum(axis=1, null_strategy="propagate").to_list() == [2, None, 6]
     assert df.mean(axis=1, null_strategy="propagate")[1] is None
+
+
+def test_filter_date():
+    dataset = pl.DataFrame(
+        {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
+    )
+    df = dataset.with_column(pl.col("date").str.strptime(pl.Date32, "%Y-%m-%d"))
+
+    # filter out the data to match only records from the previous year
+    assert df.filter(col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
