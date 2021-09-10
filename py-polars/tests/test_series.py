@@ -544,3 +544,26 @@ def test_strict_cast():
         pl.Series("a", [2 ** 16]).cast(dtype=pl.Int16, strict=True)
     with pytest.raises(RuntimeError):
         pl.DataFrame({"a": [2 ** 16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
+
+
+def test_list_concat_dispatch():
+    s0 = pl.Series("a", [[1, 2]])
+    s1 = pl.Series("b", [[3, 4, 5]])
+    expected = pl.Series("a", [[1, 2, 3, 4, 5]])
+
+    out = s0.arr.concat([s1])
+    assert out.series_equal(expected)
+
+    out = s0.arr.concat(s1)
+    assert out.series_equal(expected)
+
+    df = pl.DataFrame([s0, s1])
+    assert df.select(pl.concat_list(["a", "b"]).alias("concat"))["concat"].series_equal(
+        expected
+    )
+    assert df.select(pl.col("a").arr.concat("b").alias("concat"))[
+        "concat"
+    ].series_equal(expected)
+    assert df.select(pl.col("a").arr.concat(["b"]).alias("concat"))[
+        "concat"
+    ].series_equal(expected)

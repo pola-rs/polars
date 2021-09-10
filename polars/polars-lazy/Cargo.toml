@@ -47,6 +47,7 @@ rolling_window = ["polars-core/rolling_window"]
 rank = ["polars-core/rank"]
 diff = ["polars-core/diff"]
 moment = ["polars-core/moment"]
+list = ["polars-core/list"]
 
 # no guarantees whatsoever
 private = []

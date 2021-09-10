@@ -2769,6 +2769,24 @@ class ListNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pl.col(s.name).arr.unique())  # type: ignore
 
+    def concat(self, other: Union[tp.List[Series], Series]) -> "Series":
+        """
+        Concat the arrays in a Series dtype List in linear time.
+
+        Parameters
+        ----------
+        other
+            Columns to concat into a List Series
+        """
+        if not isinstance(other, list):
+            other = [other]
+        sthis = wrap_s(self._s)
+        names = [s.name for s in other]
+        names.insert(0, sthis.name)
+        df = pl.DataFrame(other)
+        df.insert_at_idx(0, sthis)
+        return df.select(pl.concat_list(names))[sthis.name]  # type: ignore
+
 
 class DateTimeNameSpace:
     """
