@@ -666,6 +666,18 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_sort(reverse))
 
+    def arg_max(self) -> "Expr":
+        """
+        Get the index of the maximal value.
+        """
+        return wrap_expr(self._pyexpr.arg_max())
+
+    def arg_min(self) -> "Expr":
+        """
+        Get the index of the minimal value.
+        """
+        return wrap_expr(self._pyexpr.arg_min())
+
     def sort_by(self, by: Union["Expr", str], reverse: bool = False) -> "Expr":
         """
         Sort this column by the ordering of another column.
@@ -1076,8 +1088,7 @@ class Expr:
         -------
         Expr that evaluates to a Boolean Series.
         """
-        if isinstance(other, list):
-            other = lit(pl.Series("", other))
+        other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
     def repeat_by(self, by: "Expr") -> "Expr":

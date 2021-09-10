@@ -78,6 +78,8 @@ Aggregation
     Expr.agg_groups
     Expr.count
     Expr.quantile
+    Expr.arg_min
+    Expr.arg_max
 
 Boolean
 -------

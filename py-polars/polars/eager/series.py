@@ -1113,7 +1113,7 @@ class Series:
 
     def arg_max(self) -> Optional[int]:
         """
-        Get the index of the maxima value.
+        Get the index of the maximal value.
         """
         return self._s.arg_max()
 
