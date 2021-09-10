@@ -3016,6 +3016,12 @@ class DataFrame:
         """
         return self.select(pl.col("*").interpolate())  # type: ignore
 
+    def is_empty(self) -> bool:
+        """
+        Check if the dataframe is empty
+        """
+        return self.height == 0
+
 
 class GroupBy:
     """
