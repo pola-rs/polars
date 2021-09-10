@@ -1969,6 +1969,21 @@ class DataFrame:
         else:
             return wrap_df(self._df.with_column(column._s))
 
+    def with_column_renamed(self, existing_name: str, new_name: str) -> "DataFrame":
+        """
+        Return a new DataFrame with the column added or replaced.
+
+        Parameters
+        ----------
+        column
+            Series, where the name of the Series refers to the column in the DataFrame.
+        """
+        return (
+            self.lazy()
+            .with_column_renamed(existing_name, new_name)
+            .collect(no_optimization=True, string_cache=False)
+        )
+
     def hstack(
         self, columns: Union[tp.List["pl.Series"], "DataFrame"], in_place: bool = False
     ) -> Optional["DataFrame"]:
