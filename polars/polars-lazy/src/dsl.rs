@@ -1036,7 +1036,7 @@ impl Expr {
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn round(self, decimals: u32) -> Self {
-        self.apply(move |s: Series| s.round(decimals), GetOutput::same_type())
+        self.map(move |s: Series| s.round(decimals), GetOutput::same_type())
     }
 
     /// Apply window function over a subgroup.
