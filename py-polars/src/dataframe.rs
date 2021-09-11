@@ -16,7 +16,7 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::prelude::{records_to_rows, str_to_null_strategy};
+use crate::prelude::{dicts_to_rows, str_to_null_strategy};
 use crate::utils::{downsample_str_to_rule, str_to_polarstype};
 use crate::{
     arrow_interop,
@@ -224,9 +224,11 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    pub fn read_records(records: &PyAny) -> PyResult<Self> {
-        let rows = records_to_rows(records)?;
-        Self::finish_from_rows(rows)
+    pub fn read_dicts(dicts: &PyAny) -> PyResult<Self> {
+        let (rows, names) = dicts_to_rows(dicts)?;
+        let mut pydf = Self::finish_from_rows(rows)?;
+        pydf.df.set_column_names(&names).map_err(PyPolarsEr::from)?;
+        Ok(pydf)
     }
 
     pub fn to_csv(&self, py_f: PyObject, has_headers: bool, delimiter: u8) -> PyResult<()> {

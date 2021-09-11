@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "from_dict",
+    "from_dicts",
     "from_records",
     "from_arrow",
     "from_pandas",
@@ -112,6 +113,40 @@ def from_records(
     return pl.DataFrame._from_records(
         data, columns=columns, orient=orient, nullable=nullable
     )
+
+
+def from_dicts(dicts: Sequence[Dict[str, Any]]) -> "pl.DataFrame":
+    """
+    Construct a DataFrame from a sequence of dictionaries.
+
+    Parameters
+    ----------
+    dicts
+        Sequence with dictionaries mapping column name to value
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+
+    >>> data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
+    >>> df = pl.from_dicts(data)
+    >>> df
+    shape: (3, 2)
+    ╭─────┬─────╮
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 4   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 5   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 3   ┆ 6   │
+    ╰─────┴─────╯
+    """
+    return pl.DataFrame._from_dicts(dicts)
 
 
 def from_arrow(

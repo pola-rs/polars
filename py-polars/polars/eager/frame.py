@@ -234,6 +234,11 @@ class DataFrame:
         return df
 
     @classmethod
+    def _from_dicts(cls, data: Sequence[Dict[str, Any]]) -> "DataFrame":
+        pydf = PyDataFrame.read_dicts(data)
+        return DataFrame._from_pydf(pydf)
+
+    @classmethod
     def _from_dict(
         cls,
         data: Dict[str, Sequence[Any]],
@@ -803,6 +808,15 @@ class DataFrame:
             file = str(file)
 
         self._df.to_ipc(file)
+
+    def to_dicts(self) -> tp.List[Dict[str, Any]]:
+        pydf = self._df
+        names = self.columns
+
+        return [
+            {k: v for k, v in zip(names, pydf.row_tuple(i))}
+            for i in range(0, self.height)
+        ]
 
     def transpose(self) -> "pl.DataFrame":
         """
@@ -2955,9 +2969,6 @@ class DataFrame:
     def rows(self) -> tp.List[Tuple[Any]]:
         """
         Convert columnar data to rows as python tuples.
-
-
-
         """
         return self._df.row_tuples()
 
