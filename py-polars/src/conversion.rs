@@ -333,32 +333,33 @@ pub(crate) fn str_to_null_strategy(strategy: &str) -> PyResult<NullStrategy> {
     Ok(strategy)
 }
 
-pub(crate) fn records_to_rows(records: &PyAny) -> PyResult<Vec<Row>> {
-    let (records, len) = get_pyseq(records)?;
+pub(crate) fn dicts_to_rows(records: &PyAny) -> PyResult<(Vec<Row>, Vec<String>)> {
+    let (dicts, len) = get_pyseq(records)?;
     let mut rows = Vec::with_capacity(len);
 
-    let mut iter = records.iter()?;
-    let record = iter.next().unwrap()?;
-    let record = record.downcast::<PyDict>()?;
-    let vals = record.values();
+    let mut iter = dicts.iter()?;
+    let d = iter.next().unwrap()?;
+    let d = d.downcast::<PyDict>()?;
+    let vals = d.values();
+    let keys_first = d.keys().extract::<Vec<String>>()?;
     let row = vals.extract::<Wrap<Row>>()?.0;
     rows.push(row);
 
-    let keys = record.keys();
+    let keys = d.keys();
     let width = keys.len();
 
-    for record in iter {
-        let record = record?;
-        let record = record.downcast::<PyDict>()?;
+    for d in iter {
+        let d = d?;
+        let d = d.downcast::<PyDict>()?;
 
         let mut row = Vec::with_capacity(width);
 
         for k in keys {
-            let val = record.get_item(k).unwrap();
+            let val = d.get_item(k).unwrap();
             let val = val.extract::<Wrap<AnyValue>>()?.0;
             row.push(val)
         }
         rows.push(Row(row))
     }
-    Ok(rows)
+    Ok((rows, keys_first))
 }
