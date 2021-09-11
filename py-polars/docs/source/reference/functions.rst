@@ -17,6 +17,7 @@ Conversion
    :toctree: api/
 
     from_dict
+    from_dicts
     from_records
     from_arrow
     from_pandas

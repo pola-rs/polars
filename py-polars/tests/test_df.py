@@ -195,14 +195,15 @@ def test_init_errors():
 
 
 def test_init_records():
-    records = [
+    dicts = [
         {"a": 1, "b": 2},
         {"b": 1, "a": 2},
         {"a": 1, "b": 2},
     ]
-    df = pl.DataFrame(records)
+    df = pl.DataFrame(dicts)
     expected = pl.DataFrame({"a": [1, 2, 1], "b": [2, 1, 2]})
     assert df.frame_equal(expected)
+    assert df.to_dicts() == dicts
 
 
 def test_selection():
@@ -1042,8 +1043,6 @@ def test_slicing():
         {
             "d": ["u", "u", "d", "c", "c", "d", "d"] * n,
             "v1": [None, "help", None, None, None, None, None] * n,
-            "v2": [None, "help", None, None, None, None, None] * n,
-            "v3": [None, "help", None, None, None, None, None] * n,
         }
     )
 

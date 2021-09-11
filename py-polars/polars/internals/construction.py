@@ -279,7 +279,7 @@ def sequence_to_pydf(
             data_series.append(s.inner())
 
     elif isinstance(data[0], dict):
-        pydf = PyDataFrame.read_records(data)
+        pydf = PyDataFrame.read_dicts(data)
         if columns is not None:
             pydf.set_column_names(columns)
         return pydf
