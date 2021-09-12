@@ -45,6 +45,10 @@ where
                         "left key of asof join must be sorted".into(),
                     ));
                 }
+                if lhs_val == previous_lhs_val {
+                    tuples.push(Some(rhs_idx + 1));
+                    continue;
+                }
                 previous_lhs_val = lhs_val;
 
                 loop {
@@ -70,16 +74,23 @@ where
                         }
                         // exhausted rhs
                         None => {
-                            let mut remaining = self.len() - count;
+                            let remaining = self.len() - count;
+                            // all remaining values in left hand side
                             if previous_rhs_val < lhs_val {
-                                remaining -= 1;
-                                tuples.push(Some(rhs_idx - 1));
+                                // all remaining values in the rhs are smaller
+                                // so we join with the last: the biggest
+                                let iter = std::iter::repeat(Some(rhs_idx - 1))
+                                    .take(remaining)
+                                    .trust_my_length(remaining);
+                                tuples.extend_trusted_len(iter);
+                            } else {
+                                // TODO: check if this branch should be removed
+                                let iter = std::iter::repeat(None)
+                                    .take(remaining)
+                                    .trust_my_length(remaining);
+                                tuples.extend_trusted_len(iter);
                             }
 
-                            let iter = std::iter::repeat(None)
-                                .take(remaining)
-                                .trust_my_length(remaining);
-                            tuples.extend_trusted_len(iter);
                             return Ok(tuples);
                         }
                     }
@@ -158,8 +169,8 @@ mod test {
         let expected = df![
             "a" => [2, 5, 10, 12],
             "left_val" => ["a", "b", "c", "d"],
-            "b" => [Some(2), Some(3), None, None],
-            "right_val" => [Some(2), Some(3), None, None]
+            "b" => [Some(2), Some(3), Some(3), Some(3)],
+            "right_val" => [Some(2), Some(3), Some(3), Some(3)]
         ]?;
         assert!(out.frame_equal_missing(&expected));
 
