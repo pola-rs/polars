@@ -206,3 +206,11 @@ def test_copy():
     a = pl.Series("a", [1, 2])
     copy.copy(a).series_equal(a, True)
     copy.deepcopy(a).series_equal(a, True)
+
+
+def test_to_json():
+    # tests if it runs if no arg given
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    assert (
+        df.to_json() == '{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]}'
+    )

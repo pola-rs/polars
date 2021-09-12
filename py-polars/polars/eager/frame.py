@@ -714,7 +714,7 @@ class DataFrame:
         to_string
             Ignore file argument and return a string.
         """
-        if to_string:
+        if to_string or file is None:
             file = BytesIO()
             self._df.to_json(file, pretty)
             file.seek(0)
