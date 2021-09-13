@@ -349,12 +349,15 @@ def lit_date(dt: datetime) -> "pl.Expr":
     """
     Converts a Python DateTime to a literal Expression.
 
+    .. deprecated:: 0.9.5
+        Use polars.lit
+
     Parameters
     ----------
     dt
         datetime.datetime
     """
-    return lit(int((dt.replace(tzinfo=timezone.utc)).timestamp() * 1e3))
+    return lit(int((dt.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(pl.Date64)
 
 
 def lit(
