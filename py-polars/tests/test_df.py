@@ -1030,9 +1030,12 @@ def test_filter_date():
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
     )
     df = dataset.with_column(pl.col("date").str.strptime(pl.Date32, "%Y-%m-%d"))
-
-    # filter out the data to match only records from the previous year
     assert df.filter(col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
+    assert df.filter(col("date") < pl.lit_date(datetime(2020, 1, 4))).shape[0] == 2
+    assert df.filter(col("date") < pl.lit_date(datetime(2020, 1, 5))).shape[0] == 3
+    assert df.filter(col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
+    assert df.filter(col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
+    assert df.filter(col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
 
 
 def test_slicing():

@@ -349,6 +349,9 @@ def lit_date(dt: datetime) -> "pl.Expr":
     """
     Converts a Python DateTime to a literal Expression.
 
+    .. deprecated:: 0.9.5
+        Use polars.lit
+
     Parameters
     ----------
     dt
