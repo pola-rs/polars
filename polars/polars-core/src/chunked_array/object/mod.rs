@@ -117,6 +117,11 @@ where
     fn validity(&self) -> &Option<Bitmap> {
         &self.null_bitmap
     }
+    fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
+        let mut arr = self.clone();
+        arr.null_bitmap = validity;
+        Box::new(arr)
+    }
 }
 
 impl<T> ObjectChunked<T>
