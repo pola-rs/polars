@@ -5,7 +5,7 @@ use std::fs::canonicalize;
 
 /// Optimization rule that prunes a join, if the latest operation could be merged and the rest of
 /// the LP is equal.
-// See: https://github.com/ritchie46/polars/issues/449
+// See: https://github.com/pola-rs/polars/issues/449
 pub struct JoinPrune {}
 
 impl OptimizationRule for JoinPrune {

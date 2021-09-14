@@ -314,7 +314,7 @@ def test_shape():
 
 def test_create_list_series():
     pass
-    # may Segfault: see https://github.com/ritchie46/polars/issues/518
+    # may Segfault: see https://github.com/pola-rs/polars/issues/518
     # a = [[1, 2], None, [None, 3]]
     # s = pl.Series("", a)
     # assert s.to_list() == a

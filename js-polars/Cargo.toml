@@ -3,10 +3,10 @@ name = "polars"
 version = "0.0.1"
 authors = ["Ritchie Vink"]
 edition = "2018"
-repository = "https://github.com/ritchie46/polars"
+repository = "https://github.com/pola-rs/polars"
 license = "MIT"
-documentation = "https://ritchie46.github.io/polars-book/"
-homepage = "https://github.com/ritchie46/polars"
+documentation = "https://pola-rs.github.io/polars-book/"
+homepage = "https://github.com/pola-rs/polars"
 
 [lib]
 crate-type = ["cdylib"]
