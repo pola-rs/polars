@@ -526,7 +526,7 @@ impl DataFrame {
         } else {
             Err(PolarsError::ShapeMisMatch(
                 format!(
-                    "Could add column. The Series length {} differs from the DataFrame height: {}",
+                    "Could not add column. The Series length {} differs from the DataFrame height: {}",
                     series.len(),
                     self.height()
                 )
@@ -557,7 +557,7 @@ impl DataFrame {
         } else {
             Err(PolarsError::ShapeMisMatch(
                 format!(
-                    "Could add column. The Series length {} differs from the DataFrame height: {}",
+                    "Could not add column. The Series length {} differs from the DataFrame height: {}",
                     series.len(),
                     self.height()
                 )

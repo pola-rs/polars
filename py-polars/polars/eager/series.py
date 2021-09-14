@@ -186,6 +186,10 @@ class Series:
         dtype: Optional[Type[DataType]] = None,
         strict: bool = True,
     ):
+        # this prevents errors with users setting dtype to nullable
+        if not isinstance(nullable, bool):
+            raise ValueError(f"invalid type set to nullable: {type(nullable)}")
+
         # Handle case where values are passed as the first argument
         if name is not None and not isinstance(name, str):
             if values is None:

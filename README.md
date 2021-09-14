@@ -115,9 +115,9 @@ Rust crate `polars` itself. However, both the Python package and the Python modu
 can `pip install polars` and `import polars` (previously, these were called `py-polars` and `pypolars`).
 
 ## Arrow2
-Polars has a fully functional [arrow2](https://crates.io/crates/arrow2) branch and will ship the python binaries
-from this branch. Arrow2 is a faster and safer implementation of the arrow spec. Arrow2 also has a more granular code base,
-helping to reduce the compiler bloat.
+Polars has transitioned to [arrow2](https://crates.io/crates/arrow2). Arrow2 is a faster and safer implementation of the arrow spec. 
+Arrow2 also has a more granular code base, helping to reduce the compiler bloat.
+There is still a maintained `arrow-rs` branch for users who want to use another backend.
 
 ## Acknowledgements
 Development of Polars is proudly powered by
