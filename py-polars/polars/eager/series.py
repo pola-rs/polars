@@ -2876,7 +2876,7 @@ class DateTimeNameSpace:
         -------
         Week day as UInt32
         """
-        return wrap_s(self._s.week())
+        return wrap_s(self._s.weekday())
 
     def day(self) -> Series:
         """
