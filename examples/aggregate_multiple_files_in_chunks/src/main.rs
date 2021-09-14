@@ -34,7 +34,7 @@
 //! +--------------+--------------+----------------+------------+--------------+--------------+----------------+
 //! | category     | calories_sum | calories_count | fats_g_sum | fats_g_count | sugars_g_sum | sugars_g_count |
 //! | ---          | ---          | ---            | ---        | ---          | ---          | ---            |
-//! | str          | u64          | u32            | f64        | u32          | f64          | u32            |
+//! | str          | u32          | u32            | f64        | u32          | f64          | u32            |
 //! +==============+==============+================+============+==============+==============+================+
 //! | "meat"       | 1080         | 10             | 73         | 10           | 3            | 10             |
 //! +--------------+--------------+----------------+------------+--------------+--------------+----------------+
@@ -49,7 +49,7 @@
 //! +--------------+--------------+----------------+------------+--------------+--------------+----------------+
 //! | category     | calories_sum | calories_count | fats_g_sum | fats_g_count | sugars_g_sum | sugars_g_count |
 //! | ---          | ---          | ---            | ---        | ---          | ---          | ---            |
-//! | str          | u64          | u32            | f64        | u32          | f64          | u32            |
+//! | str          | u32          | u32            | f64        | u32          | f64          | u32            |
 //! +==============+==============+================+============+==============+==============+================+
 //! | "meat"       | 1112         | 10             | 77         | 10           | 11           | 10             |
 //! +--------------+--------------+----------------+------------+--------------+--------------+----------------+
@@ -64,7 +64,7 @@
 //! +--------------+--------------+----------------+------------+--------------+--------------+----------------+
 //! | category     | calories_sum | calories_count | fats_g_sum | fats_g_count | sugars_g_sum | sugars_g_count |
 //! | ---          | ---          | ---            | ---        | ---          | ---          | ---            |
-//! | str          | u64          | u32            | f64        | u32          | f64          | u32            |
+//! | str          | u32          | u32            | f64        | u32          | f64          | u32            |
 //! +==============+==============+================+============+==============+==============+================+
 //! | "fruit"      | 409          | 7              | 4.2        | 7            | 61           | 7              |
 //! +--------------+--------------+----------------+------------+--------------+--------------+----------------+
@@ -79,7 +79,7 @@
 //! +--------------+------------------+--------------------+----------------+------------------+------------------+--------------------+
 //! | category     | calories_sum_sum | calories_count_sum | fats_g_sum_sum | fats_g_count_sum | sugars_g_sum_sum | sugars_g_count_sum |
 //! | ---          | ---              | ---                | ---            | ---              | ---              | ---                |
-//! | str          | u64              | u32                | f64            | u32              | f64              | u32                |
+//! | str          | u32              | u32                | f64            | u32              | f64              | u32                |
 //! +==============+==================+====================+================+==================+==================+====================+
 //! | "meat"       | 2645             | 25                 | 177            | 25               | 17               | 25                 |
 //! +--------------+------------------+--------------------+----------------+------------------+------------------+--------------------+
@@ -129,7 +129,7 @@ fn read_dir<P: AsRef<Path>>(directory: P) -> IoResult<Vec<PathBuf>> {
 fn get_schema() -> Schema {
     Schema::new(vec![
         Field::new("category", DataType::Utf8),
-        Field::new("calories", DataType::UInt64),
+        Field::new("calories", DataType::UInt32),
         Field::new("fats_g", DataType::Float64),
         Field::new("sugars_g", DataType::Float64),
     ])
@@ -143,7 +143,7 @@ fn read_csv<P: AsRef<Path>>(path: P) -> PolarResult<DataFrame> {
     let file = File::open(path).expect("Cannot open file.");
 
     CsvReader::new(file)
-        .with_schema(Arc::new(schema))
+        .with_schema(&Arc::new(schema))
         .has_header(true)
         .finish()
 }
@@ -168,12 +168,12 @@ fn compute_mean(
     // Get the sum column from dataframe as float.
     let sum_column = dataframe
         .drop_in_place(sum_column_name)?
-        .cast_with_datatype(&DataType::Float64)?;
+        .cast_with_dtype(&DataType::Float64)?;
 
     // Get the count column from dataframe as float.
     let count_column = dataframe
         .drop_in_place(count_column_name)?
-        .cast_with_datatype(&DataType::Float64)?;
+        .cast_with_dtype(&DataType::Float64)?;
 
     // Compute the mean serie and rename to the `mean_column_name` provided
     // as input.
@@ -317,7 +317,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     mean_series
         .into_iter()
         .try_for_each(|serie| -> PolarResult<()> {
-            main_df.add_column(serie)?;
+            main_df.with_column(serie)?;
             Ok(())
         })?;
 
