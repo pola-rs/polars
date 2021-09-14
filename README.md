@@ -1,7 +1,7 @@
 # Polars
 [![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
-![Build and test](https://github.com/ritchie46/polars/workflows/Build%20and%20test/badge.svg)
-[![](http://meritbadge.herokuapp.com/polars)](https://crates.io/crates/polars)
+[![Build and test](https://github.com/ritchie46/polars/workflows/Build%20and%20test/badge.svg)](https://github.com/pola-rs/polars/actions)
+[![](https://img.shields.io/crates/v/polars.svg)](https://crates.io/crates/polars)
 [![Gitter](https://badges.gitter.im/polars-rs/community.svg)](https://gitter.im/polars-rs/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 ## Blazingly fast DataFrames in Rust & Python
@@ -72,7 +72,7 @@ You can take latest release from `crates.io`, or if you want to use the latest f
 point to the `master` branch of this repo.
 
 ```toml
-polars = {git = "https://github.com/ritchie46/polars", rev = "<optional git tag>" } 
+polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 ## Rust version
 Required Rust version `>=1.52`
@@ -96,14 +96,14 @@ Want to know about all the features Polars support? Read the docs!
 * [Reference guide](https://pola-rs.github.io/polars/py-polars/html/reference/index.html)
 
 ## Contribution
-Want to contribute? Read our [contribution guideline](https://github.com/ritchie46/polars/blob/master/CONTRIBUTING.md).
+Want to contribute? Read our [contribution guideline](https://github.com/pola-rs/polars/blob/master/CONTRIBUTING.md).
 
 ## \[Python\] compile py-polars from source
 If you want a bleeding edge release or maximal performance you should compile **py-polars** from source.
 
 This can be done by going through the following steps in sequence:
 
-1. install the latest [rust compiler](https://www.rust-lang.org/tools/install)
+1. install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
 2. `$ pip3 install maturin`
 4.  Choose any of:
   * Very long compile times, fastest binary: `$ cd py-polars && maturin develop --rustc-extra-args="-C target-cpu=native" --release`
@@ -122,8 +122,8 @@ There is still a maintained `arrow-rs` branch for users who want to use another 
 ## Acknowledgements
 Development of Polars is proudly powered by
 
-[![Xomnia](https://raw.githubusercontent.com/ritchie46/img/master/polars/xomnia_logo.png)](https://www.xomnia.com)
+[![Xomnia](https://raw.githubusercontent.com/ritchie46/img/master/polars/xomnia_logo.png)](https://www.xomnia.com/)
 
 ## Sponsors
-* [Xomnia](https://www.xomnia.com)
-* [Jetbrains](https://www.jetbrains.com/company/brand/img/jetbrains_logo.png)
+* [Xomnia](https://www.xomnia.com/)
+* [JetBrains](https://www.jetbrains.com/company/brand/img/jetbrains_logo.png)

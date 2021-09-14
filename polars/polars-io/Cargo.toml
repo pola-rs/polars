@@ -5,7 +5,7 @@ authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
 description = "IO related logic for the Polars DataFrame library"
-repository = "https://github.com/ritchie46/polars"
+repository = "https://github.com/pola-rs/polars"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -143,7 +143,7 @@ def _pandas_series_to_arrow(values: Union["pd.Series", "pd.DatetimeIndex"]) -> p
     if dtype == "datetime64[ns]":
         # We first cast to ms because that's the unit of Date64,
         # Then we cast to via int64 to date64. Casting directly to Date64 lead to
-        # loss of time information https://github.com/ritchie46/polars/issues/476
+        # loss of time information https://github.com/pola-rs/polars/issues/476
         arr = pa.array(np.array(values.values, dtype="datetime64[ms]"))
         arr = pa.compute.cast(arr, pa.int64())
         return pa.compute.cast(arr, pa.date64())

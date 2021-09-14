@@ -33,7 +33,7 @@ def test_read_web_file():
 
 def test_parquet_chunks():
     """
-    This failed in https://github.com/ritchie46/polars/issues/545
+    This failed in https://github.com/pola-rs/polars/issues/545
     """
     cases = [
         1048576,

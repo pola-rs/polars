@@ -5,7 +5,7 @@ authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
 description = "DataFrame Library based on Apache Arrow"
-repository = "https://github.com/ritchie46/polars"
+repository = "https://github.com/pola-rs/polars"
 readme = "../README.md"
 
 [features]

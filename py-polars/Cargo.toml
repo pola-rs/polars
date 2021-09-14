@@ -4,10 +4,10 @@ version = "0.9.6-beta.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 readme = "README.md"
-repository = "https://github.com/ritchie46/polars"
+repository = "https://github.com/pola-rs/polars"
 license = "MIT"
-documentation = "https://ritchie46.github.io/polars-book/"
-homepage = "https://github.com/ritchie46/polars"
+documentation = "https://pola-rs.github.io/polars-book/"
+homepage = "https://github.com/pola-rs/polars"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

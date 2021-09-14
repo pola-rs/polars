@@ -6,8 +6,8 @@ We love your input! We want to make contributing to this project as easy and tra
 - Submitting a fix
 - Adding/Proposing new features
 
-## We Develop with Github
-We use github to host code, to track issues and feature requests, as well as accept pull requests.
+## We Develop with GitHub
+We use GitHub to host code, to track issues and feature requests, as well as accept pull requests.
 
 1. Fork the repo and create your branch from `master`.
 2. If you've added code that should be tested, add tests.
@@ -18,14 +18,14 @@ We use github to host code, to track issues and feature requests, as well as acc
 
 ## Want to discuss something?
 I can imagine that some questions don't fit an issue.
-Therefore there is also a [chat on gitter](https://gitter.im/polars-rs/community).
+Therefore there is also a [chat on Gitter](https://gitter.im/polars-rs/community).
 
 ## Any contributions you make will be under the MIT Software License
 In short, when you submit code changes, your submissions are understood to be under the same
-[MIT License](http://choosealicense.com/licenses/mit/) that covers the project.
+[MIT License](https://choosealicense.com/licenses/mit/) that covers the project.
 Feel free to contact the maintainers if that's a concern.
 
-## Report bugs using Github's [issues](https://github.com/ritchie46/polars/issues)
+## Report bugs using GitHub's [issues](https://github.com/pola-rs/polars/issues)
 We use GitHub issues to track public bugs. Report a bug by [opening a new issue]().
 **Great Bug Reports** tend to have:
 

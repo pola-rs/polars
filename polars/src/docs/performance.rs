@@ -27,7 +27,7 @@
 //! operation like a FILTER, JOIN, GROUPBY, etc. than this can become quite expensive.
 //!
 //! ## Categorical type
-//! For this reason Polars has a [CategoricalType](https://ritchie46.github.io/polars/polars/datatypes/struct.CategoricalType.html).
+//! For this reason Polars has a [CategoricalType](https://pola-rs.github.io/polars/polars/datatypes/struct.CategoricalType.html).
 //! A `CategoricalChunked` is an array filled with `u32` values that each represent a unique string value.
 //! Thereby maintaining cache-efficiency, whilst also making it cheap to move values around.
 //!
