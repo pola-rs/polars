@@ -549,15 +549,9 @@ impl Field {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash, Default)]
 pub struct Schema {
     fields: Vec<Field>,
-}
-
-impl Default for Schema {
-    fn default() -> Self {
-        Schema { fields: vec![] }
-    }
 }
 
 impl Schema {

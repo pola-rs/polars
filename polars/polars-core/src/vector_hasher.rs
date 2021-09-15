@@ -297,6 +297,7 @@ impl AsU64 for [u8; 13] {
     }
 }
 
+#[derive(Default)]
 pub struct IdHasher {
     hash: u64,
 }
@@ -328,12 +329,6 @@ impl Hasher for IdHasher {
         // Safety:
         // same number of bits
         unsafe { self.write_u64(std::mem::transmute::<i64, u64>(i)) }
-    }
-}
-
-impl Default for IdHasher {
-    fn default() -> Self {
-        IdHasher { hash: 0 }
     }
 }
 

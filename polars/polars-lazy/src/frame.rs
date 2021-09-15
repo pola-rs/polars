@@ -179,19 +179,10 @@ impl IntoLazy for DataFrame {
 /// Lazy abstraction over an eager `DataFrame`.
 /// It really is an abstraction over a logical plan. The methods of this struct will incrementally
 /// modify a logical plan until output is requested (via [collect](crate::frame::LazyFrame::collect))
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct LazyFrame {
     pub(crate) logical_plan: LogicalPlan,
     pub(crate) opt_state: OptState,
-}
-
-impl Default for LazyFrame {
-    fn default() -> Self {
-        LazyFrame {
-            logical_plan: LogicalPlan::default(),
-            opt_state: Default::default(),
-        }
-    }
 }
 
 impl From<LogicalPlan> for LazyFrame {
