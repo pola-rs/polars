@@ -59,7 +59,6 @@ fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
 
 fn sort_branch<T, Fd, Fr>(
     slice: &mut [T],
-    sort_parallel: bool,
     reverse: bool,
     default_order_fn: Fd,
     reverse_order_fn: Fr,
@@ -68,17 +67,14 @@ fn sort_branch<T, Fd, Fr>(
     Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
     Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
 {
-    match (sort_parallel, reverse) {
-        (true, true) => slice.par_sort_unstable_by(reverse_order_fn),
-        (true, false) => slice.par_sort_unstable_by(default_order_fn),
-        (false, true) => slice.sort_unstable_by(reverse_order_fn),
-        (false, false) => slice.sort_unstable_by(default_order_fn),
+    match reverse {
+        true => slice.par_sort_unstable_by(reverse_order_fn),
+        false => slice.par_sort_unstable_by(default_order_fn),
     }
 }
 
 fn argsort_branch<T, Fd, Fr>(
     slice: &mut [T],
-    sort_parallel: bool,
     reverse: bool,
     default_order_fn: Fd,
     reverse_order_fn: Fr,
@@ -87,26 +83,14 @@ fn argsort_branch<T, Fd, Fr>(
     Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
     Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync,
 {
-    match (sort_parallel, reverse) {
-        (true, true) => slice.par_sort_by(reverse_order_fn),
-        (true, false) => slice.par_sort_by(default_order_fn),
-        (false, true) => slice.sort_by(reverse_order_fn),
-        (false, false) => slice.sort_by(default_order_fn),
+    match reverse {
+        true => slice.par_sort_by(reverse_order_fn),
+        false => slice.par_sort_by(default_order_fn),
     }
-}
-
-/// If the sort should be ran parallel or not.
-fn sort_parallel<T>(ca: &ChunkedArray<T>) -> bool {
-    ca.len()
-        > std::env::var("POLARS_PAR_SORT_BOUND")
-            .map(|v| v.parse::<usize>().expect("could not parse"))
-            .unwrap_or(1000000)
 }
 
 macro_rules! argsort {
     ($self:expr, $reverse:expr) => {{
-        let sort_parallel = sort_parallel($self);
-
         let mut vals = Vec::with_capacity($self.len());
         let mut count: u32 = 0;
         $self.downcast_iter().for_each(|arr| {
@@ -120,7 +104,6 @@ macro_rules! argsort {
 
         argsort_branch(
             vals.as_mut_slice(),
-            sort_parallel,
             $reverse,
             |(_, a), (_, b)| order_default_null(a, b),
             |(_, a), (_, b)| order_reverse_null(a, b),
@@ -159,18 +142,10 @@ where
     T::Native: std::cmp::PartialOrd,
 {
     fn sort(&self, reverse: bool) -> ChunkedArray<T> {
-        let sort_parallel = sort_parallel(self);
-
         if self.null_count() == 0 {
             let mut vals = memcpy_values(self);
 
-            sort_branch(
-                vals.as_mut_slice(),
-                sort_parallel,
-                reverse,
-                order_default,
-                order_reverse,
-            );
+            sort_branch(vals.as_mut_slice(), reverse, order_default, order_reverse);
 
             return ChunkedArray::new_from_aligned_vec(self.name(), vals);
         } else {
@@ -181,7 +156,6 @@ where
             });
             sort_branch(
                 vals.as_mut_slice(),
-                sort_parallel,
                 reverse,
                 order_default_null,
                 order_reverse_null,
@@ -199,8 +173,6 @@ where
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        let sort_parallel = sort_parallel(self);
-
         let ca: NoNull<UInt32Chunked> = if self.null_count() == 0 {
             let mut vals = Vec::with_capacity(self.len());
             let mut count: u32 = 0;
@@ -216,7 +188,6 @@ where
 
             argsort_branch(
                 vals.as_mut_slice(),
-                sort_parallel,
                 reverse,
                 |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
                 |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
@@ -237,7 +208,6 @@ where
 
             argsort_branch(
                 vals.as_mut_slice(),
-                sort_parallel,
                 reverse,
                 |(_, a), (_, b)| order_default_null(a, b),
                 |(_, a), (_, b)| order_reverse_null(a, b),
@@ -336,12 +306,9 @@ macro_rules! sort {
 
 impl ChunkSort<Utf8Type> for Utf8Chunked {
     fn sort(&self, reverse: bool) -> Utf8Chunked {
-        let sort_parallel = sort_parallel(self);
-
         let mut v = Vec::from_iter(self);
         sort_branch(
             v.as_mut_slice(),
-            sort_parallel,
             reverse,
             order_default_null,
             order_reverse_null,
