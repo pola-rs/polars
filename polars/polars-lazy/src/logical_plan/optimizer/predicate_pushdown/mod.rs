@@ -8,13 +8,8 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;
 
+#[derive(Default)]
 pub(crate) struct PredicatePushDown {}
-
-impl Default for PredicatePushDown {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 impl PredicatePushDown {
     fn apply_predicate(

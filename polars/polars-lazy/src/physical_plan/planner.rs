@@ -59,12 +59,8 @@ fn aggregate_expr_to_scan_agg(
         .collect()
 }
 
+#[derive(Default)]
 pub struct DefaultPlanner {}
-impl Default for DefaultPlanner {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 impl PhysicalPlanner for DefaultPlanner {
     fn create_physical_plan(
