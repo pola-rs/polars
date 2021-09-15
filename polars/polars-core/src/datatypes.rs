@@ -63,22 +63,6 @@ impl PolarsDataType for Time64NanosecondType {
     }
 }
 
-pub struct DurationNanosecondType {}
-
-impl PolarsDataType for DurationNanosecondType {
-    fn get_dtype() -> DataType {
-        DataType::Duration(TimeUnit::Nanosecond)
-    }
-}
-
-pub struct DurationMillisecondType {}
-
-impl PolarsDataType for DurationMillisecondType {
-    fn get_dtype() -> DataType {
-        DataType::Duration(TimeUnit::Millisecond)
-    }
-}
-
 impl PolarsDataType for Utf8Type {
     fn get_dtype() -> DataType {
         DataType::Utf8
@@ -142,8 +126,6 @@ pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
 pub type Date32Chunked = ChunkedArray<Date32Type>;
 pub type Date64Chunked = ChunkedArray<Date64Type>;
-pub type DurationNanosecondChunked = ChunkedArray<DurationNanosecondType>;
-pub type DurationMillisecondChunked = ChunkedArray<DurationMillisecondType>;
 pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
@@ -189,12 +171,6 @@ impl PolarsPrimitiveType for Date64Type {
 impl PolarsPrimitiveType for Time64NanosecondType {
     type Native = i64;
 }
-impl PolarsPrimitiveType for DurationNanosecondType {
-    type Native = i64;
-}
-impl PolarsPrimitiveType for DurationMillisecondType {
-    type Native = i64;
-}
 
 macro_rules! impl_polars_numeric {
     ($ca:ident, $physical:ty) => {
@@ -216,8 +192,6 @@ impl_polars_numeric!(Float64Type, f64);
 impl_polars_numeric!(Date32Type, i32);
 impl_polars_numeric!(Date64Type, i64);
 impl_polars_numeric!(Time64NanosecondType, i64);
-impl_polars_numeric!(DurationNanosecondType, i64);
-impl_polars_numeric!(DurationMillisecondType, i64);
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -231,8 +205,6 @@ impl PolarsIntegerType for Int64Type {}
 impl PolarsIntegerType for Date32Type {}
 impl PolarsIntegerType for Date64Type {}
 impl PolarsIntegerType for Time64NanosecondType {}
-impl PolarsIntegerType for DurationNanosecondType {}
-impl PolarsIntegerType for DurationMillisecondType {}
 
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
@@ -298,8 +270,6 @@ pub enum AnyValue<'a> {
     Date64(i64),
     /// A 64-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
     Time64(i64, TimeUnit),
-    /// A 32-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
-    Duration(i64, TimeUnit),
     /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
@@ -420,8 +390,6 @@ impl Display for DataType {
             DataType::Date32 => "date32(days)",
             DataType::Date64 => "date64(ms)",
             DataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
-            DataType::Duration(TimeUnit::Nanosecond) => "duration(ns)",
-            DataType::Duration(TimeUnit::Millisecond) => "duration(ms)",
             DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
@@ -451,7 +419,6 @@ impl PartialEq for AnyValue<'_> {
             (Date32(l), Date32(r)) => l == r,
             (Date64(l), Date64(r)) => l == r,
             (Time64(l, _), Time64(r, _)) => l == r,
-            (Duration(l, _), Duration(r, _)) => l == r,
             (Boolean(l), Boolean(r)) => l == r,
             (List(_), List(_)) => panic!("eq between list series not supported"),
             #[cfg(feature = "object")]
@@ -505,7 +472,6 @@ pub enum DataType {
     Date64,
     Time64(TimeUnit),
     List(ArrowDataType),
-    Duration(TimeUnit),
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
@@ -538,7 +504,6 @@ impl DataType {
                 dt.clone(),
                 true,
             ))),
-            Duration(tu) => ArrowDataType::Duration(*tu),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
             Object(_) => panic!("cannot convert object to arrow"),
@@ -740,12 +705,6 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Date32 => DataType::Date32,
             ArrowDataType::Date64 => DataType::Date64,
             ArrowDataType::Time64(TimeUnit::Nanosecond) => DataType::Time64(TimeUnit::Nanosecond),
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                DataType::Duration(TimeUnit::Nanosecond)
-            }
-            ArrowDataType::Duration(TimeUnit::Millisecond) => {
-                DataType::Duration(TimeUnit::Millisecond)
-            }
             ArrowDataType::Utf8 => DataType::Utf8,
             dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }

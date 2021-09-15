@@ -1,8 +1,6 @@
 #[cfg(any(
     feature = "dtype-date64",
     feature = "dtype-date32",
-    feature = "dtype-duration-ms",
-    feature = "dtype-duration-ns",
     feature = "dtype-time64-ns"
 ))]
 pub mod dates;
@@ -541,40 +539,6 @@ macro_rules! impl_dyn_series {
                     Err(PolarsError::DataTypeMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into time64",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
-            fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
-                if matches!(self.0.dtype(), DataType::Duration(TimeUnit::Nanosecond)) {
-                    unsafe {
-                        Ok(&*(self as *const dyn SeriesTrait as *const DurationNanosecondChunked))
-                    }
-                } else {
-                    Err(PolarsError::DataTypeMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into duration_nanosecond",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
-            fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
-                if matches!(self.0.dtype(), DataType::Duration(TimeUnit::Millisecond)) {
-                    unsafe {
-                        Ok(&*(self as *const dyn SeriesTrait as *const DurationMillisecondChunked))
-                    }
-                } else {
-                    Err(PolarsError::DataTypeMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into duration_millisecond",
                             self.name(),
                             self.dtype(),
                         )

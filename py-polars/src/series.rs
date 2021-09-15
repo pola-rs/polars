@@ -51,7 +51,6 @@ init_method!(new_u32, u32);
 init_method!(new_u64, u64);
 init_method!(new_date32, i32);
 init_method!(new_date64, i64);
-init_method!(new_duration_ns, i64);
 init_method!(new_time_ns, i64);
 
 #[pymethods]
@@ -173,7 +172,6 @@ init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 init_method_opt!(new_opt_date32, Int32Type, i32);
 init_method_opt!(new_opt_date64, Int64Type, i64);
-init_method_opt!(new_opt_duration_ns, Int64Type, i64);
 init_method_opt!(new_opt_time_ns, Int64Type, i64);
 
 impl From<Series> for PySeries {
@@ -579,12 +577,6 @@ impl PySeries {
             DataType::Date64 => PyList::new(python, series.date64().unwrap()),
             DataType::Time64(TimeUnit::Nanosecond) => {
                 PyList::new(python, series.time64_nanosecond().unwrap())
-            }
-            DataType::Duration(TimeUnit::Nanosecond) => {
-                PyList::new(python, series.duration_nanosecond().unwrap())
-            }
-            DataType::Duration(TimeUnit::Millisecond) => {
-                PyList::new(python, series.duration_millisecond().unwrap())
             }
             DataType::Object(_) => {
                 let v = PyList::empty(python);

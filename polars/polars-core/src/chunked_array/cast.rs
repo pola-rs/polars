@@ -1,6 +1,6 @@
 //! Implementations of the ChunkCast Trait.
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
-use crate::chunked_array::kernels::{cast_logical, cast_physical};
+use crate::chunked_array::kernels::cast_physical;
 use crate::prelude::*;
 use arrow::array::Array;
 use arrow::compute::cast;
@@ -22,18 +22,6 @@ where
         .collect::<arrow::error::Result<Vec<_>>>()?;
 
     Ok(ChunkedArray::new_from_chunks(ca.field.name(), chunks))
-}
-
-macro_rules! cast_from_dtype {
-    ($self: expr, $kernel:expr, $dtype: expr) => {{
-        let chunks = $self
-            .downcast_iter()
-            .into_iter()
-            .map(|arr| $kernel(arr, &$dtype))
-            .collect();
-
-        Ok(ChunkedArray::new_from_chunks($self.field.name(), chunks))
-    }};
 }
 
 fn cast_from_dtype<N, T>(chunked: &ChunkedArray<T>, dtype: DataType) -> Result<ChunkedArray<N>>
@@ -80,14 +68,6 @@ macro_rules! cast_with_dtype {
             #[cfg(feature = "dtype-time64-ns")]
             Time64(TimeUnit::Nanosecond) => {
                 ChunkCast::cast::<Time64NanosecondType>($self).map(|ca| ca.into_series())
-            }
-            #[cfg(feature = "dtype-duration-ns")]
-            Duration(TimeUnit::Nanosecond) => {
-                ChunkCast::cast::<DurationNanosecondType>($self).map(|ca| ca.into_series())
-            }
-            #[cfg(feature = "dtype-duration-ms")]
-            Duration(TimeUnit::Millisecond) => {
-                ChunkCast::cast::<DurationMillisecondType>($self).map(|ca| ca.into_series())
             }
             List(_) => ChunkCast::cast::<ListType>($self).map(|ca| ca.into_series()),
             Categorical => ChunkCast::cast::<CategoricalType>($self).map(|ca| ca.into_series()),
@@ -163,21 +143,15 @@ where
                 ca.field = Arc::new(Field::new(ca.name(), DataType::Categorical));
                 return Ok(ca);
             }
-            // the underlying datatype is i64 so we transmute array
-            (Duration(_), Int64) => {
-                cast_from_dtype!(self, cast_logical, Int64)
-            }
             // paths not supported by arrow kernel
             // to float32
-            (Duration(_), Float32) | (Date32, Float32) | (Date64, Float32) => {
+            (Date32, Float32) | (Date64, Float32) => {
                 cast_from_dtype::<Float32Type, _>(self, Float32)?.cast::<N>()
             }
             // to float64
-            (Duration(_), Float64) | (Date32, Float64) | (Date64, Float64) => {
+            (Date32, Float64) | (Date64, Float64) => {
                 cast_from_dtype::<Float64Type, _>(self, Float64)?.cast::<N>()
             }
-            // to uint64
-            (Duration(_), UInt64) => cast_from_dtype::<UInt64Type, _>(self, UInt64)?.cast::<N>(),
             // to date64
             (Int32, Date64) | (Float64, Date64) | (Float32, Date64) => {
                 cast_from_dtype::<Date64Type, _>(self, Date64)?.cast::<N>()

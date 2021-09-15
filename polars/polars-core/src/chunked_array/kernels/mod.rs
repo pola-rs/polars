@@ -15,18 +15,6 @@ use num::Float;
 use polars_arrow::prelude::default_arrays::FromData;
 use std::sync::Arc;
 
-/// Casts a `PrimitiveArray` from its logical type to a logical type compatible
-/// with its physical type.
-/// This operation is `O(1)`
-/// # Panics
-/// Panics if `data_type` is not supported by type `T`
-pub(crate) fn cast_logical<T: NativeType>(arr: &PrimitiveArray<T>, data_type: &DataType) -> ArrayRef
-where
-    T: NativeType,
-{
-    Arc::new(arr.clone().to(data_type.to_arrow()))
-}
-
 /// Casts a `PrimitiveArray` to a different physical type and logical type.
 /// This operation is `O(N)`
 /// Values that do not fit in the new physical type are converted to nulls.

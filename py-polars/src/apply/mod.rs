@@ -20,8 +20,6 @@ impl PyArrowPrimitiveType for Float64Type {}
 impl PyArrowPrimitiveType for Date32Type {}
 impl PyArrowPrimitiveType for Date64Type {}
 impl PyArrowPrimitiveType for Time64NanosecondType {}
-impl PyArrowPrimitiveType for DurationNanosecondType {}
-impl PyArrowPrimitiveType for DurationMillisecondType {}
 
 fn iterator_to_primitive<T>(
     it: impl Iterator<Item = Option<T::Native>>,

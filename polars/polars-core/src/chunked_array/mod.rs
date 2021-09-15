@@ -223,7 +223,7 @@ impl<T> ChunkedArray<T> {
         } else {
             use DataType::*;
             match (self.dtype(), series.dtype()) {
-                (Int64, Date64) | (Int32, Date32) | (Int64, Duration(_)) | (Int64, Time64(_)) => {
+                (Int64, Date64) | (Int32, Date32) | (Int64, Time64(_)) => {
                     let ca = &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>);
                     Ok(ca)
                 }
@@ -574,14 +574,6 @@ where
             DataType::Time64(TimeUnit::Nanosecond) => {
                 let v = downcast!(Int64Array);
                 AnyValue::Time64(v, TimeUnit::Nanosecond)
-            }
-            DataType::Duration(TimeUnit::Nanosecond) => {
-                let v = downcast!(Int64Array);
-                AnyValue::Duration(v, TimeUnit::Nanosecond)
-            }
-            DataType::Duration(TimeUnit::Millisecond) => {
-                let v = downcast!(Int64Array);
-                AnyValue::Duration(v, TimeUnit::Millisecond)
             }
             DataType::List(_) => {
                 let v: ArrayRef = downcast!(LargeListArray).into();

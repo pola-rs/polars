@@ -25,7 +25,7 @@ impl<T> ChunkedArray<T> {
     /// get the physical memory type of a date type
     fn physical_type(&self) -> DataType {
         match self.dtype() {
-            DataType::Duration(_) | DataType::Date64 | DataType::Time64(_) => DataType::Int64,
+            DataType::Date64 | DataType::Time64(_) => DataType::Int64,
             DataType::Date32 => DataType::Int32,
             dt => panic!("already a physical type: {:?}", dt),
         }
@@ -447,40 +447,6 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
-                if matches!(self.0.dtype(), DataType::Duration(TimeUnit::Nanosecond)) {
-                    unsafe {
-                        Ok(&*(self as *const dyn SeriesTrait as *const DurationNanosecondChunked))
-                    }
-                } else {
-                    Err(PolarsError::DataTypeMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into duration_nanosecond",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
-            fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
-                if matches!(self.0.dtype(), DataType::Duration(TimeUnit::Millisecond)) {
-                    unsafe {
-                        Ok(&*(self as *const dyn SeriesTrait as *const DurationMillisecondChunked))
-                    }
-                } else {
-                    Err(PolarsError::DataTypeMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into duration_millisecond",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
             fn append_array(&mut self, other: ArrayRef) -> Result<()> {
                 self.0.append_array(other)
             }
@@ -584,7 +550,9 @@ macro_rules! impl_dyn_series {
             }
 
             fn sort_in_place(&mut self, reverse: bool) {
-                ChunkSort::sort_in_place(&mut self.0, reverse);
+                let s = self.sort(reverse);
+                let ca = self.0.unpack_series_matching_type(&s).unwrap().clone();
+                self.0 = ca;
             }
 
             fn sort(&self, reverse: bool) -> Series {
@@ -751,10 +719,6 @@ macro_rules! impl_dyn_series {
     };
 }
 
-#[cfg(feature = "dtype-duration-ns")]
-impl_dyn_series!(DurationNanosecondChunked);
-#[cfg(feature = "dtype-duration-ms")]
-impl_dyn_series!(DurationMillisecondChunked);
 #[cfg(feature = "dtype-date32")]
 impl_dyn_series!(Date32Chunked);
 #[cfg(feature = "dtype-date64")]
@@ -778,10 +742,6 @@ macro_rules! impl_dyn_series_numeric {
     };
 }
 
-#[cfg(feature = "dtype-duration-ns")]
-impl_dyn_series_numeric!(DurationNanosecondChunked);
-#[cfg(feature = "dtype-duration-ms")]
-impl_dyn_series_numeric!(DurationMillisecondChunked);
 #[cfg(feature = "dtype-date32")]
 impl_dyn_series_numeric!(Date32Chunked);
 #[cfg(feature = "dtype-date64")]

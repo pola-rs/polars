@@ -442,20 +442,6 @@ pub trait SeriesTrait:
         ))
     }
 
-    /// Unpack to ChunkedArray of dtype duration_nanosecond
-    fn duration_nanosecond(&self) -> Result<&DurationNanosecondChunked> {
-        Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} != duration_nanosecond", self.dtype()).into(),
-        ))
-    }
-
-    /// Unpack to ChunkedArray of dtype duration_millisecond
-    fn duration_millisecond(&self) -> Result<&DurationMillisecondChunked> {
-        Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} !== duration_millisecond", self.dtype()).into(),
-        ))
-    }
-
     /// Unpack to ChunkedArray of dtype list
     fn list(&self) -> Result<&ListChunked> {
         Err(PolarsError::DataTypeMisMatch(
@@ -494,7 +480,6 @@ pub trait SeriesTrait:
             | DataType::Categorical
             | DataType::Date32
             | DataType::Date64
-            | DataType::Duration(_)
             | DataType::Time64(_)
             | DataType::Boolean
             | DataType::Null => false,
@@ -1402,7 +1387,6 @@ impl Series {
     /// * Date32 -> Int32
     /// * Date64 -> Int64
     /// * Time64 -> Int64
-    /// * Duration -> Int64
     ///
     pub fn to_physical_repr(&self) -> Series {
         use DataType::*;
@@ -1410,7 +1394,6 @@ impl Series {
             Date32 => self.cast_with_dtype(&DataType::Int32),
             Date64 => self.cast_with_dtype(&DataType::Int64),
             Time64(_) => self.cast_with_dtype(&DataType::Int64),
-            Duration(_) => self.cast_with_dtype(&DataType::Int64),
             _ => return self.clone(),
         };
         out.unwrap()
@@ -1856,14 +1839,6 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             #[cfg(feature = "dtype-time64-ns")]
             ArrowDataType::Time64(TimeUnit::Nanosecond) => {
                 Ok(Time64NanosecondChunked::new_from_chunks(name, chunks).into_series())
-            }
-            #[cfg(feature = "dtype-duration-ns")]
-            ArrowDataType::Duration(TimeUnit::Nanosecond) => {
-                Ok(DurationNanosecondChunked::new_from_chunks(name, chunks).into_series())
-            }
-            #[cfg(feature = "dtype-duration-ms")]
-            ArrowDataType::Duration(TimeUnit::Millisecond) => {
-                Ok(DurationMillisecondChunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::LargeList(_) => {
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())

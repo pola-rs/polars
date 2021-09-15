@@ -29,14 +29,6 @@ macro_rules! impl_compare {
                 .time64_nanosecond()
                 .unwrap()
                 .$method(rhs.time64_nanosecond().unwrap()),
-            DataType::Duration(TimeUnit::Nanosecond) => lhs
-                .duration_nanosecond()
-                .unwrap()
-                .$method(rhs.duration_nanosecond().unwrap()),
-            DataType::Duration(TimeUnit::Millisecond) => lhs
-                .duration_millisecond()
-                .unwrap()
-                .$method(rhs.duration_millisecond().unwrap()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
             _ => unimplemented!(),
         }
