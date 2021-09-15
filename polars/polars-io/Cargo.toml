@@ -22,7 +22,8 @@ dtype-date64 = ["polars-core/dtype-date64", "polars-core/temporal"]
 dtype-date32 = ["polars-core/dtype-date32"]
 csv-file = ["csv-core", "memmap", "lexical", "arrow/io_csv"]
 fmt = ["polars-core/plain_fmt"]
-decompress = ["flate2"]
+decompress = ["flate2/miniz_oxide"]
+decompress-fast = ["flate2/zlib-ng-compat"]
 # don't use this
 private = []
 
@@ -44,7 +45,7 @@ ahash = "0.7"
 num = "^0.4.0"
 dirs = "3.0"
 simdutf8 = {version="0.1", optional=true}
-flate2 = {version = "1", optional=true}
+flate2 = {version = "1", optional=true, --default-features=false}
 
 [package.metadata.docs.rs]
 all-features = true
