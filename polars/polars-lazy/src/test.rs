@@ -1853,6 +1853,8 @@ fn test_round_after_agg() -> Result<()> {
 fn test_power_in_agg_list() -> Result<()> {
     let df = fruits_cars();
 
+    // this test if the group tuples are correctly updated after
+    // a flat apply on a final aggregation
     let out = df
         .lazy()
         .groupby(vec![col("fruits")])
@@ -1867,6 +1869,29 @@ fn test_power_in_agg_list() -> Result<()> {
     let first = agg.get(0).unwrap();
     let vals = first.f64()?;
     assert_eq!(Vec::from(vals), &[Some(1.0), Some(4.0), Some(25.0)]);
+
+    Ok(())
+}
+
+#[test]
+fn test_power_in_agg_list2() -> Result<()> {
+    let df = fruits_cars();
+
+    // this test if the group tuples are correctly updated after
+    // a flat apply on evaluate_on_groups
+    let out = df
+        .lazy()
+        .groupby(vec![col("fruits")])
+        .agg(vec![col("A")
+            .rolling_min(2, None, false, 0)
+            .pow(2.0)
+            .sum()
+            .alias("foo")])
+        .sort("fruits", true)
+        .collect()?;
+
+    let agg = out.column("foo")?.f64()?;
+    assert_eq!(Vec::from(agg), &[Some(5.0), Some(9.0)]);
 
     Ok(())
 }
