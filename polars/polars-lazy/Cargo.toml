@@ -30,6 +30,7 @@ dtype-date64 = ["polars-core/dtype-date64"]
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version
 #ooc = ["datafusion", "tokio"]
+true_div = []
 
 # operations
 is_in = ["polars-core/is_in"]

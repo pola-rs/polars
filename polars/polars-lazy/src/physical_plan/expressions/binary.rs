@@ -40,6 +40,14 @@ pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Res
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
+        #[cfg(feature = "true_div")]
+        Operator::TrueDivide => {
+            use DataType::*;
+            match left.dtype() {
+                Date32 | Date64 | Time64(_) | Float32 | Float64 => Ok(left / right),
+                _ => Ok(&left.cast_with_dtype(&Float64)? / &right.cast_with_dtype(&Float64)?),
+            }
+        }
         Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
         Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
         Operator::Modulus => Ok(left % right),

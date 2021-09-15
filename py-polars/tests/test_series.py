@@ -567,3 +567,15 @@ def test_list_concat_dispatch():
     assert df.select(pl.col("a").arr.concat(["b"]).alias("concat"))[
         "concat"
     ].series_equal(expected)
+
+
+def test_floor_divide():
+    s = pl.Series("a", [1, 2, 3])
+    assert (s // 2).to_list() == [0, 1, 1]
+    assert pl.DataFrame([s]).select(pl.col("a") // 2)["a"].to_list() == [0, 1, 1]
+
+
+def test_true_divide():
+    s = pl.Series("a", [1, 2])
+    assert (s / 2).to_list() == [0.5, 1.0]
+    assert pl.DataFrame([s]).select(pl.col("a") / 2)["a"].to_list() == [0.5, 1.0]

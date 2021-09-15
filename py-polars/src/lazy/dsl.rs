@@ -52,10 +52,13 @@ impl PyNumberProtocol for PyExpr {
         Ok(dsl::binary_expr(lhs.inner, Operator::Multiply, rhs.inner).into())
     }
     fn __truediv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Divide, rhs.inner).into())
+        Ok(dsl::binary_expr(lhs.inner, Operator::TrueDivide, rhs.inner).into())
     }
     fn __mod__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
         Ok(dsl::binary_expr(lhs.inner, Operator::Modulus, rhs.inner).into())
+    }
+    fn __floordiv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(lhs.inner, Operator::Divide, rhs.inner).into())
     }
 }
 
