@@ -116,6 +116,12 @@ class Expr:
     def __rtruediv__(self, other: Any) -> "Expr":
         return wrap_expr(self.__to_pyexpr(other) / self._pyexpr)
 
+    def __floordiv__(self, other: Any) -> "Expr":
+        return wrap_expr(self._pyexpr // self.__to_pyexpr(other))
+
+    def __rfloordiv__(self, other: Any) -> "Expr":
+        return wrap_expr(self.__to_pyexpr(other) // self._pyexpr)
+
     def __mod__(self, other: Any) -> "Expr":
         return wrap_expr(self._pyexpr % self.__to_pyexpr(other))
 

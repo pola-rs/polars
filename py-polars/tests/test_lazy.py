@@ -491,11 +491,11 @@ def test_arithmetic():
         [
             (col("a") % 2).alias("1"),
             (2 % col("a")).alias("2"),
-            (1 / col("a")).alias("3"),
+            (1 // col("a")).alias("3"),
             (1 * col("a")).alias("4"),
             (1 + col("a")).alias("5"),
             (1 - col("a")).alias("6"),
-            (col("a") / 2).alias("7"),
+            (col("a") // 2).alias("7"),
             (col("a") * 2).alias("8"),
             (col("a") + 2).alias("9"),
             (col("a") - 2).alias("10"),

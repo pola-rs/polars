@@ -72,7 +72,8 @@ features = [
     "rank",
     "diff",
     "moment",
-    "arange"
+    "arange",
+    "true_div"
 ]
 
 #[patch.crates-io]

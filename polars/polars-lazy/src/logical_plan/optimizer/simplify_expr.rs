@@ -287,7 +287,7 @@ impl OptimizationRule for SimplifyExprRule {
                 Some(AExpr::Literal(LiteralValue::Null))
             }
 
-            // lit(left) + lit(right) => lit(left = right)
+            // lit(left) + lit(right) => lit(left + right)
             AExpr::BinaryExpr { left, op, right } => {
                 let left = expr_arena.get(*left);
                 let right = expr_arena.get(*right);
@@ -297,6 +297,51 @@ impl OptimizationRule for SimplifyExprRule {
                     Operator::Minus => eval_binary_same_type!(left, -, right),
                     Operator::Multiply => eval_binary_same_type!(left, *, right),
                     Operator::Divide => eval_binary_same_type!(left, /, right),
+                    #[cfg(feature = "true_div")]
+                    Operator::TrueDivide => {
+                        if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right)
+                        {
+                            return match (lit_left, lit_right) {
+                                (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Float32(x / y)))
+                                }
+                                (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
+                                    Some(AExpr::Literal(LiteralValue::Float64(x / y)))
+                                }
+                                #[cfg(feature = "dtype-i8")]
+                                (LiteralValue::Int8(x), LiteralValue::Int8(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                #[cfg(feature = "dtype-i16")]
+                                (LiteralValue::Int16(x), LiteralValue::Int16(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                (LiteralValue::Int32(x), LiteralValue::Int32(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                (LiteralValue::Int64(x), LiteralValue::Int64(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                #[cfg(feature = "dtype-u8")]
+                                (LiteralValue::UInt8(x), LiteralValue::UInt8(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                #[cfg(feature = "dtype-u16")]
+                                (LiteralValue::UInt16(x), LiteralValue::UInt16(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                #[cfg(feature = "dtype-u64")]
+                                (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => Some(
+                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
+                                ),
+                                _ => None,
+                            };
+                        }
+                        None
+                    }
                     Operator::Modulus => eval_binary_same_type!(left, %, right),
                     Operator::Lt => eval_binary_bool_type!(left, <, right),
                     Operator::Gt => eval_binary_bool_type!(left, >, right),
