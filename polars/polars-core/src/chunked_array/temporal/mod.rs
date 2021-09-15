@@ -2,8 +2,7 @@
 pub mod conversion;
 pub(crate) mod conversions_utils;
 pub use self::conversion::{
-    AsDuration, AsNaiveDate, AsNaiveDateTime, AsNaiveTime, FromNaiveDate, FromNaiveDateTime,
-    FromNaiveTime,
+    AsNaiveDate, AsNaiveDateTime, AsNaiveTime, FromNaiveDate, FromNaiveDateTime, FromNaiveTime,
 };
 pub(crate) use self::conversions_utils::*;
 use chrono::NaiveDateTime;

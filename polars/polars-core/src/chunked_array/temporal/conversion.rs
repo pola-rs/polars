@@ -152,10 +152,6 @@ impl AsNaiveDate for Date32Chunked {
     }
 }
 
-pub trait AsDuration<T> {
-    fn as_duration(&self) -> ChunkedArray<T>;
-}
-
 impl AsNaiveTime for Time64NanosecondChunked {
     fn as_naive_time(&self) -> Vec<Option<NaiveTime>> {
         self.into_iter()

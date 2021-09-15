@@ -120,22 +120,6 @@ class Time64Microsecond(DataType):
     pass
 
 
-class DurationNanosecond(DataType):
-    pass
-
-
-class DurationMicrosecond(DataType):
-    pass
-
-
-class DurationMillisecond(DataType):
-    pass
-
-
-class DurationSecond(DataType):
-    pass
-
-
 class TimestampNanosecond(DataType):
     pass
 
@@ -178,8 +162,6 @@ DTYPES: tp.List[Type[DataType]] = [
     Date32,
     Date64,
     Time64Nanosecond,
-    DurationNanosecond,
-    DurationMillisecond,
     Object,
     Categorical,
 ]
@@ -200,8 +182,6 @@ DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Date32: "date32",
     Date64: "date64",
     Time64Nanosecond: "time64_nanosecond",
-    DurationNanosecond: "duration_nanosecond",
-    DurationMillisecond: "duration_millisecond",
     Object: "object",
     Categorical: "categorical",
 }
@@ -212,9 +192,6 @@ def dtype_to_primitive(dtype: Type[DataType]) -> Type[DataType]:
     if dtype == Date32:
         return Int32
     if dtype == Date64:
-        return Int64
-    ffi_name = DTYPE_TO_FFINAME[dtype]
-    if "duration" in ffi_name:
         return Int64
     return dtype
 

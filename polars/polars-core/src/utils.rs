@@ -285,10 +285,6 @@ macro_rules! match_arrow_data_type_apply_macro {
             DataType::Date64 => $macro!(Date64Type $(, $opt_args)*),
             #[cfg(feature = "dtype-time64-ns")]
             DataType::Time64(TimeUnit::Nanosecond) => $macro!(Time64NanosecondType $(, $opt_args)*),
-            #[cfg(feature = "dtype-duration-ns")]
-            DataType::Duration(TimeUnit::Nanosecond) => $macro!(DurationNanosecondType $(, $opt_args)*),
-            #[cfg(feature = "dtype-duration-ms")]
-            DataType::Duration(TimeUnit::Millisecond) => $macro!(DurationMillisecondType $(, $opt_args)*),
             _ => unimplemented!(),
         }
     }};
@@ -322,10 +318,6 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
             DataType::Date64 => $macro!($self.date64().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-time64-ns")]
             DataType::Time64(TimeUnit::Nanosecond) => $macro!($self.time64_nanosecond().unwrap() $(, $opt_args)*),
-            #[cfg(feature = "dtype-duration-ns")]
-            DataType::Duration(TimeUnit::Nanosecond) => $macro!($self.duration_nanosecond().unwrap() $(, $opt_args)*),
-            #[cfg(feature = "dtype-duration-ms")]
-            DataType::Duration(TimeUnit::Millisecond) => $macro!($self.duration_millisecond().unwrap() $(, $opt_args)*),
             _ => unimplemented!(),
         }
     }};
@@ -382,10 +374,6 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Date64 => $self.date64().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-time64-ns")]
             DataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-duration-ns")]
-            DataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-duration-ms")]
-            DataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
             dt => panic!("dtype {:?} not supported", dt)
         }
@@ -419,11 +407,6 @@ macro_rules! apply_method_numeric_series {
             DataType::Date64 => $self.date64().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-time64-ns")]
             DataType::Time64(TimeUnit::Nanosecond) => $self.time64_nanosecond().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-duration-ns")]
-            DataType::Duration(TimeUnit::Nanosecond) => $self.duration_nanosecond().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-duration-ms")]
-            DataType::Duration(TimeUnit::Millisecond) => $self.duration_millisecond().unwrap().$method($($args),*),
-
             _ => unimplemented!(),
         }
     }
@@ -504,30 +487,6 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
     // TODO! add list and temporal types
     match (l, r) {
-        (Duration(_), Int8) => Some(Int64),
-        (Duration(_), Int16) => Some(Int64),
-        (Duration(_), Int32) => Some(Int64),
-        (Duration(_), Int64) => Some(Int64),
-
-        (Duration(_), UInt8) => Some(Int64),
-        (Duration(_), UInt16) => Some(Int64),
-        (Duration(_), UInt32) => Some(Int64),
-
-        (Int8, Duration(_)) => Some(Int64),
-        (Int16, Duration(_)) => Some(Int64),
-        (Int32, Duration(_)) => Some(Int64),
-        (Int64, Duration(_)) => Some(Int64),
-
-        (UInt8, Duration(_)) => Some(Int64),
-        (UInt16, Duration(_)) => Some(Int64),
-        (UInt32, Duration(_)) => Some(Int64),
-
-        (Float32, Duration(_)) => Some(Float32),
-        (Float64, Duration(_)) => Some(Float64),
-
-        (Duration(_), Float32) => Some(Float32),
-        (Duration(_), Float64) => Some(Float64),
-
         (UInt8, Int8) => Some(Int8),
         (UInt8, Int16) => Some(Int16),
         (UInt8, Int32) => Some(Int32),

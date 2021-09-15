@@ -312,22 +312,6 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            DataType::Duration(TimeUnit::Nanosecond) => format_array!(
-                limit,
-                f,
-                self.duration_nanosecond().unwrap(),
-                "duration(ns)",
-                self.name(),
-                "Series"
-            ),
-            DataType::Duration(TimeUnit::Millisecond) => format_array!(
-                limit,
-                f,
-                self.duration_millisecond().unwrap(),
-                "duration(ms)",
-                self.name(),
-                "Series"
-            ),
             DataType::List(_) => format_array!(
                 limit,
                 f,
@@ -577,8 +561,6 @@ impl Display for AnyValue<'_> {
             AnyValue::Time64(v, TimeUnit::Nanosecond) => {
                 write!(f, "{}", time64_nanosecond_as_time(*v))
             }
-            AnyValue::Duration(v, TimeUnit::Nanosecond) => write!(f, "{}", v),
-            AnyValue::Duration(v, TimeUnit::Millisecond) => write!(f, "{}", v),
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(_) => write!(f, "object"),

@@ -19,8 +19,6 @@ pub enum PyDataType {
     Date32,
     Date64,
     Time64Nanosecond,
-    DurationNanosecond,
-    DurationMillisecond,
     Object,
     Categorical,
 }
@@ -45,8 +43,6 @@ impl From<&DataType> for PyDataType {
             DataType::Date32 => Date32,
             DataType::Date64 => Date64,
             DataType::Time64(TimeUnit::Nanosecond) => Time64Nanosecond,
-            DataType::Duration(TimeUnit::Nanosecond) => DurationNanosecond,
-            DataType::Duration(TimeUnit::Millisecond) => DurationMillisecond,
             DataType::Object(_) => Object,
             DataType::Categorical => Categorical,
             dt => panic!("datatype: {:?} not supported", dt),
@@ -68,5 +64,3 @@ impl PyPolarsPrimitiveType for Float64Type {}
 impl PyPolarsPrimitiveType for Date32Type {}
 impl PyPolarsPrimitiveType for Date64Type {}
 impl PyPolarsPrimitiveType for Time64NanosecondType {}
-impl PyPolarsPrimitiveType for DurationNanosecondType {}
-impl PyPolarsPrimitiveType for DurationMillisecondType {}

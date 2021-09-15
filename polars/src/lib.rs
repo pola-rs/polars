@@ -159,8 +159,6 @@
 //! | data type               | feature flag      |
 //! |-------------------------|-------------------|
 //! | Time64NanoSecondType    | dtype-time64-ns   |
-//! | DurationNanosecondType  | dtype-duration-ns |
-//! | DurationMillisecondType | dtype-duration-ms |
 //! | Date32Type              | dtype-date32      |
 //! | Date64Type              | dtype-date64      |
 //! | Int8Type                | dtype-i8          |

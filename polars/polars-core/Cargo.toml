@@ -79,8 +79,6 @@ moment = []
 
 # opt-in datatypes for Series
 dtype-time64-ns = []
-dtype-duration-ns = []
-dtype-duration-ms = []
 dtype-date32 = []
 dtype-date64 = []
 dtype-i8 = []
