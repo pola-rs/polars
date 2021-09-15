@@ -1848,3 +1848,25 @@ fn test_round_after_agg() -> Result<()> {
     assert!(out.column("foo")?.f64().is_ok());
     Ok(())
 }
+
+#[test]
+fn test_power_in_agg_list() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .groupby(vec![col("fruits")])
+        .agg(vec![col("A")
+            .rolling_min(1, None, false, 0)
+            .pow(2.0)
+            .alias("foo")])
+        .sort("fruits", true)
+        .collect()?;
+
+    let agg = out.column("foo")?.list()?;
+    let first = agg.get(0).unwrap();
+    let vals = first.f64()?;
+    assert_eq!(Vec::from(vals), &[Some(1.0), Some(4.0), Some(25.0)]);
+
+    Ok(())
+}

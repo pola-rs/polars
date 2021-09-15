@@ -147,6 +147,10 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    pub(crate) fn is_flat(&self) -> bool {
+        matches!(&self.series, AggState::Flat(_))
+    }
+
     pub(crate) fn combine_groups(&mut self, other: AggregationContext) -> &mut Self {
         if let (Cow::Borrowed(_), Cow::Owned(a)) = (&self.groups, other.groups) {
             self.groups = Cow::Owned(a);
