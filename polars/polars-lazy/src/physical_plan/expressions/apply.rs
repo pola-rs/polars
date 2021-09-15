@@ -75,7 +75,7 @@ impl PhysicalExpr for ApplyExpr {
                 Ok(ac)
             }
             ApplyOptions::ApplyFlat => {
-                let s = self.function.call_udf(&mut [ac.take()])?;
+                let s = self.function.call_udf(&mut [ac.flat().into_owned()])?;
                 ac.with_series(s);
                 Ok(ac)
             }
@@ -143,7 +143,21 @@ impl PhysicalAggregation for ApplyExpr {
                 }
                 Ok(Some(ca.into_series()))
             }
-            ApplyOptions::ApplyFlat => self.function.call_udf(&mut [ac.take()]).map(Some),
+            ApplyOptions::ApplyFlat => {
+                // the function needs to be called on a flat series
+                // but the series may be flat or aggregated
+                // if its flat, we just apply and return
+                // if not flat, the flattening sorts by group, so we must create new group tuples
+                // and again aggregate.
+                let out = self.function.call_udf(&mut [ac.flat().into_owned()]);
+                if ac.is_flat() {
+                    out.map(Some)
+                } else {
+                    // TODO! maybe just apply over list?
+                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    Ok(out?.agg_list(ac.groups()))
+                }
+            }
             ApplyOptions::ApplyList => self
                 .function
                 .call_udf(&mut [ac.aggregated().into_owned()])
