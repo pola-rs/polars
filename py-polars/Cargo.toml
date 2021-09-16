@@ -61,7 +61,7 @@ features = [
     "concat_str",
     "row_hash",
     "reinterpret",
-    "decompress",
+    "decompress-fast",
     "mode",
     "extract_jsonpath",
     "lazy_regex",
