@@ -483,8 +483,12 @@ impl<'a> CoreReader<'a> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn build_csv_reader<'a>(
-    #[cfg(feature = "decompress")] mut reader_bytes: ReaderBytes<'a>,
-    #[cfg(not(feature = "decompress"))] reader_bytes: ReaderBytes<'a>,
+    #[cfg(any(feature = "decompress", feature = "decompress-fast"))] mut reader_bytes: ReaderBytes<
+        'a,
+    >,
+    #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))] reader_bytes: ReaderBytes<
+        'a,
+    >,
     n_rows: Option<usize>,
     skip_rows: usize,
     mut projection: Option<Vec<usize>>,
@@ -512,7 +516,7 @@ pub fn build_csv_reader<'a>(
     let mut schema = match schema {
         Some(schema) => Cow::Borrowed(schema),
         None => {
-            #[cfg(feature = "decompress")]
+            #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
             {
                 // We keep track of the inferred schema bool
                 // In case the file is compressed this schema inference is wrong and has to be done
@@ -532,7 +536,7 @@ pub fn build_csv_reader<'a>(
                 )?;
                 Cow::Owned(inferred_schema)
             }
-            #[cfg(not(feature = "decompress"))]
+            #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
             {
                 let (inferred_schema, _) = infer_file_schema(
                     &reader_bytes,
