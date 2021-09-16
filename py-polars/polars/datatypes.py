@@ -34,7 +34,7 @@ __all__ = [
     "Categorical",
     "DTYPES",
     "DTYPE_TO_FFINAME",
-    "dtype_to_primitive",
+    "date_like_to_physical",
     "dtype_to_ctype",
     "pytype_to_polars_type",
 ]
@@ -187,7 +187,7 @@ DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
 }
 
 
-def dtype_to_primitive(dtype: Type[DataType]) -> Type[DataType]:
+def date_like_to_physical(dtype: Type[DataType]) -> Type[DataType]:
     #  TODO: add more
     if dtype == Date32:
         return Int32
