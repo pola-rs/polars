@@ -209,10 +209,13 @@ def test_init_records():
 def test_selection():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
+    # get_column by name
+    assert df.get_column("a").to_list() == [1, 2, 3]
+
     # column selection by string(s) in first dimension
-    assert df["a"] == [1, 2, 3]
-    assert df["b"] == [1.0, 2.0, 3.0]
-    assert df["c"] == ["a", "b", "c"]
+    assert df["a"].to_list() == [1, 2, 3]
+    assert df["b"].to_list() == [1.0, 2.0, 3.0]
+    assert df["c"].to_list() == ["a", "b", "c"]
 
     # row selection by integers(s) in first dimension
     assert df[0].frame_equal(pl.DataFrame({"a": [1], "b": [1.0], "c": ["a"]}))

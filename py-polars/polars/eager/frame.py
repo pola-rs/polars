@@ -2209,6 +2209,12 @@ class DataFrame:
         """
         return list(map(lambda s: pl.eager.series.wrap_s(s), self._df.get_columns()))
 
+    def get_column(self, name: str) -> "pl.Series":
+        """
+        Get a single column as Series by name.
+        """
+        return self[name]
+
     def fill_null(self, strategy: Union[str, "pl.Expr"]) -> "DataFrame":
         """
         Fill None/missing values by a filling strategy or an Expression evaluation.
