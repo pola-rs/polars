@@ -350,14 +350,9 @@ class Series:
 
     def __truediv__(self, other: Any) -> "Series":
         physical_type = date_like_to_physical(self.dtype)
-        if self.dtype != physical_type:
+        if self.dtype != physical_type or self.is_float():
             return self.__floordiv__(other)
-
-        if self.is_float():
-            out_dtype = self.dtype
-        else:
-            out_dtype = Float64
-        return np.true_divide(self, other, dtype=out_dtype)  # type: ignore
+        return self.cast(pl.Float64) / other
 
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
