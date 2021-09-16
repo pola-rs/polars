@@ -416,14 +416,13 @@ class Series:
 
     def __rtruediv__(self, other: Any) -> np.ndarray:
         primitive = date_like_to_physical(self.dtype)
-        if self.dtype != primitive:
+        if self.dtype != primitive or self.is_float():
             self.__rfloordiv__(other)
 
-        if self.is_float():
-            out_dtype = self.dtype
-        else:
-            out_dtype = Float64
-        return np.true_divide(other, self, dtype=out_dtype)  # type: ignore[call-overload]
+        if isinstance(other, int):
+            other = float(other)
+
+        return self.cast(pl.Float64).__rfloordiv__(other)  # type: ignore
 
     def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):

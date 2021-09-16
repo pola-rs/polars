@@ -168,10 +168,41 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Utf8(v).into())
         } else if let Ok(v) = ob.extract::<bool>() {
             Ok(AnyValue::Boolean(v).into())
-        } else if let Ok(res) = ob.call_method0("timestamp") {
-            // s to ms
-            let v = res.extract::<f64>()? as i64;
-            Ok(AnyValue::Date64(v * 1000).into())
+        }
+        else if ob.get_type().name()?.contains("datetime") {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+
+            // windows
+            #[cfg(target_arch = "windows")]
+            {
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("tzinfo", py.None())?;
+                let dt = ob.call_method("replace", (), Some(kwargs))?;
+
+                let pytz = PyModule::import(py, "pytz")?;
+                let tz = pytz.call_method("timezone", ("UTC", ), None)?;
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("is_dst", py.None())?;
+                let loc_tz = tz.call_method("localize", (dt, ), Some(kwargs))?;
+                loc_tz.call_method0("timestamp")?;
+                // s to ms
+                let v = ts.extract::<f64>()? as i64;
+                Ok(AnyValue::Date64(v * 1000).into())
+            }
+            // unix
+            #[cfg(not(target_arch = "windows"))]
+            {
+                let datetime = PyModule::import(py, "datetime")?;
+                let timezone = datetime.getattr("timezone")?;
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
+                let dt = ob.call_method("replace", (), Some(kwargs))?;
+                let ts = dt.call_method0("timestamp")?;
+                // s to ms
+                let v = ts.extract::<f64>()? as i64;
+                Ok(AnyValue::Date64(v * 1000).into())
+            }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
         } else {
