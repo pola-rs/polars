@@ -248,7 +248,7 @@ pub fn infer_file_schema(
     Ok((Schema::new(fields), records_count))
 }
 
-#[cfg(feature = "decompress")]
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
     // magic numbers
     let gzip: [u8; 2] = [31, 139];
