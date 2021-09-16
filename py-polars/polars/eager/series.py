@@ -42,8 +42,8 @@ from ..datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    date_like_to_physical,
     dtype_to_ctype,
-    dtype_to_primitive,
 )
 from ..utils import _ptr_to_numpy
 
@@ -333,7 +333,7 @@ class Series:
             other = Series("", [other])
         if isinstance(other, Series):
             return wrap_s(self._s.add(other._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("add_<>", dtype, self._s)
         if f is None:
             return NotImplemented
@@ -342,15 +342,15 @@ class Series:
     def __sub__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.sub(other._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("sub_<>", dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __truediv__(self, other: Any) -> "Series":
-        primitive = dtype_to_primitive(self.dtype)
-        if self.dtype != primitive:
+        physical_type = date_like_to_physical(self.dtype)
+        if self.dtype != physical_type:
             return self.__floordiv__(other)
 
         if self.is_float():
@@ -362,14 +362,14 @@ class Series:
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.div(other._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("div_<>", dtype, self._s)
         return wrap_s(f(other))
 
     def __mul__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
             return NotImplemented
@@ -378,7 +378,7 @@ class Series:
     def __mod__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.rem(other._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("rem_<>", dtype, self._s)
         if f is None:
             return NotImplemented
@@ -387,7 +387,7 @@ class Series:
     def __rmod__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.rem(self._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("rem_<>_rhs", dtype, self._s)
         if f is None:
@@ -397,7 +397,7 @@ class Series:
     def __radd__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("add_<>_rhs", dtype, self._s)
         if f is None:
@@ -407,7 +407,7 @@ class Series:
     def __rsub__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.sub(self._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("sub_<>_rhs", dtype, self._s)
         if f is None:
@@ -420,7 +420,7 @@ class Series:
         return NotImplemented
 
     def __rtruediv__(self, other: Any) -> np.ndarray:
-        primitive = dtype_to_primitive(self.dtype)
+        primitive = date_like_to_physical(self.dtype)
         if self.dtype != primitive:
             self.__rfloordiv__(other)
 
@@ -433,7 +433,7 @@ class Series:
     def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.div(self._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("div_<>_rhs", dtype, self._s)
         if f is None:
@@ -443,7 +443,7 @@ class Series:
     def __rmul__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
-        dtype = dtype_to_primitive(self.dtype)
+        dtype = date_like_to_physical(self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
