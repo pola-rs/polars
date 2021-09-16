@@ -91,6 +91,7 @@ Manipulation/ selection
     DataFrame.select_at_idx
     DataFrame.clone
     DataFrame.get_columns
+    DataFrame.get_column
     DataFrame.fill_null
     DataFrame.fill_nan
     DataFrame.explode
