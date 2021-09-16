@@ -150,8 +150,8 @@ a,b,c
     with gzip.GzipFile(fileobj=fout, mode="w") as f:
         f.write(csv.encode())
 
-    bytes = fout.getvalue()
-    out = pl.read_csv(bytes)
+    csv_bytes = fout.getvalue()
+    out = pl.read_csv(csv_bytes)
     expected = pl.DataFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
     )
@@ -162,13 +162,13 @@ a,b,c
     assert out.frame_equal(expected)
 
     # now with column projection
-    out = pl.read_csv(bytes, columns=["a", "b"])
+    out = pl.read_csv(csv_bytes, columns=["a", "b"])
     expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
     assert out.frame_equal(expected)
 
     # zlib compression
-    bytes = zlib.compress(csv.encode())
-    out = pl.read_csv(bytes)
+    csv_bytes = zlib.compress(csv.encode())
+    out = pl.read_csv(csv_bytes)
     expected = pl.DataFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": [1.0, 2.0, 3.0]}
     )
