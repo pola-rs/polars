@@ -549,3 +549,16 @@ def test_argminmax():
     )
     assert out["max"][0] == 4
     assert out["min"][0] == 0
+
+
+def test_expr_bool_cmp():
+    # Since expressions are lazy they should not be evaluated as
+    # bool(x), this has the nice side effect of throwing an error
+    # if someone tries to chain them via the and|or operators
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
+
+    with pytest.raises(ValueError):
+        df[[pl.col("a").gt(pl.col("b")) and pl.col("b").gt(pl.col("b"))]]
+
+    with pytest.raises(ValueError):
+        df[[pl.col("a").gt(pl.col("b")) or pl.col("b").gt(pl.col("b"))]]

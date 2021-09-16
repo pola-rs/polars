@@ -77,6 +77,12 @@ class Expr:
             return other
         return lit(other)
 
+    def __bool__(self) -> "Expr":
+        raise ValueError(
+            "Since Expr are lazy, the truthiness of an Expr is ambiguous. \
+            Hint: use '&' or '|' to chain Expr together, not and/or."
+        )
+
     def __invert__(self) -> "Expr":
         return self.is_not()
 
