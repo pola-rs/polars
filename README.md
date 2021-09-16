@@ -1,6 +1,6 @@
 # Polars
 [![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
-[![Build and test](https://github.com/ritchie46/polars/workflows/Build%20and%20test/badge.svg)](https://github.com/pola-rs/polars/actions)
+[![Build and test](https://github.com/pola-rs/polars/workflows/Build%20and%20test/badge.svg)](https://github.com/pola-rs/polars/actions)
 [![](https://img.shields.io/crates/v/polars.svg)](https://crates.io/crates/polars)
 [![Gitter](https://badges.gitter.im/polars-rs/community.svg)](https://gitter.im/polars-rs/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 

@@ -26,7 +26,7 @@ def test_to_from_buffer(df):
 
 
 def test_read_web_file():
-    url = "https://raw.githubusercontent.com/ritchie46/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
+    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
     df = pl.read_csv(url)
     assert df.shape == (27, 4)
 
