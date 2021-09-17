@@ -1863,6 +1863,35 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .collect();
                 Ok(Date64Chunked::new_from_chunks(name, chunks).into_series())
             }
+            #[cfg(feature = "dtype-categorical")]
+            ArrowDataType::Dictionary(key_type, value_type) => {
+                use crate::chunked_array::builder::CategoricalChunkedBuilder;
+                match (&**key_type, &**value_type) {
+                    (ArrowDataType::UInt32, ArrowDataType::LargeUtf8) => {
+                        let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
+                        let arr = arrow::compute::concat::concatenate(&chunks)?;
+
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<u32>>().unwrap();
+                        let keys = arr.keys();
+                        let values = arr.values();
+                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
+
+                        let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
+                        let iter = keys.into_iter().map(|opt_key| {
+                            opt_key.map(|k| unsafe { values.value_unchecked(*k as usize) })
+                        });
+                        builder.from_iter(iter);
+                        Ok(builder.finish().into())
+                    }
+                    (k, v) => Err(PolarsError::InvalidOperation(
+                        format!(
+                            "Cannot create polars series dictionary type of key:  {:?} value: {:?}",
+                            k, v
+                        )
+                        .into(),
+                    )),
+                }
+            }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?} type", dt).into(),
             )),

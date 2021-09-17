@@ -36,7 +36,10 @@ pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
 use arrow::array::Array;
+#[cfg(feature = "dtype-categorical")]
+pub(crate) mod categorical;
 pub(crate) mod list;
+
 use polars_arrow::prelude::*;
 
 #[cfg(feature = "dtype-categorical")]
