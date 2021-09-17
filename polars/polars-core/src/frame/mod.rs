@@ -1789,7 +1789,15 @@ impl<'a> Iterator for RecordBatchIter<'a> {
             let batch_cols = self
                 .columns
                 .iter()
-                .map(|s| s.chunks()[self.idx].clone())
+                .map(|s| {
+                    #[cfg(feature = "dtype-categorical")]
+                    if let DataType::Categorical = s.dtype() {
+                        let ca = s.categorical().unwrap();
+                        let arr: DictionaryArray<u32> = ca.into();
+                        return Arc::new(arr) as ArrayRef;
+                    }
+                    s.chunks()[self.idx].clone()
+                })
                 .collect();
             self.idx += 1;
 
