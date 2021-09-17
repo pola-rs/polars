@@ -65,6 +65,7 @@ impl RepeatBy for Utf8Chunked {
 
 impl RepeatBy for ListChunked {}
 
+#[cfg(feature = "dtype-categorical")]
 impl RepeatBy for CategoricalChunked {
     fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
         let mut ca = self.cast::<UInt32Type>().unwrap().repeat_by(by);

@@ -177,6 +177,7 @@ impl IsIn for BooleanChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl IsIn for CategoricalChunked {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         self.cast::<UInt32Type>().unwrap().is_in(other)

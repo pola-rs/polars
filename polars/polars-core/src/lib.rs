@@ -18,10 +18,13 @@ pub mod series;
 pub mod testing;
 pub(crate) mod vector_hasher;
 
+#[cfg(feature = "dtype-categorical")]
 use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rayon::{ThreadPool, ThreadPoolBuilder};
+#[cfg(feature = "dtype-categorical")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "dtype-categorical")]
 use std::sync::{Mutex, MutexGuard};
 
 // this is re-exported in utils for polars child crates
@@ -36,11 +39,13 @@ lazy_static! {
         .expect("could not spawn threads");
 }
 
+#[cfg(feature = "dtype-categorical")]
 struct SCacheInner {
     map: AHashMap<String, u32>,
     uuid: u128,
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl Default for SCacheInner {
     fn default() -> Self {
         Self {
@@ -57,8 +62,10 @@ impl Default for SCacheInner {
 /// In *eager* you need to specifically toggle global string cache to have a global effect.
 /// In *lazy* it is toggled on at the start of a computation run and turned of (deleted) when a
 /// result is produced.
+#[cfg(feature = "dtype-categorical")]
 pub(crate) struct StringCache(pub(crate) Mutex<SCacheInner>);
 
+#[cfg(feature = "dtype-categorical")]
 impl StringCache {
     pub(crate) fn lock_map(&self) -> MutexGuard<SCacheInner> {
         self.0.lock().unwrap()
@@ -70,29 +77,35 @@ impl StringCache {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl Default for StringCache {
     fn default() -> Self {
         StringCache(Mutex::new(Default::default()))
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 pub(crate) static USE_STRING_CACHE: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "dtype-categorical")]
 lazy_static! {
     pub(crate) static ref STRING_CACHE: StringCache = Default::default();
 }
 
 #[cfg(test)]
+#[cfg(feature = "dtype-categorical")]
 lazy_static! {
     // utility for the tests to ensure a single thread can execute
     pub(crate) static ref SINGLE_LOCK: Mutex<()> = Mutex::new(());
 }
 
+#[cfg(feature = "dtype-categorical")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Use a global string cache for the Categorical Types.
 ///
 /// This is used to cache the string categories locally.
 /// This allows join operations on categorical types.
+#[cfg(feature = "dtype-categorical")]
 pub fn toggle_string_cache(toggle: bool) {
     USE_STRING_CACHE.store(toggle, Ordering::Release);
 
@@ -102,11 +115,13 @@ pub fn toggle_string_cache(toggle: bool) {
 }
 
 /// Reset the global string cache used for the Categorical Types.
+#[cfg(feature = "dtype-categorical")]
 pub fn reset_string_cache() {
     STRING_CACHE.clear()
 }
 
 /// Check if string cache is set.
+#[cfg(feature = "dtype-categorical")]
 pub(crate) fn use_string_cache() -> bool {
     USE_STRING_CACHE.load(Ordering::Acquire)
 }

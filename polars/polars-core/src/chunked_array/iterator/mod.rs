@@ -1,8 +1,10 @@
+#[cfg(feature = "dtype-categorical")]
 use crate::datatypes::CategoricalChunked;
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
 use arrow::array::*;
 use std::convert::TryFrom;
+#[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
 type LargeStringArray = Utf8Array<i64>;
@@ -43,6 +45,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl<'a> IntoIterator for &'a CategoricalChunked {
     type Item = Option<u32>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
@@ -362,6 +365,7 @@ where
 
 impl<I> ExactSizeIterator for SomeIterator<I> where I: ExactSizeIterator {}
 
+#[cfg(feature = "dtype-categorical")]
 impl CategoricalChunked {
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(

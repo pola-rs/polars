@@ -61,6 +61,7 @@ impl ChunkOps for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkOps for CategoricalChunked {
     fn rechunk(&self) -> Self
     where
@@ -136,6 +137,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
+    #[cfg(feature = "dtype-categorical")]
     fn test_categorical_map_after_rechunk() {
         let s = Series::new("", &["foo", "bar", "spam"]);
         let mut a = s.cast::<CategoricalType>().unwrap();

@@ -39,10 +39,14 @@ use arrow::array::Array;
 pub(crate) mod list;
 use polars_arrow::prelude::*;
 
+#[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::categorical::RevMapping;
 use crate::utils::{slice_offsets, CustomIterTools};
 use std::mem;
 use std::ops::{Deref, DerefMut};
+
+#[cfg(not(feature = "dtype-categorical"))]
+pub struct RevMapping {}
 
 pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
 
@@ -436,6 +440,7 @@ impl<T> ChunkedArray<T> {
     where
         Self: std::marker::Sized,
     {
+        #[cfg(feature = "dtype-categorical")]
         if let (Some(rev_map_l), Some(rev_map_r)) = (
             self.categorical_map.as_ref(),
             other.categorical_map.as_ref(),
@@ -580,6 +585,7 @@ where
                 let s = Series::try_from(("", v));
                 AnyValue::List(s.unwrap())
             }
+            #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => {
                 let v = downcast!(UInt32Array);
                 AnyValue::Utf8(self.categorical_map.as_ref().expect("should be set").get(v))
@@ -822,6 +828,7 @@ impl From<UInt32Chunked> for CategoricalChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl CategoricalChunked {
     fn set_state<T>(mut self, other: &ChunkedArray<T>) -> Self {
         self.categorical_map = other.categorical_map.clone();
@@ -878,7 +885,6 @@ impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
-    use crate::reset_string_cache;
 
     pub(crate) fn get_chunked_array() -> Int32Chunked {
         ChunkedArray::new_from_slice("a", &[1, 2, 3])
@@ -1055,7 +1061,9 @@ pub(crate) mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-categorical")]
     fn test_iter_categorical() {
+        use crate::reset_string_cache;
         use crate::SINGLE_LOCK;
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();

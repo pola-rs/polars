@@ -3,6 +3,7 @@
 //! IntoTakeRandom provides structs that implement the TakeRandom trait.
 //! There are several structs that implement the fastest path for random access.
 //!
+#[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
 use arrow::array::{Array, ArrayRef};
@@ -394,6 +395,7 @@ impl ChunkTake for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkTake for CategoricalChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where

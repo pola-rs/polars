@@ -166,6 +166,7 @@
 //! | UInt8Type               | dtype-u8          |
 //! | UInt16Type              | dtype-u16         |
 //! | UInt64Type              | dtype-u64         |
+//! | Categorical             | dtype-categorical |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.
@@ -219,9 +220,9 @@
 pub mod docs;
 pub mod prelude;
 
-pub use polars_core::{
-    chunked_array, datatypes, doc, error, frame, functions, series, testing, toggle_string_cache,
-};
+#[cfg(feature = "dtype-categorical")]
+pub use polars_core::toggle_string_cache;
+pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
 
 pub use polars_core::apply_method_all_arrow_series;
 pub use polars_core::df;

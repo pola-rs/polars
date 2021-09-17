@@ -86,6 +86,7 @@ dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
 dtype-u64 = []
+dtype-categorical = []
 
 parquet = ["arrow/io_parquet"]
 
@@ -119,7 +120,8 @@ docs-selection = [
     "rolling_window",
     "interpolate",
     "diff",
-    "moment"
+    "moment",
+    "dtype-categorical"
 ]
 
 [dependencies]

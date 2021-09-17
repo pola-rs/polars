@@ -878,6 +878,7 @@ impl_dyn_series!(Int8Chunked);
 impl_dyn_series!(Int16Chunked);
 impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);
+#[cfg(feature = "dtype-categorical")]
 impl_dyn_series!(CategoricalChunked);
 impl_dyn_series!(Utf8Chunked);
 impl_dyn_series!(ListChunked);
@@ -914,6 +915,7 @@ impl_dyn_series_numeric!(Int8Chunked);
 impl_dyn_series_numeric!(Int16Chunked);
 impl_dyn_series_numeric!(Int32Chunked);
 impl_dyn_series_numeric!(Int64Chunked);
+#[cfg(feature = "dtype-categorical")]
 impl_dyn_series_numeric!(CategoricalChunked);
 
 impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {}

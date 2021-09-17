@@ -168,6 +168,7 @@ impl<'a> IntoPartialEqInner<'a> for &'a ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl<'a> IntoPartialEqInner<'a> for &'a CategoricalChunked {
     fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner> {
         unimplemented!()
@@ -281,6 +282,7 @@ impl<'a> IntoPartialOrdInner<'a> for &'a ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl<'a> IntoPartialOrdInner<'a> for &'a CategoricalChunked {
     fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner> {
         unimplemented!()

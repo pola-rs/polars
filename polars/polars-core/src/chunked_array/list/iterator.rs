@@ -162,8 +162,6 @@ impl ListChunked {
 mod test {
     use super::*;
     use crate::chunked_array::builder::get_list_builder;
-    use std::mem::ManuallyDrop;
-    use std::ops::DerefMut;
 
     #[test]
     fn test_iter_list() {

@@ -1,6 +1,7 @@
 #[cfg(feature = "rank")]
 pub(crate) mod rank;
 
+#[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
@@ -8,6 +9,7 @@ use crate::datatypes::PlHashSet;
 use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
 use crate::utils::NoNull;
+#[cfg(feature = "dtype-categorical")]
 use arrow::array::Array;
 use itertools::Itertools;
 use num::NumCast;
@@ -273,6 +275,7 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkUnique<CategoricalType> for CategoricalChunked {
     fn unique(&self) -> Result<Self> {
         let cat_map = self.categorical_map.as_ref().unwrap();
@@ -402,6 +405,7 @@ impl<T> ToDummies<ObjectType<T>> for ObjectChunked<T> {}
 impl ToDummies<Float32Type> for Float32Chunked {}
 impl ToDummies<Float64Type> for Float64Chunked {}
 impl ToDummies<BooleanType> for BooleanChunked {}
+#[cfg(feature = "dtype-categorical")]
 impl ToDummies<CategoricalType> for CategoricalChunked {}
 
 impl ChunkUnique<BooleanType> for BooleanChunked {
@@ -559,6 +563,7 @@ mod is_first {
         }
     }
 
+    #[cfg(feature = "dtype-categorical")]
     impl IsFirst<CategoricalType> for CategoricalChunked {
         fn is_first(&self) -> Result<BooleanChunked> {
             let ca = self.cast::<UInt32Type>().unwrap();

@@ -219,6 +219,7 @@ impl ChunkFillNull for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkFillNull for CategoricalChunked {
     fn fill_null(&self, _strategy: FillNullStrategy) -> Result<Self> {
         Err(PolarsError::InvalidOperation(

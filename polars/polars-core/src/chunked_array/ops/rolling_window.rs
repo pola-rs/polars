@@ -402,6 +402,7 @@ where
 impl ChunkWindow for ListChunked {}
 impl ChunkWindow for Utf8Chunked {}
 impl ChunkWindow for BooleanChunked {}
+#[cfg(feature = "dtype-categorical")]
 impl ChunkWindow for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkWindow for ObjectChunked<T> {}
@@ -448,6 +449,7 @@ where
 impl ChunkRollApply for ListChunked {}
 impl ChunkRollApply for Utf8Chunked {}
 impl ChunkRollApply for BooleanChunked {}
+#[cfg(feature = "dtype-categorical")]
 impl ChunkRollApply for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkRollApply for ObjectChunked<T> {}

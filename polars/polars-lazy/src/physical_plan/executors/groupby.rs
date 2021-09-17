@@ -236,6 +236,7 @@ impl Executor for PartitionGroupByExec {
             .map(|s| s.parse::<f32>().unwrap())
             .unwrap_or(0.005f32);
 
+        #[cfg(feature = "dtype-categorical")]
         let (frac, sampled_method) = if let Ok(ca) = key.categorical() {
             let cat_map = ca
                 .get_categorical_map()
@@ -243,6 +244,19 @@ impl Executor for PartitionGroupByExec {
 
             (cat_map.len() as f32 / ca.len() as f32, "known")
         } else {
+            let sample_frac = std::env::var("POLARS_PARTITION_SAMPLE_FRAC")
+                .map(|s| s.parse::<f32>().unwrap())
+                .unwrap_or(0.001);
+            let sample_size = (original_df.height() as f32 * sample_frac) as usize;
+
+            // if not set, we set it to 1% for sampling
+            if std::env::var("POLARS_PARTITION_CARDINALITY_FRAC").is_err() {
+                cardinality_frac = 0.01f32;
+            }
+            (sample_cardinality(&key, sample_size), "estimated")
+        };
+        #[cfg(not(feature = "dtype-categorical"))]
+        let (frac, sampled_method) = {
             let sample_frac = std::env::var("POLARS_PARTITION_SAMPLE_FRAC")
                 .map(|s| s.parse::<f32>().unwrap())
                 .unwrap_or(0.001);

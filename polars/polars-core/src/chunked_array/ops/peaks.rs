@@ -22,6 +22,7 @@ where
 
 impl ChunkPeaks for BooleanChunked {}
 impl ChunkPeaks for Utf8Chunked {}
+#[cfg(feature = "dtype-categorical")]
 impl ChunkPeaks for CategoricalChunked {}
 impl ChunkPeaks for ListChunked {}
 
