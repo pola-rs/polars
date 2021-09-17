@@ -154,6 +154,7 @@ impl ChunkZip<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkZip<CategoricalType> for CategoricalChunked {
     fn zip_with(
         &self,

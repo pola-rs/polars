@@ -29,6 +29,7 @@ use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
+#[cfg(feature = "dtype-categorical")]
 pub(crate) fn check_categorical_src(l: &Series, r: &Series) -> Result<()> {
     if let (Ok(l), Ok(r)) = (l.categorical(), r.categorical()) {
         let l = l.categorical_map.as_ref().unwrap();
@@ -1034,6 +1035,7 @@ impl DataFrame {
             return Err(PolarsError::ValueError("the dtype of the join keys don't match. first cast your columns to the correct dtype".into()));
         }
 
+        #[cfg(feature = "dtype-categorical")]
         for (l, r) in selected_left.iter().zip(&selected_right) {
             check_categorical_src(l, r)?
         }
@@ -1204,6 +1206,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left, s_right)?;
         let join_tuples = s_left.hash_join_inner(s_right);
 
@@ -1240,6 +1243,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left, s_right)?;
         let opt_join_tuples = s_left.hash_join_left(s_right);
 
@@ -1281,6 +1285,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
     ) -> Result<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left, s_right)?;
         // Get the indexes of the joined relations
         let opt_join_tuples = s_left.hash_join_outer(s_right);
@@ -1313,7 +1318,6 @@ impl DataFrame {
 mod test {
     use crate::df;
     use crate::prelude::*;
-    use crate::toggle_string_cache;
 
     fn create_frames() -> (DataFrame, DataFrame) {
         let s0 = Series::new("days", &[0, 1, 2]);
@@ -1536,7 +1540,9 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    #[cfg(feature = "dtype-categorical")]
     fn test_join_categorical() {
+        use crate::toggle_string_cache;
         let _lock = crate::SINGLE_LOCK.lock();
         toggle_string_cache(true);
 

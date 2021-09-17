@@ -68,6 +68,7 @@ impl ChunkAnyValue for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkAnyValue for CategoricalChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {

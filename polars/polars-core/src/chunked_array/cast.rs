@@ -1,4 +1,5 @@
 //! Implementations of the ChunkCast Trait.
+#[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::kernels::cast_physical;
 use crate::prelude::*;
@@ -70,6 +71,7 @@ macro_rules! cast_with_dtype {
                 ChunkCast::cast::<Time64NanosecondType>($self).map(|ca| ca.into_series())
             }
             List(_) => ChunkCast::cast::<ListType>($self).map(|ca| ca.into_series()),
+            #[cfg(feature = "dtype-categorical")]
             Categorical => ChunkCast::cast::<CategoricalType>($self).map(|ca| ca.into_series()),
             dt => Err(PolarsError::ComputeError(
                 format!(
@@ -83,6 +85,7 @@ macro_rules! cast_with_dtype {
     }};
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkCast for CategoricalChunked {
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where
@@ -114,6 +117,7 @@ impl ChunkCast for CategoricalChunked {
                 ca.field = Arc::new(Field::new(ca.name(), DataType::UInt32));
                 Ok(ca)
             }
+            #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => {
                 let mut out = ChunkedArray::new_from_chunks(self.name(), self.chunks.clone());
                 out.categorical_map = self.categorical_map.clone();
@@ -138,6 +142,7 @@ where
     {
         use DataType::*;
         let ca = match (T::get_dtype(), N::get_dtype()) {
+            #[cfg(feature = "dtype-categorical")]
             (UInt32, Categorical) => {
                 let mut ca: ChunkedArray<N> = unsafe { std::mem::transmute(self.clone()) };
                 ca.field = Arc::new(Field::new(ca.name(), DataType::Categorical));
@@ -179,6 +184,7 @@ impl ChunkCast for Utf8Chunked {
         N: PolarsDataType,
     {
         match N::get_dtype() {
+            #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => {
                 let iter = self.into_iter();
                 let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
@@ -300,6 +306,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-categorical")]
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
         let ca = Utf8Chunked::new_from_slice("foo", &["bar", "ham"]);

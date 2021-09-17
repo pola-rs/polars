@@ -3,6 +3,7 @@ use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
 use std::convert::TryFrom;
+#[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
 pub(crate) trait ExplodeByOffsets {
@@ -168,6 +169,7 @@ impl ExplodeByOffsets for Utf8Chunked {
         builder.finish().into()
     }
 }
+#[cfg(feature = "dtype-categorical")]
 impl ExplodeByOffsets for CategoricalChunked {
     #[inline(never)]
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {

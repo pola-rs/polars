@@ -47,11 +47,14 @@ where
     T::Native: Hash + Eq + Send + AsU64,
     Option<T::Native>: AsU64,
 {
+    #[cfg(feature = "dtype-categorical")]
     let group_size_hint = if let Some(m) = &ca.categorical_map {
         ca.len() / m.len()
     } else {
         0
     };
+    #[cfg(not(feature = "dtype-categorical"))]
+    let group_size_hint = 0;
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = set_partition_size() as u64;
 
@@ -165,6 +168,7 @@ impl IntoGroupTuples for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl IntoGroupTuples for CategoricalChunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         self.cast::<UInt32Type>()
@@ -1434,6 +1438,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    #[cfg(feature = "dtype-categorical")]
     fn test_groupby_categorical() {
         let mut df = df! {"foo" => ["a", "a", "b", "b", "c"],
                     "ham" => ["a", "a", "b", "b", "c"],
@@ -1539,6 +1544,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    #[cfg(feature = "dtype-categorical")]
     fn test_groupby_null_group() -> Result<()> {
         // check if null is own group
         let mut df = df![

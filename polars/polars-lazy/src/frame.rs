@@ -3,6 +3,7 @@
 use polars_core::datatypes::PlHashMap;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
+#[cfg(feature = "dtype-categorical")]
 use polars_core::toggle_string_cache;
 use std::sync::Arc;
 
@@ -591,12 +592,14 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> Result<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
         let use_string_cache = self.opt_state.global_string_cache;
         let mut expr_arena = Arena::with_capacity(256);
         let mut lp_arena = Arena::with_capacity(128);
         let lp_top = self.optimize(&mut lp_arena, &mut expr_arena)?;
 
         // if string cache was already set, we skip this and global settings are respected
+        #[cfg(feature = "dtype-categorical")]
         if use_string_cache {
             toggle_string_cache(use_string_cache);
         }
@@ -606,6 +609,7 @@ impl LazyFrame {
 
         let state = ExecutionState::new();
         let out = physical_plan.execute(&state);
+        #[cfg(feature = "dtype-categorical")]
         if use_string_cache {
             toggle_string_cache(!use_string_cache);
         }

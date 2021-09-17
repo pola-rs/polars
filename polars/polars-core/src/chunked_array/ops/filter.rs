@@ -5,6 +5,7 @@ use crate::utils::align_chunks_binary;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::filter::filter as filter_fn;
+#[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
 macro_rules! check_filter_len {
@@ -92,6 +93,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkFilter<CategoricalType> for CategoricalChunked {
     fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<CategoricalType>>
     where

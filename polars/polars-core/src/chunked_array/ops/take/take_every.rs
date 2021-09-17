@@ -45,6 +45,7 @@ impl ChunkTakeEvery<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkTakeEvery<CategoricalType> for CategoricalChunked {
     fn take_every(&self, n: usize) -> CategoricalChunked {
         let mut ca = if self.null_count() == 0 {

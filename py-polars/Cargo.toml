@@ -73,7 +73,8 @@ features = [
     "diff",
     "moment",
     "arange",
-    "true_div"
+    "true_div",
+    "dtype-categorical"
 ]
 
 #[patch.crates-io]

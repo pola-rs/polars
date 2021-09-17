@@ -66,6 +66,7 @@ impl NumericAggSync for BooleanChunked {
 }
 impl NumericAggSync for Utf8Chunked {}
 impl NumericAggSync for ListChunked {}
+#[cfg(feature = "dtype-categorical")]
 impl NumericAggSync for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> NumericAggSync for ObjectChunked<T> {}
@@ -325,6 +326,7 @@ impl AggFirst for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl AggFirst for CategoricalChunked {
     fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         let out = self
@@ -401,6 +403,7 @@ impl AggLast for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl AggLast for CategoricalChunked {
     fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         self.cast::<UInt32Type>()
@@ -486,6 +489,7 @@ where
 impl AggNUnique for Float32Chunked {}
 impl AggNUnique for Float64Chunked {}
 impl AggNUnique for ListChunked {}
+#[cfg(feature = "dtype-categorical")]
 impl AggNUnique for CategoricalChunked {
     fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
         self.cast::<UInt32Type>()
@@ -654,6 +658,7 @@ where
 impl AggQuantile for Utf8Chunked {}
 impl AggQuantile for BooleanChunked {}
 impl AggQuantile for ListChunked {}
+#[cfg(feature = "dtype-categorical")]
 impl AggQuantile for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> AggQuantile for ObjectChunked<T> {}

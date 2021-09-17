@@ -7,6 +7,7 @@ use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::iter::FromIterator;
+#[cfg(feature = "dtype-categorical")]
 use std::ops::{Deref, DerefMut};
 
 /// Sort with null values, to reverse, swap the arguments.
@@ -381,6 +382,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkSort<CategoricalType> for CategoricalChunked {
     fn sort(&self, reverse: bool) -> Self {
         self.as_ref().sort(reverse).cast().unwrap()

@@ -845,6 +845,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkReverse<CategoricalType> for CategoricalChunked {
     fn reverse(&self) -> ChunkedArray<CategoricalType> {
         self.cast::<UInt32Type>().unwrap().reverse().cast().unwrap()
@@ -928,6 +929,7 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkExpandAtIndex<CategoricalType> for CategoricalChunked {
     fn expand_at_index(&self, index: usize, length: usize) -> CategoricalChunked {
         self.cast::<UInt32Type>()

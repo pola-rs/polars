@@ -100,6 +100,7 @@ impl ChunkShift<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkShift<CategoricalType> for CategoricalChunked {
     fn shift(&self, periods: i64) -> Self {
         self.cast::<UInt32Type>()

@@ -5,6 +5,7 @@ use arrow::array::*;
 use arrow::types::NativeType;
 use polars_arrow::is_valid::IsValid;
 use std::convert::TryFrom;
+#[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -97,6 +98,7 @@ impl TakeRandom for BooleanChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl TakeRandom for CategoricalChunked {
     type Item = u32;
 

@@ -135,6 +135,7 @@ macro_rules! interpolate {
 interpolate!(Utf8Chunked);
 interpolate!(ListChunked);
 interpolate!(BooleanChunked);
+#[cfg(feature = "dtype-categorical")]
 interpolate!(CategoricalChunked);
 
 #[cfg(feature = "object")]

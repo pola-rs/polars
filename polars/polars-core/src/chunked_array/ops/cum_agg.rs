@@ -102,6 +102,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkCumAgg<CategoricalType> for CategoricalChunked {}
 impl ChunkCumAgg<Utf8Type> for Utf8Chunked {}
 impl ChunkCumAgg<ListType> for ListChunked {}

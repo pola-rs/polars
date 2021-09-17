@@ -83,6 +83,7 @@ impl Series {
                 *self = s;
                 self.as_groupable_iter()
             }
+            #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => {
                 let s = self.cast::<UInt32Type>()?;
                 *self = s;
@@ -408,6 +409,7 @@ impl ChunkPivot for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkPivot for CategoricalChunked {
     fn pivot_count<'a>(
         &self,

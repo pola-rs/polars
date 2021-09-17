@@ -55,6 +55,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ToBitRepr for CategoricalChunked {
     fn bit_repr_is_large() -> bool {
         // u32

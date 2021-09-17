@@ -182,6 +182,7 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
+#[cfg(feature = "dtype-categorical")]
 impl ChunkVar<u32> for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkVar<Series> for ObjectChunked<T> {}
@@ -342,6 +343,7 @@ impl VarAggSeries for BooleanChunked {
         Self::full_null(self.name(), 1).into_series()
     }
 }
+#[cfg(feature = "dtype-categorical")]
 impl VarAggSeries for CategoricalChunked {
     fn var_as_series(&self) -> Series {
         self.cast::<UInt32Type>().unwrap().var_as_series()
@@ -439,6 +441,7 @@ impl ChunkAggSeries for Utf8Chunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl ChunkAggSeries for CategoricalChunked {}
 
 macro_rules! one_null_list {
@@ -493,6 +496,7 @@ where
 }
 
 impl ArgAgg for BooleanChunked {}
+#[cfg(feature = "dtype-categorical")]
 impl ArgAgg for CategoricalChunked {}
 impl ArgAgg for Utf8Chunked {}
 impl ArgAgg for ListChunked {}

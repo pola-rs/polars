@@ -1,4 +1,6 @@
+#[cfg(feature = "dtype-categorical")]
 pub mod categorical;
+#[cfg(feature = "dtype-categorical")]
 pub use self::categorical::CategoricalChunkedBuilder;
 use crate::{
     prelude::*,
@@ -607,7 +609,6 @@ pub fn get_list_builder(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{reset_string_cache, toggle_string_cache};
 
     #[test]
     fn test_primitive_builder() {
@@ -658,7 +659,9 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-categorical")]
     fn test_categorical_builder() {
+        use crate::{reset_string_cache, toggle_string_cache};
         let _lock = crate::SINGLE_LOCK.lock();
         for b in &[false, true] {
             reset_string_cache();
