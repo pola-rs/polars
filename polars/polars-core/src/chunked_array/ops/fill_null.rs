@@ -4,6 +4,7 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, Num, NumCast, One, Zero};
 use polars_arrow::kernels::set::set_at_nulls;
+use polars_arrow::utils::CustomIterTools;
 use std::ops::{Add, Div};
 
 fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
@@ -23,8 +24,7 @@ where
 
 macro_rules! impl_fill_forward {
     ($ca:ident) => {{
-        let ca = $ca
-            .into_iter()
+        $ca.into_iter()
             .scan(None, |previous, opt_v| match opt_v {
                 Some(value) => {
                     *previous = Some(value);
@@ -32,8 +32,8 @@ macro_rules! impl_fill_forward {
                 }
                 None => Some(*previous),
             })
-            .collect();
-        Ok(ca)
+            .trust_my_length($ca.len())
+            .collect_trusted()
     }};
 }
 
@@ -52,8 +52,9 @@ where
             }
             None => Some(*previous),
         })
-        .collect();
-    ca.into_iter().rev().collect()
+        .trust_my_length(ca.len())
+        .collect_trusted();
+    ca.into_iter().rev().collect_trusted()
 }
 
 macro_rules! impl_fill_backward {
@@ -68,8 +69,9 @@ macro_rules! impl_fill_backward {
                 }
                 None => Some(*previous),
             })
-            .collect();
-        Ok(ca.into_iter().rev().collect())
+            .trust_my_length($ca.len())
+            .collect_trusted();
+        ca.into_iter().rev().collect_trusted()
     }};
 }
 
@@ -95,7 +97,7 @@ where
         if self.null_count() == 0 {
             return Ok(self.clone());
         }
-        let ca = match strategy {
+        let mut ca = match strategy {
             FillNullStrategy::Forward => fill_forward(self),
             FillNullStrategy::Backward => fill_backward(self),
             FillNullStrategy::Min => {
@@ -120,6 +122,7 @@ where
             FillNullStrategy::MinBound => return self.fill_null_with_values(Bounded::min_value()),
             FillNullStrategy::MaxBound => return self.fill_null_with_values(Bounded::max_value()),
         };
+        ca.rename(self.name());
         Ok(ca)
     }
 }
@@ -141,8 +144,16 @@ impl ChunkFillNull for BooleanChunked {
             return Ok(self.clone());
         }
         match strategy {
-            FillNullStrategy::Forward => impl_fill_forward!(self),
-            FillNullStrategy::Backward => impl_fill_backward!(self, BooleanChunked),
+            FillNullStrategy::Forward => {
+                let mut out: Self = impl_fill_forward!(self);
+                out.rename(self.name());
+                Ok(out)
+            }
+            FillNullStrategy::Backward => {
+                let mut out: Self = impl_fill_backward!(self, BooleanChunked);
+                out.rename(self.name());
+                Ok(out)
+            }
             FillNullStrategy::Min => self.fill_null_with_values(
                 1 == self.min().ok_or_else(|| {
                     PolarsError::ComputeError("Could not determine fill value".into())
@@ -177,8 +188,16 @@ impl ChunkFillNull for Utf8Chunked {
             return Ok(self.clone());
         }
         match strategy {
-            FillNullStrategy::Forward => impl_fill_forward!(self),
-            FillNullStrategy::Backward => impl_fill_backward!(self, Utf8Chunked),
+            FillNullStrategy::Forward => {
+                let mut out: Self = impl_fill_forward!(self);
+                out.rename(self.name());
+                Ok(out)
+            }
+            FillNullStrategy::Backward => {
+                let mut out: Self = impl_fill_backward!(self, Utf8Chunked);
+                out.rename(self.name());
+                Ok(out)
+            }
             strat => Err(PolarsError::InvalidOperation(
                 format!("Strategy {:?} not supported", strat).into(),
             )),
@@ -240,34 +259,41 @@ mod test {
     #[test]
     fn test_fill_null() {
         let ca =
-            Int32Chunked::new_from_opt_slice("", &[None, Some(2), Some(3), None, Some(4), None]);
+            Int32Chunked::new_from_opt_slice("a", &[None, Some(2), Some(3), None, Some(4), None]);
         let filled = ca.fill_null(FillNullStrategy::Forward).unwrap();
+        assert_eq!(filled.name(), "a");
+
         assert_eq!(
             Vec::from(&filled),
             &[None, Some(2), Some(3), Some(3), Some(4), Some(4)]
         );
         let filled = ca.fill_null(FillNullStrategy::Backward).unwrap();
+        assert_eq!(filled.name(), "a");
         assert_eq!(
             Vec::from(&filled),
             &[Some(2), Some(2), Some(3), Some(4), Some(4), None]
         );
         let filled = ca.fill_null(FillNullStrategy::Min).unwrap();
+        assert_eq!(filled.name(), "a");
         assert_eq!(
             Vec::from(&filled),
             &[Some(2), Some(2), Some(3), Some(2), Some(4), Some(2)]
         );
         let filled = ca.fill_null_with_values(10).unwrap();
+        assert_eq!(filled.name(), "a");
         assert_eq!(
             Vec::from(&filled),
             &[Some(10), Some(2), Some(3), Some(10), Some(4), Some(10)]
         );
         let filled = ca.fill_null(FillNullStrategy::Mean).unwrap();
+        assert_eq!(filled.name(), "a");
         assert_eq!(
             Vec::from(&filled),
             &[Some(3), Some(2), Some(3), Some(3), Some(4), Some(3)]
         );
-        let ca = Int32Chunked::new_from_opt_slice("", &[None, None, None, None, Some(4), None]);
+        let ca = Int32Chunked::new_from_opt_slice("a", &[None, None, None, None, Some(4), None]);
         let filled = ca.fill_null(FillNullStrategy::Backward).unwrap();
+        assert_eq!(filled.name(), "a");
         assert_eq!(
             Vec::from(&filled),
             &[Some(4), Some(4), Some(4), Some(4), Some(4), None]
