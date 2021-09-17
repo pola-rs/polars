@@ -214,3 +214,12 @@ def test_to_json():
     assert (
         df.to_json() == '{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]}'
     )
+
+
+def test_ipc_schema():
+    df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
+    f = io.BytesIO()
+    df.to_ipc(f)
+    f.seek(0)
+
+    assert pl.read_ipc_schema(f) == {"a": pl.Int64, "b": pl.Utf8, "c": pl.Boolean}

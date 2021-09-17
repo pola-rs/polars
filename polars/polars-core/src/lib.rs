@@ -6,6 +6,7 @@ pub mod datatypes;
 #[cfg(feature = "docs")]
 pub mod doc;
 pub mod error;
+pub mod export;
 mod fmt;
 pub mod frame;
 pub mod functions;

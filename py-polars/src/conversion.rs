@@ -152,6 +152,30 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     }
 }
 
+impl ToPyObject for Wrap<DataType> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let pl = PyModule::import(py, "polars").unwrap();
+
+        match &self.0 {
+            DataType::Int8 => pl.getattr("Int8").unwrap().into(),
+            DataType::Int16 => pl.getattr("Int16").unwrap().into(),
+            DataType::Int32 => pl.getattr("Int32").unwrap().into(),
+            DataType::Int64 => pl.getattr("Int64").unwrap().into(),
+            DataType::UInt8 => pl.getattr("UInt8").unwrap().into(),
+            DataType::UInt16 => pl.getattr("UInt16").unwrap().into(),
+            DataType::UInt32 => pl.getattr("UInt32").unwrap().into(),
+            DataType::UInt64 => pl.getattr("UInt64").unwrap().into(),
+            DataType::Float32 => pl.getattr("Float32").unwrap().into(),
+            DataType::Float64 => pl.getattr("Float64").unwrap().into(),
+            DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
+            DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
+            DataType::List(_) => pl.getattr("List").unwrap().into(),
+            dt => panic!("{} not supported", dt)
+        }
+
+    }
+}
+
 impl ToPyObject for Wrap<AnyValue<'_>> {
     fn to_object(&self, py: Python) -> PyObject {
         self.clone().into_py(py)
