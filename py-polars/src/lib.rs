@@ -13,6 +13,7 @@ use crate::{
         dsl,
     },
     series::PySeries,
+    file::EitherRustPythonFile
 };
 
 pub mod apply;
@@ -28,9 +29,13 @@ pub mod prelude;
 pub mod series;
 pub mod utils;
 
-use crate::conversion::{get_df, get_pyseq};
+use crate::conversion::{get_df, get_pyseq, Wrap};
+use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use crate::error::PyPolarsEr;
 use mimalloc::MiMalloc;
+use pyo3::types::PyDict;
+use crate::prelude::DataType;
+use crate::file::get_either_file;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -135,6 +140,28 @@ fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     Ok(df.into())
 }
 
+
+
+
+#[pyfunction]
+fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject>{
+    let metadata = match get_either_file(py_f, false)? {
+        EitherRustPythonFile::Rust(mut r) => {
+            read_file_metadata(&mut r).map_err(PyPolarsEr::from)?
+        },
+        EitherRustPythonFile::Py(mut r) => {
+            read_file_metadata(&mut r).map_err(PyPolarsEr::from)?
+        }
+    };
+
+    let dict = PyDict::new(py);
+    for field in metadata.schema().fields() {
+        let dt: Wrap<DataType> = Wrap((&field.data_type).into());
+        dict.set_item(field.name(), dt.to_object(py))?;
+    }
+    Ok(dict.to_object(py))
+}
+
 #[pymodule]
 fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -159,5 +186,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_lst)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
     Ok(())
 }

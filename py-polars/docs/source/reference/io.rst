@@ -20,6 +20,7 @@ Feather/ IPC
    :toctree: api/
 
    read_ipc
+   read_ipc_schema
    DataFrame.to_ipc
 
 Parquet

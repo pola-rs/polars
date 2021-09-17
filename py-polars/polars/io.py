@@ -27,6 +27,11 @@ import polars as pl
 from .convert import from_arrow
 
 try:
+    from polars.polars import ipc_schema as _ipc_schema
+except ImportError:
+    pass
+
+try:
     import connectorx as cx
 
     _WITH_CX = True
@@ -49,6 +54,7 @@ __all__ = [
     "read_ipc",
     "scan_csv",
     "scan_parquet",
+    "read_ipc_schema",
 ]
 
 
@@ -397,6 +403,25 @@ def scan_parquet(
     return pl.LazyFrame.scan_parquet(
         file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
     )
+
+
+def read_ipc_schema(
+    file: Union[str, BinaryIO, Path, bytes]
+) -> Dict[str, Type["pl.DataType"]]:
+    """
+    Get a schema of the IPC file without reading data.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file like object.
+
+
+    Returns
+    -------
+    Dictionary mapping column names to datatypes
+    """
+    return _ipc_schema(file)
 
 
 def read_ipc(
