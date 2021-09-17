@@ -402,6 +402,8 @@ def scan_parquet(
 def read_ipc(
     file: Union[str, BinaryIO, Path, bytes],
     use_pyarrow: bool = True,
+    memory_map: bool = True,
+    columns: Optional[List[str]] = None,
     storage_options: Optional[Dict] = None,
 ) -> "pl.DataFrame":
     """
@@ -414,6 +416,12 @@ def read_ipc(
         If ``fsspec`` is installed, it will be used to open remote files
     use_pyarrow
         Use pyarrow or the native rust reader.
+    memory_map
+        Memory map underlying file. This will likely increase performance.
+        Only used when 'use_pyarrow==True'
+    columns
+        Columns to project/ select.
+        Only valid when 'use_pyarrow==True'
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
 
@@ -424,7 +432,7 @@ def read_ipc(
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
         if use_pyarrow:
-            tbl = pa.feather.read_table(data)
+            tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
             return pl.DataFrame.from_arrow(tbl)
         return pl.DataFrame.read_ipc(data)
 
