@@ -159,6 +159,7 @@ def read_csv(
     comment_char: Optional[str] = None,
     storage_options: Optional[Dict] = None,
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+    parse_dates: bool = True,
 ) -> "pl.DataFrame":
     """
     Read into a DataFrame from a csv file.
@@ -220,6 +221,9 @@ def read_csv(
         - str -> all values encountered equal to this string will be null
         - List[str] -> A null value per column.
         - Dict[str, str] -> A dictionary that maps column name to a null value string.
+    parse_dates
+        Try to automatically parse dates. If this not succeeds, the column remains
+        of data type Utf8.
 
     Returns
     -------
@@ -246,6 +250,7 @@ def read_csv(
         and encoding == "utf8"
         and not low_memory
         and null_values is None
+        and parse_dates
     ):
         include_columns = None
 
@@ -305,6 +310,7 @@ def read_csv(
             low_memory=low_memory,
             comment_char=comment_char,
             null_values=null_values,
+            parse_dates=parse_dates,
         )
 
     if new_columns:

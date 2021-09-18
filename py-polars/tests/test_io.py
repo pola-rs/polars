@@ -114,6 +114,20 @@ a,n/a,c"""
     assert df[1, "b"] is None
 
 
+def test_datetime_parsing():
+    csv = """
+timestamp,open,high
+2021-01-01 00:00:00,0.00305500,0.00306000
+2021-01-01 00:15:00,0.00298800,0.00300400
+2021-01-01 00:30:00,0.00298300,0.00300100
+2021-01-01 00:45:00,0.00299400,0.00304000
+"""
+
+    f = io.StringIO(csv)
+    df = pl.read_csv(f)
+    assert df.dtypes == [pl.Date64, pl.Float64, pl.Float64]
+
+
 def test_partial_dtype_overwrite():
     csv = """
 a,b,c
