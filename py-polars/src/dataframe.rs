@@ -98,7 +98,7 @@ impl PyDataFrame {
         low_memory: bool,
         comment_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
-        parse_dates: bool
+        parse_dates: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);

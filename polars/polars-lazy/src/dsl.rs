@@ -1483,6 +1483,52 @@ impl Expr {
         )
     }
 
+    /// Apply a rolling variance
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_var(self, window_size: usize) -> Expr {
+        self.apply(
+            move |s| match s.dtype() {
+                DataType::Float32 => Ok(s.f32().unwrap().rolling_var(window_size).into_series()),
+                DataType::Float64 => Ok(s.f64().unwrap().rolling_var(window_size).into_series()),
+                _ => Ok(s
+                    .cast_with_dtype(&DataType::Float64)?
+                    .f64()
+                    .unwrap()
+                    .rolling_var(window_size)
+                    .into_series()),
+            },
+            GetOutput::map_field(|field| match field.data_type() {
+                DataType::Float64 => field.clone(),
+                DataType::Float32 => Field::new(field.name(), DataType::Float32),
+                _ => Field::new(field.name(), DataType::Float64),
+            }),
+        )
+    }
+
+    /// Apply a rolling std-dev
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_std(self, window_size: usize) -> Expr {
+        self.apply(
+            move |s| match s.dtype() {
+                DataType::Float32 => Ok(s.f32().unwrap().rolling_std(window_size).into_series()),
+                DataType::Float64 => Ok(s.f64().unwrap().rolling_std(window_size).into_series()),
+                _ => Ok(s
+                    .cast_with_dtype(&DataType::Float64)?
+                    .f64()
+                    .unwrap()
+                    .rolling_std(window_size)
+                    .into_series()),
+            },
+            GetOutput::map_field(|field| match field.data_type() {
+                DataType::Float64 => field.clone(),
+                DataType::Float32 => Field::new(field.name(), DataType::Float32),
+                _ => Field::new(field.name(), DataType::Float64),
+            }),
+        )
+    }
+
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.

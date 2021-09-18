@@ -764,63 +764,38 @@ impl PyExpr {
             .into()
     }
 
-    pub fn rolling_std(
-        &self,
-        window_size: usize,
-    ) -> Self {
+    pub fn rolling_std(&self, window_size: usize) -> Self {
+        self.inner.clone().rolling_std(window_size).into()
+    }
+
+    pub fn rolling_var(&self, window_size: usize) -> Self {
+        self.inner.clone().rolling_var(window_size).into()
+    }
+
+    pub fn rolling_median(&self, window_size: usize) -> Self {
         self.inner
             .clone()
-            .rolling_apply_float(window_size, |ca| ca.std()
-            )
+            .rolling_apply_float(window_size, |ca| ChunkAgg::median(ca))
             .into()
     }
 
-    pub fn rolling_var(
-        &self,
-        window_size: usize,
-    ) -> Self {
+    pub fn rolling_quantile(&self, window_size: usize, quantile: f64) -> Self {
         self.inner
             .clone()
-            .rolling_apply_float(window_size, |ca| ca.var()
-            )
+            .rolling_apply_float(window_size, move |ca| {
+                ChunkAgg::quantile(ca, quantile).unwrap()
+            })
             .into()
     }
 
-    pub fn rolling_median(
-        &self,
-        window_size: usize,
-    ) -> Self {
+    pub fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
         self.inner
             .clone()
-            .rolling_apply_float(window_size, |ca| ChunkAgg::median(ca)
-            )
+            .rolling_apply_float(window_size, move |ca| {
+                ca.clone().into_series().skew(bias).unwrap()
+            })
             .into()
     }
-
-    pub fn rolling_quantile(
-        &self,
-        window_size: usize,
-        quantile: f64
-    ) -> Self {
-        self.inner
-            .clone()
-            .rolling_apply_float(window_size, move |ca| ChunkAgg::quantile(ca, quantile).unwrap()
-            )
-            .into()
-    }
-
-    pub fn rolling_skew(
-        &self,
-        window_size: usize,
-        bias: bool
-    ) -> Self {
-        self.inner
-            .clone()
-            .rolling_apply_float(window_size, move |ca| ca.clone().into_series().skew(bias).unwrap()
-            )
-            .into()
-    }
-
 
     fn lst_max(&self) -> Self {
         self.inner

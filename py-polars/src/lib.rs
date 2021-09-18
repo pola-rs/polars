@@ -8,12 +8,12 @@ use pyo3::wrap_pyfunction;
 use crate::lazy::dsl::PyExpr;
 use crate::{
     dataframe::PyDataFrame,
+    file::EitherRustPythonFile,
     lazy::{
         dataframe::{PyLazyFrame, PyLazyGroupBy},
         dsl,
     },
     series::PySeries,
-    file::EitherRustPythonFile
 };
 
 pub mod apply;
@@ -30,12 +30,12 @@ pub mod series;
 pub mod utils;
 
 use crate::conversion::{get_df, get_pyseq, Wrap};
-use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use crate::error::PyPolarsEr;
-use mimalloc::MiMalloc;
-use pyo3::types::PyDict;
-use crate::prelude::DataType;
 use crate::file::get_either_file;
+use crate::prelude::DataType;
+use mimalloc::MiMalloc;
+use polars_core::export::arrow::io::ipc::read::read_file_metadata;
+use pyo3::types::PyDict;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -140,18 +140,13 @@ fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     Ok(df.into())
 }
 
-
-
-
 #[pyfunction]
-fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject>{
+fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(mut r) => {
             read_file_metadata(&mut r).map_err(PyPolarsEr::from)?
-        },
-        EitherRustPythonFile::Py(mut r) => {
-            read_file_metadata(&mut r).map_err(PyPolarsEr::from)?
         }
+        EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsEr::from)?,
     };
 
     let dict = PyDict::new(py);
