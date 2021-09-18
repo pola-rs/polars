@@ -170,9 +170,8 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::List(_) => pl.getattr("List").unwrap().into(),
-            dt => panic!("{} not supported", dt)
+            dt => panic!("{} not supported", dt),
         }
-
     }
 }
 
@@ -192,8 +191,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Utf8(v).into())
         } else if let Ok(v) = ob.extract::<bool>() {
             Ok(AnyValue::Boolean(v).into())
-        }
-        else if ob.get_type().name()?.contains("datetime") {
+        } else if ob.get_type().name()?.contains("datetime") {
             let gil = Python::acquire_gil();
             let py = gil.python();
 
@@ -205,10 +203,10 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 let dt = ob.call_method("replace", (), Some(kwargs))?;
 
                 let pytz = PyModule::import(py, "pytz")?;
-                let tz = pytz.call_method("timezone", ("UTC", ), None)?;
+                let tz = pytz.call_method("timezone", ("UTC",), None)?;
                 let kwargs = PyDict::new(py);
                 kwargs.set_item("is_dst", py.None())?;
-                let loc_tz = tz.call_method("localize", (dt, ), Some(kwargs))?;
+                let loc_tz = tz.call_method("localize", (dt,), Some(kwargs))?;
                 loc_tz.call_method0("timestamp")?;
                 // s to ms
                 let v = ts.extract::<f64>()? as i64;

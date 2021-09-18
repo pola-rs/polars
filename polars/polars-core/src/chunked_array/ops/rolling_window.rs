@@ -1,7 +1,8 @@
 use crate::prelude::*;
 use arrow::array::{Array, PrimitiveArray};
+use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::MutableBitmap;
-use num::{Bounded, NumCast, One, Zero};
+use num::{Bounded, Float, NumCast, One, Zero};
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
@@ -447,10 +448,26 @@ where
     }
 }
 
+fn variance<T>(vals: &[T]) -> T
+where
+    T: Float + std::iter::Sum,
+{
+    let len = T::from(vals.len()).unwrap();
+    let mean = vals.iter().copied().sum::<T>() / len;
+
+    let mut sum = T::zero();
+    for &val in vals {
+        let v = val - mean;
+        sum = sum + v * v
+    }
+    sum / (len - T::one())
+}
+
 impl<T> ChunkedArray<T>
 where
+    ChunkedArray<T>: IntoSeries,
     T: PolarsFloatType,
-    T::Native: Default,
+    T::Native: Default + std::iter::Sum + Float,
 {
     pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>
     where
@@ -466,7 +483,7 @@ where
 
         let mut validity = MutableBitmap::with_capacity(ca.len());
         validity.extend_constant(window_size - 1, false);
-        validity.extend_constant(ca.len() - window_size - 1, true);
+        validity.extend_constant(ca.len() - (window_size - 1), true);
         let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
 
         let mut values = AlignedVec::with_capacity(ca.len());
@@ -495,6 +512,80 @@ where
             Some(validity.into()),
         );
         Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]))
+    }
+
+    pub fn rolling_var(&self, window_size: usize) -> Self {
+        let ca = self.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+        let values = arr.values().as_slice();
+
+        let mut validity = MutableBitmap::with_capacity(ca.len());
+        validity.extend_constant(window_size - 1, false);
+        validity.extend_constant(ca.len() - (window_size - 1), true);
+        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+
+        let mut rolling_values = AlignedVec::with_capacity(ca.len());
+        rolling_values.extend_constant(window_size - 1, Default::default());
+
+        if ca.null_count() == 0 {
+            for offset in 0..self.len() + 1 - window_size {
+                let window = &values[offset..offset + window_size];
+                let val = variance(window);
+
+                unsafe {
+                    // Safety:
+                    // We pre-allocated enough capacity
+                    rolling_values.push_unchecked(val);
+                };
+            }
+        } else {
+            let old_validity = arr.validity().as_ref().unwrap().clone();
+            let (bytes, bytes_offset, _) = old_validity.as_slice();
+            for offset in 0..self.len() + 1 - window_size {
+                if count_zeros(bytes, bytes_offset + offset, window_size) > 0 {
+                    unsafe {
+                        // Safety:
+                        // We pre-allocated enough capacity
+                        rolling_values.push_unchecked(Default::default());
+                        // Safety:
+                        // We are in bounds
+                        unset_bit_raw(validity_ptr, offset + window_size - 1)
+                    };
+                } else {
+                    let window = &values[offset..offset + window_size];
+                    let val = variance(window);
+                    // Safety:
+                    // We pre-allocated enough capacity
+                    unsafe { rolling_values.push_unchecked(val) };
+                }
+            }
+        }
+
+        let arr = PrimitiveArray::from_data(
+            T::get_dtype().to_arrow(),
+            rolling_values.into(),
+            Some(validity.into()),
+        );
+        Self::new_from_chunks(self.name(), vec![Arc::new(arr)])
+    }
+
+    pub fn rolling_std(&self, window_size: usize) -> Self {
+        let s = self.rolling_var(window_size).into_series();
+        // Safety:
+        // We are still guarded by the type system.
+        match self.dtype() {
+            DataType::Float32 => unsafe {
+                std::mem::transmute::<Float32Chunked, ChunkedArray<T>>(
+                    s.f32().unwrap().pow_f32(0.5),
+                )
+            },
+            DataType::Float64 => unsafe {
+                std::mem::transmute::<Float64Chunked, ChunkedArray<T>>(
+                    s.f64().unwrap().pow_f64(0.5),
+                )
+            },
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -613,5 +704,35 @@ mod test {
                 Some(11.0)
             ]
         );
+    }
+
+    #[test]
+    fn test_rolling_var() {
+        let ca = Float64Chunked::new_from_opt_slice(
+            "foo",
+            &[
+                Some(0.0),
+                Some(1.0),
+                Some(2.0),
+                None,
+                None,
+                Some(5.0),
+                Some(6.0),
+            ],
+        );
+        let out = ca.rolling_var(3).cast::<Int32Type>().unwrap();
+        assert_eq!(
+            Vec::from(&out),
+            &[None, None, Some(1), None, None, None, None,]
+        );
+
+        let ca = Float64Chunked::new_from_slice("", &[0.0, 2.0, 8.0, 3.0, 12.0, 1.0]);
+        let out = ca.rolling_var(3).cast::<Int32Type>().unwrap();
+
+        assert_eq!(
+            Vec::from(&out),
+            &[None, None, Some(17), Some(10), Some(20), Some(34),]
+        );
+        dbg!(out);
     }
 }
