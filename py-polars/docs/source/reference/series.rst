@@ -97,6 +97,11 @@ Computations
     Series.rolling_mean
     Series.rolling_sum
     Series.rolling_apply
+    Series.rolling_std
+    Series.rolling_var
+    Series.rolling_median
+    Series.rolling_quantile
+    Series.rolling_skew
     Series.hash
     Series.peak_max
     Series.peak_min

@@ -1402,6 +1402,62 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rolling_apply(window_size, function))
 
+    def rolling_std(self, window_size: int) -> "Expr":
+        """
+        Compute a rolling std dev
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        """
+        return wrap_expr(self._pyexpr.rolling_std(window_size))
+
+    def rolling_var(self, window_size: int) -> "Expr":
+        """
+        Compute a rolling variance
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        """
+        return wrap_expr(self._pyexpr.rolling_var(window_size))
+
+    def rolling_median(self, window_size: int) -> "Expr":
+        """
+        Compute a rolling median
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        """
+        return wrap_expr(self._pyexpr.rolling_median(window_size))
+
+    def rolling_quantile(self, window_size: int, quantile: float) -> "Expr":
+        """
+        Compute a rolling quantile
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        quantile
+            quantile to compute
+        """
+        return wrap_expr(self._pyexpr.rolling_quantile(window_size, quantile))
+
+    def rolling_skew(self, window_size: int, bias: bool = True) -> "Expr":
+        """
+        Compute a rolling skew
+        window_size
+            Size of the rolling window
+        bias
+            If False, then the calculations are corrected for statistical bias.
+        """
+        return wrap_expr(self._pyexpr.rolling_skew(window_size, bias))
+
     def abs(self) -> "Expr":
         """
         Take absolute values
