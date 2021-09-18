@@ -126,6 +126,7 @@ where
 ///
 pub struct ParquetWriter<W> {
     writer: W,
+    compression: write::Compression,
 }
 
 impl<W> ParquetWriter<W>
@@ -137,7 +138,16 @@ where
     where
         W: Write + Seek,
     {
-        ParquetWriter { writer }
+        ParquetWriter {
+            writer,
+            compression: write::Compression::Snappy,
+        }
+    }
+
+    /// Set the compression used. Defaults to `Snappy`.
+    pub fn with_compression(mut self, compression: write::Compression) -> Self {
+        self.compression = compression;
+        self
     }
 
     /// Write the given DataFrame in the the writer `W`.
@@ -190,7 +200,7 @@ where
 
         let options = write::WriteOptions {
             write_statistics: false,
-            compression: write::Compression::Uncompressed,
+            compression: self.compression,
             version: write::Version::V2,
         };
         let schema = ArrowSchema::new(fields);
