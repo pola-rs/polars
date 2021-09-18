@@ -1,6 +1,9 @@
 use crate::prelude::*;
 use arrow::array::{Array, PrimitiveArray};
+use arrow::bitmap::MutableBitmap;
 use num::{Bounded, NumCast, One, Zero};
+use polars_arrow::bit_util::unset_bit_raw;
+use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
@@ -447,6 +450,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsFloatType,
+    T::Native: Default,
 {
     pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>
     where
@@ -460,10 +464,13 @@ where
         let array_ptr = &arr_container.chunks()[0];
         let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
 
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
-        for _ in 0..window_size - 1 {
-            builder.append_null();
-        }
+        let mut validity = MutableBitmap::with_capacity(ca.len());
+        validity.extend_constant(window_size - 1, false);
+        validity.extend_constant(ca.len() - window_size - 1, true);
+        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+
+        let mut values = AlignedVec::with_capacity(ca.len());
+        values.extend_constant(window_size - 1, Default::default());
 
         for offset in 0..self.len() + 1 - window_size {
             let arr_window = arr.slice(offset, window_size);
@@ -477,10 +484,17 @@ where
             }
 
             let out = f(&arr_container);
-            builder.append_option(out);
+            match out {
+                Some(v) => unsafe { values.push_unchecked(v) },
+                None => unsafe { unset_bit_raw(validity_ptr, offset + window_size - 1) },
+            }
         }
-
-        Ok(builder.finish())
+        let arr = PrimitiveArray::from_data(
+            T::get_dtype().to_arrow(),
+            values.into(),
+            Some(validity.into()),
+        );
+        Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]))
     }
 }
 
