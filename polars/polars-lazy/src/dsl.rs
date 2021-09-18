@@ -1491,10 +1491,49 @@ impl Expr {
         self,
         window_size: usize,
         f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
+        output_type: GetOutput,
     ) -> Expr {
         self.apply(
             move |s| s.rolling_apply(window_size, f.as_ref()),
-            GetOutput::same_type(),
+            output_type,
+        )
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    /// Apply a custom function over a rolling/ moving window of the array.
+    /// Prefer this over rolling_apply in case of floating point numbers as this is faster.
+    /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
+    pub fn rolling_apply_float<F>(self, window_size: usize, f: F) -> Expr
+    where
+        F: 'static + Fn(&Float64Chunked) -> Option<f64> + Send + Sync + Copy,
+    {
+        self.apply(
+            move |s| {
+                let out = match s.dtype() {
+                    DataType::Float64 => s
+                        .f64()
+                        .unwrap()
+                        .rolling_apply_float(window_size, f)
+                        .map(|ca| ca.into_series()),
+                    _ => s
+                        .cast::<Float64Type>()?
+                        .f64()
+                        .unwrap()
+                        .rolling_apply_float(window_size, f)
+                        .map(|ca| ca.into_series()),
+                }?;
+                if let DataType::Float32 = s.dtype() {
+                    out.cast_with_dtype(&DataType::Float32)
+                } else {
+                    Ok(out)
+                }
+            },
+            GetOutput::map_field(|field| match field.data_type() {
+                DataType::Float64 => field.clone(),
+                DataType::Float32 => Field::new(field.name(), DataType::Float32),
+                _ => Field::new(field.name(), DataType::Float64),
+            }),
         )
     }
 

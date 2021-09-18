@@ -119,6 +119,11 @@ Computations
     Expr.rolling_mean
     Expr.rolling_sum
     Expr.rolling_apply
+    Expr.rolling_std
+    Expr.rolling_var
+    Expr.rolling_median
+    Expr.rolling_quantile
+    Expr.rolling_skew
     Expr.hash
     Expr.abs
     Expr.rank

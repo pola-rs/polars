@@ -281,6 +281,11 @@ def test_rolling():
     assert a.rolling_min(2).to_list() == [None, 1, 2, 2, 1]
     assert a.rolling_max(2).to_list() == [None, 2, 3, 3, 2]
     assert a.rolling_sum(2).to_list() == [None, 3, 5, 5, 3]
+    assert np.isclose(a.rolling_std(2).to_list()[1], 0.7071067811865476)
+    assert np.isclose(a.rolling_var(2).to_list()[1], 0.5)
+    assert a.rolling_median(4).to_list() == [None, None, None, 2, 2]
+    assert a.rolling_quantile(3, 0.5).to_list() == [None, None, 2, 2, 2]
+    assert a.rolling_skew(4).null_count() == 3
 
 
 def test_object():

@@ -2468,6 +2468,72 @@ class Series:
             pl.col(self.name).rolling_apply(window_size, function)  # type: ignore
         )[self.name]
 
+    def rolling_std(self, window_size: int) -> "Series":
+        """
+        Compute a rolling std dev
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_std(window_size)  # type: ignore
+        )[self.name]
+
+    def rolling_var(self, window_size: int) -> "Series":
+        """
+        Compute a rolling variance
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_var(window_size)  # type: ignore
+        )[self.name]
+
+    def rolling_median(self, window_size: int) -> "Series":
+        """
+        Compute a rolling median
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_median(window_size)  # type: ignore
+        )[self.name]
+
+    def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
+        """
+        Compute a rolling quantile
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        quantile
+            quantile to compute
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_quantile(window_size, quantile)  # type: ignore
+        )[self.name]
+
+    def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
+        """
+        Compute a rolling skew
+        window_size
+            Size of the rolling window
+        bias
+            If False, then the calculations are corrected for statistical bias.
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_skew(window_size, bias)  # type: ignore
+        )[self.name]
+
     def abs(self) -> "Series":
         """
         Take absolute values

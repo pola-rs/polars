@@ -444,6 +444,46 @@ where
     }
 }
 
+impl<T> ChunkedArray<T>
+where
+    T: PolarsFloatType,
+{
+    pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>
+    where
+        F: Fn(&ChunkedArray<T>) -> Option<T::Native>,
+        T::Native: Zero,
+    {
+        let ca = self.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+
+        let arr_container = ChunkedArray::<T>::new_from_slice("", &[T::Native::zero()]);
+        let array_ptr = &arr_container.chunks()[0];
+        let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
+
+        let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
+        for _ in 0..window_size - 1 {
+            builder.append_null();
+        }
+
+        for offset in 0..self.len() + 1 - window_size {
+            let arr_window = arr.slice(offset, window_size);
+
+            // Safety.
+            // ptr is not dropped as we are in scope
+            // We are also the only owner of the contents of the Arc
+            // we do this to reduce heap allocs.
+            unsafe {
+                *ptr = arr_window;
+            }
+
+            let out = f(&arr_container);
+            builder.append_option(out);
+        }
+
+        Ok(builder.finish())
+    }
+}
+
 impl ChunkRollApply for ListChunked {}
 impl ChunkRollApply for Utf8Chunked {}
 impl ChunkRollApply for BooleanChunked {}
