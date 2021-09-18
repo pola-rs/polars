@@ -214,6 +214,8 @@ where
     null_values: Option<NullValues>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
+    #[cfg(feature = "temporal")]
+    parse_dates: bool,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -359,6 +361,13 @@ where
         self
     }
 
+    /// Automatically try to parse dates/ datetimes. If parsing failes, columns remain of dtype Utf8.
+    #[cfg(feature = "temporal")]
+    pub fn with_parse_dates(mut self, toggle: bool) -> Self {
+        self.parse_dates = toggle;
+        self
+    }
+
     #[cfg(feature = "private")]
     pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
         self.predicate = predicate;
@@ -410,6 +419,8 @@ where
             null_values: None,
             predicate: None,
             aggregate: None,
+            #[cfg(feature = "temporal")]
+            parse_dates: false,
         }
     }
 
@@ -510,8 +521,30 @@ where
         if rechunk && df.n_chunks()? > 1 {
             df.as_single_chunk();
         }
+        #[cfg(feature = "temporal")]
+        if self.parse_dates {
+            df = parse_dates(df)
+        }
         Ok(df)
     }
+}
+
+#[cfg(feature = "temporal")]
+fn parse_dates(df: DataFrame) -> DataFrame {
+    let mut cols: Vec<Series> = df.into();
+
+    for s in cols.iter_mut() {
+        if let Ok(ca) = s.utf8() {
+            // the order is important. A datetime can always be parsed as date.
+            if let Ok(ca) = ca.as_date64(None) {
+                *s = ca.into_series()
+            } else if let Ok(ca) = ca.as_date32(None) {
+                *s = ca.into_series()
+            }
+        }
+    }
+
+    DataFrame::new_no_checks(cols)
 }
 
 #[cfg(test)]
@@ -1041,6 +1074,25 @@ bar,bar";
             "b" => ["foo", "bar"]
         ]?;
         assert!(df.frame_equal(&expect));
+        Ok(())
+    }
+
+    #[test]
+    fn test_automatic_datetime_parsing() -> Result<()> {
+        let csv = r"timestamp,open,high
+2021-01-01 00:00:00,0.00305500,0.00306000
+2021-01-01 00:15:00,0.00298800,0.00300400
+2021-01-01 00:30:00,0.00298300,0.00300100
+2021-01-01 00:45:00,0.00299400,0.00304000
+";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).with_parse_dates(true).finish()?;
+
+        let ts = df.column("timestamp")?;
+        assert_eq!(ts.dtype(), &DataType::Date64);
+        assert_eq!(ts.null_count(), 0);
+
         Ok(())
     }
 }

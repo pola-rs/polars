@@ -1812,6 +1812,12 @@ impl Default for DataFrame {
     }
 }
 
+impl From<DataFrame> for Vec<Series> {
+    fn from(df: DataFrame) -> Self {
+        df.columns
+    }
+}
+
 /// Conversion from Vec<RecordBatch> into DataFrame
 ///
 ///

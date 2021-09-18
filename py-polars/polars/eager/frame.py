@@ -454,6 +454,7 @@ class DataFrame:
         low_memory: bool = False,
         comment_char: Optional[str] = None,
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
+        parse_dates: bool = True,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -558,6 +559,7 @@ class DataFrame:
             low_memory,
             comment_char,
             processed_null_values,
+            parse_dates,
         )
         return self
 

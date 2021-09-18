@@ -13,7 +13,7 @@ rows = ["polars-core/rows"]
 simd = ["polars-core/simd"]
 avx512 = ["polars-core/avx512"]
 docs = ["polars-core/docs"]
-temporal = ["polars-core/temporal", "polars-lazy/temporal"]
+temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal"]
 random = ["polars-core/random"]
 default = ["docs",
     "zip_with",
