@@ -21,7 +21,10 @@ from .datatypes import *
 from .eager import *
 from .functions import *
 from .io import *
+
+# explicit imports make mypy happy
 from .lazy import *
+from .lazy import col, lit
 from .lazy import to_list as list
 from .string_cache import *
 

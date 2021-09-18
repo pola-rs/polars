@@ -242,6 +242,8 @@ def test_fill_null():
     a = pl.Series("a", [1, 2, None], nullable=True)
     b = a.fill_null("forward")
     assert b == [1, 2, 2]
+    b = a.fill_null(14)
+    assert b.to_list() == [1, 2, 14]
 
 
 def test_apply():
@@ -253,7 +255,7 @@ def test_apply():
     b = a.apply(lambda x: x + "py")
     assert b == ["foopy", "barpy", None]
 
-    b = a.apply(lambda x: len(x), return_dtype=Int32)
+    b = a.apply(lambda x: len(x), return_dtype=pl.Int32)
     assert b == [3, 3, None]
 
     b = a.apply(lambda x: len(x))
@@ -268,22 +270,23 @@ def test_apply():
 
 def test_shift():
     a = pl.Series("a", [1, 2, 3])
-    assert a.shift(1) == [None, 1, 2]
-    assert a.shift(-1) == [1, 2, None]
-    assert a.shift(-2) == [1, None, None]
+    assert a.shift(1).to_list() == [None, 1, 2]
+    assert a.shift(-1).to_list() == [2, 3, None]
+    assert a.shift(-2).to_list() == [3, None, None]
+    assert a.shift_and_fill(-1, 10).to_list() == [2, 3, 10]
 
 
 def test_rolling():
     a = pl.Series("a", [1, 2, 3, 2, 1])
-    assert a.rolling_min(2) == [None, 1, 2, 2, 1]
-    assert a.rolling_max(2) == [None, 2, 3, 3, 2]
-    assert a.rolling_sum(2) == [None, 3, 5, 5, 3]
+    assert a.rolling_min(2).to_list() == [None, 1, 2, 2, 1]
+    assert a.rolling_max(2).to_list() == [None, 2, 3, 3, 2]
+    assert a.rolling_sum(2).to_list() == [None, 3, 5, 5, 3]
 
 
 def test_object():
     vals = [[12], "foo", 9]
     a = pl.Series("a", vals)
-    assert a.dtype == Object
+    assert a.dtype == pl.Object
     assert a.to_list() == vals
     assert a[1] == "foo"
 

@@ -1,7 +1,7 @@
 //! Domain specific language for the Lazy api.
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{has_expr, has_wildcard};
+use crate::utils::{expr_to_root_column_name, has_expr, has_wildcard};
 use polars_core::prelude::*;
 
 #[cfg(feature = "temporal")]
@@ -1196,17 +1196,19 @@ impl Expr {
     #[cfg(feature = "is_in")]
     #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
     pub fn is_in(self, other: Expr) -> Self {
+        let name = expr_to_root_column_name(&self).unwrap();
+        let output_field = Some(Field::new(&name, DataType::Boolean));
         map_binary(
             self,
             other,
-            |left, other| {
+            move |left, other| {
                 left.is_in(&other).map(|ca| {
                     let mut s = ca.into_series();
-                    s.rename(left.name());
+                    s.rename(&name);
                     s
                 })
             },
-            Some(Field::new("", DataType::Boolean)),
+            output_field,
         )
     }
 
