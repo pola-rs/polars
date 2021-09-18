@@ -131,6 +131,7 @@ Manipulation/ selection
     Series.set
     Series.clone
     Series.shift
+    Series.shift_and_fill
     Series.drop_nulls
     Series.rechunk
     Series.cast

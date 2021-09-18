@@ -1106,7 +1106,10 @@ class Expr:
         -------
         Expr that evaluates to a Boolean Series.
         """
-        other = expr_to_lit_or_expr(other, str_to_lit=False)
+        if isinstance(other, list):
+            other = pl.lit(pl.Series(other))
+        else:
+            other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
     def repeat_by(self, by: "Expr") -> "Expr":

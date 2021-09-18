@@ -562,3 +562,12 @@ def test_expr_bool_cmp():
 
     with pytest.raises(ValueError):
         df[[pl.col("a").gt(pl.col("b")) or pl.col("b").gt(pl.col("b"))]]
+
+
+def test_is_in():
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
+        True,
+        True,
+        False,
+    ]

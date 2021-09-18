@@ -1840,7 +1840,7 @@ class Series:
     def __deepcopy__(self, memodict={}) -> "Series":  # type: ignore
         return self.clone()
 
-    def fill_null(self, strategy: str) -> "Series":
+    def fill_null(self, strategy: Union[str, "pl.Expr"]) -> "Series":
         """
         Fill null values with a filling strategy.
 
@@ -1869,6 +1869,8 @@ class Series:
         Parameters
         ----------
         strategy
+
+        Fill null strategy or a value
                * "backward"
                * "forward"
                * "min"
@@ -1877,6 +1879,10 @@ class Series:
                * "one"
                * "zero"
         """
+        if not isinstance(strategy, str):
+            return self.to_frame().select(pl.col(self.name).fill_null(strategy))[
+                self.name
+            ]
         return wrap_s(self._s.fill_null(strategy))
 
     def round(self, decimals: int) -> "Series":
@@ -2012,6 +2018,22 @@ class Series:
             Number of places to shift (may be negative).
         """
         return wrap_s(self._s.shift(periods))
+
+    def shift_and_fill(self, periods: int, fill_value: "pl.Expr") -> "Series":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with the result of the `fill_value` expression.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        fill_value
+            Fill None values with the result of this expression.
+        """
+        return self.to_frame().select(
+            pl.col(self.name).shift_and_fill(periods, fill_value)
+        )[self.name]
 
     def zip_with(self, mask: "Series", other: "Series") -> "Series":
         """
