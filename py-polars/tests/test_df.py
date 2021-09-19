@@ -372,6 +372,13 @@ def test_head_tail():
     assert df.tail(100).height == 10
 
 
+def test_explode():
+    df = pl.DataFrame({"letters": ["c", "a"], "nrs": [[1, 2], [1, 3]]})
+    out = df.explode("nrs")
+    out["letters"].to_list() == ["c", "c", "a", "a"]
+    out["nrs"].to_list() == [1, 2, 1, 3]
+
+
 def test_groupby():
     df = pl.DataFrame(
         {
