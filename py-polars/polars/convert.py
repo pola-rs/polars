@@ -213,7 +213,7 @@ def from_arrow(
 def from_pandas(
     df: Union["pd.DataFrame", "pd.Series", "pd.DatetimeIndex"],
     rechunk: bool = True,
-    from_pandas: bool = False,
+    nan_to_none: bool = True,
 ) -> Union["pl.Series", "pl.DataFrame"]:
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
@@ -229,9 +229,8 @@ def from_pandas(
         labels already present in the data. Must match data dimensions.
     rechunk : bool, default True
         Make sure that all data is contiguous.
-    from_pandas : bool, default False
-        If data contains NaN values PyArrow will convert the NaN to None if
-        the flag is set to True
+    nan_to_none : bool, default True
+        If data contains NaN values PyArrow will convert the NaN to None
 
     Returns
     -------
@@ -274,9 +273,9 @@ def from_pandas(
         raise ImportError("from_pandas requires pandas to be installed.") from e
 
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
-        return pl.Series._from_pandas("", df, from_pandas=from_pandas)
+        return pl.Series._from_pandas("", df, nan_to_none=nan_to_none)
     elif isinstance(df, pd.DataFrame):
-        return pl.DataFrame._from_pandas(df, rechunk=rechunk, from_pandas=from_pandas)
+        return pl.DataFrame._from_pandas(df, rechunk=rechunk, nan_to_none=nan_to_none)
     else:
         raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")
 

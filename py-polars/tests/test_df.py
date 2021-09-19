@@ -611,7 +611,7 @@ def test_from_pandas():
     assert out.shape == (3, 9)
 
 
-def test_from_pandas_flag():
+def test_from_pandas_nan_to_none():
     from pyarrow import ArrowInvalid
 
     df = pd.DataFrame(
@@ -623,13 +623,13 @@ def test_from_pandas_flag():
             "nulls": [None, np.nan, np.nan],
         }
     )
-    out_true = pl.from_pandas(df, from_pandas=True)
-    out_false = pl.from_pandas(df)
+    out_true = pl.from_pandas(df)
+    out_false = pl.from_pandas(df, nan_to_none=False)
     df.loc[2, "nulls"] = pd.NA
     assert [val is None for val in out_true["nulls"]]
     assert [np.isnan(val) for val in out_false["nulls"][1:]]
     with pytest.raises(ArrowInvalid, match="Could not convert"):
-        pl.from_pandas(df)
+        pl.from_pandas(df, nan_to_none=False)
 
 
 def test_custom_groupby():

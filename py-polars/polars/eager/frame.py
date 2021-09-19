@@ -342,7 +342,7 @@ class DataFrame:
         data: "pd.DataFrame",
         columns: Optional[Sequence[str]] = None,
         rechunk: bool = True,
-        from_pandas: bool = False,
+        nan_to_none: bool = True,
     ) -> "DataFrame":
         """
         Construct a Polars DataFrame from a pandas DataFrame.
@@ -366,7 +366,7 @@ class DataFrame:
         """
         return cls._from_pydf(
             pandas_to_pydf(
-                data, columns=columns, rechunk=rechunk, from_pandas=from_pandas
+                data, columns=columns, rechunk=rechunk, nan_to_none=nan_to_none
             )
         )
 

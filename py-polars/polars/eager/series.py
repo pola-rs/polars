@@ -242,13 +242,13 @@ class Series:
         cls,
         name: str,
         values: Union["pd.Series", "pd.DatetimeIndex"],
-        from_pandas: bool = False,
+        nan_to_none: bool = True,
     ) -> "Series":
         """
         Construct a Series from a pandas Series or DatetimeIndex.
         """
         return cls._from_pyseries(
-            pandas_to_pyseries(name, values, from_pandas=from_pandas)
+            pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
         )
 
     def inner(self) -> "PySeries":
