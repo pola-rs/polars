@@ -72,7 +72,7 @@ impl DataFrame {
     ///  +-----+-----+-----+
     /// ```
     pub fn explode<'a, J, S: Selection<'a, J>>(&self, columns: S) -> Result<DataFrame> {
-        // We need to sort the column by order of original occurence. Otherwise the insert by index
+        // We need to sort the column by order of original occurrence. Otherwise the insert by index
         // below will panic
         let mut columns = self.select_series(columns)?;
         columns.sort_by(|sa, sb| {

@@ -240,9 +240,10 @@ impl ChunkExplode for ListChunked {
                 }
             }
 
-            let values = Series::try_from(("", values)).unwrap();
+            let values = Series::try_from((self.name(), values)).unwrap();
             values.explode_by_offsets(offsets)
         };
+        debug_assert_eq!(s.name(), self.name());
         Ok((s, offsets_buf))
     }
 }
