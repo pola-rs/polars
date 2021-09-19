@@ -356,9 +356,8 @@ class DataFrame:
             labels already present in the data. Must match data dimensions.
         rechunk : bool, default True
             Make sure that all data is contiguous.
-        from_pandas : bool, default False
-            If data contains NaN values PyArrow will convert the NaN to None if
-            the flag is set to True
+        nan_to_none : bool, default True
+            If data contains NaN values PyArrow will convert the NaN to None
 
         Returns
         -------
