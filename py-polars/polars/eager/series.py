@@ -239,12 +239,17 @@ class Series:
 
     @classmethod
     def _from_pandas(
-        cls, name: str, values: Union["pd.Series", "pd.DatetimeIndex"]
+        cls,
+        name: str,
+        values: Union["pd.Series", "pd.DatetimeIndex"],
+        nan_to_none: bool = True,
     ) -> "Series":
         """
         Construct a Series from a pandas Series or DatetimeIndex.
         """
-        return cls._from_pyseries(pandas_to_pyseries(name, values))
+        return cls._from_pyseries(
+            pandas_to_pyseries(name, values, nan_to_none=nan_to_none)
+        )
 
     def inner(self) -> "PySeries":
         return self._s

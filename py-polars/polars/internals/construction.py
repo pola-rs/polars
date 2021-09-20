@@ -135,7 +135,9 @@ def sequence_to_pyseries(
             return constructor(name, values, strict)
 
 
-def _pandas_series_to_arrow(values: Union["pd.Series", "pd.DatetimeIndex"]) -> pa.Array:
+def _pandas_series_to_arrow(
+    values: Union["pd.Series", "pd.DatetimeIndex"], nan_to_none: bool = True
+) -> pa.Array:
     """
     Convert a pandas Series to an Arrow array.
     """
@@ -144,17 +146,19 @@ def _pandas_series_to_arrow(values: Union["pd.Series", "pd.DatetimeIndex"]) -> p
         # We first cast to ms because that's the unit of Date64,
         # Then we cast to via int64 to date64. Casting directly to Date64 lead to
         # loss of time information https://github.com/pola-rs/polars/issues/476
-        arr = pa.array(np.array(values.values, dtype="datetime64[ms]"))
+        arr = pa.array(
+            np.array(values.values, dtype="datetime64[ms]"), from_pandas=nan_to_none
+        )
         arr = pa.compute.cast(arr, pa.int64())
         return pa.compute.cast(arr, pa.date64())
     elif dtype == "object" and len(values) > 0 and isinstance(values.iloc[0], str):
-        return pa.array(values, pa.large_utf8())
+        return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
     else:
-        return pa.array(values)
+        return pa.array(values, from_pandas=nan_to_none)
 
 
 def pandas_to_pyseries(
-    name: str, values: Union["pd.Series", "pd.DatetimeIndex"]
+    name: str, values: Union["pd.Series", "pd.DatetimeIndex"], nan_to_none: bool = True
 ) -> "PySeries":
     """
     Construct a PySeries from a pandas Series or DatetimeIndex.
@@ -162,7 +166,9 @@ def pandas_to_pyseries(
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
     if not name and values.name is not None:
         name = str(values.name)
-    return arrow_to_pyseries(name, _pandas_series_to_arrow(values))
+    return arrow_to_pyseries(
+        name, _pandas_series_to_arrow(values, nan_to_none=nan_to_none)
+    )
 
 
 ###################################
@@ -356,7 +362,11 @@ def pandas_to_pydf(
     data: "pd.DataFrame",
     columns: Optional[Sequence[str]] = None,
     rechunk: bool = True,
+    nan_to_none: bool = True,
 ) -> "PyDataFrame":
-    arrow_dict = {str(col): _pandas_series_to_arrow(data[col]) for col in data.columns}
+    arrow_dict = {
+        str(col): _pandas_series_to_arrow(data[col], nan_to_none=nan_to_none)
+        for col in data.columns
+    }
     arrow_table = pa.table(arrow_dict)
     return arrow_to_pydf(arrow_table, columns=columns, rechunk=rechunk)

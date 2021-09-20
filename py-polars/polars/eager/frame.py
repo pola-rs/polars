@@ -342,6 +342,7 @@ class DataFrame:
         data: "pd.DataFrame",
         columns: Optional[Sequence[str]] = None,
         rechunk: bool = True,
+        nan_to_none: bool = True,
     ) -> "DataFrame":
         """
         Construct a Polars DataFrame from a pandas DataFrame.
@@ -355,12 +356,18 @@ class DataFrame:
             labels already present in the data. Must match data dimensions.
         rechunk : bool, default True
             Make sure that all data is contiguous.
+        nan_to_none : bool, default True
+            If data contains NaN values PyArrow will convert the NaN to None
 
         Returns
         -------
         DataFrame
         """
-        return cls._from_pydf(pandas_to_pydf(data, columns=columns, rechunk=rechunk))
+        return cls._from_pydf(
+            pandas_to_pydf(
+                data, columns=columns, rechunk=rechunk, nan_to_none=nan_to_none
+            )
+        )
 
     @classmethod
     def from_arrow(cls, table: pa.Table, rechunk: bool = True) -> "DataFrame":

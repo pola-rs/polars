@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pytest
 
@@ -441,6 +442,19 @@ def test_from_pydatetime():
     assert s.name == "name"
     assert s.null_count() == 1
     assert s.dt[0] == dates[0]
+
+
+def test_from_pandas_nan_to_none():
+    from pyarrow import ArrowInvalid
+
+    df = pd.Series([2, np.nan, None], name="pd")
+    out_true = pl.from_pandas(df)
+    out_false = pl.from_pandas(df, nan_to_none=False)
+    df.loc[2] = pd.NA
+    assert [val is None for val in out_true]
+    assert [np.isnan(val) for val in out_false[1:]]
+    with pytest.raises(ArrowInvalid, match="Could not convert"):
+        pl.from_pandas(df, nan_to_none=False)
 
 
 def test_round():
