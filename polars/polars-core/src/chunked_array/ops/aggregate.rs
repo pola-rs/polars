@@ -346,11 +346,11 @@ impl VarAggSeries for BooleanChunked {
 #[cfg(feature = "dtype-categorical")]
 impl VarAggSeries for CategoricalChunked {
     fn var_as_series(&self) -> Series {
-        self.cast::<UInt32Type>().unwrap().var_as_series()
+        unimplemented!()
     }
 
     fn std_as_series(&self) -> Series {
-        self.cast::<UInt32Type>().unwrap().std_as_series()
+        unimplemented!()
     }
 }
 impl VarAggSeries for ListChunked {

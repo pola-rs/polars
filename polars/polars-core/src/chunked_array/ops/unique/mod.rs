@@ -308,9 +308,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
     }
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Self> {
-        let mut ca = self.cast::<UInt32Type>()?.mode()?;
-        ca.categorical_map = self.categorical_map.clone();
-        ca.cast()
+        Ok(ChunkFullNull::full_null(self.name(), 1))
     }
 }
 

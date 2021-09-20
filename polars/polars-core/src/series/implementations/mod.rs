@@ -1,11 +1,14 @@
+#[cfg(feature = "dtype-categorical")]
+mod categorical;
 #[cfg(any(
     feature = "dtype-date64",
     feature = "dtype-date32",
     feature = "dtype-time64-ns"
 ))]
-pub mod dates;
+mod dates;
 #[cfg(feature = "object")]
-pub mod object;
+mod object;
+
 #[cfg(feature = "object")]
 use std::any::Any;
 
@@ -562,21 +565,6 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn categorical(&self) -> Result<&CategoricalChunked> {
-                if matches!(self.0.dtype(), DataType::Categorical) {
-                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const CategoricalChunked)) }
-                } else {
-                    Err(PolarsError::DataTypeMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into categorical",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
             fn append_array(&mut self, other: ArrayRef) -> Result<()> {
                 self.0.append_array(other)
             }
@@ -878,8 +866,6 @@ impl_dyn_series!(Int8Chunked);
 impl_dyn_series!(Int16Chunked);
 impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);
-#[cfg(feature = "dtype-categorical")]
-impl_dyn_series!(CategoricalChunked);
 impl_dyn_series!(Utf8Chunked);
 impl_dyn_series!(ListChunked);
 impl_dyn_series!(BooleanChunked);
@@ -915,8 +901,6 @@ impl_dyn_series_numeric!(Int8Chunked);
 impl_dyn_series_numeric!(Int16Chunked);
 impl_dyn_series_numeric!(Int32Chunked);
 impl_dyn_series_numeric!(Int64Chunked);
-#[cfg(feature = "dtype-categorical")]
-impl_dyn_series_numeric!(CategoricalChunked);
 
 impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}

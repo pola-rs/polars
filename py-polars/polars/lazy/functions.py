@@ -169,7 +169,7 @@ def to_list(name: str) -> "pl.Expr":
     return col(name).list()
 
 
-def std(column: Union[str, "pl.Series"]) -> Union["pl.Expr", float]:
+def std(column: Union[str, "pl.Series"]) -> Union["pl.Expr", Optional[float]]:
     """
     Get the standard deviation.
     """
@@ -178,7 +178,7 @@ def std(column: Union[str, "pl.Series"]) -> Union["pl.Expr", float]:
     return col(column).std()
 
 
-def var(column: Union[str, "pl.Series"]) -> Union["pl.Expr", float]:
+def var(column: Union[str, "pl.Series"]) -> Union["pl.Expr", Optional[float]]:
     """
     Get the variance.
     """
