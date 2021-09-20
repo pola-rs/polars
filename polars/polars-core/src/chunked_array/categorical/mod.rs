@@ -1,6 +1,7 @@
 use crate::chunked_array::RevMapping;
 use crate::prelude::*;
 use arrow::array::DictionaryArray;
+use arrow::compute::cast::cast;
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {
@@ -15,6 +16,32 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
                 let iter = keys
                     .into_iter()
                     .map(|opt_k| opt_k.map(|k| *reverse_map.get(k).unwrap()));
+                let keys = PrimitiveArray::from_trusted_len_iter(iter);
+
+                DictionaryArray::from_data(keys, Arc::new(values.clone()))
+            }
+        }
+    }
+}
+impl From<&CategoricalChunked> for DictionaryArray<i64> {
+    fn from(ca: &CategoricalChunked) -> Self {
+        let ca = ca.rechunk();
+        let keys = ca.downcast_iter().next().unwrap();
+        let map = &**ca.categorical_map.as_ref().unwrap();
+        match map {
+            RevMapping::Local(arr) => DictionaryArray::from_data(
+                cast(keys, &ArrowDataType::Int64)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<i64>>()
+                    .unwrap()
+                    .clone(),
+                Arc::new(arr.clone()),
+            ),
+            RevMapping::Global(reverse_map, values, _uuid) => {
+                let iter = keys
+                    .into_iter()
+                    .map(|opt_k| opt_k.map(|k| *reverse_map.get(k).unwrap() as i64));
                 let keys = PrimitiveArray::from_trusted_len_iter(iter);
 
                 DictionaryArray::from_data(keys, Arc::new(values.clone()))

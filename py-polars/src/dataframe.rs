@@ -310,19 +310,7 @@ impl PyDataFrame {
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
 
-        // Arrow does not know about our categorical type implementation, so we cast to utf8
-        let cols = self
-            .df
-            .get_columns()
-            .iter()
-            .map(|s| match s.dtype() {
-                DataType::Categorical => s.cast::<Utf8Type>().unwrap(),
-                _ => s.clone(),
-            })
-            .collect::<Vec<_>>();
-        let df = DataFrame::new_no_checks(cols);
-
-        let rbs = df
+        let rbs = self.df
             .iter_record_batches()
             .map(|rb| arrow_interop::to_py::to_py_rb(&rb, py, pyarrow))
             .collect::<PyResult<_>>()?;

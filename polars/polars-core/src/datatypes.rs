@@ -639,6 +639,14 @@ impl Schema {
                         ))),
                         true,
                     ),
+                    DataType::Categorical => ArrowField::new(
+                        f.name(),
+                        ArrowDataType::Dictionary(
+                            Box::new(ArrowDataType::UInt32),
+                            Box::new(ArrowDataType::LargeUtf8),
+                        ),
+                        true,
+                    ),
                     _ => f.to_arrow(),
                 }
             })

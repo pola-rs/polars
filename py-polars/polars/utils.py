@@ -32,16 +32,6 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
     elif isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())
 
-    # simplest solution is to cast to (large)-string arrays
-    # this is copy and expensive
-    elif isinstance(array.type, pa.DictionaryType):
-        if pa.types.is_string(array.type.value_type):
-            array = pa.compute.cast(array, pa.large_utf8())
-        else:
-            raise ValueError(
-                "polars does not support dictionary encoded types other than strings"
-            )
-
     if hasattr(array, "num_chunks") and array.num_chunks > 1:
         # we have to coerce before combining chunks, because pyarrow panics if
         # offsets overflow
