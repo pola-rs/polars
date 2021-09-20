@@ -334,3 +334,57 @@ where
     }
     single_pred.expect("an empty iterator was passed")
 }
+
+#[cfg(test)]
+pub(crate) mod test {
+    use crate::prelude::stack_opt::{OptimizationRule, StackOptimizer};
+    use crate::prelude::*;
+    use polars_core::prelude::*;
+
+    pub fn optimize_lp(lp: LogicalPlan, rules: &mut [Box<dyn OptimizationRule>]) -> LogicalPlan {
+        // initialize arena's
+        let mut expr_arena = Arena::with_capacity(64);
+        let mut lp_arena = Arena::with_capacity(32);
+        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+
+        let opt = StackOptimizer {};
+        let lp_top = opt.optimize_loop(rules, &mut expr_arena, &mut lp_arena, root);
+        node_to_lp(lp_top, &mut expr_arena, &mut lp_arena)
+    }
+
+    pub fn optimize_expr(
+        expr: Expr,
+        schema: Schema,
+        rules: &mut [Box<dyn OptimizationRule>],
+    ) -> Expr {
+        // initialize arena's
+        let mut expr_arena = Arena::with_capacity(64);
+        let mut lp_arena = Arena::with_capacity(32);
+        let schema = Arc::new(schema);
+
+        // dummy input needed to put the schema
+        let input = Box::new(LogicalPlan::Projection {
+            expr: vec![],
+            input: Box::new(Default::default()),
+            schema: schema.clone(),
+        });
+
+        let lp = LogicalPlan::Projection {
+            expr: vec![expr],
+            input,
+            schema,
+        };
+
+        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+
+        let opt = StackOptimizer {};
+        let lp_top = opt.optimize_loop(rules, &mut expr_arena, &mut lp_arena, root);
+        if let LogicalPlan::Projection { mut expr, .. } =
+            node_to_lp(lp_top, &mut expr_arena, &mut lp_arena)
+        {
+            expr.pop().unwrap()
+        } else {
+            unreachable!()
+        }
+    }
+}
