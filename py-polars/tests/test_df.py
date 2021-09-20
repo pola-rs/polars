@@ -18,7 +18,7 @@ def test_version():
 
 
 def test_init_empty():
-    # Empty intialization
+    # Empty initialization
     df1 = pl.DataFrame()
     assert df1.shape == (0, 0)
 

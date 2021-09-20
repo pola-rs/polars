@@ -77,7 +77,7 @@ impl DataFrame {
             false => create_rand_index_no_replacement(n, self.height()).1,
         };
         // Safety:
-        // indices are withing bounds
+        // indices are within bounds
         Ok(unsafe { self.take_unchecked(&idx) })
     }
 

@@ -116,7 +116,7 @@ pub(super) fn is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> boo
             AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
-            // everyting that works on groups likely changes to order of elements w/r/t the other columns
+            // everything that works on groups likely changes to order of elements w/r/t the other columns
             | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyList, .. }, ..}
             // Could be fine, could be not, for now let's be conservative on this one

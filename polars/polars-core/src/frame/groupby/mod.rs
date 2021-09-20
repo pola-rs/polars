@@ -135,10 +135,10 @@ impl IntoGroupTuples for Utf8Chunked {
         if multithreaded {
             let n_partitions = set_partition_size();
 
-            let splitted = split_ca(self, n_partitions).unwrap();
+            let split = split_ca(self, n_partitions).unwrap();
 
             let str_hashes = POOL.install(|| {
-                splitted
+                split
                     .par_iter()
                     .map(|ca| {
                         ca.into_iter()
@@ -1384,13 +1384,13 @@ mod test {
 
         // Create a series for every group name.
         for series_name in &series_names {
-            let serie = Series::new(series_name, series_content.as_ref());
-            series.push(serie);
+            let series = Series::new(series_name, series_content.as_ref());
+            series.push(series);
         }
 
         // Create a series for the aggregation column.
-        let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
-        series.push(serie);
+        let series = Series::new("N", [1, 2, 3, 3, 4].as_ref());
+        series.push(series);
 
         // Creat the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();
@@ -1485,12 +1485,12 @@ mod test {
             vec![1, 2, 3, 4, 4, 4],
         ] {
             let ca = UInt32Chunked::new_from_slice("", &slice);
-            let splitted = split_ca(&ca, 4).unwrap();
+            let split = split_ca(&ca, 4).unwrap();
 
             let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
 
-            let keys = splitted.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, 0, splitted.len() as u64)
+            let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
+            let b = groupby_threaded_num(keys, 0, split.len() as u64)
                 .into_iter()
                 .sorted()
                 .collect_vec();

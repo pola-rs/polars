@@ -13,7 +13,7 @@ use rayon::prelude::*;
 ///
 /// # Input
 ///
-/// seq_iter: The sequential iterator to cast the parallel iterator once it is splitted in threads.
+/// seq_iter: The sequential iterator to cast the parallel iterator once it is split in threads.
 macro_rules! impl_numeric_parallel_iterator_body {
     ($seq_iter:ty) => {
         type Item = <$seq_iter as Iterator>::Item;
@@ -66,7 +66,7 @@ macro_rules! impl_numeric_indexed_parallel_iterator_body {
 ///
 /// # Input
 ///
-/// seq_iter: The sequential iterator this producer cast after spliting.
+/// seq_iter: The sequential iterator this producer cast after splitting.
 macro_rules! impl_numeric_producer_body {
     ($seq_iter:ty) => {
         type Item = <$seq_iter as Iterator>::Item;

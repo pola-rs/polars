@@ -253,7 +253,7 @@ impl DefaultPlanner {
                 // checks:
                 //      1. complex expressions in the groupby itself are also not partitionable
                 //          in this case anything more than col("foo")
-                //      2. a custom funciton cannot be partitioned
+                //      2. a custom function cannot be partitioned
                 //      3. maintain order is likely cheaper in default groupby
                 if keys.len() == 1 && apply.is_none() && !maintain_order {
                     // complex expressions in the groupby itself are also not partitionable

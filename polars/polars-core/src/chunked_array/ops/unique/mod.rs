@@ -72,7 +72,7 @@ macro_rules! is_unique_duplicated {
     ($ca:expr, $inverse:expr) => {{
         let mut idx_key = PlHashMap::new();
 
-        // instead of grouptuples, wich allocates a full vec per group, we now just toggle a boolean
+        // instead of grouptuples, which allocates a full vec per group, we now just toggle a boolean
         // that's false if a group has multiple entries.
         $ca.into_iter().enumerate().for_each(|(idx, key)| {
             idx_key

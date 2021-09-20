@@ -136,7 +136,7 @@ fn run_partitions(
 ) -> Result<Vec<DataFrame>> {
     // We do a partitioned groupby.
     // Meaning that we first do the groupby operation arbitrarily
-    // splitted on several threads. Than the final result we apply the same groupby again.
+    // split on several threads. Than the final result we apply the same groupby again.
     let dfs = split_df(df, n_threads)?;
 
     POOL.install(|| {

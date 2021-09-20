@@ -175,12 +175,12 @@ fn compute_mean(
         .drop_in_place(count_column_name)?
         .cast_with_dtype(&DataType::Float64)?;
 
-    // Compute the mean serie and rename to the `mean_column_name` provided
+    // Compute the mean series and rename to the `mean_column_name` provided
     // as input.
     let mut mean_column = &sum_column / &count_column;
     mean_column.rename(mean_column_name);
 
-    // Return successfully the serie.
+    // Return successfully the series.
     Ok(mean_column)
 }
 
@@ -275,7 +275,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //    aggregation of the `FILES_IN_PARALLEL`. At this point the
     //    schema will change to ['category', 'calories_sum', 'calories_count',
     //    'fats_g_sum', 'fats_g_count', 'sugars_g_sum', 'sugars_g_count'].
-    // 3. Append sequencially each partial dataframe to the final dataframe.
+    // 3. Append sequentially each partial dataframe to the final dataframe.
     // 4. Group by category.
     // 5. Aggregate summing the sums and the counts of the partial aggregation
     //    to get the global sums '${field}_sum_sum' and the global counts
@@ -307,8 +307,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // - calories_mean from calories_sum_sum and calories_count_sum
     // - fats_g_mean from fats_g_sum_sum and fats_g_count_sum
     // - sugars_g_mean from sugars_g_sum_sum and sugars_g_count_sum
-    // The ${field}_sum_sum and ${field}_count_sum colums will be
-    // droped after computing the mean as they are not needed anymore.
+    // The ${field}_sum_sum and ${field}_count_sum columns will be
+    // dropped after computing the mean as they are not needed anymore.
     let mean_series = compute_all_means(&mut main_df)?;
 
     // Add the computed mean series to the main dataframe.
@@ -316,8 +316,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 'sugars_g_mean']
     mean_series
         .into_iter()
-        .try_for_each(|serie| -> PolarResult<()> {
-            main_df.with_column(serie)?;
+        .try_for_each(|series| -> PolarResult<()> {
+            main_df.with_column(series)?;
             Ok(())
         })?;
 
