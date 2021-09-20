@@ -1384,13 +1384,13 @@ mod test {
 
         // Create a series for every group name.
         for series_name in &series_names {
-            let series = Series::new(series_name, series_content.as_ref());
-            series.push(series);
+            let serie = Series::new(series_name, series_content.as_ref());
+            series.push(serie);
         }
 
         // Create a series for the aggregation column.
-        let series = Series::new("N", [1, 2, 3, 3, 4].as_ref());
-        series.push(series);
+        let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
+        series.push(serie);
 
         // Creat the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();
