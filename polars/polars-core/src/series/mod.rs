@@ -600,13 +600,13 @@ pub trait SeriesTrait:
     /// Returns the mean value in the array
     /// Returns an option because the array is nullable.
     fn mean(&self) -> Option<f64> {
-        unimplemented!()
+        None
     }
 
     /// Returns the median value in the array
     /// Returns an option because the array is nullable.
     fn median(&self) -> Option<f64> {
-        unimplemented!()
+        None
     }
 
     /// Create a new Series filled with values at that index.
@@ -687,12 +687,12 @@ pub trait SeriesTrait:
 
     /// Get min index
     fn arg_min(&self) -> Option<usize> {
-        unimplemented!()
+        None
     }
 
     /// Get max index
     fn arg_max(&self) -> Option<usize> {
-        unimplemented!()
+        None
     }
 
     /// Get indexes that evaluate true

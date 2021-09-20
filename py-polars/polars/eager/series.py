@@ -613,7 +613,7 @@ class Series:
         └──────────────┴───────┘
 
         """
-        stats: Dict[str, Union[float, int, str]]
+        stats: Dict[str, Union[Optional[float], int, str]]
 
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
@@ -707,7 +707,7 @@ class Series:
         """
         return self._s.max()
 
-    def std(self, ddof: int = 1) -> float:
+    def std(self, ddof: int = 1) -> Optional[float]:
         """
         Get the standard deviation of this Series.
 
@@ -725,9 +725,11 @@ class Series:
         1.0
 
         """
+        if not self.is_numeric():
+            return None
         return np.std(self.drop_nulls().view(), ddof=ddof)
 
-    def var(self, ddof: int = 1) -> float:
+    def var(self, ddof: int = 1) -> Optional[float]:
         """
         Get variance of this Series.
 
@@ -745,6 +747,8 @@ class Series:
         1.0
 
         """
+        if not self.is_numeric():
+            return None
         return np.var(self.drop_nulls().view(), ddof=ddof)
 
     def median(self) -> float:

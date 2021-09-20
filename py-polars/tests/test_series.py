@@ -607,3 +607,12 @@ def test_true_divide():
     foo = pl.Series(vals)
     assert (foo / 1).to_list() == vals
     assert pl.DataFrame({"a": vals}).select([pl.col("a") / 1])["a"].to_list() == vals
+
+
+def test_invalid_categorical():
+    s = pl.Series("cat_series", ["a", "b", "b", "c", "a"]).cast(pl.Categorical)
+    assert s.std() is None
+    assert s.var() is None
+    assert s.median() is None
+    assert s.quantile(0.5) is None
+    assert s.mode().to_list() == [None]
