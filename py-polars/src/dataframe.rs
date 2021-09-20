@@ -8,10 +8,7 @@ use polars::prelude::*;
 #[cfg(feature = "downsample")]
 use polars_core::frame::groupby::resample::SampleRule;
 
-use crate::apply::dataframe::{
-    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
-    apply_lambda_with_utf8_out_type,
-};
+use crate::apply::dataframe::{apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type, apply_lambda_with_utf8_out_type};
 use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
 use crate::file::get_mmap_bytes_reader;
@@ -891,7 +888,6 @@ impl PyDataFrame {
             Some(DataType::Utf8) => {
                 apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
             }
-
             _ => apply_lambda_unknown(df, py, lambda)?,
         };
 

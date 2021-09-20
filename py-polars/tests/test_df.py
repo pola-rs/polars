@@ -1061,12 +1061,12 @@ def test_filter_date():
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
     )
     df = dataset.with_column(pl.col("date").str.strptime(pl.Date32, "%Y-%m-%d"))
-    assert df.filter(col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
-    assert df.filter(col("date") < pl.lit_date(datetime(2020, 1, 4))).shape[0] == 2
-    assert df.filter(col("date") < pl.lit_date(datetime(2020, 1, 5))).shape[0] == 3
-    assert df.filter(col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
-    assert df.filter(col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
-    assert df.filter(col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
+    assert df.filter(pl.col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
+    assert df.filter(pl.col("date") < pl.lit_date(datetime(2020, 1, 4))).shape[0] == 2
+    assert df.filter(pl.col("date") < pl.lit_date(datetime(2020, 1, 5))).shape[0] == 3
+    assert df.filter(pl.col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
+    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
+    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
 
 
 def test_slicing():
@@ -1084,3 +1084,9 @@ def test_slicing():
         2,
         1,
     )
+
+
+def test_apply_list_return():
+    df = pl.DataFrame({"start": [1, 2], "end": [3, 5]})
+    out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1)))
+    assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
