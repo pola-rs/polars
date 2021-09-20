@@ -15,7 +15,7 @@ fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(path.to_string()).finish()
 }
 
-fn fruits_cars() -> DataFrame {
+pub(crate) fn fruits_cars() -> DataFrame {
     df!(
             "A"=> [1, 2, 3, 4, 5],
             "fruits"=> ["banana", "banana", "apple", "apple", "banana"],
