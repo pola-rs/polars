@@ -43,7 +43,6 @@ impl OptimizationRule for ReplaceDropNulls {
                 let mut binary_and_count = 0;
                 let mut not_null_count = 0;
                 let mut column_count = 0;
-                let mut other_count = 0;
                 for (_, e) in iter {
                     if is_binary_and(e) {
                         binary_and_count += 1;
@@ -54,13 +53,16 @@ impl OptimizationRule for ReplaceDropNulls {
                     } else if is_lit_true(e) {
                         // do nothing
                     } else {
-                        other_count += 1;
+                        // only expected
+                        //  - binary and
+                        //  - column
+                        //  - is not null
+                        //  - lit true
+                        // so we can return early
+                        return None;
                     }
                 }
-                if not_null_count == column_count
-                    && binary_and_count < column_count
-                    && other_count == 0
-                {
+                if not_null_count == column_count && binary_and_count < column_count {
                     let subset = aexpr_to_root_names(*predicate, expr_arena)
                         .iter()
                         .map(|s| s.to_string())
