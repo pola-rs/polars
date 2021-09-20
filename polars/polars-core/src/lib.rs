@@ -16,6 +16,8 @@ pub mod prelude;
 pub mod serde;
 pub mod series;
 pub mod testing;
+#[cfg(test)]
+mod tests;
 pub(crate) mod vector_hasher;
 
 #[cfg(feature = "dtype-categorical")]
