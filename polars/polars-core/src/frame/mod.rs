@@ -179,7 +179,7 @@ impl DataFrame {
 
     /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the `Series`.
     ///
-    /// It is adviced to use [Series::new](Series::new) in favor of this method.
+    /// It is advised to use [Series::new](Series::new) in favor of this method.
     ///
     /// # Panic
     /// It is the callers responsibility to uphold the contract of all `Series`

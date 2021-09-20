@@ -135,10 +135,10 @@ impl IntoGroupTuples for Utf8Chunked {
         if multithreaded {
             let n_partitions = set_partition_size();
 
-            let splitted = split_ca(self, n_partitions).unwrap();
+            let split = split_ca(self, n_partitions).unwrap();
 
             let str_hashes = POOL.install(|| {
-                splitted
+                split
                     .par_iter()
                     .map(|ca| {
                         ca.into_iter()
@@ -1485,12 +1485,12 @@ mod test {
             vec![1, 2, 3, 4, 4, 4],
         ] {
             let ca = UInt32Chunked::new_from_slice("", &slice);
-            let splitted = split_ca(&ca, 4).unwrap();
+            let split = split_ca(&ca, 4).unwrap();
 
             let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
 
-            let keys = splitted.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, 0, splitted.len() as u64)
+            let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
+            let b = groupby_threaded_num(keys, 0, split.len() as u64)
                 .into_iter()
                 .sorted()
                 .collect_vec();

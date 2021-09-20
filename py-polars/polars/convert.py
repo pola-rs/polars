@@ -81,7 +81,7 @@ def from_records(
         If not specified, columns will be named `column_0`, `column_1`, etc.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
-        the orientation is infered by matching the columns and data dimensions. If
+        the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
     nullable : bool, default True
         If your data does not contain null values, set to False to speed up

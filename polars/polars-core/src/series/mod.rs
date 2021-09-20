@@ -1001,7 +1001,7 @@ pub trait SeriesTrait:
 
     #[cfg(feature = "random")]
     #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
+    /// Sample a fraction between 0.0-1.0 of this Series.
     fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series>;
 
     #[cfg(feature = "object")]

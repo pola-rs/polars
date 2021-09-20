@@ -75,7 +75,7 @@ pub trait PushUnchecked<T> {
     /// Caller must ensure the array has enough capacity to hold `T`.
     unsafe fn push_unchecked(&mut self, value: T);
 
-    /// Will push an item and not check if there is enough capacity nor update the array's lenght
+    /// Will push an item and not check if there is enough capacity nor update the array's length
     /// # Safety
     /// Caller must ensure the array has enough capacity to hold `T`.
     /// Caller must update the length when its done updating the vector.
