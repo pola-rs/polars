@@ -129,9 +129,9 @@ where
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
-        let values = arr.values();
-        let len = arr.len();
-        (vals_slice[offset..len]).copy_from_slice(values);
+        let values = arr.values().as_slice();
+        let len = values.len();
+        (vals_slice[offset..offset + len]).copy_from_slice(values);
         offset += len;
     });
     vals
