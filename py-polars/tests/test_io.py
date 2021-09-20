@@ -6,6 +6,7 @@ import zlib
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -237,3 +238,14 @@ def test_ipc_schema():
     f.seek(0)
 
     assert pl.read_ipc_schema(f) == {"a": pl.Int64, "b": pl.Utf8, "c": pl.Boolean}
+
+
+def test_categorical_round_trip():
+    df = pl.DataFrame({"ints": [1, 2, 3], "cat": ["a", "b", "c"]})
+    df = df.with_column(pl.col("cat").cast(pl.Categorical))
+
+    tbl = df.to_arrow()
+    assert "dictionary" in str(tbl["cat"].type)
+
+    df = pl.from_arrow(tbl)
+    assert df.dtypes == [pl.Int64, pl.Categorical]

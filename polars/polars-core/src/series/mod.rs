@@ -1866,31 +1866,131 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type) => {
                 use crate::chunked_array::builder::CategoricalChunkedBuilder;
-                match (&**key_type, &**value_type) {
-                    (ArrowDataType::UInt32, ArrowDataType::LargeUtf8) => {
-                        let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                        let arr = arrow::compute::concat::concatenate(&chunks)?;
+                use arrow::compute::cast::cast;
+                let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
+                let arr = arrow::compute::concat::concatenate(&chunks)?;
 
+                let (keys, values) = match (&**key_type, &**value_type) {
+                    (ArrowDataType::Int8, ArrowDataType::LargeUtf8) => {
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i8>>().unwrap();
+                        let keys = arr.keys();
+                        let keys = cast(keys, &ArrowDataType::UInt32)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<u32>>()
+                            .unwrap()
+                            .clone();
+                        let values = arr.values();
+                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
+                        (keys, values.clone())
+                    }
+                    (ArrowDataType::Int16, ArrowDataType::LargeUtf8) => {
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i16>>().unwrap();
+                        let keys = arr.keys();
+                        let keys = cast(keys, &ArrowDataType::UInt32)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<u32>>()
+                            .unwrap()
+                            .clone();
+                        let values = arr.values();
+                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
+                        (keys, values.clone())
+                    }
+                    (ArrowDataType::Int32, ArrowDataType::LargeUtf8) => {
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i32>>().unwrap();
+                        let keys = arr.keys();
+                        let keys = cast(keys, &ArrowDataType::UInt32)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<u32>>()
+                            .unwrap()
+                            .clone();
+                        let values = arr.values();
+                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
+                        (keys, values.clone())
+                    }
+                    (ArrowDataType::UInt32, ArrowDataType::LargeUtf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<u32>>().unwrap();
                         let keys = arr.keys();
                         let values = arr.values();
                         let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
-
-                        let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
-                        let iter = keys.into_iter().map(|opt_key| {
-                            opt_key.map(|k| unsafe { values.value_unchecked(*k as usize) })
-                        });
-                        builder.from_iter(iter);
-                        Ok(builder.finish().into())
+                        (keys.clone(), values.clone())
                     }
-                    (k, v) => Err(PolarsError::InvalidOperation(
-                        format!(
+                    (ArrowDataType::Int8, ArrowDataType::Utf8) => {
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i8>>().unwrap();
+                        let keys = arr.keys();
+                        let keys = cast(keys, &ArrowDataType::UInt32)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<u32>>()
+                            .unwrap()
+                            .clone();
+                        let values = arr.values();
+                        let values = values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+                        let values = cast(values, &ArrowDataType::LargeUtf8)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<Utf8Array<i64>>()
+                            .unwrap()
+                            .clone();
+                        (keys, values)
+                    }
+                    (ArrowDataType::Int16, ArrowDataType::Utf8) => {
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i16>>().unwrap();
+                        let keys = arr.keys();
+                        let keys = cast(keys, &ArrowDataType::UInt32)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<u32>>()
+                            .unwrap()
+                            .clone();
+                        let values = arr.values();
+                        let values = values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+                        let values = cast(values, &ArrowDataType::LargeUtf8)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<Utf8Array<i64>>()
+                            .unwrap()
+                            .clone();
+                        (keys, values)
+                    }
+                    (ArrowDataType::Int32, ArrowDataType::Utf8) => {
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i32>>().unwrap();
+                        let keys = arr.keys();
+                        let keys = cast(keys, &ArrowDataType::UInt32)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<u32>>()
+                            .unwrap()
+                            .clone();
+                        let values = arr.values();
+                        let values = values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+                        let values = cast(values, &ArrowDataType::LargeUtf8)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<Utf8Array<i64>>()
+                            .unwrap()
+                            .clone();
+                        (keys, values)
+                    }
+                    (k, v) => {
+                        return Err(PolarsError::InvalidOperation(
+                            format!(
                             "Cannot create polars series dictionary type of key:  {:?} value: {:?}",
                             k, v
                         )
-                        .into(),
-                    )),
-                }
+                            .into(),
+                        ))
+                    }
+                };
+
+                let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
+                let iter = keys
+                    .into_iter()
+                    .map(|opt_key| opt_key.map(|k| unsafe { values.value_unchecked(*k as usize) }));
+                builder.from_iter(iter);
+                Ok(builder.finish().into())
             }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?} type", dt).into(),
