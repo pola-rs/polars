@@ -122,29 +122,6 @@ where
     }
 }
 
-macro_rules! interpolate {
-    ($ca:ty) => {
-        impl Interpolate for $ca {
-            fn interpolate(&self) -> Self {
-                self.clone()
-            }
-        }
-    };
-}
-
-interpolate!(Utf8Chunked);
-interpolate!(ListChunked);
-interpolate!(BooleanChunked);
-#[cfg(feature = "dtype-categorical")]
-interpolate!(CategoricalChunked);
-
-#[cfg(feature = "object")]
-impl<T: PolarsObject> Interpolate for ObjectChunked<T> {
-    fn interpolate(&self) -> Self {
-        self.clone()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -174,17 +151,6 @@ mod test {
         assert_eq!(
             Vec::from(&out),
             &[None, Some(1), Some(2), Some(3), Some(4), Some(5), None]
-        );
-
-        let ca = Utf8Chunked::new_from_opt_slice(
-            "",
-            &[None, Some("foo"), None, None, Some("bar"), None, None],
-        );
-
-        let out = ca.interpolate();
-        assert_eq!(
-            Vec::from(&out),
-            &[None, Some("foo"), None, None, Some("bar"), None, None]
         );
     }
 }

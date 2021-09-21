@@ -397,21 +397,6 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
     }
 }
 
-#[cfg(feature = "object")]
-impl<T> ChunkSort<ObjectType<T>> for ObjectChunked<T> {
-    fn sort(&self, _reverse: bool) -> Self {
-        unimplemented!()
-    }
-
-    fn sort_in_place(&mut self, _reverse: bool) {
-        unimplemented!()
-    }
-
-    fn argsort(&self, _reverse: bool) -> UInt32Chunked {
-        unimplemented!()
-    }
-}
-
 impl ChunkSort<BooleanType> for BooleanChunked {
     fn sort(&self, reverse: bool) -> BooleanChunked {
         sort!(self, reverse)

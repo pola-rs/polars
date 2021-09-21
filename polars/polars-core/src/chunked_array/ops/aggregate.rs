@@ -237,9 +237,6 @@ impl ChunkAgg<u32> for BooleanChunked {
     }
 }
 
-impl ChunkAgg<Series> for ListChunked {}
-impl ChunkAgg<String> for Utf8Chunked {}
-
 // Needs the same trait bounds as the implementation of ChunkedArray<T> of dyn Series
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where

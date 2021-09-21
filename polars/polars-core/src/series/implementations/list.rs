@@ -17,8 +17,6 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
-#[cfg(feature = "checked_arithmetic")]
-use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
@@ -138,11 +136,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<ListChunked> {
-    #[cfg(feature = "rolling_window")]
-    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
-        ChunkRollApply::rolling_apply(&self.0, _window_size, _f).map(|ca| ca.into_series())
-    }
-
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0.clone().into_series()
@@ -358,28 +351,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
             DataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
             _ => Ok(self.0.pow_f64(exponent).into_series()),
         }
-    }
-
-    fn peak_max(&self) -> BooleanChunked {
-        self.0.peak_max()
-    }
-
-    fn peak_min(&self) -> BooleanChunked {
-        self.0.peak_min()
-    }
-
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
-        IsIn::is_in(&self.0, other)
-    }
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
-        RepeatBy::repeat_by(&self.0, by)
-    }
-
-    #[cfg(feature = "checked_arithmetic")]
-    fn checked_div(&self, rhs: &Series) -> Result<Series> {
-        self.0.checked_div(rhs)
     }
 
     #[cfg(feature = "is_first")]

@@ -17,8 +17,6 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
-#[cfg(feature = "checked_arithmetic")]
-use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
@@ -37,21 +35,6 @@ impl IntoSeries for BooleanChunked {
 impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cummax(&self, reverse: bool) -> Series {
-        self.0.cummax(reverse).into_series()
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cummin(&self, reverse: bool) -> Series {
-        self.0.cummin(reverse).into_series()
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cumsum(&self, reverse: bool) -> Series {
-        self.0.cumsum(reverse).into_series()
     }
 
     #[cfg(feature = "asof_join")]
@@ -192,7 +175,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
-        self.0.interpolate().into_series()
+        self.0.clone().into_series()
     }
 
     #[cfg(feature = "series_bitwise")]
@@ -480,14 +463,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         }
     }
 
-    fn peak_max(&self) -> BooleanChunked {
-        self.0.peak_max()
-    }
-
-    fn peak_min(&self) -> BooleanChunked {
-        self.0.peak_min()
-    }
-
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         IsIn::is_in(&self.0, other)
@@ -495,11 +470,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
         RepeatBy::repeat_by(&self.0, by)
-    }
-
-    #[cfg(feature = "checked_arithmetic")]
-    fn checked_div(&self, rhs: &Series) -> Result<Series> {
-        self.0.checked_div(rhs)
     }
 
     #[cfg(feature = "is_first")]

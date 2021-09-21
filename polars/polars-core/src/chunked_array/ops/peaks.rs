@@ -19,15 +19,3 @@ where
             & (self.shift_and_fill(-1, Some(Zero::zero())).gt(self))
     }
 }
-
-impl ChunkPeaks for BooleanChunked {}
-impl ChunkPeaks for Utf8Chunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ChunkPeaks for CategoricalChunked {}
-impl ChunkPeaks for ListChunked {}
-
-#[cfg(feature = "object")]
-impl<T> ChunkPeaks for ObjectChunked<T> where
-    T: 'static + std::fmt::Debug + Clone + Send + Sync + Default
-{
-}

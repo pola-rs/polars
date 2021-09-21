@@ -142,11 +142,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<CategoricalChunked> {
-    #[cfg(feature = "rolling_window")]
-    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
-        ChunkRollApply::rolling_apply(&self.0, _window_size, _f).map(|ca| ca.into_series())
-    }
-
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0.interpolate().into_series()

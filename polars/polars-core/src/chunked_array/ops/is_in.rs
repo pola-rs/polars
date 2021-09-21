@@ -184,8 +184,6 @@ impl IsIn for CategoricalChunked {
     }
 }
 
-impl IsIn for ListChunked {}
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
