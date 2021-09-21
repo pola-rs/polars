@@ -226,11 +226,6 @@ pub mod checked {
         }
     }
 
-    impl NumOpsDispatchChecked for BooleanChunked {}
-    impl NumOpsDispatchChecked for ListChunked {}
-    impl NumOpsDispatchChecked for CategoricalChunked {}
-    impl NumOpsDispatchChecked for Utf8Chunked {}
-
     impl NumOpsDispatchChecked for Series {
         fn checked_div(&self, rhs: &Series) -> Result<Series> {
             let (lhs, rhs) = coerce_lhs_rhs(self, rhs).expect("cannot coerce datatypes");

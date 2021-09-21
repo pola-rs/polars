@@ -17,8 +17,6 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
-#[cfg(feature = "checked_arithmetic")]
-use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
@@ -35,21 +33,6 @@ impl IntoSeries for Utf8Chunked {
 impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cummax(&self, reverse: bool) -> Series {
-        self.0.cummax(reverse).into_series()
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cummin(&self, reverse: bool) -> Series {
-        self.0.cummin(reverse).into_series()
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cumsum(&self, reverse: bool) -> Series {
-        self.0.cumsum(reverse).into_series()
     }
 
     #[cfg(feature = "asof_join")]
@@ -208,11 +191,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         self.0.clone().into_series()
     }
 
-    #[cfg(feature = "rolling_window")]
-    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
-        ChunkRollApply::rolling_apply(&self.0, _window_size, _f).map(|ca| ca.into_series())
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }
@@ -272,14 +250,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
-    }
-
-    fn mean(&self) -> Option<f64> {
-        self.0.mean()
-    }
-
-    fn median(&self) -> Option<f64> {
-        self.0.median()
     }
 
     fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
@@ -492,14 +462,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         }
     }
 
-    fn peak_max(&self) -> BooleanChunked {
-        self.0.peak_max()
-    }
-
-    fn peak_min(&self) -> BooleanChunked {
-        self.0.peak_min()
-    }
-
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         IsIn::is_in(&self.0, other)
@@ -507,11 +469,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
         RepeatBy::repeat_by(&self.0, by)
-    }
-
-    #[cfg(feature = "checked_arithmetic")]
-    fn checked_div(&self, rhs: &Series) -> Result<Series> {
-        self.0.checked_div(rhs)
     }
 
     #[cfg(feature = "is_first")]

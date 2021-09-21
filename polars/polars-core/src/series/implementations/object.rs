@@ -69,7 +69,7 @@ where
 {
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
-        self.0.interpolate().into_series()
+        self.0.clone().into_series()
     }
 
     fn rename(&mut self, name: &str) {
@@ -186,19 +186,6 @@ where
     fn get(&self, index: usize) -> AnyValue {
         ObjectChunked::get_any_value(&self.0, index)
     }
-
-    fn sort_in_place(&mut self, reverse: bool) {
-        ChunkSort::sort_in_place(&mut self.0, reverse)
-    }
-
-    fn sort(&self, reverse: bool) -> Series {
-        ChunkSort::sort(&self.0, reverse).into_series()
-    }
-
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        ChunkSort::argsort(&self.0, reverse)
-    }
-
     fn null_count(&self) -> usize {
         ObjectChunked::null_count(&self.0)
     }

@@ -63,8 +63,6 @@ impl RepeatBy for Utf8Chunked {
     }
 }
 
-impl RepeatBy for ListChunked {}
-
 #[cfg(feature = "dtype-categorical")]
 impl RepeatBy for CategoricalChunked {
     fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
@@ -73,5 +71,3 @@ impl RepeatBy for CategoricalChunked {
         ca
     }
 }
-#[cfg(feature = "object")]
-impl<T> RepeatBy for ObjectChunked<T> {}

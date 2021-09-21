@@ -102,15 +102,6 @@ where
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkCumAgg<CategoricalType> for CategoricalChunked {}
-impl ChunkCumAgg<Utf8Type> for Utf8Chunked {}
-impl ChunkCumAgg<ListType> for ListChunked {}
-impl ChunkCumAgg<BooleanType> for BooleanChunked {}
-
-#[cfg(feature = "object")]
-impl<T> ChunkCumAgg<ObjectType<T>> for ObjectChunked<T> {}
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
