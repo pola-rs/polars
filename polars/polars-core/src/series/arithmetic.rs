@@ -104,9 +104,6 @@ impl NumOpsDispatch for Utf8Chunked {
         Ok(out.into_series())
     }
 }
-impl NumOpsDispatch for BooleanChunked {}
-impl NumOpsDispatch for ListChunked {}
-impl NumOpsDispatch for CategoricalChunked {}
 
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {

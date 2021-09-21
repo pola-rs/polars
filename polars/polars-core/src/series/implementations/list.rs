@@ -6,7 +6,6 @@ use crate::chunked_array::{
     ops::{
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
         explode::ExplodeByOffsets,
-        ChunkFullNull,
     },
     AsSinglePtr, ChunkIdIter,
 };
@@ -23,16 +22,17 @@ use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
+#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 
-impl IntoSeries for CategoricalChunked {
+impl IntoSeries for ListChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
 }
 
-impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
+impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
     }
@@ -126,13 +126,9 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     ) -> Series {
         ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
     }
+
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         IntoGroupTuples::group_tuples(&self.0, multithreaded)
-    }
-
-    #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
-        self.0.argsort_multiple(by, reverse)
     }
 
     fn str_value(&self, index: usize) -> Cow<str> {
@@ -141,7 +137,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 }
 
-impl SeriesTrait for SeriesWrap<CategoricalChunked> {
+impl SeriesTrait for SeriesWrap<ListChunked> {
     #[cfg(feature = "rolling_window")]
     fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
         ChunkRollApply::rolling_apply(&self.0, _window_size, _f).map(|ca| ca.into_series())
@@ -149,7 +145,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
-        self.0.interpolate().into_series()
+        self.0.clone().into_series()
     }
 
     fn rename(&mut self, name: &str) {
@@ -174,19 +170,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn categorical(&self) -> Result<&CategoricalChunked> {
-        if matches!(self.0.dtype(), DataType::Categorical) {
-            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const CategoricalChunked)) }
-        } else {
-            Err(PolarsError::DataTypeMisMatch(
-                format!(
-                    "cannot unpack Series: {:?} of type {:?} into categorical",
-                    self.name(),
-                    self.dtype(),
-                )
-                .into(),
-            ))
-        }
+    fn list(&self) -> Result<&ListChunked> {
+        unsafe { Ok(&*(self as *const dyn SeriesTrait as *const ListChunked)) }
     }
 
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
@@ -276,14 +261,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.cast_with_dtype(data_type)
     }
 
-    fn to_dummies(&self) -> Result<DataFrame> {
-        ToDummies::to_dummies(&self.0)
-    }
-
-    fn value_counts(&self) -> Result<DataFrame> {
-        ChunkUnique::value_counts(&self.0)
-    }
-
     fn get(&self, index: usize) -> AnyValue {
         self.0.get_any_value(index)
     }
@@ -293,32 +270,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
-        ChunkSort::sort_in_place(&mut self.0, reverse);
-    }
-
-    fn sort(&self, reverse: bool) -> Series {
-        ChunkSort::sort(&self.0, reverse).into_series()
-    }
-
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        ChunkSort::argsort(&self.0, reverse)
-    }
-
     fn null_count(&self) -> usize {
         self.0.null_count()
-    }
-
-    fn unique(&self) -> Result<Series> {
-        ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
-    }
-
-    fn n_unique(&self) -> Result<usize> {
-        ChunkUnique::n_unique(&self.0)
-    }
-
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
-        ChunkUnique::arg_unique(&self.0)
     }
 
     fn is_null(&self) -> BooleanChunked {
@@ -327,14 +280,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn is_not_null(&self) -> BooleanChunked {
         self.0.is_not_null()
-    }
-
-    fn is_unique(&self) -> Result<BooleanChunked> {
-        ChunkUnique::is_unique(&self.0)
-    }
-
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
-        ChunkUnique::is_duplicated(&self.0)
     }
 
     fn reverse(&self) -> Series {
@@ -354,28 +299,28 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn sum_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::sum_as_series(&self.0)
     }
     fn max_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::max_as_series(&self.0)
     }
     fn min_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::min_as_series(&self.0)
     }
     fn mean_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::mean_as_series(&self.0)
     }
     fn median_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::median_as_series(&self.0)
     }
     fn var_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        VarAggSeries::var_as_series(&self.0)
     }
     fn std_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        VarAggSeries::std_as_series(&self.0)
     }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
-        Ok(CategoricalChunked::full_null(self.name(), 1).into_series())
+    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
+        ChunkAggSeries::quantile_as_series(&self.0, quantile)
     }
 
     fn fmt_list(&self) -> String {
@@ -401,6 +346,28 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .map(|ca| ca.into_series())
     }
 
+    fn pow(&self, exponent: f64) -> Result<Series> {
+        let f_err = || {
+            Err(PolarsError::InvalidOperation(
+                format!("power operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        };
+
+        match self.dtype() {
+            DataType::Utf8 | DataType::List(_) | DataType::Boolean => f_err(),
+            DataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
+            _ => Ok(self.0.pow_f64(exponent).into_series()),
+        }
+    }
+
+    fn peak_max(&self) -> BooleanChunked {
+        self.0.peak_max()
+    }
+
+    fn peak_min(&self) -> BooleanChunked {
+        self.0.peak_min()
+    }
+
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         IsIn::is_in(&self.0, other)
@@ -423,21 +390,5 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     #[cfg(feature = "object")]
     fn as_any(&self) -> &dyn Any {
         &self.0
-    }
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> Result<Series> {
-        Ok(self.0.mode()?.into_series())
-    }
-}
-
-impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        CategoricalChunked::bit_repr_is_large()
-    }
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
-    }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.bit_repr_small()
     }
 }

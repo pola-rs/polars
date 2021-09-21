@@ -75,6 +75,7 @@ list = []
 rank = []
 diff = []
 moment = []
+series_bitwise = []
 
 
 # opt-in datatypes for Series
