@@ -1,6 +1,8 @@
 use crate::utils::align_chunks_binary;
 use crate::{prelude::*, utils::NoNull};
 use arrow::compute::comparison::Simd8;
+use arrow::scalar::Utf8Scalar;
+use arrow::types::NativeType;
 use arrow::{
     array::{ArrayRef, BooleanArray, PrimitiveArray, Utf8Array},
     compute,
@@ -455,15 +457,22 @@ impl NumComp for u64 {}
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + NumComp + Simd8,
+    T::Native: NumCast + NumComp + Simd8 + NativeType,
 {
     fn primitive_compare_scalar<Rhs: NumComp + ToPrimitive>(
         &self,
         rhs: Rhs,
         op: comparison::Operator,
     ) -> BooleanChunked {
-        let rhs = NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        self.apply_kernel_cast(|arr| Arc::new(comparison::primitive_compare_scalar(arr, rhs, op)))
+        let rhs: T::Native =
+            NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
+        self.apply_kernel_cast(|arr| {
+            Arc::new(comparison::primitive_compare_scalar(
+                arr,
+                &Some(rhs).into(),
+                op,
+            ))
+        })
     }
 }
 
@@ -504,7 +513,13 @@ where
 
 impl Utf8Chunked {
     fn utf8_compare_scalar(&self, rhs: &str, op: comparison::Operator) -> BooleanChunked {
-        self.apply_kernel_cast(|arr| Arc::new(comparison::utf8_compare_scalar(arr, rhs, op)))
+        self.apply_kernel_cast(|arr| {
+            Arc::new(comparison::utf8_compare_scalar(
+                arr,
+                &Utf8Scalar::<i64>::new(Some(rhs)),
+                op,
+            ))
+        })
     }
 }
 
