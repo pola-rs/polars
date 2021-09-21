@@ -6,6 +6,7 @@ use crate::vector_hasher::{df_rows_to_hashes_threaded, IdBuildHasher, IdxHash};
 use crate::vector_hasher::{this_partition, AsU64};
 use crate::POOL;
 use crate::{datatypes::PlHashMap, utils::split_df};
+use ahash::CallHasher;
 use hashbrown::hash_map::Entry;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use rayon::prelude::*;
@@ -56,7 +57,7 @@ pub(crate) fn groupby_threaded_num<T, IntoSlice>(
     n_partitions: u64,
 ) -> GroupTuples
 where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + AsU64 + CallHasher,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
     assert!(n_partitions.is_power_of_two());
@@ -75,6 +76,7 @@ where
             for keys in &keys {
                 let keys = keys.as_ref();
                 let len = keys.len() as u32;
+                let hasher = hash_tbl.hasher().clone();
 
                 let mut cnt = 0;
                 keys.iter().for_each(|k| {
@@ -82,15 +84,18 @@ where
                     cnt += 1;
 
                     if this_partition(k.as_u64(), thread_no, n_partitions) {
-                        let entry = hash_tbl.entry(*k);
+                        let hash = T::get_hash(k, &hasher);
+                        let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
 
                         match entry {
-                            Entry::Vacant(entry) => {
+                            RawEntryMut::Vacant(entry) => {
                                 let mut tuples = Vec::with_capacity(group_size_hint);
                                 tuples.push(idx);
-                                entry.insert((idx, tuples));
+                                entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
+                                    T::get_hash(k, &hasher)
+                                });
                             }
-                            Entry::Occupied(mut entry) => {
+                            RawEntryMut::Occupied(mut entry) => {
                                 let v = entry.get_mut();
                                 v.1.push(idx);
                             }

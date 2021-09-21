@@ -2,7 +2,7 @@ use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
 use crate::utils::arrow::array::Array;
 use crate::POOL;
-use ahash::RandomState;
+use ahash::{CallHasher, RandomState};
 use arrow::bitmap::utils::get_bit_unchecked;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use polars_arrow::utils::CustomIterTools;
@@ -27,7 +27,7 @@ pub trait VecHash {
     }
 }
 
-fn get_null_hash_value(random_state: RandomState) -> u64 {
+pub(crate) fn get_null_hash_value(random_state: RandomState) -> u64 {
     // we just start with a large prime number and hash that twice
     // to get a constant hash value for null/None
     let mut hasher = random_state.build_hasher();
@@ -41,7 +41,7 @@ fn get_null_hash_value(random_state: RandomState) -> u64 {
 impl<T> VecHash for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Hash,
+    T::Native: Hash + CallHasher,
 {
     fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
         // Note that we don't use the no null branch! This can break in unexpected ways.
@@ -53,11 +53,12 @@ where
         let mut av = AlignedVec::with_capacity(self.len());
 
         self.downcast_iter().for_each(|arr| {
-            av.extend(arr.values().as_slice().iter().map(|v| {
-                let mut hasher = random_state.build_hasher();
-                v.hash(&mut hasher);
-                hasher.finish()
-            }));
+            av.extend(
+                arr.values()
+                    .as_slice()
+                    .iter()
+                    .map(|v| T::Native::get_hash(v, &random_state)),
+            );
         });
 
         let null_h = get_null_hash_value(random_state);
@@ -94,18 +95,16 @@ where
                     .iter()
                     .zip(&mut hashes[offset..])
                     .for_each(|(v, h)| {
-                        let mut hasher = random_state.build_hasher();
-                        v.hash(&mut hasher);
-                        *h = boost_hash_combine(hasher.finish(), *h)
+                        let l = T::Native::get_hash(v, &random_state);
+                        *h = boost_hash_combine(l, *h)
                     }),
                 _ => arr
                     .iter()
                     .zip(&mut hashes[offset..])
                     .for_each(|(opt_v, h)| match opt_v {
                         Some(v) => {
-                            let mut hasher = random_state.build_hasher();
-                            v.hash(&mut hasher);
-                            *h = boost_hash_combine(hasher.finish(), *h)
+                            let l = T::Native::get_hash(v, &random_state);
+                            *h = boost_hash_combine(l, *h)
                         }
                         None => {
                             *h = boost_hash_combine(null_h, *h);
@@ -119,23 +118,26 @@ where
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+        let null_h = get_null_hash_value(random_state.clone());
         let mut av = AlignedVec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {
-            av.extend(arr.into_iter().map(|opt_v| {
-                let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
-                hasher.finish()
+            av.extend(arr.into_iter().map(|opt_v| match opt_v {
+                Some(v) => str::get_hash(v, &random_state),
+                None => null_h,
             }))
         });
         av
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        let null_h = get_null_hash_value(random_state.clone());
         self.apply_to_slice(
             |opt_v, h| {
-                let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
-                boost_hash_combine(hasher.finish(), *h)
+                let l = match opt_v {
+                    Some(v) => str::get_hash(v, &random_state),
+                    None => null_h,
+                };
+                boost_hash_combine(l, *h)
             },
             hashes,
         )
@@ -283,17 +285,13 @@ impl AsU64 for [u8; 9] {
 const BUILD_HASHER: RandomState = RandomState::with_seeds(0, 0, 0, 0);
 impl AsU64 for [u8; 17] {
     fn as_u64(self) -> u64 {
-        let mut h = BUILD_HASHER.build_hasher();
-        self.hash(&mut h);
-        h.finish()
+        <[u8]>::get_hash(&self, &BUILD_HASHER)
     }
 }
 
 impl AsU64 for [u8; 13] {
     fn as_u64(self) -> u64 {
-        let mut h = BUILD_HASHER.build_hasher();
-        self.hash(&mut h);
-        h.finish()
+        <[u8]>::get_hash(&self, &BUILD_HASHER)
     }
 }
 
@@ -395,7 +393,7 @@ impl<'a> AsU64 for StrHash<'a> {
 /// For partitions that are a power of 2 we can use a bitshift instead of a modulo.
 pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
     // n % 2^i = n & (2^i - 1)
-    (h + thread_no) & (n_partitions - 1) == 0
+    (h.wrapping_add(thread_no)) & n_partitions.wrapping_sub(1) == 0
 }
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(

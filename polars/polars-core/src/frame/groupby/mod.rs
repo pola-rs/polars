@@ -7,14 +7,14 @@ use crate::utils::Wrap;
 use crate::utils::{
     accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca, NoNull,
 };
-use crate::vector_hasher::{AsU64, StrHash};
+use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
-use ahash::RandomState;
+use ahash::{CallHasher, RandomState};
 use hashbrown::HashMap;
 use num::NumCast;
 use rayon::prelude::*;
 use std::fmt::Debug;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::Hash;
 
 pub mod aggregations;
 pub(crate) mod hashing;
@@ -132,6 +132,8 @@ impl IntoGroupTuples for BooleanChunked {
 impl IntoGroupTuples for Utf8Chunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         let hb = RandomState::default();
+        let null_h = get_null_hash_value(hb.clone());
+
         if multithreaded {
             let n_partitions = set_partition_size();
 
@@ -143,9 +145,10 @@ impl IntoGroupTuples for Utf8Chunked {
                     .map(|ca| {
                         ca.into_iter()
                             .map(|opt_s| {
-                                let mut state = hb.build_hasher();
-                                opt_s.hash(&mut state);
-                                let hash = state.finish();
+                                let hash = match opt_s {
+                                    Some(s) => str::get_hash(s, &hb),
+                                    None => null_h,
+                                };
                                 StrHash::new(opt_s, hash)
                             })
                             .collect::<Vec<_>>()
@@ -157,9 +160,10 @@ impl IntoGroupTuples for Utf8Chunked {
             let str_hashes = self
                 .into_iter()
                 .map(|opt_s| {
-                    let mut state = hb.build_hasher();
-                    opt_s.hash(&mut state);
-                    let hash = state.finish();
+                    let hash = match opt_s {
+                        Some(s) => str::get_hash(s, &hb),
+                        None => null_h,
+                    };
                     StrHash::new(opt_s, hash)
                 })
                 .collect::<Vec<_>>();
