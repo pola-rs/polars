@@ -64,23 +64,22 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd13b40184904cea33bbc7388c394a995ae5e74d21314c5084d6392753415510"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=fa5d9eaead7eddce65624e67baabf75c975fb9bd#fa5d9eaead7eddce65624e67baabf75c975fb9bd"
 dependencies = [
+ "ahash",
  "base64",
  "chrono",
  "csv",
  "flatbuffers",
  "futures",
  "hash_hasher",
- "lazy_static",
  "lexical-core",
  "lz4",
  "multiversion",
  "num-traits",
  "packed_simd_2",
  "parquet2",
- "regex",
+ "simdutf8",
  "streaming-iterator",
  "strength_reduce",
  "zstd",
@@ -1166,9 +1165,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73758f76c8c842dfd846dfbc6ee05779aff626908531fffc3305a30cbccc55e7"
+checksum = "19f7a559e610a513b181d4ba28f49e92c9a8d7fcc9e8d3a85e2f9ffb6f0d3ab6"
 dependencies = [
  "async-stream",
  "bitpacking",
@@ -1630,6 +1629,12 @@ checksum = "e51e73328dc4ac0c7ccbda3a494dfa03df1de2f46018127f60c693f2648455b0"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "simdutf8"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c970da16e7c682fa90a261cf0724dee241c9f7831635ecc4e988ae8f3b505559"
 
 [[package]]
 name = "slab"

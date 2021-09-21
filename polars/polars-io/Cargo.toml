@@ -20,7 +20,7 @@ parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compress
 dtype-u64 = ["polars-core/dtype-u64"]
 dtype-date64 = ["polars-core/dtype-date64", "polars-core/temporal"]
 dtype-date32 = ["polars-core/dtype-date32"]
-csv-file = ["csv-core", "memmap", "lexical", "arrow/io_csv"]
+csv-file = ["csv-core", "memmap", "lexical", "arrow/io_csv_write"]
 fmt = ["polars-core/plain_fmt"]
 decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng-compat"]
@@ -29,9 +29,8 @@ temporal = ["polars-core/dtype-date32", "polars-core/dtype-date64"]
 private = []
 
 [dependencies]
-#arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "f326fed4f3f7b428deee0d4adb46eebc8b7a3471", --default-features=false }
-#arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", rev = "8aab4065eedfdee458ceb315b65e23cc8e9f06f5", default-features = false }
-arrow = { package = "arrow2", version="0.5.3", --default-features=false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "fa5d9eaead7eddce65624e67baabf75c975fb9bd", default-features = false }
+#arrow = { package = "arrow2", version="0.5.3", --default-features=false }
 polars-core = {version = "0.16.0", path = "../polars-core", features = ["private"], default-features=false}
 polars-arrow = {version = "0.16.0", path = "../polars-arrow"}
 lexical = {version = "6", optional = true}
