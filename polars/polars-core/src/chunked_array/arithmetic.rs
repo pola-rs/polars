@@ -543,6 +543,144 @@ impl Pow for Utf8Chunked {}
 impl Pow for ListChunked {}
 impl Pow for CategoricalChunked {}
 
+#[cfg(feature = "series_bitwise")]
+mod bitwise {
+    use super::*;
+    use crate::utils::{combine_validities, CustomIterTools};
+    use std::ops::{BitAnd, BitOr, BitXor};
+
+    impl<T> BitAnd for &ChunkedArray<T>
+    where
+        T: PolarsIntegerType,
+        T::Native: BitAnd<Output = T::Native>,
+    {
+        type Output = ChunkedArray<T>;
+
+        fn bitand(self, rhs: Self) -> Self::Output {
+            let (l, r) = align_chunks_binary(self, rhs);
+            let chunks = l
+                .downcast_iter()
+                .zip(r.downcast_iter())
+                .map(|(l_arr, r_arr)| {
+                    let l_vals = l_arr.values().as_slice();
+                    let r_vals = l_arr.values().as_slice();
+                    let valididity =
+                        combine_validities(l_arr.validity().as_ref(), r_arr.validity().as_ref());
+
+                    let av = l_vals
+                        .iter()
+                        .zip(r_vals)
+                        .map(|(l, r)| *l & *r)
+                        .collect_trusted::<AlignedVec<_>>();
+
+                    let arr =
+                        PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
+                    Arc::new(arr) as ArrayRef
+                })
+                .collect::<Vec<_>>();
+
+            ChunkedArray::new_from_chunks(self.name(), chunks)
+        }
+    }
+
+    impl<T> BitOr for &ChunkedArray<T>
+    where
+        T: PolarsIntegerType,
+        T::Native: BitOr<Output = T::Native>,
+    {
+        type Output = ChunkedArray<T>;
+
+        fn bitor(self, rhs: Self) -> Self::Output {
+            let (l, r) = align_chunks_binary(self, rhs);
+            let chunks = l
+                .downcast_iter()
+                .zip(r.downcast_iter())
+                .map(|(l_arr, r_arr)| {
+                    let l_vals = l_arr.values().as_slice();
+                    let r_vals = l_arr.values().as_slice();
+                    let valididity =
+                        combine_validities(l_arr.validity().as_ref(), r_arr.validity().as_ref());
+
+                    let av = l_vals
+                        .iter()
+                        .zip(r_vals)
+                        .map(|(l, r)| *l | *r)
+                        .collect_trusted::<AlignedVec<_>>();
+
+                    let arr =
+                        PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
+                    Arc::new(arr) as ArrayRef
+                })
+                .collect::<Vec<_>>();
+
+            ChunkedArray::new_from_chunks(self.name(), chunks)
+        }
+    }
+
+    impl<T> BitXor for &ChunkedArray<T>
+    where
+        T: PolarsIntegerType,
+        T::Native: BitXor<Output = T::Native>,
+    {
+        type Output = ChunkedArray<T>;
+
+        fn bitxor(self, rhs: Self) -> Self::Output {
+            let (l, r) = align_chunks_binary(self, rhs);
+            let chunks = l
+                .downcast_iter()
+                .zip(r.downcast_iter())
+                .map(|(l_arr, r_arr)| {
+                    let l_vals = l_arr.values().as_slice();
+                    let r_vals = l_arr.values().as_slice();
+                    let valididity =
+                        combine_validities(l_arr.validity().as_ref(), r_arr.validity().as_ref());
+
+                    let av = l_vals
+                        .iter()
+                        .zip(r_vals)
+                        .map(|(l, r)| l.bitxor(*r))
+                        .collect_trusted::<AlignedVec<_>>();
+
+                    let arr =
+                        PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
+                    Arc::new(arr) as ArrayRef
+                })
+                .collect::<Vec<_>>();
+
+            ChunkedArray::new_from_chunks(self.name(), chunks)
+        }
+    }
+
+    macro_rules! impl_floats {
+        ($_type:ty) => {
+            impl BitXor for &$_type {
+                type Output = $_type;
+
+                fn bitxor(self, _rhs: Self) -> Self::Output {
+                    unimplemented!()
+                }
+            }
+            impl BitAnd for &$_type {
+                type Output = $_type;
+
+                fn bitand(self, _rhs: Self) -> Self::Output {
+                    unimplemented!()
+                }
+            }
+            impl BitOr for &$_type {
+                type Output = $_type;
+
+                fn bitor(self, _rhs: Self) -> Self::Output {
+                    unimplemented!()
+                }
+            }
+        };
+    }
+
+    impl_floats!(Float64Chunked);
+    impl_floats!(Float32Chunked);
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;

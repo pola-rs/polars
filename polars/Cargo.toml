@@ -95,6 +95,7 @@ diff = ["polars-core/diff", "polars-lazy/diff"]
 moment = ["polars-core/moment", "polars-lazy/moment"]
 arange = ["polars-lazy/arange"]
 true_div = ["polars-lazy/true_div"]
+series_bitwise = ["polars-core/series_bitwise"]
 
 # don't use this
 private = []

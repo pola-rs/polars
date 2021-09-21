@@ -401,14 +401,6 @@ where
     }
 }
 
-impl ChunkWindow for ListChunked {}
-impl ChunkWindow for Utf8Chunked {}
-impl ChunkWindow for BooleanChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ChunkWindow for CategoricalChunked {}
-#[cfg(feature = "object")]
-impl<T> ChunkWindow for ObjectChunked<T> {}
-
 impl<T> ChunkRollApply for ChunkedArray<T>
 where
     T: PolarsNumericType,

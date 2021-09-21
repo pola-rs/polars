@@ -91,19 +91,6 @@ macro_rules! is_unique_duplicated {
     }};
 }
 
-impl ChunkUnique<ListType> for ListChunked {
-    fn unique(&self) -> Result<ChunkedArray<ListType>> {
-        Err(PolarsError::InvalidOperation(
-            "unique not supported for list".into(),
-        ))
-    }
-
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Err(PolarsError::InvalidOperation(
-            "unique not supported for list".into(),
-        ))
-    }
-}
 #[cfg(feature = "object")]
 impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     fn unique(&self) -> Result<ChunkedArray<ObjectType<T>>> {
@@ -397,7 +384,6 @@ where
     }
 }
 
-impl ToDummies<ListType> for ListChunked {}
 #[cfg(feature = "object")]
 impl<T> ToDummies<ObjectType<T>> for ObjectChunked<T> {}
 impl ToDummies<Float32Type> for Float32Chunked {}

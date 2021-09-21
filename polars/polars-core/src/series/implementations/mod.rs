@@ -1,3 +1,4 @@
+mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 #[cfg(any(
@@ -6,8 +7,10 @@ mod categorical;
     feature = "dtype-time64-ns"
 ))]
 mod dates;
+mod list;
 #[cfg(feature = "object")]
 mod object;
+mod utf8;
 
 #[cfg(feature = "object")]
 use std::any::Any;
@@ -38,6 +41,8 @@ use ahash::RandomState;
 use arrow::array::ArrayRef;
 use std::borrow::Cow;
 use std::ops::Deref;
+#[cfg(feature = "series_bitwise")]
+use std::ops::{BitAnd, BitOr, BitXor};
 
 // Utility wrapper struct
 pub(crate) struct SeriesWrap<T>(pub T);
@@ -298,6 +303,39 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "interpolate")]
             fn interpolate(&self) -> Series {
                 self.0.interpolate().into_series()
+            }
+
+            #[cfg(feature = "series_bitwise")]
+            fn bitand(&self, other: &Series) -> Result<Series> {
+                let other = if other.len() == 1 {
+                    Cow::Owned(other.cast_with_dtype(self.dtype())?)
+                } else {
+                    Cow::Borrowed(other)
+                };
+                let other = self.0.unpack_series_matching_type(&other)?;
+                Ok(self.0.bitand(&other).into_series())
+            }
+
+            #[cfg(feature = "series_bitwise")]
+            fn bitor(&self, other: &Series) -> Result<Series> {
+                let other = if other.len() == 1 {
+                    Cow::Owned(other.cast_with_dtype(self.dtype())?)
+                } else {
+                    Cow::Borrowed(other)
+                };
+                let other = self.0.unpack_series_matching_type(&other)?;
+                Ok(self.0.bitor(&other).into_series())
+            }
+
+            #[cfg(feature = "series_bitwise")]
+            fn bitxor(&self, other: &Series) -> Result<Series> {
+                let other = if other.len() == 1 {
+                    Cow::Owned(other.cast_with_dtype(self.dtype())?)
+                } else {
+                    Cow::Borrowed(other)
+                };
+                let other = self.0.unpack_series_matching_type(&other)?;
+                Ok(self.0.bitxor(&other).into_series())
             }
 
             fn rename(&mut self, name: &str) {
@@ -866,9 +904,6 @@ impl_dyn_series!(Int8Chunked);
 impl_dyn_series!(Int16Chunked);
 impl_dyn_series!(Int32Chunked);
 impl_dyn_series!(Int64Chunked);
-impl_dyn_series!(Utf8Chunked);
-impl_dyn_series!(ListChunked);
-impl_dyn_series!(BooleanChunked);
 
 macro_rules! impl_dyn_series_numeric {
     ($ca: ident) => {
@@ -902,6 +937,6 @@ impl_dyn_series_numeric!(Int16Chunked);
 impl_dyn_series_numeric!(Int32Chunked);
 impl_dyn_series_numeric!(Int64Chunked);
 
-impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {}

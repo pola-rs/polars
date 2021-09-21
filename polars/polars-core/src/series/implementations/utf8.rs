@@ -6,7 +6,6 @@ use crate::chunked_array::{
     ops::{
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
         explode::ExplodeByOffsets,
-        ChunkFullNull,
     },
     AsSinglePtr, ChunkIdIter,
 };
@@ -23,18 +22,34 @@ use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
+#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 
-impl IntoSeries for CategoricalChunked {
+impl IntoSeries for Utf8Chunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
 }
 
-impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
+impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
+    }
+
+    #[cfg(feature = "cum_agg")]
+    fn _cummax(&self, reverse: bool) -> Series {
+        self.0.cummax(reverse).into_series()
+    }
+
+    #[cfg(feature = "cum_agg")]
+    fn _cummin(&self, reverse: bool) -> Series {
+        self.0.cummin(reverse).into_series()
+    }
+
+    #[cfg(feature = "cum_agg")]
+    fn _cumsum(&self, reverse: bool) -> Series {
+        self.0.cumsum(reverse).into_series()
     }
 
     #[cfg(feature = "asof_join")]
@@ -69,12 +84,36 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
+    fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.0.agg_mean(groups)
+    }
+
+    fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.0.agg_min(groups)
+    }
+
+    fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.0.agg_max(groups)
+    }
+
+    fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.0.agg_sum(groups)
+    }
+
     fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         self.0.agg_first(groups)
     }
 
     fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         self.0.agg_last(groups)
+    }
+
+    fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.0.agg_std(groups)
+    }
+
+    fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.0.agg_var(groups)
     }
 
     fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
@@ -85,6 +124,13 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.agg_list(groups)
     }
 
+    fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
+        self.0.agg_quantile(groups, quantile)
+    }
+
+    fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        self.0.agg_median(groups)
+    }
     #[cfg(feature = "lazy")]
     fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.0.agg_valid_count(groups)
@@ -126,6 +172,21 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     ) -> Series {
         ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
     }
+    fn subtract(&self, rhs: &Series) -> Result<Series> {
+        NumOpsDispatch::subtract(&self.0, rhs)
+    }
+    fn add_to(&self, rhs: &Series) -> Result<Series> {
+        NumOpsDispatch::add_to(&self.0, rhs)
+    }
+    fn multiply(&self, rhs: &Series) -> Result<Series> {
+        NumOpsDispatch::multiply(&self.0, rhs)
+    }
+    fn divide(&self, rhs: &Series) -> Result<Series> {
+        NumOpsDispatch::divide(&self.0, rhs)
+    }
+    fn remainder(&self, rhs: &Series) -> Result<Series> {
+        NumOpsDispatch::remainder(&self.0, rhs)
+    }
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         IntoGroupTuples::group_tuples(&self.0, multithreaded)
     }
@@ -141,15 +202,15 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 }
 
-impl SeriesTrait for SeriesWrap<CategoricalChunked> {
+impl SeriesTrait for SeriesWrap<Utf8Chunked> {
+    #[cfg(feature = "interpolate")]
+    fn interpolate(&self) -> Series {
+        self.0.clone().into_series()
+    }
+
     #[cfg(feature = "rolling_window")]
     fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
         ChunkRollApply::rolling_apply(&self.0, _window_size, _f).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "interpolate")]
-    fn interpolate(&self) -> Series {
-        self.0.interpolate().into_series()
     }
 
     fn rename(&mut self, name: &str) {
@@ -174,13 +235,13 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn categorical(&self) -> Result<&CategoricalChunked> {
-        if matches!(self.0.dtype(), DataType::Categorical) {
-            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const CategoricalChunked)) }
+    fn utf8(&self) -> Result<&Utf8Chunked> {
+        if matches!(self.0.dtype(), DataType::Utf8) {
+            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Utf8Chunked)) }
         } else {
             Err(PolarsError::DataTypeMisMatch(
                 format!(
-                    "cannot unpack Series: {:?} of type {:?} into categorical",
+                    "cannot unpack Series: {:?} of type {:?} into utf8",
                     self.name(),
                     self.dtype(),
                 )
@@ -211,6 +272,14 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+    }
+
+    fn mean(&self) -> Option<f64> {
+        self.0.mean()
+    }
+
+    fn median(&self) -> Option<f64> {
+        self.0.median()
     }
 
     fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
@@ -321,6 +390,14 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         ChunkUnique::arg_unique(&self.0)
     }
 
+    fn arg_min(&self) -> Option<usize> {
+        ArgAgg::arg_min(&self.0)
+    }
+
+    fn arg_max(&self) -> Option<usize> {
+        ArgAgg::arg_max(&self.0)
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -354,28 +431,28 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn sum_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::sum_as_series(&self.0)
     }
     fn max_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::max_as_series(&self.0)
     }
     fn min_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::min_as_series(&self.0)
     }
     fn mean_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::mean_as_series(&self.0)
     }
     fn median_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        ChunkAggSeries::median_as_series(&self.0)
     }
     fn var_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        VarAggSeries::var_as_series(&self.0)
     }
     fn std_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
+        VarAggSeries::std_as_series(&self.0)
     }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
-        Ok(CategoricalChunked::full_null(self.name(), 1).into_series())
+    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
+        ChunkAggSeries::quantile_as_series(&self.0, quantile)
     }
 
     fn fmt_list(&self) -> String {
@@ -399,6 +476,28 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0
             .sample_frac(frac, with_replacement)
             .map(|ca| ca.into_series())
+    }
+
+    fn pow(&self, exponent: f64) -> Result<Series> {
+        let f_err = || {
+            Err(PolarsError::InvalidOperation(
+                format!("power operation not supported on dtype {:?}", self.dtype()).into(),
+            ))
+        };
+
+        match self.dtype() {
+            DataType::Utf8 | DataType::List(_) | DataType::Boolean => f_err(),
+            DataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
+            _ => Ok(self.0.pow_f64(exponent).into_series()),
+        }
+    }
+
+    fn peak_max(&self) -> BooleanChunked {
+        self.0.peak_max()
+    }
+
+    fn peak_min(&self) -> BooleanChunked {
+        self.0.peak_min()
     }
 
     #[cfg(feature = "is_in")]
@@ -427,17 +526,5 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Series> {
         Ok(self.0.mode()?.into_series())
-    }
-}
-
-impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {
-    fn bit_repr_is_large(&self) -> bool {
-        CategoricalChunked::bit_repr_is_large()
-    }
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
-    }
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.bit_repr_small()
     }
 }

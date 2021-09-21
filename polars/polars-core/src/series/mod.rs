@@ -41,6 +41,18 @@ pub trait IntoSeries {
         Self: Sized;
 }
 
+macro_rules! invalid_operation {
+    ($s:expr) => {
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "argsort_multiple is not implemented for this dtype: {:?}",
+                $s.dtype()
+            )
+            .into(),
+        ))
+    };
+}
+
 pub(crate) mod private {
     use super::*;
     #[cfg(feature = "pivot")]
@@ -282,10 +294,38 @@ pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
     #[cfg(feature = "interpolate")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
     fn interpolate(&self) -> Series;
 
     /// Rename the Series.
     fn rename(&mut self, name: &str);
+
+    #[cfg(feature = "series_bitwise")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "series_bitwise")))]
+    fn bitand(&self, _other: &Series) -> Result<Series> {
+        panic!(
+            "bitwise and operation not supported for dtype {:?}",
+            self.dtype()
+        )
+    }
+
+    #[cfg(feature = "series_bitwise")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "series_bitwise")))]
+    fn bitor(&self, _other: &Series) -> Result<Series> {
+        panic!(
+            "bitwise or operation not fit supported for dtype {:?}",
+            self.dtype()
+        )
+    }
+
+    #[cfg(feature = "series_bitwise")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "series_bitwise")))]
+    fn bitxor(&self, _other: &Series) -> Result<Series> {
+        panic!(
+            "bitwise xor operation not fit supported for dtype {:?}",
+            self.dtype()
+        )
+    }
 
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkIdIter {
@@ -318,10 +358,7 @@ pub trait SeriesTrait:
 
     /// Shrink the capacity of this array to fit it's length.
     fn shrink_to_fit(&mut self) {
-        eprintln!(
-            "shrink to fit, not yet supported for this {:?}",
-            self.dtype()
-        )
+        panic!("shrink to fit not supported for dtype {:?}", self.dtype())
     }
 
     /// Unpack to ChunkedArray of dtype i8
@@ -672,7 +709,7 @@ pub trait SeriesTrait:
 
     /// Get unique values in the Series.
     fn unique(&self) -> Result<Series> {
-        unimplemented!()
+        invalid_operation!(self)
     }
 
     /// Get unique values in the Series.
