@@ -408,6 +408,9 @@ where
     Self: IntoSeries,
 {
     fn rolling_apply(&self, window_size: usize, f: &dyn Fn(&Series) -> Series) -> Result<Self> {
+        if window_size >= self.len() {
+            return Ok(Self::full_null(self.name(), self.len()));
+        }
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
 
@@ -466,6 +469,9 @@ where
         F: Fn(&ChunkedArray<T>) -> Option<T::Native>,
         T::Native: Zero,
     {
+        if window_size >= self.len() {
+            return Ok(Self::full_null(self.name(), self.len()));
+        }
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
 
@@ -507,6 +513,10 @@ where
     }
 
     pub fn rolling_var(&self, window_size: usize) -> Series {
+        if window_size >= self.len() {
+            return Self::full_null(self.name(), self.len()).into();
+        }
+
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
         let values = arr.values().as_slice();
@@ -696,6 +706,9 @@ mod test {
                 Some(6.0),
             ],
         );
+        // window larger than array
+        assert_eq!(ca.rolling_var(10).null_count(), ca.len());
+
         let out = ca.rolling_var(3).cast::<Int32Type>().unwrap();
         let out = out.i32().unwrap();
         assert_eq!(
