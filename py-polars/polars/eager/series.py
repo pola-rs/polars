@@ -475,8 +475,18 @@ class Series:
 
     def __getitem__(self, item: Any) -> Any:
         if isinstance(item, int):
-            if item >= self.len():
-                raise IndexError
+            if item < 0:
+                item = self.len() + item
+            if self.dtype in (List, Date32, Date64, Object):
+                f = get_ffi_func("get_<>", self.dtype, self._s)
+                if f is None:
+                    return NotImplemented
+                out = f(item)
+                if self.dtype == List:
+                    return wrap_s(out)
+                return out
+
+            return self._s.get_idx(item)
         # assume it is boolean mask
         if isinstance(item, Series):
             return Series._from_pyseries(self._s.filter(item._s))
