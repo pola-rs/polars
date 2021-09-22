@@ -36,7 +36,8 @@ jobs:
           cp README.md py-polars/README.md
           cd py-polars
           rustup override set nightly-2021-09-14
-      - uses: maturin publish
+      - name: maturin publish
+        uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
