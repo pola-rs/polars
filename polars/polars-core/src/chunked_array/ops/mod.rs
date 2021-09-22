@@ -121,6 +121,38 @@ pub trait ChunkBytes {
     fn to_byte_slices(&self) -> Vec<&[u8]>;
 }
 
+#[cfg(feature = "rolling_window")]
+pub trait ChunkWindowMean {
+    /// Apply a rolling mean (moving mean) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
+    /// values will be aggregated to their mean.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_size` - The length of the window.
+    /// * `weight` - An optional slice with the same length of the window that will be multiplied
+    ///              elementwise with the values in the window.
+    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
+    ///                     `true` -> Null values will be ignored.
+    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
+    /// * `min_periods` -  Amount of elements in the window that should be filled before computing a result.
+    fn rolling_mean(
+        &self,
+        _window_size: u32,
+        _weight: Option<&[f64]>,
+        _ignore_null: bool,
+        _min_periods: u32,
+    ) -> Result<Series>
+    where
+        Self: std::marker::Sized,
+    {
+        Err(PolarsError::InvalidOperation(
+            "rolling mean not supported for this datatype".into(),
+        ))
+    }
+}
+
 /// Rolling window functions
 #[cfg(feature = "rolling_window")]
 pub trait ChunkWindow {
@@ -149,34 +181,6 @@ pub trait ChunkWindow {
     {
         Err(PolarsError::InvalidOperation(
             "rolling sum not supported for this datatype".into(),
-        ))
-    }
-    /// Apply a rolling mean (moving mean) over the values in this array.
-    /// A window of length `window_size` will traverse the array. The values that fill this window
-    /// will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
-    /// values will be aggregated to their mean.
-    ///
-    /// # Arguments
-    ///
-    /// * `window_size` - The length of the window.
-    /// * `weight` - An optional slice with the same length of the window that will be multiplied
-    ///              elementwise with the values in the window.
-    /// * `ignore_null` - Toggle behavior of aggregation regarding null values in the window.
-    ///                     `true` -> Null values will be ignored.
-    ///                     `false` -> Any Null in the window leads to a Null in the aggregation result.
-    /// * `min_periods` -  Amount of elements in the window that should be filled before computing a result.
-    fn rolling_mean(
-        &self,
-        _window_size: u32,
-        _weight: Option<&[f64]>,
-        _ignore_null: bool,
-        _min_periods: u32,
-    ) -> Result<Self>
-    where
-        Self: std::marker::Sized,
-    {
-        Err(PolarsError::InvalidOperation(
-            "rolling mean not supported for this datatype".into(),
         ))
     }
 
