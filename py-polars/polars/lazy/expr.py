@@ -1305,6 +1305,8 @@ class Expr:
         will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
         values will be aggregated to their sum.
 
+        Parameters
+        ----------
         window_size
             The length of the window.
         weight
@@ -1317,6 +1319,37 @@ class Expr:
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        >>>     {
+        >>>         "A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]
+        >>>     }
+        >>> )
+        >>> df.select([
+        >>>     col("A").rolling_mean(window_size=2)
+        >>> ])
+        shape: (6, 1)
+        ┌──────┐
+        │ A    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 4.5  │
+        ├╌╌╌╌╌╌┤
+        │ 7    │
+        ├╌╌╌╌╌╌┤
+        │ 4    │
+        ├╌╌╌╌╌╌┤
+        │ 9    │
+        ├╌╌╌╌╌╌┤
+        │ 13   │
+        └──────┘
+
         """
         if min_periods is None:
             min_periods = window_size
