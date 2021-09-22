@@ -1549,6 +1549,26 @@ class Series:
             DataType to cast to
         strict
             Throw an error if a cast could not be done for instance due to an overflow
+
+        Examples
+        --------
+        >>> s = pl.Series("a", ["2020-01-01", "2020-01-02", "2020-01-03"])
+        shape: (3,)
+        Series: 'a' [str]
+        [
+            "2020-01-01"
+            "2020-01-02"
+            "2020-01-03"
+        ]
+        >>> s.cast(pl.datatypes.Date32)
+        shape: (3,)
+        Series: 'a' [date32]
+        [
+            2020-01-01
+            2020-01-02
+            2020-01-03
+        ]
+
         """
         if dtype == int:
             dtype = Int64
