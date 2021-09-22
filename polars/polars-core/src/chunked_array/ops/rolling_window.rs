@@ -531,7 +531,7 @@ where
         Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]))
     }
 
-    pub fn rolling_var(&self, window_size: usize) -> Self {
+    pub fn rolling_var(&self, window_size: usize) -> Series {
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
         let values = arr.values().as_slice();
@@ -583,24 +583,16 @@ where
             rolling_values.into(),
             Some(validity.into()),
         );
-        Self::new_from_chunks(self.name(), vec![Arc::new(arr)])
+        Self::new_from_chunks(self.name(), vec![Arc::new(arr)]).into()
     }
 
-    pub fn rolling_std(&self, window_size: usize) -> Self {
-        let s = self.rolling_var(window_size).into_series();
+    pub fn rolling_std(&self, window_size: usize) -> Series {
+        let s = self.rolling_var(window_size);
         // Safety:
         // We are still guarded by the type system.
         match self.dtype() {
-            DataType::Float32 => unsafe {
-                std::mem::transmute::<Float32Chunked, ChunkedArray<T>>(
-                    s.f32().unwrap().pow_f32(0.5),
-                )
-            },
-            DataType::Float64 => unsafe {
-                std::mem::transmute::<Float64Chunked, ChunkedArray<T>>(
-                    s.f64().unwrap().pow_f64(0.5),
-                )
-            },
+            DataType::Float32 => s.f32().unwrap().pow_f32(0.5).into_series(),
+            DataType::Float64 => s.f64().unwrap().pow_f64(0.5).into_series(),
             _ => unreachable!(),
         }
     }
@@ -740,18 +732,19 @@ mod test {
             ],
         );
         let out = ca.rolling_var(3).cast::<Int32Type>().unwrap();
+        let out = out.i32().unwrap();
         assert_eq!(
-            Vec::from(&out),
+            Vec::from(out),
             &[None, None, Some(1), None, None, None, None,]
         );
 
         let ca = Float64Chunked::new_from_slice("", &[0.0, 2.0, 8.0, 3.0, 12.0, 1.0]);
         let out = ca.rolling_var(3).cast::<Int32Type>().unwrap();
+        let out = out.i32().unwrap();
 
         assert_eq!(
-            Vec::from(&out),
+            Vec::from(out),
             &[None, None, Some(17), Some(10), Some(20), Some(34),]
         );
-        dbg!(out);
     }
 }
