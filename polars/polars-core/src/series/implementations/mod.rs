@@ -81,8 +81,14 @@ macro_rules! impl_dyn_series {
                 ignore_null: bool,
                 min_periods: u32,
             ) -> Result<Series> {
-                ChunkWindow::rolling_mean(&self.0, window_size, weight, ignore_null, min_periods)
-                    .map(|ca| ca.into_series())
+                ChunkWindowMean::rolling_mean(
+                    &self.0,
+                    window_size,
+                    weight,
+                    ignore_null,
+                    min_periods,
+                )
+                .map(|ca| ca.into_series())
             }
             #[cfg(feature = "rolling_window")]
             fn _rolling_sum(

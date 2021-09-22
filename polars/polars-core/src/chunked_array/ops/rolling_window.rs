@@ -224,6 +224,44 @@ where
     }
 }
 
+impl<T> ChunkWindowMean for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Add<Output = T::Native>
+        + Sub<Output = T::Native>
+        + Mul<Output = T::Native>
+        + Div<Output = T::Native>
+        + Rem<Output = T::Native>
+        + Zero
+        + Bounded
+        + NumCast
+        + PartialOrd
+        + One
+        + Copy,
+    ChunkedArray<T>: IntoSeries,
+{
+    fn rolling_mean(
+        &self,
+        window_size: u32,
+        weight: Option<&[f64]>,
+        ignore_null: bool,
+        min_periods: u32,
+    ) -> Result<Series> {
+        match self.dtype() {
+            DataType::Float32 | DataType::Float64 => {
+                check_input(window_size, min_periods)?;
+                let ca = self.rolling_sum(window_size, weight, ignore_null, min_periods)?;
+                let rolling_window_size = self.window_size(window_size, None, min_periods);
+                Ok((&ca).div(&rolling_window_size).into_series())
+            }
+            _ => {
+                let ca = self.cast::<Float64Type>()?;
+                ca.rolling_mean(window_size, weight, ignore_null, min_periods)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum InitFold {
     Zero,
@@ -268,19 +306,6 @@ where
             InitFold::Zero,
             min_periods,
         ))
-    }
-
-    fn rolling_mean(
-        &self,
-        window_size: u32,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-        min_periods: u32,
-    ) -> Result<Self> {
-        check_input(window_size, min_periods)?;
-        let rolling_window_size = self.window_size(window_size, None, min_periods);
-        let ca = self.rolling_sum(window_size, weight, ignore_null, min_periods)?;
-        Ok((&ca).div(&rolling_window_size))
     }
 
     fn rolling_min(
@@ -646,8 +671,9 @@ mod test {
 
         // validate that we divide by the proper window length. (same as pandas)
         let a = ca.rolling_mean(3, None, true, 1).unwrap();
+        let a = a.f64().unwrap();
         assert_eq!(
-            Vec::from(&a),
+            Vec::from(a),
             &[
                 Some(0.0),
                 Some(0.5),
@@ -657,6 +683,15 @@ mod test {
                 Some(5.0),
                 Some(5.5)
             ]
+        );
+
+        // integers
+        let ca = Int32Chunked::new_from_slice("", &[1, 8, 6, 2, 16, 10]);
+        let out = ca.rolling_mean(2, None, true, 2).unwrap();
+        let out = out.f64().unwrap();
+        assert_eq!(
+            Vec::from(out),
+            &[None, Some(4.5), Some(7.0), Some(4.0), Some(9.0), Some(13.0),]
         );
     }
 

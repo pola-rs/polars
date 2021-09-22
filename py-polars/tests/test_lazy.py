@@ -416,16 +416,16 @@ def test_rolling(fruits_cars):
     df = fruits_cars
     assert df.select(
         [
-            col("A").rolling_min(3, min_periods=1).alias("1"),
-            col("A").rolling_mean(3, min_periods=1).alias("2"),
-            col("A").rolling_max(3, min_periods=1).alias("3"),
-            col("A").rolling_sum(3, min_periods=1).alias("4"),
+            pl.col("A").rolling_min(3, min_periods=1).alias("1"),
+            pl.col("A").rolling_mean(3, min_periods=1).alias("2"),
+            pl.col("A").rolling_max(3, min_periods=1).alias("3"),
+            pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
         ]
     ).frame_equal(
         pl.DataFrame(
             {
                 "1": [1, 1, 1, 2, 3],
-                "2": [1, 1, 2, 3, 4],
+                "2": [1.0, 1.5, 2.0, 3.0, 4.0],
                 "3": [1, 2, 3, 4, 5],
                 "5": [1, 3, 6, 9, 12],
             }
