@@ -195,6 +195,21 @@ def test_rechunk():
     assert a.n_chunks() == 1
 
 
+def test_indexing():
+    a = pl.Series("a", [1, 2, None])
+    assert a[1] == 2
+    assert a[2] == None
+    b = pl.Series("b", [True, False])
+    assert b[0]
+    assert not b[1]
+    a = pl.Series("a", ["a", None])
+    assert a[0] == "a"
+    assert a[1] == None
+    a = pl.Series("a", [0.1, None])
+    assert a[0] == 0.1
+    assert a[1] == None
+
+
 def test_arrow():
     a = pl.Series("a", [1, 2, 3, None])
     out = a.to_arrow()

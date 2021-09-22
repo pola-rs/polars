@@ -239,6 +239,10 @@ impl PySeries {
         }
     }
 
+    pub fn get_idx(&self, py: Python, idx: usize) -> PyObject {
+        Wrap(self.series.get(idx)).into_py(py)
+    }
+
     pub fn bitand(&self, other: &PySeries) -> PyResult<Self> {
         let out = self.series.bitand(&other.series).map_err(PyPolarsEr::from)?;
         Ok(out.into())
