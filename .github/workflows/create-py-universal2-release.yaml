@@ -1,6 +1,10 @@
 name: Create universal2 python release
 
-on: [workflow_dispatch]
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
 
 jobs:
   build:
