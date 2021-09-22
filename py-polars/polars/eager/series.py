@@ -1560,7 +1560,7 @@ class Series:
             "2020-01-02"
             "2020-01-03"
         ]
-        >>> s.cast(pl.datatypes.Date32)
+        >>> s.cast(pl.datatypes.Date32)git
         shape: (3,)
         Series: 'a' [date32]
         [
