@@ -48,8 +48,9 @@ pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Res
                 _ => Ok(&left.cast_with_dtype(&Float64)? / &right.cast_with_dtype(&Float64)?),
             }
         }
-        Operator::And => Ok((left.bool()? & right.bool()?).into_series()),
-        Operator::Or => Ok((left.bool()? | right.bool()?).into_series()),
+        Operator::And => left.bitand(right),
+        Operator::Or => left.bitor(right),
+        Operator::Xor => left.bitxor(right),
         Operator::Modulus => Ok(left % right),
     }
 }

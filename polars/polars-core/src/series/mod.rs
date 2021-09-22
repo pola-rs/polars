@@ -300,8 +300,6 @@ pub trait SeriesTrait:
     /// Rename the Series.
     fn rename(&mut self, name: &str);
 
-    #[cfg(feature = "series_bitwise")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "series_bitwise")))]
     fn bitand(&self, _other: &Series) -> Result<Series> {
         panic!(
             "bitwise and operation not supported for dtype {:?}",
@@ -309,8 +307,6 @@ pub trait SeriesTrait:
         )
     }
 
-    #[cfg(feature = "series_bitwise")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "series_bitwise")))]
     fn bitor(&self, _other: &Series) -> Result<Series> {
         panic!(
             "bitwise or operation not fit supported for dtype {:?}",
@@ -318,8 +314,6 @@ pub trait SeriesTrait:
         )
     }
 
-    #[cfg(feature = "series_bitwise")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "series_bitwise")))]
     fn bitxor(&self, _other: &Series) -> Result<Series> {
         panic!(
             "bitwise xor operation not fit supported for dtype {:?}",

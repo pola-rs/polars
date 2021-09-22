@@ -1,4 +1,3 @@
-use crate::utils::align_chunks_binary;
 use crate::{prelude::*, utils::NoNull};
 use arrow::compute::comparison::Simd8;
 use arrow::scalar::Utf8Scalar;
@@ -9,7 +8,7 @@ use arrow::{
     compute::comparison,
 };
 use num::{Num, NumCast, ToPrimitive};
-use std::ops::{BitAnd, BitOr, Not};
+use std::ops::Not;
 use std::sync::Arc;
 
 type LargeStringArray = Utf8Array<i64>;
@@ -612,88 +611,6 @@ impl ChunkCompare<&ListChunked> for ListChunked {
 
     fn lt_eq(&self, _rhs: &ListChunked) -> BooleanChunked {
         unimplemented!()
-    }
-}
-
-impl BitOr for &BooleanChunked {
-    type Output = BooleanChunked;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        if self.len() == 1 {
-            return match self.get(0) {
-                Some(true) => BooleanChunked::full(self.name(), true, rhs.len()),
-                Some(false) => {
-                    let mut rhs = rhs.clone();
-                    rhs.rename(self.name());
-                    rhs
-                }
-                None => &self.expand_at_index(0, rhs.len()) | rhs,
-            };
-        } else if rhs.len() == 1 {
-            return match rhs.get(0) {
-                Some(true) => BooleanChunked::full(self.name(), true, self.len()),
-                Some(false) => self.clone(),
-                None => &rhs.expand_at_index(0, self.len()) | self,
-            };
-        }
-
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(lhs, rhs)| {
-                Arc::new(compute::boolean_kleene::or(lhs, rhs).expect("should be same size"))
-                    as ArrayRef
-            })
-            .collect();
-        BooleanChunked::new_from_chunks(self.name(), chunks)
-    }
-}
-
-impl BitOr for BooleanChunked {
-    type Output = BooleanChunked;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        (&self).bitor(&rhs)
-    }
-}
-
-impl BitAnd for &BooleanChunked {
-    type Output = BooleanChunked;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        if self.len() == 1 {
-            return match self.get(0) {
-                Some(true) => rhs.clone(),
-                Some(false) => BooleanChunked::full(self.name(), false, rhs.len()),
-                None => &self.expand_at_index(0, rhs.len()) & rhs,
-            };
-        } else if rhs.len() == 1 {
-            return match rhs.get(0) {
-                Some(true) => self.clone(),
-                Some(false) => BooleanChunked::full(self.name(), false, self.len()),
-                None => self & &rhs.expand_at_index(0, self.len()),
-            };
-        }
-
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(lhs, rhs)| {
-                Arc::new(compute::boolean_kleene::and(lhs, rhs).expect("should be same size"))
-                    as ArrayRef
-            })
-            .collect();
-        BooleanChunked::new_from_chunks(self.name(), chunks)
-    }
-}
-
-impl BitAnd for BooleanChunked {
-    type Output = BooleanChunked;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        (&self).bitand(&rhs)
     }
 }
 

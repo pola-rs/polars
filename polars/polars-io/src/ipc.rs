@@ -153,7 +153,7 @@ mod test {
         // Vec<T> : Write + Read
         // Cursor<Vec<_>>: Seek
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut df = create_df();
+        let df = create_df();
 
         IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
 

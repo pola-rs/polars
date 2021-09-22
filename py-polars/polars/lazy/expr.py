@@ -86,6 +86,12 @@ class Expr:
     def __invert__(self) -> "Expr":
         return self.is_not()
 
+    def __xor__(self, other: "Expr") -> "Expr":
+        return wrap_expr(self._pyexpr._xor(self.__to_pyexpr(other)))
+
+    def __rxor__(self, other: "Expr") -> "Expr":
+        return wrap_expr(self._pyexpr._xor(self.__to_pyexpr(other)))
+
     def __and__(self, other: "Expr") -> "Expr":
         return wrap_expr(self._pyexpr._and(self.__to_pyexpr(other)))
 

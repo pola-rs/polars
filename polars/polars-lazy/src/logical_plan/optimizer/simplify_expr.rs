@@ -242,23 +242,14 @@ impl OptimizationRule for SimplifyBooleanRule {
     }
 }
 
-fn eval_and(left: &AExpr, right: &AExpr) -> Option<AExpr> {
+fn eval_bitwise<F>(left: &AExpr, right: &AExpr, operation: F) -> Option<AExpr>
+where
+    F: Fn(bool, bool) -> bool,
+{
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right) {
         return match (lit_left, lit_right) {
             (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(*x && *y)))
-            }
-            _ => None,
-        };
-    }
-    None
-}
-
-fn eval_or(left: &AExpr, right: &AExpr) -> Option<AExpr> {
-    if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right) {
-        return match (lit_left, lit_right) {
-            (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(*x || *y)))
+                Some(AExpr::Literal(LiteralValue::Boolean(operation(*x, *y))))
             }
             _ => None,
         };
@@ -349,8 +340,9 @@ impl OptimizationRule for SimplifyExprRule {
                     Operator::NotEq => eval_binary_bool_type!(left, !=, right),
                     Operator::GtEq => eval_binary_bool_type!(left, >=, right),
                     Operator::LtEq => eval_binary_bool_type!(left, >=, right),
-                    Operator::And => eval_and(left, right),
-                    Operator::Or => eval_or(left, right),
+                    Operator::And => eval_bitwise(left, right, |l, r| l & r),
+                    Operator::Or => eval_bitwise(left, right, |l, r| l | r),
+                    Operator::Xor => eval_bitwise(left, right, |l, r| l ^ r),
                 }
             }
             AExpr::Reverse(expr) => {

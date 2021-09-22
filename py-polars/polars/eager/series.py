@@ -268,10 +268,28 @@ class Series:
         return self.__str__()
 
     def __and__(self, other: "Series") -> "Series":
+        if not isinstance(other, Series):
+            other = Series([other])
         return wrap_s(self._s.bitand(other._s))
 
+    def __rand__(self, other: "Series") -> "Series":
+        return self.__and__(other)
+
     def __or__(self, other: "Series") -> "Series":
+        if not isinstance(other, Series):
+            other = Series([other])
         return wrap_s(self._s.bitor(other._s))
+
+    def __ror__(self, other: "Series") -> "Series":
+        return self.__or__(other)
+
+    def __xor__(self, other: "Series") -> "Series":
+        if not isinstance(other, Series):
+            other = Series([other])
+        return wrap_s(self._s.bitxor(other._s))
+
+    def __rxor__(self, other: "Series") -> "Series":
+        return self.__xor__(other)
 
     def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
         if isinstance(other, Sequence) and not isinstance(other, str):

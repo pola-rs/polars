@@ -291,6 +291,10 @@ impl PyExpr {
         self.clone().inner.and(expr.inner).into()
     }
 
+    pub fn _xor(&self, expr: PyExpr) -> PyExpr {
+        self.clone().inner.xor(expr.inner).into()
+    }
+
     pub fn _or(&self, expr: PyExpr) -> PyExpr {
         self.clone().inner.or(expr.inner).into()
     }

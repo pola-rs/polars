@@ -463,6 +463,7 @@ pub enum Operator {
     Modulus,
     And,
     Or,
+    Xor,
 }
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
@@ -1163,6 +1164,11 @@ impl Expr {
     /// and operation
     pub fn and(self, expr: Expr) -> Self {
         binary_expr(self, Operator::And, expr)
+    }
+
+    // xor operation
+    pub fn xor(self, expr: Expr) -> Self {
+        binary_expr(self, Operator::Xor, expr)
     }
 
     /// or operation
