@@ -230,11 +230,11 @@ impl PyDataFrame {
         Ok(pydf)
     }
 
-    pub fn to_csv(&self, py_f: PyObject, has_headers: bool, delimiter: u8) -> PyResult<()> {
+    pub fn to_csv(&self, py_f: PyObject, has_headers: bool, sep: u8) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         CsvWriter::new(&mut buf)
             .has_headers(has_headers)
-            .with_delimiter(delimiter)
+            .with_delimiter(sep)
             .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())

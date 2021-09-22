@@ -768,7 +768,7 @@ class DataFrame:
         self,
         file: Optional[Union[TextIO, str, Path]] = None,
         has_headers: bool = True,
-        delimiter: str = ",",
+        sep: str = ",",
     ) -> Optional[str]:
         """
         Write Dataframe to comma-separated values file (csv).
@@ -779,7 +779,7 @@ class DataFrame:
             File path to which the file should be written.
         has_headers
             Whether or not to include header in the CSV output.
-        delimiter
+        sep
             Separate CSV fields with this symbol.
 
         Examples
@@ -795,13 +795,13 @@ class DataFrame:
         """
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, has_headers, ord(delimiter))
+            self._df.to_csv(buffer, has_headers, ord(sep))
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, Path):
             file = str(file)
 
-        self._df.to_csv(file, has_headers, ord(delimiter))
+        self._df.to_csv(file, has_headers, ord(sep))
         return None
 
     def to_ipc(self, file: Union[BinaryIO, str, Path]) -> None:
