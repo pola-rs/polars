@@ -8,7 +8,6 @@ use crate::{arrow_interop, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
-use std::ops::{BitAnd, BitOr};
 
 #[pyclass]
 #[repr(transparent)]
@@ -240,24 +239,18 @@ impl PySeries {
         }
     }
 
-    pub fn bitand(&self, other: &PySeries) -> Self {
-        let s = self
-            .series
-            .bool()
-            .expect("boolean")
-            .bitand(other.series.bool().expect("boolean"))
-            .into_series();
-        s.into()
+    pub fn bitand(&self, other: &PySeries) -> PyResult<Self> {
+        let out = self.series.bitand(&other.series).map_err(PyPolarsEr::from)?;
+        Ok(out.into())
     }
 
-    pub fn bitor(&self, other: &PySeries) -> Self {
-        let s = self
-            .series
-            .bool()
-            .expect("boolean")
-            .bitor(other.series.bool().expect("boolean"))
-            .into_series();
-        s.into()
+    pub fn bitor(&self, other: &PySeries) -> PyResult<Self> {
+        let out = self.series.bitor(&other.series).map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
+    pub fn bitxor(&self, other: &PySeries) -> PyResult<Self> {
+        let out = self.series.bitxor(&other.series).map_err(PyPolarsEr::from)?;
+        Ok(out.into())
     }
 
     pub fn cumsum(&self, reverse: bool) -> Self {

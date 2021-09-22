@@ -23,8 +23,7 @@ use arrow::array::ArrayRef;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
-#[cfg(feature = "series_bitwise")]
-use std::ops::{BitAnd, BitOr};
+use std::ops::{BitAnd, BitOr, BitXor};
 
 impl IntoSeries for BooleanChunked {
     fn into_series(self) -> Series {
@@ -178,13 +177,16 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.clone().into_series()
     }
 
-    #[cfg(feature = "series_bitwise")]
+    fn bitxor(&self, other: &Series) -> Result<Series> {
+        let other = self.0.unpack_series_matching_type(other)?;
+        Ok((&self.0).bitxor(other).into_series())
+    }
+
     fn bitand(&self, other: &Series) -> Result<Series> {
         let other = self.0.unpack_series_matching_type(other)?;
         Ok((&self.0).bitand(other).into_series())
     }
 
-    #[cfg(feature = "series_bitwise")]
     fn bitor(&self, other: &Series) -> Result<Series> {
         let other = self.0.unpack_series_matching_type(other)?;
         Ok((&self.0).bitor(other).into_series())

@@ -616,3 +616,23 @@ def test_invalid_categorical():
     assert s.median() is None
     assert s.quantile(0.5) is None
     assert s.mode().to_list() == [None]
+
+
+def test_bitwise():
+    a = pl.Series("a", [1, 2, 3])
+    b = pl.Series("b", [3, 4, 5])
+    assert (a & b).to_list() == [1, 0, 1]
+    assert (a | b).to_list() == [3, 6, 7]
+    assert (a ^ b).to_list() == [2, 6, 6]
+
+    df = pl.DataFrame([a, b])
+    out = df.select(
+        [
+            (pl.col("a") & pl.col("b")).alias("and"),
+            (pl.col("a") | pl.col("b")).alias("or"),
+            (pl.col("a") ^ pl.col("b")).alias("xor"),
+        ]
+    )
+    out["and"].to_list() == [1, 0, 1]
+    out["or"].to_list() == [3, 6, 7]
+    out["xor"].to_list() == [2, 6, 6]

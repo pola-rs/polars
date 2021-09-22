@@ -41,7 +41,6 @@ use ahash::RandomState;
 use arrow::array::ArrayRef;
 use std::borrow::Cow;
 use std::ops::Deref;
-#[cfg(feature = "series_bitwise")]
 use std::ops::{BitAnd, BitOr, BitXor};
 
 // Utility wrapper struct
@@ -305,7 +304,6 @@ macro_rules! impl_dyn_series {
                 self.0.interpolate().into_series()
             }
 
-            #[cfg(feature = "series_bitwise")]
             fn bitand(&self, other: &Series) -> Result<Series> {
                 let other = if other.len() == 1 {
                     Cow::Owned(other.cast_with_dtype(self.dtype())?)
@@ -316,7 +314,6 @@ macro_rules! impl_dyn_series {
                 Ok(self.0.bitand(&other).into_series())
             }
 
-            #[cfg(feature = "series_bitwise")]
             fn bitor(&self, other: &Series) -> Result<Series> {
                 let other = if other.len() == 1 {
                     Cow::Owned(other.cast_with_dtype(self.dtype())?)
@@ -327,7 +324,6 @@ macro_rules! impl_dyn_series {
                 Ok(self.0.bitor(&other).into_series())
             }
 
-            #[cfg(feature = "series_bitwise")]
             fn bitxor(&self, other: &Series) -> Result<Series> {
                 let other = if other.len() == 1 {
                     Cow::Owned(other.cast_with_dtype(self.dtype())?)
