@@ -3,6 +3,7 @@ use crate::utils::CustomIterTools;
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::{Buffer, MutableBuffer};
+use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::FromDataUtf8;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -28,6 +29,7 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
     // Maybe we could add another branch based on the null count
     let mut validity = MutableBitmap::with_capacity(indices.len());
     validity.extend_constant(indices.len(), true);
+    let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
 
     if let Some(validity_indices) = indices.validity().as_ref() {
         index_values.iter().enumerate().for_each(|(i, idx)| {
@@ -35,14 +37,14 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
             // idx is the index that we take from the values array.
             let idx = *idx as usize;
             if !validity_indices.get_bit_unchecked(i) || !validity_values.get_bit_unchecked(idx) {
-                validity.set(i, false);
+                unset_bit_raw(validity_ptr, i);
             }
         });
     } else {
         index_values.iter().enumerate().for_each(|(i, idx)| {
             let idx = *idx as usize;
             if !validity_values.get_bit_unchecked(idx) {
-                validity.set(i, false);
+                unset_bit_raw(validity_ptr, i);
             }
         });
     };
@@ -563,6 +565,7 @@ pub(crate) unsafe fn take_list_unchecked(
         if values.null_count() > 0 || indices.null_count() > 0 {
             // determine null buffer, which are a function of `values` and `indices`
             let mut validity = MutableBitmap::with_capacity(indices.len());
+            let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
             validity.extend_constant(indices.len(), true);
 
             {
@@ -570,7 +573,7 @@ pub(crate) unsafe fn take_list_unchecked(
                     |(i, window): (usize, &[i64])| {
                         if window[0] == window[1] {
                             // offsets are equal, slot is null
-                            validity.set(i, false);
+                            unset_bit_raw(validity_ptr, i);
                         }
                     },
                 );
