@@ -42,9 +42,7 @@ fn fill_backward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    // TODO! improve performance. This is a double scan
-    let ca: ChunkedArray<T> = ca
-        .into_iter()
+    ca.into_iter()
         .rev()
         .scan(None, |previous, opt_v| match opt_v {
             Some(value) => {
@@ -54,8 +52,7 @@ where
             None => Some(*previous),
         })
         .trust_my_length(ca.len())
-        .collect_trusted();
-    ca.into_iter().rev().collect_trusted()
+        .collect_reversed()
 }
 
 macro_rules! impl_fill_backward {
@@ -151,6 +148,7 @@ impl ChunkFillNull for BooleanChunked {
                 Ok(out)
             }
             FillNullStrategy::Backward => {
+                // TODO: still a double scan. impl collect_reversed for boolean
                 let mut out: Self = impl_fill_backward!(self, BooleanChunked);
                 out.rename(self.name());
                 Ok(out)
