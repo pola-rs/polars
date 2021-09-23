@@ -448,20 +448,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
             .map(|ca| ca.into_series())
     }
 
-    fn pow(&self, exponent: f64) -> Result<Series> {
-        let f_err = || {
-            Err(PolarsError::InvalidOperation(
-                format!("power operation not supported on dtype {:?}", self.dtype()).into(),
-            ))
-        };
-
-        match self.dtype() {
-            DataType::Utf8 | DataType::List(_) | DataType::Boolean => f_err(),
-            DataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
-            _ => Ok(self.0.pow_f64(exponent).into_series()),
-        }
-    }
-
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         IsIn::is_in(&self.0, other)

@@ -538,11 +538,6 @@ where
     }
 }
 
-impl Pow for BooleanChunked {}
-impl Pow for Utf8Chunked {}
-impl Pow for ListChunked {}
-impl Pow for CategoricalChunked {}
-
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;

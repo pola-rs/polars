@@ -271,10 +271,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.cast_with_dtype(data_type)
     }
 
-    fn to_dummies(&self) -> Result<DataFrame> {
-        ToDummies::to_dummies(&self.0)
-    }
-
     fn value_counts(&self) -> Result<DataFrame> {
         ChunkUnique::value_counts(&self.0)
     }
