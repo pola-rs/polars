@@ -60,16 +60,21 @@ where
     fn cummax(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::min_value();
         let mut ca: Self = match reverse {
-            false => self.into_iter().scan(init, det_max).collect(),
-            true => self.into_iter().rev().scan(init, det_max).collect(),
+            false => self
+                .into_iter()
+                .scan(init, det_max)
+                .trust_my_length(self.len())
+                .collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .scan(init, det_max)
+                .trust_my_length(self.len())
+                .collect_reversed(),
         };
 
         ca.rename(self.name());
-        if reverse {
-            ca.reverse()
-        } else {
-            ca
-        }
+        ca
     }
 
     fn cummin(&self, reverse: bool) -> ChunkedArray<T> {
@@ -85,15 +90,11 @@ where
                 .rev()
                 .scan(init, det_min)
                 .trust_my_length(self.len())
-                .collect_trusted(),
+                .collect_reversed(),
         };
 
         ca.rename(self.name());
-        if reverse {
-            ca.reverse()
-        } else {
-            ca
-        }
+        ca
     }
 
     fn cumsum(&self, reverse: bool) -> ChunkedArray<T> {
@@ -109,15 +110,11 @@ where
                 .rev()
                 .scan(init, det_sum)
                 .trust_my_length(self.len())
-                .collect_trusted(),
+                .collect_reversed(),
         };
 
         ca.rename(self.name());
-        if reverse {
-            ca.reverse()
-        } else {
-            ca
-        }
+        ca
     }
 }
 
