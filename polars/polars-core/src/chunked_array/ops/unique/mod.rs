@@ -384,13 +384,8 @@ where
     }
 }
 
-#[cfg(feature = "object")]
-impl<T> ToDummies<ObjectType<T>> for ObjectChunked<T> {}
 impl ToDummies<Float32Type> for Float32Chunked {}
 impl ToDummies<Float64Type> for Float64Chunked {}
-impl ToDummies<BooleanType> for BooleanChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ToDummies<CategoricalType> for CategoricalChunked {}
 
 impl ChunkUnique<BooleanType> for BooleanChunked {
     fn unique(&self) -> Result<Self> {
@@ -572,8 +567,6 @@ mod is_first {
             Ok(BooleanChunked::new_from_chunks(self.name(), chunks))
         }
     }
-    impl IsFirst<ListType> for ListChunked {}
-    impl IsFirst<BooleanType> for BooleanChunked {}
 }
 
 #[cfg(test)]

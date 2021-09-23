@@ -313,14 +313,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.cast_with_dtype(data_type)
     }
 
-    fn to_dummies(&self) -> Result<DataFrame> {
-        ToDummies::to_dummies(&self.0)
-    }
-
-    fn value_counts(&self) -> Result<DataFrame> {
-        ChunkUnique::value_counts(&self.0)
-    }
-
     fn get(&self, index: usize) -> AnyValue {
         self.0.get_any_value(index)
     }
@@ -451,20 +443,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
             .map(|ca| ca.into_series())
     }
 
-    fn pow(&self, exponent: f64) -> Result<Series> {
-        let f_err = || {
-            Err(PolarsError::InvalidOperation(
-                format!("power operation not supported on dtype {:?}", self.dtype()).into(),
-            ))
-        };
-
-        match self.dtype() {
-            DataType::Utf8 | DataType::List(_) | DataType::Boolean => f_err(),
-            DataType::Float32 => Ok(self.0.pow_f32(exponent as f32).into_series()),
-            _ => Ok(self.0.pow_f64(exponent).into_series()),
-        }
-    }
-
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         IsIn::is_in(&self.0, other)
@@ -472,11 +450,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
         RepeatBy::repeat_by(&self.0, by)
-    }
-
-    #[cfg(feature = "is_first")]
-    fn is_first(&self) -> Result<BooleanChunked> {
-        self.0.is_first()
     }
 
     #[cfg(feature = "object")]

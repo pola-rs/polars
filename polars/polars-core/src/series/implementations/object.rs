@@ -175,10 +175,6 @@ where
         ))
     }
 
-    fn to_dummies(&self) -> Result<DataFrame> {
-        ToDummies::to_dummies(&self.0)
-    }
-
     fn value_counts(&self) -> Result<DataFrame> {
         ChunkUnique::value_counts(&self.0)
     }

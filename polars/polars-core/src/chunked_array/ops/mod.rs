@@ -4,41 +4,41 @@ use std::marker::Sized;
 use arrow::array::ArrayRef;
 
 pub use self::take::*;
-use crate::chunked_array::builder::get_list_builder;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
-use crate::utils::NoNull;
 use arrow::buffer::Buffer;
 
 pub(crate) mod aggregate;
-pub(crate) mod any_value;
-pub(crate) mod apply;
-pub(crate) mod bit_repr;
+mod any_value;
+mod apply;
+mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
 #[cfg(feature = "cum_agg")]
-pub(crate) mod cum_agg;
+mod cum_agg;
 pub(crate) mod downcast;
 pub(crate) mod explode;
-pub(crate) mod fill_null;
-pub(crate) mod filter;
+mod fill_null;
+mod filter;
+pub mod full;
 #[cfg(feature = "interpolate")]
-pub(crate) mod interpolate;
+mod interpolate;
 #[cfg(feature = "is_in")]
-pub(crate) mod is_in;
-pub(crate) mod peaks;
+mod is_in;
+mod peaks;
 #[cfg(feature = "repeat_by")]
-pub(crate) mod repeat_by;
+mod repeat_by;
+mod reverse;
 #[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
-pub(crate) mod set;
-pub(crate) mod shift;
+mod set;
+mod shift;
 pub(crate) mod sort;
 pub(crate) mod take;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
-pub(crate) mod zip;
+pub mod zip;
 
 #[cfg(feature = "to_list")]
 pub trait ToList<T: PolarsDataType> {
@@ -723,170 +723,10 @@ pub trait ChunkFullNull {
         Self: std::marker::Sized;
 }
 
-impl<T> ChunkFull<T::Native> for ChunkedArray<T>
-where
-    T: PolarsPrimitiveType,
-{
-    fn full(name: &str, value: T::Native, length: usize) -> Self
-    where
-        T::Native: Copy,
-    {
-        let mut ca = (0..length)
-            .map(|_| value)
-            .collect::<NoNull<ChunkedArray<T>>>()
-            .into_inner();
-        ca.rename(name);
-        ca
-    }
-}
-
-impl<T> ChunkFullNull for ChunkedArray<T>
-where
-    T: PolarsPrimitiveType,
-{
-    fn full_null(name: &str, length: usize) -> Self {
-        let mut ca = (0..length).map(|_| None).collect::<Self>();
-        ca.rename(name);
-        ca
-    }
-}
-impl ChunkFull<bool> for BooleanChunked {
-    fn full(name: &str, value: bool, length: usize) -> Self {
-        let mut ca = (0..length).map(|_| value).collect::<BooleanChunked>();
-        ca.rename(name);
-        ca
-    }
-}
-
-impl ChunkFullNull for BooleanChunked {
-    fn full_null(name: &str, length: usize) -> Self {
-        let mut ca = (0..length).map(|_| None).collect::<Self>();
-        ca.rename(name);
-        ca
-    }
-}
-
-impl<'a> ChunkFull<&'a str> for Utf8Chunked {
-    fn full(name: &str, value: &'a str, length: usize) -> Self {
-        let mut builder = Utf8ChunkedBuilder::new(name, length, length * value.len());
-
-        for _ in 0..length {
-            builder.append_value(value);
-        }
-        builder.finish()
-    }
-}
-
-impl ChunkFullNull for Utf8Chunked {
-    fn full_null(name: &str, length: usize) -> Self {
-        let mut ca = (0..length)
-            .map::<Option<String>, _>(|_| None)
-            .collect::<Self>();
-        ca.rename(name);
-        ca
-    }
-}
-
-impl ChunkFull<&Series> for ListChunked {
-    fn full(name: &str, value: &Series, length: usize) -> ListChunked {
-        let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
-        for _ in 0..length {
-            builder.append_series(value)
-        }
-        builder.finish()
-    }
-}
-
-impl ChunkFullNull for ListChunked {
-    fn full_null(name: &str, length: usize) -> ListChunked {
-        let mut builder = ListBooleanChunkedBuilder::new(name, length, 0);
-        for _ in 0..length {
-            builder.append_null();
-        }
-        builder.finish()
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkFullNull for CategoricalChunked {
-    fn full_null(name: &str, length: usize) -> CategoricalChunked {
-        use crate::chunked_array::builder::CategoricalChunkedBuilder;
-        let mut builder = CategoricalChunkedBuilder::new(name, length);
-        let iter = (0..length).map(|_| None);
-        builder.from_iter(iter);
-        builder.finish()
-    }
-}
-
-impl ListChunked {
-    fn full_null_with_dtype(name: &str, length: usize, dt: &DataType) -> ListChunked {
-        let mut builder = get_list_builder(dt, 0, length, name);
-        for _ in 0..length {
-            builder.append_null();
-        }
-        builder.finish()
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T: PolarsObject> ChunkFullNull for ObjectChunked<T> {
-    fn full_null(name: &str, length: usize) -> ObjectChunked<T> {
-        let mut ca: Self = (0..length).map(|_| None).collect();
-        ca.rename(name);
-        ca
-    }
-}
-
 /// Reverse a ChunkedArray<T>
 pub trait ChunkReverse<T> {
     /// Return a reversed version of this array.
     fn reverse(&self) -> ChunkedArray<T>;
-}
-
-impl<T> ChunkReverse<T> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: ChunkOps,
-{
-    fn reverse(&self) -> ChunkedArray<T> {
-        if let Ok(slice) = self.cont_slice() {
-            let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect();
-            let mut ca = ca.into_inner();
-            ca.rename(self.name());
-            ca
-        } else {
-            self.into_iter().rev().collect()
-        }
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkReverse<CategoricalType> for CategoricalChunked {
-    fn reverse(&self) -> ChunkedArray<CategoricalType> {
-        self.cast::<UInt32Type>().unwrap().reverse().cast().unwrap()
-    }
-}
-
-macro_rules! impl_reverse {
-    ($arrow_type:ident, $ca_type:ident) => {
-        impl ChunkReverse<$arrow_type> for $ca_type {
-            fn reverse(&self) -> Self {
-                unsafe { self.take_unchecked((0..self.len()).rev().into()) }
-            }
-        }
-    };
-}
-
-impl_reverse!(BooleanType, BooleanChunked);
-impl_reverse!(Utf8Type, Utf8Chunked);
-impl_reverse!(ListType, ListChunked);
-#[cfg(feature = "object")]
-impl<T: PolarsObject> ChunkReverse<ObjectType<T>> for ObjectChunked<T> {
-    fn reverse(&self) -> Self {
-        // Safety
-        // we we know we don't get out of bounds
-        unsafe { self.take_unchecked((0..self.len()).rev().into()) }
-    }
 }
 
 /// Filter values by a boolean mask.
