@@ -229,7 +229,7 @@ def test_window_deadlock():
 def test_concat_str():
     df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
-    out = df[[pl.concat_str(["a", "b"], delimiter="-")]]
+    out = df[[pl.concat_str(["a", "b"], sep="-")]]
     assert out["a"] == ["a-1", "a-2", "a-3"]
 
 
