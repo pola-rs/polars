@@ -790,7 +790,7 @@ class DataFrame:
         >>>     "bar": [6, 7, 8, 9, 10],
         >>>     "ham": ['a', 'b', 'c', 'd','e']
         >>>     })
-        >>> df.to_csv('new_file.csv', delimiter=',')
+        >>> df.to_csv('new_file.csv', sep=',')
 
         """
         if file is None:
