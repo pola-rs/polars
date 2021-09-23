@@ -1,4 +1,4 @@
-use crate::trusted_len::{PushUnchecked, TrustedLen};
+use crate::trusted_len::{FromIteratorReversed, PushUnchecked, TrustedLen};
 use arrow::bitmap::Bitmap;
 use std::ops::BitAnd;
 
@@ -77,6 +77,13 @@ pub trait CustomIterTools: Iterator {
         Self: Sized + TrustedLen,
     {
         FromTrustedLenIterator::from_iter_trusted_length(self)
+    }
+
+    fn collect_reversed<T: FromIteratorReversed<Self::Item>>(self) -> T
+    where
+        Self: Sized + TrustedLen,
+    {
+        FromIteratorReversed::from_trusted_len_iter_rev(self)
     }
 }
 

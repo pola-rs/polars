@@ -1,9 +1,11 @@
 mod boolean;
+mod rev;
 
 use crate::utils::{FromTrustedLenIterator, TrustMyLength};
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::buffer::MutableBuffer;
 use arrow::types::NativeType;
+pub use rev::FromIteratorReversed;
 use std::slice::Iter;
 
 /// An iterator of known, fixed size.

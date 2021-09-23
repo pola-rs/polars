@@ -1,12 +1,15 @@
 use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
-use arrow::buffer::Buffer;
+use arrow::bitmap::MutableBitmap;
+use arrow::buffer::{Buffer, MutableBuffer};
+use polars_arrow::bit_util::unset_bit_raw;
+use polars_arrow::trusted_len::FromIteratorReversed;
 use std::borrow::Borrow;
 
 impl<T> FromTrustedLenIterator<Option<T::Native>> for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let iter = iter.into_iter();
@@ -21,7 +24,7 @@ where
 // NoNull is only a wrapper needed for specialization
 impl<T> FromTrustedLenIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
@@ -33,6 +36,72 @@ where
         NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
     }
 }
+
+impl<T> FromIteratorReversed<Option<T::Native>> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<T::Native>>>(iter: I) -> Self {
+        debug_assert_eq!(iter.size_hint().0, iter.size_hint().1.unwrap());
+        let size = iter.size_hint().0;
+
+        let mut vals: MutableBuffer<T::Native> = AlignedVec::with_capacity(size);
+        let mut validity = MutableBitmap::with_capacity(size);
+        validity.extend_constant(size, true);
+        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+        unsafe {
+            // set to end of buffer
+            let mut ptr = vals.as_mut_ptr().add(size);
+            let mut offset = size;
+
+            iter.for_each(|opt_item| {
+                offset -= 1;
+                ptr = ptr.sub(1);
+                match opt_item {
+                    Some(item) => {
+                        std::ptr::write(ptr, item);
+                    }
+                    None => {
+                        std::ptr::write(ptr, T::Native::default());
+                        unset_bit_raw(validity_ptr, offset)
+                    }
+                }
+            });
+            vals.set_len(size)
+        }
+        let arr = PrimitiveArray::from_data(
+            T::get_dtype().to_arrow(),
+            vals.into(),
+            Some(validity.into()),
+        );
+        ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
+    }
+}
+
+impl<T> FromIteratorReversed<T::Native> for NoNull<ChunkedArray<T>>
+where
+    T: PolarsNumericType,
+{
+    fn from_trusted_len_iter_rev<I: TrustedLen<Item = T::Native>>(iter: I) -> Self {
+        debug_assert_eq!(iter.size_hint().0, iter.size_hint().1.unwrap());
+        let size = iter.size_hint().0;
+
+        let mut vals: MutableBuffer<T::Native> = AlignedVec::with_capacity(size);
+        unsafe {
+            // set to end of buffer
+            let mut ptr = vals.as_mut_ptr().add(size);
+
+            iter.for_each(|item| {
+                ptr = ptr.sub(1);
+                std::ptr::write(ptr, item);
+            });
+            vals.set_len(size)
+        }
+        let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), vals.into(), None);
+        NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
+    }
+}
+
 impl<Ptr> FromTrustedLenIterator<Ptr> for ListChunked
 where
     Ptr: Borrow<Series>,
@@ -108,5 +177,27 @@ impl<T: PolarsObject> FromTrustedLenIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
         let iter = iter.into_iter();
         iter.collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::utils::CustomIterTools;
+
+    #[test]
+    fn test_reverse_collect() {
+        let ca: NoNull<Int32Chunked> = (0..5).collect_reversed();
+        let arr = ca.downcast_iter().next().unwrap();
+        let s = arr.values().as_slice();
+        assert_eq!(s, &[4, 3, 2, 1, 0]);
+
+        let ca: Int32Chunked = (0..5)
+            .map(|val| match val % 2 == 0 {
+                true => Some(val),
+                false => None,
+            })
+            .collect_reversed();
+        assert_eq!(Vec::from(&ca), &[Some(4), None, Some(2), None, Some(0)]);
     }
 }
