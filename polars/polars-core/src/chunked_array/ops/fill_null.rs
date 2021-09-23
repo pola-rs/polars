@@ -19,7 +19,8 @@ where
             }
             None => Some(*previous),
         })
-        .collect()
+        .trust_my_length(ca.len())
+        .collect_trusted()
 }
 
 macro_rules! impl_fill_forward {

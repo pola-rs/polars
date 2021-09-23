@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::NoNull;
+use crate::utils::{CustomIterTools, NoNull};
 
 impl<T> ChunkReverse<T> for ChunkedArray<T>
 where
@@ -8,12 +8,12 @@ where
 {
     fn reverse(&self) -> ChunkedArray<T> {
         if let Ok(slice) = self.cont_slice() {
-            let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect();
+            let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect_trusted();
             let mut ca = ca.into_inner();
             ca.rename(self.name());
             ca
         } else {
-            self.into_iter().rev().collect()
+            self.into_iter().rev().collect_trusted()
         }
     }
 }
@@ -29,7 +29,7 @@ macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse<$arrow_type> for $ca_type {
             fn reverse(&self) -> Self {
-                unsafe { self.take_unchecked((0..self.len()).rev().into()) }
+                self.into_iter().rev().collect_trusted()
             }
         }
     };

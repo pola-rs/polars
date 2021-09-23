@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::utils::CustomIterTools;
 use itertools::__std_iter::FromIterator;
 use num::Bounded;
 use std::ops::{Add, AddAssign};
@@ -74,8 +75,17 @@ where
     fn cummin(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::max_value();
         let mut ca: Self = match reverse {
-            false => self.into_iter().scan(init, det_min).collect(),
-            true => self.into_iter().rev().scan(init, det_min).collect(),
+            false => self
+                .into_iter()
+                .scan(init, det_min)
+                .trust_my_length(self.len())
+                .collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .scan(init, det_min)
+                .trust_my_length(self.len())
+                .collect_trusted(),
         };
 
         ca.rename(self.name());
@@ -89,8 +99,17 @@ where
     fn cumsum(&self, reverse: bool) -> ChunkedArray<T> {
         let init = None;
         let mut ca: Self = match reverse {
-            false => self.into_iter().scan(init, det_sum).collect(),
-            true => self.into_iter().rev().scan(init, det_sum).collect(),
+            false => self
+                .into_iter()
+                .scan(init, det_sum)
+                .trust_my_length(self.len())
+                .collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .scan(init, det_sum)
+                .trust_my_length(self.len())
+                .collect_trusted(),
         };
 
         ca.rename(self.name());

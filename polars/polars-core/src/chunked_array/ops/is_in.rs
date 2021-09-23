@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::get_supertype;
+use crate::utils::{get_supertype, CustomIterTools};
 use hashbrown::hash_set::HashSet;
 use num::NumCast;
 use std::hash::Hash;
@@ -33,7 +33,7 @@ where
             let opt_val = *ptr;
             set.contains(&opt_val)
         })
-        .collect();
+        .collect_trusted();
     ca.rename(name);
     Ok(ca)
 }
@@ -64,7 +64,7 @@ where
                         }
                         _ => false,
                     })
-                    .collect();
+                    .collect_trusted();
                 Ok(ca)
             }
             _ => {
@@ -117,7 +117,7 @@ impl IsIn for Utf8Chunked {
                         }
                         _ => false,
                     })
-                    .collect();
+                    .collect_trusted();
                 Ok(ca)
             }
             DataType::Utf8 => {
@@ -132,7 +132,7 @@ impl IsIn for Utf8Chunked {
                 let mut ca: BooleanChunked = self
                     .into_iter()
                     .map(|opt_val| set.contains(&opt_val))
-                    .collect();
+                    .collect_trusted();
                 ca.rename(self.name());
                 Ok(ca)
             }
@@ -162,7 +162,7 @@ impl IsIn for BooleanChunked {
                         }
                         _ => false,
                     })
-                    .collect();
+                    .collect_trusted();
                 Ok(ca)
             }
             _ => Err(PolarsError::DataTypeMisMatch(
