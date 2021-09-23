@@ -242,7 +242,10 @@ where
 
         assert_eq!(other.len(), reverse.len() - 1);
 
-        let compare_inner: Vec<_> = other.iter().map(|s| s.into_partial_ord_inner()).collect();
+        let compare_inner: Vec<_> = other
+            .iter()
+            .map(|s| s.into_partial_ord_inner())
+            .collect_trusted();
 
         let mut count: u32 = 0;
         let mut vals: Vec<_> = self
@@ -252,7 +255,7 @@ where
                 count += 1;
                 (i, v)
             })
-            .collect();
+            .collect_trusted();
 
         vals.sort_by(
             |tpl_a, tpl_b| match (reverse[0], sort_with_nulls(&tpl_a.1, &tpl_b.1)) {
@@ -268,7 +271,7 @@ where
                 (_, ord) => ord,
             },
         );
-        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect();
+        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut ca = ca.into_inner();
         ca.set_sorted(reverse[0]);
         Ok(ca)
@@ -298,9 +301,15 @@ fn ordering_other_columns<'a>(
 macro_rules! sort {
     ($self:ident, $reverse:ident) => {{
         if $reverse {
-            $self.into_iter().sorted_by(|a, b| b.cmp(a)).collect()
+            $self
+                .into_iter()
+                .sorted_by(|a, b| b.cmp(a))
+                .collect_trusted()
         } else {
-            $self.into_iter().sorted_by(|a, b| a.cmp(b)).collect()
+            $self
+                .into_iter()
+                .sorted_by(|a, b| a.cmp(b))
+                .collect_trusted()
         }
     }};
 }
@@ -358,8 +367,11 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 count += 1;
                 (i, v)
             })
-            .collect();
-        let compare_inner: Vec<_> = other.iter().map(|s| s.into_partial_ord_inner()).collect();
+            .collect_trusted();
+        let compare_inner: Vec<_> = other
+            .iter()
+            .map(|s| s.into_partial_ord_inner())
+            .collect_trusted();
 
         vals.sort_by(
             |tpl_a, tpl_b| match (reverse[0], sort_with_nulls(&tpl_a.1, &tpl_b.1)) {
@@ -375,7 +387,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 (_, ord) => ord,
             },
         );
-        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect();
+        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut ca = ca.into_inner();
         ca.set_sorted(reverse[0]);
         Ok(ca)

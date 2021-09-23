@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::align_chunks_ternary;
+use crate::utils::{align_chunks_ternary, CustomIterTools};
 use arrow::compute::if_then_else::if_then_else;
 use polars_arrow::array::default_arrays::FromData;
 
@@ -34,7 +34,7 @@ macro_rules! impl_ternary_broadcast {
                 let mut val: ChunkedArray<$ty> = $mask
                     .into_no_null_iter()
                     .map(|mask_val| ternary_apply(mask_val, left, right))
-                    .collect();
+                    .collect_trusted();
                 val.rename($self.name());
                 Ok(val)
             }
@@ -44,7 +44,7 @@ macro_rules! impl_ternary_broadcast {
                     .into_no_null_iter()
                     .zip($self)
                     .map(|(mask_val, left)| ternary_apply(mask_val, left, right))
-                    .collect();
+                    .collect_trusted();
                 val.rename($self.name());
                 Ok(val)
             }
@@ -54,7 +54,7 @@ macro_rules! impl_ternary_broadcast {
                     .into_no_null_iter()
                     .zip($other)
                     .map(|(mask_val, right)| ternary_apply(mask_val, left, right))
-                    .collect();
+                    .collect_trusted();
                 val.rename($self.name());
                 Ok(val)
             }

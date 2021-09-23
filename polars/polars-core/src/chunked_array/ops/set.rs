@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::align_chunks_binary;
+use crate::utils::{align_chunks_binary, CustomIterTools};
 use arrow::array::ArrayRef;
 use polars_arrow::array::ValueSize;
 use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
@@ -128,7 +128,7 @@ where
                     Some(true) => value,
                     _ => opt_val,
                 })
-                .collect();
+                .collect_trusted();
             Ok(ca)
         }
     }
@@ -145,7 +145,7 @@ where
                 Some(true) => f(opt_val),
                 _ => opt_val,
             })
-            .collect();
+            .collect_trusted();
         Ok(ca)
     }
 }
@@ -177,7 +177,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
                 Some(true) => value,
                 _ => opt_val,
             })
-            .collect();
+            .collect_trusted();
         Ok(ca)
     }
 
@@ -193,7 +193,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
                 Some(true) => f(opt_val),
                 _ => opt_val,
             })
-            .collect();
+            .collect_trusted();
         Ok(ca)
     }
 }
@@ -261,7 +261,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
                 Some(true) => value,
                 _ => opt_val,
             })
-            .collect();
+            .collect_trusted();
         Ok(ca)
     }
 
