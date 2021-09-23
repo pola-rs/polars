@@ -639,7 +639,7 @@ def concat_str(exprs: tp.List["pl.Expr"], sep: str = "") -> "pl.Expr":
     return pl.lazy.expr.wrap_expr(_concat_str(exprs, sep))
 
 
-def concat_list(exprs: tp.List["pl.Expr"], delimiter: str = "") -> "pl.Expr":
+def concat_list(exprs: tp.List["pl.Expr"]) -> "pl.Expr":
     """
     Concat the arrays in a Series dtype List in linear time.
 
