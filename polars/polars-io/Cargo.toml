@@ -29,7 +29,8 @@ temporal = ["polars-core/dtype-date32", "polars-core/dtype-date64"]
 private = []
 
 [dependencies]
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "fa5d9eaead7eddce65624e67baabf75c975fb9bd", default-features = false }
+#arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "fa5d9eaead7eddce65624e67baabf75c975fb9bd", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false }
 #arrow = { package = "arrow2", version="0.5.3", --default-features=false }
 polars-core = {version = "0.16.0", path = "../polars-core", features = ["private"], default-features=false}
 polars-arrow = {version = "0.16.0", path = "../polars-arrow"}

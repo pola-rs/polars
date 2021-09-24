@@ -101,12 +101,20 @@ where
     }
 
     fn slice(&self, offset: usize, length: usize) -> Box<dyn Array> {
+        assert!(
+            offset + length <= self.len(),
+            "the offset of the new Buffer cannot exceed the existing length"
+        );
+        unsafe { self.slice_unchecked(offset, length) }
+    }
+
+    unsafe fn slice_unchecked(&self, offset: usize, length: usize) -> Box<dyn Array> {
         let mut new = self.clone();
         let len = std::cmp::min(new.len - offset, length);
 
         new.len = len;
         new.offset = offset;
-        new.null_bitmap = new.null_bitmap.map(|x| x.slice(offset, len));
+        new.null_bitmap = new.null_bitmap.map(|x| x.slice_unchecked(offset, len));
         Box::new(new)
     }
 

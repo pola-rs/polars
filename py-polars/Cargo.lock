@@ -64,7 +64,7 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 [[package]]
 name = "arrow2"
 version = "0.5.3"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=fa5d9eaead7eddce65624e67baabf75c975fb9bd#fa5d9eaead7eddce65624e67baabf75c975fb9bd"
+source = "git+https://github.com/ritchie46/arrow2#564bc6819c6888ea66604536862e89f726a417a1"
 dependencies = [
  "ahash",
  "base64",
