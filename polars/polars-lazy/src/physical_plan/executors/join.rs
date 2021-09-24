@@ -11,6 +11,7 @@ pub struct JoinExec {
     left_on: Vec<Arc<dyn PhysicalExpr>>,
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
+    suffix: Option<String>,
 }
 
 impl JoinExec {
@@ -21,6 +22,7 @@ impl JoinExec {
         left_on: Vec<Arc<dyn PhysicalExpr>>,
         right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
+        suffix: Option<String>,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
@@ -29,6 +31,7 @@ impl JoinExec {
             left_on,
             right_on,
             parallel,
+            suffix,
         }
     }
 }
@@ -73,7 +76,13 @@ impl Executor for JoinExec {
             .map(|e| e.evaluate(&df_right, state).map(|s| s.name().to_string()))
             .collect::<Result<Vec<_>>>()?;
 
-        let df = df_left.join(&df_right, &left_names, &right_names, self.how);
+        let df = df_left.join(
+            &df_right,
+            &left_names,
+            &right_names,
+            self.how,
+            self.suffix.clone(),
+        );
         if state.verbose {
             eprintln!("{:?} join dataframes finished", self.how);
         };

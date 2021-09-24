@@ -305,11 +305,9 @@ pub(crate) fn to_alp(
             input_left,
             input_right,
             schema,
-            how,
             left_on,
             right_on,
-            allow_par,
-            force_par,
+            options,
         } => {
             let i_l = to_alp(*input_left, expr_arena, lp_arena);
             let i_r = to_alp(*input_right, expr_arena, lp_arena);
@@ -328,10 +326,8 @@ pub(crate) fn to_alp(
                 input_right: i_r,
                 schema,
                 left_on: l_on,
-                how,
                 right_on: r_on,
-                allow_par,
-                force_par,
+                options,
             }
         }
         LogicalPlan::HStack {
@@ -737,11 +733,9 @@ pub(crate) fn node_to_lp(
             input_left,
             input_right,
             schema,
-            how,
             left_on,
             right_on,
-            allow_par,
-            force_par,
+            options,
         } => {
             let i_l = node_to_lp(input_left, expr_arena, lp_arena);
             let i_r = node_to_lp(input_right, expr_arena, lp_arena);
@@ -750,11 +744,9 @@ pub(crate) fn node_to_lp(
                 input_left: Box::new(i_l),
                 input_right: Box::new(i_r),
                 schema,
-                how,
                 left_on: nodes_to_exprs(&left_on, expr_arena),
                 right_on: nodes_to_exprs(&right_on, expr_arena),
-                allow_par,
-                force_par,
+                options,
             }
         }
         ALogicalPlan::HStack {

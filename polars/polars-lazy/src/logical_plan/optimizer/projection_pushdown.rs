@@ -551,9 +551,7 @@ impl ProjectionPushDown {
                 input_right,
                 left_on,
                 right_on,
-                how,
-                allow_par,
-                force_par,
+                options,
                 ..
             } => {
                 let mut pushdown_left = init_vec();
@@ -629,12 +627,13 @@ impl ProjectionPushDown {
                             let root_column_name =
                                 aexpr_to_root_names(proj, expr_arena).pop().unwrap();
 
+                            let suffix = options.suffix.as_deref().unwrap_or("_right");
                             // If _right suffix exists we need to push a projection down without this
                             // suffix.
-                            if root_column_name.ends_with("_right") {
+                            if root_column_name.ends_with(suffix) {
                                 // downwards name is the name without the _right i.e. "foo".
                                 let (downwards_name, _) = root_column_name
-                                    .split_at(root_column_name.len() - "_right".len());
+                                    .split_at(root_column_name.len() - suffix.len());
 
                                 let downwards_name_column =
                                     expr_arena.add(AExpr::Column(Arc::new(downwards_name.into())));
@@ -646,7 +645,7 @@ impl ProjectionPushDown {
                                 // locally we project and alias
                                 let projection = expr_arena.add(AExpr::Alias(
                                     downwards_name_column,
-                                    Arc::new(format!("{}_right", downwards_name)),
+                                    Arc::new(format!("{}{}", downwards_name, suffix)),
                                 ));
                                 local_projection.push(projection);
                             }
@@ -684,11 +683,9 @@ impl ProjectionPushDown {
 
                 let builder = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena).join(
                     input_right,
-                    how,
                     left_on,
                     right_on,
-                    allow_par,
-                    force_par,
+                    options,
                 );
                 Ok(self.finish_node(local_projection, builder))
             }

@@ -385,6 +385,7 @@ impl PyDataFrame {
         left_on: Vec<&str>,
         right_on: Vec<&str>,
         how: &str,
+        suffix: String
     ) -> PyResult<Self> {
         let how = match how {
             "left" => JoinType::Left,
@@ -397,7 +398,7 @@ impl PyDataFrame {
 
         let df = self
             .df
-            .join(&other.df, left_on, right_on, how)
+            .join(&other.df, left_on, right_on, how, Some(suffix))
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }

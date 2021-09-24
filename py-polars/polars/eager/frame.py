@@ -1892,6 +1892,7 @@ class DataFrame:
         ] = None,
         on: Optional[Union[str, tp.List[str]]] = None,
         how: str = "inner",
+        suffix: str = "_right",
     ) -> Union["DataFrame", "pl.LazyFrame"]:
         """
         SQL like joins.
@@ -1913,7 +1914,8 @@ class DataFrame:
                 - "outer"
                 - "asof"
                 - "cross"
-
+        suffix
+            Suffix to append to columns with a duplicate name.
         Returns
         -------
             Joined DataFrame
@@ -1964,7 +1966,7 @@ class DataFrame:
 
         """
         if how == "cross":
-            return wrap_df(self._df.join(df._df, [], [], how))
+            return wrap_df(self._df.join(df._df, [], [], how, suffix))
 
         left_on_: Union[tp.List[str], tp.List[pl.Expr], None]
         if isinstance(left_on, (str, pl.Expr)):
@@ -1989,9 +1991,11 @@ class DataFrame:
             raise ValueError("You should pass the column to join on as an argument.")
 
         if isinstance(left_on_[0], pl.Expr) or isinstance(right_on_[0], pl.Expr):
-            return self.lazy().join(df.lazy(), left_on, right_on, how=how)
+            return self.lazy().join(
+                df.lazy(), left_on, right_on, how=how, suffix=suffix
+            )
         else:
-            return wrap_df(self._df.join(df._df, left_on_, right_on_, how))
+            return wrap_df(self._df.join(df._df, left_on_, right_on_, how, suffix))
 
     def apply(
         self,

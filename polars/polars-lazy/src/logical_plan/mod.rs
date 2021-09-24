@@ -10,7 +10,6 @@ use std::{
 use ahash::RandomState;
 use itertools::Itertools;
 
-use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 #[cfg(feature = "temporal")]
@@ -219,11 +218,9 @@ pub enum LogicalPlan {
         input_left: Box<LogicalPlan>,
         input_right: Box<LogicalPlan>,
         schema: SchemaRef,
-        how: JoinType,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
-        allow_par: bool,
-        force_par: bool,
+        options: JoinOptions,
     },
     /// Adding columns to the table without a Join
     HStack {
@@ -1245,11 +1242,9 @@ impl LogicalPlanBuilder {
     pub fn join(
         self,
         other: LogicalPlan,
-        how: JoinType,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
-        allow_par: bool,
-        force_par: bool,
+        options: JoinOptions,
     ) -> Self {
         let schema_left = self.0.schema();
         let schema_right = other.schema();
@@ -1288,12 +1283,10 @@ impl LogicalPlanBuilder {
         LogicalPlan::Join {
             input_left: Box::new(self.0),
             input_right: Box::new(other),
-            how,
             schema,
             left_on,
             right_on,
-            allow_par,
-            force_par,
+            options,
         }
         .into()
     }
