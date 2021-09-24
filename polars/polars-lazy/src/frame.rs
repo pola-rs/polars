@@ -407,23 +407,47 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
-    /// Rename a column in the DataFrame
-    pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
-        let schema = self.logical_plan.schema();
-        let schema = schema
-            .rename(&[existing_name], &[new_name])
-            .expect("cannot rename non existing column");
+    /// Rename columns in the DataFrame. This does not preserve ordering.
+    pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
+    where
+        I: IntoIterator<Item = T> + Clone,
+        J: IntoIterator<Item = S>,
+        T: AsRef<str>,
+        S: AsRef<str>,
+    {
+        let existing: Vec<String> = existing
+            .into_iter()
+            .map(|name| name.as_ref().to_string())
+            .collect();
 
-        // first make sure that the column is projected, then we
-        let init = self.with_column(col(existing_name));
+        self.with_columns(
+            existing
+                .iter()
+                .zip(new)
+                .map(|(old, new)| col(old).alias(new.as_ref()))
+                .collect(),
+        )
+        .drop_columns_impl(&existing)
+    }
 
-        let existing_name = existing_name.to_string();
-        let new_name = new_name.to_string();
-        let f = move |mut df: DataFrame| {
-            df.rename(&existing_name, &new_name)?;
-            Ok(df)
-        };
-        init.map(f, Some(AllowedOptimizations::default()), Some(schema))
+    /// Removes columns from the DataFrame.
+    /// Note that its better to only select the columns you need
+    /// and let the projection pushdown optimize away the unneeded columns.
+    pub fn drop_columns<I, T>(self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        let columns: Vec<String> = columns
+            .into_iter()
+            .map(|name| name.as_ref().to_string())
+            .collect();
+        self.drop_columns_impl(&columns)
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn drop_columns_impl(self, columns: &Vec<String>) -> Self {
+        self.select_local(vec![col("*").exclude(columns)])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
