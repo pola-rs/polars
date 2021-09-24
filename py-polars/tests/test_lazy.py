@@ -583,3 +583,24 @@ def test_rename():
 def test_drop_columns():
     out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop_columns(["a", "b"])
     assert out.columns == ["c"]
+
+
+def test_join_suffix():
+    df_left = pl.DataFrame(
+        {
+            "a": ["a", "b", "a", "z"],
+            "b": [1, 2, 3, 4],
+            "c": [6, 5, 4, 3],
+        }
+    )
+    df_right = pl.DataFrame(
+        {
+            "a": ["b", "c", "b", "a"],
+            "b": [0, 3, 9, 6],
+            "c": [1, 0, 2, 1],
+        }
+    )
+    out = df_left.join(df_right, on="a", suffix="_bar")
+    assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
+    out = df_left.lazy().join(df_right.lazy(), on="a", suffix="_bar").collect()
+    assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]

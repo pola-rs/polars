@@ -427,6 +427,7 @@ class LazyFrame:
         right_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
         on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
         how: str = "inner",
+        suffix: str = "_right",
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> "LazyFrame":
@@ -450,7 +451,8 @@ class LazyFrame:
                 "outer"
                 "asof",
                 "cross"
-
+        suffix
+            Suffix to append to columns with a duplicate name.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
         force_parallel
@@ -463,7 +465,9 @@ class LazyFrame:
         """
         if how == "cross":
             return wrap_ldf(
-                self._ldf.join(ldf._ldf, [], [], allow_parallel, force_parallel, how)
+                self._ldf.join(
+                    ldf._ldf, [], [], allow_parallel, force_parallel, how, suffix
+                )
             )
 
         left_on_: Union[tp.List[str], tp.List[Expr], None]
@@ -501,7 +505,13 @@ class LazyFrame:
 
         return wrap_ldf(
             self._ldf.join(
-                ldf._ldf, new_left_on, new_right_on, allow_parallel, force_parallel, how
+                ldf._ldf,
+                new_left_on,
+                new_right_on,
+                allow_parallel,
+                force_parallel,
+                how,
+                suffix,
             )
         )
 
@@ -564,7 +574,7 @@ class LazyFrame:
         """
         Rename a column in the DataFrame
         """
-        return wrap_ldf(self._ldf.rename([existing_name], [new_name]))
+        return wrap_ldf(self._ldf.with_column_renamed(existing_name, new_name))
 
     def rename(self, mapping: Dict[str, str]) -> "LazyFrame":
         """

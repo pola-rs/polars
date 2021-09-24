@@ -285,10 +285,8 @@ impl PredicatePushDown {
                 input_right,
                 left_on,
                 right_on,
-                how,
-                allow_par,
-                force_par,
                 schema,
+                options,
             } => {
                 let schema_left = lp_arena.get(input_left).schema(lp_arena);
                 let schema_right = lp_arena.get(input_right).schema(lp_arena);
@@ -337,7 +335,7 @@ impl PredicatePushDown {
                     // An outer join or left join may create null values.
                     // we also do it local
                     let matches = |e: &AExpr| matches!(e, AExpr::IsNotNull(_) | AExpr::IsNull(_));
-                    if (how == JoinType::Outer) | (how == JoinType::Left)
+                    if (options.how == JoinType::Outer) | (options.how == JoinType::Left)
                         && has_aexpr(predicate, expr_arena, matches)
                     {
                         local_predicates.push(predicate);
@@ -353,10 +351,8 @@ impl PredicatePushDown {
                     input_right,
                     left_on,
                     right_on,
-                    how,
-                    allow_par,
-                    force_par,
                     schema,
+                    options,
                 };
                 Ok(self.apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }

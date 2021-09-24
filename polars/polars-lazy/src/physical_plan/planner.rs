@@ -322,16 +322,14 @@ impl DefaultPlanner {
             Join {
                 input_left,
                 input_right,
-                how,
                 left_on,
                 right_on,
-                allow_par,
-                force_par,
+                options,
                 ..
             } => {
-                let parallel = if force_par {
-                    force_par
-                } else if allow_par {
+                let parallel = if options.force_parallel {
+                    true
+                } else if options.allow_parallel {
                     // check if two DataFrames come from a separate source.
                     // If they don't we can parallelize,
                     // Otherwise it is in cache.
@@ -360,10 +358,11 @@ impl DefaultPlanner {
                 Ok(Box::new(JoinExec::new(
                     input_left,
                     input_right,
-                    how,
+                    options.how,
                     left_on,
                     right_on,
                     parallel,
+                    options.suffix,
                 )))
             }
             HStack { input, exprs, .. } => {

@@ -151,10 +151,12 @@ impl<'a> LazyCsvReader<'a> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
+    pub how: JoinType,
+    pub suffix: Option<String>,
 }
 
 impl Default for JoinOptions {
@@ -162,6 +164,8 @@ impl Default for JoinOptions {
         JoinOptions {
             allow_parallel: true,
             force_parallel: false,
+            how: JoinType::Left,
+            suffix: None,
         }
     }
 }
@@ -405,6 +409,25 @@ impl LazyFrame {
     /// ```
     pub fn reverse(self) -> Self {
         self.select_local(vec![col("*").reverse()])
+    }
+
+    /// Rename a column in the DataFrame
+    pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
+        let schema = self.logical_plan.schema();
+        let schema = schema
+            .rename(&[existing_name], &[new_name])
+            .expect("cannot rename non existing column");
+
+        // first make sure that the column is projected, then we
+        let init = self.with_column(col(existing_name));
+
+        let existing_name = existing_name.to_string();
+        let new_name = new_name.to_string();
+        let f = move |mut df: DataFrame| {
+            df.rename(&existing_name, &new_name)?;
+            Ok(df)
+        };
+        init.map(f, Some(AllowedOptimizations::default()), Some(schema))
     }
 
     /// Rename columns in the DataFrame. This does not preserve ordering.
@@ -824,6 +847,7 @@ impl LazyFrame {
             .finish()
     }
 
+    /// Control more join options with the join builder.
     pub fn join_builder(self) -> JoinBuilder {
         JoinBuilder::new(self)
     }
@@ -1100,6 +1124,7 @@ pub struct JoinBuilder {
     right_on: Vec<Expr>,
     allow_parallel: bool,
     force_parallel: bool,
+    suffix: Option<String>,
 }
 impl JoinBuilder {
     fn new(lf: LazyFrame) -> Self {
@@ -1111,36 +1136,53 @@ impl JoinBuilder {
             right_on: vec![],
             allow_parallel: true,
             force_parallel: false,
+            suffix: None,
         }
     }
 
+    /// The table to join with.
     pub fn with(mut self, other: LazyFrame) -> Self {
         self.other = Some(other);
         self
     }
 
+    /// Select the join type.
     pub fn how(mut self, how: JoinType) -> Self {
         self.how = how;
         self
     }
 
+    /// The columns you want to join the left table on.
     pub fn left_on(mut self, on: Vec<Expr>) -> Self {
         self.left_on = on;
         self
     }
 
+    /// The columns you want to join the right table on.
     pub fn right_on(mut self, on: Vec<Expr>) -> Self {
         self.right_on = on;
         self
     }
+    /// Allow parallel table evaluation.
     pub fn allow_parallel(mut self, allow: bool) -> Self {
         self.allow_parallel = allow;
         self
     }
+
+    /// Force parallel table evaluation.
     pub fn force_parallel(mut self, allow: bool) -> Self {
         self.allow_parallel = allow;
         self
     }
+
+    /// Suffix to add duplicate column names in join.
+    /// Defaults to `"_right"`.
+    pub fn suffix(mut self, suffix: String) -> Self {
+        self.suffix = Some(suffix);
+        self
+    }
+
+    /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
 
@@ -1149,11 +1191,14 @@ impl JoinBuilder {
             .get_plan_builder()
             .join(
                 self.other.expect("with not set").logical_plan,
-                self.how,
                 self.left_on,
                 self.right_on,
-                self.allow_parallel,
-                self.force_parallel,
+                JoinOptions {
+                    allow_parallel: self.allow_parallel,
+                    force_parallel: self.force_parallel,
+                    how: self.how,
+                    suffix: self.suffix,
+                },
             )
             .build();
         LazyFrame::from_logical_plan(lp, opt_state)

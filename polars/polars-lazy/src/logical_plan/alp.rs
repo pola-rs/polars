@@ -2,7 +2,6 @@ use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 use ahash::RandomState;
-use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 use polars_core::utils::{Arena, Node};
 use std::collections::HashSet;
@@ -86,11 +85,9 @@ pub enum ALogicalPlan {
         input_left: Node,
         input_right: Node,
         schema: SchemaRef,
-        how: JoinType,
         left_on: Vec<Node>,
         right_on: Vec<Node>,
-        allow_par: bool,
-        force_par: bool,
+        options: JoinOptions,
     },
     HStack {
         input: Node,
@@ -276,20 +273,16 @@ impl ALogicalPlan {
             },
             Join {
                 schema,
-                how,
                 left_on,
-                allow_par,
-                force_par,
+                options,
                 ..
             } => Join {
                 input_left: inputs[0],
                 input_right: inputs[1],
                 schema: schema.clone(),
-                how: *how,
                 left_on: exprs[..left_on.len()].to_vec(),
                 right_on: exprs[left_on.len()..].to_vec(),
-                allow_par: *allow_par,
-                force_par: *force_par,
+                options: options.clone(),
             },
             Sort {
                 by_column, reverse, ..
@@ -657,11 +650,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
     pub fn join(
         self,
         other: Node,
-        how: JoinType,
         left_on: Vec<Node>,
         right_on: Vec<Node>,
-        allow_par: bool,
-        force_par: bool,
+        options: JoinOptions,
     ) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
@@ -706,12 +697,10 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let lp = ALogicalPlan::Join {
             input_left: self.root,
             input_right: other,
-            how,
             schema,
             left_on,
             right_on,
-            allow_par,
-            force_par,
+            options,
         };
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)

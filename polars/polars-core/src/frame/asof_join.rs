@@ -126,7 +126,7 @@ impl DataFrame {
             )
         };
 
-        self.finish_join(self.clone(), right_df)
+        self.finish_join(self.clone(), right_df, None)
     }
 }
 

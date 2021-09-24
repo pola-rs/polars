@@ -32,7 +32,7 @@ impl DataFrame {
 
         let (l_df, r_df) = POOL.install(|| rayon::join(create_left_df, create_right_df));
 
-        self.finish_join(l_df, r_df)
+        self.finish_join(l_df, r_df, None)
     }
 }
 

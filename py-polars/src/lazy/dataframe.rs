@@ -234,6 +234,7 @@ impl PyLazyFrame {
         allow_parallel: bool,
         force_parallel: bool,
         how: &str,
+        suffix: String,
     ) -> PyLazyFrame {
         let how = match how {
             "left" => JoinType::Left,
@@ -256,6 +257,7 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .how(how)
+            .suffix(suffix)
             .finish()
             .into()
     }
@@ -273,6 +275,11 @@ impl PyLazyFrame {
     pub fn rename(&mut self, existing: Vec<String>, new: Vec<String>) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.rename(existing, new).into()
+    }
+
+    pub fn with_column_renamed(&mut self, existing: &str, new: &str) -> PyLazyFrame {
+        let ldf = self.ldf.clone();
+        ldf.with_column_renamed(existing, new).into()
     }
 
     pub fn reverse(&self) -> Self {

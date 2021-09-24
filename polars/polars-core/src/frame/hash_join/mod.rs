@@ -972,6 +972,7 @@ impl DataFrame {
         &self,
         mut df_left: DataFrame,
         mut df_right: DataFrame,
+        suffix: Option<String>,
     ) -> Result<DataFrame> {
         let mut left_names = HashSet::with_capacity_and_hasher(df_left.width(), RandomState::new());
 
@@ -986,9 +987,10 @@ impl DataFrame {
                 rename_strs.push(series.name().to_owned())
             }
         });
+        let suffix = suffix.as_deref().unwrap_or("_right");
 
         for name in rename_strs {
-            df_right.rename(&name, &format!("{}_right", name))?;
+            df_right.rename(&name, &format!("{}{}", name, suffix))?;
         }
 
         df_left.hstack_mut(&df_right.columns)?;
@@ -1012,6 +1014,7 @@ impl DataFrame {
         left_on: S1,
         right_on: S2,
         how: JoinType,
+        suffix: Option<String>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
@@ -1042,16 +1045,12 @@ impl DataFrame {
 
         // Single keys
         if selected_left.len() == 1 {
+            let s_left = self.column(selected_left[0].name())?;
+            let s_right = other.column(selected_right[0].name())?;
             return match how {
-                JoinType::Inner => {
-                    self.inner_join(other, selected_left[0].name(), selected_right[0].name())
-                }
-                JoinType::Left => {
-                    self.left_join(other, selected_left[0].name(), selected_right[0].name())
-                }
-                JoinType::Outer => {
-                    self.outer_join(other, selected_left[0].name(), selected_right[0].name())
-                }
+                JoinType::Inner => self.inner_join_from_series(other, s_left, s_right, suffix),
+                JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix),
+                JoinType::Outer => self.outer_join_from_series(other, s_left, s_right, suffix),
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf => {
                     self.join_asof(other, selected_left[0].name(), selected_right[0].name())
@@ -1117,7 +1116,7 @@ impl DataFrame {
                         )
                     },
                 );
-                self.finish_join(df_left, df_right)
+                self.finish_join(df_left, df_right, suffix)
             }
             JoinType::Left => {
                 let left = DataFrame::new_no_checks(selected_left);
@@ -1135,7 +1134,7 @@ impl DataFrame {
                         )
                     },
                 );
-                self.finish_join(df_left, df_right)
+                self.finish_join(df_left, df_right, suffix)
             }
             JoinType::Outer => {
                 let left = DataFrame::new_no_checks(selected_left.clone());
@@ -1166,7 +1165,7 @@ impl DataFrame {
                     s.rename(s_left.name());
                     df_left.hstack_mut(&[s])?;
                 }
-                self.finish_join(df_left, df_right)
+                self.finish_join(df_left, df_right, suffix)
             }
             #[cfg(feature = "asof_join")]
             JoinType::AsOf => Err(PolarsError::ValueError(
@@ -1197,7 +1196,7 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
-        self.inner_join_from_series(other, s_left, s_right)
+        self.inner_join_from_series(other, s_left, s_right, None)
     }
 
     pub(crate) fn inner_join_from_series(
@@ -1205,6 +1204,7 @@ impl DataFrame {
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
+        suffix: Option<String>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left, s_right)?;
@@ -1219,7 +1219,7 @@ impl DataFrame {
                     .take_iter_unchecked(join_tuples.iter().map(|(_left, right)| *right as usize))
             },
         );
-        self.finish_join(df_left, df_right)
+        self.finish_join(df_left, df_right, suffix)
     }
 
     /// Perform a left join on two DataFrames
@@ -1234,7 +1234,7 @@ impl DataFrame {
     pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
-        self.left_join_from_series(other, s_left, s_right)
+        self.left_join_from_series(other, s_left, s_right, None)
     }
 
     pub(crate) fn left_join_from_series(
@@ -1242,6 +1242,7 @@ impl DataFrame {
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
+        suffix: Option<String>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left, s_right)?;
@@ -1257,7 +1258,7 @@ impl DataFrame {
                 )
             },
         );
-        self.finish_join(df_left, df_right)
+        self.finish_join(df_left, df_right, suffix)
     }
 
     /// Perform an outer join on two DataFrames
@@ -1277,13 +1278,14 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         let s_left = self.column(left_on)?;
         let s_right = other.column(right_on)?;
-        self.outer_join_from_series(other, s_left, s_right)
+        self.outer_join_from_series(other, s_left, s_right, None)
     }
     pub(crate) fn outer_join_from_series(
         &self,
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
+        suffix: Option<String>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left, s_right)?;
@@ -1310,7 +1312,7 @@ impl DataFrame {
         let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
         s.rename(s_left.name());
         df_left.hstack_mut(&[s])?;
-        self.finish_join(df_left, df_right)
+        self.finish_join(df_left, df_right, suffix)
     }
 }
 
@@ -1512,14 +1514,14 @@ mod test {
 
         // now check the join with multiple columns
         let joined = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Left)
+            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Left, None)
             .unwrap();
         let ca = joined.column("ham").unwrap().utf8().unwrap();
         dbg!(&df_a, &df_b);
         assert_eq!(Vec::from(ca), correct_ham);
         let joined_inner_hack = df_a.inner_join(&df_b, "dummy", "dummy").unwrap();
         let joined_inner = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Inner)
+            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Inner, None)
             .unwrap();
 
         dbg!(&joined_inner_hack, &joined_inner);
@@ -1530,7 +1532,7 @@ mod test {
 
         let joined_outer_hack = df_a.outer_join(&df_b, "dummy", "dummy").unwrap();
         let joined_outer = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Outer)
+            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Outer, None)
             .unwrap();
         assert!(joined_outer_hack
             .column("ham")
@@ -1553,7 +1555,7 @@ mod test {
         df_b.may_apply("bar", |s| s.cast_with_dtype(&DataType::Categorical))
             .unwrap();
 
-        let out = df_a.join(&df_b, "b", "bar", JoinType::Left).unwrap();
+        let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None).unwrap();
         assert_eq!(out.shape(), (6, 5));
         let correct_ham = &[
             Some("let"),
@@ -1578,7 +1580,7 @@ mod test {
 
         df_b.may_apply("bar", |s| s.cast_with_dtype(&DataType::Categorical))
             .unwrap();
-        let out = df_a.join(&df_b, "b", "bar", JoinType::Left);
+        let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None);
         assert!(out.is_err())
     }
 
@@ -1645,11 +1647,11 @@ mod test {
 
         // dtypes don't match, error
         assert!(df1
-            .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left)
+            .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left, None)
             .is_err());
         // length of join keys don't match error
         assert!(df1
-            .join(&df2, vec!["a"], vec!["a", "b"], JoinType::Left)
+            .join(&df2, vec!["a"], vec!["a", "b"], JoinType::Left, None)
             .is_err());
         Ok(())
     }
@@ -1670,7 +1672,13 @@ mod test {
             "ham" => &["let", "var", "const"]
         }?;
 
-        let out = df_a.join(&df_b, vec!["a", "c"], vec!["foo", "bar"], JoinType::Left)?;
+        let out = df_a.join(
+            &df_b,
+            vec!["a", "c"],
+            vec!["foo", "bar"],
+            JoinType::Left,
+            None,
+        )?;
         assert_eq!(
             Vec::from(out.column("ham")?.utf8()?),
             &[None, Some("var"), None, None]
