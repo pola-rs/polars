@@ -270,9 +270,9 @@ impl PyLazyFrame {
         ldf.with_columns(py_exprs_to_exprs(exprs)).into()
     }
 
-    pub fn with_column_renamed(&mut self, existing: &str, new: &str) -> PyLazyFrame {
+    pub fn rename(&mut self, existing: Vec<String>, new: Vec<String>) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        ldf.with_column_renamed(existing, new).into()
+        ldf.rename(existing, new).into()
     }
 
     pub fn reverse(&self) -> Self {
@@ -409,13 +409,7 @@ impl PyLazyFrame {
 
     pub fn drop_columns(&self, cols: Vec<String>) -> Self {
         let ldf = self.ldf.clone();
-        let f = move |mut df: DataFrame| {
-            for col in &cols {
-                let _ = df.drop_in_place(col);
-            }
-            Ok(df)
-        };
-        ldf.map(f, None, None).into()
+        ldf.drop_columns(cols).into()
     }
 
     pub fn clone(&self) -> PyLazyFrame {

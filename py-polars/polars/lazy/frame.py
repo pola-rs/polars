@@ -564,7 +564,20 @@ class LazyFrame:
         """
         Rename a column in the DataFrame
         """
-        return wrap_ldf(self._ldf.with_column_renamed(existing_name, new_name))
+        return wrap_ldf(self._ldf.rename([existing_name], [new_name]))
+
+    def rename(self, mapping: Dict[str, str]) -> "LazyFrame":
+        """
+        Rename column names. This does not preserve column order.
+
+        Parameters
+        ----------
+        mapping
+            Key value pairs that map from old name to new name.
+        """
+        existing = list(mapping.keys())
+        new = list(mapping.values())
+        return wrap_ldf(self._ldf.rename(existing, new))
 
     def reverse(self) -> "LazyFrame":
         """

@@ -535,7 +535,7 @@ def test_datetime_consistency():
 
 def test_clip():
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    df.select(col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
+    df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
     pl.Series([1, 2, 3, 4, 5]).clip(2, 4).to_list() == [2, 2, 3, 4, 4]
 
 
@@ -571,3 +571,15 @@ def test_is_in():
         True,
         False,
     ]
+
+
+def test_rename():
+    lf = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
+    out = lf.rename({"a": "foo", "b": "bar"}).collect()
+    # todo: preserve column order
+    assert out.columns == ["c", "foo", "bar"]
+
+
+def test_drop_columns():
+    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop_columns(["a", "b"])
+    assert out.columns == ["c"]

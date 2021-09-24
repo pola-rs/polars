@@ -41,6 +41,7 @@ Manipulation/ selection
     LazyFrame.drop_columns
     LazyFrame.drop_column
     LazyFrame.with_column_renamed
+    LazyFrame.rename
     LazyFrame.reverse
     LazyFrame.shift
     LazyFrame.shift_and_fill
