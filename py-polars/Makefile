@@ -10,7 +10,7 @@ pip:
 	pip install --force-reinstall -U wheels/polars-*.whl
 
 release-build:
-	maturin build --release -o wheels -i $(which python)
+	maturin build --release -o wheels
 
 release-install: release-build pip
 
@@ -19,7 +19,7 @@ test:
 	pytest tests
 
 test-build:
-	maturin build -o wheels -i $(which python)
+	maturin build -o wheels
 
 test-install: test-build pip
 
