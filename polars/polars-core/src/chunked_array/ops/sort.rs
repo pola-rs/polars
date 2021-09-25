@@ -437,7 +437,13 @@ pub(crate) fn prepare_argsort(
             use DataType::*;
             match s.dtype() {
                 Float32 | Float64 | Int32 | Int64 | Utf8 | UInt32 | UInt64 => s.clone(),
-                _ => s.cast::<Int32Type>().unwrap(),
+                _ => {
+                    if s.bit_repr_is_large() {
+                        s.cast::<Int64Type>().unwrap()
+                    } else {
+                        s.cast::<Int32Type>().unwrap()
+                    }
+                }
             }
         })
         .collect::<Vec<_>>();
