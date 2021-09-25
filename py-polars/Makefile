@@ -7,8 +7,7 @@ pre-commit:
 	flake8 .
 
 pip:
-	@cd wheels
-	pip install --force-reinstall -U polars-*.whl
+	pip install --force-reinstall -U wheels/polars-*.whl
 
 release-build:
 	maturin build --release -o wheels -i $(which python)
