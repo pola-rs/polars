@@ -21,8 +21,3 @@ test:
 
 test-build:
 	maturin build -o wheels -i $(which python)
-
-test-install: test-build pip
-
-build-and-test: test-install
-	pytest tests
