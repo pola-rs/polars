@@ -23,4 +23,5 @@ test-build:
 
 test-install: test-build pip
 
-build-and-test: test-install test
+build-and-test: test-install
+	pytest tests
