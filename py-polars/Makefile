@@ -21,3 +21,5 @@ test:
 
 test-build:
 	maturin build -o wheels -i $(which python)
+
+build-and-test: test-build test
