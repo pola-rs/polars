@@ -93,10 +93,10 @@ jobs:
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2021-09-14 && ./tasks.sh build-run-tests
+          cd py-polars && rustup override set nightly-2021-09-14 && make build-and-test
           cargo clippy
       # test if we can import polars without any requirements
-      - name: import polars
+      - name: Import polars
         run: |
           pip uninstall pandas -y
           python -c "import polars"
