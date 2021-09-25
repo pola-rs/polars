@@ -6,12 +6,14 @@ pre-commit:
 	mypy
 	flake8 .
 
+pip:
+	@cd wheels
+	pip install --force-reinstall -U polars-*.whl
+
 release-build:
 	maturin build --release -o wheels -i $(which python)
 
-release-install: release-build
-	@cd wheels
-	pip install --force-reinstall -U polars-*.whl
+release-install: release-build pip
 
 test:
 	maturin develop
@@ -19,3 +21,7 @@ test:
 
 test-build:
 	maturin build -o wheels -i $(which python)
+
+test-install: test-build pip
+
+build-and-test: test-install test
