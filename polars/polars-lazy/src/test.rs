@@ -1859,7 +1859,10 @@ fn test_power_in_agg_list() -> Result<()> {
         .lazy()
         .groupby(vec![col("fruits")])
         .agg(vec![col("A")
-            .rolling_min(1, None, false, 0)
+            .rolling_min(RollingOptions {
+                window_size: 1,
+                ..Default::default()
+            })
             .pow(2.0)
             .alias("foo")])
         .sort("fruits", true)
@@ -1883,7 +1886,11 @@ fn test_power_in_agg_list2() -> Result<()> {
         .lazy()
         .groupby(vec![col("fruits")])
         .agg(vec![col("A")
-            .rolling_min(2, None, false, 0)
+            .rolling_min(RollingOptions {
+                window_size: 2,
+                min_periods: 2,
+                ..Default::default()
+            })
             .pow(2.0)
             .sum()
             .alias("foo")])

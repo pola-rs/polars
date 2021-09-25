@@ -1421,16 +1421,9 @@ impl Expr {
     /// [ChunkedArray::rolling_min](polars::prelude::ChunkWindow::rolling_min).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_min(
-        self,
-        window_size: u32,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-        min_periods: u32,
-    ) -> Expr {
-        let weight = weight.map(|v| v.to_vec());
+    pub fn rolling_min(self, options: RollingOptions) -> Expr {
         self.apply(
-            move |s| s.rolling_min(window_size, weight.as_deref(), ignore_null, min_periods),
+            move |s| s.rolling_min(options.clone()),
             GetOutput::same_type(),
         )
     }
@@ -1439,16 +1432,9 @@ impl Expr {
     /// [ChunkedArray::rolling_max](polars::prelude::ChunkWindow::rolling_max).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_max(
-        self,
-        window_size: u32,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-        min_periods: u32,
-    ) -> Expr {
-        let weight = weight.map(|v| v.to_vec());
+    pub fn rolling_max(self, options: RollingOptions) -> Expr {
         self.apply(
-            move |s| s.rolling_max(window_size, weight.as_deref(), ignore_null, min_periods),
+            move |s| s.rolling_max(options.clone()),
             GetOutput::same_type(),
         )
     }
@@ -1457,16 +1443,9 @@ impl Expr {
     /// [ChunkedArray::rolling_mean](polars::prelude::ChunkWindow::rolling_mean).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_mean(
-        self,
-        window_size: u32,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-        min_periods: u32,
-    ) -> Expr {
-        let weight = weight.map(|v| v.to_vec());
+    pub fn rolling_mean(self, options: RollingOptions) -> Expr {
         self.apply(
-            move |s| s.rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods),
+            move |s| s.rolling_mean(options.clone()),
             GetOutput::same_type(),
         )
     }
@@ -1475,16 +1454,9 @@ impl Expr {
     /// [ChunkedArray::rolling_sum](polars::prelude::ChunkWindow::rolling_sum).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_sum(
-        self,
-        window_size: u32,
-        weight: Option<&[f64]>,
-        ignore_null: bool,
-        min_periods: u32,
-    ) -> Expr {
-        let weight = weight.map(|v| v.to_vec());
+    pub fn rolling_sum(self, options: RollingOptions) -> Expr {
         self.apply(
-            move |s| s.rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods),
+            move |s| s.rolling_sum(options.clone()),
             GetOutput::same_type(),
         )
     }
@@ -1492,17 +1464,16 @@ impl Expr {
     /// Apply a rolling variance
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_var(self, window_size: usize) -> Expr {
+    pub fn rolling_var(self, options: RollingOptions) -> Expr {
         self.apply(
             move |s| match s.dtype() {
-                DataType::Float32 => Ok(s.f32().unwrap().rolling_var(window_size).into_series()),
-                DataType::Float64 => Ok(s.f64().unwrap().rolling_var(window_size).into_series()),
-                _ => Ok(s
+                DataType::Float32 => s.f32().unwrap().rolling_var(options.clone()),
+                DataType::Float64 => s.f64().unwrap().rolling_var(options.clone()),
+                _ => s
                     .cast_with_dtype(&DataType::Float64)?
                     .f64()
                     .unwrap()
-                    .rolling_var(window_size)
-                    .into_series()),
+                    .rolling_var(options.clone()),
             },
             GetOutput::map_field(|field| match field.data_type() {
                 DataType::Float64 => field.clone(),
@@ -1515,17 +1486,16 @@ impl Expr {
     /// Apply a rolling std-dev
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_std(self, window_size: usize) -> Expr {
+    pub fn rolling_std(self, options: RollingOptions) -> Expr {
         self.apply(
             move |s| match s.dtype() {
-                DataType::Float32 => Ok(s.f32().unwrap().rolling_std(window_size).into_series()),
-                DataType::Float64 => Ok(s.f64().unwrap().rolling_std(window_size).into_series()),
-                _ => Ok(s
+                DataType::Float32 => s.f32().unwrap().rolling_std(options.clone()),
+                DataType::Float64 => s.f64().unwrap().rolling_std(options.clone()),
+                _ => s
                     .cast_with_dtype(&DataType::Float64)?
                     .f64()
                     .unwrap()
-                    .rolling_std(window_size)
-                    .into_series()),
+                    .rolling_std(options.clone()),
             },
             GetOutput::map_field(|field| match field.data_type() {
                 DataType::Float64 => field.clone(),

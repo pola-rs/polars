@@ -31,6 +31,10 @@ impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
 {
+    fn _field(&self) -> &Field {
+        self.0.ref_field()
+    }
+
     fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
         self.0.agg_first(_groups)
     }
@@ -82,10 +86,6 @@ where
 
     fn name(&self) -> &str {
         ObjectChunked::name(&self.0)
-    }
-
-    fn field(&self) -> &Field {
-        ObjectChunked::ref_field(&self.0)
     }
 
     fn dtype(&self) -> &DataType {

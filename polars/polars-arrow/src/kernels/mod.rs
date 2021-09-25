@@ -1,6 +1,7 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::utils::BitChunks;
 use std::iter::Enumerate;
+pub mod rolling;
 pub mod set;
 
 /// Internal state of [SlicesIterator]
