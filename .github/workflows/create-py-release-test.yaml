@@ -32,7 +32,7 @@ jobs:
         run: |
           cd py-polars
           rustup override set nightly-2021-09-14
-          ./tasks.sh build-run-tests
+          make build-and-test
           rm wheels/*
 
   build:
