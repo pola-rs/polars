@@ -8,37 +8,11 @@ use std::hash::Hash;
 use arrow::types::{simd::Simd, NativeType};
 
 use crate::prelude::*;
+use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
 use arrow::buffer::MutableBuffer;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::trusted_len::PushUnchecked;
-
-pub(crate) trait NumericAggSync {
-    fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        None
-    }
-    fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        None
-    }
-    fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        None
-    }
-    fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        None
-    }
-    fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        None
-    }
-    fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        None
-    }
-
-    /// Count the valid values. That is length - null_count
-    /// Used in partitioned aggregation to compute the mean values.
-    fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        None
-    }
-}
 
 fn agg_helper<T, F>(groups: &[(u32, Vec<u32>)], f: F) -> Option<Series>
 where
@@ -50,25 +24,40 @@ where
     Some(ca.into_series())
 }
 
-impl NumericAggSync for BooleanChunked {
-    fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+impl BooleanChunked {
+    pub(crate) fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.cast::<UInt32Type>().unwrap().agg_min(groups)
     }
-    fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    pub(crate) fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.cast::<UInt32Type>().unwrap().agg_max(groups)
     }
-    fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    pub(crate) fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.cast::<UInt32Type>().unwrap().agg_sum(groups)
     }
 }
-impl NumericAggSync for Utf8Chunked {}
-impl NumericAggSync for ListChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl NumericAggSync for CategoricalChunked {}
-#[cfg(feature = "object")]
-impl<T> NumericAggSync for ObjectChunked<T> {}
 
-impl<T> NumericAggSync for ChunkedArray<T>
+impl<T> ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkTake,
+    T: PolarsDataType + Sync,
+{
+    #[cfg(feature = "lazy")]
+    pub(crate) fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        agg_helper::<UInt32Type, _>(groups, |(_first, idx)| {
+            debug_assert!(idx.len() <= self.len());
+            if idx.is_empty() {
+                None
+            } else if self.null_count() == 0 {
+                Some(idx.len() as u32)
+            } else {
+                let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                Some((take.len() - take.null_count()) as u32)
+            }
+        })
+    }
+}
+
+impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
     T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded,
@@ -77,7 +66,212 @@ where
         + arrow::compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
-    fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    pub(crate) fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        agg_helper::<T, _>(groups, |(first, idx)| {
+            debug_assert!(idx.len() <= self.len());
+            if idx.is_empty() {
+                None
+            } else if idx.len() == 1 {
+                self.get(*first as usize)
+            } else {
+                match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => Some(unsafe {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a < b { a } else { b },
+                            T::Native::max_value(),
+                        )
+                    }),
+                    (_, 1) => unsafe {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a < b { a } else { b },
+                            T::Native::max_value(),
+                        )
+                    },
+                    _ => {
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                        take.min()
+                    }
+                }
+            }
+        })
+    }
+
+    pub(crate) fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        agg_helper::<T, _>(groups, |(first, idx)| {
+            debug_assert!(idx.len() <= self.len());
+            if idx.is_empty() {
+                None
+            } else if idx.len() == 1 {
+                self.get(*first as usize)
+            } else {
+                match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => Some(unsafe {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a > b { a } else { b },
+                            T::Native::min_value(),
+                        )
+                    }),
+                    (_, 1) => unsafe {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a > b { a } else { b },
+                            T::Native::min_value(),
+                        )
+                    },
+                    _ => {
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                        take.max()
+                    }
+                }
+            }
+        })
+    }
+
+    pub(crate) fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        agg_helper::<T, _>(groups, |(first, idx)| {
+            debug_assert!(idx.len() <= self.len());
+            if idx.is_empty() {
+                None
+            } else if idx.len() == 1 {
+                self.get(*first as usize)
+            } else {
+                match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => Some(unsafe {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                    }),
+                    (_, 1) => unsafe {
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                    },
+                    _ => {
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                        take.sum()
+                    }
+                }
+            }
+        })
+    }
+}
+
+impl<T> SeriesWrap<ChunkedArray<T>>
+where
+    T: PolarsFloatType,
+    ChunkedArray<T>: IntoSeries,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Simd,
+    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
+        + arrow::compute::aggregate::Sum<T::Native>
+        + arrow::compute::aggregate::SimdOrd<T::Native>,
+{
+    pub(crate) fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        agg_helper::<T, _>(groups, |(first, idx)| {
+            // this can fail due to a bug in lazy code.
+            // here users can create filters in aggregations
+            // and thereby creating shorter columns than the original group tuples.
+            // the group tuples are modified, but if that's done incorrect there can be out of bounds
+            // access
+            debug_assert!(idx.len() <= self.len());
+            let out = if idx.is_empty() {
+                None
+            } else if idx.len() == 1 {
+                self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
+            } else {
+                match (self.null_count(), self.chunks.len()) {
+                    (0, 1) => unsafe {
+                        take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                    }
+                    .to_f64()
+                    .map(|sum| sum / idx.len() as f64),
+                    (_, 1) => unsafe {
+                        take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _>(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                        )
+                    }
+                    .map(|(sum, null_count)| {
+                        sum.to_f64()
+                            .map(|sum| sum / (idx.len() as f64 - null_count as f64))
+                            .unwrap()
+                    }),
+                    _ => {
+                        let take =
+                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                        let opt_sum: Option<T::Native> = take.sum();
+                        opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                    }
+                }
+            };
+            out.map(|flt| NumCast::from(flt).unwrap())
+        })
+    }
+
+    pub(crate) fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        let ca = &self.0;
+        agg_helper::<T, _>(groups, |(_first, idx)| {
+            debug_assert!(idx.len() <= ca.len());
+            if idx.is_empty() {
+                return None;
+            }
+            let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+            take.into_series()
+                .var_as_series()
+                .unpack::<T>()
+                .unwrap()
+                .get(0)
+        })
+    }
+    pub(crate) fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        let ca = &self.0;
+        agg_helper::<T, _>(groups, |(_first, idx)| {
+            debug_assert!(idx.len() <= ca.len());
+            if idx.is_empty() {
+                return None;
+            }
+            let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+            take.into_series()
+                .std_as_series()
+                .unpack::<T>()
+                .unwrap()
+                .get(0)
+        })
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    ChunkedArray<T>: IntoSeries,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded,
+    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
+        + arrow::compute::aggregate::Sum<T::Native>
+        + arrow::compute::aggregate::SimdOrd<T::Native>,
+{
+    pub(crate) fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<Float64Type, _>(groups, |(first, idx)| {
             // this can fail due to a bug in lazy code.
             // here users can create filters in aggregations
@@ -125,111 +319,7 @@ where
         })
     }
 
-    fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        agg_helper::<T, _>(groups, |(first, idx)| {
-            debug_assert!(idx.len() <= self.len());
-            if idx.is_empty() {
-                None
-            } else if idx.len() == 1 {
-                self.get(*first as usize)
-            } else {
-                match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => Some(unsafe {
-                        take_agg_no_null_primitive_iter_unchecked(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
-                            |a, b| if a < b { a } else { b },
-                            T::Native::max_value(),
-                        )
-                    }),
-                    (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
-                            |a, b| if a < b { a } else { b },
-                            T::Native::max_value(),
-                        )
-                    },
-                    _ => {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                        take.min()
-                    }
-                }
-            }
-        })
-    }
-
-    fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        agg_helper::<T, _>(groups, |(first, idx)| {
-            debug_assert!(idx.len() <= self.len());
-            if idx.is_empty() {
-                None
-            } else if idx.len() == 1 {
-                self.get(*first as usize)
-            } else {
-                match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => Some(unsafe {
-                        take_agg_no_null_primitive_iter_unchecked(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
-                            |a, b| if a > b { a } else { b },
-                            T::Native::min_value(),
-                        )
-                    }),
-                    (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
-                            |a, b| if a > b { a } else { b },
-                            T::Native::min_value(),
-                        )
-                    },
-                    _ => {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                        take.max()
-                    }
-                }
-            }
-        })
-    }
-
-    fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        agg_helper::<T, _>(groups, |(first, idx)| {
-            debug_assert!(idx.len() <= self.len());
-            if idx.is_empty() {
-                None
-            } else if idx.len() == 1 {
-                self.get(*first as usize)
-            } else {
-                match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => Some(unsafe {
-                        take_agg_no_null_primitive_iter_unchecked(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
-                            |a, b| a + b,
-                            T::Native::zero(),
-                        )
-                    }),
-                    (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            self.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
-                            |a, b| a + b,
-                            T::Native::zero(),
-                        )
-                    },
-                    _ => {
-                        let take =
-                            unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                        take.sum()
-                    }
-                }
-            }
-        })
-    }
-    fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    pub(crate) fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<Float64Type, _>(groups, |(_first, idx)| {
             debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
@@ -243,7 +333,7 @@ where
                 .get(0)
         })
     }
-    fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    pub(crate) fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         agg_helper::<Float64Type, _>(groups, |(_first, idx)| {
             debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
@@ -255,20 +345,6 @@ where
                 .unpack::<Float64Type>()
                 .unwrap()
                 .get(0)
-        })
-    }
-    #[cfg(feature = "lazy")]
-    fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        agg_helper::<UInt32Type, _>(groups, |(_first, idx)| {
-            debug_assert!(idx.len() <= self.len());
-            if idx.is_empty() {
-                None
-            } else if self.null_count() == 0 {
-                Some(idx.len() as u32)
-            } else {
-                let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                Some((take.len() - take.null_count()) as u32)
-            }
         })
     }
 }

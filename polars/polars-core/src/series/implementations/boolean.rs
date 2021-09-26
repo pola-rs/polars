@@ -72,10 +72,6 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_mean(groups)
-    }
-
     fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.0.agg_min(groups)
     }
@@ -94,14 +90,6 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 
     fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         self.0.agg_last(groups)
-    }
-
-    fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_std(groups)
-    }
-
-    fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_var(groups)
     }
 
     fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
