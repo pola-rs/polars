@@ -10,6 +10,7 @@ pub mod ops;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
+use crate::chunked_array::ops::rolling_window::RollingOptions;
 use crate::chunked_array::{builder::get_list_builder, ChunkIdIter};
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::{rank, RankMethod};
@@ -45,8 +46,8 @@ macro_rules! invalid_operation {
     ($s:expr) => {
         Err(PolarsError::InvalidOperation(
             format!(
-                "argsort_multiple is not implemented for this dtype: {:?}",
-                $s.dtype()
+                "this operation is not implemented/valid for this dtype: {:?}",
+                $s._dtype()
             )
             .into(),
         ))
@@ -76,6 +77,16 @@ pub(crate) mod private {
     }
 
     pub trait PrivateSeries {
+        /// Get field (used in schema)
+        fn _field(&self) -> &Field {
+            unimplemented!()
+        }
+
+        /// Get datatype of series.
+        fn _dtype(&self) -> &DataType {
+            self._field().data_type()
+        }
+
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
             unimplemented!()
         }
@@ -83,50 +94,35 @@ pub(crate) mod private {
         /// Apply a rolling mean to a Series. See:
         /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
         #[cfg(feature = "rolling_window")]
-        fn _rolling_mean(
-            &self,
-            _window_size: u32,
-            _weight: Option<&[f64]>,
-            _ignore_null: bool,
-            _min_periods: u32,
-        ) -> Result<Series> {
-            unimplemented!()
+        fn _rolling_mean(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
         }
         /// Apply a rolling sum to a Series. See:
-        /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_sum).
         #[cfg(feature = "rolling_window")]
-        fn _rolling_sum(
-            &self,
-            _window_size: u32,
-            _weight: Option<&[f64]>,
-            _ignore_null: bool,
-            _min_periods: u32,
-        ) -> Result<Series> {
-            unimplemented!()
+        fn _rolling_sum(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
         }
         /// Apply a rolling min to a Series. See:
-        /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_min).
         #[cfg(feature = "rolling_window")]
-        fn _rolling_min(
-            &self,
-            _window_size: u32,
-            _weight: Option<&[f64]>,
-            _ignore_null: bool,
-            _min_periods: u32,
-        ) -> Result<Series> {
-            unimplemented!()
+        fn _rolling_min(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
         }
         /// Apply a rolling max to a Series. See:
-        /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_max).
         #[cfg(feature = "rolling_window")]
-        fn _rolling_max(
-            &self,
-            _window_size: u32,
-            _weight: Option<&[f64]>,
-            _ignore_null: bool,
-            _min_periods: u32,
-        ) -> Result<Series> {
-            unimplemented!()
+        fn _rolling_max(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
+        }
+
+        /// Apply a rolling variance to a Series. See:
+        #[cfg(feature = "rolling_window")]
+        fn _rolling_var(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
+        }
+
+        /// Apply a rolling std_dev to a Series. See:
+        #[cfg(feature = "rolling_window")]
+        fn _rolling_std(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
         }
 
         /// Get an array with the cumulative max computed at every element
@@ -332,12 +328,12 @@ pub trait SeriesTrait:
 
     /// Get field (used in schema)
     fn field(&self) -> &Field {
-        unimplemented!()
+        self._field()
     }
 
     /// Get datatype of series.
     fn dtype(&self) -> &DataType {
-        self.field().data_type()
+        self._dtype()
     }
 
     /// Underlying chunks.
@@ -1604,19 +1600,39 @@ impl Series {
         }
     }
 
+    /// Apply a rolling variance to a Series. See:
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_var(&self, _options: RollingOptions) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_var(_options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
+
+    /// Apply a rolling std to a Series. See:
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_std(&self, _options: RollingOptions) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_std(_options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
+
     /// Apply a rolling mean to a Series. See:
     /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_mean(
-        &self,
-        _window_size: u32,
-        _weight: Option<&[f64]>,
-        _ignore_null: bool,
-        _min_periods: u32,
-    ) -> Result<Series> {
+    pub fn rolling_mean(&self, _options: RollingOptions) -> Result<Series> {
         #[cfg(feature = "rolling_window")]
         {
-            self._rolling_mean(_window_size, _weight, _ignore_null, _min_periods)
+            self._rolling_mean(_options)
         }
         #[cfg(not(feature = "rolling_window"))]
         {
@@ -1626,16 +1642,10 @@ impl Series {
     /// Apply a rolling sum to a Series. See:
     /// [ChunkedArray::rolling_sum](crate::prelude::ChunkWindow::rolling_sum).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_sum(
-        &self,
-        _window_size: u32,
-        _weight: Option<&[f64]>,
-        _ignore_null: bool,
-        _min_periods: u32,
-    ) -> Result<Series> {
+    pub fn rolling_sum(&self, _options: RollingOptions) -> Result<Series> {
         #[cfg(feature = "rolling_window")]
         {
-            self._rolling_sum(_window_size, _weight, _ignore_null, _min_periods)
+            self._rolling_sum(_options)
         }
         #[cfg(not(feature = "rolling_window"))]
         {
@@ -1645,16 +1655,10 @@ impl Series {
     /// Apply a rolling min to a Series. See:
     /// [ChunkedArray::rolling_min](crate::prelude::ChunkWindow::rolling_min).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_min(
-        &self,
-        _window_size: u32,
-        _weight: Option<&[f64]>,
-        _ignore_null: bool,
-        _min_periods: u32,
-    ) -> Result<Series> {
+    pub fn rolling_min(&self, _options: RollingOptions) -> Result<Series> {
         #[cfg(feature = "rolling_window")]
         {
-            self._rolling_min(_window_size, _weight, _ignore_null, _min_periods)
+            self._rolling_min(_options)
         }
         #[cfg(not(feature = "rolling_window"))]
         {
@@ -1664,16 +1668,10 @@ impl Series {
     /// Apply a rolling max to a Series. See:
     /// [ChunkedArray::rolling_max](crate::prelude::ChunkWindow::rolling_max).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_max(
-        &self,
-        _window_size: u32,
-        _weight: Option<&[f64]>,
-        _ignore_null: bool,
-        _min_periods: u32,
-    ) -> Result<Series> {
+    pub fn rolling_max(&self, _options: RollingOptions) -> Result<Series> {
         #[cfg(feature = "rolling_window")]
         {
-            self._rolling_max(_window_size, _weight, _ignore_null, _min_periods)
+            self._rolling_max(_options)
         }
         #[cfg(not(feature = "rolling_window"))]
         {

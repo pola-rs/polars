@@ -1,24 +1,10 @@
-mod boolean;
-#[cfg(feature = "dtype-categorical")]
-mod categorical;
-#[cfg(any(
-    feature = "dtype-date64",
-    feature = "dtype-date32",
-    feature = "dtype-time64-ns"
-))]
-mod dates;
-mod floats;
-mod list;
-#[cfg(feature = "object")]
-mod object;
-mod utf8;
-
 #[cfg(feature = "object")]
 use std::any::Any;
 
 use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
+use super::SeriesWrap;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "rolling_window")]
 use crate::chunked_array::ops::rolling_window::RollingOptions;
@@ -43,25 +29,7 @@ use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
 use std::borrow::Cow;
-use std::ops::Deref;
 use std::ops::{BitAnd, BitOr, BitXor};
-
-// Utility wrapper struct
-pub(crate) struct SeriesWrap<T>(pub T);
-
-impl<T> From<ChunkedArray<T>> for SeriesWrap<ChunkedArray<T>> {
-    fn from(ca: ChunkedArray<T>) -> Self {
-        SeriesWrap(ca)
-    }
-}
-
-impl<T> Deref for SeriesWrap<ChunkedArray<T>> {
-    type Target = ChunkedArray<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
 
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
@@ -79,30 +47,31 @@ macro_rules! impl_dyn_series {
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
                 self.0.explode_by_offsets(offsets)
             }
+
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_mean(&self, options: RollingOptions) -> Result<Series> {
+                self.0.rolling_mean(options)
+            }
             #[cfg(feature = "rolling_window")]
             fn _rolling_sum(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_sum(options)
+                self.0.rolling_sum(options).map(|ca| ca.into())
             }
             #[cfg(feature = "rolling_window")]
             fn _rolling_min(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_min(options)
+                self.0.rolling_min(options).map(|ca| ca.into())
             }
             #[cfg(feature = "rolling_window")]
             fn _rolling_max(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_max(options)
+                self.0.rolling_max(options).map(|ca| ca.into())
             }
             #[cfg(feature = "rolling_window")]
             fn _rolling_std(&self, options: RollingOptions) -> Result<Series> {
-                self.cast::<Float64Type>().unwrap().rolling_std(options)
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-                self.cast::<Float64Type>().unwrap().rolling_mean(options)
+                self.0.rolling_std(options)
             }
 
             #[cfg(feature = "rolling_window")]
             fn _rolling_var(&self, options: RollingOptions) -> Result<Series> {
-                self.cast::<Float64Type>().unwrap().rolling_var(options)
+                self.0.rolling_var(options)
             }
 
             #[cfg(feature = "cum_agg")]
@@ -868,52 +837,5 @@ macro_rules! impl_dyn_series {
     };
 }
 
-#[cfg(feature = "dtype-u8")]
-impl_dyn_series!(UInt8Chunked);
-#[cfg(feature = "dtype-u16")]
-impl_dyn_series!(UInt16Chunked);
-impl_dyn_series!(UInt32Chunked);
-#[cfg(feature = "dtype-u64")]
-impl_dyn_series!(UInt64Chunked);
-#[cfg(feature = "dtype-i8")]
-impl_dyn_series!(Int8Chunked);
-#[cfg(feature = "dtype-i16")]
-impl_dyn_series!(Int16Chunked);
-impl_dyn_series!(Int32Chunked);
-impl_dyn_series!(Int64Chunked);
-
-macro_rules! impl_dyn_series_numeric {
-    ($ca: ident) => {
-        impl private::PrivateSeriesNumeric for SeriesWrap<$ca> {
-            fn bit_repr_is_large(&self) -> bool {
-                $ca::bit_repr_is_large()
-            }
-            fn bit_repr_large(&self) -> UInt64Chunked {
-                self.0.bit_repr_large()
-            }
-            fn bit_repr_small(&self) -> UInt32Chunked {
-                self.0.bit_repr_small()
-            }
-        }
-    };
-}
-
-impl_dyn_series_numeric!(Float32Chunked);
-impl_dyn_series_numeric!(Float64Chunked);
-#[cfg(feature = "dtype-u8")]
-impl_dyn_series_numeric!(UInt8Chunked);
-#[cfg(feature = "dtype-u16")]
-impl_dyn_series_numeric!(UInt16Chunked);
-impl_dyn_series_numeric!(UInt32Chunked);
-#[cfg(feature = "dtype-u64")]
-impl_dyn_series_numeric!(UInt64Chunked);
-#[cfg(feature = "dtype-i8")]
-impl_dyn_series_numeric!(Int8Chunked);
-#[cfg(feature = "dtype-i16")]
-impl_dyn_series_numeric!(Int16Chunked);
-impl_dyn_series_numeric!(Int32Chunked);
-impl_dyn_series_numeric!(Int64Chunked);
-
-impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {}
+impl_dyn_series!(Float32Chunked);
+impl_dyn_series!(Float64Chunked);

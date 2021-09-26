@@ -105,67 +105,12 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
-            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-                physical_dispatch!(self, explode_by_offsets, offsets)
+            fn _field(&self) -> &Field {
+                self.0.ref_field()
             }
 
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_mean(
-                &self,
-                _window_size: u32,
-                _weight: Option<&[f64]>,
-                _ignore_null: bool,
-                _min_periods: u32,
-            ) -> Result<Series> {
-                Err(PolarsError::ComputeError(
-                    "cannot compute rolling mean of dates".into(),
-                ))
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_sum(
-                &self,
-                _window_size: u32,
-                _weight: Option<&[f64]>,
-                _ignore_null: bool,
-                _min_periods: u32,
-            ) -> Result<Series> {
-                Err(PolarsError::ComputeError(
-                    "cannot compute rolling sum of dates".into(),
-                ))
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_min(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                try_physical_dispatch!(
-                    self,
-                    rolling_min,
-                    window_size,
-                    weight,
-                    ignore_null,
-                    min_periods
-                )
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_max(
-                &self,
-                window_size: u32,
-                weight: Option<&[f64]>,
-                ignore_null: bool,
-                min_periods: u32,
-            ) -> Result<Series> {
-                try_physical_dispatch!(
-                    self,
-                    rolling_max,
-                    window_size,
-                    weight,
-                    ignore_null,
-                    min_periods
-                )
+            fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+                physical_dispatch!(self, explode_by_offsets, offsets)
             }
 
             #[cfg(feature = "cum_agg")]
@@ -386,10 +331,6 @@ macro_rules! impl_dyn_series {
             }
             fn name(&self) -> &str {
                 self.0.name()
-            }
-
-            fn field(&self) -> &Field {
-                self.0.ref_field()
             }
 
             fn chunks(&self) -> &Vec<ArrayRef> {

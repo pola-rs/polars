@@ -31,6 +31,10 @@ impl IntoSeries for Utf8Chunked {
 }
 
 impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
+    fn _field(&self) -> &Field {
+        self.0.ref_field()
+    }
+
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
     }
@@ -200,10 +204,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     }
     fn name(&self) -> &str {
         self.0.name()
-    }
-
-    fn field(&self) -> &Field {
-        self.0.ref_field()
     }
 
     fn chunks(&self) -> &Vec<ArrayRef> {
