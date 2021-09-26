@@ -122,7 +122,7 @@ There is still a maintained `arrow-rs` branch for users who want to use another 
 ## Acknowledgements
 Development of Polars is proudly powered by
 
-[![Xomnia](https://raw.githubusercontent.com/ritchie46/img/master/polars/xomnia_logo.png)](https://www.xomnia.com/)
+[![Xomnia](https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png)](https://www.xomnia.com/)
 
 ## Sponsors
 * [Xomnia](https://www.xomnia.com/)

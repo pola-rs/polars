@@ -10,12 +10,12 @@
 //! * an offset array indicating the start (and end) of each string `[0, 2, 5, 8]`
 //! * a null bitmap, indicating null values
 //!
-//! ![](https://raw.githubusercontent.com/ritchie46/img/master/polars/arrow/arrow_string.svg)
+//! ![](https://raw.githubusercontent.com/pola-rs/polars-static/master/docs/arrow-string.svg)
 //!
 //! This memory structure is very cache efficient if we are to read the string values. Especially if
 //! we compare it to a `Vec<String>`.
 //!
-//! ![](https://raw.githubusercontent.com/ritchie46/img/master/polars/arrow/pandas_string.svg)
+//! ![](https://raw.githubusercontent.com/pola-rs/polars-static/master/docs/pandas-string.svg)
 //!
 //! However, if we need to reorder the Arrow UTF8 array, we need to swap around all the bytes of the
 //! string values, which can become very expensive when we're dealing with large strings. On the
