@@ -244,7 +244,10 @@ impl PySeries {
     }
 
     pub fn bitand(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self.series.bitand(&other.series).map_err(PyPolarsEr::from)?;
+        let out = self
+            .series
+            .bitand(&other.series)
+            .map_err(PyPolarsEr::from)?;
         Ok(out.into())
     }
 
@@ -253,7 +256,10 @@ impl PySeries {
         Ok(out.into())
     }
     pub fn bitxor(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self.series.bitxor(&other.series).map_err(PyPolarsEr::from)?;
+        let out = self
+            .series
+            .bitxor(&other.series)
+            .map_err(PyPolarsEr::from)?;
         Ok(out.into())
     }
 
@@ -971,19 +977,16 @@ impl PySeries {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> PyResult<Self> {
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
-        let s = self
-            .series
-            .rolling_sum(options)
-            .map_err(PyPolarsEr::from)?;
+        let s = self.series.rolling_sum(options).map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
@@ -992,14 +995,13 @@ impl PySeries {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> PyResult<Self> {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
         let s = self
@@ -1014,20 +1016,16 @@ impl PySeries {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> PyResult<Self> {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
-        let s = self
-            .series
-            .rolling_max(options)
-            .map_err(PyPolarsEr::from)?;
+        let s = self.series.rolling_max(options).map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
     pub fn rolling_min(
@@ -1035,20 +1033,16 @@ impl PySeries {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> PyResult<Self> {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
-        let s = self
-            .series
-            .rolling_min(options)
-            .map_err(PyPolarsEr::from)?;
+        let s = self.series.rolling_min(options).map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
@@ -1057,20 +1051,16 @@ impl PySeries {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> PyResult<Self> {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
-        let s = self
-            .series
-            .rolling_var(options)
-            .map_err(PyPolarsEr::from)?;
+        let s = self.series.rolling_var(options).map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
@@ -1079,20 +1069,16 @@ impl PySeries {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> PyResult<Self> {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
-        let s = self
-            .series
-            .rolling_std(options)
-            .map_err(PyPolarsEr::from)?;
+        let s = self.series.rolling_std(options).map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
@@ -1303,7 +1289,7 @@ macro_rules! impl_ufuncs {
                         // args and the lambda return have a reference, making a total of 3
                         assert_eq!(out_array.get_refcnt(), 3);
 
-                        let validity = self.series.chunks()[0].validity().clone();
+                        let validity = self.series.chunks()[0].validity().cloned();
                         let ca = ChunkedArray::<$type>::new_from_owned_with_null_bitmap(
                             self.name(),
                             av,

@@ -724,75 +724,61 @@ impl PyExpr {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> PyExpr {
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
-        self.inner
-            .clone()
-            .rolling_sum(options)
-            .into()
+        self.inner.clone().rolling_sum(options).into()
     }
     pub fn rolling_min(
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> Self {
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
-        self.inner
-            .clone()
-            .rolling_min(options)
-            .into()
+        self.inner.clone().rolling_min(options).into()
     }
     pub fn rolling_max(
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> Self {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
-        self.inner
-            .clone()
-            .rolling_max(options)
-            .into()
+        self.inner.clone().rolling_max(options).into()
     }
     pub fn rolling_mean(
         &self,
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> Self {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
-        self.inner
-            .clone()
-            .rolling_mean(options)
-            .into()
+        self.inner.clone().rolling_mean(options).into()
     }
 
     pub fn rolling_std(
@@ -800,20 +786,16 @@ impl PyExpr {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> Self {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
-        self.inner
-            .clone()
-            .rolling_std(options)
-            .into()
+        self.inner.clone().rolling_std(options).into()
     }
 
     pub fn rolling_var(
@@ -821,20 +803,16 @@ impl PyExpr {
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool
+        center: bool,
     ) -> Self {
-
         let options = RollingOptions {
             window_size,
             weights,
             min_periods,
-            center
+            center,
         };
 
-        self.inner
-            .clone()
-            .rolling_var(options)
-            .into()
+        self.inner.clone().rolling_var(options).into()
     }
 
     pub fn rolling_median(&self, window_size: usize) -> Self {
