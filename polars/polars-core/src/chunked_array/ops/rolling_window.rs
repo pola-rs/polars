@@ -1,8 +1,13 @@
 #[derive(Clone)]
 pub struct RollingOptions {
+    /// The length of the window.
     pub window_size: usize,
+    /// Amount of elements in the window that should be filled before computing a result.
     pub min_periods: usize,
+    /// An optional slice with the same length as the window that will be multiplied
+    ///              elementwise with the values in the window.
     pub weights: Option<Vec<f64>>,
+    /// Set the labels at the center of the window.
     pub center: bool,
 }
 
@@ -47,6 +52,10 @@ mod inner_mod {
             + Copy,
         ChunkedArray<T>: IntoSeries,
     {
+        /// Apply a rolling mean (moving mean) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+        /// values will be aggregated to their mean.
         pub fn rolling_mean(&self, options: RollingOptions) -> Result<Series> {
             match self.dtype() {
                 DataType::Float32 | DataType::Float64 => {
@@ -96,6 +105,10 @@ mod inner_mod {
             + One
             + Copy,
     {
+        /// Apply a rolling sum (moving sum) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+        /// values will be aggregated to their sum.
         pub fn rolling_sum(&self, options: RollingOptions) -> Result<Series> {
             check_input(options.window_size, options.min_periods)?;
             let ca = self.rechunk();
@@ -127,6 +140,10 @@ mod inner_mod {
             Series::try_from((self.name(), arr))
         }
 
+        /// Apply a rolling min (moving min) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+        /// values will be aggregated to their min.
         pub fn rolling_min(&self, options: RollingOptions) -> Result<Series> {
             check_input(options.window_size, options.min_periods)?;
             let ca = self.rechunk();
@@ -157,6 +174,10 @@ mod inner_mod {
             Series::try_from((self.name(), arr))
         }
 
+        /// Apply a rolling max (moving max) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+        /// values will be aggregated to their max.
         pub fn rolling_max(&self, options: RollingOptions) -> Result<Series> {
             check_input(options.window_size, options.min_periods)?;
             let ca = self.rechunk();
@@ -205,6 +226,7 @@ mod inner_mod {
         T::Native: Zero,
         Self: IntoSeries,
     {
+        /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         fn rolling_apply(&self, window_size: usize, f: &dyn Fn(&Series) -> Series) -> Result<Self> {
             if window_size >= self.len() {
                 return Ok(Self::full_null(self.name(), self.len()));
@@ -247,6 +269,7 @@ mod inner_mod {
         T: PolarsFloatType,
         T::Native: Default + std::iter::Sum + Float + AddAssign,
     {
+        /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>
         where
             F: Fn(&ChunkedArray<T>) -> Option<T::Native>,
@@ -295,6 +318,10 @@ mod inner_mod {
             Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]))
         }
 
+        /// Apply a rolling var (moving var) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+        /// values will be aggregated to their var.
         pub fn rolling_var(&self, options: RollingOptions) -> Result<Series> {
             check_input(options.window_size, options.min_periods)?;
             let ca = self.rechunk();
@@ -324,7 +351,10 @@ mod inner_mod {
             };
             Series::try_from((self.name(), arr))
         }
-
+        /// Apply a rolling std (moving std) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+        /// values will be aggregated to their std.
         pub fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
             let s = self.rolling_var(options)?;
             // Safety:
