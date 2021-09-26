@@ -1845,7 +1845,7 @@ fn test_round_after_agg() -> Result<()> {
             .alias("foo")])
         .collect()?;
 
-    assert!(out.column("foo")?.f64().is_ok());
+    assert!(out.column("foo")?.f32().is_ok());
     Ok(())
 }
 

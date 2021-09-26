@@ -128,7 +128,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                self.0.agg_mean(groups)
+                self.agg_mean(groups)
             }
 
             fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -152,27 +152,11 @@ macro_rules! impl_dyn_series {
             }
 
             fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                match self.0.dtype() {
-                    DataType::Float32 => self
-                        .0
-                        .cast::<Float64Type>()
-                        .unwrap()
-                        .agg_std(groups)
-                        .map(|s| s.cast::<Float32Type>().unwrap()),
-                    _ => self.0.agg_std(groups),
-                }
+                self.agg_std(groups)
             }
 
             fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                match self.0.dtype() {
-                    DataType::Float32 => self
-                        .0
-                        .cast::<Float64Type>()
-                        .unwrap()
-                        .agg_var(groups)
-                        .map(|s| s.cast::<Float32Type>().unwrap()),
-                    _ => self.0.agg_var(groups),
-                }
+                self.agg_var(groups)
             }
 
             fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
