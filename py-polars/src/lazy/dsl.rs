@@ -721,59 +721,120 @@ impl PyExpr {
 
     pub fn rolling_sum(
         &self,
-        window_size: u32,
-        weight: Option<Vec<f64>>,
-        ignore_null: bool,
-        min_periods: u32,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
     ) -> PyExpr {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
         self.inner
             .clone()
-            .rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods)
+            .rolling_sum(options)
             .into()
     }
     pub fn rolling_min(
         &self,
-        window_size: u32,
-        weight: Option<Vec<f64>>,
-        ignore_null: bool,
-        min_periods: u32,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
     ) -> Self {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
         self.inner
             .clone()
-            .rolling_min(window_size, weight.as_deref(), ignore_null, min_periods)
+            .rolling_min(options)
             .into()
     }
     pub fn rolling_max(
         &self,
-        window_size: u32,
-        weight: Option<Vec<f64>>,
-        ignore_null: bool,
-        min_periods: u32,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
     ) -> Self {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
         self.inner
             .clone()
-            .rolling_max(window_size, weight.as_deref(), ignore_null, min_periods)
+            .rolling_max(options)
             .into()
     }
     pub fn rolling_mean(
         &self,
-        window_size: u32,
-        weight: Option<Vec<f64>>,
-        ignore_null: bool,
-        min_periods: u32,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
     ) -> Self {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
         self.inner
             .clone()
-            .rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods)
+            .rolling_mean(options)
             .into()
     }
 
-    pub fn rolling_std(&self, window_size: usize) -> Self {
-        self.inner.clone().rolling_std(window_size).into()
+    pub fn rolling_std(
+        &self,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
+    ) -> Self {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
+        self.inner
+            .clone()
+            .rolling_std(options)
+            .into()
     }
 
-    pub fn rolling_var(&self, window_size: usize) -> Self {
-        self.inner.clone().rolling_var(window_size).into()
+    pub fn rolling_var(
+        &self,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
+    ) -> Self {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
+        self.inner
+            .clone()
+            .rolling_var(options)
+            .into()
     }
 
     pub fn rolling_median(&self, window_size: usize) -> Self {

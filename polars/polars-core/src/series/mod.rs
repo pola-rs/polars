@@ -98,21 +98,30 @@ pub(crate) mod private {
             invalid_operation!(self)
         }
         /// Apply a rolling sum to a Series. See:
-        /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_sum).
         #[cfg(feature = "rolling_window")]
         fn _rolling_sum(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
         /// Apply a rolling min to a Series. See:
-        /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_min).
         #[cfg(feature = "rolling_window")]
         fn _rolling_min(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
         /// Apply a rolling max to a Series. See:
-        /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_max).
         #[cfg(feature = "rolling_window")]
         fn _rolling_max(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
+        }
+
+        /// Apply a rolling variance to a Series. See:
+        #[cfg(feature = "rolling_window")]
+        fn _rolling_var(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
+        }
+
+        /// Apply a rolling std_dev to a Series. See:
+        #[cfg(feature = "rolling_window")]
+        fn _rolling_std(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
 
@@ -1588,6 +1597,32 @@ impl Series {
         #[cfg(not(feature = "cum_agg"))]
         {
             panic!("activate 'cum_agg' feature")
+        }
+    }
+
+    /// Apply a rolling variance to a Series. See:
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_var(&self, _options: RollingOptions) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_var(_options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
+
+    /// Apply a rolling std to a Series. See:
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_std(&self, _options: RollingOptions) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_std(_options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
         }
     }
 

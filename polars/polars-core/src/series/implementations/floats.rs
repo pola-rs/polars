@@ -64,6 +64,15 @@ macro_rules! impl_dyn_series {
             fn _rolling_max(&self, options: RollingOptions) -> Result<Series> {
                 self.0.rolling_max(options).map(|ca| ca.into())
             }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_std(&self, options: RollingOptions) -> Result<Series> {
+                self.0.rolling_std(options)
+            }
+
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_var(&self, options: RollingOptions) -> Result<Series> {
+                self.0.rolling_var(options)
+            }
 
             #[cfg(feature = "cum_agg")]
             fn _cummax(&self, reverse: bool) -> Series {

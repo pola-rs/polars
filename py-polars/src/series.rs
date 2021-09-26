@@ -968,55 +968,130 @@ impl PySeries {
     }
     pub fn rolling_sum(
         &self,
-        window_size: u32,
-        weight: Option<Vec<f64>>,
-        ignore_null: bool,
-        min_periods: u32,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
     ) -> PyResult<Self> {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
         let s = self
             .series
-            .rolling_sum(window_size, weight.as_deref(), ignore_null, min_periods)
+            .rolling_sum(options)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
     pub fn rolling_mean(
         &self,
-        window_size: u32,
-        weight: Option<Vec<f64>>,
-        ignore_null: bool,
-        min_periods: u32,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
     ) -> PyResult<Self> {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
         let s = self
             .series
-            .rolling_mean(window_size, weight.as_deref(), ignore_null, min_periods)
+            .rolling_mean(options)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
     pub fn rolling_max(
         &self,
-        window_size: u32,
-        weight: Option<Vec<f64>>,
-        ignore_null: bool,
-        min_periods: u32,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
     ) -> PyResult<Self> {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
         let s = self
             .series
-            .rolling_max(window_size, weight.as_deref(), ignore_null, min_periods)
+            .rolling_max(options)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
     pub fn rolling_min(
         &self,
-        window_size: u32,
-        weight: Option<Vec<f64>>,
-        ignore_null: bool,
-        min_periods: u32,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
     ) -> PyResult<Self> {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
         let s = self
             .series
-            .rolling_min(window_size, weight.as_deref(), ignore_null, min_periods)
+            .rolling_min(options)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn rolling_var(
+        &self,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
+    ) -> PyResult<Self> {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
+        let s = self
+            .series
+            .rolling_var(options)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn rolling_std(
+        &self,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool
+    ) -> PyResult<Self> {
+
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center
+        };
+
+        let s = self
+            .series
+            .rolling_std(options)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }

@@ -2112,9 +2112,9 @@ class Series:
     def rolling_min(
         self,
         window_size: int,
-        weight: Optional[tp.List[float]] = None,
-        ignore_null: bool = True,
+        weights: Optional[tp.List[float]] = None,
         min_periods: Optional[int] = None,
+        center: bool = False,
     ) -> "Series":
         """
         apply a rolling min (moving min) over the values in this array.
@@ -2122,18 +2122,18 @@ class Series:
         will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
         values will be aggregated to their sum.
 
+        Parameters
+        ----------
         window_size
             The length of the window.
-        weight
-            An optional slice with the same length of the window that will be multiplied
+        weights
+            An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        ignore_null
-            Toggle behavior of aggregation regarding null values in the window.
-              `True` -> Null values will be ignored.
-              `False` -> Any Null in the window leads to a Null in the aggregation result.
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
 
         Examples
         --------
@@ -2152,16 +2152,14 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(
-            self._s.rolling_min(window_size, weight, ignore_null, min_periods)
-        )
+        return wrap_s(self._s.rolling_min(window_size, weights, min_periods, center))
 
     def rolling_max(
         self,
         window_size: int,
-        weight: Optional[tp.List[float]] = None,
-        ignore_null: bool = True,
+        weights: Optional[tp.List[float]] = None,
         min_periods: Optional[int] = None,
+        center: bool = False,
     ) -> "Series":
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -2169,18 +2167,18 @@ class Series:
         will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
         values will be aggregated to their sum.
 
+        Parameters
+        ----------
         window_size
             The length of the window.
-        weight
-            An optional slice with the same length of the window that will be multiplied
+        weights
+            An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        ignore_null
-            Toggle behavior of aggregation regarding null values in the window.
-              `True` -> Null values will be ignored.
-              `False` -> Any Null in the window leads to a Null in the aggregation result.
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
 
         Examples
         --------
@@ -2199,16 +2197,14 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(
-            self._s.rolling_max(window_size, weight, ignore_null, min_periods)
-        )
+        return wrap_s(self._s.rolling_max(window_size, weights, min_periods, center))
 
     def rolling_mean(
         self,
         window_size: int,
-        weight: Optional[tp.List[float]] = None,
-        ignore_null: bool = True,
+        weights: Optional[tp.List[float]] = None,
         min_periods: Optional[int] = None,
+        center: bool = False,
     ) -> "Series":
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -2216,18 +2212,18 @@ class Series:
         will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
         values will be aggregated to their sum.
 
+        Parameters
+        ----------
         window_size
             The length of the window.
-        weight
-            An optional slice with the same length of the window that will be multiplied
+        weights
+            An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        ignore_null
-            Toggle behavior of aggregation regarding null values in the window.
-              `True` -> Null values will be ignored.
-              `False` -> Any Null in the window leads to a Null in the aggregation result.
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
 
         Examples
         --------
@@ -2246,16 +2242,14 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(
-            self._s.rolling_mean(window_size, weight, ignore_null, min_periods)
-        )
+        return wrap_s(self._s.rolling_mean(window_size, weights, min_periods, center))
 
     def rolling_sum(
         self,
         window_size: int,
-        weight: Optional[tp.List[float]] = None,
-        ignore_null: bool = True,
+        weights: Optional[tp.List[float]] = None,
         min_periods: Optional[int] = None,
+        center: bool = False,
     ) -> "Series":
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -2263,18 +2257,18 @@ class Series:
         will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
         values will be aggregated to their sum.
 
+        Parameters
+        ----------
         window_size
             The length of the window.
         weight
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
-        ignore_null
-            Toggle behavior of aggregation regarding null values in the window.
-              `True` -> Null values will be ignored.
-              `False` -> Any Null in the window leads to a Null in the aggregation result.
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
 
         Examples
         --------
@@ -2293,9 +2287,146 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(
-            self._s.rolling_sum(window_size, weight, ignore_null, min_periods)
-        )
+        return wrap_s(self._s.rolling_sum(window_size, weights, min_periods, center))
+
+    def rolling_std(
+        self,
+        window_size: int,
+        weights: Optional[tp.List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+    ) -> "Series":
+        """
+        Compute a rolling std dev
+
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
+
+        Parameters
+        ----------
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
+        """
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(self._s.rolling_std(window_size, weights, min_periods, center))
+
+    def rolling_var(
+        self,
+        window_size: int,
+        weights: Optional[tp.List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+    ) -> "Series":
+        """
+        Compute a rolling variance.
+
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        values will be aggregated to their sum.
+
+        Parameters
+        ----------
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
+        """
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_s(self._s.rolling_var(window_size, weights, min_periods, center))
+
+    def rolling_apply(
+        self, window_size: int, function: Callable[["pl.Series"], Any]
+    ) -> "pl.Series":
+        """
+        Allows a custom rolling window function.
+        Prefer the specific rolling window functions over this one, as they are faster.
+        Prefer:
+            * rolling_min
+            * rolling_max
+            * rolling_mean
+            * rolling_sum
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        function
+            Aggregation function
+        Examples
+        --------
+        >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
+        >>> s.rolling_apply(window_size=3, function=lambda s: s.std())
+        shape: (5,)
+        Series: 'A' [f64]
+        [
+            null
+            null
+            4.358898943540674
+            4.041451884327381
+            5.5677643628300215
+        ]
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_apply(window_size, function)  # type: ignore
+        )[self.name]
+
+    def rolling_median(self, window_size: int) -> "Series":
+        """
+        Compute a rolling median
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_median(window_size)  # type: ignore
+        )[self.name]
+
+    def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
+        """
+        Compute a rolling quantile
+
+        Parameters
+        ----------
+        window_size
+            Size of the rolling window
+        quantile
+            quantile to compute
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_quantile(window_size, quantile)  # type: ignore
+        )[self.name]
+
+    def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
+        """
+        Compute a rolling skew
+        window_size
+            Size of the rolling window
+        bias
+            If False, then the calculations are corrected for statistical bias.
+        """
+        return self.to_frame().select(
+            pl.col(self.name).rolling_skew(window_size, bias)  # type: ignore
+        )[self.name]
 
     def sample(
         self,
@@ -2483,113 +2614,6 @@ class Series:
 
         """
         return wrap_s(self._s.interpolate())
-
-    def rolling_apply(
-        self, window_size: int, function: Callable[["pl.Series"], Any]
-    ) -> "pl.Series":
-        """
-        Allows a custom rolling window function.
-        Prefer the specific rolling window functions over this one, as they are faster.
-
-        Prefer:
-            * rolling_min
-            * rolling_max
-            * rolling_mean
-            * rolling_sum
-
-        Parameters
-        ----------
-        window_size
-            Size of the rolling window
-        function
-            Aggregation function
-
-
-        Examples
-        --------
-
-        >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
-        >>> s.rolling_apply(window_size=3, function=lambda s: s.std())
-        shape: (5,)
-        Series: 'A' [f64]
-        [
-            null
-            null
-            4.358898943540674
-            4.041451884327381
-            5.5677643628300215
-        ]
-
-        """
-        return self.to_frame().select(
-            pl.col(self.name).rolling_apply(window_size, function)  # type: ignore
-        )[self.name]
-
-    def rolling_std(self, window_size: int) -> "Series":
-        """
-        Compute a rolling std dev
-
-        Parameters
-        ----------
-        window_size
-            Size of the rolling window
-        """
-        return self.to_frame().select(
-            pl.col(self.name).rolling_std(window_size)  # type: ignore
-        )[self.name]
-
-    def rolling_var(self, window_size: int) -> "Series":
-        """
-        Compute a rolling variance
-
-        Parameters
-        ----------
-        window_size
-            Size of the rolling window
-        """
-        return self.to_frame().select(
-            pl.col(self.name).rolling_var(window_size)  # type: ignore
-        )[self.name]
-
-    def rolling_median(self, window_size: int) -> "Series":
-        """
-        Compute a rolling median
-
-        Parameters
-        ----------
-        window_size
-            Size of the rolling window
-        """
-        return self.to_frame().select(
-            pl.col(self.name).rolling_median(window_size)  # type: ignore
-        )[self.name]
-
-    def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
-        """
-        Compute a rolling quantile
-
-        Parameters
-        ----------
-        window_size
-            Size of the rolling window
-        quantile
-            quantile to compute
-        """
-        return self.to_frame().select(
-            pl.col(self.name).rolling_quantile(window_size, quantile)  # type: ignore
-        )[self.name]
-
-    def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
-        """
-        Compute a rolling skew
-        window_size
-            Size of the rolling window
-        bias
-            If False, then the calculations are corrected for statistical bias.
-        """
-        return self.to_frame().select(
-            pl.col(self.name).rolling_skew(window_size, bias)  # type: ignore
-        )[self.name]
 
     def abs(self) -> "Series":
         """

@@ -79,12 +79,6 @@ macro_rules! impl_dyn_series {
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
                 self.0.explode_by_offsets(offsets)
             }
-
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-                let s = self.cast_with_dtype(&DataType::Float64).unwrap();
-                s._rolling_mean(options)
-            }
             #[cfg(feature = "rolling_window")]
             fn _rolling_sum(&self, options: RollingOptions) -> Result<Series> {
                 self.0.rolling_sum(options)
@@ -96,6 +90,19 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "rolling_window")]
             fn _rolling_max(&self, options: RollingOptions) -> Result<Series> {
                 self.0.rolling_max(options)
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_std(&self, options: RollingOptions) -> Result<Series> {
+                self.cast::<Float64Type>().unwrap().rolling_std(options)
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_mean(&self, options: RollingOptions) -> Result<Series> {
+                self.cast::<Float64Type>().unwrap().rolling_mean(options)
+            }
+
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_var(&self, options: RollingOptions) -> Result<Series> {
+                self.cast::<Float64Type>().unwrap().rolling_var(options)
             }
 
             #[cfg(feature = "cum_agg")]
