@@ -8,7 +8,7 @@ pub(crate) mod take_agg;
 pub mod temporal;
 
 use crate::datatypes::{DataType, PolarsNumericType};
-use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use num::Float;
@@ -38,7 +38,7 @@ where
 
     Arc::new(BooleanArray::from_data_default(
         values,
-        arr.validity().clone(),
+        arr.validity().cloned(),
     ))
 }
 
@@ -50,7 +50,7 @@ where
 
     Arc::new(BooleanArray::from_data_default(
         values,
-        arr.validity().clone(),
+        arr.validity().cloned(),
     ))
 }
 
@@ -62,7 +62,7 @@ where
 
     Arc::new(BooleanArray::from_data_default(
         values,
-        arr.validity().clone(),
+        arr.validity().cloned(),
     ))
 }
 
@@ -74,6 +74,6 @@ where
 
     Arc::new(BooleanArray::from_data_default(
         values,
-        arr.validity().clone(),
+        arr.validity().cloned(),
     ))
 }

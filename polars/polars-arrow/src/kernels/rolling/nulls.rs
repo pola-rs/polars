@@ -1,6 +1,6 @@
 use super::*;
 use crate::utils::CustomIterTools;
-use arrow::array::{Array, ArrayRef, PrimitiveArray};
+use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
 use arrow::buffer::MutableBuffer;
 use arrow::types::NativeType;

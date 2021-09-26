@@ -122,8 +122,8 @@ where
         self.len
     }
 
-    fn validity(&self) -> &Option<Bitmap> {
-        &self.null_bitmap
+    fn validity(&self) -> Option<&Bitmap> {
+        self.null_bitmap.as_ref()
     }
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         let mut arr = self.clone();

@@ -22,7 +22,7 @@ where
                     Arc::new(PrimitiveArray::from_data(
                         ArrowDataType::UInt64,
                         buf,
-                        array.validity().clone(),
+                        array.validity().cloned(),
                     )) as Arc<dyn Array>
                 })
                 .collect::<Vec<_>>();
@@ -44,7 +44,7 @@ where
                     Arc::new(PrimitiveArray::from_data(
                         ArrowDataType::UInt32,
                         buf,
-                        array.validity().clone(),
+                        array.validity().cloned(),
                     )) as Arc<dyn Array>
                 })
                 .collect::<Vec<_>>();
@@ -84,7 +84,7 @@ impl Reinterpret for UInt64Chunked {
                 Arc::new(PrimitiveArray::from_data(
                     ArrowDataType::Int64,
                     buf,
-                    array.validity().clone(),
+                    array.validity().cloned(),
                 )) as Arc<dyn Array>
             })
             .collect::<Vec<_>>();

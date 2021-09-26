@@ -17,7 +17,7 @@ where
         return array.clone();
     }
 
-    let validity = array.validity().as_ref().unwrap();
+    let validity = array.validity().unwrap();
     let validity = BooleanArray::from_data_default(validity.clone(), None);
 
     let mut av = MutableBuffer::with_capacity(array.len());
@@ -90,7 +90,7 @@ where
     Ok(PrimitiveArray::from_data(
         data_type,
         buf.into(),
-        array.validity().clone(),
+        array.validity().cloned(),
     ))
 }
 

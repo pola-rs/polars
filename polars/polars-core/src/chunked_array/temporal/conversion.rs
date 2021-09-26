@@ -227,6 +227,22 @@ fn date_pattern(val: &str, id: usize) -> Option<&'static str> {
                 return Some("%Y%m%d");
             }
         }
+        7 => {
+            // 2019-04-18T02:45:55
+            let pat = r"\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\s*^";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%FT%H:%M:%S");
+            }
+        }
+        8 => {
+            // 2019-04-18T02:45:55.555000000
+            let pat = r"\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}.?\d*\s*^";
+            let reg = Regex::new(pat).expect("wrong regex");
+            if reg.is_match(val) {
+                return Some("%FT%H:%M:%S.%3f");
+            }
+        }
         _ => (),
     }
     None

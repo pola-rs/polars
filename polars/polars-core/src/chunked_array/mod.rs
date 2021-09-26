@@ -199,7 +199,7 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Get the buffer of bits representing null values
-    pub fn null_bits(&self) -> impl Iterator<Item = (usize, &Option<Bitmap>)> + '_ {
+    pub fn null_bits(&self) -> impl Iterator<Item = (usize, Option<&Bitmap>)> + '_ {
         self.chunks
             .iter()
             .map(|arr| (arr.null_count(), arr.validity()))
@@ -389,7 +389,6 @@ impl<T> ChunkedArray<T> {
             .map(|arr| {
                 let bitmap = arr
                     .validity()
-                    .as_ref()
                     .map(|bitmap| !bitmap)
                     .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
@@ -409,7 +408,7 @@ impl<T> ChunkedArray<T> {
             .map(|arr| {
                 let bitmap = arr
                     .validity()
-                    .clone()
+                    .cloned()
                     .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
