@@ -3,7 +3,6 @@
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::kernels::cast_physical;
 use crate::prelude::*;
-use arrow::array::Array;
 use arrow::compute::cast;
 use num::NumCast;
 
@@ -246,7 +245,7 @@ fn cast_inner_list_type(
     let child = cast::cast(child.as_ref(), child_type)?.into();
 
     let data_type = ListArray::<i64>::default_datatype(child_type.clone());
-    let list = ListArray::from_data(data_type, offsets.clone(), child, list.validity().clone());
+    let list = ListArray::from_data(data_type, offsets.clone(), child, list.validity().cloned());
     Ok(Arc::new(list) as ArrayRef)
 }
 

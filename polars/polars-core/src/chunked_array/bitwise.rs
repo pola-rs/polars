@@ -19,8 +19,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let valididity =
-                    combine_validities(l_arr.validity().as_ref(), r_arr.validity().as_ref());
+                let valididity = combine_validities(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -53,8 +52,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let valididity =
-                    combine_validities(l_arr.validity().as_ref(), r_arr.validity().as_ref());
+                let valididity = combine_validities(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -87,8 +85,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let valididity =
-                    combine_validities(l_arr.validity().as_ref(), r_arr.validity().as_ref());
+                let valididity = combine_validities(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -158,8 +155,7 @@ impl BitXor for &BooleanChunked {
             .downcast_iter()
             .zip(r.downcast_iter())
             .map(|(l_arr, r_arr)| {
-                let valididity =
-                    combine_validities(l_arr.validity().as_ref(), r_arr.validity().as_ref());
+                let valididity = combine_validities(l_arr.validity(), r_arr.validity());
 
                 let mut vals = MutableBitmap::with_capacity(l_arr.len());
 

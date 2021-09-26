@@ -39,10 +39,7 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
     }
 
     let array_values = arr.values().as_slice();
-    let validity = arr
-        .validity()
-        .as_ref()
-        .expect("null buffer should be there");
+    let validity = arr.validity().expect("null buffer should be there");
 
     let out = indices.into_iter().fold(init, |acc, idx| {
         if validity.get_bit_unchecked(idx) {
@@ -74,10 +71,7 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
     }
 
     let array_values = arr.values().as_slice();
-    let validity = arr
-        .validity()
-        .as_ref()
-        .expect("null buffer should be there");
+    let validity = arr.validity().expect("null buffer should be there");
 
     let mut null_count = 0;
     let out = indices.into_iter().fold(init, |acc, idx| {

@@ -63,7 +63,7 @@ where
             .zip(self.null_bits())
             .map(|(slice, (_, validity))| {
                 let values = AlignedVec::<_>::from_trusted_len_iter(slice.iter().map(|&v| f(v)));
-                to_array::<S>(values, validity.clone())
+                to_array::<S>(values, validity.cloned())
             })
             .collect();
         ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
@@ -101,7 +101,7 @@ where
             .map(|(slice, (_, validity))| {
                 let values = slice.iter().copied().map(f);
                 let values = AlignedVec::<_>::from_trusted_len_iter(values);
-                to_array::<T>(values, validity.clone())
+                to_array::<T>(values, validity.cloned())
             })
             .collect();
         ChunkedArray::<T>::new_from_chunks(self.name(), chunks)
@@ -117,7 +117,7 @@ where
             .zip(self.null_bits())
             .map(|(slice, (_null_count, validity))| {
                 let vec: Result<AlignedVec<_>> = slice.iter().copied().map(f).collect();
-                Ok((vec?, validity.clone()))
+                Ok((vec?, validity.cloned()))
             })
             .collect::<Result<_>>()?;
         ca.rename(self.name());
@@ -200,7 +200,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         self.apply_kernel_cast(|array| {
             let values = array.values().iter().map(f);
             let values = AlignedVec::<_>::from_trusted_len_iter(values);
-            let validity = array.validity().clone();
+            let validity = array.validity().cloned();
             to_array::<S>(values, validity)
         })
     }
@@ -282,7 +282,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .map(|array| {
                 let values = array.values_iter().map(|x| f(x));
                 let values = AlignedVec::<_>::from_trusted_len_iter(values);
-                to_array::<S>(values, array.validity().clone())
+                to_array::<S>(values, array.validity().cloned())
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
@@ -299,7 +299,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .map(|array| {
                 let values = array.into_iter().map(|x| f(x));
                 let values = AlignedVec::<_>::from_trusted_len_iter(values);
-                to_array::<S>(values, array.validity().clone())
+                to_array::<S>(values, array.validity().cloned())
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
@@ -445,7 +445,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                         f(series)
                     })
                     .collect_trusted();
-                to_array::<S>(values, array.validity().clone())
+                to_array::<S>(values, array.validity().cloned())
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)
@@ -468,7 +468,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                     f(x)
                 });
                 let values = AlignedVec::<_>::from_trusted_len_iter(values);
-                to_array::<S>(values, array.validity().clone())
+                to_array::<S>(values, array.validity().cloned())
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)

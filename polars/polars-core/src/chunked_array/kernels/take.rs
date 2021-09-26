@@ -15,7 +15,7 @@ pub(crate) unsafe fn take_primitive_unchecked<T: PolarsNumericType>(
 ) -> Arc<PrimitiveArray<T::Native>> {
     let array_values = arr.values();
     let index_values = indices.values();
-    let validity_values = arr.validity().as_ref().expect("should have nulls");
+    let validity_values = arr.validity().expect("should have nulls");
 
     // first take the values, these are always needed
     let values: AlignedVec<T::Native> = index_values
@@ -72,7 +72,7 @@ pub(crate) unsafe fn take_no_null_primitive<T: PolarsPrimitiveType>(
         .map(|idx| *array_values.get_unchecked(*idx as usize));
 
     let values = Buffer::from_trusted_len_iter(iter);
-    let validity = indices.validity().clone();
+    let validity = indices.validity().cloned();
     Arc::new(PrimitiveArray::from_data(
         T::get_dtype().to_arrow(),
         values,
@@ -121,7 +121,7 @@ pub(crate) unsafe fn take_primitive_iter_unchecked<
     indices: I,
 ) -> Arc<PrimitiveArray<T::Native>> {
     let array_values = arr.values().as_slice();
-    let validity = arr.validity().as_ref().expect("should have nulls");
+    let validity = arr.validity().expect("should have nulls");
 
     let iter = indices.into_iter().map(|idx| {
         if validity.get_bit_unchecked(idx) {
@@ -172,7 +172,7 @@ pub(crate) unsafe fn take_primitive_opt_iter_unchecked<
     indices: I,
 ) -> Arc<PrimitiveArray<T::Native>> {
     let array_values = arr.values().as_slice();
-    let validity = arr.validity().as_ref().expect("should have nulls");
+    let validity = arr.validity().expect("should have nulls");
 
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
@@ -238,7 +238,7 @@ pub(crate) unsafe fn take_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
-    let validity = arr.validity().as_ref().expect("should have nulls");
+    let validity = arr.validity().expect("should have nulls");
 
     let iter = indices.into_iter().map(|idx| {
         if validity.get_bit_unchecked(idx) {
@@ -259,7 +259,7 @@ pub(crate) unsafe fn take_bool_opt_iter_unchecked<I: IntoIterator<Item = Option<
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
-    let validity = arr.validity().as_ref().expect("should have nulls");
+    let validity = arr.validity().expect("should have nulls");
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
             if validity.get_bit_unchecked(idx) {
@@ -309,7 +309,7 @@ pub(crate) unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
-    let validity = arr.validity().as_ref().expect("should have nulls");
+    let validity = arr.validity().expect("should have nulls");
     let iter = indices.into_iter().map(|idx| {
         if validity.get_bit_unchecked(idx) {
             Some(arr.value_unchecked(idx))
@@ -342,7 +342,7 @@ pub(crate) unsafe fn take_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
-    let validity = arr.validity().as_ref().expect("should have nulls");
+    let validity = arr.validity().expect("should have nulls");
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
             if validity.get_bit_unchecked(idx) {
@@ -421,10 +421,10 @@ pub(crate) unsafe fn take_utf8_unchecked(
                 }
                 *offset = length_so_far;
             });
-        validity = indices.validity().clone();
+        validity = indices.validity().cloned();
     } else {
         let mut builder = MutableUtf8Array::with_capacities(data_len, length_so_far as usize);
-        let validity_arr = arr.validity().as_ref().expect("should have nulls");
+        let validity_arr = arr.validity().expect("should have nulls");
 
         if indices.null_count() == 0 {
             (0..data_len).for_each(|idx| {
@@ -437,7 +437,7 @@ pub(crate) unsafe fn take_utf8_unchecked(
                 });
             });
         } else {
-            let validity_indices = indices.validity().as_ref().expect("should have nulls");
+            let validity_indices = indices.validity().expect("should have nulls");
             (0..data_len).for_each(|idx| {
                 if validity_indices.get_bit_unchecked(idx) {
                     let index = indices.value_unchecked(idx) as usize;
@@ -510,7 +510,7 @@ unsafe fn take_value_indices_from_list(
             }
         }
     } else {
-        let validity = indices.validity().as_ref().expect("should have nulls");
+        let validity = indices.validity().expect("should have nulls");
 
         for i in 0..indices.len() {
             if validity.get_bit_unchecked(i) {
