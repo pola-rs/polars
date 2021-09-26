@@ -1,10 +1,12 @@
 //! kernels that combine take and aggregations.
-use crate::prelude::*;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
-pub(crate) unsafe fn take_agg_no_null_primitive_iter_unchecked<
+/// # Safety
+/// caller must enure iterators indexes are in bounds
+#[inline]
+pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     T: NativeType,
     I: IntoIterator<Item = usize>,
     F: Fn(T, T) -> T,
@@ -24,16 +26,19 @@ pub(crate) unsafe fn take_agg_no_null_primitive_iter_unchecked<
 }
 
 /// Take kernel for single chunk and an iterator as index.
-pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
-    T: PolarsNumericType,
+/// # Safety
+/// caller must enure iterators indexes are in bounds
+#[inline]
+pub unsafe fn take_agg_primitive_iter_unchecked<
+    T: NativeType,
     I: IntoIterator<Item = usize>,
-    F: Fn(T::Native, T::Native) -> T::Native,
+    F: Fn(T, T) -> T,
 >(
-    arr: &PrimitiveArray<T::Native>,
+    arr: &PrimitiveArray<T>,
     indices: I,
     f: F,
-    init: T::Native,
-) -> Option<T::Native> {
+    init: T,
+) -> Option<T> {
     if arr.null_count() == arr.len() {
         return None;
     }
@@ -56,16 +61,19 @@ pub(crate) unsafe fn take_agg_primitive_iter_unchecked<
 }
 
 /// Take kernel for single chunk and an iterator as index.
-pub(crate) unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
-    T: PolarsNumericType,
+/// # Safety
+/// caller must enure iterators indexes are in bounds
+#[inline]
+pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
+    T: NativeType,
     I: IntoIterator<Item = usize>,
-    F: Fn(T::Native, T::Native) -> T::Native,
+    F: Fn(T, T) -> T,
 >(
-    arr: &PrimitiveArray<T::Native>,
+    arr: &PrimitiveArray<T>,
     indices: I,
     f: F,
-    init: T::Native,
-) -> Option<(T::Native, u32)> {
+    init: T,
+) -> Option<(T, u32)> {
     if arr.null_count() == arr.len() {
         return None;
     }

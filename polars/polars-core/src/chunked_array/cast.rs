@@ -1,10 +1,24 @@
 //! Implementations of the ChunkCast Trait.
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
-use crate::chunked_array::kernels::cast_physical;
 use crate::prelude::*;
 use arrow::compute::cast;
 use num::NumCast;
+
+/// Casts a `PrimitiveArray` to a different physical type and logical type.
+/// This operation is `O(N)`
+/// Values that do not fit in the new physical type are converted to nulls.
+pub(crate) fn cast_physical<S, T>(arr: &PrimitiveArray<S::Native>, datatype: &DataType) -> ArrayRef
+where
+    S: PolarsNumericType,
+    T: PolarsNumericType,
+    T::Native: num::NumCast,
+    S::Native: num::NumCast,
+{
+    let array =
+        arrow::compute::cast::primitive_to_primitive::<_, T::Native>(arr, &datatype.to_arrow());
+    Arc::new(array)
+}
 
 fn cast_ca<N, T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<N>>
 where

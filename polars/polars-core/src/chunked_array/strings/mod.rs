@@ -1,9 +1,8 @@
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
-
-use crate::chunked_array::kernels::strings::string_lengths;
 use crate::prelude::*;
 use arrow::compute::substring::substring;
+use polars_arrow::kernels::string::*;
 use regex::Regex;
 
 impl Utf8Chunked {
