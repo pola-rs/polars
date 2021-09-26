@@ -5,7 +5,7 @@ use crate::series::PySeries;
 use polars::prelude::*;
 use pyo3::conversion::FromPyObject;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyString, PyTuple, PyList};
+use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
 
 pub fn apply_lambda_unknown<'a>(
     df: &'a DataFrame,
@@ -70,10 +70,13 @@ pub fn apply_lambda_unknown<'a>(
             )
             .into_series());
         } else if out.is_instance::<PyList>().unwrap() {
-            return Err(PyPolarsEr::Other("A list output type is invalid. Do you mean to create polars List Series?\
-Then return a Series object.".into()).into());
-        }
-        else {
+            return Err(PyPolarsEr::Other(
+                "A list output type is invalid. Do you mean to create polars List Series?\
+Then return a Series object."
+                    .into(),
+            )
+            .into());
+        } else {
             return Err(PyPolarsEr::Other("Could not determine output type".into()).into());
         }
     }
@@ -181,17 +184,13 @@ pub fn apply_lambda_with_list_out_type<'a>(
             let iter = columns.iter().map(|s: &Series| Wrap(s.get(idx)));
             let tpl = (PyTuple::new(py, iter),);
             match lambda.call1(tpl) {
-                Ok(val) => {
-                    match val.getattr("_s") {
-                        Ok(val) => {
-                            val.extract::<PySeries>().ok().map(|ps| ps.series)
-                        }
-                        Err(_) => {
-                            if val.is_none() {
-                                None
-                            } else {
-                                panic!("should return a Series, got a {:?}", val)
-                            }
+                Ok(val) => match val.getattr("_s") {
+                    Ok(val) => val.extract::<PySeries>().ok().map(|ps| ps.series),
+                    Err(_) => {
+                        if val.is_none() {
+                            None
+                        } else {
+                            panic!("should return a Series, got a {:?}", val)
                         }
                     }
                 },

@@ -8,7 +8,10 @@ use polars::prelude::*;
 #[cfg(feature = "downsample")]
 use polars_core::frame::groupby::resample::SampleRule;
 
-use crate::apply::dataframe::{apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type, apply_lambda_with_utf8_out_type};
+use crate::apply::dataframe::{
+    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
+    apply_lambda_with_utf8_out_type,
+};
 use crate::conversion::{ObjectValue, Wrap};
 use crate::datatypes::PyDataType;
 use crate::file::get_mmap_bytes_reader;
@@ -307,7 +310,8 @@ impl PyDataFrame {
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
 
-        let rbs = self.df
+        let rbs = self
+            .df
             .iter_record_batches()
             .map(|rb| arrow_interop::to_py::to_py_rb(&rb, py, pyarrow))
             .collect::<PyResult<_>>()?;
@@ -385,7 +389,7 @@ impl PyDataFrame {
         left_on: Vec<&str>,
         right_on: Vec<&str>,
         how: &str,
-        suffix: String
+        suffix: String,
     ) -> PyResult<Self> {
         let how = match how {
             "left" => JoinType::Left,
