@@ -349,164 +349,18 @@ where
     }
 }
 
-pub(crate) trait AggFirst {
-    fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series;
-}
-
-macro_rules! impl_agg_first {
-    ($self:ident, $groups:ident, $ca_type:ty) => {{
-        let mut ca = $groups
-            .iter()
-            .map(|(first, idx)| {
-                debug_assert!(idx.len() <= $self.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                $self.get(*first as usize)
-            })
-            .collect::<$ca_type>();
-
-        ca.categorical_map = $self.categorical_map.clone();
-        ca.into_series()
-    }};
-}
-
-impl<T> AggFirst for ChunkedArray<T>
+impl<T> ChunkedArray<T>
 where
-    T: PolarsNumericType + Send,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: ChunkTake + IntoSeries,
 {
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        impl_agg_first!(self, groups, ChunkedArray<T>)
+    pub(crate) fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
+        let iter = groups.iter().map(|(idx, _)| *idx as usize);
+        unsafe { self.take_unchecked(iter.into()) }.into_series()
     }
-}
 
-impl AggFirst for BooleanChunked {
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        impl_agg_first!(self, groups, BooleanChunked)
-    }
-}
-
-impl AggFirst for Utf8Chunked {
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        impl_agg_first!(self, groups, Utf8Chunked)
-    }
-}
-
-impl AggFirst for ListChunked {
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        impl_agg_first!(self, groups, ListChunked)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl AggFirst for CategoricalChunked {
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        let out = self
-            .cast::<UInt32Type>()
-            .unwrap()
-            .agg_first(groups)
-            .cast::<CategoricalType>()
-            .unwrap();
-
-        debug_assert!(out.categorical().unwrap().categorical_map.is_some());
-        out
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T: PolarsObject> AggFirst for ObjectChunked<T> {
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        let ca: Self = groups
-            .iter()
-            .map(|(first, idx)| {
-                if idx.is_empty() {
-                    return None;
-                }
-                self.get(*first as usize).cloned()
-            })
-            .collect();
-
-        ca.into_series()
-    }
-}
-
-pub(crate) trait AggLast {
-    fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series;
-}
-
-macro_rules! impl_agg_last {
-    ($self:ident, $groups:ident, $ca_type:ty) => {{
-        let mut ca = $groups
-            .iter()
-            .map(|(_first, idx)| {
-                debug_assert!(idx.len() <= $self.len());
-                if idx.is_empty() {
-                    return None;
-                }
-
-                $self.get(idx[idx.len() - 1] as usize)
-            })
-            .collect::<$ca_type>();
-
-        ca.categorical_map = $self.categorical_map.clone();
-        ca.into_series()
-    }};
-}
-
-impl<T> AggLast for ChunkedArray<T>
-where
-    T: PolarsNumericType + Send,
-    ChunkedArray<T>: IntoSeries,
-{
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        impl_agg_last!(self, groups, ChunkedArray<T>)
-    }
-}
-
-impl AggLast for BooleanChunked {
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        impl_agg_last!(self, groups, BooleanChunked)
-    }
-}
-
-impl AggLast for Utf8Chunked {
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        impl_agg_last!(self, groups, Utf8Chunked)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl AggLast for CategoricalChunked {
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .agg_last(groups)
-            .cast::<CategoricalType>()
-            .unwrap()
-    }
-}
-
-impl AggLast for ListChunked {
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        impl_agg_last!(self, groups, ListChunked)
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T: PolarsObject> AggLast for ObjectChunked<T> {
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        let ca: Self = groups
-            .iter()
-            .map(|(_first, idx)| {
-                if idx.is_empty() {
-                    return None;
-                }
-                self.get((idx.len() - 1) as usize).cloned()
-            })
-            .collect();
-
-        ca.into_series()
+    pub(crate) fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
+        let iter = groups.iter().map(|(_, idx)| idx[idx.len() - 1] as usize);
+        unsafe { self.take_unchecked(iter.into()) }.into_series()
     }
 }
 
