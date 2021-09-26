@@ -8,16 +8,9 @@ use std::ops::Deref;
 
 use arrow::array::{Array, ArrayRef};
 use arrow::compute::take::take;
+use polars_arrow::kernels::take::*;
 
-use crate::chunked_array::kernels::take::{
-    take_bool_iter_unchecked, take_bool_opt_iter_unchecked, take_list_unchecked,
-    take_no_null_bool_iter_unchecked, take_no_null_bool_opt_iter_unchecked, take_no_null_primitive,
-    take_no_null_primitive_iter_unchecked, take_no_null_primitive_opt_iter_unchecked,
-    take_no_null_utf8_iter_unchecked, take_no_null_utf8_opt_iter_unchecked,
-    take_primitive_iter_n_chunks, take_primitive_iter_unchecked, take_primitive_opt_iter_n_chunks,
-    take_primitive_opt_iter_unchecked, take_primitive_unchecked, take_utf8_iter_unchecked,
-    take_utf8_opt_iter_unchecked, take_utf8_unchecked,
-};
+use crate::chunked_array::kernels::take::*;
 
 use crate::prelude::*;
 use crate::utils::NoNull;
@@ -83,12 +76,10 @@ where
                     return Self::full_null(self.name(), array.len());
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => {
-                        take_no_null_primitive::<T>(chunks.next().unwrap(), array) as ArrayRef
-                    }
-                    (_, 1) => {
-                        take_primitive_unchecked::<T>(chunks.next().unwrap(), array) as ArrayRef
-                    }
+                    (0, 1) => take_no_null_primitive::<T::Native>(chunks.next().unwrap(), array)
+                        as ArrayRef,
+                    (_, 1) => take_primitive_unchecked::<T::Native>(chunks.next().unwrap(), array)
+                        as ArrayRef,
                     _ => {
                         return if array.null_count() == 0 {
                             let iter = array.values().iter().map(|i| *i as usize);
@@ -112,12 +103,14 @@ where
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => {
-                        take_no_null_primitive_iter_unchecked::<T, _>(chunks.next().unwrap(), iter)
+                    (0, 1) => take_no_null_primitive_iter_unchecked::<T::Native, _>(
+                        chunks.next().unwrap(),
+                        iter,
+                    ) as ArrayRef,
+                    (_, 1) => {
+                        take_primitive_iter_unchecked::<T::Native, _>(chunks.next().unwrap(), iter)
                             as ArrayRef
                     }
-                    (_, 1) => take_primitive_iter_unchecked::<T, _>(chunks.next().unwrap(), iter)
-                        as ArrayRef,
                     _ => {
                         let mut ca = take_primitive_iter_n_chunks(self, iter);
                         ca.rename(self.name());
@@ -131,14 +124,14 @@ where
                     return Self::full_null(self.name(), iter.size_hint().0);
                 }
                 let array = match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => take_no_null_primitive_opt_iter_unchecked::<T, _>(
+                    (0, 1) => take_no_null_primitive_opt_iter_unchecked::<T::Native, _>(
                         chunks.next().unwrap(),
                         iter,
                     ) as ArrayRef,
-                    (_, 1) => {
-                        take_primitive_opt_iter_unchecked::<T, _>(chunks.next().unwrap(), iter)
-                            as ArrayRef
-                    }
+                    (_, 1) => take_primitive_opt_iter_unchecked::<T::Native, _>(
+                        chunks.next().unwrap(),
+                        iter,
+                    ) as ArrayRef,
                     _ => {
                         let mut ca = take_primitive_opt_iter_n_chunks(self, iter);
                         ca.rename(self.name());

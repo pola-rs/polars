@@ -1,8 +1,13 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::utils::BitChunks;
 use std::iter::Enumerate;
+pub mod float;
 pub mod rolling;
 pub mod set;
+#[cfg(feature = "strings")]
+pub mod string;
+pub mod take;
+pub mod take_agg;
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]

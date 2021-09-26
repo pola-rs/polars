@@ -7,13 +7,10 @@ use std::hash::Hash;
 
 use arrow::types::{simd::Simd, NativeType};
 
-use crate::chunked_array::kernels::take_agg::{
-    take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
-    take_agg_primitive_iter_unchecked_count_nulls,
-};
 use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::buffer::MutableBuffer;
+use polars_arrow::kernels::take_agg::*;
 use polars_arrow::trusted_len::PushUnchecked;
 
 pub(crate) trait NumericAggSync {
@@ -105,7 +102,7 @@ where
                     .to_f64()
                     .map(|sum| sum / idx.len() as f64),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked_count_nulls::<T, _, _>(
+                        take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _>(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| a + b,
@@ -146,7 +143,7 @@ where
                         )
                     }),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked::<T, _, _>(
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| if a < b { a } else { b },
@@ -181,7 +178,7 @@ where
                         )
                     }),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked::<T, _, _>(
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| if a > b { a } else { b },
@@ -216,7 +213,7 @@ where
                         )
                     }),
                     (_, 1) => unsafe {
-                        take_agg_primitive_iter_unchecked::<T, _, _>(
+                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             |a, b| a + b,

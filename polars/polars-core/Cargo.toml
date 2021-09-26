@@ -25,7 +25,7 @@ lazy = ["sort_multiple"]
 performant = []
 
 # extra utilities for Utf8Chunked
-strings = ["regex"]
+strings = ["regex", "polars-arrow/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]

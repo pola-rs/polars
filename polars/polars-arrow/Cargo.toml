@@ -14,3 +14,6 @@ arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", 
 #arrow = { package = "arrow2", version = "0.5.3", default-features=false}
 thiserror = "^1.0"
 num = "^0.4"
+
+[features]
+strings = []

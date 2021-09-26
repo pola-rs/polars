@@ -28,11 +28,9 @@ pub use crate::{
 };
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
+pub use polars_arrow::prelude::{AlignedVec, LargeListArray, LargeStringArray};
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 pub use std::sync::Arc;
-pub type LargeStringArray = Utf8Array<i64>;
-pub type LargeListArray = ListArray<i64>;
-pub type AlignedVec<T> = arrow::buffer::MutableBuffer<T>;
 
 #[cfg(feature = "object")]
 pub use crate::chunked_array::object::PolarsObject;
