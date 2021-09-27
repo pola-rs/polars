@@ -58,7 +58,7 @@ def test_agg():
 def test_fold():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.lazy().select(pl.sum(["a", "b"])).collect()
-    assert out["sum"].series_equal(pl.Series("sum", [2, 4, 6]))
+    assert out["sum"].series_equal(pl.Series("sum", [2.0, 4.0, 6.0]))
 
     out = df.select(
         pl.fold(acc=lit(0), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("foo")

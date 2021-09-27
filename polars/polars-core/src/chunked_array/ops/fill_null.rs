@@ -85,7 +85,8 @@ where
         + One
         + Bounded
         + Add<Output = T::Native>
-        + Div<Output = T::Native>,
+        + Div<Output = T::Native>
+        + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,

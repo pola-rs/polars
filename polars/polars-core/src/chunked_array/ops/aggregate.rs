@@ -63,7 +63,7 @@ macro_rules! impl_quantile {
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -132,7 +132,7 @@ where
 impl<T> ChunkVar<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -241,7 +241,7 @@ impl ChunkAgg<u32> for BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -297,7 +297,7 @@ macro_rules! impl_as_series {
 impl<T> VarAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,

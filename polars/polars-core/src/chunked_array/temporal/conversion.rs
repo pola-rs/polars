@@ -6,115 +6,14 @@ use crate::chunked_array::kernels::temporal::{
     date64_to_year,
 };
 use crate::prelude::*;
+use crate::utils::CustomIterTools;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime};
 pub use conversions_utils::*;
-use regex::Regex;
-
-pub trait FromNaiveTime<T, N> {
-    fn new_from_naive_time(name: &str, v: &[N]) -> Self;
-
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self;
-}
-
-fn parse_naive_time_from_str(s: &str, fmt: &str) -> Option<NaiveTime> {
-    NaiveTime::parse_from_str(s, fmt).ok()
-}
-
-macro_rules! impl_from_naive_time {
-    ($arrowtype:ident, $chunkedtype:ident, $func:ident) => {
-        impl FromNaiveTime<$arrowtype, NaiveTime> for $chunkedtype {
-            fn new_from_naive_time(name: &str, v: &[NaiveTime]) -> Self {
-                let unit = v.iter().map($func).collect::<AlignedVec<_>>();
-                ChunkedArray::new_from_aligned_vec(name, unit)
-            }
-
-            fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
-                ChunkedArray::new_from_opt_iter(
-                    name,
-                    v.iter()
-                        .map(|s| parse_naive_time_from_str(s, fmt).as_ref().map($func)),
-                )
-            }
-        }
-    };
-}
-
-impl_from_naive_time!(
-    Time64NanosecondType,
-    Time64NanosecondChunked,
-    naive_time_to_time64_nanoseconds
-);
-
-pub trait AsNaiveTime {
-    fn as_naive_time(&self) -> Vec<Option<NaiveTime>>;
-}
-
-pub fn parse_naive_datetime_from_str(s: &str, fmt: &str) -> Option<NaiveDateTime> {
-    NaiveDateTime::parse_from_str(s, fmt).ok()
-}
-
-pub trait FromNaiveDateTime<T, N> {
-    fn new_from_naive_datetime(name: &str, v: &[N]) -> Self;
-
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self;
-}
-
-macro_rules! impl_from_naive_datetime {
-    ($arrowtype:ident, $chunkedtype:ident, $func:ident) => {
-        impl FromNaiveDateTime<$arrowtype, NaiveDateTime> for $chunkedtype {
-            fn new_from_naive_datetime(name: &str, v: &[NaiveDateTime]) -> Self {
-                let unit = v.iter().map($func).collect::<AlignedVec<_>>();
-                ChunkedArray::new_from_aligned_vec(name, unit)
-            }
-
-            fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
-                ChunkedArray::new_from_opt_iter(
-                    name,
-                    v.iter()
-                        .map(|s| parse_naive_datetime_from_str(s, fmt).as_ref().map($func)),
-                )
-            }
-        }
-    };
-}
-
-impl_from_naive_datetime!(Date64Type, Date64Chunked, naive_datetime_to_date64);
-
-pub trait FromNaiveDate<T, N> {
-    fn new_from_naive_date(name: &str, v: &[N]) -> Self;
-
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self;
-}
 
 pub fn naive_date_to_date32(nd: NaiveDate) -> i32 {
     let nt = NaiveTime::from_hms(0, 0, 0);
     let ndt = NaiveDateTime::new(nd, nt);
     naive_datetime_to_date32(&ndt)
-}
-
-pub fn parse_naive_date_from_str(s: &str, fmt: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s, fmt).ok()
-}
-
-impl FromNaiveDate<Date32Type, NaiveDate> for Date32Chunked {
-    fn new_from_naive_date(name: &str, v: &[NaiveDate]) -> Self {
-        let unit = v
-            .iter()
-            .map(|v| naive_date_to_date32(*v))
-            .collect::<AlignedVec<_>>();
-        ChunkedArray::new_from_aligned_vec(name, unit)
-    }
-
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
-        ChunkedArray::new_from_opt_iter(
-            name,
-            v.iter().map(|s| {
-                parse_naive_date_from_str(s, fmt)
-                    .as_ref()
-                    .map(|v| naive_date_to_date32(*v))
-            }),
-        )
-    }
 }
 
 pub trait AsNaiveDateTime {
@@ -152,98 +51,34 @@ impl AsNaiveDate for Date32Chunked {
     }
 }
 
-impl AsNaiveTime for Time64NanosecondChunked {
-    fn as_naive_time(&self) -> Vec<Option<NaiveTime>> {
-        self.into_iter()
-            .map(|opt_t| opt_t.map(time64_nanosecond_as_time))
-            .collect()
-    }
-}
-
-const N_PATTERNS: usize = 7;
-fn date_pattern(val: &str, id: usize) -> Option<&'static str> {
-    match id {
-        0 => {
-            // 2021-12-1
-            // 2021-12-31
-            let pat = r"^\d{4}-\d{1,2}-\d{1,2}\s*$";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%Y-%m-%d");
-            }
+fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
+// (string, fmt) -> result
+where
+    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+{
+    for fmt in [
+        // 2021-12-31
+        "%Y-%m-%d",
+        // 31-12-2021
+        "%d-%m-%Y",
+        // 2021/12/31 12:54:98
+        "%Y/%m/%d %H:%M:%S",
+        // 2021-12-31 24:58:01
+        "%Y-%m-%d %H:%M:%S",
+        // 2021/12/31 24:58:01
+        "%Y/%m/%d %H:%M:%S",
+        // 20210319 23:58:50
+        "%Y%m%d %H:%M:%S",
+        // 2021319 (2021-03-19)
+        "%Y%m%d",
+        // 2019-04-18T02:45:55
+        "%FT%H:%M:%S",
+        // 2019-04-18T02:45:55.555000000
+        "%FT%H:%M:%S.%6f",
+    ] {
+        if convert(val, fmt).is_ok() {
+            return Some(fmt);
         }
-        1 => {
-            // 1-12-2021
-            // 31-12-2021
-            let pat = r"^\d{1,2}-\d{1,2}-\d{4}\s*$";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%d-%m-%Y");
-            }
-        }
-        2 => {
-            // 2021/12/31 12:54:98
-            let pat = r"^\d{4}/\d{1,2}/\d{1,2}\s*$";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%Y/%m/%d %H:%M:%S");
-            }
-        }
-        3 => {
-            // 2021-12-31 24:58:01
-            let pat = r"^\d{4}-\d{1,2}-\d{1,2} \d{2}:\d{2}:\d{2}\s*$";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%Y-%m-%d %H:%M:%S");
-            }
-        }
-        4 => {
-            // 2021/12/31 24:58:01
-            let pat = r"^\d{4}/\d{1,2}/\d{1,2} \d{2}:\d{2}:\d{2}\s*$";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%Y/%m/%d %H:%M:%S");
-            }
-        }
-        5 => {
-            // no separator
-            // 20210319 23:58:50
-            // 2021319 23:58:50
-            // 202131 23:58:50
-            let pat = r"^\d{6,8} \d{2}:\d{2}:\d{2}\s*$";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%Y%m%d %H:%M:%S");
-            }
-        }
-        6 => {
-            // no separator
-            // 20210319
-            // 2021319 (2021-03-19)
-            // 202131 (2021-03-01)
-            let pat = r"^\d{6,8}\s*$";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%Y%m%d");
-            }
-        }
-        7 => {
-            // 2019-04-18T02:45:55
-            let pat = r"\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\s*^";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%FT%H:%M:%S");
-            }
-        }
-        8 => {
-            // 2019-04-18T02:45:55.555000000
-            let pat = r"\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}.?\d*\s*^";
-            let reg = Regex::new(pat).expect("wrong regex");
-            if reg.is_match(val) {
-                return Some("%FT%H:%M:%S.%3f");
-            }
-        }
-        _ => (),
     }
     None
 }
@@ -264,10 +99,8 @@ impl Utf8Chunked {
 
     fn sniff_fmt_date64(&self) -> Result<&'static str> {
         let val = self.get_first_val()?;
-        for id in 0..N_PATTERNS {
-            if let Some(pattern) = date_pattern(val, id) {
-                return Ok(pattern);
-            }
+        if let Some(pattern) = date_pattern(val, NaiveDateTime::parse_from_str) {
+            return Ok(pattern);
         }
         Err(PolarsError::ComputeError(
             "Could not find an appropriate format to parse dates, please define a fmt".into(),
@@ -276,10 +109,8 @@ impl Utf8Chunked {
 
     fn sniff_fmt_date32(&self) -> Result<&'static str> {
         let val = self.get_first_val()?;
-        for id in 0..N_PATTERNS {
-            if let Some(pattern) = date_pattern(val, id) {
-                return Ok(pattern);
-            }
+        if let Some(pattern) = date_pattern(val, NaiveDate::parse_from_str) {
+            return Ok(pattern);
         }
         Err(PolarsError::ComputeError(
             "Could not find an appropriate format to parse dates, please define a fmt".into(),
@@ -295,20 +126,27 @@ impl Utf8Chunked {
         let mut ca: Date32Chunked = match self.null_count() {
             0 => self
                 .into_no_null_iter()
-                .map(|s| parse_naive_date_from_str(s, fmt).map(naive_date_to_date32))
-                .collect(),
+                .map(|s| {
+                    NaiveDate::parse_from_str(s, fmt)
+                        .ok()
+                        .map(naive_date_to_date32)
+                })
+                .collect_trusted(),
             _ => self
                 .into_iter()
                 .map(|opt_s| {
-                    let opt_nd =
-                        opt_s.map(|s| parse_naive_date_from_str(s, fmt).map(naive_date_to_date32));
+                    let opt_nd = opt_s.map(|s| {
+                        NaiveDate::parse_from_str(s, fmt)
+                            .ok()
+                            .map(naive_date_to_date32)
+                    });
                     match opt_nd {
                         None => None,
                         Some(None) => None,
                         Some(Some(nd)) => Some(nd),
                     }
                 })
-                .collect(),
+                .collect_trusted(),
         };
         ca.rename(self.name());
         Ok(ca)
@@ -324,14 +162,17 @@ impl Utf8Chunked {
             0 => self
                 .into_no_null_iter()
                 .map(|s| {
-                    parse_naive_datetime_from_str(s, fmt).map(|dt| naive_datetime_to_date64(&dt))
+                    NaiveDateTime::parse_from_str(s, fmt)
+                        .ok()
+                        .map(|dt| naive_datetime_to_date64(&dt))
                 })
-                .collect(),
+                .collect_trusted(),
             _ => self
                 .into_iter()
                 .map(|opt_s| {
                     let opt_nd = opt_s.map(|s| {
-                        parse_naive_datetime_from_str(s, fmt)
+                        NaiveDateTime::parse_from_str(s, fmt)
+                            .ok()
                             .map(|dt| naive_datetime_to_date64(&dt))
                     });
                     match opt_nd {
@@ -340,7 +181,7 @@ impl Utf8Chunked {
                         Some(Some(nd)) => Some(nd),
                     }
                 })
-                .collect(),
+                .collect_trusted(),
         };
         ca.rename(self.name());
         Ok(ca)
@@ -422,6 +263,26 @@ impl Date64Chunked {
         ca.rename(self.name());
         ca
     }
+
+    pub fn new_from_naive_datetime(name: &str, v: &[NaiveDateTime]) -> Self {
+        let vals = v
+            .iter()
+            .map(naive_datetime_to_date64)
+            .collect_trusted::<AlignedVec<_>>();
+        ChunkedArray::new_from_aligned_vec(name, vals)
+    }
+
+    pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
+        ChunkedArray::new_from_opt_iter(
+            name,
+            v.iter().map(|s| {
+                NaiveDateTime::parse_from_str(s, fmt)
+                    .ok()
+                    .as_ref()
+                    .map(|v| naive_datetime_to_date64(v))
+            }),
+        )
+    }
 }
 
 impl Date32Chunked {
@@ -474,5 +335,25 @@ impl Date32Chunked {
             .collect();
         ca.rename(self.name());
         ca
+    }
+
+    pub fn new_from_naive_date(name: &str, v: &[NaiveDate]) -> Self {
+        let unit = v
+            .iter()
+            .map(|v| naive_date_to_date32(*v))
+            .collect::<AlignedVec<_>>();
+        ChunkedArray::new_from_aligned_vec(name, unit)
+    }
+
+    pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
+        ChunkedArray::new_from_opt_iter(
+            name,
+            v.iter().map(|s| {
+                NaiveDate::parse_from_str(s, fmt)
+                    .ok()
+                    .as_ref()
+                    .map(|v| naive_date_to_date32(*v))
+            }),
+        )
     }
 }

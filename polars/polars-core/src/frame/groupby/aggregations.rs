@@ -60,7 +60,8 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded,
+    T::Native:
+        NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
@@ -176,7 +177,7 @@ impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
     ChunkedArray<T>: IntoSeries,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Simd,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
@@ -266,7 +267,8 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
     ChunkedArray<T>: IntoSeries,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded,
+    T::Native:
+        NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
@@ -354,12 +356,24 @@ where
     ChunkedArray<T>: ChunkTake + IntoSeries,
 {
     pub(crate) fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        let iter = groups.iter().map(|(idx, _)| *idx as usize);
+        let iter = groups.iter().map(|(first, idx)| {
+            if idx.is_empty() {
+                None
+            } else {
+                Some(*first as usize)
+            }
+        });
         unsafe { self.take_unchecked(iter.into()) }.into_series()
     }
 
     pub(crate) fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        let iter = groups.iter().map(|(_, idx)| idx[idx.len() - 1] as usize);
+        let iter = groups.iter().map(|(_, idx)| {
+            if idx.is_empty() {
+                None
+            } else {
+                Some(idx[idx.len() - 1] as usize)
+            }
+        });
         unsafe { self.take_unchecked(iter.into()) }.into_series()
     }
 }
@@ -553,7 +567,7 @@ pub(crate) trait AggQuantile {
 impl<T> AggQuantile for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: PartialOrd + Num + NumCast + Zero + Simd,
+    T::Native: PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,

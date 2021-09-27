@@ -861,6 +861,7 @@ def test_string_cache_eager_lazy():
             "score": [2.0, 1.0, None, 3.0, None],
         }
     )
+
     assert df1.join(
         df2, left_on="region_ids", right_on="seq_name", how="left"
     ).frame_equal(expected, null_equal=True)

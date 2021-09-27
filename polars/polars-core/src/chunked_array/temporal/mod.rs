@@ -1,9 +1,7 @@
 //! Traits and utilities for temporal data.
 pub mod conversion;
 pub(crate) mod conversions_utils;
-pub use self::conversion::{
-    AsNaiveDate, AsNaiveDateTime, AsNaiveTime, FromNaiveDate, FromNaiveDateTime, FromNaiveTime,
-};
+pub use self::conversion::{AsNaiveDate, AsNaiveDateTime};
 pub(crate) use self::conversions_utils::*;
 use chrono::NaiveDateTime;
 
@@ -14,18 +12,7 @@ pub fn unix_time() -> NaiveDateTime {
 #[cfg(all(test, feature = "temporal"))]
 mod test {
     use crate::prelude::*;
-    use chrono::{NaiveDateTime, NaiveTime};
-
-    #[test]
-    fn from_time() {
-        let times: Vec<_> = ["23:56:04", "00:00:00"]
-            .iter()
-            .map(|s| NaiveTime::parse_from_str(s, "%H:%M:%S").unwrap())
-            .collect();
-        let t = Time64NanosecondChunked::new_from_naive_time("times", &times);
-        // NOTE: the values are checked and correct.
-        assert_eq!([86164000000000, 0], t.cont_slice().unwrap());
-    }
+    use chrono::NaiveDateTime;
 
     #[test]
     fn from_datetime() {

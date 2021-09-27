@@ -8,10 +8,14 @@ impl Series {
         if self.get_data_ptr() == other.get_data_ptr() {
             return true;
         }
-        if self.len() != other.len() {
+        if self.len() != other.len() || self.null_count() != other.null_count() {
             return false;
         }
-        if self.null_count() != other.null_count() {
+        if self.dtype() != other.dtype()
+            && !(matches!(self.dtype(), DataType::Utf8 | DataType::Categorical)
+                || matches!(other.dtype(), DataType::Utf8 | DataType::Categorical))
+            && !(self.is_numeric() && other.is_numeric())
+        {
             return false;
         }
         match self.eq(other).sum() {
@@ -22,10 +26,17 @@ impl Series {
 
     /// Check if all values in series are equal where `None == None` evaluates to `true`.
     pub fn series_equal_missing(&self, other: &Series) -> bool {
-        if self.len() != other.len() {
+        if self.get_data_ptr() == other.get_data_ptr() {
+            return true;
+        }
+        if self.len() != other.len() || self.null_count() != other.null_count() {
             return false;
         }
-        if self.null_count() != other.null_count() {
+        if self.dtype() != other.dtype()
+            && !(matches!(self.dtype(), DataType::Utf8 | DataType::Categorical)
+                || matches!(other.dtype(), DataType::Utf8 | DataType::Categorical))
+            && !(self.is_numeric() && other.is_numeric())
+        {
             return false;
         }
         // if all null and previous check did not return (so other is also all null)

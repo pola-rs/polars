@@ -1,7 +1,7 @@
 // Conversion extracted from:
 // https://docs.rs/arrow/1.0.0/src/arrow/array/array.rs.html#589
 
-use chrono::{NaiveDateTime, NaiveTime, Timelike};
+use chrono::{NaiveDateTime, NaiveTime};
 
 /// Number of seconds in a day
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
@@ -32,15 +32,6 @@ pub fn naive_datetime_to_date64(v: &NaiveDateTime) -> i64 {
 
 pub fn naive_datetime_to_date32(v: &NaiveDateTime) -> i32 {
     (naive_datetime_to_date64(v) / (MILLISECONDS_IN_SECOND * SECONDS_IN_DAY)) as i32
-}
-
-pub(crate) fn naive_time_to_time64_nanoseconds(v: &NaiveTime) -> i64 {
-    // 3600 seconds in an hour
-    v.hour() as i64 * 3600 * NANOSECONDS_IN_SECOND
-        // 60 seconds in a minute
-        + v.minute() as i64 * 60 * NANOSECONDS_IN_SECOND
-        + v.second() as i64 * NANOSECONDS_IN_SECOND
-        + v.nanosecond() as i64
 }
 
 pub(crate) fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
