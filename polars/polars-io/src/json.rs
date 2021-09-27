@@ -87,7 +87,6 @@ where
     }
 
     fn finish(self, df: &DataFrame) -> Result<()> {
-        let df = to_arrow_compatible_df(df);
         let mut json_writer = arrow::io::json::LineDelimitedWriter::new(self.buffer);
 
         let batches = df.as_record_batches()?;
