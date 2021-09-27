@@ -16,7 +16,6 @@
 //!
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
-use crate::utils::to_arrow_compatible_df;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::compute::cast;
 use arrow::io::parquet::write::Encoding;
@@ -152,7 +151,6 @@ where
 
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
-        let df = to_arrow_compatible_df(df);
         let mut fields = df.schema().to_arrow().fields().clone();
 
         // date64 is not supported by parquet and will be be truncated to date32

@@ -44,7 +44,7 @@
 use crate::csv_core::csv::build_csv_reader;
 use crate::csv_core::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
-use crate::utils::{resolve_homedir, to_arrow_compatible_df};
+use crate::utils::resolve_homedir;
 use crate::{PhysicalIoExpr, ScanAggregation, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
@@ -75,7 +75,6 @@ where
     }
 
     fn finish(self, df: &DataFrame) -> Result<()> {
-        let df = to_arrow_compatible_df(df);
         let mut writer = self.writer_builder.from_writer(self.buffer);
 
         let iter = df.iter_record_batches();
