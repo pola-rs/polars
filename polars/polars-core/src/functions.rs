@@ -19,7 +19,7 @@ use std::ops::Add;
 pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
-    T::Native: NativeType + PartialOrd + Float + NumCast + Simd,
+    T::Native: NativeType + PartialOrd + Float + NumCast + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -37,7 +37,7 @@ where
 pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
-    T::Native: NativeType + PartialOrd + Float + NumCast + Simd,
+    T::Native: NativeType + PartialOrd + Float + NumCast + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,

@@ -1031,6 +1031,7 @@ fn test_lazy_groupby_filter() -> Result<()> {
         .sort("a", false)
         .collect()?;
 
+    dbg!(&out);
     assert_eq!(
         Vec::from(out.column("b_sum").unwrap().i32().unwrap()),
         [Some(6), None, None]

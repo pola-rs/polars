@@ -67,10 +67,15 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
+        let options = write::SerializeOptions {
+            date64_format: "%FT%H:%M:%S.%6f".to_string(),
+            ..Default::default()
+        };
+
         CsvWriter {
             buffer,
             writer_builder: write::WriterBuilder::new(),
-            options: write::SerializeOptions::default(),
+            options,
         }
     }
 
@@ -104,19 +109,21 @@ where
 
     /// Set the CSV file's date format
     pub fn with_date_format(mut self, format: String) -> Self {
-        self.options.date_format = format;
+        self.options.date32_format = format;
         self
     }
 
     /// Set the CSV file's time format
     pub fn with_time_format(mut self, format: String) -> Self {
-        self.options.time_format = format;
+        self.options.time32_format = format.clone();
+        self.options.time64_format = format;
         self
     }
 
     /// Set the CSV file's timestamp format array in
     pub fn with_timestamp_format(mut self, format: String) -> Self {
-        self.options.timestamp_format = format;
+        self.options.timestamp_format = format.clone();
+        self.options.date64_format = format;
         self
     }
 

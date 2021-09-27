@@ -19,23 +19,6 @@
 //!
 //! Polars has interopatibilty with the `chrono` library.
 //!
-//! ### Example
-//!
-//! ```rust
-//! use chrono::NaiveTime;
-//! use polars_core::prelude::*;;
-//!
-//! // We can create a ChunkedArray from NaiveTime objects
-//! fn from_naive_time_to_time64(time_values: &[NaiveTime]) -> Time64NanosecondChunked {
-//!     Time64NanosecondChunked::new_from_naive_time("name", time_values)
-//! }
-//!
-//! // Or from a ChunkedArray to NaiveTime objects
-//! fn from_time64_to_naive_time(ca: &Time64NanosecondChunked) -> Vec<Option<NaiveTime>> {
-//!     ca.as_naive_time()
-//! }
-//! ```
-//!
 //! ## String formatting
 //!
 //! We can also directly parse strings given a predefined `fmt: &str`. This uses **chrono's**
@@ -49,14 +32,13 @@
 //!
 //! ```rust
 //! use polars_core::prelude::*;
-//! use chrono::NaiveTime;
 //!
 //! // String values to parse, Note that the 2nd value is not a correct time value.
-//! let time_values = &["23:56:04", "26:00:99", "12:39:08"];
+//! let datetime_values = &["2021-12-01 23:56:04", "22021-12-01 26:00:99", "12021-12-01 22:39:08"];
 //! // Parsing fmt
-//! let fmt = "%H:%M:%S";
+//! let fmt = "%Y-%m%-d %H:%M:%S";
 //! // Create the ChunkedArray
-//! let ca = Utf8Chunked::new_from_slice("time", time_values);
+//! let ca = Utf8Chunked::new_from_slice("datetime", datetime_values);
 //! // Parse strings as DateTime objects
 //! let date_ca = ca.as_date64(Some(fmt));
 //! ```
