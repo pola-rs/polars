@@ -197,7 +197,9 @@ impl<'a> From<&AnyValue<'a>> for Field {
             Int64(_) => Field::new("", DataType::Int64),
             Float32(_) => Field::new("", DataType::Float32),
             Float64(_) => Field::new("", DataType::Float64),
+            #[cfg(feature = "dtype-date32")]
             Date32(_) => Field::new("", DataType::Date32),
+            #[cfg(feature = "dtype-date64")]
             Date64(_) => Field::new("", DataType::Date64),
             _ => unimplemented!(),
         }

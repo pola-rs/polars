@@ -55,14 +55,6 @@ impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(Date32Type, Date32, i32);
 impl_polars_datatype!(Date64Type, Date64, i64);
 
-pub struct Time64NanosecondType {}
-
-impl PolarsDataType for Time64NanosecondType {
-    fn get_dtype() -> DataType {
-        DataType::Time64(TimeUnit::Nanosecond)
-    }
-}
-
 impl PolarsDataType for Utf8Type {
     fn get_dtype() -> DataType {
         DataType::Utf8
@@ -126,7 +118,6 @@ pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
 pub type Date32Chunked = ChunkedArray<Date32Type>;
 pub type Date64Chunked = ChunkedArray<Date64Type>;
-pub type Time64NanosecondChunked = ChunkedArray<Time64NanosecondType>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
 pub trait PolarsPrimitiveType: Send + Sync + PolarsDataType + 'static {
@@ -168,9 +159,6 @@ impl PolarsPrimitiveType for Date32Type {
 impl PolarsPrimitiveType for Date64Type {
     type Native = i64;
 }
-impl PolarsPrimitiveType for Time64NanosecondType {
-    type Native = i64;
-}
 
 macro_rules! impl_polars_numeric {
     ($ca:ident, $physical:ty) => {
@@ -191,7 +179,6 @@ impl_polars_numeric!(Float32Type, f32);
 impl_polars_numeric!(Float64Type, f64);
 impl_polars_numeric!(Date32Type, i32);
 impl_polars_numeric!(Date64Type, i64);
-impl_polars_numeric!(Time64NanosecondType, i64);
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -204,7 +191,6 @@ impl PolarsIntegerType for Int32Type {}
 impl PolarsIntegerType for Int64Type {}
 impl PolarsIntegerType for Date32Type {}
 impl PolarsIntegerType for Date64Type {}
-impl PolarsIntegerType for Time64NanosecondType {}
 
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
@@ -264,12 +250,12 @@ pub enum AnyValue<'a> {
     Float64(f64),
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
+    #[cfg(feature = "dtype-date32")]
     Date32(i32),
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
+    #[cfg(feature = "dtype-date64")]
     Date64(i64),
-    /// A 64-bit time representing the elapsed time since midnight in the unit of `TimeUnit`.
-    Time64(i64, TimeUnit),
     /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
@@ -389,12 +375,10 @@ impl Display for DataType {
             DataType::Utf8 => "str",
             DataType::Date32 => "date32(days)",
             DataType::Date64 => "date64(ms)",
-            DataType::Time64(TimeUnit::Nanosecond) => "time64(ns)",
             DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
             DataType::Categorical => "cat",
-            _ => panic!("{:?} not implemented", self),
         };
         f.write_str(s)
     }
@@ -416,9 +400,10 @@ impl PartialEq for AnyValue<'_> {
             (Int64(l), Int64(r)) => l == r,
             (Float32(l), Float32(r)) => l == r,
             (Float64(l), Float64(r)) => l == r,
+            #[cfg(all(feature = "dtype-date64", feature = "dtype-date32"))]
             (Date32(l), Date32(r)) => l == r,
+            #[cfg(all(feature = "dtype-date64", feature = "dtype-date32"))]
             (Date64(l), Date64(r)) => l == r,
-            (Time64(l, _), Time64(r, _)) => l == r,
             (Boolean(l), Boolean(r)) => l == r,
             (List(_), List(_)) => panic!("eq between list series not supported"),
             #[cfg(feature = "object")]
@@ -470,7 +455,6 @@ pub enum DataType {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
     Date64,
-    Time64(TimeUnit),
     List(ArrowDataType),
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
@@ -498,7 +482,6 @@ impl DataType {
             Utf8 => ArrowDataType::LargeUtf8,
             Date32 => ArrowDataType::Date32,
             Date64 => ArrowDataType::Date64,
-            Time64(tu) => ArrowDataType::Time64(*tu),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",
                 dt.clone(),
@@ -706,7 +689,6 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeList(f) => DataType::List(f.data_type().clone()),
             ArrowDataType::Date32 => DataType::Date32,
             ArrowDataType::Date64 => DataType::Date64,
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => DataType::Time64(TimeUnit::Nanosecond),
             ArrowDataType::Utf8 => DataType::Utf8,
             dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }

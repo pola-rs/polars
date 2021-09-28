@@ -462,13 +462,6 @@ pub trait SeriesTrait:
         ))
     }
 
-    /// Unpack to ChunkedArray of dtype time64_nanosecond
-    fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
-        Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} != time64", self.dtype()).into(),
-        ))
-    }
-
     /// Unpack to ChunkedArray of dtype list
     fn list(&self) -> Result<&ListChunked> {
         Err(PolarsError::DataTypeMisMatch(
@@ -507,7 +500,6 @@ pub trait SeriesTrait:
             | DataType::Categorical
             | DataType::Date32
             | DataType::Date64
-            | DataType::Time64(_)
             | DataType::Boolean
             | DataType::Null => false,
             #[cfg(feature = "object")]
@@ -1413,14 +1405,12 @@ impl Series {
     ///
     /// * Date32 -> Int32
     /// * Date64 -> Int64
-    /// * Time64 -> Int64
     ///
     pub fn to_physical_repr(&self) -> Series {
         use DataType::*;
         let out = match self.dtype() {
             Date32 => self.cast_with_dtype(&DataType::Int32),
             Date64 => self.cast_with_dtype(&DataType::Int64),
-            Time64(_) => self.cast_with_dtype(&DataType::Int64),
             _ => return self.clone(),
         };
         out.unwrap()
@@ -1865,10 +1855,6 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Date32 => Ok(Date32Chunked::new_from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-date64")]
             ArrowDataType::Date64 => Ok(Date64Chunked::new_from_chunks(name, chunks).into_series()),
-            #[cfg(feature = "dtype-time64-ns")]
-            ArrowDataType::Time64(TimeUnit::Nanosecond) => {
-                Ok(Time64NanosecondChunked::new_from_chunks(name, chunks).into_series())
-            }
             ArrowDataType::LargeList(_) => {
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }

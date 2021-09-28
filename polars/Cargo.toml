@@ -101,7 +101,6 @@ private = []
 
 # all opt-in datatypes
 dtype-full = [
-    "dtype-time64-ns",
     "dtype-date32",
     "dtype-date64",
     "dtype-i8",
@@ -118,7 +117,6 @@ dtype-slim = [
 ]
 
 # opt-in datatypes for Series
-dtype-time64-ns = ["polars-core/dtype-time64-ns"]
 dtype-date32 = ["polars-core/dtype-date32", "polars-lazy/dtype-date32"]
 dtype-date64 = ["polars-core/dtype-date64", "polars-lazy/dtype-date64"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]

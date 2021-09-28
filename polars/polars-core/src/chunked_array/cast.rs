@@ -79,10 +79,6 @@ macro_rules! cast_with_dtype {
             Date32 => ChunkCast::cast::<Date32Type>($self).map(|ca| ca.into_series()),
             #[cfg(feature = "dtype-date64")]
             Date64 => ChunkCast::cast::<Date64Type>($self).map(|ca| ca.into_series()),
-            #[cfg(feature = "dtype-time64-ns")]
-            Time64(TimeUnit::Nanosecond) => {
-                ChunkCast::cast::<Time64NanosecondType>($self).map(|ca| ca.into_series())
-            }
             List(_) => ChunkCast::cast::<ListType>($self).map(|ca| ca.into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical => ChunkCast::cast::<CategoricalType>($self).map(|ca| ca.into_series()),

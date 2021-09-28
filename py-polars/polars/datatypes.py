@@ -104,38 +104,6 @@ class Date64(DataType):
     pass
 
 
-class Time32Millisecond(DataType):
-    pass
-
-
-class Time32Second(DataType):
-    pass
-
-
-class Time64Nanosecond(DataType):
-    pass
-
-
-class Time64Microsecond(DataType):
-    pass
-
-
-class TimestampNanosecond(DataType):
-    pass
-
-
-class TimestampMicrosecond(DataType):
-    pass
-
-
-class TimestampMillisecond(DataType):
-    pass
-
-
-class TimestampSecond(DataType):
-    pass
-
-
 class Object(DataType):
     pass
 
@@ -161,7 +129,6 @@ DTYPES: tp.List[Type[DataType]] = [
     List,
     Date32,
     Date64,
-    Time64Nanosecond,
     Object,
     Categorical,
 ]
@@ -181,7 +148,6 @@ DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     List: "list",
     Date32: "date32",
     Date64: "date64",
-    Time64Nanosecond: "time64_nanosecond",
     Object: "object",
     Categorical: "categorical",
 }

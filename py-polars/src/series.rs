@@ -578,9 +578,6 @@ impl PySeries {
             DataType::Float64 => PyList::new(python, series.f64().unwrap()),
             DataType::Date32 => PyList::new(python, series.date32().unwrap()),
             DataType::Date64 => PyList::new(python, series.date64().unwrap()),
-            DataType::Time64(TimeUnit::Nanosecond) => {
-                PyList::new(python, series.time64_nanosecond().unwrap())
-            }
             DataType::Object(_) => {
                 let v = PyList::empty(python);
                 for i in 0..series.len() {

@@ -117,6 +117,7 @@ impl Utf8Chunked {
         ))
     }
 
+    #[cfg(feature = "dtype-date32")]
     pub fn as_date32(&self, fmt: Option<&str>) -> Result<Date32Chunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
@@ -152,6 +153,7 @@ impl Utf8Chunked {
         Ok(ca)
     }
 
+    #[cfg(feature = "dtype-date64")]
     pub fn as_date64(&self, fmt: Option<&str>) -> Result<Date64Chunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,

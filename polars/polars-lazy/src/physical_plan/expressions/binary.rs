@@ -44,7 +44,7 @@ pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Res
         Operator::TrueDivide => {
             use DataType::*;
             match left.dtype() {
-                Date32 | Date64 | Time64(_) | Float32 | Float64 => Ok(left / right),
+                Date32 | Date64 | Float32 | Float64 => Ok(left / right),
                 _ => Ok(&left.cast_with_dtype(&Float64)? / &right.cast_with_dtype(&Float64)?),
             }
         }

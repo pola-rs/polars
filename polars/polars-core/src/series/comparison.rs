@@ -25,10 +25,6 @@ macro_rules! impl_compare {
             DataType::Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
             DataType::Date32 => lhs.date32().unwrap().$method(rhs.date32().unwrap()),
             DataType::Date64 => lhs.date64().unwrap().$method(rhs.date64().unwrap()),
-            DataType::Time64(TimeUnit::Nanosecond) => lhs
-                .time64_nanosecond()
-                .unwrap()
-                .$method(rhs.time64_nanosecond().unwrap()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
             _ => unimplemented!(),
         }

@@ -133,7 +133,6 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Utf8(v) => v.into_py(py),
             AnyValue::Date32(v) => v.into_py(py),
             AnyValue::Date64(v) => v.into_py(py),
-            AnyValue::Time64(v, _) => v.into_py(py),
             AnyValue::List(v) => {
                 let pypolars = PyModule::import(py, "polars").expect("polars installed");
                 let pyseries = PySeries::new(v);

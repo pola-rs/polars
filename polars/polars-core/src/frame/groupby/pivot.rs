@@ -67,11 +67,6 @@ impl Series {
                 *self = s;
                 self.as_groupable_iter()
             }
-            DataType::Time64(TimeUnit::Nanosecond) => {
-                let s = self.cast::<Int64Type>()?;
-                *self = s;
-                self.as_groupable_iter()
-            }
             DataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
             DataType::Float32 => {
                 let s = self.f32()?.bit_repr_small().into_series();

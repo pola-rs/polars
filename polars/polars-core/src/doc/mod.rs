@@ -1,4 +1,8 @@
 //! Other documentation
 pub mod changelog;
-#[cfg(feature = "temporal")]
+#[cfg(all(
+    feature = "temporal",
+    feature = "dtype-date32",
+    feature = "dtype-date64"
+))]
 pub mod time;

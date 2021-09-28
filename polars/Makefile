@@ -43,3 +43,7 @@ test-doc:
 
 
 pre-commit: fmt clippy clippy-default
+
+
+check-features:
+	cargo hack check --each-feature --no-dev-deps --features private

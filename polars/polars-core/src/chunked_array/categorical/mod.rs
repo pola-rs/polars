@@ -53,7 +53,7 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{reset_string_cache, SINGLE_LOCK};
+    use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
     use std::convert::TryFrom;
 
     #[test]
