@@ -22,9 +22,15 @@ from typing import (
 )
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute
-import pyarrow.parquet
+
+try:
+    import pyarrow as pa
+    import pyarrow.compute
+    import pyarrow.parquet
+
+    _PYARROW_AVAILABLE = True
+except ImportError:
+    _PYARROW_AVAILABLE = False
 
 import polars as pl
 from polars.internals.construction import (
@@ -177,6 +183,7 @@ class DataFrame:
                 Dict[str, Sequence[Any]],
                 Sequence[Any],
                 np.ndarray,
+                "pa.Table",
                 "pd.DataFrame",
                 "pl.Series",
             ]
@@ -207,7 +214,7 @@ class DataFrame:
                 data, columns=columns, orient=orient, nullable=nullable
             )
 
-        elif isinstance(data, pa.Table):
+        elif _PYARROW_AVAILABLE and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(data, columns=columns)
 
         elif isinstance(data, Sequence) and not isinstance(data, str):
@@ -219,6 +226,10 @@ class DataFrame:
             self._df = series_to_pydf(data, columns=columns)
 
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
+            if not _PYARROW_AVAILABLE:
+                raise ImportError(
+                    "'pyarrow' is required for converting a pandas DataFrame to a polars DataFrame."
+                )
             self._df = pandas_to_pydf(data, columns=columns)
 
         else:
@@ -309,7 +320,7 @@ class DataFrame:
     @classmethod
     def _from_arrow(
         cls,
-        data: pa.Table,
+        data: "pa.Table",
         columns: Optional[Sequence[str]] = None,
         rechunk: bool = True,
     ) -> "DataFrame":
@@ -370,13 +381,13 @@ class DataFrame:
         )
 
     @classmethod
-    def from_arrow(cls, table: pa.Table, rechunk: bool = True) -> "DataFrame":
+    def from_arrow(cls, table: "pa.Table", rechunk: bool = True) -> "DataFrame":
         """
         .. deprecated:: 0.8.13
             `DataFrame.from_arrow` will be removed in Polars 0.9.0. Use `pl.from_arrow`
             instead, or call the DataFrame constructor directly.
 
-        Construct a DataFrame from an arrow Table.
+        Construct a DataFrame from an Arrow Table.
 
         Most will be zero copy. Types that are not supported by Polars may be cast to a
         closest supported type.
@@ -623,7 +634,7 @@ class DataFrame:
         self._df = PyDataFrame.read_json(file)
         return self
 
-    def to_arrow(self) -> pa.Table:
+    def to_arrow(self) -> "pa.Table":
         """
         Collect the underlying arrow arrays in an Arrow Table.
         This operation is mostly zero copy.
@@ -631,6 +642,10 @@ class DataFrame:
         Data types that do copy:
             - CategoricalType
         """
+        if not _PYARROW_AVAILABLE:
+            raise ImportError(
+                "'pyarrow' is required for converting a polars DataFrame to an Arrow Table."
+            )
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
 
@@ -868,6 +883,11 @@ class DataFrame:
             file = str(file)
 
         if use_pyarrow:
+            if not _PYARROW_AVAILABLE:
+                raise ImportError(
+                    "'pyarrow' is required when using 'to_parquet(..., use_pyarrow=True)'."
+                )
+
             tbl = self.to_arrow()
 
             data = {}
