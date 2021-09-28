@@ -1,7 +1,7 @@
 // Conversion extracted from:
 // https://docs.rs/arrow/1.0.0/src/arrow/array/array.rs.html#589
 
-use chrono::{NaiveDateTime, NaiveTime};
+use chrono::NaiveDateTime;
 
 /// Number of seconds in a day
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
@@ -9,8 +9,6 @@ pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
 const MILLISECONDS_IN_SECOND: i64 = 1_000;
 /// Number of microseconds in a second
 const MICROSECONDS_IN_SECOND: i64 = 1_000_000;
-/// Number of nanoseconds in a second
-const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 
 pub(crate) fn date32_as_datetime(v: i32) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(v as i64 * SECONDS_IN_DAY, 0)
@@ -32,13 +30,4 @@ pub fn naive_datetime_to_date64(v: &NaiveDateTime) -> i64 {
 
 pub fn naive_datetime_to_date32(v: &NaiveDateTime) -> i32 {
     (naive_datetime_to_date64(v) / (MILLISECONDS_IN_SECOND * SECONDS_IN_DAY)) as i32
-}
-
-pub(crate) fn time64_nanosecond_as_time(v: i64) -> NaiveTime {
-    NaiveTime::from_num_seconds_from_midnight(
-        // extract seconds from nanoseconds
-        (v / NANOSECONDS_IN_SECOND) as u32,
-        // discard extracted seconds
-        (v % NANOSECONDS_IN_SECOND) as u32,
-    )
 }

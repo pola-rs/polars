@@ -25,7 +25,7 @@ impl<T> ChunkedArray<T> {
     /// get the physical memory type of a date type
     fn physical_type(&self) -> DataType {
         match self.dtype() {
-            DataType::Date64 | DataType::Time64(_) => DataType::Int64,
+            DataType::Date64 => DataType::Int64,
             DataType::Date32 => DataType::Int32,
             dt => panic!("already a physical type: {:?}", dt),
         }
@@ -371,23 +371,6 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn time64_nanosecond(&self) -> Result<&Time64NanosecondChunked> {
-                if matches!(self.0.dtype(), DataType::Time64(TimeUnit::Nanosecond)) {
-                    unsafe {
-                        Ok(&*(self as *const dyn SeriesTrait as *const Time64NanosecondChunked))
-                    }
-                } else {
-                    Err(PolarsError::DataTypeMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into time64",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
             fn append_array(&mut self, other: ArrayRef) -> Result<()> {
                 self.0.append_array(other)
             }
@@ -664,8 +647,6 @@ macro_rules! impl_dyn_series {
 impl_dyn_series!(Date32Chunked);
 #[cfg(feature = "dtype-date64")]
 impl_dyn_series!(Date64Chunked);
-#[cfg(feature = "dtype-time64-ns")]
-impl_dyn_series!(Time64NanosecondChunked);
 
 macro_rules! impl_dyn_series_numeric {
     ($ca: ident) => {
@@ -687,8 +668,6 @@ macro_rules! impl_dyn_series_numeric {
 impl_dyn_series_numeric!(Date32Chunked);
 #[cfg(feature = "dtype-date64")]
 impl_dyn_series_numeric!(Date64Chunked);
-#[cfg(feature = "dtype-time64-ns")]
-impl_dyn_series_numeric!(Time64NanosecondChunked);
 
 #[cfg(test)]
 mod test {

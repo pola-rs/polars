@@ -1,6 +1,6 @@
 //! The typed heart of every Series column.
 use crate::prelude::*;
-use arrow::{array::*, bitmap::Bitmap, datatypes::TimeUnit};
+use arrow::{array::*, bitmap::Bitmap};
 use itertools::Itertools;
 use polars_arrow::prelude::ValueSize;
 use std::convert::TryFrom;
@@ -30,7 +30,11 @@ mod random;
 #[cfg(feature = "strings")]
 #[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
 pub mod strings;
-#[cfg(feature = "temporal")]
+#[cfg(any(
+    feature = "temporal",
+    feature = "dtype-date64",
+    feature = "dtype-date32"
+))]
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
 mod trusted_len;
@@ -231,7 +235,7 @@ impl<T> ChunkedArray<T> {
         } else {
             use DataType::*;
             match (self.dtype(), series.dtype()) {
-                (Int64, Date64) | (Int32, Date32) | (Int64, Time64(_)) => {
+                (Int64, Date64) | (Int32, Date32) => {
                     let ca = &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>);
                     Ok(ca)
                 }
@@ -577,12 +581,10 @@ where
             DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
             DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
             DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
+            #[cfg(feature = "dtype-date32")]
             DataType::Date32 => downcast_and_pack!(Int32Array, Date32),
+            #[cfg(feature = "dtype-date64")]
             DataType::Date64 => downcast_and_pack!(Int64Array, Date64),
-            DataType::Time64(TimeUnit::Nanosecond) => {
-                let v = downcast!(Int64Array);
-                AnyValue::Time64(v, TimeUnit::Nanosecond)
-            }
             DataType::List(_) => {
                 let v: ArrayRef = downcast!(LargeListArray).into();
                 let s = Series::try_from(("", v));

@@ -29,8 +29,6 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.date64() {
             ca.serialize(serializer)
-        } else if let Ok(ca) = self.time64_nanosecond() {
-            ca.serialize(serializer)
         } else if let Ok(ca) = self.utf8() {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.bool() {
@@ -153,13 +151,6 @@ impl<'de> Deserialize<'de> for Series {
                     DeDataType::Float64 => {
                         let values: Vec<Option<f64>> = map.next_value()?;
                         Ok(Series::new(&name, values))
-                    }
-                    #[cfg(feature = "dtype-time64-ns")]
-                    DeDataType::Time64(TimeUnit::Nanosecond) => {
-                        let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(&name, values)
-                            .cast::<Time64NanosecondType>()
-                            .unwrap())
                     }
                     DeDataType::Utf8 => {
                         let values: Vec<Option<&str>> = map.next_value()?;

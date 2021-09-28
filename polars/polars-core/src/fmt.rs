@@ -1,9 +1,7 @@
 use crate::prelude::*;
 
-#[cfg(feature = "temporal")]
-use crate::chunked_array::temporal::{
-    date32_as_datetime, date64_as_datetime, time64_nanosecond_as_time,
-};
+#[cfg(any(feature = "dtype-date32", feature = "dtype-date64"))]
+use crate::chunked_array::temporal::{date32_as_datetime, date64_as_datetime};
 use num::{Num, NumCast};
 use std::{
     fmt,
@@ -304,14 +302,6 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            DataType::Time64(TimeUnit::Nanosecond) => format_array!(
-                limit,
-                f,
-                self.time64_nanosecond().unwrap(),
-                "time64(ns)",
-                self.name(),
-                "Series"
-            ),
             DataType::List(_) => format_array!(
                 limit,
                 f,
@@ -554,17 +544,13 @@ impl Display for AnyValue<'_> {
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-date32")]
             AnyValue::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-date64")]
             AnyValue::Date64(v) => write!(f, "{}", date64_as_datetime(*v)),
-            AnyValue::Time64(v, TimeUnit::Nanosecond) => {
-                write!(f, "{}", time64_nanosecond_as_time(*v))
-            }
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(_) => write!(f, "object"),
-            _ => unimplemented!(),
         }
     }
 }

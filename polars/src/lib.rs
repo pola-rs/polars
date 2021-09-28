@@ -158,7 +158,6 @@
 //!
 //! | data type               | feature flag      |
 //! |-------------------------|-------------------|
-//! | Time64NanoSecondType    | dtype-time64-ns   |
 //! | Date32Type              | dtype-date32      |
 //! | Date64Type              | dtype-date64      |
 //! | Int8Type                | dtype-i8          |
