@@ -2,7 +2,7 @@
 pub(crate) mod rank;
 
 #[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::builder::categorical::RevMapping;
+use crate::chunked_array::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;

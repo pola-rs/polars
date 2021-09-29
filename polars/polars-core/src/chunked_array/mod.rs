@@ -48,7 +48,7 @@ pub(crate) mod list;
 use polars_arrow::prelude::*;
 
 #[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::builder::categorical::RevMapping;
+use crate::chunked_array::categorical::RevMapping;
 use crate::utils::{slice_offsets, CustomIterTools};
 use std::mem;
 use std::ops::{Deref, DerefMut};

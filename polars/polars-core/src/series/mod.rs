@@ -1880,7 +1880,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             }
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type) => {
-                use crate::chunked_array::builder::CategoricalChunkedBuilder;
+                use crate::chunked_array::categorical::CategoricalChunkedBuilder;
                 use arrow::compute::cast::cast;
                 let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let arr = arrow::compute::concat::concatenate(&chunks)?;
