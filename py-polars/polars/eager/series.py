@@ -4,7 +4,13 @@ from numbers import Number
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
-import pyarrow as pa
+
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:
+    _PYARROW_AVAILABLE = False
 
 import polars as pl
 from polars.internals.construction import (
@@ -108,7 +114,7 @@ def wrap_s(s: "PySeries") -> "Series":
 
 
 ArrayLike = Union[
-    Sequence[Any], "Series", pa.Array, np.ndarray, "pd.Series", "pd.DatetimeIndex"
+    Sequence[Any], "Series", "pa.Array", np.ndarray, "pd.Series", "pd.DatetimeIndex"
 ]
 
 
@@ -206,7 +212,7 @@ class Series:
             self._s = sequence_to_pyseries(name, [], dtype=dtype)
         elif isinstance(values, Series):
             self._s = series_to_pyseries(name, values)
-        elif isinstance(values, pa.Array):
+        elif _PYARROW_AVAILABLE and isinstance(values, pa.Array):
             self._s = arrow_to_pyseries(name, values)
         elif isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict)
@@ -231,9 +237,9 @@ class Series:
         return cls._from_pyseries(PySeries.repeat(name, val, n))
 
     @classmethod
-    def _from_arrow(cls, name: str, values: pa.Array) -> "Series":
+    def _from_arrow(cls, name: str, values: "pa.Array") -> "Series":
         """
-        Construct a Series from an Arrow array.
+        Construct a Series from an Arrow Array.
         """
         return cls._from_pyseries(arrow_to_pyseries(name, values))
 
@@ -1813,9 +1819,9 @@ class Series:
         """
         return self.to_arrow().to_numpy(*args, zero_copy_only=zero_copy_only, **kwargs)
 
-    def to_arrow(self) -> pa.Array:
+    def to_arrow(self) -> "pa.Array":
         """
-        Get the underlying arrow array. If the Series contains only a single chunk
+        Get the underlying Arrow Array. If the Series contains only a single chunk
         this operation is zero copy.
 
         Examples
