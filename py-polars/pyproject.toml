@@ -6,10 +6,15 @@ build-backend = "maturin"
 name = "polars"
 dependencies = [
     "numpy",
-    # the Arrow memory format is stable between 4.0 and 5.0-SNAPSHOTS
-    # (which the Rust libraries use to take advantage of Rust API changes).
-    "pyarrow>=4.0.*"
 ]
+
+[project.optional-dependencies]
+# the Arrow memory format is stable between 4.0 and 5.0-SNAPSHOTS
+# (which the Rust libraries use to take advantage of Rust API changes).
+pyarrow = [ "pyarrow>=4.0.*" ]
+pandas = [ "pyarrow>=4.0.*", "pandas" ]
+fsspec = [ "fsspec" ]
+connectorx = [ "connectorx" ]
 
 [tool.isort]
 profile = "black"
