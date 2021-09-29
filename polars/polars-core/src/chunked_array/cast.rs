@@ -1,6 +1,6 @@
 //! Implementations of the ChunkCast Trait.
 #[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::builder::CategoricalChunkedBuilder;
+use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 use crate::prelude::*;
 use arrow::compute::cast;
 use num::NumCast;

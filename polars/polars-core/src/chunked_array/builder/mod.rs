@@ -1,7 +1,3 @@
-#[cfg(feature = "dtype-categorical")]
-pub mod categorical;
-#[cfg(feature = "dtype-categorical")]
-pub use self::categorical::CategoricalChunkedBuilder;
 use crate::{
     prelude::*,
     utils::{get_iter_capacity, NoNull},

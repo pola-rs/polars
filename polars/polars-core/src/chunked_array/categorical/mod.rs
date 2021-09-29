@@ -1,7 +1,8 @@
-use crate::chunked_array::RevMapping;
 use crate::prelude::*;
 use arrow::array::DictionaryArray;
 use arrow::compute::cast::cast;
+mod builder;
+pub use builder::*;
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {
