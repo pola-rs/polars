@@ -4,8 +4,14 @@ import warnings
 from typing import Any, Dict, Tuple, Union
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute
+
+try:
+    import pyarrow as pa
+    import pyarrow.compute
+
+    _PYARROW_AVAILABLE = True
+except ImportError:
+    _PYARROW_AVAILABLE = False
 
 import polars as pl
 
@@ -16,7 +22,7 @@ __all__ = [
 ]
 
 
-def coerce_arrow(array: pa.Array) -> pa.Array:
+def coerce_arrow(array: "pa.Array") -> "pa.Array":
     # also coerces timezone to naive representation
     # units are accounted for by pyarrow
     if "timestamp" in str(array.type):
