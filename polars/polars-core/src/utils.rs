@@ -452,11 +452,7 @@ macro_rules! static_zip {
 macro_rules! df {
     ($($col_name:expr => $slice:expr), +) => {
         {
-            let mut columns = vec![];
-            $(
-                columns.push(Series::new($col_name, $slice));
-            )+
-            DataFrame::new(columns)
+            DataFrame::new(vec![$(Series::new($col_name, $slice),)+])
         }
     }
 }
