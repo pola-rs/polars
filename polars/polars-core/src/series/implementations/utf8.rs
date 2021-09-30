@@ -153,8 +153,10 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     }
 
     fn str_value(&self, index: usize) -> Cow<str> {
-        // get AnyValue
-        Cow::Owned(format!("{}", self.get(index)))
+        match self.0.get(index) {
+            Some(s) => Cow::Borrowed(s),
+            None => Cow::Borrowed("null"),
+        }
     }
 }
 

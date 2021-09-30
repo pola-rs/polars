@@ -2,6 +2,8 @@ use crate::prelude::*;
 use arrow::array::DictionaryArray;
 use arrow::compute::cast::cast;
 mod builder;
+mod merge;
+
 pub use builder::*;
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
@@ -79,5 +81,24 @@ mod test {
         assert_eq!(s.len(), 6);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_append_categorical() {
+        let _lock = SINGLE_LOCK.lock();
+        reset_string_cache();
+        toggle_string_cache(true);
+
+        let mut s1 = Series::new("1", vec!["a", "b", "c"])
+            .cast::<CategoricalType>()
+            .unwrap();
+        let s2 = Series::new("2", vec!["a", "x", "y"])
+            .cast::<CategoricalType>()
+            .unwrap();
+        let appended = s1.append(&s2).unwrap();
+        assert_eq!(appended.str_value(0), "\"a\"");
+        assert_eq!(appended.str_value(1), "\"b\"");
+        assert_eq!(appended.str_value(4), "\"x\"");
+        assert_eq!(appended.str_value(5), "\"y\"");
     }
 }

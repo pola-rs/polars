@@ -442,32 +442,6 @@ impl<T> ChunkedArray<T> {
         self.slice(-(len as i64), len)
     }
 
-    /// Append in place.
-    pub fn append(&mut self, other: &Self)
-    where
-        Self: std::marker::Sized,
-    {
-        #[cfg(feature = "dtype-categorical")]
-        if let (Some(rev_map_l), Some(rev_map_r)) = (
-            self.categorical_map.as_ref(),
-            other.categorical_map.as_ref(),
-        ) {
-            // first assertion checks if the global string cache is equal,
-            // the second checks if we append a slice from this array to self
-            if !rev_map_l.same_src(rev_map_r) && !Arc::ptr_eq(rev_map_l, rev_map_r) {
-                panic!("Appending categorical data can only be done if they are made under the same global string cache. \
-                Consider using a global string cache.")
-            }
-        }
-
-        // replace an empty array
-        if self.chunks.len() == 1 && self.is_empty() {
-            self.chunks = other.chunks.clone();
-        } else {
-            self.chunks.extend_from_slice(&other.chunks);
-        }
-    }
-
     /// Name of the ChunkedArray.
     pub fn name(&self) -> &str {
         self.field.name()
