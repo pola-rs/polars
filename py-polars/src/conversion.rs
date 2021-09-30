@@ -131,6 +131,10 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Null => py.None(),
             AnyValue::Boolean(v) => v.into_py(py),
             AnyValue::Utf8(v) => v.into_py(py),
+            AnyValue::Categorical(idx, rev) => {
+                let s = rev.get(idx);
+                s.into_py(py)
+            }
             AnyValue::Date32(v) => v.into_py(py),
             AnyValue::Date64(v) => v.into_py(py),
             AnyValue::List(v) => {

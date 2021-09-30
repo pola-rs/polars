@@ -3,7 +3,6 @@ use crate::prelude::*;
 use arrow::{array::*, bitmap::Bitmap};
 use itertools::Itertools;
 use polars_arrow::prelude::ValueSize;
-use std::convert::TryFrom;
 use std::iter::{Copied, Map};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -519,59 +518,6 @@ where
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: 0,
-        }
-    }
-
-    #[inline]
-    unsafe fn arr_to_any_value(&self, arr: &dyn Array, idx: usize) -> AnyValue {
-        if arr.is_null(idx) {
-            return AnyValue::Null;
-        }
-
-        macro_rules! downcast_and_pack {
-            ($casttype:ident, $variant:ident) => {{
-                let arr = &*(arr as *const dyn Array as *const $casttype);
-                let v = arr.value(idx);
-                AnyValue::$variant(v)
-            }};
-        }
-        macro_rules! downcast {
-            ($casttype:ident) => {{
-                let arr = &*(arr as *const dyn Array as *const $casttype);
-                arr.value_unchecked(idx)
-            }};
-        }
-        // TODO: insert types
-        match T::get_dtype() {
-            DataType::Utf8 => downcast_and_pack!(LargeStringArray, Utf8),
-            DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
-            DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
-            DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
-            DataType::UInt32 => downcast_and_pack!(UInt32Array, UInt32),
-            DataType::UInt64 => downcast_and_pack!(UInt64Array, UInt64),
-            DataType::Int8 => downcast_and_pack!(Int8Array, Int8),
-            DataType::Int16 => downcast_and_pack!(Int16Array, Int16),
-            DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
-            DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
-            DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
-            DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
-            #[cfg(feature = "dtype-date32")]
-            DataType::Date32 => downcast_and_pack!(Int32Array, Date32),
-            #[cfg(feature = "dtype-date64")]
-            DataType::Date64 => downcast_and_pack!(Int64Array, Date64),
-            DataType::List(_) => {
-                let v: ArrayRef = downcast!(LargeListArray).into();
-                let s = Series::try_from(("", v));
-                AnyValue::List(s.unwrap())
-            }
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
-                let v = downcast!(UInt32Array);
-                AnyValue::Utf8(self.categorical_map.as_ref().expect("should be set").get(v))
-            }
-            #[cfg(feature = "object")]
-            DataType::Object(_) => panic!("should not be here"),
-            _ => unimplemented!(),
         }
     }
 }

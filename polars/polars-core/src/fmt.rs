@@ -548,6 +548,11 @@ impl Display for AnyValue<'_> {
             AnyValue::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
             #[cfg(feature = "dtype-date64")]
             AnyValue::Date64(v) => write!(f, "{}", date64_as_datetime(*v)),
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::Categorical(idx, rev) => {
+                let s = rev.get(*idx);
+                write!(f, "\"{}\"", s)
+            }
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(_) => write!(f, "object"),
