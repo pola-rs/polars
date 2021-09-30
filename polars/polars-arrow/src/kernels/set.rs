@@ -27,7 +27,7 @@ where
             if truthy {
                 av.extend_from_slice(&values[lower..upper])
             } else {
-                av.extend((lower..upper).map(|_| value))
+                av.extend_from_trusted_len_iter(std::iter::repeat(value).take(upper - lower))
             }
         });
 
@@ -48,7 +48,7 @@ pub fn set_with_mask<T: NativeType>(
         .into_iter()
         .for_each(|(lower, upper, truthy)| {
             if truthy {
-                buf.extend((lower..upper).map(|_| value))
+                buf.extend_from_trusted_len_iter(std::iter::repeat(value).take(upper - lower))
             } else {
                 buf.extend_from_slice(&values[lower..upper])
             }

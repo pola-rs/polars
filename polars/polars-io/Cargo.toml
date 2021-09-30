@@ -46,7 +46,7 @@ ahash = "0.7"
 num = "^0.4.0"
 dirs = "3.0"
 simdutf8 = {version="0.1", optional=true}
-flate2 = {version = "1", optional=true, --default-features=false}
+flate2 = {version = "1", optional=true, default-features=false}
 
 [package.metadata.docs.rs]
 all-features = true
