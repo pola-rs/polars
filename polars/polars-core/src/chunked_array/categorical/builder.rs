@@ -4,7 +4,10 @@ use arrow::array::*;
 use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
+    /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
+    /// Utf8Array: caches the string values
     Global(PlHashMap<u32, u32>, MutableUtf8Array<i64>, u128),
+    /// Utf8Array: caches the string values
     Local(MutableUtf8Array<i64>),
 }
 
@@ -36,7 +39,10 @@ impl RevMappingBuilder {
 }
 
 pub enum RevMapping {
+    /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
+    /// Utf8Array: caches the string values
     Global(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
+    /// Utf8Array: caches the string values
     Local(Utf8Array<i64>),
 }
 
@@ -179,6 +185,7 @@ impl CategoricalChunkedBuilder {
 
 #[cfg(test)]
 mod test {
+    use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::prelude::*;
     use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
 
@@ -215,5 +222,38 @@ mod test {
         ca1.append(&ca2);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_categorical_builder() {
+        use crate::{reset_string_cache, toggle_string_cache};
+        let _lock = crate::SINGLE_LOCK.lock();
+        for b in &[false, true] {
+            reset_string_cache();
+            toggle_string_cache(*b);
+
+            // Use 2 builders to check if the global string cache
+            // does not interfere with the index mapping
+            let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
+            let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
+            builder1.from_iter(vec![None, Some("hello"), Some("vietnam")]);
+            builder2.from_iter(vec![Some("hello"), None, Some("world")].into_iter());
+
+            let ca = builder1.finish();
+            let v = AnyValue::Null;
+            assert_eq!(ca.get_any_value(0), v);
+            let v = AnyValue::Utf8("hello");
+            assert_eq!(ca.get_any_value(1), v);
+            let v = AnyValue::Utf8("vietnam");
+            assert_eq!(ca.get_any_value(2), v);
+
+            let ca = builder2.finish();
+            let v = AnyValue::Utf8("hello");
+            assert_eq!(ca.get_any_value(0), v);
+            let v = AnyValue::Null;
+            assert_eq!(ca.get_any_value(1), v);
+            let v = AnyValue::Utf8("world");
+            assert_eq!(ca.get_any_value(2), v);
+        }
     }
 }

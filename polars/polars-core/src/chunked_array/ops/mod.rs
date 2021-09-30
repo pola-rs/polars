@@ -11,6 +11,7 @@ use arrow::buffer::Buffer;
 
 pub(crate) mod aggregate;
 mod any_value;
+mod append;
 mod apply;
 mod bit_repr;
 pub(crate) mod chunkops;

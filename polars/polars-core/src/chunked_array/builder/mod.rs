@@ -653,38 +653,4 @@ mod test {
         let ca = builder.finish();
         dbg!(ca);
     }
-
-    #[test]
-    #[cfg(feature = "dtype-categorical")]
-    fn test_categorical_builder() {
-        use crate::{reset_string_cache, toggle_string_cache};
-        let _lock = crate::SINGLE_LOCK.lock();
-        for b in &[false, true] {
-            reset_string_cache();
-            toggle_string_cache(*b);
-
-            // Use 2 builders to check if the global string cache
-            // does not interfere with the index mapping
-            let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
-            let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
-            builder1.from_iter(vec![None, Some("hello"), Some("vietnam")]);
-            builder2.from_iter(vec![Some("hello"), None, Some("world")].into_iter());
-
-            let ca = builder1.finish();
-            let v = AnyValue::Null;
-            assert_eq!(ca.get_any_value(0), v);
-            let v = AnyValue::Utf8("hello");
-            assert_eq!(ca.get_any_value(1), v);
-            let v = AnyValue::Utf8("vietnam");
-            assert_eq!(ca.get_any_value(2), v);
-
-            let ca = builder2.finish();
-            let v = AnyValue::Utf8("hello");
-            assert_eq!(ca.get_any_value(0), v);
-            let v = AnyValue::Null;
-            assert_eq!(ca.get_any_value(1), v);
-            let v = AnyValue::Utf8("world");
-            assert_eq!(ca.get_any_value(2), v);
-        }
-    }
 }
