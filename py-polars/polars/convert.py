@@ -1,12 +1,22 @@
 from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
 
 import numpy as np
-import pyarrow as pa
 
 import polars as pl
 
 if TYPE_CHECKING:
     import pandas as pd
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+else:
+    try:
+        import pyarrow as pa
+
+        _PYARROW_AVAILABLE = True
+    except ImportError:
+        _PYARROW_AVAILABLE = False
+
 
 __all__ = [
     "from_dict",
@@ -150,18 +160,18 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> "pl.DataFrame":
 
 
 def from_arrow(
-    a: Union[pa.Table, pa.Array], rechunk: bool = True
+    a: Union["pa.Table", "pa.Array"], rechunk: bool = True
 ) -> Union["pl.DataFrame", "pl.Series"]:
     """
-    Create a DataFrame or Series from an Arrow table or array.
+    Create a DataFrame or Series from an Arrow Table or Array.
 
     This operation will be zero copy for the most part. Types that are not
     supported by Polars may be cast to the closest supported type.
 
     Parameters
     ----------
-    a : Arrow table or array
-        Data represented as Arrow table or array.
+    a : Arrow Table or Array
+        Data represented as Arrow Table or Array.
     rechunk : bool, default True
         Make sure that all data is contiguous.
 
@@ -171,7 +181,7 @@ def from_arrow(
 
     Examples
     --------
-    Constructing a DataFrame from an Arrow table:
+    Constructing a DataFrame from an Arrow Table:
 
     >>> data = pa.table({'a': [1, 2, 3], 'b': [4, 5, 6]})
     >>> df = pl.from_arrow(data)
@@ -189,7 +199,7 @@ def from_arrow(
     │ 3   ┆ 6   │
     ╰─────┴─────╯
 
-    Constructing a Series from an Arrow array:
+    Constructing a Series from an Arrow Array:
 
     >>> data = pa.array([1, 2, 3])
     >>> series = pl.from_arrow(data)
@@ -202,12 +212,14 @@ def from_arrow(
             3
     ]
     """
+    if not _PYARROW_AVAILABLE:
+        raise ImportError("'pyarrow' is required when using from_arrow().")
     if isinstance(a, pa.Table):
         return pl.DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, (pa.Array, pa.ChunkedArray)):
         return pl.Series._from_arrow("", a)
     else:
-        raise ValueError(f"Expected Arrow table or array, got {type(a)}.")
+        raise ValueError(f"Expected Arrow Table or Array, got {type(a)}.")
 
 
 def from_pandas(
@@ -270,7 +282,7 @@ def from_pandas(
     try:
         import pandas as pd
     except ImportError as e:
-        raise ImportError("from_pandas requires pandas to be installed.") from e
+        raise ImportError("'pandas' is required when using from_pandas().") from e
 
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
         return pl.Series._from_pandas("", df, nan_to_none=nan_to_none)
@@ -311,12 +323,12 @@ def from_rows(
     return pl.DataFrame.from_rows(rows, column_names, column_name_mapping)
 
 
-def from_arrow_table(table: pa.Table, rechunk: bool = True) -> "pl.DataFrame":
+def from_arrow_table(table: "pa.Table", rechunk: bool = True) -> "pl.DataFrame":
     """
     .. deprecated:: 7.3
         use `from_arrow`
 
-    Create a DataFrame from an arrow Table.
+    Create a DataFrame from an Arrow Table.
 
     Parameters
     ----------

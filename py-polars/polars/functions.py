@@ -1,6 +1,11 @@
 from typing import Optional, Sequence, Union
 
-import pyarrow as pa
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:
+    _PYARROW_AVAILABLE = False
 
 import polars as pl
 
@@ -74,6 +79,10 @@ def repeat(
         s.rename(name)
         return s
     else:
+        if not _PYARROW_AVAILABLE:
+            raise ImportError(
+                "'pyarrow' is required for repeating a int or a float value."
+            )
         return pl.Series._from_arrow(name, pa.repeat(val, n))
 
 

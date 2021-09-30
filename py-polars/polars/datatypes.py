@@ -3,7 +3,14 @@ import typing as tp
 from typing import Any, Callable, Dict, Sequence, Type
 
 import numpy as np
-import pyarrow as pa
+
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:
+    _PYARROW_AVAILABLE = False
+
 from _ctypes import _SimpleCData
 
 try:
@@ -284,7 +291,7 @@ def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
         return PySeries.new_object
 
 
-if not _DOCUMENTING:
+if _PYARROW_AVAILABLE and not _DOCUMENTING:
     _PY_TYPE_TO_ARROW_TYPE = {
         float: pa.float64(),
         int: pa.int64(),
@@ -293,11 +300,11 @@ if not _DOCUMENTING:
     }
 
 
-def py_type_to_arrow_type(dtype: Type[Any]) -> pa.lib.DataType:
+def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
     """
     Convert a Python dtype to an Arrow dtype.
     """
     try:
         return _PY_TYPE_TO_ARROW_TYPE[dtype]
     except KeyError:
-        raise ValueError(f"Cannot parse dtype {dtype} into arrow dtype.")
+        raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")

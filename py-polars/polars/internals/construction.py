@@ -3,8 +3,6 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type, Union
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.compute
 
 import polars as pl
 from polars.datatypes import (
@@ -28,7 +26,16 @@ from polars.utils import coerce_arrow
 
 if TYPE_CHECKING:
     import pandas as pd
+    import pyarrow as pa
 
+    _PYARROW_AVAILABLE = True
+else:
+    try:
+        import pyarrow as pa
+
+        _PYARROW_AVAILABLE = True
+    except ImportError:
+        _PYARROW_AVAILABLE = False
 
 ################################
 # Series constructor interface #
@@ -46,7 +53,7 @@ def series_to_pyseries(
     return values.inner()
 
 
-def arrow_to_pyseries(name: str, values: pa.Array) -> "PySeries":
+def arrow_to_pyseries(name: str, values: "pa.Array") -> "PySeries":
     """
     Construct a PySeries from an Arrow array.
     """
@@ -110,11 +117,20 @@ def sequence_to_pyseries(
         dtype_ = type(value) if value is not None else float
 
         if dtype_ == date or dtype_ == datetime:
+            if not _PYARROW_AVAILABLE:
+                raise ImportError(
+                    "'pyarrow' is required for converting a Sequence of date or datetime values to a PySeries."
+                )
             return arrow_to_pyseries(name, pa.array(values))
 
         elif dtype_ == list or dtype_ == tuple or dtype_ == pl.Series:
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
+
+            if not _PYARROW_AVAILABLE:
+                raise ImportError(
+                    f"'pyarrow' is required for converting a Sequence of {nested_dtype} to a PySeries."
+                )
 
             try:
                 nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
@@ -137,9 +153,9 @@ def sequence_to_pyseries(
 
 def _pandas_series_to_arrow(
     values: Union["pd.Series", "pd.DatetimeIndex"], nan_to_none: bool = True
-) -> pa.Array:
+) -> "pa.Array":
     """
-    Convert a pandas Series to an Arrow array.
+    Convert a pandas Series to an Arrow Array.
     """
     dtype = values.dtype
     if dtype == "datetime64[ns]":
@@ -163,6 +179,10 @@ def pandas_to_pyseries(
     """
     Construct a PySeries from a pandas Series or DatetimeIndex.
     """
+    if not _PYARROW_AVAILABLE:
+        raise ImportError(
+            "'pyarrow' is required when constructing a PySeries from a pandas Series."
+        )
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
     if not name and values.name is not None:
         name = str(values.name)
@@ -315,11 +335,15 @@ def sequence_to_pydf(
 
 
 def arrow_to_pydf(
-    data: pa.Table, columns: Optional[Sequence[str]] = None, rechunk: bool = True
+    data: "pa.Table", columns: Optional[Sequence[str]] = None, rechunk: bool = True
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from an Arrow Table.
     """
+    if not _PYARROW_AVAILABLE:
+        raise ImportError(
+            "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
+        )
     if columns is not None:
         try:
             data = data.rename_columns(columns)
@@ -364,6 +388,13 @@ def pandas_to_pydf(
     rechunk: bool = True,
     nan_to_none: bool = True,
 ) -> "PyDataFrame":
+    """
+    Construct a PyDataFrame from a pandas DataFrame.
+    """
+    if not _PYARROW_AVAILABLE:
+        raise ImportError(
+            "'pyarrow' is required when constructing a PyDataFrame from a pandas DataFrame."
+        )
     arrow_dict = {
         str(col): _pandas_series_to_arrow(data[col], nan_to_none=nan_to_none)
         for col in data.columns
