@@ -38,6 +38,7 @@ impl RevMappingBuilder {
     }
 }
 
+#[derive(Debug)]
 pub enum RevMapping {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
@@ -239,21 +240,15 @@ mod test {
             builder1.from_iter(vec![None, Some("hello"), Some("vietnam")]);
             builder2.from_iter(vec![Some("hello"), None, Some("world")].into_iter());
 
-            let ca = builder1.finish();
-            let v = AnyValue::Null;
-            assert_eq!(ca.get_any_value(0), v);
-            let v = AnyValue::Utf8("hello");
-            assert_eq!(ca.get_any_value(1), v);
-            let v = AnyValue::Utf8("vietnam");
-            assert_eq!(ca.get_any_value(2), v);
+            let s = builder1.finish().into_series();
+            assert_eq!(s.str_value(0), "null");
+            assert_eq!(s.str_value(1), "\"hello\"");
+            assert_eq!(s.str_value(2), "\"vietnam\"");
 
-            let ca = builder2.finish();
-            let v = AnyValue::Utf8("hello");
-            assert_eq!(ca.get_any_value(0), v);
-            let v = AnyValue::Null;
-            assert_eq!(ca.get_any_value(1), v);
-            let v = AnyValue::Utf8("world");
-            assert_eq!(ca.get_any_value(2), v);
+            let s = builder2.finish().into_series();
+            assert_eq!(s.str_value(0), "\"hello\"");
+            assert_eq!(s.str_value(1), "null");
+            assert_eq!(s.str_value(2), "\"world\"");
         }
     }
 }

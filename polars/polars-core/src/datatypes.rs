@@ -6,6 +6,8 @@
 //! [See the AnyValue variants](enum.AnyValue.html#variants) for the data types that
 //! are currently supported.
 //!
+#[cfg(feature = "dtype-categorical")]
+use crate::chunked_array::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -256,6 +258,8 @@ pub enum AnyValue<'a> {
     /// in milliseconds (64 bits).
     #[cfg(feature = "dtype-date64")]
     Date64(i64),
+    #[cfg(feature = "dtype-categorical")]
+    Categorical(u32, &'a RevMapping),
     /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
@@ -410,6 +414,16 @@ impl PartialEq for AnyValue<'_> {
             (Object(_), Object(_)) => panic!("eq between object not supported"),
             // should it?
             (Null, Null) => true,
+            #[cfg(feature = "dtype-categorical")]
+            (Categorical(idx_l, rev_l), Categorical(idx_r, rev_r)) => match (rev_l, rev_r) {
+                (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => {
+                    id_l == id_r && idx_l == idx_r
+                }
+                (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => {
+                    std::ptr::eq(arr_l, arr_r) && idx_l == idx_r
+                }
+                _ => false,
+            },
             _ => false,
         }
     }
