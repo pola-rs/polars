@@ -517,6 +517,56 @@ def any(name: Union[str, tp.List["pl.Expr"]]) -> "pl.Expr":
     return col(name).sum() > 0
 
 
+def exclude(columns: Union[str, tp.List[str]]) -> "pl.Expr":
+    """
+     Exclude certain columns from a wildcard expression.
+
+     Syntactic sugar for:
+     >>> col("*").exclude()
+
+     Parameters
+     ----------
+     columns
+         Column(s) to exclude from selection
+
+     Examples
+     --------
+
+     >>> df = pl.DataFrame({
+     >>>     "a": [1, 2, 3],
+     >>>     "b": ["a", "b", None],
+     >>>     "c": [None, 2, 1]
+     >>> })
+     >>> df
+     shape: (3, 3)
+     ╭─────┬──────┬──────╮
+     │ a   ┆ b    ┆ c    │
+     │ --- ┆ ---  ┆ ---  │
+     │ i64 ┆ str  ┆ i64  │
+     ╞═════╪══════╪══════╡
+     │ 1   ┆ "a"  ┆ null │
+     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+     │ 2   ┆ "b"  ┆ 2    │
+     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+     │ 3   ┆ null ┆ 1    │
+     ╰─────┴──────┴──────╯
+     >>> df.select(pl.exclude("b"))
+    shape: (3, 2)
+     ╭─────┬──────╮
+     │ a   ┆ c    │
+     │ --- ┆ ---  │
+     │ i64 ┆ i64  │
+     ╞═════╪══════╡
+     │ 1   ┆ null │
+     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+     │ 2   ┆ 2    │
+     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+     │ 3   ┆ 1    │
+     ╰─────┴──────╯
+    """
+    return col("*").exclude(columns)
+
+
 def all(name: Optional[Union[str, tp.List["pl.Expr"]]] = None) -> "pl.Expr":
     """
     This function is two things

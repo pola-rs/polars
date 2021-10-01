@@ -548,27 +548,20 @@ class LazyFrame:
         """
         return self.with_columns([expr])
 
-    def drop_columns(self, columns: tp.List[str]) -> "LazyFrame":
+    def drop(self, columns: Union[str, tp.List[str]]) -> "LazyFrame":
         """
-        Remove multiple columns from a DataFrame.
+        Remove one or multiple columns from a DataFrame.
 
         Parameters
         ----------
         columns
-            List of column names.
+            - Name of the column that should be removed.
+            - List of column names.
+
         """
+        if isinstance(columns, str):
+            columns = [columns]
         return wrap_ldf(self._ldf.drop_columns(columns))
-
-    def drop_column(self, column: str) -> "LazyFrame":
-        """
-        Remove a column from the DataFrame.
-
-        Parameters
-        ----------
-        column
-            Name of the column that should be removed.
-        """
-        return self.drop_columns([column])
 
     def with_column_renamed(self, existing_name: str, new_name: str) -> "LazyFrame":
         """

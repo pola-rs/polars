@@ -581,7 +581,7 @@ def test_rename():
 
 
 def test_drop_columns():
-    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop_columns(["a", "b"])
+    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop(["a", "b"])
     assert out.columns == ["c"]
 
 

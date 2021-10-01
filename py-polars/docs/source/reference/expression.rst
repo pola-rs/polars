@@ -42,6 +42,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    concat_str
    concat_list
    when
+   exclude
 
 Constructor
 -----------
