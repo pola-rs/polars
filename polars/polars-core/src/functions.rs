@@ -7,7 +7,6 @@ use crate::chunked_array::ops::sort::prepare_argsort;
 use crate::prelude::*;
 use arrow::compute;
 use arrow::types::simd::Simd;
-use arrow::types::NativeType;
 #[cfg(feature = "concat_str")]
 use itertools::Itertools;
 use num::{Float, NumCast};
@@ -19,7 +18,7 @@ use std::ops::Add;
 pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
-    T::Native: NativeType + PartialOrd + Float + NumCast + Simd + std::iter::Sum<T::Native>,
+    T::Native: Float,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -37,7 +36,7 @@ where
 pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
-    T::Native: NativeType + PartialOrd + Float + NumCast + Simd + std::iter::Sum<T::Native>,
+    T::Native: Float,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,

@@ -1272,7 +1272,7 @@ macro_rules! impl_ufuncs {
                 let py = gil.python();
                 let size = self.len();
                 let (out_array, av) =
-                    unsafe { aligned_array::<<$type as PolarsPrimitiveType>::Native>(py, size) };
+                    unsafe { aligned_array::<<$type as PolarsNumericType>::Native>(py, size) };
 
                 debug_assert_eq!(out_array.get_refcnt(), 1);
                 // inserting it in a tuple increase the reference count by 1.

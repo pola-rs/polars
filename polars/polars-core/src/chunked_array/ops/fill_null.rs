@@ -1,11 +1,10 @@
 use crate::prelude::*;
 use arrow::compute;
 use arrow::types::simd::Simd;
-use arrow::types::NativeType;
-use num::{Bounded, Num, NumCast, One, Zero};
+use num::{Bounded, NumCast, One, Zero};
 use polars_arrow::kernels::set::set_at_nulls;
 use polars_arrow::utils::CustomIterTools;
-use std::ops::{Add, Div};
+use std::ops::Add;
 
 fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
@@ -76,17 +75,6 @@ macro_rules! impl_fill_backward {
 impl<T> ChunkFillNull for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NativeType
-        + PartialOrd
-        + Num
-        + NumCast
-        + Zero
-        + Simd
-        + One
-        + Bounded
-        + Add<Output = T::Native>
-        + Div<Output = T::Native>
-        + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -129,7 +117,6 @@ where
 impl<T> ChunkFillNullValue<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Add<Output = T::Native> + PartialOrd + Div<Output = T::Native> + Num + NumCast,
 {
     fn fill_null_with_values(&self, value: T::Native) -> Result<Self> {
         Ok(self.apply_kernel(|arr| Arc::new(set_at_nulls(arr, value))))

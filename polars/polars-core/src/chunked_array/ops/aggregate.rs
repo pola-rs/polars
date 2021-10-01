@@ -5,9 +5,7 @@ use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
 use arrow::types::simd::Simd;
-use arrow::types::NativeType;
-use num::{Num, NumCast, ToPrimitive, Zero};
-use std::cmp::PartialOrd;
+use num::{NumCast, ToPrimitive};
 use std::ops::Add;
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
@@ -63,7 +61,6 @@ macro_rules! impl_quantile {
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -132,7 +129,6 @@ where
 impl<T> ChunkVar<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -241,7 +237,6 @@ impl ChunkAgg<u32> for BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -297,7 +292,6 @@ macro_rules! impl_as_series {
 impl<T> VarAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -476,7 +470,6 @@ impl<T> ChunkAggSeries for ObjectChunked<T> {}
 impl<T> ArgAgg for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialOrd,
 {
     fn arg_min(&self) -> Option<usize> {
         self.into_iter()

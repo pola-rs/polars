@@ -91,7 +91,7 @@ impl DataFrame {
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Float + NumCast,
+    T::Native: Float,
 {
     /// Create `ChunkedArray` with samples from a Normal distribution.
     pub fn rand_normal(name: &str, length: usize, mean: f64, std_dev: f64) -> Result<Self> {

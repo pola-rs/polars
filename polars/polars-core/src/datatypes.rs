@@ -12,12 +12,16 @@ use crate::chunked_array::categorical::RevMapping;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use ahash::RandomState;
+use arrow::compute::comparison::Simd8;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
+use arrow::types::simd::Simd;
 use arrow::types::NativeType;
+use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
+use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
 
 pub struct Utf8Type {}
 
@@ -122,65 +126,74 @@ pub type Date32Chunked = ChunkedArray<Date32Type>;
 pub type Date64Chunked = ChunkedArray<Date64Type>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
-pub trait PolarsPrimitiveType: Send + Sync + PolarsDataType + 'static {
-    type Native: NativeType;
+pub trait NumericNative:
+    PartialOrd
+    + Num
+    + NumCast
+    + Zero
+    + Simd
+    + Simd8
+    + std::iter::Sum<Self>
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
+    + Rem<Output = Self>
+    + AddAssign
+    + Bounded
+    + FromPrimitive
+{
 }
-impl PolarsPrimitiveType for UInt8Type {
+impl NumericNative for i8 {}
+impl NumericNative for i16 {}
+impl NumericNative for i32 {}
+impl NumericNative for i64 {}
+impl NumericNative for u8 {}
+impl NumericNative for u16 {}
+impl NumericNative for u32 {}
+impl NumericNative for u64 {}
+impl NumericNative for f32 {}
+impl NumericNative for f64 {}
+
+pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
+    type Native: NativeType + NumericNative;
+}
+impl PolarsNumericType for UInt8Type {
     type Native = u8;
 }
-impl PolarsPrimitiveType for UInt16Type {
+impl PolarsNumericType for UInt16Type {
     type Native = u16;
 }
-impl PolarsPrimitiveType for UInt32Type {
+impl PolarsNumericType for UInt32Type {
     type Native = u32;
 }
-impl PolarsPrimitiveType for UInt64Type {
+impl PolarsNumericType for UInt64Type {
     type Native = u64;
 }
-impl PolarsPrimitiveType for Int8Type {
+impl PolarsNumericType for Int8Type {
     type Native = i8;
 }
-impl PolarsPrimitiveType for Int16Type {
+impl PolarsNumericType for Int16Type {
     type Native = i16;
 }
-impl PolarsPrimitiveType for Int32Type {
+impl PolarsNumericType for Int32Type {
     type Native = i32;
 }
-impl PolarsPrimitiveType for Int64Type {
+impl PolarsNumericType for Int64Type {
     type Native = i64;
 }
-impl PolarsPrimitiveType for Float32Type {
+impl PolarsNumericType for Float32Type {
     type Native = f32;
 }
-impl PolarsPrimitiveType for Float64Type {
+impl PolarsNumericType for Float64Type {
     type Native = f64;
 }
-impl PolarsPrimitiveType for Date32Type {
+impl PolarsNumericType for Date32Type {
     type Native = i32;
 }
-impl PolarsPrimitiveType for Date64Type {
+impl PolarsNumericType for Date64Type {
     type Native = i64;
 }
-
-macro_rules! impl_polars_numeric {
-    ($ca:ident, $physical:ty) => {
-        impl PolarsNumericType for $ca {}
-    };
-}
-
-pub trait PolarsNumericType: PolarsPrimitiveType {}
-impl_polars_numeric!(UInt8Type, u8);
-impl_polars_numeric!(UInt16Type, u16);
-impl_polars_numeric!(UInt32Type, u32);
-impl_polars_numeric!(UInt64Type, u64);
-impl_polars_numeric!(Int8Type, i8);
-impl_polars_numeric!(Int16Type, i16);
-impl_polars_numeric!(Int32Type, i32);
-impl_polars_numeric!(Int64Type, i64);
-impl_polars_numeric!(Float32Type, f32);
-impl_polars_numeric!(Float64Type, f64);
-impl_polars_numeric!(Date32Type, i32);
-impl_polars_numeric!(Date64Type, i64);
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -197,31 +210,6 @@ impl PolarsIntegerType for Date64Type {}
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
-
-pub trait ToPolarsType {
-    fn to_polars_type() -> &'static dyn PolarsDataType;
-}
-
-macro_rules! to_polars_type {
-    ($native:ty, $polars:ident) => {
-        impl ToPolarsType for $native {
-            fn to_polars_type() -> &'static dyn PolarsDataType {
-                &$polars {}
-            }
-        }
-    };
-}
-
-to_polars_type!(i8, Int8Type);
-to_polars_type!(i16, Int16Type);
-to_polars_type!(i32, Int32Type);
-to_polars_type!(i64, Int64Type);
-to_polars_type!(u8, UInt8Type);
-to_polars_type!(u16, UInt16Type);
-to_polars_type!(u32, UInt32Type);
-to_polars_type!(u64, UInt64Type);
-to_polars_type!(f32, Float32Type);
-to_polars_type!(f64, Float64Type);
 
 #[derive(Debug, Clone)]
 pub enum AnyValue<'a> {

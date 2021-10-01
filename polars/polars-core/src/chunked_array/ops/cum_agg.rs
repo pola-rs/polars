@@ -54,7 +54,6 @@ where
 impl<T> ChunkCumAgg<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Bounded + PartialOrd + AddAssign + Add<Output = T::Native>,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     fn cummax(&self, reverse: bool) -> ChunkedArray<T> {

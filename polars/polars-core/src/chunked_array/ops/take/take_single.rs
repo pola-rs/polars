@@ -2,7 +2,6 @@
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
 use arrow::array::*;
-use arrow::types::NativeType;
 use polars_arrow::is_valid::IsValid;
 use std::convert::TryFrom;
 #[cfg(feature = "dtype-categorical")]
@@ -54,7 +53,6 @@ macro_rules! impl_take_random_get_unchecked {
 impl<T> TakeRandom for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NativeType,
 {
     type Item = T::Native;
 
@@ -72,7 +70,6 @@ where
 impl<'a, T> TakeRandom for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NativeType,
 {
     type Item = T::Native;
 

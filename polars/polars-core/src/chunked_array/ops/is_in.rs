@@ -1,13 +1,11 @@
 use crate::prelude::*;
 use crate::utils::{get_supertype, CustomIterTools};
 use hashbrown::hash_set::HashSet;
-use num::NumCast;
 use std::hash::Hash;
 
 unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> Result<BooleanChunked>
 where
     T: PolarsNumericType,
-    T::Native: NumCast,
     P: Eq + Hash + Copy,
 {
     let mut set = HashSet::with_capacity(other.len());
@@ -41,7 +39,6 @@ where
 impl<T> IsIn for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + Copy,
 {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         // We check implicitly cast to supertype here
