@@ -48,7 +48,7 @@ impl From<&DataType> for PyDataType {
     }
 }
 
-pub trait PyPolarsPrimitiveType: PolarsPrimitiveType {}
+pub trait PyPolarsPrimitiveType: PolarsNumericType {}
 impl PyPolarsPrimitiveType for UInt8Type {}
 impl PyPolarsPrimitiveType for UInt16Type {}
 impl PyPolarsPrimitiveType for UInt32Type {}

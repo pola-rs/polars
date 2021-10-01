@@ -32,7 +32,7 @@ impl<T> Default for ChunkedArray<T> {
 
 impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let iter = iter.into_iter();
@@ -66,7 +66,7 @@ where
 // NoNull is only a wrapper needed for specialization
 impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
@@ -294,7 +294,7 @@ fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
 
 impl<T> FromParallelIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = T::Native>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads
@@ -312,7 +312,7 @@ where
 
 impl<T> FromParallelIterator<Option<T::Native>> for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads

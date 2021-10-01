@@ -23,7 +23,7 @@ trait ToPolarsError: Debug {
 
 impl ToPolarsError for lexical::Error {}
 
-pub(crate) trait PrimitiveParser: PolarsPrimitiveType {
+pub(crate) trait PrimitiveParser: PolarsNumericType {
     fn parse(bytes: &[u8]) -> Result<Self::Native>;
 }
 

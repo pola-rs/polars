@@ -5,7 +5,7 @@ use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
 
-pub trait PyArrowPrimitiveType: PolarsPrimitiveType {}
+pub trait PyArrowPrimitiveType: PolarsNumericType {}
 
 impl PyArrowPrimitiveType for UInt8Type {}
 impl PyArrowPrimitiveType for UInt16Type {}

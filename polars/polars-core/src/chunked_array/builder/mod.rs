@@ -64,7 +64,7 @@ impl BooleanChunkedBuilder {
 
 pub struct PrimitiveChunkedBuilder<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
     T::Native: Default,
 {
     array_builder: MutablePrimitiveArray<T::Native>,
@@ -73,7 +73,7 @@ where
 
 impl<T> ChunkedBuilder<T::Native, T> for PrimitiveChunkedBuilder<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
     T::Native: Default,
 {
     /// Appends a value of type `T` into the builder
@@ -101,7 +101,7 @@ where
 
 impl<T> PrimitiveChunkedBuilder<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     pub fn new(name: &str, capacity: usize) -> Self {
         let array_builder = MutablePrimitiveArray::<T::Native>::with_capacity(capacity)
@@ -220,7 +220,7 @@ pub trait NewChunkedArray<T, N> {
 
 impl<T> NewChunkedArray<T, T::Native> for ChunkedArray<T>
 where
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
         let arr = PrimitiveArray::<T::Native>::from_slice(v).to(T::get_dtype().to_arrow());

@@ -606,7 +606,7 @@ macro_rules! impl_chunk_expand {
 impl<T> ChunkExpandAtIndex<T> for ChunkedArray<T>
 where
     ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
-    T: PolarsPrimitiveType,
+    T: PolarsNumericType,
 {
     fn expand_at_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
         impl_chunk_expand!(self, length, index)
