@@ -12,9 +12,7 @@ use crate::utils::NoNull;
 #[cfg(feature = "dtype-categorical")]
 use arrow::array::Array;
 use itertools::Itertools;
-use num::NumCast;
 use rayon::prelude::*;
-use std::fmt::Display;
 use std::hash::Hash;
 
 fn finish_is_unique_helper(
@@ -188,7 +186,7 @@ macro_rules! impl_value_counts {
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq + NumCast,
+    T::Native: Hash + Eq,
     ChunkedArray<T>: ChunkOps + IntoSeries,
 {
     fn unique(&self) -> Result<Self> {
@@ -359,7 +357,7 @@ impl ToDummies<Utf8Type> for Utf8Chunked {
 impl<T> ToDummies<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType + Sync,
-    T::Native: Hash + Eq + Display + NumCast,
+    T::Native: Hash + Eq,
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {
@@ -520,7 +518,6 @@ mod is_first {
     impl<T> IsFirst<T> for ChunkedArray<T>
     where
         T: PolarsNumericType,
-        T::Native: NumCast,
     {
         fn is_first(&self) -> Result<BooleanChunked> {
             use DataType::*;

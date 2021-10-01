@@ -27,7 +27,6 @@ macro_rules! impl_shift_fill {
 impl<T> ChunkShiftFill<T, Option<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Copy,
 {
     fn shift_and_fill(&self, periods: i64, fill_value: Option<T::Native>) -> ChunkedArray<T> {
         impl_shift_fill!(self, periods, fill_value)
@@ -36,7 +35,6 @@ where
 impl<T> ChunkShift<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Copy,
 {
     fn shift(&self, periods: i64) -> ChunkedArray<T> {
         self.shift_and_fill(periods, None)

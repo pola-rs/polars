@@ -3,7 +3,6 @@
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 use crate::prelude::*;
 use arrow::compute::cast;
-use num::NumCast;
 
 /// Casts a `PrimitiveArray` to a different physical type and logical type.
 /// This operation is `O(N)`
@@ -12,8 +11,6 @@ pub(crate) fn cast_physical<S, T>(arr: &PrimitiveArray<S::Native>, datatype: &Da
 where
     S: PolarsNumericType,
     T: PolarsNumericType,
-    T::Native: num::NumCast,
-    S::Native: num::NumCast,
 {
     let array =
         arrow::compute::cast::primitive_to_primitive::<_, T::Native>(arr, &datatype.to_arrow());
@@ -42,8 +39,6 @@ fn cast_from_dtype<N, T>(chunked: &ChunkedArray<T>, dtype: DataType) -> Result<C
 where
     N: PolarsNumericType,
     T: PolarsNumericType,
-    N::Native: NumCast,
-    T::Native: NumCast,
 {
     let chunks = chunked
         .downcast_iter()
@@ -143,7 +138,6 @@ impl ChunkCast for CategoricalChunked {
 impl<T> ChunkCast for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast,
 {
     fn cast<N>(&self) -> Result<ChunkedArray<N>>
     where

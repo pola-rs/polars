@@ -160,7 +160,7 @@ impl ChunkCompare<&Series> for Series {
 
 impl<Rhs> ChunkCompare<Rhs> for Series
 where
-    Rhs: NumComp,
+    Rhs: NumericNative,
 {
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
         self.eq(rhs)

@@ -27,29 +27,15 @@ mod inner_mod {
     use crate::prelude::*;
     use arrow::array::{Array, PrimitiveArray};
     use arrow::bitmap::MutableBitmap;
-    use num::{Bounded, Float, NumCast, One, Zero};
+    use num::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
     use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
     use std::convert::TryFrom;
-    use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
 
     impl<T> ChunkedArray<T>
     where
         T: PolarsNumericType,
-        T::Native: Add<Output = T::Native>
-            + Float
-            + AddAssign
-            + std::iter::Sum
-            + Sub<Output = T::Native>
-            + Mul<Output = T::Native>
-            + Div<Output = T::Native>
-            + Rem<Output = T::Native>
-            + Zero
-            + Bounded
-            + NumCast
-            + PartialOrd
-            + One
-            + Copy,
+        T::Native: Float,
         ChunkedArray<T>: IntoSeries,
     {
         /// Apply a rolling mean (moving mean) over the values in this array.
@@ -91,19 +77,6 @@ mod inner_mod {
     impl<T> ChunkedArray<T>
     where
         T: PolarsNumericType,
-        T::Native: Add<Output = T::Native>
-            + AddAssign
-            + std::iter::Sum
-            + Sub<Output = T::Native>
-            + Mul<Output = T::Native>
-            + Div<Output = T::Native>
-            + Rem<Output = T::Native>
-            + Zero
-            + Bounded
-            + NumCast
-            + PartialOrd
-            + One
-            + Copy,
     {
         /// Apply a rolling sum (moving sum) over the values in this array.
         /// A window of length `window_size` will traverse the array. The values that fill this window
@@ -223,7 +196,6 @@ mod inner_mod {
     impl<T> ChunkRollApply for ChunkedArray<T>
     where
         T: PolarsNumericType,
-        T::Native: Zero,
         Self: IntoSeries,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
@@ -267,13 +239,12 @@ mod inner_mod {
     where
         ChunkedArray<T>: IntoSeries,
         T: PolarsFloatType,
-        T::Native: Default + std::iter::Sum + Float + AddAssign,
+        T::Native: Float,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>
         where
             F: Fn(&ChunkedArray<T>) -> Option<T::Native>,
-            T::Native: Zero,
         {
             if window_size >= self.len() {
                 return Ok(Self::full_null(self.name(), self.len()));

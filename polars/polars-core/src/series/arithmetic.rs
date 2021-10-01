@@ -56,13 +56,6 @@ pub trait NumOpsDispatch: Debug {
 impl<T> NumOpsDispatch for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: ops::Add<Output = T::Native>
-        + ops::Sub<Output = T::Native>
-        + ops::Mul<Output = T::Native>
-        + ops::Div<Output = T::Native>
-        + ops::Rem<Output = T::Native>
-        + num::Zero
-        + num::One,
     ChunkedArray<T>: IntoSeries,
 {
     fn subtract(&self, rhs: &Series) -> Result<Series> {
@@ -540,7 +533,6 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Num + NumCast + ops::Sub<Output = T::Native> + ops::Div<Output = T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
     /// Apply lhs - self

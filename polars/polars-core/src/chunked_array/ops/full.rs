@@ -6,10 +6,7 @@ impl<T> ChunkFull<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn full(name: &str, value: T::Native, length: usize) -> Self
-    where
-        T::Native: Copy,
-    {
+    fn full(name: &str, value: T::Native, length: usize) -> Self {
         let mut ca = (0..length)
             .map(|_| value)
             .collect::<NoNull<ChunkedArray<T>>>()

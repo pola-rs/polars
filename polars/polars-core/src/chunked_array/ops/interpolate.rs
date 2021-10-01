@@ -13,12 +13,6 @@ where
 impl<T> Interpolate for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Sub<Output = T::Native>
-        + Mul<Output = T::Native>
-        + Add<Output = T::Native>
-        + Div<Output = T::Native>
-        + FromPrimitive
-        + Zero,
 {
     fn interpolate(&self) -> Self {
         // This implementation differs from pandas as that boundary None's are not removed

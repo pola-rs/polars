@@ -13,7 +13,6 @@ pub(crate) trait ExplodeByOffsets {
 impl<T> ExplodeByOffsets for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Default,
 {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);

@@ -140,7 +140,6 @@ where
 impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: std::cmp::PartialOrd,
 {
     fn sort(&self, reverse: bool) -> ChunkedArray<T> {
         if self.null_count() == 0 {

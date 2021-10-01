@@ -65,7 +65,6 @@ impl BooleanChunkedBuilder {
 pub struct PrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType,
-    T::Native: Default,
 {
     array_builder: MutablePrimitiveArray<T::Native>,
     field: Field,
@@ -74,7 +73,6 @@ where
 impl<T> ChunkedBuilder<T::Native, T> for PrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType,
-    T::Native: Default,
 {
     /// Appends a value of type `T` into the builder
     #[inline]

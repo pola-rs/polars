@@ -44,7 +44,6 @@ macro_rules! impl_traits {
         impl<$T> PartialEqInner for $struct
         where
             $T: PolarsNumericType + Sync,
-            $T::Native: Copy + PartialEq,
         {
             #[inline]
             unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
@@ -55,7 +54,6 @@ macro_rules! impl_traits {
         impl<$T> PartialOrdInner for $struct
         where
             $T: PolarsNumericType + Sync,
-            $T::Native: Copy + PartialOrd + Sync,
         {
             #[inline]
             unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
@@ -95,7 +93,6 @@ pub(crate) trait IntoPartialEqInner<'a> {
 impl<'a, T> IntoPartialEqInner<'a> for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialEq,
 {
     fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
         let mut chunks = self.downcast_iter();
@@ -209,7 +206,6 @@ pub(crate) trait IntoPartialOrdInner<'a> {
 impl<'a, T> IntoPartialOrdInner<'a> for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialOrd,
 {
     fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
         let mut chunks = self.downcast_iter();

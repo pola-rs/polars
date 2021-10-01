@@ -91,7 +91,6 @@ impl DataFrame {
     pub fn to_ndarray<N>(&self) -> Result<Array2<N::Native>>
     where
         N: PolarsNumericType,
-        N::Native: num::Zero + Copy,
     {
         let mut ndarr = Array2::zeros(self.shape());
         for (col_idx, series) in self.get_columns().iter().enumerate() {

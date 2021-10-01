@@ -1,13 +1,11 @@
 use crate::{prelude::*, utils::NoNull};
-use arrow::compute::comparison::Simd8;
 use arrow::scalar::Utf8Scalar;
-use arrow::types::NativeType;
 use arrow::{
     array::{ArrayRef, BooleanArray, PrimitiveArray, Utf8Array},
     compute,
     compute::comparison,
 };
-use num::{Num, NumCast, ToPrimitive};
+use num::{NumCast, ToPrimitive};
 use std::ops::Not;
 use std::sync::Arc;
 
@@ -64,7 +62,6 @@ macro_rules! impl_eq_missing {
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumComp + Simd8,
 {
     fn eq_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
@@ -440,25 +437,11 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 }
 
-pub trait NumComp: Num + NumCast + PartialOrd {}
-
-impl NumComp for f32 {}
-impl NumComp for f64 {}
-impl NumComp for i8 {}
-impl NumComp for i16 {}
-impl NumComp for i32 {}
-impl NumComp for i64 {}
-impl NumComp for u8 {}
-impl NumComp for u16 {}
-impl NumComp for u32 {}
-impl NumComp for u64 {}
-
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + NumComp + Simd8 + NativeType,
 {
-    fn primitive_compare_scalar<Rhs: NumComp + ToPrimitive>(
+    fn primitive_compare_scalar<Rhs: ToPrimitive>(
         &self,
         rhs: Rhs,
         op: comparison::Operator,
@@ -478,8 +461,7 @@ where
 impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: NumCast + NumComp + Simd8,
-    Rhs: NumComp + ToPrimitive,
+    Rhs: ToPrimitive,
 {
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
         self.eq(rhs)
@@ -672,7 +654,6 @@ pub(crate) trait ChunkEqualElement {
 impl<T> ChunkEqualElement for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: PartialEq,
 {
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
         let ca_other = other.as_ref().as_ref();

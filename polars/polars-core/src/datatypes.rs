@@ -12,15 +12,16 @@ use crate::chunked_array::categorical::RevMapping;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use ahash::RandomState;
+use arrow::compute::comparison::Simd8;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
-use num::{Num, NumCast, Zero};
+use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
 
 pub struct Utf8Type {}
 
@@ -131,12 +132,16 @@ pub trait NumericNative:
     + NumCast
     + Zero
     + Simd
+    + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
     + Sub<Output = Self>
     + Mul<Output = Self>
     + Div<Output = Self>
     + Rem<Output = Self>
+    + AddAssign
+    + Bounded
+    + FromPrimitive
 {
 }
 impl NumericNative for i8 {}

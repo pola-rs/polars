@@ -9,7 +9,6 @@ pub use crate::{
             ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
-        comparison::NumComp,
         iterator::{IntoNoNullIterator, PolarsIterator},
         ops::{aggregate::*, chunkops::ChunkOps, *},
         ChunkedArray,
