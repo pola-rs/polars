@@ -38,9 +38,8 @@ Manipulation/ selection
     LazyFrame.join
     LazyFrame.with_columns
     LazyFrame.with_column
-    LazyFrame.drop_columns
-    LazyFrame.drop_column
     LazyFrame.with_column_renamed
+    LazyFrame.drop
     LazyFrame.rename
     LazyFrame.reverse
     LazyFrame.shift
