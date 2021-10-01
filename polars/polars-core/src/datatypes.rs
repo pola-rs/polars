@@ -13,11 +13,14 @@ use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use ahash::RandomState;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
+use arrow::types::simd::Simd;
 use arrow::types::NativeType;
+use num::{Num, NumCast, Zero};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 pub struct Utf8Type {}
 
@@ -122,8 +125,33 @@ pub type Date32Chunked = ChunkedArray<Date32Type>;
 pub type Date64Chunked = ChunkedArray<Date64Type>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
+pub trait NumericNative:
+    PartialOrd
+    + Num
+    + NumCast
+    + Zero
+    + Simd
+    + std::iter::Sum<Self>
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
+    + Rem<Output = Self>
+{
+}
+impl NumericNative for i8 {}
+impl NumericNative for i16 {}
+impl NumericNative for i32 {}
+impl NumericNative for i64 {}
+impl NumericNative for u8 {}
+impl NumericNative for u16 {}
+impl NumericNative for u32 {}
+impl NumericNative for u64 {}
+impl NumericNative for f32 {}
+impl NumericNative for f64 {}
+
 pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
-    type Native: NativeType;
+    type Native: NativeType + NumericNative;
 }
 impl PolarsNumericType for UInt8Type {
     type Native = u8;
