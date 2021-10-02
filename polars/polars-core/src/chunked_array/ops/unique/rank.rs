@@ -13,6 +13,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
     // See: https://github.com/scipy/scipy/blob/v1.7.1/scipy/stats/stats.py#L8631-L8737
 
     let len = s.len();
+    let null_count = s.null_count();
     let sort_idx_ca = s.argsort(false);
     let sort_idx = sort_idx_ca.downcast_iter().next().unwrap().values();
 
@@ -45,6 +46,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
             // Safety:
             // in bounds
             let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
+            let validity = arr.chunks()[0].validity().cloned();
             let is_consecutive_same = (&arr.slice(1, len - 1))
                 .neq(&arr.slice(0, len - 1))
                 .rechunk();
@@ -59,16 +61,18 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
             //     if method == 'min':
             //         return count[dense - 1] + 1
             // ```
-            let mut cumsum = if let RankMethod::Min = method { 0 } else { 1 };
+            let mut cumsum: u32 = if let RankMethod::Min = method { 0 } else { 1 };
 
             dense.push(cumsum);
-            obs.iter().for_each(|opt_value| {
-                if opt_value.unwrap() {
+            obs.values_iter().for_each(|b| {
+                if b {
                     cumsum += 1;
                 }
                 dense.push(cumsum)
             });
-            let dense = UInt32Chunked::new_from_aligned_vec(s.name(), dense);
+            let arr =
+                PrimitiveArray::from_data(DataType::UInt32.to_arrow(), dense.into(), validity);
+            let dense: UInt32Chunked = (s.name(), arr).into();
             // Safety:
             // in bounds
             let dense = unsafe { dense.take_unchecked((&inv_ca).into()) };
@@ -83,13 +87,25 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
             let mut cnt = 0u32;
             count.push(cnt);
 
-            obs.iter().for_each(|opt_value| {
-                cnt += 1;
-                if opt_value.unwrap() {
-                    count.push(cnt)
-                }
-            });
-            count.push(len as u32);
+            if null_count > 0 {
+                obs.iter().for_each(|b| {
+                    if let Some(b) = b {
+                        cnt += 1;
+                        if b {
+                            count.push(cnt)
+                        }
+                    }
+                });
+            } else {
+                obs.values_iter().for_each(|b| {
+                    cnt += 1;
+                    if b {
+                        count.push(cnt)
+                    }
+                });
+            }
+
+            count.push((len - null_count) as u32);
             let count = UInt32Chunked::new_from_aligned_vec(s.name(), count);
 
             match method {
@@ -109,8 +125,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
                     let a = unsafe { count.take_unchecked((&dense).into()) }
                         .cast::<Float32Type>()
                         .unwrap();
-                    let iter = dense.cont_slice().unwrap().iter().map(|i| *i as usize - 1);
-                    let b = unsafe { count.take_unchecked(iter.into()) }
+                    let b = unsafe { count.take_unchecked((&(dense - 1)).into()) }
                         .cast::<Float32Type>()
                         .unwrap()
                         + 1.0;
@@ -160,6 +175,28 @@ mod test {
             .collect::<Vec<_>>();
         assert_eq!(out, &[2.0f32, 4.0, 6.5, 4.0, 4.0, 6.5, 1.0]);
 
+        let s = Series::new(
+            "a",
+            &[Some(1), Some(2), Some(3), Some(2), None, None, Some(0)],
+        );
+
+        let out = rank(&s, RankMethod::Average)
+            .f32()?
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            out,
+            &[
+                Some(2.0f32),
+                Some(3.5),
+                Some(5.0),
+                Some(3.5),
+                None,
+                None,
+                Some(1.0)
+            ]
+        );
         Ok(())
     }
 }
