@@ -1110,7 +1110,7 @@ impl Expr {
         }
     }
 
-    /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::fill_null).
+    /// Replace the null values by a value.
     pub fn fill_null(self, fill_value: Expr) -> Self {
         map_binary_lazy_field(
             self,
@@ -1131,6 +1131,11 @@ impl Expr {
                 Some(Field::new(a.name(), st))
             },
         )
+    }
+
+    /// Replace the floating point `NaN` values by a value.
+    pub fn fill_nan(self, fill_value: Expr) -> Self {
+        when(self.clone().is_nan()).then(fill_value).otherwise(self)
     }
     /// Count the values of the Series
     /// or

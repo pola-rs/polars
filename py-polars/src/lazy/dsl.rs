@@ -232,6 +232,10 @@ impl PyExpr {
         self.clone().inner.fill_null(expr.inner).into()
     }
 
+    pub fn fill_nan(&self, expr: PyExpr) -> PyExpr {
+        self.clone().inner.fill_nan(expr.inner).into()
+    }
+
     pub fn filter(&self, predicate: PyExpr) -> PyExpr {
         self.clone().inner.filter(predicate.inner).into()
     }

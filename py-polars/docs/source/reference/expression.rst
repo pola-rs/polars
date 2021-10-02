@@ -153,6 +153,7 @@ Manipulation/ selection
     Expr.shift
     Expr.shift_and_fill
     Expr.fill_null
+    Expr.fill_nan
     Expr.forward_fill
     Expr.backward_fill
     Expr.reverse
