@@ -29,8 +29,8 @@ fn q1(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .groupby(vec![col("id1")])
-                .agg(vec![col("v1").sum()])
+                .groupby([col("id1")])
+                .agg([col("v1").sum()])
                 .collect()
                 .unwrap();
         })
@@ -42,8 +42,8 @@ fn q2(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .groupby(vec![col("id1"), col("id2")])
-                .agg(vec![col("v1").sum()])
+                .groupby([col("id1"), col("id2")])
+                .agg([col("v1").sum()])
                 .collect()
                 .unwrap();
         })
@@ -55,8 +55,8 @@ fn q3(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .groupby(vec![col("id3")])
-                .agg(vec![col("v1").sum(), col("v3").mean()])
+                .groupby([col("id3")])
+                .agg([col("v1").sum(), col("v3").mean()])
                 .collect()
                 .unwrap();
         })
@@ -68,8 +68,8 @@ fn q4(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .groupby(vec![col("id4")])
-                .agg(vec![col("v1").mean(), col("v2").mean(), col("v3").mean()])
+                .groupby([col("id4")])
+                .agg([col("v1").mean(), col("v2").mean(), col("v3").mean()])
                 .collect()
                 .unwrap();
         })
@@ -81,8 +81,8 @@ fn q5(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .groupby(vec![col("id6")])
-                .agg(vec![col("v1").sum(), col("v2").sum(), col("v3").sum()])
+                .groupby([col("id6")])
+                .agg([col("v1").sum(), col("v2").sum(), col("v3").sum()])
                 .collect()
                 .unwrap();
         })
@@ -94,8 +94,8 @@ fn q6(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .groupby(vec![col("id4"), col("id5")])
-                .agg(vec![
+                .groupby([col("id4"), col("id5")])
+                .agg([
                     col("v3").median().alias("v3_median"),
                     col("v3").std().alias("v3_std"),
                 ])
@@ -110,15 +110,9 @@ fn q7(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .groupby(vec![col("id3")])
-                .agg(vec![
-                    col("v1").max().alias("v1"),
-                    col("v2").min().alias("v2"),
-                ])
-                .select(vec![
-                    col("id3"),
-                    (col("v1") - col("v2")).alias("range_v1_v2"),
-                ])
+                .groupby([col("id3")])
+                .agg([col("v1").max().alias("v1"), col("v2").min().alias("v2")])
+                .select([col("id3"), (col("v1") - col("v2")).alias("range_v1_v2")])
                 .collect()
                 .unwrap();
         })
@@ -133,8 +127,8 @@ fn q8(c: &mut Criterion) {
                 // todo! accept slice of str
                 .drop_nulls(Some(vec![col("v3")]))
                 .sort("v3", true)
-                .groupby(vec![col("id6")])
-                .agg(vec![col("v3").head(Some(2)).alias("v3_top_2")])
+                .groupby([col("id6")])
+                .agg([col("v3").head(Some(2)).alias("v3_top_2")])
                 .explode(&[col("v3_top_2")])
                 .collect()
                 .unwrap();
@@ -148,10 +142,8 @@ fn q9(c: &mut Criterion) {
             DATA.clone()
                 .lazy()
                 .drop_nulls(Some(vec![col("v1"), col("v2")]))
-                .groupby(vec![col("id2"), col("id4")])
-                .agg(vec![pearson_corr(col("v1"), col("v2"))
-                    .alias("r2")
-                    .pow(2.0)])
+                .groupby([col("id2"), col("id4")])
+                .agg([pearson_corr(col("v1"), col("v2")).alias("r2").pow(2.0)])
                 .collect()
                 .unwrap();
         })
@@ -163,7 +155,7 @@ fn q10(c: &mut Criterion) {
         b.iter(|| {
             DATA.clone()
                 .lazy()
-                .groupby(vec![
+                .groupby([
                     col("id1"),
                     col("id2"),
                     col("id3"),
@@ -171,10 +163,7 @@ fn q10(c: &mut Criterion) {
                     col("id5"),
                     col("id6"),
                 ])
-                .agg(vec![
-                    col("v3").sum().alias("v3"),
-                    col("v1").count().alias("v1"),
-                ])
+                .agg([col("v3").sum().alias("v3"), col("v1").count().alias("v1")])
                 .collect()
                 .unwrap();
         })

@@ -65,14 +65,14 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn argsort_by(by: Vec<Expr>, reverse: &[bool]) -> Expr {
+pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
     let reverse = reverse.to_vec();
     let function = NoEq::new(Arc::new(move |by: &mut [Series]| {
         polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
 
     Expr::Function {
-        input: by,
+        input: by.as_ref().to_vec(),
         function,
         output_type: GetOutput::from_type(DataType::UInt32),
         options: FunctionOptions {

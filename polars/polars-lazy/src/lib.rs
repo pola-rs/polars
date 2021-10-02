@@ -101,8 +101,8 @@
 //!     )?;
 //!
 //!     df.lazy()
-//!     .groupby(vec![col("date")])
-//!     .agg(vec![
+//!     .groupby([col("date")])
+//!     .agg([
 //!         col("rain").min(),
 //!         col("rain").sum(),
 //!         col("rain").quantile(0.5).alias("median_rain"),
@@ -162,7 +162,7 @@
 //!     .filter(
 //!         col("a").lt(lit(2))
 //!     )
-//!     .groupby(vec![col("b")])
+//!     .groupby([col("b")])
 //!     .agg(
 //!         vec![col("b").first(), col("c").first()]
 //!      )
@@ -178,7 +178,7 @@
 //!
 //! fn aggregate_all_columns(df_a: DataFrame) -> LazyFrame {
 //!     df_a.lazy()
-//!     .groupby(vec![col("b")])
+//!     .groupby([col("b")])
 //!     .agg(
 //!         vec![col("*").first()]
 //!      )

@@ -3,7 +3,7 @@
 ///
 /// &str => df.select("my-column"),
 /// (&str)" => df.select(("col_1", "col_2")),
-/// Vec<&str)" => df.select(vec!["col_a", "col_b"]),
+/// Vec<&str)" => df.select(["col_a", "col_b"]),
 pub trait Selection<'a, S> {
     fn to_selection_vec(self) -> Vec<&'a str>;
 

@@ -878,7 +878,7 @@ id090,id048,id0000067778,24,2,51862,4,9,
             .with_columns(Some(
                 schema
                     .fields()
-                    .into_iter()
+                    .iter()
                     .map(|s| s.name().to_string())
                     .collect(),
             ))

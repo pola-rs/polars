@@ -1063,7 +1063,7 @@ impl Expr {
     ///      .lazy()
     ///      .select(&[
     ///          col("groups"),
-    ///          sum("values").over(vec![col("groups")]),
+    ///          sum("values").over([col("groups")]),
     ///      ])
     ///      .collect()?;
     ///     dbg!(&out);
@@ -1101,10 +1101,10 @@ impl Expr {
     /// │ 1      ┆ 16     │
     /// ╰────────┴────────╯
     /// ```
-    pub fn over(self, partition_by: Vec<Expr>) -> Self {
+    pub fn over<E: AsRef<[Expr]>>(self, partition_by: E) -> Self {
         Expr::Window {
             function: Box::new(self),
-            partition_by,
+            partition_by: partition_by.as_ref().to_vec(),
             order_by: None,
             options: WindowOptions { explode: false },
         }
@@ -1353,7 +1353,7 @@ impl Expr {
     /// use polars_lazy::prelude::*;
     ///
     /// fn example(df: LazyFrame) -> LazyFrame {
-    ///     df.select(vec![
+    ///     df.select([
     /// // even thought the alias yields a different column name,
     /// // `keep_name` will make sure that the original column name is used
     ///         col("*").alias("foo").keep_name()

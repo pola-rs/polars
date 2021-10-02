@@ -221,7 +221,7 @@ mod test {
         assert_eq!(out, expr);
 
         let expr = col("fruits") + (lit("somestr"));
-        let out = optimize_expr(expr.clone(), schema, &mut rules);
+        let out = optimize_expr(expr, schema, &mut rules);
         let expected = col("fruits").cast(DataType::Utf8) + lit("somestr");
         assert_eq!(out, expected);
     }

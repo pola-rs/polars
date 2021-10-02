@@ -102,7 +102,7 @@ fn test_lazy_melt() {
             vec!["sepal.length".to_string(), "sepal.width".to_string()],
         )
         .filter(col("variable").eq(lit("sepal.length")))
-        .select(vec![col("variable"), col("petal.width"), col("value")])
+        .select([col("variable"), col("petal.width"), col("value")])
         .collect()
         .unwrap();
     assert_eq!(out.shape(), (7, 3));
@@ -117,7 +117,7 @@ fn test_lazy_drop_nulls() {
     }
     .unwrap();
 
-    let new = df.clone().lazy().drop_nulls(None).collect().unwrap();
+    let new = df.lazy().drop_nulls(None).collect().unwrap();
     let out = df! {
         "foo" => &[Some(1)],
         "bar" => &[Some(1)]
@@ -162,8 +162,8 @@ fn test_lazy_is_null() {
 
     let new = df
         .lazy()
-        .groupby(vec![col("variety")])
-        .agg(vec![col("sepal.width").min()])
+        .groupby([col("variety")])
+        .agg([col("sepal.width").min()])
         .collect()
         .unwrap();
 
@@ -177,8 +177,8 @@ fn test_lazy_pushdown_through_agg() {
     let df = get_df();
     let new = df
         .lazy()
-        .groupby(vec![col("variety")])
-        .agg(vec![
+        .groupby([col("variety")])
+        .agg([
             col("sepal.length").min(),
             col("petal.length").min().alias("foo"),
         ])
@@ -212,8 +212,8 @@ fn test_lazy_agg() {
 
     let lf = df
         .lazy()
-        .groupby(vec![col("date")])
-        .agg(vec![
+        .groupby([col("date")])
+        .agg([
             col("rain").min(),
             col("rain").sum(),
             col("rain").quantile(0.5).alias("median_rain"),
@@ -293,8 +293,8 @@ fn test_lazy_query_1() {
     df_a.lazy()
         .left_join(df_b.lazy(), col("b"), col("b"))
         .filter(col("a").lt(lit(2)))
-        .groupby(vec![col("b")])
-        .agg(vec![col("b").first(), col("c").first()])
+        .groupby([col("b")])
+        .agg([col("b").first(), col("c").first()])
         .select(&[col("b"), col("c_first")])
         .collect()
         .unwrap();
@@ -321,8 +321,8 @@ fn test_lazy_query_2() {
 fn test_lazy_query_3() {
     // query checks if schema of scanning is not changed by aggregation
     let _ = scan_foods_csv()
-        .groupby(vec![col("calories")])
-        .agg(vec![col("fats_g").max()])
+        .groupby([col("calories")])
+        .agg([col("fats_g").max()])
         .collect()
         .unwrap();
 }
@@ -340,8 +340,8 @@ fn test_lazy_query_4() {
 
     let out = base_df
         .clone()
-        .groupby(vec![col("uid")])
-        .agg(vec![
+        .groupby([col("uid")])
+        .agg([
             col("day").list().alias("day"),
             col("cumcases")
                 .apply(|s: Series| Ok(&s - &(s.shift(1))), GetOutput::same_type())
@@ -374,8 +374,8 @@ fn test_lazy_query_5() {
 
     let out = df
         .lazy()
-        .groupby(vec![col("uid")])
-        .agg(vec![col("day").head(Some(2))])
+        .groupby([col("uid")])
+        .agg([col("day").head(Some(2))])
         .collect()
         .unwrap();
     dbg!(&out);
@@ -408,9 +408,9 @@ fn test_lazy_query_6() -> Result<()> {
 
     let out = df
         .lazy()
-        .groupby(vec![col("uid")])
+        .groupby([col("uid")])
         // a double aggregation expression.
-        .agg(vec![pearson_corr(col("day"), col("cumcases")).pow(2.0)])
+        .agg([pearson_corr(col("day"), col("cumcases")).pow(2.0)])
         .sort("uid", false)
         .collect()
         .unwrap();
@@ -478,8 +478,8 @@ fn test_lazy_query_9() -> Result<()> {
             vec![col("Cities.City")],
             JoinType::Inner,
         )
-        .groupby(vec![col("Cities.Country")])
-        .agg(vec![col("Sales.Amount").sum().alias("sum")])
+        .groupby([col("Cities.Country")])
+        .agg([col("Sales.Amount").sum().alias("sum")])
         .sort("sum", false)
         .collect()?;
     let vals = out
@@ -517,7 +517,7 @@ fn test_lazy_query_7() {
         .filter(col("date").gt(lit(NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)))))
         .collect()
         .unwrap();
-    let a = out.column(&"shifted").unwrap().sum::<f64>().unwrap() - 7.0;
+    let a = out.column("shifted").unwrap().sum::<f64>().unwrap() - 7.0;
     assert!(a < 0.01 && a > -0.01);
 }
 
@@ -581,8 +581,8 @@ fn test_lazy_wildcard() {
 
     let new = df
         .lazy()
-        .groupby(vec![col("b")])
-        .agg(vec![col("*").sum(), col("*").first()])
+        .groupby([col("b")])
+        .agg([col("*").sum(), col("*").first()])
         .collect()
         .unwrap();
     assert_eq!(new.shape(), (3, 6));
@@ -722,13 +722,13 @@ fn test_lazy_window_functions() {
     let _ = df
         .clone()
         .lazy()
-        .select(&[avg("values").over(vec![col("groups")]).alias("part")])
+        .select(&[avg("values").over([col("groups")]).alias("part")])
         .collect()
         .unwrap();
     // test if partition aggregation is correct
     let out = df
         .lazy()
-        .select(&[col("groups"), sum("values").over(vec![col("groups")])])
+        .select(&[col("groups"), sum("values").over([col("groups")])])
         .collect()
         .unwrap();
     assert_eq!(
@@ -791,8 +791,8 @@ fn test_lazy_partition_agg() {
 
     let out = df
         .lazy()
-        .groupby(vec![col("foo")])
-        .agg(vec![col("bar").mean()])
+        .groupby([col("foo")])
+        .agg([col("bar").mean()])
         .sort("foo", false)
         .collect()
         .unwrap();
@@ -803,8 +803,8 @@ fn test_lazy_partition_agg() {
     );
 
     let out = scan_foods_csv()
-        .groupby(vec![col("category")])
-        .agg(vec![col("calories").list()])
+        .groupby([col("category")])
+        .agg([col("calories").list()])
         .sort("category", false)
         .collect()
         .unwrap();
@@ -832,8 +832,8 @@ fn test_lazy_groupby_apply() {
     let df = fruits_cars();
 
     df.lazy()
-        .groupby(vec![col("fruits")])
-        .agg(vec![col("cars").apply(
+        .groupby([col("fruits")])
+        .agg([col("cars").apply(
             |s: Series| Ok(Series::new("", &[s.len() as u32])),
             GetOutput::same_type(),
         )])
@@ -866,7 +866,6 @@ fn test_lazy_shift_and_fill() {
     assert_eq!(out.column("A").unwrap().null_count(), 0);
 
     let out = df
-        .clone()
         .lazy()
         .shift_and_fill(-1, col("B").std())
         .collect()
@@ -884,8 +883,8 @@ fn test_lazy_groupby() {
 
     let out = df
         .lazy()
-        .groupby(vec![col("groups")])
-        .agg(vec![col("a").mean()])
+        .groupby([col("groups")])
+        .agg([col("a").mean()])
         .sort("a_mean", false)
         .collect()
         .unwrap();
@@ -904,7 +903,7 @@ fn test_lazy_tail() {
     }
     .unwrap();
 
-    let _out = df.clone().lazy().tail(3).collect().unwrap();
+    let _out = df.lazy().tail(3).collect().unwrap();
 }
 
 #[test]
@@ -918,8 +917,8 @@ fn test_lazy_groupby_sort() {
     let out = df
         .clone()
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![col("b").sort(false).first()])
+        .groupby([col("a")])
+        .agg([col("b").sort(false).first()])
         .collect()
         .unwrap()
         .sort("a", false)
@@ -932,8 +931,8 @@ fn test_lazy_groupby_sort() {
 
     let out = df
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![col("b").sort(false).last()])
+        .groupby([col("a")])
+        .agg([col("b").sort(false).last()])
         .collect()
         .unwrap()
         .sort("a", false)
@@ -956,8 +955,8 @@ fn test_lazy_groupby_sort_by() {
 
     let out = df
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![col("b").sort_by(col("c"), true).first()])
+        .groupby([col("a")])
+        .agg([col("b").sort_by(col("c"), true).first()])
         .collect()
         .unwrap()
         .sort("a", false)
@@ -981,8 +980,8 @@ fn test_lazy_groupby_cast() {
     // test if it runs in groupby context
     let _out = df
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![col("b").mean().cast(DataType::Date64)])
+        .groupby([col("a")])
+        .agg([col("b").mean().cast(DataType::Date64)])
         .collect()
         .unwrap();
 }
@@ -998,8 +997,8 @@ fn test_lazy_groupby_binary_expr() {
     // test if it runs in groupby context
     let out = df
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![col("b").mean() * lit(2)])
+        .groupby([col("a")])
+        .agg([col("b").mean() * lit(2)])
         .sort("a", false)
         .collect()
         .unwrap();
@@ -1021,8 +1020,8 @@ fn test_lazy_groupby_filter() -> Result<()> {
 
     let out = df
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![
+        .groupby([col("a")])
+        .agg([
             col("b").filter(col("a").eq(lit("a"))).sum(),
             col("b").filter(col("a").eq(lit("a"))).first(),
             col("b").filter(col("a").eq(lit("e"))).mean(),
@@ -1064,12 +1063,12 @@ fn test_groupby_projection_pd_same_column() -> Result<()> {
         .unwrap();
 
         df.lazy()
-            .select(vec![col("col1").alias("foo"), col("col2").alias("bar")])
+            .select([col("col1").alias("foo"), col("col2").alias("bar")])
     };
 
     let out = a()
         .left_join(a(), col("foo"), col("foo"))
-        .select(vec![col("bar")])
+        .select([col("bar")])
         .collect()?;
 
     let a = out.column("bar")?.i32()?;
@@ -1096,15 +1095,15 @@ fn test_groupby_sort_slice() -> Result<()> {
         .clone()
         .lazy()
         .sort("vals", true)
-        .groupby(vec![col("groups")])
-        .agg(vec![col("vals").head(Some(2)).alias("foo")])
+        .groupby([col("groups")])
+        .agg([col("vals").head(Some(2)).alias("foo")])
         .sort("groups", false)
         .collect()?;
 
     let out2 = df
         .lazy()
-        .groupby(vec![col("groups")])
-        .agg(vec![col("vals").sort(true).head(Some(2)).alias("foo")])
+        .groupby([col("groups")])
+        .agg([col("vals").sort(true).head(Some(2)).alias("foo")])
         .sort("groups", false)
         .collect()?;
 
@@ -1122,8 +1121,8 @@ fn test_groupby_cumsum() -> Result<()> {
 
     let out = df
         .lazy()
-        .groupby(vec![col("groups")])
-        .agg(vec![col("vals").cumsum(false)])
+        .groupby([col("groups")])
+        .agg([col("vals").cumsum(false)])
         .sort("groups", false)
         .collect()?;
 
@@ -1152,10 +1151,7 @@ fn test_argsort_multiple() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .select(vec![argsort_by(
-            vec![col("int"), col("flt")],
-            &[true, false],
-        )])
+        .select([argsort_by([col("int"), col("flt")], &[true, false])])
         .collect()?;
 
     assert_eq!(
@@ -1170,10 +1166,7 @@ fn test_argsort_multiple() -> Result<()> {
     // check if this runs
     let _out = df
         .lazy()
-        .select(vec![argsort_by(
-            vec![col("str"), col("flt")],
-            &[true, false],
-        )])
+        .select([argsort_by([col("str"), col("flt")], &[true, false])])
         .collect()?;
     Ok(())
 }
@@ -1188,8 +1181,8 @@ fn test_multiple_explode() -> Result<()> {
 
     let out = df
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![
+        .groupby([col("a")])
+        .agg([
             col("b").list().alias("b_list"),
             col("c").list().alias("c_list"),
         ])
@@ -1241,7 +1234,7 @@ fn test_ternary_null() -> Result<()> {
 
     let out = df
         .lazy()
-        .select(vec![when(col("a").eq(lit("c")))
+        .select([when(col("a").eq(lit("c")))
             .then(Null {}.lit())
             .otherwise(col("a"))
             .alias("foo")])
@@ -1263,7 +1256,7 @@ fn test_fill_forward() -> Result<()> {
 
     let out = df
         .lazy()
-        .select(vec![col("b").forward_fill().over(vec![col("a")])])
+        .select([col("b").forward_fill().over([col("a")])])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1304,9 +1297,7 @@ fn test_fold_wildcard() -> Result<()> {
     let out = df1
         .clone()
         .lazy()
-        .select(vec![
-            fold_exprs(lit(0), |a, b| Ok(&a + &b), vec![col("*")]).alias("foo")
-        ])
+        .select([fold_exprs(lit(0), |a, b| Ok(&a + &b), vec![col("*")]).alias("foo")])
         .collect()?;
 
     assert_eq!(
@@ -1317,7 +1308,7 @@ fn test_fold_wildcard() -> Result<()> {
     // test if we don't panic due to wildcard
     let _out = df1
         .lazy()
-        .select(vec![all_exprs(vec![col("*").is_not_null()])])
+        .select([all_exprs(vec![col("*").is_not_null()])])
         .collect()?;
     Ok(())
 }
@@ -1333,7 +1324,7 @@ fn test_select_empty_df() -> Result<()> {
     let out = df1
         .lazy()
         .filter(col("a").eq(lit(0))) // this will lead to an empty frame
-        .select(vec![col("a"), lit(1).alias("c")])
+        .select([col("a"), lit(1).alias("c")])
         .collect()?;
 
     assert_eq!(out.column("a")?.len(), 0);
@@ -1351,7 +1342,7 @@ fn test_keep_name() -> Result<()> {
 
     let out = df
         .lazy()
-        .select(vec![
+        .select([
             col("a").alias("bar").keep_name(),
             col("b").alias("bar").keep_name(),
         ])
@@ -1369,7 +1360,7 @@ fn test_exclude() -> Result<()> {
     "c" => [1, 2, 3]
     ]?;
 
-    let out = df.lazy().select(vec![col("*").exclude(&["b"])]).collect()?;
+    let out = df.lazy().select([col("*").exclude(&["b"])]).collect()?;
 
     assert_eq!(out.get_column_names(), &["a", "c"]);
     Ok(())
@@ -1384,7 +1375,7 @@ fn test_regex_selection() -> Result<()> {
     "annie" => [1, 2, 3]
     ]?;
 
-    let out = df.lazy().select(vec![col("^a.*o.*$")]).collect()?;
+    let out = df.lazy().select([col("^a.*o.*$")]).collect()?;
 
     assert_eq!(out.get_column_names(), &["anton", "arnold schwars"]);
     Ok(())
@@ -1403,20 +1394,18 @@ fn test_filter_in_groupby_agg() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![
-            (col("b").filter(col("b").eq(lit(100))) * lit(2)).mean()
-        ])
+        .groupby([col("a")])
+        .agg([(col("b").filter(col("b").eq(lit(100))) * lit(2)).mean()])
         .collect()?;
 
     assert_eq!(out.column("b_mean")?.null_count(), 2);
 
     let out = df
         .lazy()
-        .groupby(vec![col("a")])
-        .agg(vec![(col("b")
+        .groupby([col("a")])
+        .agg([(col("b")
             .filter(col("b").eq(lit(100)))
-            .map(|s| Ok(s), GetOutput::same_type()))
+            .map(Ok, GetOutput::same_type()))
         .mean()])
         .collect()?;
     assert_eq!(out.column("b_mean")?.null_count(), 2);
@@ -1432,24 +1421,21 @@ fn test_shift_and_fill_window_function() -> Result<()> {
     let out1 = df
         .clone()
         .lazy()
-        .select(vec![
+        .select([
             col("fruits"),
-            col("B")
-                .shift_and_fill(-1, lit(-1))
-                .over(vec![col("fruits")]),
+            col("B").shift_and_fill(-1, lit(-1)).over([col("fruits")]),
         ])
         .collect()?;
 
     // same expression, no final list aggregation
     let out2 = df
-        .clone()
         .lazy()
-        .select(vec![
+        .select([
             col("fruits"),
             col("B")
                 .shift_and_fill(-1, lit(-1))
                 .list()
-                .over(vec![col("fruits")]),
+                .over([col("fruits")]),
         ])
         .collect()?;
 
@@ -1470,11 +1456,11 @@ fn test_cumsum_agg_as_key() -> Result<()> {
 
     let out = df
         .lazy()
-        .groupby(vec![col("soil")
+        .groupby([col("soil")
             .neq(col("soil").shift_and_fill(1, col("soil").first()))
             .cumsum(false)
             .alias("key")])
-        .agg(vec![col("depth").max().keep_name()])
+        .agg([col("depth").max().keep_name()])
         .sort("depth", false)
         .collect()?;
 
@@ -1498,8 +1484,8 @@ fn test_auto_list_agg() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby(vec![col("fruits")])
-        .agg(vec![col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
+        .groupby([col("fruits")])
+        .agg([col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
         .collect()?;
 
     assert!(matches!(out.column("foo")?.dtype(), DataType::List(_)));
@@ -1508,20 +1494,20 @@ fn test_auto_list_agg() -> Result<()> {
     let _out = df
         .clone()
         .lazy()
-        .groupby(vec![col("fruits")])
-        .agg(vec![col("B").shift_and_fill(-1, lit(-1))])
+        .groupby([col("fruits")])
+        .agg([col("B").shift_and_fill(-1, lit(-1))])
         .collect()?;
 
     // test if window expr executor adds list
     let _out = df
         .clone()
         .lazy()
-        .select(vec![col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
+        .select([col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
         .collect()?;
 
     let _out = df
         .lazy()
-        .select(vec![col("B").shift_and_fill(-1, lit(-1))])
+        .select([col("B").shift_and_fill(-1, lit(-1))])
         .collect()?;
     Ok(())
 }
@@ -1534,11 +1520,11 @@ fn test_exploded_window_function() -> Result<()> {
         .clone()
         .lazy()
         .sort("fruits", false)
-        .select(vec![
+        .select([
             col("fruits"),
             col("B")
                 .shift(1)
-                .over(vec![col("fruits")])
+                .over([col("fruits")])
                 .explode()
                 .alias("shifted"),
         ])
@@ -1554,11 +1540,11 @@ fn test_exploded_window_function() -> Result<()> {
     let out = df
         .lazy()
         .sort("fruits", false)
-        .select(vec![
+        .select([
             col("fruits"),
             col("B")
                 .shift_and_fill(1, lit(-1.0))
-                .over(vec![col("fruits")])
+                .over([col("fruits")])
                 .explode()
                 .alias("shifted"),
         ])
@@ -1578,9 +1564,9 @@ fn test_reverse_in_groups() -> Result<()> {
     let out = df
         .lazy()
         .sort("fruits", false)
-        .select(vec![col("B")
+        .select([col("B")
             .reverse()
-            .over(vec![col("fruits")])
+            .over([col("fruits")])
             .explode()
             .alias("rev")])
         .collect()?;
@@ -1598,9 +1584,9 @@ fn test_take_in_groups() -> Result<()> {
     let out = df
         .lazy()
         .sort("fruits", false)
-        .select(vec![col("B")
+        .select([col("B")
             .take(lit(Series::new("", &[0u32])))
-            .over(vec![col("fruits")])
+            .over([col("fruits")])
             .explode()
             .alias("taken")])
         .collect()?;
@@ -1616,12 +1602,12 @@ fn test_sort_by_in_groups() -> Result<()> {
     let out = df
         .lazy()
         .sort("cars", false)
-        .select(vec![
+        .select([
             col("fruits"),
             col("cars"),
             col("A")
                 .sort_by(col("B"), false)
-                .over(vec![col("cars")])
+                .over([col("cars")])
                 .explode()
                 .alias("sorted_A_by_B"),
         ])
@@ -1640,12 +1626,12 @@ fn test_filter_after_shift_in_groups() -> Result<()> {
 
     let out = df
         .lazy()
-        .select(vec![
+        .select([
             col("fruits"),
             col("B")
                 .shift(1)
                 .filter(col("B").shift(1).gt(lit(4)))
-                .over(vec![col("fruits")])
+                .over([col("fruits")])
                 .alias("filtered"),
         ])
         .collect()?;
@@ -1690,7 +1676,7 @@ fn test_lazy_ternary_predicate_pushdown() -> Result<()> {
 
     let out = df
         .lazy()
-        .select(vec![when(col("a").eq(lit(10)))
+        .select([when(col("a").eq(lit(10)))
             .then(Null {}.lit())
             .otherwise(col("a"))])
         .drop_nulls(None)
@@ -1711,11 +1697,11 @@ fn test_categorical_addition() -> Result<()> {
     // test if we can do that arithmetic operation with utf8 and categorical
     let out = df
         .lazy()
-        .select(vec![
+        .select([
             col("fruits").cast(DataType::Categorical),
             col("cars").cast(DataType::Categorical),
         ])
-        .select(vec![(col("fruits") + lit(" ") + col("cars")).alias("foo")])
+        .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;
 
     assert_eq!(out.column("foo")?.utf8()?.get(0).unwrap(), "banana beetle");
@@ -1726,11 +1712,7 @@ fn test_categorical_addition() -> Result<()> {
 #[test]
 fn test_error_duplicate_names() {
     let df = fruits_cars();
-    assert!(df
-        .lazy()
-        .select(vec![col("*"), col("*"),])
-        .collect()
-        .is_err());
+    assert!(df.lazy().select([col("*"), col("*"),]).collect().is_err());
 }
 
 #[test]
@@ -1738,7 +1720,7 @@ fn test_filter_count() -> Result<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .select(vec![col("fruits")
+        .select([col("fruits")
             .filter(col("fruits").eq(lit("banana")))
             .count()])
         .collect()?;
@@ -1756,8 +1738,8 @@ fn test_groupby_small_ints() -> Result<()> {
     // https://github.com/pola-rs/polars/issues/1255
     let out = df
         .lazy()
-        .groupby(vec![col("id_16"), col("id_32")])
-        .agg(vec![col("id_16").sum().alias("foo")])
+        .groupby([col("id_16"), col("id_32")])
+        .agg([col("id_16").sum().alias("foo")])
         .sort("foo", true)
         .collect()?;
 
@@ -1771,7 +1753,7 @@ fn test_when_then_schema() -> Result<()> {
 
     let schema = df
         .lazy()
-        .select(vec![when(col("A").gt(lit(1)))
+        .select([when(col("A").gt(lit(1)))
             .then(Null {}.lit())
             .otherwise(col("A"))])
         .schema();
@@ -1785,7 +1767,7 @@ fn test_singleton_broadcast() -> Result<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .select(vec![col("fruits"), lit(1).alias("foo")])
+        .select([col("fruits"), lit(1).alias("foo")])
         .collect()?;
 
     assert!(out.column("foo")?.len() > 1);
@@ -1797,9 +1779,9 @@ fn test_sort_by_suffix() -> Result<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .select(vec![col("*")
+        .select([col("*")
             .sort_by(col("A"), false)
-            .over(vec![col("fruits")])
+            .over([col("fruits")])
             .flatten()
             .suffix("_sorted")])
         .collect()?;
@@ -1824,7 +1806,7 @@ fn test_list_in_select_context() -> Result<()> {
 
     let df = DataFrame::new(vec![s])?;
 
-    let out = df.lazy().select(vec![col("a").list()]).collect()?;
+    let out = df.lazy().select([col("a").list()]).collect()?;
 
     let s = out.column("a")?;
     assert!(s.series_equal(&expected));
@@ -1838,8 +1820,8 @@ fn test_round_after_agg() -> Result<()> {
 
     let out = df
         .lazy()
-        .groupby(vec![col("fruits")])
-        .agg(vec![col("A")
+        .groupby([col("fruits")])
+        .agg([col("A")
             .cast(DataType::Float32)
             .mean()
             .round(2)
@@ -1858,8 +1840,8 @@ fn test_power_in_agg_list() -> Result<()> {
     // a flat apply on a final aggregation
     let out = df
         .lazy()
-        .groupby(vec![col("fruits")])
-        .agg(vec![col("A")
+        .groupby([col("fruits")])
+        .agg([col("A")
             .rolling_min(RollingOptions {
                 window_size: 1,
                 ..Default::default()
@@ -1885,8 +1867,8 @@ fn test_power_in_agg_list2() -> Result<()> {
     // a flat apply on evaluate_on_groups
     let out = df
         .lazy()
-        .groupby(vec![col("fruits")])
-        .agg(vec![col("A")
+        .groupby([col("fruits")])
+        .agg([col("A")
             .rolling_min(RollingOptions {
                 window_size: 2,
                 min_periods: 2,

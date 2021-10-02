@@ -1488,7 +1488,7 @@ mod test {
             vec![1, 2, 3, 4, 4, 4, 2, 1, 1],
             vec![1, 2, 3, 4, 4, 4],
         ] {
-            let ca = UInt32Chunked::new_from_slice("", &slice);
+            let ca = UInt32Chunked::new_from_slice("", slice);
             let split = split_ca(&ca, 4).unwrap();
 
             let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();

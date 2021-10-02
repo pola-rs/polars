@@ -140,8 +140,8 @@ mod test {
     fn test_pearson_corr() {
         let a = Series::new("a", &[1.0f32, 2.0]);
         let b = Series::new("b", &[1.0f32, 2.0]);
-        assert!((cov(&a.f32().unwrap(), &b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
-        assert!((pearson_corr(&a.f32().unwrap(), &b.f32().unwrap()).unwrap() - 1.0).abs() < 0.001);
+        assert!((cov(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
+        assert!((pearson_corr(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 1.0).abs() < 0.001);
     }
 
     #[test]

@@ -46,9 +46,9 @@ mod test {
 
         let out = df
             .lazy()
-            .groupby(vec![col("a")])
-            .agg(vec![col("b").mean()])
-            .select(vec![col("a"), col("b_mean")])
+            .groupby([col("a")])
+            .agg([col("b").mean()])
+            .select([col("a"), col("b_mean")])
             .sort("a", false)
             .ooc()?;
 
