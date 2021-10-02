@@ -631,11 +631,10 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     ///
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///       df.lazy()
-    ///         .groupby(vec![col("foo")])
-    ///         .agg(vec!(col("bar").sum(),
-    ///                   col("ham").mean().alias("avg_ham")))
-    ///         .collect()
+    ///     df.lazy()
+    ///       .groupby([col("foo")])
+    ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
+    ///       .collect()
     /// }
     /// ```
     pub fn collect(self) -> Result<DataFrame> {
@@ -735,8 +734,8 @@ impl LazyFrame {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby(vec![col("date")])
-    ///        .agg(vec![
+    ///        .groupby([col("date")])
+    ///        .agg([
     ///            col("rain").min(),
     ///            col("rain").sum(),
     ///            col("rain").quantile(0.5).alias("median_rain"),
@@ -744,23 +743,23 @@ impl LazyFrame {
     ///        .sort("date", false)
     /// }
     /// ```
-    pub fn groupby(self, by: Vec<Expr>) -> LazyGroupBy {
+    pub fn groupby<E: AsRef<[Expr]>>(self, by: E) -> LazyGroupBy {
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by,
+            keys: by.as_ref().to_vec(),
             maintain_order: false,
         }
     }
 
     /// Similar to groupby, but order of the DataFrame is maintained.
-    pub fn stable_groupby(self, by: Vec<Expr>) -> LazyGroupBy {
+    pub fn stable_groupby<E: AsRef<[Expr]>>(self, by: E) -> LazyGroupBy {
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by,
+            keys: by.as_ref().to_vec(),
             maintain_order: true,
         }
     }
@@ -1056,8 +1055,8 @@ impl LazyGroupBy {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby(vec![col("date")])
-    ///        .agg(vec![
+    ///        .groupby([col("date")])
+    ///        .agg([
     ///            col("rain").min(),
     ///            col("rain").sum(),
     ///            col("rain").quantile(0.5).alias("median_rain"),
@@ -1065,7 +1064,7 @@ impl LazyGroupBy {
     ///        .sort("date", false)
     /// }
     /// ```
-    pub fn agg(self, aggs: Vec<Expr>) -> LazyFrame {
+    pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
         let lp = LogicalPlanBuilder::from(self.logical_plan)
             .groupby(Arc::new(self.keys), aggs, None, self.maintain_order)
             .build();
@@ -1081,7 +1080,7 @@ impl LazyGroupBy {
             .flatten()
             .collect::<Vec<_>>();
 
-        self.agg(vec![col("*").exclude(&keys).head(n).list().keep_name()])
+        self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
             .explode(vec![col("*").exclude(&keys)])
     }
 
@@ -1094,7 +1093,7 @@ impl LazyGroupBy {
             .flatten()
             .collect::<Vec<_>>();
 
-        self.agg(vec![col("*").exclude(&keys).tail(n).list().keep_name()])
+        self.agg([col("*").exclude(&keys).tail(n).list().keep_name()])
             .explode(vec![col("*").exclude(&keys)])
     }
 

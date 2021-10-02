@@ -148,8 +148,8 @@ mod test {
         let out = df
             .lazy()
             .with_columns(vec![
-                shift_col_1.clone().alias("shift_1"),
-                shift_col_neg_1.clone().alias("shift_neg_1"),
+                shift_col_1.alias("shift_1"),
+                shift_col_neg_1.alias("shift_neg_1"),
             ])
             .with_column(col("shift_1").and(col("shift_neg_1")).alias("diff"))
             .filter(col("diff"))

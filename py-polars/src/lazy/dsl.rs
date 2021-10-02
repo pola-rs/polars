@@ -283,7 +283,10 @@ impl PyExpr {
     }
 
     pub fn over(&self, partition_by: Vec<PyExpr>) -> PyExpr {
-        let partition_by = partition_by.into_iter().map(|e| e.inner).collect();
+        let partition_by = partition_by
+            .into_iter()
+            .map(|e| e.inner)
+            .collect::<Vec<Expr>>();
         self.clone().inner.over(partition_by).into()
     }
 

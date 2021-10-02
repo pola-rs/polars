@@ -117,8 +117,8 @@
 //!     .has_header(true)
 //!     .with_delimiter(b',')
 //!     .finish()
-//!     .groupby(vec![col("comment_karma")])
-//!     .agg(vec![col("name").n_unique().alias("unique_names"), col("link_karma").max()])
+//!     .groupby([col("comment_karma")])
+//!     .agg([col("name").n_unique().alias("unique_names"), col("link_karma").max()])
 //!     // take only 100 rows.
 //!     .fetch(100)?;
 //! # Ok(())

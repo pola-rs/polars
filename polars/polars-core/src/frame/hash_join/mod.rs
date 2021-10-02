@@ -1470,7 +1470,7 @@ mod test {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_join_multiple_columns() {
-        let (df_a, df_b) = get_dfs();
+        let (mut df_a, mut df_b) = get_dfs();
 
         // First do a hack with concatenated string dummy column
         let mut s = df_a
@@ -1483,7 +1483,6 @@ mod test {
             + df_a.column("b").unwrap().utf8().unwrap();
         s.rename("dummy");
 
-        let mut df_a = df_a.clone();
         df_a.with_column(s).unwrap();
         let mut s = df_b
             .column("foo")
@@ -1494,7 +1493,6 @@ mod test {
             .unwrap()
             + df_b.column("bar").unwrap().utf8().unwrap();
         s.rename("dummy");
-        let mut df_b = df_b.clone();
         df_b.with_column(s).unwrap();
 
         let joined = df_a.left_join(&df_b, "dummy", "dummy").unwrap();

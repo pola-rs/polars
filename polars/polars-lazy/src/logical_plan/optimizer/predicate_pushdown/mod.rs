@@ -493,7 +493,7 @@ mod test {
             &mut expr_arena,
         );
         let root = *acc_predicates.get(&String::from("foo")).unwrap();
-        let expr = node_to_exp(root, &mut expr_arena);
+        let expr = node_to_exp(root, &expr_arena);
         assert_eq!(
             format!("{:?}", &expr),
             format!("{:?}", &lit(true).and(predicate_expr))

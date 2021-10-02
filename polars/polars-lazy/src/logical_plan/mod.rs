@@ -1140,16 +1140,16 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn groupby(
+    pub fn groupby<E: AsRef<[Expr]>>(
         self,
         keys: Arc<Vec<Expr>>,
-        aggs: Vec<Expr>,
+        aggs: E,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
     ) -> Self {
         debug_assert!(!keys.is_empty());
         let current_schema = self.0.schema();
-        let aggs = rewrite_projections(aggs, current_schema);
+        let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema);
 
         let schema1 = utils::expressions_to_schema(&keys, current_schema, Context::Default);
         let schema2 = utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation);
@@ -1393,8 +1393,8 @@ mod test {
 
         let lp = df
             .lazy()
-            .groupby(vec![col("variety")])
-            .agg(vec![col("sepal.width").min()])
+            .groupby([col("variety")])
+            .agg([col("sepal.width").min()])
             .logical_plan;
         println!("{:#?}", lp.schema().fields());
         assert!(lp.schema().field_with_name("sepal.width_min").is_ok());
@@ -1443,9 +1443,8 @@ mod test {
         // check if optimization succeeds with selection of a renamed column due to the join
         {
             let lf = left
-                .clone()
                 .lazy()
-                .left_join(right.clone().lazy(), col("days"), col("days"))
+                .left_join(right.lazy(), col("days"), col("days"))
                 .select(&[col("temp"), col("rain_right")]);
 
             print_plans(&lf);

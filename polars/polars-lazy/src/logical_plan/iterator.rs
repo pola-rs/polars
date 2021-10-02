@@ -320,8 +320,8 @@ mod test {
         let (root, lp_arena, _expr_arena) = df
             .lazy()
             .sort("a", false)
-            .groupby(vec![col("a")])
-            .agg(vec![col("a").first()])
+            .groupby([col("a")])
+            .agg([col("a").first()])
             .logical_plan
             .into_alp();
 

@@ -173,14 +173,10 @@ mod test {
         let q1 = df
             .clone()
             .lazy()
-            .groupby(vec![col("b")])
-            .agg(vec![col("a").first()]);
+            .groupby([col("b")])
+            .agg([col("a").first()]);
 
-        let q2 = df
-            .clone()
-            .lazy()
-            .groupby(vec![col("b")])
-            .agg(vec![col("a").last()]);
+        let q2 = df.clone().lazy().groupby([col("b")]).agg([col("a").last()]);
 
         let (root, mut expr_arena, mut alp_arena) = q1.left_join(q2, col("b"), col("b")).into_alp();
         dbg!(alp_arena.get(root));
@@ -194,16 +190,15 @@ mod test {
         let q1 = df
             .clone()
             .lazy()
-            .select(vec![col("a"), col("b")])
-            .groupby(vec![col("b")])
-            .agg(vec![col("a").first()]);
+            .select([col("a"), col("b")])
+            .groupby([col("b")])
+            .agg([col("a").first()]);
 
         let q2 = df
-            .clone()
             .lazy()
-            .select(vec![col("a"), col("b"), col("c")])
-            .groupby(vec![col("b")])
-            .agg(vec![col("a").last()]);
+            .select([col("a"), col("b"), col("c")])
+            .groupby([col("b")])
+            .agg([col("a").last()]);
 
         let (root, mut expr_arena, mut alp_arena) = q1.left_join(q2, col("b"), col("b")).into_alp();
         dbg!(alp_arena.get(root));
