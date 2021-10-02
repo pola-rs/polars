@@ -148,7 +148,12 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-                try_physical_dispatch!(self, zip_with_same_type, mask, other)
+                let other = if self.dtype() == &DataType::Date32 {
+                    other.cast_with_dtype(&DataType::Int32)?
+                } else {
+                    other.cast_with_dtype(&DataType::Int64)?
+                };
+                try_physical_dispatch!(self, zip_with_same_type, mask, &other)
             }
 
             fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {

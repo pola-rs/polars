@@ -17,12 +17,24 @@ impl CastExpr {
         // We use the booleanarray as null series, because we have no null array.
         // in a ternary or binary operation, we then do type coercion to matching supertype.
         // here we create a null array for the types we cannot cast to from a booleanarray
-        if matches!(self.data_type, DataType::List(_)) {
-            // the booleanarray is hacked as null type
-            if input.bool().is_ok() && input.null_count() == input.len() {
-                return Ok(ListChunked::full_null(input.name(), input.len()).into_series());
+
+        if input.bool().is_ok() && input.null_count() == input.len() {
+            match self.data_type {
+                DataType::List(_) => {
+                    return Ok(ListChunked::full_null(input.name(), input.len()).into_series())
+                }
+                #[cfg(feature = "dtype-date32")]
+                DataType::Date32 => {
+                    return Ok(Date32Chunked::full_null(input.name(), input.len()).into_series())
+                }
+                #[cfg(feature = "dtype-date64")]
+                DataType::Date64 => {
+                    return Ok(Date64Chunked::full_null(input.name(), input.len()).into_series())
+                }
+                _ => {}
             }
         }
+
         if self.strict {
             input.strict_cast(&self.data_type)
         } else {

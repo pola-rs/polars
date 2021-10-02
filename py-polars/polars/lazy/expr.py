@@ -776,6 +776,13 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
 
+    def fill_nan(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
+        """
+        Fill none value with a fill value
+        """
+        fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
+        return wrap_expr(self._pyexpr.fill_nan(fill_value._pyexpr))
+
     def forward_fill(self) -> "Expr":
         """
         Fill missing values with the latest seen values
