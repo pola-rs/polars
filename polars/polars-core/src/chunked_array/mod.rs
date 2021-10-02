@@ -43,6 +43,7 @@ mod bitwise;
 #[cfg(feature = "dtype-categorical")]
 pub(crate) mod categorical;
 pub(crate) mod list;
+pub(crate) mod logical;
 
 use polars_arrow::prelude::*;
 

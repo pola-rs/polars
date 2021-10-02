@@ -1,6 +1,8 @@
 use crate::frame::groupby::GroupBy;
 use crate::prelude::*;
 use crate::utils::chrono::{Datelike, NaiveDate};
+use crate::utils::CustomIterTools;
+use std::ops::Deref;
 
 pub enum SampleRule {
     Month(u32),
@@ -25,7 +27,7 @@ impl Date32Chunked {
                             .map(|nd| (nd.and_hms(0, 0, 0).timestamp() / SECONDS_IN_DAY) as i32),
                         _ => None,
                     })
-                    .collect()
+                    .collect_trusted()
             }
             Week(n) => {
                 let year = self.year();
@@ -47,27 +49,27 @@ impl Date32Chunked {
                         }
                         _ => None,
                     })
-                    .collect()
+                    .collect_trusted()
             }
             Day(n) => {
                 // just floor divide to create a bucket
-                self / n * n
+                self.deref() / n * n
             }
             Hour(_) => {
                 // date32 does not have hours
-                self.clone()
+                self.deref().clone()
             }
             Minute(_) => {
                 // date32 does not have minutes
-                self.clone()
+                self.deref().clone()
             }
             Second(_) => {
                 // date32 does not have minutes
-                self.clone()
+                self.deref().clone()
             }
         };
         out.rename(self.name());
-        out
+        out.into()
     }
 }
 
@@ -112,23 +114,23 @@ impl Date64Chunked {
             Day(n) => {
                 // just floor divide to create a bucket
                 let fact = 1000 * 3600 * 24 * n;
-                self / fact * fact
+                self.deref() / fact * fact
             }
             Hour(n) => {
                 let fact = 1000 * 3600 * n;
-                self / fact * fact
+                self.deref() / fact * fact
             }
             Minute(n) => {
                 let fact = 1000 * 60 * n;
-                self / fact * fact
+                self.deref() / fact * fact
             }
             Second(n) => {
                 let fact = 1000 * n;
-                self / fact * fact
+                self.deref() / fact * fact
             }
         };
         out.rename(self.name());
-        out
+        out.into()
     }
 }
 
@@ -261,7 +263,8 @@ impl DataFrame {
                             .map(|nd| nd.and_hms(0, 0, 0).timestamp_millis()),
                         _ => None,
                     })
-                    .collect::<Date64Chunked>()
+                    .collect_trusted::<Int64Chunked>()
+                    .into_date()
                     .into_series();
 
                 key.rename(&key_name);
@@ -295,7 +298,8 @@ impl DataFrame {
                         }
                         _ => None,
                     })
-                    .collect::<Date64Chunked>()
+                    .collect_trusted::<Int64Chunked>()
+                    .into_date()
                     .into_series();
 
                 key.rename(&key_name);
@@ -424,7 +428,7 @@ mod test {
 
     #[test]
     fn test_downsample() -> Result<()> {
-        let ts = Date64Chunked::new_from_slice(
+        let ts = Int64Chunked::new_from_slice(
             "ms",
             &[
                 946684800000,
@@ -449,16 +453,15 @@ mod test {
                 946685940000,
             ],
         )
+        .into_date()
         .into_series();
         let idx = UInt8Chunked::new_from_iter("i", 0..20).into_series();
 
         let df = DataFrame::new(vec![ts, idx])?;
-        dbg!(&df);
         let out = df
             .downsample("ms", SampleRule::Minute(5))?
             .first()?
             .sort("ms", false)?;
-        dbg!(&out);
         assert_eq!(
             Vec::from(out.column("i_first")?.u8()?),
             &[Some(0), Some(5), Some(10), Some(15)]

@@ -17,6 +17,15 @@ where
     Arc::new(array)
 }
 
+pub(crate) fn cast_chunks(chunks: &[ArrayRef], dtype: DataType) -> Result<Vec<ArrayRef>> {
+    let chunks = chunks
+        .iter()
+        .map(|arr| cast::cast(arr.as_ref(), &dtype.to_arrow()))
+        .map(|arr| arr.map(|x| x.into()))
+        .collect::<arrow::error::Result<Vec<_>>>()?;
+    Ok(chunks)
+}
+
 fn cast_ca<N, T>(ca: &ChunkedArray<T>) -> Result<ChunkedArray<N>>
 where
     N: PolarsDataType,
@@ -25,13 +34,7 @@ where
     if N::get_dtype() == T::get_dtype() {
         return Ok(ChunkedArray::new_from_chunks(ca.name(), ca.chunks.clone()));
     };
-    let chunks = ca
-        .chunks
-        .iter()
-        .map(|arr| cast::cast(arr.as_ref(), &N::get_dtype().to_arrow()))
-        .map(|arr| arr.map(|x| x.into()))
-        .collect::<arrow::error::Result<Vec<_>>>()?;
-
+    let chunks = cast_chunks(&ca.chunks, N::get_dtype())?;
     Ok(ChunkedArray::new_from_chunks(ca.field.name(), chunks))
 }
 
@@ -70,9 +73,13 @@ macro_rules! cast_with_dtype {
             Float32 => ChunkCast::cast::<Float32Type>($self).map(|ca| ca.into_series()),
             Float64 => ChunkCast::cast::<Float64Type>($self).map(|ca| ca.into_series()),
             #[cfg(feature = "dtype-date32")]
-            Date32 => ChunkCast::cast::<Date32Type>($self).map(|ca| ca.into_series()),
+            Date32 => {
+                ChunkCast::cast::<Int32Type>($self).map(|ca| Date32Chunked::new(ca).into_series())
+            }
             #[cfg(feature = "dtype-date64")]
-            Date64 => ChunkCast::cast::<Date64Type>($self).map(|ca| ca.into_series()),
+            Date64 => {
+                ChunkCast::cast::<Int64Type>($self).map(|ca| Date64Chunked::new(ca).into_series())
+            }
             List(_) => ChunkCast::cast::<ListType>($self).map(|ca| ca.into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical => ChunkCast::cast::<CategoricalType>($self).map(|ca| ca.into_series()),

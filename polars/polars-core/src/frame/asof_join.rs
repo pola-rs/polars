@@ -4,7 +4,7 @@ use num::Bounded;
 use polars_arrow::trusted_len::PushUnchecked;
 
 pub(crate) trait JoinAsof<T: PolarsDataType> {
-    fn join_asof(&self, _other: &ChunkedArray<T>) -> Result<Vec<Option<u32>>> {
+    fn join_asof(&self, _other: &Series) -> Result<Vec<Option<u32>>> {
         Err(PolarsError::InvalidOperation(
             format!(
                 "asof join not implemented for key with dtype: {:?}",
@@ -20,7 +20,8 @@ where
     T: PolarsNumericType,
     T::Native: Bounded + PartialOrd,
 {
-    fn join_asof(&self, other: &ChunkedArray<T>) -> Result<Vec<Option<u32>>> {
+    fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
+        let other = self.unpack_series_matching_type(other)?;
         let mut rhs_iter = other.into_iter();
         let mut tuples = Vec::with_capacity(self.len());
         if self.null_count() > 0 {

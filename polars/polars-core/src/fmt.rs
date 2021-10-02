@@ -634,6 +634,18 @@ impl FmtList for CategoricalChunked {
     }
 }
 
+impl FmtList for Date32Chunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
+impl FmtList for Date64Chunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> FmtList for ObjectChunked<T> {
     fn fmt_list(&self) -> String {

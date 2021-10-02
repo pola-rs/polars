@@ -320,7 +320,7 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
 }
 
 /// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
-/// So no dates.
+/// So no logical.
 #[macro_export]
 macro_rules! match_arrow_data_type_apply_macro_ca_logical_num {
     ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{

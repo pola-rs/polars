@@ -4,6 +4,7 @@ use super::Series;
 use crate::apply_method_numeric_series;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
+use std::ops::Deref;
 
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
@@ -23,8 +24,8 @@ macro_rules! impl_compare {
             DataType::Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
             DataType::Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             DataType::Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
-            DataType::Date32 => lhs.date32().unwrap().$method(rhs.date32().unwrap()),
-            DataType::Date64 => lhs.date64().unwrap().$method(rhs.date64().unwrap()),
+            DataType::Date32 => lhs.date32().unwrap().$method(rhs.date32().unwrap().deref()),
+            DataType::Date64 => lhs.date64().unwrap().$method(rhs.date64().unwrap().deref()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
             _ => unimplemented!(),
         }

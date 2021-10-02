@@ -43,7 +43,7 @@ mod test {
             "2020-08-22",
         ];
         let fmt = "%Y-%m-%d";
-        let ca = Date32Chunked::parse_from_str_slice("dates", dates, fmt);
+        let ca = Date32Chunked::parse_from_str_slice("logical", dates, fmt);
         assert_eq!(
             [18495, 18495, 18496, 18497, 18496],
             ca.cont_slice().unwrap()

@@ -1,6 +1,6 @@
 //! # DateTime related functionality
 //!
-//! Polars supports most data types in Arrow related to time and dates.
+//! Polars supports most data types in Arrow related to time and logical.
 //! The datatypes that have most utility support are:
 //!
 //! * Date32
@@ -60,7 +60,7 @@
 //! // Create the ChunkedArray
 //! let ca = Date64Chunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt);
 //!
-//! // or dates in different precision (days)
+//! // or logical in different precision (days)
 //! let ca = Date32Chunked::parse_from_str_slice("date as days since Epoch", datetime_values, fmt);
 //! ```
 //!

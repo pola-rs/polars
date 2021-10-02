@@ -308,12 +308,15 @@ impl DataFrame {
 
     /// Get fields from the columns.
     fn create_fields(columns: &[Series]) -> Vec<Field> {
-        columns.iter().map(|s| s.field().clone()).collect()
+        columns.iter().map(|s| s.field().into_owned()).collect()
     }
 
     /// Get a reference to the schema fields of the DataFrame.
     pub fn fields(&self) -> Vec<Field> {
-        self.columns.iter().map(|s| s.field().clone()).collect()
+        self.columns
+            .iter()
+            .map(|s| s.field().into_owned())
+            .collect()
     }
 
     /// Get (width x height)
@@ -1786,19 +1789,7 @@ impl<'a> Iterator for RecordBatchIter<'a> {
             None
         } else {
             // create a batch of the columns with the same chunk no.
-            let batch_cols = self
-                .columns
-                .iter()
-                .map(|s| {
-                    #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical = s.dtype() {
-                        let ca = s.categorical().unwrap();
-                        let arr: DictionaryArray<u32> = ca.into();
-                        return Arc::new(arr) as ArrayRef;
-                    }
-                    s.chunks()[self.idx].clone()
-                })
-                .collect();
+            let batch_cols = self.columns.iter().map(|s| s.to_arrow(self.idx)).collect();
             self.idx += 1;
 
             Some(RecordBatch::try_new(self.schema.clone(), batch_cols).unwrap())
