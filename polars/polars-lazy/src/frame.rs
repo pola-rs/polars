@@ -631,11 +631,10 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     ///
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///       df.lazy()
-    ///         .groupby([col("foo")])
-    ///         .agg((col("bar").sum(),
-    ///                   col("ham").mean().alias("avg_ham")))
-    ///         .collect()
+    ///     df.lazy()
+    ///       .groupby([col("foo")])
+    ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
+    ///       .collect()
     /// }
     /// ```
     pub fn collect(self) -> Result<DataFrame> {

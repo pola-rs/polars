@@ -92,7 +92,10 @@ fn cov(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
 
 #[pyfunction]
 fn argsort_by(by: Vec<dsl::PyExpr>, reverse: Vec<bool>) -> dsl::PyExpr {
-    let by = by.into_iter().map(|e| e.inner).collect();
+    let by = by
+        .into_iter()
+        .map(|e| e.inner)
+        .collect::<Vec<polars::lazy::dsl::Expr>>();
     polars::lazy::functions::argsort_by(by, &reverse).into()
 }
 

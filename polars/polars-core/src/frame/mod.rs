@@ -642,7 +642,7 @@ impl DataFrame {
     ///     match possible {
     ///         "by_str" => df.select("my-column"),
     ///         "by_tuple" => df.select(("col_1", "col_2")),
-    ///         "by_vec" => df.select(["col_a", "col_b"]),
+    ///         "by_vec" => df.select(vec!["col_a", "col_b"]),
     ///          _ => unimplemented!()
     ///     }
     /// }
