@@ -128,7 +128,7 @@ impl BooleanChunked {
            + DoubleEndedIterator
            + TrustedLen {
         self.downcast_iter()
-            .map(|bool_arr| BoolIterNoNull::new(bool_arr))
+            .map(BoolIterNoNull::new)
             .flatten()
             .trust_my_length(self.len())
     }
@@ -206,7 +206,7 @@ impl Utf8Chunked {
            + DoubleEndedIterator
            + TrustedLen {
         self.downcast_iter()
-            .map(|arr| Utf8IterNoNull::new(arr))
+            .map(Utf8IterNoNull::new)
             .flatten()
             .trust_my_length(self.len())
     }
@@ -292,7 +292,7 @@ impl ListChunked {
            + DoubleEndedIterator
            + TrustedLen {
         self.downcast_iter()
-            .map(|arr| ListIterNoNull::new(arr))
+            .map(ListIterNoNull::new)
             .flatten()
             .trust_my_length(self.len())
     }

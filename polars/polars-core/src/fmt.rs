@@ -373,9 +373,10 @@ fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<Str
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let height = self.height();
-        if !self.columns.iter().all(|s| s.len() == height) {
-            panic!("The columns lengths in the DataFrame are not equal.");
-        }
+        assert!(
+            self.columns.iter().all(|s| s.len() == height),
+            "The columns lengths in the DataFrame are not equal."
+        );
 
         let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
             .unwrap_or_else(|_| "8".to_string())

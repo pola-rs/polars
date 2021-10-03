@@ -67,7 +67,7 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         self.downcast_iter()
-            .map(|a| compute::aggregate::sum_primitive(a))
+            .map(compute::aggregate::sum_primitive)
             .fold(None, |acc, v| match v {
                 Some(v) => match acc {
                     None => Some(v),
@@ -79,13 +79,13 @@ where
 
     fn min(&self) -> Option<T::Native> {
         self.downcast_iter()
-            .filter_map(|a| compute::aggregate::min_primitive(a))
+            .filter_map(compute::aggregate::min_primitive)
             .fold_first_(|acc, v| if acc < v { acc } else { v })
     }
 
     fn max(&self) -> Option<T::Native> {
         self.downcast_iter()
-            .filter_map(|a| compute::aggregate::max_primitive(a))
+            .filter_map(compute::aggregate::max_primitive)
             .fold_first_(|acc, v| if acc > v { acc } else { v })
     }
 

@@ -772,17 +772,19 @@ impl Expr {
 
     /// Get unique values of this expression.
     pub fn unique(self) -> Self {
-        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
-            panic!("wildcard not supperted in unique expr");
-        }
+        assert!(
+            !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
+            "wildcard not supperted in unique expr"
+        );
         self.apply(|s: Series| s.unique(), GetOutput::same_type())
     }
 
     /// Get the first index of unique values of this expression.
     pub fn arg_unique(self) -> Self {
-        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
-            panic!("wildcard not supported in unique expr");
-        }
+        assert!(
+            !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
+            "wildcard not supported in unique expr"
+        );
         self.apply(
             |s: Series| s.arg_unique().map(|ca| ca.into_series()),
             GetOutput::from_type(DataType::UInt32),
@@ -791,9 +793,10 @@ impl Expr {
 
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, reverse: bool) -> Self {
-        if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
-            panic!("wildcard not supported in unique expr");
-        }
+        assert!(
+            !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
+            "wildcard not supported in unique expr"
+        );
         self.apply(
             move |s: Series| Ok(s.argsort(reverse).into_series()),
             GetOutput::from_type(DataType::UInt32),
