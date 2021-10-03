@@ -227,7 +227,6 @@ pub(crate) enum Buffer {
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
-    #[cfg(feature = "dtype-u64")]
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     #[cfg(feature = "dtype-date32")]
     Date32(PrimitiveChunkedBuilder<Date32Type>),
@@ -246,7 +245,6 @@ impl Debug for Buffer {
             Int32(_) => f.write_str("i32"),
             Int64(_) => f.write_str("i64"),
             UInt32(_) => f.write_str("u32"),
-            #[cfg(feature = "dtype-u64")]
             UInt64(_) => f.write_str("u64"),
             #[cfg(feature = "dtype-date32")]
             Date32(_) => f.write_str("date32"),
@@ -271,9 +269,7 @@ impl Buffer {
             (Int64(builder), AnyValue::Null) => builder.append_null(),
             (UInt32(builder), AnyValue::UInt32(v)) => builder.append_value(v),
             (UInt32(builder), AnyValue::Null) => builder.append_null(),
-            #[cfg(feature = "dtype-u64")]
             (UInt64(builder), AnyValue::UInt64(v)) => builder.append_value(v),
-            #[cfg(feature = "dtype-u64")]
             (UInt64(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-date32")]
             (Date32(builder), AnyValue::Null) => builder.append_null(),
@@ -296,7 +292,6 @@ impl Buffer {
             Int32(b) => b.finish().into_series(),
             Int64(b) => b.finish().into_series(),
             UInt32(b) => b.finish().into_series(),
-            #[cfg(feature = "dtype-u64")]
             UInt64(b) => b.finish().into_series(),
             #[cfg(feature = "dtype-date32")]
             Date32(b) => b.finish().into_series(),
@@ -319,7 +314,6 @@ impl From<(&DataType, usize)> for Buffer {
             Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new("", len)),
             Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new("", len)),
             UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new("", len)),
-            #[cfg(feature = "dtype-u64")]
             UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new("", len)),
             #[cfg(feature = "dtype-date32")]
             Date32 => Buffer::Date32(PrimitiveChunkedBuilder::new("", len)),

@@ -781,7 +781,6 @@ impl_dyn_series!(UInt8Chunked);
 #[cfg(feature = "dtype-u16")]
 impl_dyn_series!(UInt16Chunked);
 impl_dyn_series!(UInt32Chunked);
-#[cfg(feature = "dtype-u64")]
 impl_dyn_series!(UInt64Chunked);
 #[cfg(feature = "dtype-i8")]
 impl_dyn_series!(Int8Chunked);
@@ -813,7 +812,6 @@ impl_dyn_series_numeric!(UInt8Chunked);
 #[cfg(feature = "dtype-u16")]
 impl_dyn_series_numeric!(UInt16Chunked);
 impl_dyn_series_numeric!(UInt32Chunked);
-#[cfg(feature = "dtype-u64")]
 impl_dyn_series_numeric!(UInt64Chunked);
 #[cfg(feature = "dtype-i8")]
 impl_dyn_series_numeric!(Int8Chunked);

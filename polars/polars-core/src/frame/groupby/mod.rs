@@ -353,7 +353,6 @@ impl DataFrame {
                     Categorical | Int8 | UInt8 | Int16 | UInt16 => s.cast::<UInt32Type>().unwrap(),
                     Float32 => s.bit_repr_small().into_series(),
                     // otherwise we use the vec hash for float
-                    #[cfg(feature = "dtype-u64")]
                     Float64 => s.bit_repr_large().into_series(),
                     _ => {
                         // is date like

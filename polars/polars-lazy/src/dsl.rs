@@ -1845,7 +1845,6 @@ make_literal!(u8, UInt8);
 #[cfg(feature = "dtype-u16")]
 make_literal!(u16, UInt16);
 make_literal!(u32, UInt32);
-#[cfg(feature = "dtype-u64")]
 make_literal!(u64, UInt64);
 
 /// The literal Null

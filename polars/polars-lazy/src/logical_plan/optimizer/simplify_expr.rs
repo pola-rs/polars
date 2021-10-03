@@ -38,7 +38,6 @@ macro_rules! eval_binary_same_type {
             (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => {
                 Some(AExpr::Literal(LiteralValue::UInt32(x $operand y)))
             }
-            #[cfg(feature = "dtype-u64")]
             (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => {
                 Some(AExpr::Literal(LiteralValue::UInt64(x $operand y)))
             }
@@ -85,7 +84,6 @@ macro_rules! eval_binary_bool_type {
             (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
-            #[cfg(feature = "dtype-u64")]
             (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => {
                 Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
             }
@@ -324,7 +322,6 @@ impl OptimizationRule for SimplifyExprRule {
                                 (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => Some(
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
                                 ),
-                                #[cfg(feature = "dtype-u64")]
                                 (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => Some(
                                     AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
                                 ),
