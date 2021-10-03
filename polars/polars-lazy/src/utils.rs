@@ -94,7 +94,7 @@ pub(crate) fn has_expr<F>(current_expr: &Expr, matches: F) -> bool
 where
     F: Fn(&Expr) -> bool,
 {
-    current_expr.into_iter().any(|e| matches(e))
+    current_expr.into_iter().any(matches)
 }
 
 // this one is used so much that it has its own function, to reduce inlining

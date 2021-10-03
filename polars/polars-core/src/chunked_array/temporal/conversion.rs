@@ -281,7 +281,7 @@ impl Date64Chunked {
                 NaiveDateTime::parse_from_str(s, fmt)
                     .ok()
                     .as_ref()
-                    .map(|v| naive_datetime_to_date64(v))
+                    .map(naive_datetime_to_date64)
             }),
         )
     }

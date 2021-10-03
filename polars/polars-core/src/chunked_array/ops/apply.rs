@@ -280,7 +280,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let values = array.values_iter().map(|x| f(x));
+                let values = array.values_iter().map(f);
                 let values = AlignedVec::<_>::from_trusted_len_iter(values);
                 to_array::<S>(values, array.validity().cloned())
             })
@@ -297,7 +297,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let values = array.into_iter().map(|x| f(x));
+                let values = array.into_iter().map(f);
                 let values = AlignedVec::<_>::from_trusted_len_iter(values);
                 to_array::<S>(values, array.validity().cloned())
             })
@@ -368,11 +368,7 @@ impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
     where
         F: Fn(&BooleanArray) -> ArrayRef,
     {
-        let chunks = self
-            .downcast_iter()
-            .into_iter()
-            .map(|array| f(array))
-            .collect();
+        let chunks = self.downcast_iter().into_iter().map(f).collect();
         Self::new_from_chunks(self.name(), chunks)
     }
 
@@ -381,11 +377,7 @@ impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
         F: Fn(&BooleanArray) -> ArrayRef,
         S: PolarsDataType,
     {
-        let chunks = self
-            .downcast_iter()
-            .into_iter()
-            .map(|array| f(array))
-            .collect();
+        let chunks = self.downcast_iter().into_iter().map(f).collect();
         ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
     }
 }
