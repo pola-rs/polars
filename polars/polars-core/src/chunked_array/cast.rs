@@ -60,7 +60,6 @@ macro_rules! cast_with_dtype {
             #[cfg(feature = "dtype-u16")]
             UInt16 => ChunkCast::cast::<UInt16Type>($self).map(|ca| ca.into_series()),
             UInt32 => ChunkCast::cast::<UInt32Type>($self).map(|ca| ca.into_series()),
-            #[cfg(feature = "dtype-u64")]
             UInt64 => ChunkCast::cast::<UInt64Type>($self).map(|ca| ca.into_series()),
             #[cfg(feature = "dtype-i8")]
             Int8 => ChunkCast::cast::<Int8Type>($self).map(|ca| ca.into_series()),

@@ -125,7 +125,6 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    #[cfg(feature = "dtype-u64")]
                     DeDataType::UInt64 => {
                         let values: Vec<Option<u64>> = map.next_value()?;
                         Ok(Series::new(&name, values))

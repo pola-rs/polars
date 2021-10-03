@@ -288,7 +288,6 @@ pub(crate) fn init_buffers(
                 &DataType::UInt32 => {
                     Buffer::UInt32(PrimitiveChunkedBuilder::new(field.name(), capacity))
                 }
-                #[cfg(feature = "dtype-u64")]
                 &DataType::UInt64 => {
                     Buffer::UInt64(PrimitiveChunkedBuilder::new(field.name(), capacity))
                 }
@@ -321,7 +320,6 @@ pub(crate) enum Buffer {
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
-    #[cfg(feature = "dtype-u64")]
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
@@ -336,7 +334,6 @@ impl Buffer {
             Buffer::Int32(v) => v.finish().into_series(),
             Buffer::Int64(v) => v.finish().into_series(),
             Buffer::UInt32(v) => v.finish().into_series(),
-            #[cfg(feature = "dtype-u64")]
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
@@ -363,7 +360,6 @@ impl Buffer {
             Buffer::Int32(v) => v.append_null(),
             Buffer::Int64(v) => v.append_null(),
             Buffer::UInt32(v) => v.append_null(),
-            #[cfg(feature = "dtype-u64")]
             Buffer::UInt64(v) => v.append_null(),
             Buffer::Float32(v) => v.append_null(),
             Buffer::Float64(v) => v.append_null(),
@@ -413,7 +409,6 @@ impl Buffer {
                     needs_escaping,
                 )
             }
-            #[cfg(feature = "dtype-u64")]
             UInt64(buf) => {
                 <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer<UInt64Type>>::parse_bytes(
                     buf,

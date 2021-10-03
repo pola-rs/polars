@@ -264,7 +264,6 @@ pub mod checked {
                     .unwrap()
                     .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i32().unwrap())))
                     .into_series(),
-                #[cfg(feature = "dtype-u64")]
                 UInt64 => s
                     .u64()
                     .unwrap()

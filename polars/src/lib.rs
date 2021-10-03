@@ -164,7 +164,6 @@
 //! | Int16Type               | dtype-i16         |
 //! | UInt8Type               | dtype-u8          |
 //! | UInt16Type              | dtype-u16         |
-//! | UInt64Type              | dtype-u64         |
 //! | Categorical             | dtype-categorical |
 //!
 //!

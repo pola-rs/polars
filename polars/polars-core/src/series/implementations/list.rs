@@ -15,7 +15,6 @@ use crate::frame::asof_join::JoinAsof;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
-use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
@@ -112,23 +111,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     ) -> Result<DataFrame> {
         self.0.pivot_count(pivot_series, keys, groups)
     }
-    fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
-        HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
-    }
-    fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
-        HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
-    }
-    fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-        HashJoin::hash_join_outer(&self.0, other.as_ref().as_ref())
-    }
-    fn zip_outer_join_column(
-        &self,
-        right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
-    ) -> Series {
-        ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
-    }
-
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         IntoGroupTuples::group_tuples(&self.0, multithreaded)
     }

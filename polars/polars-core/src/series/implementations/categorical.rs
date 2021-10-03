@@ -128,7 +128,11 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         right_column: &Series,
         opt_join_tuples: &[(Option<u32>, Option<u32>)],
     ) -> Series {
-        ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
+        let ca = self.0.cast::<UInt32Type>().unwrap();
+        let right = right_column.cast_with_dtype(&DataType::UInt32).unwrap();
+        ZipOuterJoinColumn::zip_outer_join_column(&ca, &right, opt_join_tuples)
+            .cast_with_dtype(&DataType::Categorical)
+            .unwrap()
     }
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         IntoGroupTuples::group_tuples(&self.0, multithreaded)

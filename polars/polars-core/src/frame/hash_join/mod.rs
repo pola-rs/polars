@@ -477,7 +477,6 @@ impl HashJoin<Float64Type> for Float64Chunked {
     }
 }
 
-impl HashJoin<ListType> for ListChunked {}
 impl HashJoin<CategoricalType> for CategoricalChunked {
     fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(u32, u32)> {
         self.deref().hash_join_inner(&other.cast().unwrap())
@@ -920,17 +919,10 @@ where
                     }
                 }
             })
-            .collect::<ChunkedArray<T>>()
+            .collect_trusted::<ChunkedArray<T>>()
             .into_series()
     }
 }
-
-impl ZipOuterJoinColumn for Float32Chunked {}
-impl ZipOuterJoinColumn for Float64Chunked {}
-impl ZipOuterJoinColumn for ListChunked {}
-impl ZipOuterJoinColumn for CategoricalChunked {}
-#[cfg(feature = "object")]
-impl<T> ZipOuterJoinColumn for ObjectChunked<T> {}
 
 macro_rules! impl_zip_outer_join {
     ($chunkedtype:ident) => {
@@ -965,6 +957,36 @@ macro_rules! impl_zip_outer_join {
 }
 impl_zip_outer_join!(BooleanChunked);
 impl_zip_outer_join!(Utf8Chunked);
+
+impl ZipOuterJoinColumn for Float32Chunked {
+    fn zip_outer_join_column(
+        &self,
+        right_column: &Series,
+        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+    ) -> Series {
+        self.apply_as_ints(|s| {
+            s.zip_outer_join_column(
+                &right_column.bit_repr_small().into_series(),
+                opt_join_tuples,
+            )
+        })
+    }
+}
+
+impl ZipOuterJoinColumn for Float64Chunked {
+    fn zip_outer_join_column(
+        &self,
+        right_column: &Series,
+        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+    ) -> Series {
+        self.apply_as_ints(|s| {
+            s.zip_outer_join_column(
+                &right_column.bit_repr_large().into_series(),
+                opt_join_tuples,
+            )
+        })
+    }
+}
 
 impl DataFrame {
     /// Utility method to finish a join.
@@ -1077,25 +1099,6 @@ impl DataFrame {
         impl DataFrame {
             fn len(&self) -> usize {
                 self.height()
-            }
-        }
-
-        // check if we have floats, in that case we have to coerce them
-        if selected_left
-            .iter()
-            .any(|s| matches!(s.dtype(), DataType::Float32 | DataType::Float64))
-        {
-            #[cfg(feature = "dtype-u64")]
-            for selected in &mut [&mut selected_left, &mut selected_right] {
-                selected.iter_mut().for_each(|s| match s.dtype().clone() {
-                    DataType::Float64 => *s = s.bit_repr_large().into_series(),
-                    DataType::Float32 => *s = s.bit_repr_small().into_series(),
-                    _ => {}
-                });
-            }
-            #[cfg(not(feature = "dtype-u64"))]
-            {
-                panic!("activate dtype-u64 feature to be able to join on floats")
             }
         }
 
@@ -1656,7 +1659,6 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    #[cfg(feature = "dtype-u64")]
     fn test_join_floats() -> Result<()> {
         let df_a = df! {
             "a" => &[1.0, 2.0, 1.0, 1.0],
@@ -1680,6 +1682,23 @@ mod test {
         assert_eq!(
             Vec::from(out.column("ham")?.utf8()?),
             &[None, Some("var"), None, None]
+        );
+
+        let out = df_a.join(
+            &df_b,
+            vec!["a", "c"],
+            vec!["foo", "bar"],
+            JoinType::Outer,
+            None,
+        )?;
+        assert_eq!(
+            out.dtypes(),
+            &[
+                DataType::Utf8,
+                DataType::Float64,
+                DataType::Float64,
+                DataType::Utf8
+            ]
         );
         Ok(())
     }

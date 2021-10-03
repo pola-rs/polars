@@ -170,35 +170,20 @@ impl VecHash for BooleanChunked {
 }
 
 impl VecHash for Float32Chunked {
-    fn vec_hash(&self, _random_state: RandomState) -> AlignedVec<u64> {
-        panic!("should already be coerced to u32")
+    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+        self.bit_repr_small().vec_hash(random_state)
     }
 
-    fn vec_hash_combine(&self, _random_state: RandomState, _hashes: &mut [u64]) {
-        panic!("should already be coerced to u32")
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        self.bit_repr_small().vec_hash_combine(random_state, hashes)
     }
 }
 impl VecHash for Float64Chunked {
-    fn vec_hash(&self, _random_state: RandomState) -> AlignedVec<u64> {
-        #[cfg(not(feature = "dtype-u64"))]
-        {
-            let mut av = AlignedVec::with_capacity(self.len());
-            self.downcast_iter().for_each(|arr| {
-                av.extend(arr.into_iter().map(|opt_v| {
-                    let mut hasher = _random_state.build_hasher();
-                    opt_v.map(|v| v.to_bits()).hash(&mut hasher);
-                    hasher.finish()
-                }))
-            });
-            av
-        }
-        #[cfg(feature = "dtype-u64")]
-        {
-            panic!("should already be coerced to u64")
-        }
+    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+        self.bit_repr_large().vec_hash(random_state)
     }
-    fn vec_hash_combine(&self, _random_state: RandomState, _hashes: &mut [u64]) {
-        panic!("should already be coerced to u64")
+    fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
+        self.bit_repr_large().vec_hash_combine(random_state, hashes)
     }
 }
 

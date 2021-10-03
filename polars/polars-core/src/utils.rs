@@ -271,7 +271,6 @@ macro_rules! match_arrow_data_type_apply_macro {
             #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
             DataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
-            #[cfg(feature = "dtype-u64")]
             DataType::UInt64 => $macro!(UInt64Type $(, $opt_args)*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $macro!(Int8Type $(, $opt_args)*),
@@ -300,7 +299,6 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
             #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => $macro!($self.u16().unwrap() $(, $opt_args)*),
             DataType::UInt32 => $macro!($self.u32().unwrap() $(, $opt_args)*),
-            #[cfg(feature = "dtype-u64")]
             DataType::UInt64 => $macro!($self.u64().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $macro!($self.i8().unwrap() $(, $opt_args)*),
@@ -332,7 +330,6 @@ macro_rules! match_arrow_data_type_apply_macro_ca_logical_num {
             #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => $macro!($self.u16().unwrap() $(, $opt_args)*),
             DataType::UInt32 => $macro!($self.u32().unwrap() $(, $opt_args)*),
-            #[cfg(feature = "dtype-u64")]
             DataType::UInt64 => $macro!($self.u64().unwrap() $(, $opt_args)*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $macro!($self.i8().unwrap() $(, $opt_args)*),
@@ -358,7 +355,6 @@ macro_rules! apply_method_all_arrow_series {
             #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-u64")]
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
@@ -389,7 +385,6 @@ macro_rules! apply_method_numeric_series {
             #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-u64")]
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
