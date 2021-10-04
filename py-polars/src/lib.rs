@@ -29,7 +29,7 @@ pub mod prelude;
 pub mod series;
 pub mod utils;
 
-use crate::conversion::{get_df, get_pyseq, Wrap};
+use crate::conversion::{get_df, get_pyseq, get_series, Wrap};
 use crate::error::PyPolarsEr;
 use crate::file::get_either_file;
 use crate::prelude::DataType;
@@ -144,6 +144,22 @@ fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
+fn concat_series(series: &PyAny) -> PyResult<PySeries> {
+    let (seq, _len) = get_pyseq(series)?;
+    let mut iter = seq.iter()?;
+    let first = iter.next().unwrap()?;
+
+    let mut s = get_series(first)?;
+
+    for res in iter {
+        let item = res?;
+        let item = get_series(item)?;
+        s.append(&item).map_err(PyPolarsEr::from)?;
+    }
+    Ok(s.into())
+}
+
+#[pyfunction]
 fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(mut r) => {
@@ -184,6 +200,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_lst)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
     Ok(())
 }

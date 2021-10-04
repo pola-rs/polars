@@ -46,6 +46,11 @@ pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
     Ok(pydf.extract::<PyDataFrame>()?.df)
 }
 
+pub(crate) fn get_series(obj: &PyAny) -> PyResult<Series> {
+    let pydf = obj.getattr("_s")?;
+    Ok(pydf.extract::<PySeries>()?.series)
+}
+
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
 where
     T: PyPolarsPrimitiveType,

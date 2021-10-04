@@ -11,6 +11,7 @@ import polars as pl
 
 try:
     from polars.polars import concat_df as _concat_df
+    from polars.polars import concat_series as _concat_series
 
     _DOCUMENTING = False
 except ImportError:
@@ -36,25 +37,31 @@ def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
     return df.to_dummies()
 
 
-def concat(dfs: Sequence["pl.DataFrame"], rechunk: bool = True) -> "pl.DataFrame":
+def concat(
+    items: Union[Sequence["pl.DataFrame"], Sequence["pl.Series"]], rechunk: bool = True
+) -> Union["pl.DataFrame", "pl.Series"]:
     """
-    Aggregate all the Dataframes in a List of DataFrames to a single DataFrame.
+    Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single DataFrame/Series.
 
     Parameters
     ----------
-    dfs
-        DataFrames to concatenate.
+    items
+        DataFrames/Series to concatenate.
     rechunk
-        rechunk the final DataFrame.
+        rechunk the final DataFrame/Series.
     """
-    if not len(dfs) > 0:
+    if not len(items) > 0:
         raise ValueError("cannot concat empty list")
 
-    df = pl.wrap_df(_concat_df(dfs))
+    out: Union["pl.Series", "pl.DataFrame"]
+    if isinstance(items[0], pl.DataFrame):
+        out = pl.wrap_df(_concat_df(items))
+    else:
+        out = pl.wrap_s(_concat_series(items))
 
     if rechunk:
-        return df.rechunk()
-    return df
+        return out.rechunk()  # type: ignore
+    return out
 
 
 def repeat(
