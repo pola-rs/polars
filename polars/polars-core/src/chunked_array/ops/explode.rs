@@ -12,7 +12,7 @@ pub(crate) trait ExplodeByOffsets {
 
 impl<T> ExplodeByOffsets for ChunkedArray<T>
 where
-    T: PolarsNumericType,
+    T: PolarsIntegerType,
 {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
@@ -93,6 +93,17 @@ where
             Some(validity.into()),
         );
         Series::try_from((self.name(), Arc::new(arr) as ArrayRef)).unwrap()
+    }
+}
+
+impl ExplodeByOffsets for Float32Chunked {
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        self.apply_as_ints(|s| s.explode_by_offsets(offsets))
+    }
+}
+impl ExplodeByOffsets for Float64Chunked {
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        self.apply_as_ints(|s| s.explode_by_offsets(offsets))
     }
 }
 
