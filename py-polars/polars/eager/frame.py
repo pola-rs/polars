@@ -1441,10 +1441,10 @@ class DataFrame:
                 describe_cast(self.median()),
             ]
         )
-        summary.insert_at_idx(
+        summary.insert_at_idx(  # type: ignore
             0, pl.Series("describe", ["mean", "std", "min", "max", "median"])
         )
-        return summary
+        return summary  # type: ignore
 
     def replace_at_idx(self, index: int, series: "pl.Series") -> None:
         """

@@ -46,6 +46,14 @@ def test_init_inputs():
         pl.Series("bigint", [2 ** 64])
 
 
+def test_concat():
+    s = pl.Series("a", [2, 1, 3])
+
+    assert pl.concat([s, s]).len() == 6
+    # check if s remains unchanged
+    assert s.len() == 3
+
+
 def test_to_frame():
     assert create_series().to_frame().shape == (2, 1)
 
