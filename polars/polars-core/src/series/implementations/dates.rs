@@ -429,7 +429,21 @@ macro_rules! impl_dyn_series {
             }
 
             fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
-                self.0.cast_with_dtype(data_type)
+                const MS_IN_DAY: i64 = 86400000;
+                use DataType::*;
+                let ca = match (self.dtype(), data_type) {
+                    (Date32, Date64) => {
+                        let casted = self.0.cast_with_dtype(data_type)?;
+                        let casted = casted.date64().unwrap();
+                        return Ok((casted.deref() * MS_IN_DAY).into_date().into_series());
+                    }
+                    (Date64, Date32) => {
+                        let ca = self.0.deref() / MS_IN_DAY;
+                        Cow::Owned(ca)
+                    }
+                    _ => Cow::Borrowed(self.0.deref()),
+                };
+                ca.cast_with_dtype(data_type)
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {

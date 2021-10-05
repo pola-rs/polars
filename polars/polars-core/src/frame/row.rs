@@ -294,9 +294,9 @@ impl Buffer {
             UInt32(b) => b.finish().into_series(),
             UInt64(b) => b.finish().into_series(),
             #[cfg(feature = "dtype-date32")]
-            Date32(b) => b.finish().into_series(),
+            Date32(b) => b.finish().into_date().into_series(),
             #[cfg(feature = "dtype-date64")]
-            Date64(b) => b.finish().into_series(),
+            Date64(b) => b.finish().into_date().into_series(),
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
