@@ -10,11 +10,13 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => {
                 let ca = self.categorical().unwrap();
-                let ca = CategoricalChunked::new_from_chunks(
+                let mut new = CategoricalChunked::new_from_chunks(
                     ca.name(),
                     vec![ca.chunks()[chunk_idx].clone()],
                 );
-                let arr: DictionaryArray<u32> = (&ca).into();
+                new.set_categorical_map(ca.get_categorical_map().cloned().unwrap());
+
+                let arr: DictionaryArray<u32> = (&new).into();
                 Arc::new(arr) as ArrayRef
             }
             DataType::Date32 => {

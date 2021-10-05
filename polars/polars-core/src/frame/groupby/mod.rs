@@ -447,7 +447,7 @@ impl DataFrame {
 /// ```ignore
 /// use polars_core::prelude::*;
 ///
-/// let logical = &[
+/// let dates = &[
 /// "2020-08-21",
 /// "2020-08-21",
 /// "2020-08-22",
@@ -457,7 +457,7 @@ impl DataFrame {
 /// // date format
 /// let fmt = "%Y-%m-%d";
 /// // create date series
-/// let s0 = Date32Chunked::parse_from_str_slice("date", logical, fmt)
+/// let s0 = Date32Chunked::parse_from_str_slice("date", dates, fmt)
 ///         .into_series();
 /// // create temperature series
 /// let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());

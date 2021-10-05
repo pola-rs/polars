@@ -1,6 +1,7 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::cast::cast_chunks;
 use crate::prelude::*;
+use arrow::compute::cast;
 use std::convert::TryFrom;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
@@ -106,7 +107,14 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::List(fld) => {
-                let chunks = cast_chunks(&chunks, DataType::List(fld.data_type().clone())).unwrap();
+                let chunks = chunks
+                    .iter()
+                    .map(|arr| {
+                        cast::cast(arr.as_ref(), &ArrowDataType::LargeList(fld.clone()))
+                            .unwrap()
+                            .into()
+                    })
+                    .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Boolean => {
@@ -336,12 +344,14 @@ where
     }
 }
 
+#[cfg(feature = "dtype-date32")]
 impl From<Date32Chunked> for Series {
     fn from(a: Date32Chunked) -> Self {
         a.into_series()
     }
 }
 
+#[cfg(feature = "dtype-date64")]
 impl From<Date64Chunked> for Series {
     fn from(a: Date64Chunked) -> Self {
         a.into_series()

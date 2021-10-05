@@ -432,11 +432,13 @@ macro_rules! impl_dyn_series {
                 const MS_IN_DAY: i64 = 86400000;
                 use DataType::*;
                 let ca = match (self.dtype(), data_type) {
+                    #[cfg(feature = "dtype-date64")]
                     (Date32, Date64) => {
                         let casted = self.0.cast_with_dtype(data_type)?;
                         let casted = casted.date64().unwrap();
                         return Ok((casted.deref() * MS_IN_DAY).into_date().into_series());
                     }
+                    #[cfg(feature = "dtype-date32")]
                     (Date64, Date32) => {
                         let ca = self.0.deref() / MS_IN_DAY;
                         Cow::Owned(ca)

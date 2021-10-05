@@ -163,7 +163,7 @@ where
                 cast_from_dtype::<_, Float32Type>(self, Float32)?.cast::<N>()
             }
             (_, Date32) | (_, Date64) => {
-                panic!("use cast_with_dtype for casting logical types")
+                panic!("use cast_with_dtype for casting date types")
             }
             _ => cast_ca(self),
         };

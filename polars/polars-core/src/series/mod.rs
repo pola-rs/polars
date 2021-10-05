@@ -614,7 +614,9 @@ impl Series {
 
     fn into_date(self) -> Series {
         match self.dtype() {
+            #[cfg(feature = "dtype-date32")]
             DataType::Int32 => self.i32().unwrap().clone().into_date().into_series(),
+            #[cfg(feature = "dtype-date64")]
             DataType::Int64 => self.i64().unwrap().clone().into_date().into_series(),
             _ => unreachable!(),
         }

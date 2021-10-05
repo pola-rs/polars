@@ -53,6 +53,17 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
     }
 }
 
+impl CategoricalChunked {
+    /// Get a reference to the mapping of categorical types to the string values.
+    pub fn get_categorical_map(&self) -> Option<&Arc<RevMapping>> {
+        self.categorical_map.as_ref()
+    }
+
+    pub(crate) fn set_categorical_map(&mut self, categorical_map: Arc<RevMapping>) {
+        self.categorical_map = Some(categorical_map)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
