@@ -883,11 +883,13 @@ impl PyDataFrame {
                 apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series()
             }
             Some(DataType::Date32) => {
-                apply_lambda_with_primitive_out_type::<Date32Type>(df, py, lambda, 0, None)
+                apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
+                    .into_date()
                     .into_series()
             }
             Some(DataType::Date64) => {
-                apply_lambda_with_primitive_out_type::<Date64Type>(df, py, lambda, 0, None)
+                apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
+                    .into_date()
                     .into_series()
             }
             Some(DataType::Utf8) => {

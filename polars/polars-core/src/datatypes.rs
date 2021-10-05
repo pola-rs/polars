@@ -187,12 +187,6 @@ impl PolarsNumericType for Float32Type {
 impl PolarsNumericType for Float64Type {
     type Native = f64;
 }
-impl PolarsNumericType for Date32Type {
-    type Native = i32;
-}
-impl PolarsNumericType for Date64Type {
-    type Native = i64;
-}
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -203,8 +197,6 @@ impl PolarsIntegerType for Int8Type {}
 impl PolarsIntegerType for Int16Type {}
 impl PolarsIntegerType for Int32Type {}
 impl PolarsIntegerType for Int64Type {}
-impl PolarsIntegerType for Date32Type {}
-impl PolarsIntegerType for Date64Type {}
 
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}

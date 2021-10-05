@@ -38,7 +38,7 @@ where
     Ok(ChunkedArray::new_from_chunks(ca.field.name(), chunks))
 }
 
-fn cast_from_dtype<N, T>(chunked: &ChunkedArray<T>, dtype: DataType) -> Result<ChunkedArray<N>>
+fn cast_from_dtype<T, N>(chunked: &ChunkedArray<T>, dtype: DataType) -> Result<ChunkedArray<N>>
 where
     N: PolarsNumericType,
     T: PolarsNumericType,
@@ -160,19 +160,10 @@ where
             // paths not supported by arrow kernel
             // to float32
             (Date32, Float32) | (Date64, Float32) => {
-                cast_from_dtype::<Float32Type, _>(self, Float32)?.cast::<N>()
+                cast_from_dtype::<_, Float32Type>(self, Float32)?.cast::<N>()
             }
-            // to float64
-            (Date32, Float64) | (Date64, Float64) => {
-                cast_from_dtype::<Float64Type, _>(self, Float64)?.cast::<N>()
-            }
-            // to date64
-            (Int32, Date64) | (Float64, Date64) | (Float32, Date64) => {
-                cast_from_dtype::<Date64Type, _>(self, Date64)?.cast::<N>()
-            }
-            // to date32
-            (Int64, Date32) | (Float64, Date32) | (Float32, Date32) => {
-                cast_from_dtype::<Date32Type, _>(self, Date32)?.cast::<N>()
+            (_, Date32) | (_, Date64) => {
+                panic!("use cast_with_dtype for casting logical types")
             }
             _ => cast_ca(self),
         };

@@ -48,7 +48,7 @@ pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
 
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
 where
-    T: PyPolarsPrimitiveType,
+    T: PyPolarsNumericType,
     T::Native: FromPyObject<'a>,
 {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {

@@ -17,8 +17,6 @@ impl PyArrowPrimitiveType for Int32Type {}
 impl PyArrowPrimitiveType for Int64Type {}
 impl PyArrowPrimitiveType for Float32Type {}
 impl PyArrowPrimitiveType for Float64Type {}
-impl PyArrowPrimitiveType for Date32Type {}
-impl PyArrowPrimitiveType for Date64Type {}
 
 fn iterator_to_primitive<T>(
     it: impl Iterator<Item = Option<T::Native>>,
