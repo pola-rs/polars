@@ -43,6 +43,7 @@ mod bitwise;
 #[cfg(feature = "dtype-categorical")]
 pub(crate) mod categorical;
 pub(crate) mod list;
+pub(crate) mod logical;
 
 use polars_arrow::prelude::*;
 
@@ -177,10 +178,6 @@ impl<T> ChunkedArray<T> {
         } else {
             self.bit_settings |= 1
         }
-    }
-    /// Get a reference to the mapping of categorical types to the string values.
-    pub fn get_categorical_map(&self) -> Option<&Arc<RevMapping>> {
-        self.categorical_map.as_ref()
     }
 
     /// Get the index of the first non null value in this ChunkedArray.

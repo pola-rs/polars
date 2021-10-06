@@ -367,7 +367,7 @@ where
         self
     }
 
-    /// Automatically try to parse dates/ datetimes. If parsing fails, columns remain of dtype Utf8.
+    /// Automatically try to parse logical/ datetimes. If parsing fails, columns remain of dtype Utf8.
     #[cfg(feature = "temporal")]
     pub fn with_parse_dates(mut self, toggle: bool) -> Self {
         self.parse_dates = toggle;

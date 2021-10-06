@@ -576,8 +576,8 @@ impl PySeries {
             DataType::Int64 => PyList::new(python, series.i64().unwrap()),
             DataType::Float32 => PyList::new(python, series.f32().unwrap()),
             DataType::Float64 => PyList::new(python, series.f64().unwrap()),
-            DataType::Date32 => PyList::new(python, series.date32().unwrap()),
-            DataType::Date64 => PyList::new(python, series.date64().unwrap()),
+            DataType::Date32 => PyList::new(python, &series.date32().unwrap().0),
+            DataType::Date64 => PyList::new(python, &series.date64().unwrap().0),
             DataType::Object(_) => {
                 let v = PyList::empty(python);
                 for i in 0..series.len() {
@@ -795,7 +795,7 @@ impl PySeries {
                 ca.into_series()
             }
             Some(DataType::Date32) => {
-                let ca: Date32Chunked = apply_method_all_arrow_series!(
+                let ca: Int32Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -803,10 +803,10 @@ impl PySeries {
                     0,
                     None
                 )?;
-                ca.into_series()
+                ca.into_date().into_series()
             }
             Some(DataType::Date64) => {
-                let ca: Date64Chunked = apply_method_all_arrow_series!(
+                let ca: Int64Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
                     py,
@@ -814,7 +814,7 @@ impl PySeries {
                     0,
                     None
                 )?;
-                ca.into_series()
+                ca.into_date().into_series()
             }
             Some(DataType::Utf8) => {
                 let ca: Utf8Chunked = apply_method_all_arrow_series!(

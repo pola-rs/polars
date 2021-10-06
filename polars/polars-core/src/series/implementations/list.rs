@@ -10,8 +10,6 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "asof_join")]
-use crate::frame::asof_join::JoinAsof;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
@@ -30,17 +28,14 @@ impl IntoSeries for ListChunked {
 }
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
-    fn _field(&self) -> &Field {
-        self.0.ref_field()
+    fn _field(&self) -> Cow<Field> {
+        Cow::Borrowed(self.0.ref_field())
     }
-
+    fn _dtype(&self) -> &DataType {
+        self.0.ref_field().data_type()
+    }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
-    }
-
-    #[cfg(feature = "asof_join")]
-    fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-        self.0.join_asof(other.as_ref().as_ref())
     }
 
     fn set_sorted(&mut self, reverse: bool) {

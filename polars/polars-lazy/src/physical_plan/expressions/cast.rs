@@ -25,11 +25,15 @@ impl CastExpr {
                 }
                 #[cfg(feature = "dtype-date32")]
                 DataType::Date32 => {
-                    return Ok(Date32Chunked::full_null(input.name(), input.len()).into_series())
+                    return Ok(Int32Chunked::full_null(input.name(), input.len())
+                        .into_date()
+                        .into_series())
                 }
                 #[cfg(feature = "dtype-date64")]
                 DataType::Date64 => {
-                    return Ok(Date64Chunked::full_null(input.name(), input.len()).into_series())
+                    return Ok(Int64Chunked::full_null(input.name(), input.len())
+                        .into_date()
+                        .into_series())
                 }
                 _ => {}
             }

@@ -40,8 +40,11 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
-            fn _field(&self) -> &Field {
-                self.0.ref_field()
+            fn _field(&self) -> Cow<Field> {
+                Cow::Borrowed(self.0.ref_field())
+            }
+            fn _dtype(&self) -> &DataType {
+                self.0.ref_field().data_type()
             }
 
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
@@ -91,7 +94,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "asof_join")]
             fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-                self.0.join_asof(other.as_ref().as_ref())
+                self.0.join_asof(other)
             }
 
             fn set_sorted(&mut self, reverse: bool) {
@@ -484,11 +487,6 @@ macro_rules! impl_dyn_series {
 
             fn arg_max(&self) -> Option<usize> {
                 ArgAgg::arg_max(&self.0)
-            }
-
-            fn arg_true(&self) -> Result<UInt32Chunked> {
-                let ca: &BooleanChunked = self.bool()?;
-                Ok(ca.arg_true())
             }
 
             fn is_null(&self) -> BooleanChunked {

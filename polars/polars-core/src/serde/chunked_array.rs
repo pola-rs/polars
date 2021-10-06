@@ -41,6 +41,25 @@ where
     }
 }
 
+fn serialize_impl<T, S>(
+    serializer: S,
+    name: &str,
+    dtype: &DataType,
+    ca: &ChunkedArray<T>,
+) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+where
+    T: PolarsNumericType,
+    T::Native: Serialize,
+    S: Serializer,
+{
+    let mut state = serializer.serialize_map(Some(3))?;
+    state.serialize_entry("name", name)?;
+    let dtype: DeDataType = dtype.into();
+    state.serialize_entry("datatype", &dtype)?;
+    state.serialize_entry("values", &IterSer::new(ca.into_iter()))?;
+    state.end()
+}
+
 impl<T> Serialize for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -53,12 +72,24 @@ where
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_map(Some(3))?;
-        state.serialize_entry("name", self.name())?;
-        let dtype: DeDataType = self.dtype().into();
-        state.serialize_entry("datatype", &dtype)?;
-        state.serialize_entry("values", &IterSer::new(self.into_iter()))?;
-        state.end()
+        serialize_impl(serializer, self.name(), self.dtype(), self)
+    }
+}
+
+impl<K: PolarsDataType, T: PolarsNumericType> Serialize for Logical<K, T>
+where
+    Self: LogicalType,
+    ChunkedArray<T>: Serialize,
+    T::Native: Serialize,
+{
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        serialize_impl(serializer, self.name(), self.dtype(), self)
     }
 }
 

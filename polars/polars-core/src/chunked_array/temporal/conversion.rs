@@ -124,7 +124,7 @@ impl Utf8Chunked {
             None => self.sniff_fmt_date32()?,
         };
 
-        let mut ca: Date32Chunked = match self.null_count() {
+        let mut ca: Int32Chunked = match self.null_count() {
             0 => self
                 .into_no_null_iter()
                 .map(|s| {
@@ -150,7 +150,7 @@ impl Utf8Chunked {
                 .collect_trusted(),
         };
         ca.rename(self.name());
-        Ok(ca)
+        Ok(ca.into())
     }
 
     #[cfg(feature = "dtype-date64")]
@@ -160,7 +160,7 @@ impl Utf8Chunked {
             None => self.sniff_fmt_date64()?,
         };
 
-        let mut ca: Date64Chunked = match self.null_count() {
+        let mut ca: Int64Chunked = match self.null_count() {
             0 => self
                 .into_no_null_iter()
                 .map(|s| {
@@ -186,7 +186,7 @@ impl Utf8Chunked {
                 .collect_trusted(),
         };
         ca.rename(self.name());
-        Ok(ca)
+        Ok(ca.into())
     }
 }
 
@@ -271,11 +271,11 @@ impl Date64Chunked {
             .iter()
             .map(naive_datetime_to_date64)
             .collect_trusted::<AlignedVec<_>>();
-        ChunkedArray::new_from_aligned_vec(name, vals)
+        Int64Chunked::new_from_aligned_vec(name, vals).into()
     }
 
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
-        ChunkedArray::new_from_opt_iter(
+        Int64Chunked::new_from_opt_iter(
             name,
             v.iter().map(|s| {
                 NaiveDateTime::parse_from_str(s, fmt)
@@ -284,6 +284,7 @@ impl Date64Chunked {
                     .map(naive_datetime_to_date64)
             }),
         )
+        .into()
     }
 }
 
@@ -344,11 +345,11 @@ impl Date32Chunked {
             .iter()
             .map(|v| naive_date_to_date32(*v))
             .collect::<AlignedVec<_>>();
-        ChunkedArray::new_from_aligned_vec(name, unit)
+        Int32Chunked::new_from_aligned_vec(name, unit).into()
     }
 
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
-        ChunkedArray::new_from_opt_iter(
+        Int32Chunked::new_from_opt_iter(
             name,
             v.iter().map(|s| {
                 NaiveDate::parse_from_str(s, fmt)
@@ -357,5 +358,6 @@ impl Date32Chunked {
                     .map(|v| naive_date_to_date32(*v))
             }),
         )
+        .into()
     }
 }

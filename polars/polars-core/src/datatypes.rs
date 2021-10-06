@@ -8,6 +8,7 @@
 //!
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::RevMapping;
+pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -122,8 +123,6 @@ pub type Int64Chunked = ChunkedArray<Int64Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
-pub type Date32Chunked = ChunkedArray<Date32Type>;
-pub type Date64Chunked = ChunkedArray<Date64Type>;
 pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
 pub trait NumericNative:
@@ -188,12 +187,6 @@ impl PolarsNumericType for Float32Type {
 impl PolarsNumericType for Float64Type {
     type Native = f64;
 }
-impl PolarsNumericType for Date32Type {
-    type Native = i32;
-}
-impl PolarsNumericType for Date64Type {
-    type Native = i64;
-}
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 impl PolarsIntegerType for UInt8Type {}
@@ -204,8 +197,6 @@ impl PolarsIntegerType for Int8Type {}
 impl PolarsIntegerType for Int16Type {}
 impl PolarsIntegerType for Int32Type {}
 impl PolarsIntegerType for Int64Type {}
-impl PolarsIntegerType for Date32Type {}
-impl PolarsIntegerType for Date64Type {}
 
 pub trait PolarsFloatType: PolarsNumericType {}
 impl PolarsFloatType for Float32Type {}
@@ -320,7 +311,17 @@ where
 }
 
 impl<'a> AnyValue<'a> {
-    pub fn add<'b>(&self, rhs: &AnyValue<'b>) -> AnyValue<'a> {
+    pub(crate) fn into_date(self) -> Self {
+        match self {
+            #[cfg(feature = "dtype-date32")]
+            AnyValue::Int32(v) => AnyValue::Date32(v),
+            #[cfg(feature = "dtype-date64")]
+            AnyValue::Int64(v) => AnyValue::Date64(v),
+            _ => panic!("cannot create date from other type"),
+        }
+    }
+
+    pub fn add<'b>(&self, rhs: &AnyValue<'b>) -> Self {
         use AnyValue::*;
         match (self, rhs) {
             (Null, _) => Null,

@@ -229,9 +229,9 @@ pub(crate) enum Buffer {
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     #[cfg(feature = "dtype-date32")]
-    Date32(PrimitiveChunkedBuilder<Date32Type>),
+    Date32(PrimitiveChunkedBuilder<Int32Type>),
     #[cfg(feature = "dtype-date64")]
-    Date64(PrimitiveChunkedBuilder<Date64Type>),
+    Date64(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
@@ -294,9 +294,9 @@ impl Buffer {
             UInt32(b) => b.finish().into_series(),
             UInt64(b) => b.finish().into_series(),
             #[cfg(feature = "dtype-date32")]
-            Date32(b) => b.finish().into_series(),
+            Date32(b) => b.finish().into_date().into_series(),
             #[cfg(feature = "dtype-date64")]
-            Date64(b) => b.finish().into_series(),
+            Date64(b) => b.finish().into_date().into_series(),
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),

@@ -10,16 +10,21 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
-use crate::chunked_array::{comparison::*, AsSinglePtr, ChunkIdIter};
+use crate::chunked_array::{
+    comparison::*,
+    ops::{explode::ExplodeByOffsets, ToBitRepr},
+    AsSinglePtr, ChunkIdIter,
+};
 use crate::fmt::FmtList;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
-use crate::frame::groupby::*;
+use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
 use ahash::RandomState;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
 
 impl<T> ChunkedArray<T> {
     /// get the physical memory type of a date type
@@ -32,70 +37,6 @@ impl<T> ChunkedArray<T> {
     }
 }
 
-/// Dispatch the method call to the physical type and coerce back to logical type
-macro_rules! physical_dispatch {
-    ($s: expr, $method: ident, $($args:expr),*) => {{
-        let dtype = $s.dtype();
-        let phys_type = $s.physical_type();
-        let s = $s.cast_with_dtype(&phys_type).unwrap();
-        let s = s.$method($($args),*);
-
-        // if the type is unchanged we return the original type
-        if s.dtype() == &phys_type {
-            s.cast_with_dtype(dtype).unwrap()
-        }
-        // else the change of type is part of the operation.
-        else {
-            s
-        }
-    }}
-}
-
-macro_rules! try_physical_dispatch {
-    ($s: expr, $method: ident, $($args:expr),*) => {{
-        let dtype = $s.dtype();
-        let phys_type = $s.physical_type();
-        let s = $s.cast_with_dtype(&phys_type).unwrap();
-        let s = s.$method($($args),*)?;
-
-        // if the type is unchanged we return the original type
-        if s.dtype() == &phys_type {
-            s.cast_with_dtype(dtype)
-        }
-        // else the change of type is part of the operation.
-        else {
-            Ok(s)
-        }
-    }}
-}
-
-macro_rules! opt_physical_dispatch {
-    ($s: expr, $method: ident, $($args:expr),*) => {{
-        let dtype = $s.dtype();
-        let phys_type = $s.physical_type();
-        let s = $s.cast_with_dtype(&phys_type).unwrap();
-        let s = s.$method($($args),*)?;
-
-        // if the type is unchanged we return the original type
-        if s.dtype() == &phys_type {
-            Some(s.cast_with_dtype(dtype).unwrap())
-        }
-        // else the change of type is part of the operation.
-        else {
-            Some(s)
-        }
-    }}
-}
-
-/// Same as physical dispatch, but doesnt care about return type
-macro_rules! cast_and_apply {
-    ($s: expr, $method: ident, $($args:expr),*) => {{
-        let phys_type = $s.physical_type();
-        let s = $s.cast_with_dtype(&phys_type).unwrap();
-        s.$method($($args),*)
-    }}
-}
-
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
         impl IntoSeries for $ca {
@@ -105,36 +46,40 @@ macro_rules! impl_dyn_series {
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
-            fn _field(&self) -> &Field {
-                self.0.ref_field()
+            fn _field(&self) -> Cow<Field> {
+                Cow::Owned(self.0.field())
+            }
+            fn _dtype(&self) -> &DataType {
+                self.0.dtype()
             }
 
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-                physical_dispatch!(self, explode_by_offsets, offsets)
+                self.0.explode_by_offsets(offsets).into_date().into_series()
             }
 
             #[cfg(feature = "cum_agg")]
             fn _cummax(&self, reverse: bool) -> Series {
-                physical_dispatch!(self, cummax, reverse)
+                self.0.cummax(reverse).into_date().into_series()
             }
 
             #[cfg(feature = "cum_agg")]
             fn _cummin(&self, reverse: bool) -> Series {
-                physical_dispatch!(self, cummin, reverse)
+                self.0.cummin(reverse).into_date().into_series()
             }
 
             #[cfg(feature = "cum_agg")]
             fn _cumsum(&self, _reverse: bool) -> Series {
-                panic!("cannot sum dates")
+                panic!("cannot sum logical")
             }
 
             #[cfg(feature = "asof_join")]
             fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-                cast_and_apply!(self, join_asof, other)
+                use crate::frame::asof_join::JoinAsof;
+                self.0.deref().join_asof(other)
             }
 
             fn set_sorted(&mut self, reverse: bool) {
-                self.0.set_sorted(reverse)
+                self.0.deref_mut().set_sorted(reverse)
             }
 
             unsafe fn equal_element(
@@ -153,72 +98,85 @@ macro_rules! impl_dyn_series {
                 } else {
                     other.cast_with_dtype(&DataType::Int64)?
                 };
-                try_physical_dispatch!(self, zip_with_same_type, mask, &other)
+                self.0
+                    .zip_with(mask, &other.as_ref().as_ref())
+                    .map(|ca| ca.into_date().into_series())
             }
 
             fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
-                cast_and_apply!(self, vec_hash, random_state)
+                self.0.vec_hash(random_state)
             }
 
             fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-                cast_and_apply!(self, vec_hash_combine, build_hasher, hashes)
+                self.0.vec_hash_combine(build_hasher, hashes)
             }
 
             fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                // does not make sense on dates
+                // does not make sense on logical
                 None
             }
 
             fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_min, groups)
+                self.0
+                    .agg_min(groups)
+                    .map(|ca| ca.into_date().into_series())
             }
 
             fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_max, groups)
+                self.0
+                    .agg_max(groups)
+                    .map(|ca| ca.into_date().into_series())
             }
 
             fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                // does not make sense on dates
+                // does not make sense on logical
                 None
             }
 
             fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-                physical_dispatch!(self, agg_first, groups)
+                self.0.agg_first(groups).into_date().into_series()
             }
 
             fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-                physical_dispatch!(self, agg_last, groups)
+                self.0.agg_last(groups).into_date().into_series()
             }
 
             fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                // does not make sense on dates
+                // does not make sense on logical
                 None
             }
 
             fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                // does not make sense on dates
+                // does not make sense on logical
                 None
             }
 
             fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-                cast_and_apply!(self, agg_n_unique, groups)
+                self.0.agg_n_unique(groups)
             }
 
             fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 // we cannot cast and dispatch as the inner type of the list would be incorrect
-                self.0.agg_list(groups)
+                self.0.agg_list(groups).map(|s| {
+                    s.cast_with_dtype(&DataType::List(self.dtype().to_arrow()))
+                        .unwrap()
+                })
             }
 
             fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_quantile, groups, quantile)
+                self.0
+                    .agg_quantile(groups, quantile)
+                    .map(|s| s.into_date().into_series())
             }
 
             fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_median, groups)
+                self.0
+                    .agg_median(groups)
+                    .map(|s| s.into_date().into_series())
             }
             #[cfg(feature = "lazy")]
             fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                opt_physical_dispatch!(self, agg_valid_count, groups)
+                self.0.agg_valid_count(groups)
             }
 
             #[cfg(feature = "pivot")]
@@ -243,15 +201,15 @@ macro_rules! impl_dyn_series {
             }
             fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
                 let other = other.to_physical_repr();
-                cast_and_apply!(self, hash_join_inner, &other)
+                self.0.hash_join_inner(&other.as_ref().as_ref())
             }
             fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
                 let other = other.to_physical_repr();
-                cast_and_apply!(self, hash_join_left, &other)
+                self.0.hash_join_left(&other.as_ref().as_ref())
             }
             fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
                 let other = other.to_physical_repr();
-                cast_and_apply!(self, hash_join_outer, &other)
+                self.0.hash_join_outer(&other.as_ref().as_ref())
             }
             fn zip_outer_join_column(
                 &self,
@@ -259,19 +217,22 @@ macro_rules! impl_dyn_series {
                 opt_join_tuples: &[(Option<u32>, Option<u32>)],
             ) -> Series {
                 let right_column = right_column.to_physical_repr();
-                physical_dispatch!(self, zip_outer_join_column, &right_column, opt_join_tuples)
+                self.0
+                    .zip_outer_join_column(&right_column, opt_join_tuples)
+                    .into_date()
+                    .into_series()
             }
             fn subtract(&self, rhs: &Series) -> Result<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date32, DataType::Date32) => {
                         let lhs = self.cast_with_dtype(&DataType::Int32).unwrap();
                         let rhs = rhs.cast_with_dtype(&DataType::Int32).unwrap();
-                        Ok(lhs.subtract(&rhs)?.into_series())
+                        Ok(lhs.subtract(&rhs)?.into_date().into_series())
                     }
                     (DataType::Date64, DataType::Date64) => {
                         let lhs = self.cast_with_dtype(&DataType::Int64).unwrap();
                         let rhs = rhs.cast_with_dtype(&DataType::Int64).unwrap();
-                        Ok(lhs.subtract(&rhs)?.into_series())
+                        Ok(lhs.subtract(&rhs)?.into_date().into_series())
                     }
                     (dtl, dtr) => Err(PolarsError::ComputeError(
                         format!(
@@ -284,26 +245,26 @@ macro_rules! impl_dyn_series {
             }
             fn add_to(&self, _rhs: &Series) -> Result<Series> {
                 Err(PolarsError::ComputeError(
-                    "cannot do addition on dates".into(),
+                    "cannot do addition on logical".into(),
                 ))
             }
             fn multiply(&self, _rhs: &Series) -> Result<Series> {
                 Err(PolarsError::ComputeError(
-                    "cannot do multiplication on dates".into(),
+                    "cannot do multiplication on logical".into(),
                 ))
             }
             fn divide(&self, _rhs: &Series) -> Result<Series> {
                 Err(PolarsError::ComputeError(
-                    "cannot do division on dates".into(),
+                    "cannot do division on logical".into(),
                 ))
             }
             fn remainder(&self, _rhs: &Series) -> Result<Series> {
                 Err(PolarsError::ComputeError(
-                    "cannot do remainder operation on dates".into(),
+                    "cannot do remainder operation on logical".into(),
                 ))
             }
             fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-                cast_and_apply!(self, group_tuples, multithreaded)
+                self.0.group_tuples(multithreaded)
             }
             #[cfg(feature = "sort_multiple")]
             fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
@@ -324,7 +285,7 @@ macro_rules! impl_dyn_series {
         impl SeriesTrait for SeriesWrap<$ca> {
             #[cfg(feature = "interpolate")]
             fn interpolate(&self) -> Series {
-                physical_dispatch!(self, interpolate,)
+                self.0.interpolate().into_date().into_series()
             }
 
             fn rename(&mut self, name: &str) {
@@ -381,15 +342,15 @@ macro_rules! impl_dyn_series {
             }
 
             fn slice(&self, offset: i64, length: usize) -> Series {
-                self.0.slice(offset, length).into_series()
+                self.0.slice(offset, length).into_date().into_series()
             }
 
             fn mean(&self) -> Option<f64> {
-                cast_and_apply!(self, mean,)
+                self.0.mean()
             }
 
             fn median(&self) -> Option<f64> {
-                cast_and_apply!(self, median,)
+                self.0.median()
             }
 
             fn append(&mut self, other: &Series) -> Result<()> {
@@ -405,36 +366,43 @@ macro_rules! impl_dyn_series {
             }
 
             fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
-                try_physical_dispatch!(self, filter, filter)
+                self.0.filter(filter).map(|ca| ca.into_date().into_series())
             }
 
             fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
-                try_physical_dispatch!(self, take, indices)
+                ChunkTake::take(self.0.deref(), indices.into())
+                    .map(|ca| ca.into_date().into_series())
             }
 
             fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
-                try_physical_dispatch!(self, take_iter, iter)
+                ChunkTake::take(self.0.deref(), iter.into()).map(|ca| ca.into_date().into_series())
             }
 
             fn take_every(&self, n: usize) -> Series {
-                physical_dispatch!(self, take_every, n)
+                self.0.take_every(n).into_date().into_series()
             }
 
             unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-                physical_dispatch!(self, take_iter_unchecked, iter)
+                ChunkTake::take_unchecked(self.0.deref(), iter.into())
+                    .into_date()
+                    .into_series()
             }
 
             unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
-                try_physical_dispatch!(self, take_unchecked, idx)
+                Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
+                    .into_date()
+                    .into_series())
             }
 
             unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-                physical_dispatch!(self, take_opt_iter_unchecked, iter)
+                ChunkTake::take_unchecked(self.0.deref(), iter.into())
+                    .into_date()
+                    .into_series()
             }
 
             #[cfg(feature = "take_opt_iter")]
             fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
-                try_physical_dispatch!(self, take_opt_iter, iter)
+                ChunkTake::take(self.0.deref(), iter.into()).map(|ca| ca.into_date().into_series())
             }
 
             fn len(&self) -> usize {
@@ -442,54 +410,72 @@ macro_rules! impl_dyn_series {
             }
 
             fn rechunk(&self) -> Series {
-                physical_dispatch!(self, rechunk,)
+                self.0.rechunk().into_date().into_series()
             }
 
             fn head(&self, length: Option<usize>) -> Series {
-                self.0.head(length).into_series()
+                self.0.head(length).into_date().into_series()
             }
 
             fn tail(&self, length: Option<usize>) -> Series {
-                self.0.tail(length).into_series()
+                self.0.tail(length).into_date().into_series()
             }
 
             fn expand_at_index(&self, index: usize, length: usize) -> Series {
-                physical_dispatch!(self, expand_at_index, index, length)
+                self.0
+                    .expand_at_index(index, length)
+                    .into_date()
+                    .into_series()
             }
 
             fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
-                self.0.cast_with_dtype(data_type)
+                const MS_IN_DAY: i64 = 86400000;
+                use DataType::*;
+                let ca = match (self.dtype(), data_type) {
+                    #[cfg(feature = "dtype-date64")]
+                    (Date32, Date64) => {
+                        let casted = self.0.cast_with_dtype(data_type)?;
+                        let casted = casted.date64().unwrap();
+                        return Ok((casted.deref() * MS_IN_DAY).into_date().into_series());
+                    }
+                    #[cfg(feature = "dtype-date32")]
+                    (Date64, Date32) => {
+                        let ca = self.0.deref() / MS_IN_DAY;
+                        Cow::Owned(ca)
+                    }
+                    _ => Cow::Borrowed(self.0.deref()),
+                };
+                ca.cast_with_dtype(data_type)
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {
-                cast_and_apply!(self, to_dummies,)
+                self.0.to_dummies()
             }
 
             fn value_counts(&self) -> Result<DataFrame> {
-                cast_and_apply!(self, value_counts,)
+                self.0.value_counts()
             }
 
             fn get(&self, index: usize) -> AnyValue {
-                self.0.get_any_value(index)
+                self.0.get_any_value(index).into_date()
             }
 
             #[inline]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-                self.0.get_any_value_unchecked(index)
+                self.0.get_any_value_unchecked(index).into_date()
             }
 
             fn sort_in_place(&mut self, reverse: bool) {
-                let s = self.sort(reverse);
-                let ca = self.0.unpack_series_matching_type(&s).unwrap().clone();
-                self.0 = ca;
+                let ca = self.0.deref().sort(reverse);
+                self.0 = ca.into_date();
             }
 
             fn sort(&self, reverse: bool) -> Series {
-                physical_dispatch!(self, sort, reverse)
+                self.0.sort(reverse).into_date().into_series()
             }
 
             fn argsort(&self, reverse: bool) -> UInt32Chunked {
-                cast_and_apply!(self, argsort, reverse)
+                self.0.argsort(reverse)
             }
 
             fn null_count(&self) -> usize {
@@ -497,48 +483,43 @@ macro_rules! impl_dyn_series {
             }
 
             fn unique(&self) -> Result<Series> {
-                try_physical_dispatch!(self, unique,)
+                self.0.unique().map(|ca| ca.into_date().into_series())
             }
 
             fn n_unique(&self) -> Result<usize> {
-                cast_and_apply!(self, n_unique,)
+                self.0.n_unique()
             }
 
             fn arg_unique(&self) -> Result<UInt32Chunked> {
-                cast_and_apply!(self, arg_unique,)
+                self.0.arg_unique()
             }
 
             fn arg_min(&self) -> Option<usize> {
-                cast_and_apply!(self, arg_min,)
+                self.0.arg_min()
             }
 
             fn arg_max(&self) -> Option<usize> {
-                cast_and_apply!(self, arg_max,)
-            }
-
-            fn arg_true(&self) -> Result<UInt32Chunked> {
-                let ca: &BooleanChunked = self.bool()?;
-                Ok(ca.arg_true())
+                self.0.arg_max()
             }
 
             fn is_null(&self) -> BooleanChunked {
-                cast_and_apply!(self, is_null,)
+                self.0.is_null()
             }
 
             fn is_not_null(&self) -> BooleanChunked {
-                cast_and_apply!(self, is_not_null,)
+                self.0.is_not_null()
             }
 
             fn is_unique(&self) -> Result<BooleanChunked> {
-                cast_and_apply!(self, is_unique,)
+                self.0.is_unique()
             }
 
             fn is_duplicated(&self) -> Result<BooleanChunked> {
-                cast_and_apply!(self, is_duplicated,)
+                self.0.is_duplicated()
             }
 
             fn reverse(&self) -> Series {
-                physical_dispatch!(self, reverse,)
+                self.0.reverse().into_date().into_series()
             }
 
             fn as_single_ptr(&mut self) -> Result<usize> {
@@ -546,11 +527,13 @@ macro_rules! impl_dyn_series {
             }
 
             fn shift(&self, periods: i64) -> Series {
-                physical_dispatch!(self, shift, periods)
+                self.0.shift(periods).into_date().into_series()
             }
 
             fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
-                try_physical_dispatch!(self, fill_null, strategy)
+                self.0
+                    .fill_null(strategy)
+                    .map(|ca| ca.into_date().into_series())
             }
 
             fn sum_as_series(&self) -> Series {
@@ -560,10 +543,10 @@ macro_rules! impl_dyn_series {
                     .into()
             }
             fn max_as_series(&self) -> Series {
-                physical_dispatch!(self, max_as_series,)
+                self.0.max_as_series().into_date()
             }
             fn min_as_series(&self) -> Series {
-                physical_dispatch!(self, min_as_series,)
+                self.0.min_as_series().into_date()
             }
             fn mean_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
@@ -584,10 +567,16 @@ macro_rules! impl_dyn_series {
                     .into()
             }
             fn std_as_series(&self) -> Series {
-                physical_dispatch!(self, std_as_series,)
+                Int32Chunked::full_null(self.name(), 1)
+                    .cast_with_dtype(self.dtype())
+                    .unwrap()
+                    .into()
             }
-            fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-                try_physical_dispatch!(self, quantile_as_series, quantile)
+            fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+                Ok(Int32Chunked::full_null(self.name(), 1)
+                    .cast_with_dtype(self.dtype())
+                    .unwrap()
+                    .into())
             }
 
             fn fmt_list(&self) -> String {
@@ -601,48 +590,71 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "random")]
             #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
             fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
-                try_physical_dispatch!(self, sample_n, n, with_replacement)
+                self.0
+                    .sample_n(n, with_replacement)
+                    .map(|s| s.into_date().into_series())
             }
 
             #[cfg(feature = "random")]
             #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
             fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
-                try_physical_dispatch!(self, sample_frac, frac, with_replacement)
+                self.0
+                    .sample_frac(frac, with_replacement)
+                    .map(|s| s.into_date().into_series())
             }
 
             fn pow(&self, _exponent: f64) -> Result<Series> {
                 Err(PolarsError::ComputeError(
-                    "cannot compute power of dates".into(),
+                    "cannot compute power of logical".into(),
                 ))
             }
 
             fn peak_max(&self) -> BooleanChunked {
-                cast_and_apply!(self, peak_max,)
+                self.0.peak_max()
             }
 
             fn peak_min(&self) -> BooleanChunked {
-                cast_and_apply!(self, peak_min,)
+                self.0.peak_min()
             }
             #[cfg(feature = "is_in")]
             fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
-                IsIn::is_in(&self.0, other)
+                self.0.is_in(other)
             }
             #[cfg(feature = "repeat_by")]
             fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
-                RepeatBy::repeat_by(&self.0, by)
+                match self.0.dtype() {
+                    DataType::Date32 => self
+                        .0
+                        .repeat_by(by)
+                        .cast_with_dtype(&DataType::List(ArrowDataType::Date32))
+                        .unwrap()
+                        .list()
+                        .unwrap()
+                        .clone(),
+                    DataType::Date64 => self
+                        .0
+                        .repeat_by(by)
+                        .cast_with_dtype(&DataType::List(ArrowDataType::Date64))
+                        .unwrap()
+                        .list()
+                        .unwrap()
+                        .clone(),
+                    _ => unreachable!(),
+                }
             }
             #[cfg(feature = "is_first")]
             fn is_first(&self) -> Result<BooleanChunked> {
-                cast_and_apply!(self, is_first,)
+                self.0.is_first()
             }
 
             #[cfg(feature = "object")]
             fn as_any(&self) -> &dyn Any {
                 &self.0
             }
+
             #[cfg(feature = "mode")]
             fn mode(&self) -> Result<Series> {
-                try_physical_dispatch!(self, mode,)
+                self.0.mode().map(|ca| ca.into_date().into_series())
             }
         }
     };
@@ -657,13 +669,17 @@ macro_rules! impl_dyn_series_numeric {
     ($ca: ident) => {
         impl private::PrivateSeriesNumeric for SeriesWrap<$ca> {
             fn bit_repr_is_large(&self) -> bool {
-                cast_and_apply!(self, bit_repr_is_large,)
+                if let DataType::Date64 = self.dtype() {
+                    true
+                } else {
+                    false
+                }
             }
             fn bit_repr_large(&self) -> UInt64Chunked {
-                cast_and_apply!(self, bit_repr_large,)
+                self.0.bit_repr_large()
             }
             fn bit_repr_small(&self) -> UInt32Chunked {
-                cast_and_apply!(self, bit_repr_small,)
+                self.0.bit_repr_small()
             }
         }
     };
@@ -718,7 +734,7 @@ mod test {
         let s = s.cast_with_dtype(&DataType::Date64)?;
 
         let out = s.subtract(&s)?;
-        assert!(matches!(out.dtype(), DataType::Int64));
+        assert!(matches!(out.dtype(), DataType::Date64));
         Ok(())
     }
 }
