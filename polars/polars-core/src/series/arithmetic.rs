@@ -304,7 +304,7 @@ pub mod checked {
                     .into_series(),
                 _ => panic!("dtype not yet supported in checked div"),
             };
-            out.cast_with_dtype(self.dtype())
+            out.cast(self.dtype())
         }
     }
 }
@@ -317,12 +317,12 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     let left = if lhs.dtype() == &dtype {
         Cow::Borrowed(lhs)
     } else {
-        Cow::Owned(lhs.cast_with_dtype(&dtype)?)
+        Cow::Owned(lhs.cast(&dtype)?)
     };
     let right = if rhs.dtype() == &dtype {
         Cow::Borrowed(rhs)
     } else {
-        Cow::Owned(rhs.cast_with_dtype(&dtype)?)
+        Cow::Owned(rhs.cast(&dtype)?)
     };
     Ok((left, right))
 }

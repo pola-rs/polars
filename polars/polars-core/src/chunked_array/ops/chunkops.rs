@@ -5,6 +5,8 @@ use crate::prelude::*;
 use arrow::array::Array;
 use arrow::compute::concat;
 use itertools::Itertools;
+#[cfg(feature = "dtype-categorical")]
+use std::ops::Deref;
 
 pub trait ChunkOps {
     /// Aggregate to contiguous memory.
@@ -67,10 +69,10 @@ impl ChunkOps for CategoricalChunked {
     where
         Self: std::marker::Sized,
     {
+        let mut out: CategoricalChunked = self.deref().rechunk().into();
         let cat_map = self.categorical_map.clone();
-        let mut ca = self.cast::<UInt32Type>().unwrap().rechunk().cast().unwrap();
-        ca.categorical_map = cat_map;
-        ca
+        out.categorical_map = cat_map;
+        out
     }
 }
 
@@ -140,7 +142,7 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_categorical_map_after_rechunk() {
         let s = Series::new("", &["foo", "bar", "spam"]);
-        let mut a = s.cast::<CategoricalType>().unwrap();
+        let mut a = s.cast(&DataType::Categorical).unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();
         a.rechunk();

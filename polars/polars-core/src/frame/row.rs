@@ -132,7 +132,7 @@ impl DataFrame {
         let columns = self
             .columns
             .iter()
-            .map(|s| s.cast_with_dtype(&dtype))
+            .map(|s| s.cast(&dtype))
             .collect::<Result<Vec<_>>>()?;
 
         let iter = columns.iter().map(|s| {

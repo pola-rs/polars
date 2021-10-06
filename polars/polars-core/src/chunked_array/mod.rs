@@ -51,7 +51,6 @@ use polars_arrow::prelude::*;
 use crate::chunked_array::categorical::RevMapping;
 use crate::utils::{slice_offsets, CustomIterTools};
 use std::mem;
-use std::ops::{Deref, DerefMut};
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
@@ -89,9 +88,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// ```rust
 /// # use polars_core::prelude::*;
 /// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.cast::<Float64Type>()
-///         .unwrap()
-///         .apply(|v| v.cos())
+///     ca.apply_cast_numeric(|v| v.cos() as f64)
 /// }
 /// ```
 ///
@@ -726,38 +723,6 @@ impl<T> AsRef<ChunkedArray<T>> for ChunkedArray<T> {
     }
 }
 
-impl Deref for CategoricalChunked {
-    type Target = UInt32Chunked;
-
-    fn deref(&self) -> &Self::Target {
-        let ptr = self as *const CategoricalChunked;
-        let ptr = ptr as *const UInt32Chunked;
-        unsafe { &*ptr }
-    }
-}
-
-impl DerefMut for CategoricalChunked {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        let ptr = self as *mut CategoricalChunked;
-        let ptr = ptr as *mut UInt32Chunked;
-        unsafe { &mut *ptr }
-    }
-}
-
-impl From<UInt32Chunked> for CategoricalChunked {
-    fn from(ca: UInt32Chunked) -> Self {
-        ca.cast().unwrap()
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl CategoricalChunked {
-    fn set_state<T>(mut self, other: &ChunkedArray<T>) -> Self {
-        self.categorical_map = other.categorical_map.clone();
-        self
-    }
-}
-
 impl ValueSize for ListChunked {
     fn get_values_size(&self) -> usize {
         self.chunks
@@ -893,8 +858,8 @@ pub(crate) mod test {
     #[test]
     fn cast() {
         let a = get_chunked_array();
-        let b = a.cast::<Int64Type>().unwrap();
-        assert_eq!(b.field.data_type(), &ArrowDataType::Int64)
+        let b = a.cast(&DataType::Int64).unwrap();
+        assert_eq!(b.dtype(), &ArrowDataType::Int64)
     }
 
     fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])
@@ -991,7 +956,8 @@ pub(crate) mod test {
         reset_string_cache();
         let ca =
             Utf8Chunked::new_from_opt_slice("", &[Some("foo"), None, Some("bar"), Some("ham")]);
-        let ca = ca.cast::<CategoricalType>().unwrap();
+        let ca = ca.cast(&DataType::Categorical).unwrap();
+        let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }

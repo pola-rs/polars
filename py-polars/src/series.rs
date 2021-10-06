@@ -295,7 +295,7 @@ impl PySeries {
     pub fn mean(&self) -> Option<f64> {
         match self.series.dtype() {
             DataType::Boolean => {
-                let s = self.series.cast_with_dtype(&DataType::UInt8).unwrap();
+                let s = self.series.cast(&DataType::UInt8).unwrap();
                 s.mean()
             }
             _ => self.series.mean(),
@@ -596,7 +596,7 @@ impl PySeries {
     pub fn median(&self) -> Option<f64> {
         match self.series.dtype() {
             DataType::Boolean => {
-                let s = self.series.cast_with_dtype(&DataType::UInt8).unwrap();
+                let s = self.series.cast(&DataType::UInt8).unwrap();
                 s.median()
             }
             _ => self.series.median(),
@@ -1251,7 +1251,7 @@ impl PySeries {
         let out = if strict {
             self.series.strict_cast(&dtype)
         } else {
-            self.series.cast_with_dtype(&dtype)
+            self.series.cast(&dtype)
         };
         let out = out.map_err(PyPolarsEr::from)?;
         Ok(out.into())

@@ -479,13 +479,13 @@ impl HashJoin<Float64Type> for Float64Chunked {
 
 impl HashJoin<CategoricalType> for CategoricalChunked {
     fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(u32, u32)> {
-        self.deref().hash_join_inner(&other.cast().unwrap())
+        self.deref().hash_join_inner(other.deref())
     }
     fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(u32, Option<u32>)> {
-        self.deref().hash_join_left(&other.cast().unwrap())
+        self.deref().hash_join_left(other.deref())
     }
     fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<u32>, Option<u32>)> {
-        self.deref().hash_join_outer(&other.cast().unwrap())
+        self.deref().hash_join_outer(other.deref())
     }
 }
 
@@ -687,9 +687,11 @@ where
                 num_group_join_inner(&ca, &other)
             }
             _ => {
-                let ca = self.cast::<UInt32Type>().unwrap();
-                let other = other.cast::<UInt32Type>().unwrap();
-                num_group_join_inner(&ca, &other)
+                let ca = self.cast(&DataType::UInt32).unwrap();
+                let ca = ca.u32().unwrap();
+                let other = other.cast(&DataType::UInt32).unwrap();
+                let other = other.u32().unwrap();
+                num_group_join_inner(ca, other)
             }
         }
     }
@@ -727,9 +729,11 @@ where
                 num_group_join_left(&ca, &other)
             }
             _ => {
-                let ca = self.cast::<UInt32Type>().unwrap();
-                let other = other.cast::<UInt32Type>().unwrap();
-                num_group_join_left(&ca, &other)
+                let ca = self.cast(&DataType::UInt32).unwrap();
+                let ca = ca.u32().unwrap();
+                let other = other.cast(&DataType::UInt32).unwrap();
+                let other = other.u32().unwrap();
+                num_group_join_left(ca, other)
             }
         }
     }
@@ -764,15 +768,19 @@ where
 
 impl HashJoin<BooleanType> for BooleanChunked {
     fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(u32, u32)> {
-        let ca = self.cast::<UInt32Type>().unwrap();
-        let other = other.cast::<UInt32Type>().unwrap();
-        ca.hash_join_inner(&other)
+        let ca = self.cast(&DataType::UInt32).unwrap();
+        let ca = ca.u32().unwrap();
+        let other = other.cast(&DataType::UInt32).unwrap();
+        let other = other.u32().unwrap();
+        ca.hash_join_inner(other)
     }
 
     fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(u32, Option<u32>)> {
-        let ca = self.cast::<UInt32Type>().unwrap();
-        let other = other.cast::<UInt32Type>().unwrap();
-        ca.hash_join_left(&other)
+        let ca = self.cast(&DataType::UInt32).unwrap();
+        let ca = ca.u32().unwrap();
+        let other = other.cast(&DataType::UInt32).unwrap();
+        let other = other.u32().unwrap();
+        ca.hash_join_left(other)
     }
 
     fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<u32>, Option<u32>)> {
@@ -1479,7 +1487,7 @@ mod test {
         let mut s = df_a
             .column("a")
             .unwrap()
-            .cast::<Utf8Type>()
+            .cast(&DataType::Utf8)
             .unwrap()
             .utf8()
             .unwrap()
@@ -1490,7 +1498,7 @@ mod test {
         let mut s = df_b
             .column("foo")
             .unwrap()
-            .cast::<Utf8Type>()
+            .cast(&DataType::Utf8)
             .unwrap()
             .utf8()
             .unwrap()
@@ -1551,9 +1559,9 @@ mod test {
 
         let (mut df_a, mut df_b) = get_dfs();
 
-        df_a.may_apply("b", |s| s.cast_with_dtype(&DataType::Categorical))
+        df_a.may_apply("b", |s| s.cast(&DataType::Categorical))
             .unwrap();
-        df_b.may_apply("bar", |s| s.cast_with_dtype(&DataType::Categorical))
+        df_b.may_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
 
         let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None).unwrap();
@@ -1573,13 +1581,13 @@ mod test {
 
         // Test an error when joining on different string cache
         let (mut df_a, mut df_b) = get_dfs();
-        df_a.may_apply("b", |s| s.cast_with_dtype(&DataType::Categorical))
+        df_a.may_apply("b", |s| s.cast(&DataType::Categorical))
             .unwrap();
         // create a new cache
         toggle_string_cache(false);
         toggle_string_cache(true);
 
-        df_b.may_apply("bar", |s| s.cast_with_dtype(&DataType::Categorical))
+        df_b.may_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
         let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None);
         assert!(out.is_err())

@@ -300,8 +300,8 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
     }
 
-    fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
-        self.0.cast_with_dtype(data_type)
+    fn cast(&self, data_type: &DataType) -> Result<Series> {
+        self.0.cast(data_type)
     }
 
     fn get(&self, index: usize) -> AnyValue {

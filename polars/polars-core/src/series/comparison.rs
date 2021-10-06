@@ -48,7 +48,7 @@ where
     match cat_map.find(value) {
         None => BooleanChunked::full(name, fill_value, cat.len()),
         Some(cat_idx) => {
-            let cat = cat.cast_with_dtype(&DataType::UInt32).unwrap();
+            let cat = cat.cast(&DataType::UInt32).unwrap();
             compare(&cat, cat_idx)
         }
     }

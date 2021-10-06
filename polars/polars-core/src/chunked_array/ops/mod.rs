@@ -8,6 +8,8 @@ pub use self::take::*;
 use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use arrow::buffer::Buffer;
+#[cfg(feature = "dtype-categorical")]
+use std::ops::Deref;
 
 pub(crate) mod aggregate;
 mod any_value;
@@ -276,13 +278,8 @@ pub trait ChunkSet<'a, A, B> {
 
 /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
 pub trait ChunkCast {
-    /// Cast `ChunkedArray<T>` to `ChunkedArray<N>`
-    fn cast<N>(&self) -> Result<ChunkedArray<N>>
-    where
-        N: PolarsDataType,
-        Self: Sized;
-
-    fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series>;
+    /// Cast a `[ChunkedArray]` to `[DataType]`
+    fn cast(&self, data_type: &DataType) -> Result<Series>;
 }
 
 /// Fastest way to do elementwise operations on a ChunkedArray<T> when the operation is cheaper than
@@ -628,11 +625,8 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
 #[cfg(feature = "dtype-categorical")]
 impl ChunkExpandAtIndex<CategoricalType> for CategoricalChunked {
     fn expand_at_index(&self, index: usize, length: usize) -> CategoricalChunked {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .expand_at_index(index, length)
-            .cast()
-            .unwrap()
+        let ca: CategoricalChunked = self.deref().expand_at_index(index, length).into();
+        ca.set_state(self)
     }
 }
 

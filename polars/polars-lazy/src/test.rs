@@ -1889,7 +1889,7 @@ fn test_power_in_agg_list2() -> Result<()> {
 #[test]
 #[cfg(feature = "dtype-date32")]
 fn test_fill_nan() -> Result<()> {
-    let s0 = Series::new("date", &[1, 2, 3]).cast_with_dtype(&DataType::Date32)?;
+    let s0 = Series::new("date", &[1, 2, 3]).cast(&DataType::Date32)?;
     let s1 = Series::new("float", &[Some(1.0), Some(f32::NAN), Some(3.0)]);
 
     let df = DataFrame::new(vec![s0, s1])?;

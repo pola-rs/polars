@@ -265,7 +265,7 @@ mod test {
             "date64" => [Some(191845729i64), Some(89107598), None, Some(3158971092)]
         ]?;
 
-        df.may_apply("date64", |s| s.cast::<Date64Type>())?;
+        df.may_apply("date64", |s| s.cast(&DataType::Date64))?;
 
         ParquetWriter::new(&mut f).finish(&df)?;
 

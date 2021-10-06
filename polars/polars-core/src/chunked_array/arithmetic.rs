@@ -416,27 +416,25 @@ where
     ChunkedArray<T>: ChunkCast,
 {
     fn pow_f32(&self, exp: f32) -> Float32Chunked {
-        self.cast::<Float32Type>()
-            .expect("f32 array")
-            .apply_kernel(|arr| {
-                Arc::new(compute::arity::unary(
-                    arr,
-                    |x| x.powf(exp),
-                    DataType::Float32.to_arrow(),
-                ))
-            })
+        let s = self.cast(&DataType::Float32).unwrap();
+        s.f32().unwrap().apply_kernel(|arr| {
+            Arc::new(compute::arity::unary(
+                arr,
+                |x| x.powf(exp),
+                DataType::Float32.to_arrow(),
+            ))
+        })
     }
 
     fn pow_f64(&self, exp: f64) -> Float64Chunked {
-        self.cast::<Float64Type>()
-            .expect("f64 array")
-            .apply_kernel(|arr| {
-                Arc::new(compute::arity::unary(
-                    arr,
-                    |x| x.powf(exp),
-                    DataType::Float64.to_arrow(),
-                ))
-            })
+        let s = self.cast(&DataType::Float64).unwrap();
+        s.f64().unwrap().apply_kernel(|arr| {
+            Arc::new(compute::arity::unary(
+                arr,
+                |x| x.powf(exp),
+                DataType::Float64.to_arrow(),
+            ))
+        })
     }
 }
 

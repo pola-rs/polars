@@ -15,6 +15,8 @@ use num::NumCast;
 use rayon::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
+#[cfg(feature = "dtype-categorical")]
+use std::ops::Deref;
 
 pub mod aggregations;
 pub(crate) mod hashing;
@@ -115,17 +117,18 @@ where
                 num_group_tuples(&ca, multithreaded)
             }
             _ => {
-                let ca = self.cast::<UInt32Type>().unwrap();
-                num_group_tuples(&ca, multithreaded)
+                let ca = self.cast(&DataType::UInt32).unwrap();
+                let ca = ca.u32().unwrap();
+                num_group_tuples(ca, multithreaded)
             }
         }
     }
 }
 impl IntoGroupTuples for BooleanChunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .group_tuples(multithreaded)
+        let ca = self.cast(&DataType::UInt32).unwrap();
+        let ca = ca.u32().unwrap();
+        ca.group_tuples(multithreaded)
     }
 }
 
@@ -175,9 +178,7 @@ impl IntoGroupTuples for Utf8Chunked {
 #[cfg(feature = "dtype-categorical")]
 impl IntoGroupTuples for CategoricalChunked {
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .group_tuples(multithreaded)
+        self.deref().group_tuples(multithreaded)
     }
 }
 
@@ -350,7 +351,9 @@ impl DataFrame {
         let keys_df = DataFrame::new(
             by.iter()
                 .map(|s| match s.dtype() {
-                    Categorical | Int8 | UInt8 | Int16 | UInt16 => s.cast::<UInt32Type>().unwrap(),
+                    Categorical | Int8 | UInt8 | Int16 | UInt16 => {
+                        s.cast(&DataType::UInt32).unwrap()
+                    }
                     Float32 => s.bit_repr_small().into_series(),
                     // otherwise we use the vec hash for float
                     Float64 => s.bit_repr_large().into_series(),
@@ -1449,7 +1452,7 @@ mod test {
         }
         .unwrap();
 
-        df.apply("foo", |s| s.cast::<CategoricalType>().unwrap())
+        df.apply("foo", |s| s.cast(&DataType::Categorical).unwrap())
             .unwrap();
 
         // check multiple keys and categorical
@@ -1556,7 +1559,7 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.may_apply("g", |s| s.cast::<CategoricalType>())?;
+        df.may_apply("g", |s| s.cast(&DataType::Categorical))?;
 
         let out = df.groupby("g")?.sum()?;
         dbg!(out);

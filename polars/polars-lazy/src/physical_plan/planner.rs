@@ -641,7 +641,7 @@ impl DefaultPlanner {
                                     let s = std::mem::take(&mut s[0]);
                                     let len = s.len() as f64;
                                     parallel_op_series(|s| Ok(s.sum_as_series()), s, None)
-                                        .map(|s| s.cast::<Float64Type>().unwrap() / len)
+                                        .map(|s| s.cast(&DataType::Float64).unwrap() / len)
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {

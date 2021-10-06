@@ -97,16 +97,19 @@ macro_rules! impl_dyn_series {
             }
             #[cfg(feature = "rolling_window")]
             fn _rolling_std(&self, options: RollingOptions) -> Result<Series> {
-                self.cast::<Float64Type>().unwrap().rolling_std(options)
+                let s = self.cast(&DataType::Float64).unwrap();
+                s.f64().unwrap().rolling_std(options)
             }
             #[cfg(feature = "rolling_window")]
             fn _rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-                self.cast::<Float64Type>().unwrap().rolling_mean(options)
+                let s = self.cast(&DataType::Float64).unwrap();
+                s.f64().unwrap().rolling_mean(options)
             }
 
             #[cfg(feature = "rolling_window")]
             fn _rolling_var(&self, options: RollingOptions) -> Result<Series> {
-                self.cast::<Float64Type>().unwrap().rolling_var(options)
+                let s = self.cast(&DataType::Float64).unwrap();
+                s.f64().unwrap().rolling_var(options)
             }
 
             #[cfg(feature = "cum_agg")]
@@ -297,7 +300,7 @@ macro_rules! impl_dyn_series {
 
             fn bitand(&self, other: &Series) -> Result<Series> {
                 let other = if other.len() == 1 {
-                    Cow::Owned(other.cast_with_dtype(self.dtype())?)
+                    Cow::Owned(other.cast(self.dtype())?)
                 } else {
                     Cow::Borrowed(other)
                 };
@@ -307,7 +310,7 @@ macro_rules! impl_dyn_series {
 
             fn bitor(&self, other: &Series) -> Result<Series> {
                 let other = if other.len() == 1 {
-                    Cow::Owned(other.cast_with_dtype(self.dtype())?)
+                    Cow::Owned(other.cast(self.dtype())?)
                 } else {
                     Cow::Borrowed(other)
                 };
@@ -317,7 +320,7 @@ macro_rules! impl_dyn_series {
 
             fn bitxor(&self, other: &Series) -> Result<Series> {
                 let other = if other.len() == 1 {
-                    Cow::Owned(other.cast_with_dtype(self.dtype())?)
+                    Cow::Owned(other.cast(self.dtype())?)
                 } else {
                     Cow::Borrowed(other)
                 };
@@ -585,8 +588,8 @@ macro_rules! impl_dyn_series {
                 ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
             }
 
-            fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
-                self.0.cast_with_dtype(data_type)
+            fn cast(&self, data_type: &DataType) -> Result<Series> {
+                self.0.cast(data_type)
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {

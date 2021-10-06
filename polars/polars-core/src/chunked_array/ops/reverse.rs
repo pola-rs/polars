@@ -1,5 +1,7 @@
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
+#[cfg(feature = "dtype-categorical")]
+use std::ops::Deref;
 
 impl<T> ChunkReverse<T> for ChunkedArray<T>
 where
@@ -21,7 +23,8 @@ where
 #[cfg(feature = "dtype-categorical")]
 impl ChunkReverse<CategoricalType> for CategoricalChunked {
     fn reverse(&self) -> ChunkedArray<CategoricalType> {
-        self.cast::<UInt32Type>().unwrap().reverse().cast().unwrap()
+        let ca: CategoricalChunked = self.deref().reverse().into();
+        ca.set_state(self)
     }
 }
 

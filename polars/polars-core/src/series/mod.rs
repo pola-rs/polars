@@ -191,12 +191,9 @@ impl Series {
         self.get_inner_mut().as_single_ptr()
     }
 
-    /// Cast to some primitive type.
-    pub fn cast<N>(&self) -> Result<Self>
-    where
-        N: PolarsDataType,
-    {
-        self.0.cast_with_dtype(&N::get_dtype())
+    /// Cast `[Series]` to another `[DataType]`
+    pub fn cast(&self, dtype: &DataType) -> Result<Self> {
+        self.0.cast(dtype)
     }
     /// Returns `None` if the array is empty or only contains null values.
     /// ```
@@ -209,7 +206,7 @@ impl Series {
         T: NumCast,
     {
         self.sum_as_series()
-            .cast::<Float64Type>()
+            .cast(&DataType::Float64)
             .ok()
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
@@ -226,7 +223,7 @@ impl Series {
         T: NumCast,
     {
         self.min_as_series()
-            .cast::<Float64Type>()
+            .cast(&DataType::Float64)
             .ok()
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
@@ -243,7 +240,7 @@ impl Series {
         T: NumCast,
     {
         self.max_as_series()
-            .cast::<Float64Type>()
+            .cast(&DataType::Float64)
             .ok()
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
@@ -329,8 +326,8 @@ impl Series {
     pub fn to_physical_repr(&self) -> Series {
         use DataType::*;
         let out = match self.dtype() {
-            Date32 => self.cast_with_dtype(&DataType::Int32),
-            Date64 => self.cast_with_dtype(&DataType::Int64),
+            Date32 => self.cast(&DataType::Int32),
+            Date64 => self.cast(&DataType::Int64),
             _ => return self.clone(),
         };
         out.unwrap()
@@ -497,10 +494,7 @@ impl Series {
         #[cfg(feature = "cum_agg")]
         {
             match self.dtype() {
-                DataType::Boolean => self
-                    .cast_with_dtype(&DataType::UInt32)
-                    .unwrap()
-                    ._cumsum(_reverse),
+                DataType::Boolean => self.cast(&DataType::UInt32).unwrap()._cumsum(_reverse),
                 _ => self._cumsum(_reverse),
             }
         }
@@ -597,7 +591,7 @@ impl Series {
 
     /// Cast throws an error if conversion had overflows
     pub fn strict_cast(&self, data_type: &DataType) -> Result<Series> {
-        let s = self.cast_with_dtype(data_type)?;
+        let s = self.cast(data_type)?;
         if self.null_count() != s.null_count() {
             Err(PolarsError::ComputeError(
                 format!(
@@ -612,7 +606,7 @@ impl Series {
         }
     }
 
-    fn into_date(self) -> Series {
+    pub(crate) fn into_date(self) -> Series {
         match self.dtype() {
             #[cfg(feature = "dtype-date32")]
             DataType::Int32 => self.i32().unwrap().clone().into_date().into_series(),
@@ -673,10 +667,10 @@ mod test {
     fn cast() {
         let ar = UInt32Chunked::new_from_slice("a", &[1, 2]);
         let s = ar.into_series();
-        let s2 = s.cast::<Int64Type>().unwrap();
+        let s2 = s.cast(&DataType::Int64).unwrap();
 
         assert!(s2.i64().is_ok());
-        let s2 = s.cast::<Float32Type>().unwrap();
+        let s2 = s.cast(&DataType::Float32).unwrap();
         assert!(s2.f32().is_ok());
     }
 

@@ -190,6 +190,7 @@ impl Debug for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl Debug for CategoricalChunked {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = set_limit!(self);
@@ -314,6 +315,7 @@ impl Debug for Series {
             DataType::Object(_) => {
                 format_object_array(limit, f, self.as_ref(), self.name(), "Series")
             }
+            #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => format_array!(
                 limit,
                 f,
@@ -628,6 +630,7 @@ impl FmtList for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl FmtList for CategoricalChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)

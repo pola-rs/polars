@@ -163,7 +163,7 @@ impl PhysicalAggregation for AggregationExpr {
                 // this is needed to compute the final mean.
                 if let Some(agg_s) = agg_s {
                     // we expect f64 from mean, so we already cast
-                    let mut agg_s = agg_s.cast_with_dtype(&DataType::Float64)?;
+                    let mut agg_s = agg_s.cast(&DataType::Float64)?;
                     agg_s.rename(&new_name);
                     new_name.push_str("__POLARS_MEAN_COUNT");
                     let mut count_s = series.agg_valid_count(groups).unwrap();
@@ -260,9 +260,7 @@ impl PhysicalAggregation for CastExpr {
     ) -> Result<Option<Series>> {
         let agg_expr = self.input.as_agg_expr()?;
         let opt_agg = agg_expr.aggregate(df, groups, state)?;
-        opt_agg
-            .map(|agg| agg.cast_with_dtype(&self.data_type))
-            .transpose()
+        opt_agg.map(|agg| agg.cast(&self.data_type)).transpose()
     }
 }
 

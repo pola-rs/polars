@@ -1,6 +1,8 @@
 use crate::prelude::*;
 use arrow::array::Array;
 use arrow::buffer::Buffer;
+#[cfg(feature = "dtype-categorical")]
+use std::ops::Deref;
 
 impl<T> ToBitRepr for ChunkedArray<T>
 where
@@ -67,7 +69,7 @@ impl ToBitRepr for CategoricalChunked {
     }
 
     fn bit_repr_small(&self) -> UInt32Chunked {
-        self.cast::<UInt32Type>().unwrap()
+        self.deref().clone()
     }
 }
 

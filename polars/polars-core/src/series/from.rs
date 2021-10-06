@@ -103,7 +103,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Utf8 => {
-                let chunks = cast_chunks(&chunks, DataType::Utf8).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Utf8).unwrap();
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::List(fld) => {
@@ -140,14 +140,14 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             }
             #[cfg(feature = "dtype-date32")]
             ArrowDataType::Date32 => {
-                let chunks = cast_chunks(&chunks, DataType::Int32).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Int32).unwrap();
                 Ok(Int32Chunked::new_from_chunks(name, chunks)
                     .into_date()
                     .into_series())
             }
             #[cfg(feature = "dtype-date64")]
             ArrowDataType::Date64 => {
-                let chunks = cast_chunks(&chunks, DataType::Int64).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 Ok(Int64Chunked::new_from_chunks(name, chunks)
                     .into_date()
                     .into_series())
@@ -165,7 +165,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             }
             #[cfg(feature = "dtype-date64")]
             ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
-                let chunks = cast_chunks(&chunks, DataType::Date64).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Date64).unwrap();
                 Ok(Int64Chunked::new_from_chunks(name, chunks)
                     .into_date()
                     .into_series())

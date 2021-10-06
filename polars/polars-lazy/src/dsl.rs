@@ -1123,8 +1123,8 @@ impl Expr {
                     Ok(a)
                 } else {
                     let st = get_supertype(a.dtype(), b.dtype())?;
-                    let a = a.cast_with_dtype(&st)?;
-                    let b = b.cast_with_dtype(&st)?;
+                    let a = a.cast(&st)?;
+                    let b = b.cast(&st)?;
                     let mask = a.is_not_null();
                     a.zip_with_same_type(&mask, &b)
                 }
@@ -1312,7 +1312,7 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
     pub fn repeat_by(self, by: Expr) -> Expr {
         let function = |s: Series, by: Series| {
-            let by = by.cast_with_dtype(&DataType::UInt32)?;
+            let by = by.cast(&DataType::UInt32)?;
             Ok(s.repeat_by(by.u32()?).into_series())
         };
         map_binary_lazy_field(self, by, function, |_schema, _ctxt, l, _r| {
@@ -1478,7 +1478,7 @@ impl Expr {
                 DataType::Float32 => s.f32().unwrap().rolling_var(options.clone()),
                 DataType::Float64 => s.f64().unwrap().rolling_var(options.clone()),
                 _ => s
-                    .cast_with_dtype(&DataType::Float64)?
+                    .cast(&DataType::Float64)?
                     .f64()
                     .unwrap()
                     .rolling_var(options.clone()),
@@ -1500,7 +1500,7 @@ impl Expr {
                 DataType::Float32 => s.f32().unwrap().rolling_std(options.clone()),
                 DataType::Float64 => s.f64().unwrap().rolling_std(options.clone()),
                 _ => s
-                    .cast_with_dtype(&DataType::Float64)?
+                    .cast(&DataType::Float64)?
                     .f64()
                     .unwrap()
                     .rolling_std(options.clone()),
@@ -1547,14 +1547,14 @@ impl Expr {
                         .rolling_apply_float(window_size, f)
                         .map(|ca| ca.into_series()),
                     _ => s
-                        .cast::<Float64Type>()?
+                        .cast(&DataType::Float64)?
                         .f64()
                         .unwrap()
                         .rolling_apply_float(window_size, f)
                         .map(|ca| ca.into_series()),
                 }?;
                 if let DataType::Float32 = s.dtype() {
-                    out.cast_with_dtype(&DataType::Float32)
+                    out.cast(&DataType::Float32)
                 } else {
                     Ok(out)
                 }
