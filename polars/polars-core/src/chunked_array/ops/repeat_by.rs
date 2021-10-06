@@ -2,6 +2,7 @@ use super::RepeatBy;
 use crate::prelude::*;
 use arrow::array::ListArray;
 use polars_arrow::array::ListFromIter;
+use std::ops::Deref;
 
 type LargeListArray = ListArray<i64>;
 
@@ -66,7 +67,7 @@ impl RepeatBy for Utf8Chunked {
 #[cfg(feature = "dtype-categorical")]
 impl RepeatBy for CategoricalChunked {
     fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
-        let mut ca = self.cast::<UInt32Type>().unwrap().repeat_by(by);
+        let mut ca = self.deref().repeat_by(by);
         ca.categorical_map = self.categorical_map.clone();
         ca
     }

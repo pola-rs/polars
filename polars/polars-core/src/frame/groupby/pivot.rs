@@ -5,7 +5,7 @@ use itertools::Itertools;
 use num::{Num, NumCast, Zero};
 use std::collections::hash_map::RandomState;
 use std::fmt::{Debug, Formatter};
-use std::ops::Add;
+use std::ops::{Add, Deref};
 
 /// Utility enum used for grouping on multiple columns
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
@@ -49,7 +49,7 @@ impl Series {
         match self.dtype() {
             DataType::Boolean => as_groupable_iter!(self.bool().unwrap(), Boolean),
             DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
-                let s = self.cast::<Int32Type>()?;
+                let s = self.cast(&DataType::Int32)?;
                 *self = s;
                 self.as_groupable_iter()
             }
@@ -57,16 +57,6 @@ impl Series {
             DataType::UInt64 => as_groupable_iter!(self.u64().unwrap(), UInt64),
             DataType::Int32 => as_groupable_iter!(self.i32().unwrap(), Int32),
             DataType::Int64 => as_groupable_iter!(self.i64().unwrap(), Int64),
-            DataType::Date32 => {
-                let s = self.cast::<Int32Type>()?;
-                *self = s;
-                self.as_groupable_iter()
-            }
-            DataType::Date64 => {
-                let s = self.cast::<Int64Type>()?;
-                *self = s;
-                self.as_groupable_iter()
-            }
             DataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
             DataType::Float32 => {
                 let s = self.f32()?.bit_repr_small().into_series();
@@ -80,7 +70,7 @@ impl Series {
             }
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => {
-                let s = self.cast::<UInt32Type>()?;
+                let s = self.cast(&DataType::UInt32)?;
                 *self = s;
                 self.as_groupable_iter()
             }
@@ -412,9 +402,7 @@ impl ChunkPivot for CategoricalChunked {
         keys: Vec<Series>,
         groups: &[(u32, Vec<u32>)],
     ) -> Result<DataFrame> {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .pivot_count(pivot_series, keys, groups)
+        self.deref().pivot_count(pivot_series, keys, groups)
     }
 }
 

@@ -491,7 +491,7 @@ where
 
             // cast to the original dtypes in the schema
             for fld in to_cast {
-                df.may_apply(fld.name(), |s| s.cast_with_dtype(fld.data_type()))?;
+                df.may_apply(fld.name(), |s| s.cast(fld.data_type()))?;
             }
             df
         } else {

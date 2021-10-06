@@ -1568,20 +1568,13 @@ impl DataFrame {
             _ => {
                 let sum = self.hsum(none_strategy)?;
 
-                let first: Cow<Series> = Cow::Owned(
-                    self.columns[0]
-                        .is_null()
-                        .cast::<UInt32Type>()
-                        .unwrap()
-                        .into_series(),
-                );
+                let first: Cow<Series> =
+                    Cow::Owned(self.columns[0].is_null().cast(&DataType::UInt32).unwrap());
                 let null_count = self.columns[1..]
                     .iter()
                     .map(Cow::Borrowed)
                     .fold(first, |acc, s| {
-                        Cow::Owned(
-                            acc.as_ref() + &s.is_null().cast::<UInt32Type>().unwrap().into_series(),
-                        )
+                        Cow::Owned(acc.as_ref() + &s.is_null().cast(&DataType::UInt32).unwrap())
                     })
                     .into_owned();
 
@@ -1594,7 +1587,7 @@ impl DataFrame {
                 let value_length = value_length
                     .set(&value_length.eq(0), None)?
                     .into_series()
-                    .cast::<Float64Type>()?;
+                    .cast(&DataType::Float64)?;
 
                 Ok(sum.map(|sum| &sum / &value_length))
             }

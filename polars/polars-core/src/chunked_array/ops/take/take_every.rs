@@ -1,5 +1,7 @@
 use crate::prelude::*;
 use crate::utils::NoNull;
+#[cfg(feature = "dtype-categorical")]
+use std::ops::Deref;
 
 impl<T> ChunkTakeEvery<T> for ChunkedArray<T>
 where
@@ -48,14 +50,9 @@ impl ChunkTakeEvery<ListType> for ListChunked {
 #[cfg(feature = "dtype-categorical")]
 impl ChunkTakeEvery<CategoricalType> for CategoricalChunked {
     fn take_every(&self, n: usize) -> CategoricalChunked {
-        let mut ca = if self.null_count() == 0 {
-            let ca: NoNull<UInt32Chunked> = self.into_no_null_iter().step_by(n).collect();
-            ca.into_inner()
-        } else {
-            self.into_iter().step_by(n).collect()
-        };
+        let mut ca: CategoricalChunked = self.deref().take_every(n).into();
         ca.categorical_map = self.categorical_map.clone();
-        ca.cast().unwrap()
+        ca
     }
 }
 #[cfg(feature = "object")]

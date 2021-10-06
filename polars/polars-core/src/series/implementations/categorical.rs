@@ -25,6 +25,7 @@ use ahash::RandomState;
 use arrow::array::ArrayRef;
 use std::any::Any;
 use std::borrow::Cow;
+use std::ops::Deref;
 
 impl IntoSeries for CategoricalChunked {
     fn into_series(self) -> Series {
@@ -131,10 +132,10 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         right_column: &Series,
         opt_join_tuples: &[(Option<u32>, Option<u32>)],
     ) -> Series {
-        let ca = self.0.cast::<UInt32Type>().unwrap();
-        let right = right_column.cast_with_dtype(&DataType::UInt32).unwrap();
-        ZipOuterJoinColumn::zip_outer_join_column(&ca, &right, opt_join_tuples)
-            .cast_with_dtype(&DataType::Categorical)
+        let ca = self.0.deref();
+        let right = right_column.cast(&DataType::UInt32).unwrap();
+        ZipOuterJoinColumn::zip_outer_join_column(ca, &right, opt_join_tuples)
+            .cast(&DataType::Categorical)
             .unwrap()
     }
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
@@ -274,8 +275,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
     }
 
-    fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
-        self.0.cast_with_dtype(data_type)
+    fn cast(&self, data_type: &DataType) -> Result<Series> {
+        self.0.cast(data_type)
     }
 
     fn value_counts(&self) -> Result<DataFrame> {

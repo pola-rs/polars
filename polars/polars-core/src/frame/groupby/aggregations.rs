@@ -26,13 +26,13 @@ where
 
 impl BooleanChunked {
     pub(crate) fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.cast::<UInt32Type>().unwrap().agg_min(groups)
+        self.cast(&DataType::UInt32).unwrap().agg_min(groups)
     }
     pub(crate) fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.cast::<UInt32Type>().unwrap().agg_max(groups)
+        self.cast(&DataType::UInt32).unwrap().agg_max(groups)
     }
     pub(crate) fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.cast::<UInt32Type>().unwrap().agg_sum(groups)
+        self.cast(&DataType::UInt32).unwrap().agg_sum(groups)
     }
 }
 
@@ -433,7 +433,7 @@ impl AggNUnique for ListChunked {}
 #[cfg(feature = "dtype-categorical")]
 impl AggNUnique for CategoricalChunked {
     fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-        self.cast::<UInt32Type>()
+        self.cast(&DataType::UInt32)
             .unwrap()
             .agg_n_unique(groups)
             .map(|mut ca| {

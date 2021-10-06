@@ -123,13 +123,13 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
                     // Safety:
                     // in bounds
                     let a = unsafe { count.take_unchecked((&dense).into()) }
-                        .cast::<Float32Type>()
+                        .cast(&DataType::Float32)
                         .unwrap();
                     let b = unsafe { count.take_unchecked((&(dense - 1)).into()) }
-                        .cast::<Float32Type>()
+                        .cast(&DataType::Float32)
                         .unwrap()
                         + 1.0;
-                    ((a + b) * 0.5).into_series()
+                    (&a + &b) * 0.5
                 }
                 Dense | Ordinal => unimplemented!(),
             }

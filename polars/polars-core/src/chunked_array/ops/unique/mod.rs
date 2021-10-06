@@ -14,6 +14,8 @@ use arrow::array::Array;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::hash::Hash;
+#[cfg(feature = "dtype-categorical")]
+use std::ops::Deref;
 
 fn finish_is_unique_helper(
     mut unique_idx: Vec<u32>,
@@ -271,18 +273,18 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
             }
         };
         ca.categorical_map = self.categorical_map.clone();
-        ca.cast()
+        Ok(ca.into())
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        self.cast::<UInt32Type>()?.arg_unique()
+        self.deref().arg_unique()
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
-        self.cast::<UInt32Type>()?.is_unique()
+        self.deref().is_unique()
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        self.cast::<UInt32Type>()?.is_duplicated()
+        self.deref().is_duplicated()
     }
 
     fn value_counts(&self) -> Result<DataFrame> {
@@ -498,9 +500,10 @@ mod is_first {
         fn is_first(&self) -> Result<BooleanChunked> {
             use DataType::*;
             match self.dtype() {
+                // cast types to reduce compiler bloat
                 Int8 | Int16 | UInt8 | UInt16 => {
-                    let ca = self.cast::<Int32Type>().unwrap();
-                    ca.is_first()
+                    let s = self.cast(&DataType::Int32).unwrap();
+                    s.is_first()
                 }
                 _ => {
                     if Self::bit_repr_is_large() {
@@ -518,8 +521,7 @@ mod is_first {
     #[cfg(feature = "dtype-categorical")]
     impl IsFirst<CategoricalType> for CategoricalChunked {
         fn is_first(&self) -> Result<BooleanChunked> {
-            let ca = self.cast::<UInt32Type>().unwrap();
-            ca.is_first()
+            self.deref().is_first()
         }
     }
 

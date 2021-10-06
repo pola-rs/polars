@@ -2,6 +2,8 @@ use crate::prelude::*;
 use crate::utils::{align_chunks_ternary, CustomIterTools};
 use arrow::compute::if_then_else::if_then_else;
 use polars_arrow::array::default_arrays::FromData;
+#[cfg(feature = "dtype-categorical")]
+use std::ops::Deref;
 
 fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
     if predicate {
@@ -161,10 +163,8 @@ impl ChunkZip<CategoricalType> for CategoricalChunked {
         mask: &BooleanChunked,
         other: &ChunkedArray<CategoricalType>,
     ) -> Result<ChunkedArray<CategoricalType>> {
-        self.cast::<UInt32Type>()
-            .unwrap()
-            .zip_with(mask, &other.cast().unwrap())?
-            .cast()
+        let ca: CategoricalChunked = self.deref().zip_with(mask, other.deref())?.into();
+        Ok(ca.set_state(self))
     }
 }
 

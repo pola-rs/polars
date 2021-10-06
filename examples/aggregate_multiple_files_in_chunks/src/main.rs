@@ -168,12 +168,12 @@ fn compute_mean(
     // Get the sum column from dataframe as float.
     let sum_column = dataframe
         .drop_in_place(sum_column_name)?
-        .cast_with_dtype(&DataType::Float64)?;
+        .cast(&DataType::Float64)?;
 
     // Get the count column from dataframe as float.
     let count_column = dataframe
         .drop_in_place(count_column_name)?
-        .cast_with_dtype(&DataType::Float64)?;
+        .cast(&DataType::Float64)?;
 
     // Compute the mean series and rename to the `mean_column_name` provided
     // as input.

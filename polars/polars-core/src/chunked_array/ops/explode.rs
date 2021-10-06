@@ -186,7 +186,7 @@ impl ExplodeByOffsets for CategoricalChunked {
         let ca: CategoricalChunked = self
             .deref()
             .explode_by_offsets(offsets)
-            .cast_with_dtype(&DataType::Categorical)
+            .cast(&DataType::Categorical)
             .unwrap()
             .categorical()
             .unwrap()

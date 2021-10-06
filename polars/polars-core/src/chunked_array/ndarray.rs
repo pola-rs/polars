@@ -39,7 +39,7 @@ impl ListChunked {
 
                 ndarray = unsafe { ndarray::Array::uninitialized((self.len(), series.len())) };
 
-                let series = series.cast::<N>()?;
+                let series = series.cast(&N::get_dtype())?;
                 let ca = series.unpack::<N>()?;
                 let a = ca.to_ndarray()?;
                 let mut row = ndarray.slice_mut(s![0, ..]);
@@ -51,7 +51,7 @@ impl ListChunked {
                             "Could not create a 2D array. Series have different lengths".into(),
                         ));
                     }
-                    let series = series.cast::<N>()?;
+                    let series = series.cast(&N::get_dtype())?;
                     let ca = series.unpack::<N>()?;
                     let a = ca.to_ndarray()?;
                     let mut row = ndarray.slice_mut(s![0, ..]);
@@ -100,7 +100,7 @@ impl DataFrame {
                 ));
             }
             // this is an Arc clone if already of type N
-            let series = series.cast::<N>()?;
+            let series = series.cast(&N::get_dtype())?;
             let ca = series.unpack::<N>()?;
 
             ca.into_no_null_iter()

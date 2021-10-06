@@ -94,9 +94,9 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
                 let other = if self.dtype() == &DataType::Date32 {
-                    other.cast_with_dtype(&DataType::Int32)?
+                    other.cast(&DataType::Int32)?
                 } else {
-                    other.cast_with_dtype(&DataType::Int64)?
+                    other.cast(&DataType::Int64)?
                 };
                 self.0
                     .zip_with(mask, &other.as_ref().as_ref())
@@ -157,10 +157,9 @@ macro_rules! impl_dyn_series {
 
             fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 // we cannot cast and dispatch as the inner type of the list would be incorrect
-                self.0.agg_list(groups).map(|s| {
-                    s.cast_with_dtype(&DataType::List(self.dtype().to_arrow()))
-                        .unwrap()
-                })
+                self.0
+                    .agg_list(groups)
+                    .map(|s| s.cast(&DataType::List(self.dtype().to_arrow())).unwrap())
             }
 
             fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
@@ -225,13 +224,13 @@ macro_rules! impl_dyn_series {
             fn subtract(&self, rhs: &Series) -> Result<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date32, DataType::Date32) => {
-                        let lhs = self.cast_with_dtype(&DataType::Int32).unwrap();
-                        let rhs = rhs.cast_with_dtype(&DataType::Int32).unwrap();
+                        let lhs = self.cast(&DataType::Int32).unwrap();
+                        let rhs = rhs.cast(&DataType::Int32).unwrap();
                         Ok(lhs.subtract(&rhs)?.into_date().into_series())
                     }
                     (DataType::Date64, DataType::Date64) => {
-                        let lhs = self.cast_with_dtype(&DataType::Int64).unwrap();
-                        let rhs = rhs.cast_with_dtype(&DataType::Int64).unwrap();
+                        let lhs = self.cast(&DataType::Int64).unwrap();
+                        let rhs = rhs.cast(&DataType::Int64).unwrap();
                         Ok(lhs.subtract(&rhs)?.into_date().into_series())
                     }
                     (dtl, dtr) => Err(PolarsError::ComputeError(
@@ -269,7 +268,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "sort_multiple")]
             fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
                 let phys_type = self.0.physical_type();
-                let s = self.cast_with_dtype(&phys_type).unwrap();
+                let s = self.cast(&phys_type).unwrap();
 
                 self.0
                     .unpack_series_matching_type(&s)?
@@ -428,13 +427,13 @@ macro_rules! impl_dyn_series {
                     .into_series()
             }
 
-            fn cast_with_dtype(&self, data_type: &DataType) -> Result<Series> {
+            fn cast(&self, data_type: &DataType) -> Result<Series> {
                 const MS_IN_DAY: i64 = 86400000;
                 use DataType::*;
                 let ca = match (self.dtype(), data_type) {
                     #[cfg(feature = "dtype-date64")]
                     (Date32, Date64) => {
-                        let casted = self.0.cast_with_dtype(data_type)?;
+                        let casted = self.0.cast(data_type)?;
                         let casted = casted.date64().unwrap();
                         return Ok((casted.deref() * MS_IN_DAY).into_date().into_series());
                     }
@@ -445,7 +444,7 @@ macro_rules! impl_dyn_series {
                     }
                     _ => Cow::Borrowed(self.0.deref()),
                 };
-                ca.cast_with_dtype(data_type)
+                ca.cast(data_type)
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {
@@ -538,7 +537,7 @@ macro_rules! impl_dyn_series {
 
             fn sum_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
-                    .cast_with_dtype(self.dtype())
+                    .cast(self.dtype())
                     .unwrap()
                     .into()
             }
@@ -550,31 +549,31 @@ macro_rules! impl_dyn_series {
             }
             fn mean_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
-                    .cast_with_dtype(self.dtype())
+                    .cast(self.dtype())
                     .unwrap()
                     .into()
             }
             fn median_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
-                    .cast_with_dtype(self.dtype())
+                    .cast(self.dtype())
                     .unwrap()
                     .into()
             }
             fn var_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
-                    .cast_with_dtype(self.dtype())
+                    .cast(self.dtype())
                     .unwrap()
                     .into()
             }
             fn std_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
-                    .cast_with_dtype(self.dtype())
+                    .cast(self.dtype())
                     .unwrap()
                     .into()
             }
             fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
                 Ok(Int32Chunked::full_null(self.name(), 1)
-                    .cast_with_dtype(self.dtype())
+                    .cast(self.dtype())
                     .unwrap()
                     .into())
             }
@@ -626,7 +625,7 @@ macro_rules! impl_dyn_series {
                     DataType::Date32 => self
                         .0
                         .repeat_by(by)
-                        .cast_with_dtype(&DataType::List(ArrowDataType::Date32))
+                        .cast(&DataType::List(ArrowDataType::Date32))
                         .unwrap()
                         .list()
                         .unwrap()
@@ -634,7 +633,7 @@ macro_rules! impl_dyn_series {
                     DataType::Date64 => self
                         .0
                         .repeat_by(by)
-                        .cast_with_dtype(&DataType::List(ArrowDataType::Date64))
+                        .cast(&DataType::List(ArrowDataType::Date64))
                         .unwrap()
                         .list()
                         .unwrap()
@@ -698,7 +697,7 @@ mod test {
     #[cfg(feature = "dtype-date64")]
     fn test_agg_list_type() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let s = s.cast_with_dtype(&DataType::Date64)?;
+        let s = s.cast(&DataType::Date64)?;
 
         let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
         assert!(matches!(l.dtype(), DataType::List(ArrowDataType::Date64)));
@@ -711,7 +710,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_datelike_join() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let mut s1 = s.cast_with_dtype(&DataType::Date64)?;
+        let mut s1 = s.cast(&DataType::Date64)?;
         s1.rename("bar");
 
         let df = DataFrame::new(vec![s, s1])?;
@@ -731,7 +730,7 @@ mod test {
     #[cfg(feature = "dtype-date64")]
     fn test_datelike_methods() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let s = s.cast_with_dtype(&DataType::Date64)?;
+        let s = s.cast(&DataType::Date64)?;
 
         let out = s.subtract(&s)?;
         assert!(matches!(out.dtype(), DataType::Date64));

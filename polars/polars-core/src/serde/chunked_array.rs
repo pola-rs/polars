@@ -118,6 +118,7 @@ impl_serialize!(Utf8Chunked);
 impl_serialize!(BooleanChunked);
 impl_serialize!(ListChunked);
 
+#[cfg(feature = "dtype-categorical")]
 impl Serialize for CategoricalChunked {
     fn serialize<S>(
         &self,
@@ -126,7 +127,7 @@ impl Serialize for CategoricalChunked {
     where
         S: Serializer,
     {
-        let ca = self.cast::<Utf8Type>().unwrap();
+        let ca = self.cast(&DataType::Utf8).unwrap();
         ca.serialize(serializer)
     }
 }

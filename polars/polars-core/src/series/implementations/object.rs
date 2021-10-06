@@ -168,7 +168,7 @@ where
         ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
     }
 
-    fn cast_with_dtype(&self, _data_type: &DataType) -> Result<Series> {
+    fn cast(&self, _data_type: &DataType) -> Result<Series> {
         Err(PolarsError::InvalidOperation(
             "cannot cast array of type ObjectChunked to arrow datatype".into(),
         ))

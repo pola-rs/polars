@@ -331,9 +331,7 @@ impl DataFrame {
                     }
                     _ => return wrong_key_dtype(),
                 }
-                key = key_phys
-                    .cast_with_dtype(key_dtype)
-                    .expect("back to original type");
+                key = key_phys.cast(key_dtype).expect("back to original type");
 
                 df.groupby_stable(&[year_c, day_c])?
             }
@@ -355,9 +353,7 @@ impl DataFrame {
                     }
                     _ => return wrong_key_dtype(),
                 }
-                key = key_phys
-                    .cast_with_dtype(key_dtype)
-                    .expect("back to original type");
+                key = key_phys.cast(key_dtype).expect("back to original type");
                 df.groupby_stable(&[year_c, day_c, hour_c])?
             }
             Minute(n) => {
@@ -381,9 +377,7 @@ impl DataFrame {
                     }
                     _ => return wrong_key_dtype_date64(),
                 }
-                key = key_phys
-                    .cast_with_dtype(key_dtype)
-                    .expect("back to original type");
+                key = key_phys.cast(key_dtype).expect("back to original type");
 
                 df.groupby_stable(&[year_c, day_c, hour_c, minute_c])?
             }
@@ -410,9 +404,7 @@ impl DataFrame {
                     }
                     _ => return wrong_key_dtype_date64(),
                 }
-                key = key_phys
-                    .cast_with_dtype(key_dtype)
-                    .expect("back to original type");
+                key = key_phys.cast(key_dtype).expect("back to original type");
 
                 df.groupby_stable(&[day_c, hour_c, minute_c, second_c])?
             }

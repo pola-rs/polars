@@ -5,6 +5,7 @@ mod builder;
 mod merge;
 
 pub use builder::*;
+use std::ops::{Deref, DerefMut};
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {
@@ -62,6 +63,40 @@ impl CategoricalChunked {
     pub(crate) fn set_categorical_map(&mut self, categorical_map: Arc<RevMapping>) {
         self.categorical_map = Some(categorical_map)
     }
+
+    pub(crate) fn set_state<T>(mut self, other: &ChunkedArray<T>) -> Self {
+        self.categorical_map = other.categorical_map.clone();
+        self
+    }
+}
+
+impl Deref for CategoricalChunked {
+    type Target = UInt32Chunked;
+
+    fn deref(&self) -> &Self::Target {
+        // TODO: update the Field, dtype still points to Categorical
+        let ptr = self as *const CategoricalChunked;
+        let ptr = ptr as *const UInt32Chunked;
+        unsafe { &*ptr }
+    }
+}
+
+impl DerefMut for CategoricalChunked {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let ptr = self as *mut CategoricalChunked;
+        let ptr = ptr as *mut UInt32Chunked;
+        unsafe { &mut *ptr }
+    }
+}
+
+impl From<UInt32Chunked> for CategoricalChunked {
+    fn from(ca: UInt32Chunked) -> Self {
+        ca.cast(&DataType::Categorical)
+            .unwrap()
+            .categorical()
+            .unwrap()
+            .clone()
+    }
 }
 
 #[cfg(test)]
@@ -83,9 +118,10 @@ mod test {
             Some("bar"),
         ];
         let ca = Utf8Chunked::new_from_opt_slice("a", slice);
-        let ca = ca.cast::<CategoricalType>()?;
+        let ca = ca.cast(&DataType::Categorical)?;
+        let ca = ca.categorical().unwrap();
 
-        let arr: DictionaryArray<u32> = (&ca).into();
+        let arr: DictionaryArray<u32> = (ca).into();
         let s = Series::try_from(("foo", Arc::new(arr) as ArrayRef))?;
         assert_eq!(s.dtype(), &DataType::Categorical);
         assert_eq!(s.null_count(), 1);
@@ -101,10 +137,10 @@ mod test {
         toggle_string_cache(true);
 
         let mut s1 = Series::new("1", vec!["a", "b", "c"])
-            .cast::<CategoricalType>()
+            .cast(&DataType::Categorical)
             .unwrap();
         let s2 = Series::new("2", vec!["a", "x", "y"])
-            .cast::<CategoricalType>()
+            .cast(&DataType::Categorical)
             .unwrap();
         let appended = s1.append(&s2).unwrap();
         assert_eq!(appended.str_value(0), "\"a\"");

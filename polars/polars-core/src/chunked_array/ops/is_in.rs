@@ -2,6 +2,7 @@ use crate::prelude::*;
 use crate::utils::{get_supertype, CustomIterTools};
 use hashbrown::hash_set::HashSet;
 use std::hash::Hash;
+use std::ops::Deref;
 
 unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> Result<BooleanChunked>
 where
@@ -46,8 +47,8 @@ where
             DataType::List(dt) => {
                 let st = get_supertype(self.dtype(), &dt.into())?;
                 if &st != self.dtype() {
-                    let left = self.cast_with_dtype(&st)?;
-                    let right = other.cast_with_dtype(&DataType::List(st.to_arrow()))?;
+                    let left = self.cast(&st)?;
+                    let right = other.cast(&DataType::List(st.to_arrow()))?;
                     return left.is_in(&right);
                 }
 
@@ -68,8 +69,8 @@ where
                 // first make sure that the types are equal
                 let st = get_supertype(self.dtype(), other.dtype())?;
                 if self.dtype() != other.dtype() {
-                    let left = self.cast_with_dtype(&st)?;
-                    let right = other.cast_with_dtype(&st)?;
+                    let left = self.cast(&st)?;
+                    let right = other.cast(&st)?;
                     return left.is_in(&right);
                 }
                 // now that the types are equal, we coerce every 32 bit array to u32
@@ -177,7 +178,7 @@ impl IsIn for BooleanChunked {
 #[cfg(feature = "dtype-categorical")]
 impl IsIn for CategoricalChunked {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
-        self.cast::<UInt32Type>().unwrap().is_in(other)
+        self.deref().is_in(other)
     }
 }
 

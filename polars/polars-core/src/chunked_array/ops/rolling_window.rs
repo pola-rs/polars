@@ -67,8 +67,8 @@ mod inner_mod {
                     Series::try_from((self.name(), arr))
                 }
                 _ => {
-                    let ca = self.cast::<Float64Type>()?;
-                    ca.rolling_mean(options)
+                    let s = self.cast(&DataType::Float64)?;
+                    s.rolling_mean(options)
                 }
             }
         }
@@ -89,7 +89,7 @@ mod inner_mod {
             if options.weights.is_some()
                 && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
             {
-                let s = ca.cast_with_dtype(&DataType::Float64).unwrap();
+                let s = ca.cast(&DataType::Float64).unwrap();
                 return s.rolling_sum(options);
             }
 
@@ -123,7 +123,7 @@ mod inner_mod {
             if options.weights.is_some()
                 && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
             {
-                let s = ca.cast_with_dtype(&DataType::Float64).unwrap();
+                let s = ca.cast(&DataType::Float64).unwrap();
                 return s.rolling_min(options);
             }
 
@@ -157,7 +157,7 @@ mod inner_mod {
             if options.weights.is_some()
                 && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
             {
-                let s = ca.cast_with_dtype(&DataType::Float64).unwrap();
+                let s = ca.cast(&DataType::Float64).unwrap();
                 return s.rolling_max(options);
             }
 
@@ -299,7 +299,7 @@ mod inner_mod {
             if options.weights.is_some()
                 && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
             {
-                let s = ca.cast_with_dtype(&DataType::Float64).unwrap();
+                let s = ca.cast(&DataType::Float64).unwrap();
                 return s.f64().unwrap().rolling_var(options);
             }
 
@@ -546,7 +546,7 @@ mod test {
         let out = ca
             .rolling_var(options.clone())
             .unwrap()
-            .cast::<Int32Type>()
+            .cast(&DataType::Int32)
             .unwrap();
         let out = out.i32().unwrap();
         assert_eq!(
@@ -558,7 +558,7 @@ mod test {
         let out = ca
             .rolling_var(options)
             .unwrap()
-            .cast::<Int32Type>()
+            .cast(&DataType::Int32)
             .unwrap();
         let out = out.i32().unwrap();
 

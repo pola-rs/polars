@@ -468,6 +468,17 @@ pub enum DataType {
 }
 
 impl DataType {
+    /// Convert to the physical data type
+    pub(crate) fn to_physical(&self) -> DataType {
+        use DataType::*;
+        match self {
+            Date32 => Int32,
+            Date64 => Int64,
+            _ => self.clone(),
+        }
+    }
+
+    /// Convert to an Arrow data type.
     pub fn to_arrow(&self) -> ArrowDataType {
         use DataType::*;
         match self {

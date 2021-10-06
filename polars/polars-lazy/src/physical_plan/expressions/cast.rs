@@ -42,7 +42,7 @@ impl CastExpr {
         if self.strict {
             input.strict_cast(&self.data_type)
         } else {
-            input.cast_with_dtype(&self.data_type)
+            input.cast(&self.data_type)
         }
     }
 }

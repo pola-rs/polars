@@ -21,8 +21,8 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
                 Series::new(name, &[polars_core::functions::cov(ca_a, ca_b)])
             }
             _ => {
-                let a = a.cast::<Float64Type>()?;
-                let b = b.cast::<Float64Type>()?;
+                let a = a.cast(&DataType::Float64)?;
+                let b = b.cast(&DataType::Float64)?;
                 let ca_a = a.f64().unwrap();
                 let ca_b = b.f64().unwrap();
                 Series::new(name, &[polars_core::functions::cov(ca_a, ca_b)])
@@ -49,8 +49,8 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
                 Series::new(name, &[polars_core::functions::pearson_corr(ca_a, ca_b)])
             }
             _ => {
-                let a = a.cast::<Float64Type>()?;
-                let b = b.cast::<Float64Type>()?;
+                let a = a.cast(&DataType::Float64)?;
+                let b = b.cast(&DataType::Float64)?;
                 let ca_a = a.f64().unwrap();
                 let ca_b = b.f64().unwrap();
                 Series::new(name, &[polars_core::functions::pearson_corr(ca_a, ca_b)])
@@ -131,8 +131,8 @@ pub fn concat_lst(s: Vec<Expr>) -> Expr {
 pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
     if matches!(low, Expr::Literal(_)) || matches!(high, Expr::Literal(_)) {
         let f = move |sa: Series, sb: Series| {
-            let sa = sa.cast_with_dtype(&DataType::Int64)?;
-            let sb = sb.cast_with_dtype(&DataType::Int64)?;
+            let sa = sa.cast(&DataType::Int64)?;
+            let sb = sb.cast(&DataType::Int64)?;
             let low = sa
                 .i64()?
                 .get(0)
@@ -151,8 +151,8 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
         map_binary(low, high, f, Some(Field::new("arange", DataType::Int64)))
     } else {
         let f = move |sa: Series, sb: Series| {
-            let sa = sa.cast_with_dtype(&DataType::Int64)?;
-            let sb = sb.cast_with_dtype(&DataType::Int64)?;
+            let sa = sa.cast(&DataType::Int64)?;
+            let sb = sb.cast(&DataType::Int64)?;
             let low = sa.i64()?;
             let high = sb.i64()?;
             let mut builder =

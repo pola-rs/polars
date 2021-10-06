@@ -99,7 +99,7 @@ impl ChunkFilter<CategoricalType> for CategoricalChunked {
     where
         Self: Sized,
     {
-        let ca: CategoricalChunked = self.deref().filter(filter)?.cast()?;
+        let ca: CategoricalChunked = self.deref().filter(filter)?.into();
         Ok(ca.set_state(self))
     }
 }

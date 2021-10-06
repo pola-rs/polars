@@ -18,7 +18,7 @@ fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> Result<Optio
                 n_list.push(current_n)
             }
 
-            let a_zero_mean = s.cast::<Float64Type>()? - mean;
+            let a_zero_mean = s.cast(&DataType::Float64)? - mean;
 
             let mut s = if n_list.pop().unwrap() == 1 {
                 a_zero_mean.clone()

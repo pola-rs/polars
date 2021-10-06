@@ -8,6 +8,7 @@ use crate::chunked_array::ChunkIdIter;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
+use std::ops::Deref;
 use std::sync::Arc;
 
 macro_rules! invalid_operation {
@@ -608,7 +609,7 @@ pub trait SeriesTrait:
         unimplemented!()
     }
 
-    fn cast_with_dtype(&self, _data_type: &DataType) -> Result<Series> {
+    fn cast(&self, _data_type: &DataType) -> Result<Series> {
         unimplemented!()
     }
 
@@ -965,9 +966,11 @@ pub trait SeriesTrait:
     fn timestamp(&self) -> Result<Int64Chunked> {
         match self.dtype() {
             DataType::Date32 => self
-                .date32()
-                .map(|ca| (ca.cast::<Int64Type>().unwrap() * 1000)),
-            DataType::Date64 => self.date64().map(|ca| ca.cast::<Int64Type>().unwrap()),
+                .cast(&DataType::Int64)
+                .unwrap()
+                .date64()
+                .map(|ca| (ca.deref() * 1000)),
+            DataType::Date64 => self.date64().map(|ca| ca.deref().clone()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),

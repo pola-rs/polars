@@ -396,7 +396,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
 #[cfg(feature = "dtype-categorical")]
 impl ChunkSort<CategoricalType> for CategoricalChunked {
     fn sort(&self, reverse: bool) -> Self {
-        self.as_ref().sort(reverse).cast().unwrap()
+        self.deref().sort(reverse).into()
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
@@ -437,10 +437,12 @@ pub(crate) fn prepare_argsort(
             match s.dtype() {
                 Float32 | Float64 | Int32 | Int64 | Utf8 | UInt32 | UInt64 => s.clone(),
                 _ => {
+                    // small integers i8, u8 etc are casted to reduce compiler bloat
+                    // not that we don't expect any logical types at this point
                     if s.bit_repr_is_large() {
-                        s.cast::<Int64Type>().unwrap()
+                        s.cast(&DataType::Int64).unwrap()
                     } else {
-                        s.cast::<Int32Type>().unwrap()
+                        s.cast(&DataType::Int32).unwrap()
                     }
                 }
             }

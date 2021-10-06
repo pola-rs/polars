@@ -81,7 +81,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
     let cas = s
         .iter()
         .map(|s| {
-            let s = s.cast::<Utf8Type>()?;
+            let s = s.cast(&DataType::Utf8)?;
             let mut ca = s.utf8()?.clone();
             // broadcast
             if ca.len() == 1 && len > 1 {

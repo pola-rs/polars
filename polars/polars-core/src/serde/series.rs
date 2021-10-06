@@ -34,14 +34,19 @@ impl Serialize for Series {
         } else if let Ok(ca) = self.bool() {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.categorical() {
-            ca.serialize(serializer)
+            #[cfg(feature = "dtype-categorical")]
+            {
+                ca.serialize(serializer)
+            }
+            #[cfg(not(feature = "dtype-categorical"))]
+            {
+                panic!("activate dtype-categorical");
+            }
         } else if let Ok(ca) = self.list() {
             ca.serialize(serializer)
         } else {
             // cast small integers to i32
-            self.cast_with_dtype(&DataType::Int32)
-                .unwrap()
-                .serialize(serializer)
+            self.cast(&DataType::Int32).unwrap().serialize(serializer)
         }
     }
 }
@@ -132,16 +137,12 @@ impl<'de> Deserialize<'de> for Series {
                     #[cfg(feature = "dtype-date32")]
                     DeDataType::Date32 => {
                         let values: Vec<Option<i32>> = map.next_value()?;
-                        Ok(Series::new(&name, values)
-                            .cast_with_dtype(&DataType::Date32)
-                            .unwrap())
+                        Ok(Series::new(&name, values).cast(&DataType::Date32).unwrap())
                     }
                     #[cfg(feature = "dtype-date64")]
                     DeDataType::Date64 => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(&name, values)
-                            .cast_with_dtype(&DataType::Date64)
-                            .unwrap())
+                        Ok(Series::new(&name, values).cast(&DataType::Date64).unwrap())
                     }
                     DeDataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;
