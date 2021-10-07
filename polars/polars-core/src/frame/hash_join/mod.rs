@@ -86,11 +86,12 @@ unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
     hash_tables.get_unchecked(idx)
 }
 
+#[allow(clippy::type_complexity)]
 unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     h: u64,
-    hash_tables: &mut [HashMap<T, Vec<u32>, H>],
+    hash_tables: &mut [HashMap<T, (bool, Vec<u32>), H>],
     len: u64,
-) -> &mut HashMap<T, Vec<u32>, H> {
+) -> &mut HashMap<T, (bool, Vec<u32>), H> {
     let mut idx = 0;
     for i in 0..len {
         // can only be done for powers of two.
@@ -315,7 +316,7 @@ where
 /// Probe the build table and add tuples to the results (inner join)
 fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
-    hash_tbls: &mut [PlHashMap<T, Vec<u32>>],
+    hash_tbls: &mut [PlHashMap<T, (bool, Vec<u32>)>],
     results: &mut Vec<(Option<u32>, Option<u32>)>,
     n_tables: u64,
     // Function that get index_a, index_b when there is a match and pushes to result
@@ -349,8 +350,9 @@ fn probe_outer<T, F, G, H>(
 
             match entry {
                 // match and remove
-                RawEntryMut::Occupied(occupied) => {
-                    let indexes_b = occupied.remove();
+                RawEntryMut::Occupied(mut occupied) => {
+                    let (tracker, indexes_b) = occupied.get_mut();
+                    *tracker = true;
                     results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
                 }
                 // no match
@@ -361,9 +363,11 @@ fn probe_outer<T, F, G, H>(
     }
 
     for hash_tbl in hash_tbls {
-        hash_tbl.iter().for_each(|(_k, indexes_b)| {
+        hash_tbl.iter().for_each(|(_k, (tracker, indexes_b))| {
             // remaining joined values from the right table
-            results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+            if !*tracker {
+                results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+            }
         });
     }
 }
@@ -1667,6 +1671,119 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    fn test_joins_with_duplicates() -> Result<()> {
+        // test joins with duplicates in both dataframes
+
+        let df_left = df![
+            "col1" => [1, 1, 2],
+            "int_col" => [1, 2, 3]
+        ]
+        .unwrap();
+
+        let df_right = df![
+            "join_col1" => [1, 1, 1, 1, 1, 3],
+            "dbl_col" => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+        ]
+        .unwrap();
+
+        let df_inner_join = df_left.inner_join(&df_right, "col1", "join_col1").unwrap();
+
+        assert_eq!(df_inner_join.height(), 10);
+        assert_eq!(df_inner_join.column("col1")?.null_count(), 0);
+        assert_eq!(df_inner_join.column("int_col")?.null_count(), 0);
+        assert_eq!(df_inner_join.column("dbl_col")?.null_count(), 0);
+
+        let df_left_join = df_left.left_join(&df_right, "col1", "join_col1").unwrap();
+
+        assert_eq!(df_left_join.height(), 11);
+        assert_eq!(df_left_join.column("col1")?.null_count(), 0);
+        assert_eq!(df_left_join.column("int_col")?.null_count(), 0);
+        assert_eq!(df_left_join.column("dbl_col")?.null_count(), 1);
+
+        let df_outer_join = df_left.outer_join(&df_right, "col1", "join_col1").unwrap();
+
+        assert_eq!(df_outer_join.height(), 12);
+        assert_eq!(df_outer_join.column("col1")?.null_count(), 0);
+        assert_eq!(df_outer_join.column("int_col")?.null_count(), 1);
+        assert_eq!(df_outer_join.column("dbl_col")?.null_count(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_multi_joins_with_duplicates() -> Result<()> {
+        // test joins with multiple join columns and duplicates in both
+        // dataframes
+
+        let df_left = df![
+            "col1" => [1, 1, 1],
+            "join_col2" => ["a", "a", "b"],
+            "int_col" => [1, 2, 3]
+        ]
+        .unwrap();
+
+        let df_right = df![
+            "join_col1" => [1, 1, 1, 1, 1, 2],
+            "col2" => ["a", "a", "a", "a", "a", "c"],
+            "dbl_col" => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+        ]
+        .unwrap();
+
+        let df_inner_join = df_left
+            .join(
+                &df_right,
+                &["col1", "join_col2"],
+                &["join_col1", "col2"],
+                JoinType::Inner,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(df_inner_join.height(), 10);
+        assert_eq!(df_inner_join.column("col1")?.null_count(), 0);
+        assert_eq!(df_inner_join.column("join_col2")?.null_count(), 0);
+        assert_eq!(df_inner_join.column("int_col")?.null_count(), 0);
+        assert_eq!(df_inner_join.column("dbl_col")?.null_count(), 0);
+
+        let df_left_join = df_left
+            .join(
+                &df_right,
+                &["col1", "join_col2"],
+                &["join_col1", "col2"],
+                JoinType::Left,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(df_left_join.height(), 11);
+        assert_eq!(df_left_join.column("col1")?.null_count(), 0);
+        assert_eq!(df_left_join.column("join_col2")?.null_count(), 0);
+        assert_eq!(df_left_join.column("int_col")?.null_count(), 0);
+        assert_eq!(df_left_join.column("dbl_col")?.null_count(), 1);
+
+        let df_outer_join = df_left
+            .join(
+                &df_right,
+                &["col1", "join_col2"],
+                &["join_col1", "col2"],
+                JoinType::Outer,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(df_outer_join.height(), 12);
+        assert_eq!(df_outer_join.column("col1")?.null_count(), 0);
+        assert_eq!(df_outer_join.column("join_col2")?.null_count(), 0);
+        assert_eq!(df_outer_join.column("int_col")?.null_count(), 1);
+        assert_eq!(df_outer_join.column("dbl_col")?.null_count(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    #[cfg(feature = "dtype-u64")]
     fn test_join_floats() -> Result<()> {
         let df_a = df! {
             "a" => &[1.0, 2.0, 1.0, 1.0],

@@ -317,7 +317,7 @@ impl Hasher for IdHasher {
 
 pub type IdBuildHasher = BuildHasherDefault<IdHasher>;
 
-#[derive(Debug)]
+#[derive(Debug, Eq)]
 /// Contains an idx of a row in a DataFrame and the precomputed hash of that row.
 /// That hash still needs to be used to create another hash to be able to resize hashmaps without
 /// accidental quadratic behavior. So do not use an Identity function!
@@ -326,6 +326,12 @@ pub(crate) struct IdxHash {
     pub(crate) idx: u32,
     // precomputed hash of T
     hash: u64,
+}
+
+impl PartialEq for IdxHash {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash && self.idx == other.idx
+    }
 }
 
 impl Hash for IdxHash {
@@ -383,7 +389,7 @@ pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool 
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
-) -> Vec<HashMap<T, Vec<u32>, RandomState>>
+) -> Vec<HashMap<T, (bool, Vec<u32>), RandomState>>
 where
     I: Iterator<Item = T> + Send + TrustedLen,
     T: Send + Hash + Eq + Sync + Copy,
@@ -401,7 +407,7 @@ where
             let build_hasher = build_hasher.clone();
             let hashes_and_keys = &hashes_and_keys;
             let partition_no = partition_no as u64;
-            let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
+            let mut hash_tbl: HashMap<T, (bool, Vec<u32>), RandomState> =
                 HashMap::with_hasher(build_hasher);
 
             let n_threads = n_partitions as u64;
@@ -424,11 +430,11 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    entry.insert_hashed_nocheck(*h, *k, vec![idx]);
+                                    entry.insert_hashed_nocheck(*h, *k, (false, vec![idx]));
                                 }
                                 RawEntryMut::Occupied(mut entry) => {
                                     let (_k, v) = entry.get_key_value_mut();
-                                    v.push(idx);
+                                    v.1.push(idx);
                                 }
                             }
                         }

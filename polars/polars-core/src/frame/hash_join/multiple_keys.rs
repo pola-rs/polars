@@ -73,6 +73,55 @@ fn create_build_table(
     .collect()
 }
 
+fn create_build_table_outer(
+    hashes: &[UInt64Chunked],
+    keys: &DataFrame,
+) -> Vec<HashMap<IdxHash, (bool, Vec<u32>), IdBuildHasher>> {
+    // Outer join equivalent of create_build_table() adds a bool in the hashmap values for tracking
+    // whether a value in the hash table has already been matched to a value in the probe hashes.
+    let n_partitions = set_partition_size();
+
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+    POOL.install(|| {
+        (0..n_partitions).into_par_iter().map(|part_no| {
+            let part_no = part_no as u64;
+            let mut hash_tbl: HashMap<IdxHash, (bool, Vec<u32>), IdBuildHasher> =
+                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+
+            let n_partitions = n_partitions as u64;
+            let mut offset = 0;
+            for hashes in hashes {
+                for hashes in hashes.data_views() {
+                    let len = hashes.len();
+                    let mut idx = 0;
+                    hashes.iter().for_each(|h| {
+                        // partition hashes by thread no.
+                        // So only a part of the hashes go to this hashmap
+                        if this_partition(*h, part_no, n_partitions) {
+                            let idx = idx + offset;
+                            populate_multiple_key_hashmap(
+                                &mut hash_tbl,
+                                idx,
+                                *h,
+                                keys,
+                                || (false, vec![idx]),
+                                |v| v.1.push(idx),
+                            )
+                        }
+                        idx += 1;
+                    });
+
+                    offset += len as u32;
+                }
+            }
+            hash_tbl
+        })
+    })
+    .collect()
+}
+
 /// Probe the build table and add tuples to the results (inner join)
 #[allow(clippy::too_many_arguments)]
 fn probe_inner<F>(
@@ -259,9 +308,10 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32,
 
 /// Probe the build table and add tuples to the results (inner join)
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 fn probe_outer<F, G, H>(
     probe_hashes: &[UInt64Chunked],
-    hash_tbls: &mut [HashMap<IdxHash, Vec<u32>, IdBuildHasher>],
+    hash_tbls: &mut [HashMap<IdxHash, (bool, Vec<u32>), IdBuildHasher>],
     results: &mut Vec<(Option<u32>, Option<u32>)>,
     n_tables: u64,
     a: &DataFrame,
@@ -303,8 +353,9 @@ fn probe_outer<F, G, H>(
 
                 match entry {
                     // match and remove
-                    RawEntryMut::Occupied(occupied) => {
-                        let indexes_b = occupied.remove();
+                    RawEntryMut::Occupied(mut occupied) => {
+                        let (tracker, indexes_b) = occupied.get_mut();
+                        *tracker = true;
                         results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
                     }
                     // no match
@@ -316,9 +367,11 @@ fn probe_outer<F, G, H>(
     }
 
     for hash_tbl in hash_tbls {
-        hash_tbl.iter().for_each(|(_k, indexes_b)| {
-            // remaining joined values from the right table
-            results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+        hash_tbl.iter().for_each(|(_k, (tracker, indexes_b))| {
+            // remaining unmatched joined values from the right table
+            if !*tracker {
+                results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+            }
         });
     }
 }
@@ -341,7 +394,7 @@ pub(crate) fn outer_join_multiple_keys(
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
     let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
 
-    let mut hash_tbls = create_build_table(&build_hashes, b);
+    let mut hash_tbls = create_build_table_outer(&build_hashes, b);
     // early drop to reduce memory pressure
     drop(build_hashes);
 
