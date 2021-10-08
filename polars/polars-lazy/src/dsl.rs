@@ -1608,6 +1608,18 @@ impl Expr {
             GetOutput::from_type(DataType::Float64),
         )
     }
+    #[cfg(feature = "concat_str")]
+    /// Concat the values into a string array.
+    /// # Arguments
+    ///
+    /// * `delimiter` - A string that will act as delimiter between values.
+    pub fn str_concat(self, delimiter: &str) -> Expr {
+        let delimiter = delimiter.to_owned();
+        self.apply(
+            move |s| Ok(s.str_concat(&delimiter).into_series()),
+            GetOutput::from_type(DataType::Utf8),
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.

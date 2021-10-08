@@ -604,3 +604,9 @@ def test_join_suffix():
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
     out = df_left.lazy().join(df_right.lazy(), on="a", suffix="_bar").collect()
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
+
+
+def test_str_concat():
+    df = pl.DataFrame({"foo": [1, None, 2]})
+    df = df.select(pl.col("foo").str_concat("-"))
+    assert df[0, 0] == "1-null-2"

@@ -1675,6 +1675,28 @@ class Expr:
             .otherwise(self)
         ).keep_name()
 
+    def str_concat(self, delimiter: str = "-") -> "Expr":  # type: ignore
+        """
+        Vertically concat the values in the Series to a single string value.
+
+        Returns
+        -------
+        Series of dtype Utf8
+
+        Examples
+        >>> df = pl.DataFrame({"foo": [1, None, 2]})
+        >>> df = df.select(col("foo").str_concat("-"))
+        shape: (1, 1)
+        ┌──────────┐
+        │ foo      │
+        │ ---      │
+        │ str      │
+        ╞══════════╡
+        │ 1-null-2 │
+        └──────────┘
+        """
+        return wrap_expr(self._pyexpr.str_concat(delimiter))
+
 
 class ExprListNameSpace:
     """

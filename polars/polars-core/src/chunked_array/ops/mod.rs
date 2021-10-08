@@ -18,6 +18,8 @@ mod apply;
 mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
+#[cfg(feature = "concat_str")]
+mod concat_str;
 #[cfg(feature = "cum_agg")]
 mod cum_agg;
 pub(crate) mod downcast;
@@ -722,6 +724,7 @@ pub trait RepeatBy {
 
 #[cfg(feature = "is_first")]
 #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
+/// Mask the first unique values as `true`
 pub trait IsFirst<T: PolarsDataType> {
     fn is_first(&self) -> Result<BooleanChunked> {
         Err(PolarsError::InvalidOperation(
@@ -732,10 +735,22 @@ pub trait IsFirst<T: PolarsDataType> {
 
 #[cfg(feature = "is_first")]
 #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
+/// Mask the last unique values as `true`
 pub trait IsLast<T: PolarsDataType> {
     fn is_last(&self) -> Result<BooleanChunked> {
         Err(PolarsError::InvalidOperation(
             format!("operation not supported by {:?}", T::get_dtype()).into(),
         ))
     }
+}
+
+#[cfg(feature = "concat_str")]
+#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
+/// Concat the values into a string array.
+pub trait StrConcat {
+    /// Concat the values into a string array.
+    /// # Arguments
+    ///
+    /// * `delimiter` - A string that will act as delimiter between values.
+    fn str_concat(&self, delimiter: &str) -> Utf8Chunked;
 }

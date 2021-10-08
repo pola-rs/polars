@@ -2734,6 +2734,22 @@ class Series:
             pl.col(self.name).clip(min_val, max_val)  # type: ignore
         )[self.name]
 
+    def str_concat(self, delimiter: str = "-") -> "Series":  # type: ignore
+        """
+        Vertically concat the values in the Series to a single string value.
+
+        Returns
+        -------
+        Series of dtype Utf8
+
+        Examples
+        >>> assert pl.Series([1, None, 2]).str_concat("-")[0] == "1-null-2"
+
+        """
+        return self.to_frame().select(
+            pl.col(self.name).delimiter(delimiter)  # type: ignore
+        )[self.name]
+
 
 class StringNameSpace:
     """

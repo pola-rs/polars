@@ -954,6 +954,9 @@ impl PyExpr {
     fn kurtosis(&self, fisher: bool, bias: bool) -> Self {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
+    fn str_concat(&self, delimiter: &str) -> Self {
+        self.inner.clone().str_concat(delimiter).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
