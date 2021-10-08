@@ -383,7 +383,7 @@ pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool 
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
-) -> Vec<HashMap<T, Vec<u32>, RandomState>>
+) -> Vec<HashMap<T, (bool, Vec<u32>), RandomState>>
 where
     I: Iterator<Item = T> + Send + TrustedLen,
     T: Send + Hash + Eq + Sync + Copy,
@@ -401,7 +401,7 @@ where
             let build_hasher = build_hasher.clone();
             let hashes_and_keys = &hashes_and_keys;
             let partition_no = partition_no as u64;
-            let mut hash_tbl: HashMap<T, Vec<u32>, RandomState> =
+            let mut hash_tbl: HashMap<T, (bool, Vec<u32>), RandomState> =
                 HashMap::with_hasher(build_hasher);
 
             let n_threads = n_partitions as u64;
@@ -424,11 +424,11 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    entry.insert_hashed_nocheck(*h, *k, vec![idx]);
+                                    entry.insert_hashed_nocheck(*h, *k, (false, vec![idx]));
                                 }
                                 RawEntryMut::Occupied(mut entry) => {
                                     let (_k, v) = entry.get_key_value_mut();
-                                    v.push(idx);
+                                    v.1.push(idx);
                                 }
                             }
                         }

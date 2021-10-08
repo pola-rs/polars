@@ -509,8 +509,10 @@ def test_join():
     assert joined["b"].series_equal(pl.Series("", [1, 3, 2, 2, 4]))
     joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
     assert joined["c_right"].null_count() == 1
-    assert joined["c"].null_count() == 2
-    assert joined["b"].null_count() == 2
+    assert joined["c"].null_count() == 1
+    assert joined["b"].null_count() == 1
+    assert joined["k"].null_count() == 1
+    assert joined["a"].null_count() == 0
 
     df_a = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     df_b = pl.DataFrame(
