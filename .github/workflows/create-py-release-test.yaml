@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install maturin==0.11.0 pytest pandas
+          pip install maturin==0.11.0 pytest pandas pyarrow
       - name: Run tests
         run: |
           cd py-polars
