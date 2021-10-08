@@ -22,6 +22,14 @@ macro_rules! invalid_operation {
         ))
     };
 }
+macro_rules! invalid_operation_panic {
+    ($s:expr) => {
+        panic!(
+            "this operation is not implemented/valid for this dtype: {:?}",
+            $s._dtype()
+        )
+    };
+}
 
 pub(crate) mod private {
     use super::*;
@@ -793,35 +801,35 @@ pub trait SeriesTrait:
 
     /// Get the sum of the Series as a new Series of length 1.
     fn sum_as_series(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     /// Get the max of the Series as a new Series of length 1.
     fn max_as_series(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     /// Get the min of the Series as a new Series of length 1.
     fn min_as_series(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     /// Get the mean of the Series as a new Series of length 1.
     fn mean_as_series(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     /// Get the median of the Series as a new Series of length 1.
     fn median_as_series(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     /// Get the variance of the Series as a new Series of length 1.
     fn var_as_series(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     /// Get the standard deviation of the Series as a new Series of length 1.
     fn std_as_series(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
     fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     fn fmt_list(&self) -> String {
@@ -1056,10 +1064,20 @@ pub trait SeriesTrait:
     }
 
     #[cfg(feature = "rolling_window")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
         panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
+    }
+    #[cfg(feature = "concat_str")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
+    /// Concat the values into a string array.
+    /// # Arguments
+    ///
+    /// * `delimiter` - A string that will act as delimiter between values.
+    fn str_concat(&self, _delimiter: &str) -> Utf8Chunked {
+        invalid_operation_panic!(self)
     }
 }
 

@@ -774,6 +774,11 @@ macro_rules! impl_dyn_series {
             fn mode(&self) -> Result<Series> {
                 Ok(self.0.mode()?.into_series())
             }
+
+            #[cfg(feature = "concat_str")]
+            fn str_concat(&self, delimiter: &str) -> Utf8Chunked {
+                self.0.str_concat(delimiter)
+            }
         }
     };
 }
