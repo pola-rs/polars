@@ -172,8 +172,8 @@ def test_cast():
     assert a.cast(Float64).dtype == Float64
     assert a.cast(Int32).dtype == Int32
     assert a.cast(UInt32).dtype == UInt32
-    assert a.cast(Date64).dtype == Date64
-    assert a.cast(Date32).dtype == Date32
+    assert a.cast(Datetime).dtype == Datetime
+    assert a.cast(Date).dtype == Date
 
 
 def test_to_python():
@@ -286,9 +286,9 @@ def test_apply():
     assert b == [3, 3, None]
 
     # just check that it runs (somehow problem with conditional compilation)
-    a = pl.Series("a", [2, 2, 3]).cast(pl.Date64)
+    a = pl.Series("a", [2, 2, 3]).cast(pl.Datetime)
     a.apply(lambda x: x)
-    a = pl.Series("a", [2, 2, 3]).cast(pl.Date32)
+    a = pl.Series("a", [2, 2, 3]).cast(pl.Date)
     a.apply(lambda x: x)
 
 
@@ -424,8 +424,8 @@ def test_arange_expr():
 
 
 def test_strftime():
-    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date32)
-    assert a.dtype == pl.Date32
+    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
+    assert a.dtype == pl.Date
     a = a.dt.strftime("%F")
     assert a[2] == "2052-02-20"
 
@@ -433,7 +433,7 @@ def test_strftime():
 def test_timestamp():
     from datetime import datetime
 
-    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date64)
+    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Datetime)
     assert a.dt.timestamp() == [10000, 20000, 30000]
     out = a.dt.to_python_datetime()
     assert isinstance(out[0], datetime)
@@ -454,14 +454,14 @@ def test_from_pydatetime():
         None,
     ]
     s = pl.Series("name", dates)
-    assert s.dtype == pl.Date64
+    assert s.dtype == pl.Datetime
     assert s.name == "name"
     assert s.null_count() == 1
     assert s.dt[0] == dates[0]
 
     dates = [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3), None]
     s = pl.Series("name", dates)
-    assert s.dtype == pl.Date32
+    assert s.dtype == pl.Date
     assert s.name == "name"
     assert s.null_count() == 1
     assert s.dt[0] == dates[0]

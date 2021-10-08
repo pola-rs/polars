@@ -19,7 +19,7 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
-        Date32 | Date64 => out.into_date(),
+        Date | Datetime => out.into_date(),
         _ => out,
     };
 

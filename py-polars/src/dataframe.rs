@@ -882,12 +882,12 @@ impl PyDataFrame {
             Some(DataType::Boolean) => {
                 apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series()
             }
-            Some(DataType::Date32) => {
+            Some(DataType::Date) => {
                 apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
                     .into_date()
                     .into_series()
             }
-            Some(DataType::Date64) => {
+            Some(DataType::Datetime) => {
                 apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
                     .into_date()
                     .into_series()

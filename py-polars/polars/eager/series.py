@@ -33,8 +33,8 @@ from ..datatypes import (
     DTYPES,
     Boolean,
     DataType,
-    Date32,
-    Date64,
+    Date,
+    Datetime,
     Float32,
     Float64,
     Int8,
@@ -483,7 +483,7 @@ class Series:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            if self.dtype in (List, Date32, Date64, Object):
+            if self.dtype in (List, Date, Datetime, Object):
                 f = get_ffi_func("get_<>", self.dtype, self._s)
                 if f is None:
                     return NotImplemented
@@ -1594,9 +1594,9 @@ class Series:
             "2020-01-02"
             "2020-01-03"
         ]
-        >>> s.cast(pl.datatypes.Date32)git
+        >>> s.cast(pl.datatypes.Date)
         shape: (3,)
-        Series: 'a' [date32]
+        Series: 'a' [date]
         [
             2020-01-01
             2020-01-02
@@ -1682,7 +1682,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Date32, Date64)
+        return self.dtype in (Date, Datetime)
 
     def is_float(self) -> bool:
         """
@@ -2761,23 +2761,23 @@ class StringNameSpace:
 
     def strptime(self, datatype: DataType, fmt: Optional[str] = None) -> Series:
         """
-        Parse a Series of dtype Utf8 to a Date32/Date64 Series.
+        Parse a Series of dtype Utf8 to a Date/Datetime Series.
 
         Parameters
         ----------
         datatype
-            Date32 or Date64.
+            Date or Datetime.
         fmt
             formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
 
         Returns
         -------
-        A Date32/ Date64 Series
+        A Date/ Datetime Series
         """
-        if datatype == Date32:
-            return wrap_s(self._s.str_parse_date32(fmt))
-        if datatype == Date64:
-            return wrap_s(self._s.str_parse_date64(fmt))
+        if datatype == Date:
+            return wrap_s(self._s.str_parse_date(fmt))
+        if datatype == Datetime:
+            return wrap_s(self._s.str_parse_datetime(fmt))
         raise NotImplementedError
 
     def lengths(self) -> Series:
@@ -3005,7 +3005,7 @@ class DateTimeNameSpace:
 
     def strftime(self, fmt: str) -> Series:
         """
-        Format date32/date64 with a formatting rule: See `chrono strftime/strptime <https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html>`_.
+        Format Date/datetime with a formatting rule: See `chrono strftime/strptime <https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html>`_.
 
         Returns
         -------
@@ -3015,8 +3015,8 @@ class DateTimeNameSpace:
 
     def year(self) -> Series:
         """
-        Extract the year from the underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Extract the year from the underlying date representation.
+        Can be performed on Date and Datetime.
 
         Returns the year number in the calendar date.
 
@@ -3028,8 +3028,8 @@ class DateTimeNameSpace:
 
     def month(self) -> Series:
         """
-        Extract the month from the underlying Date representation.
-        Can be performed on Date32 and Date64
+        Extract the month from the underlying date representation.
+        Can be performed on Date and Datetime
 
         Returns the month number starting from 1.
         The return value ranges from 1 to 12.
@@ -3042,8 +3042,8 @@ class DateTimeNameSpace:
 
     def week(self) -> Series:
         """
-        Extract the week from the underlying Date representation.
-        Can be performed on Date32 and Date64
+        Extract the week from the underlying date representation.
+        Can be performed on Date and Datetime
 
         Returns the ISO week number starting from 1.
         The return value ranges from 1 to 53. (The last week of year differs by years.)
@@ -3056,8 +3056,8 @@ class DateTimeNameSpace:
 
     def weekday(self) -> Series:
         """
-        Extract the week day from the underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Extract the week day from the underlying date representation.
+        Can be performed on Date and Datetime.
 
         Returns the weekday number where monday = 0 and sunday = 6
 
@@ -3069,8 +3069,8 @@ class DateTimeNameSpace:
 
     def day(self) -> Series:
         """
-        Extract the day from the underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Extract the day from the underlying date representation.
+        Can be performed on Date and Datetime.
 
         Returns the day of month starting from 1.
         The return value ranges from 1 to 31. (The last day of month differs by months.)
@@ -3083,8 +3083,8 @@ class DateTimeNameSpace:
 
     def ordinal_day(self) -> Series:
         """
-        Extract ordinal day from underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Extract ordinal day from underlying date representation.
+        Can be performed on Date and Datetime.
 
         Returns the day of year starting from 1.
         The return value ranges from 1 to 366. (The last day of year differs by years.)
@@ -3098,7 +3098,7 @@ class DateTimeNameSpace:
     def hour(self) -> Series:
         """
         Extract the hour from the underlying DateTime representation.
-        Can be performed on Date64.
+        Can be performed on Datetime.
 
         Returns the hour number from 0 to 23.
 
@@ -3111,7 +3111,7 @@ class DateTimeNameSpace:
     def minute(self) -> Series:
         """
         Extract the minutes from the underlying DateTime representation.
-        Can be performed on Date64.
+        Can be performed on Datetime.
 
         Returns the minute number from 0 to 59.
 
@@ -3124,7 +3124,7 @@ class DateTimeNameSpace:
     def second(self) -> Series:
         """
         Extract the seconds the from underlying DateTime representation.
-        Can be performed on Date64.
+        Can be performed on Datetime.
 
         Returns the second number from 0 to 59.
 
@@ -3137,7 +3137,7 @@ class DateTimeNameSpace:
     def nanosecond(self) -> Series:
         """
         Extract the nanoseconds from the underlying DateTime representation.
-        Can be performed on Date64.
+        Can be performed on Datetime.
 
         Returns the number of nanoseconds since the whole non-leap second.
         The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
@@ -3156,7 +3156,7 @@ class DateTimeNameSpace:
 
     def to_python_datetime(self) -> Series:
         """
-        Go from Date32/Date64 to python DateTime objects
+        Go from Date/Datetime to python DateTime objects
         """
 
         return (self.timestamp() // 1000).apply(
@@ -3221,12 +3221,12 @@ class DateTimeNameSpace:
 def _to_python_datetime(
     value: Union[int, float], dtype: Type[DataType]
 ) -> Union[date, datetime]:
-    if dtype == Date32:
+    if dtype == Date:
         # days to seconds
         # important to create from utc. Not doing this leads
         # to inconsistencies dependent on the timezone you are in.
         return datetime.utcfromtimestamp(value * 3600 * 24).date()
-    elif dtype == Date64:
+    elif dtype == Datetime:
         # ms to seconds
         return datetime.utcfromtimestamp(value // 1000)
     else:

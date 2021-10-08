@@ -280,8 +280,8 @@ macro_rules! match_arrow_data_type_apply_macro {
             DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
             DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
-            // DataType::Date32 => $macro!(Date32Type $(, $opt_args)*),
-            // DataType::Date64 => $macro!(Date64Type $(, $opt_args)*),
+            // DataType::Date => $macro!(DateType $(, $opt_args)*),
+            // DataType::Datetime=> $macro!(DatetimeType $(, $opt_args)*),
             _ => unimplemented!(),
         }
     }};
@@ -308,10 +308,10 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
-            // #[cfg(feature = "dtype-date32")]
-            // DataType::Date32 => $macro!($self.date32().unwrap() $(, $opt_args)*),
-            // #[cfg(feature = "dtype-date64")]
-            // DataType::Date64 => $macro!($self.date64().unwrap() $(, $opt_args)*),
+            // #[cfg(feature = "dtype-date")]
+            // DataType::Date => $macro!($self.date().unwrap() $(, $opt_args)*),
+            // #[cfg(feature = "dtype-datetime")]
+            // DataType::Datetime=> $macro!($self.datetime().unwrap() $(, $opt_args)*),
             _ => unimplemented!(),
         }
     }};
@@ -362,8 +362,8 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
-            DataType::Date32 => $self.date32().unwrap().$method($($args),*),
-            DataType::Date64 => $self.date64().unwrap().$method($($args),*),
+            DataType::Date => $self.date().unwrap().$method($($args),*),
+            DataType::Datetime=> $self.datetime().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
             dt => panic!("dtype {:?} not supported", dt)
         }
@@ -390,10 +390,10 @@ macro_rules! apply_method_numeric_series {
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-date32")]
-            DataType::Date32 => $self.date32().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-date64")]
-            DataType::Date64 => $self.date64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => $self.date().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime=> $self.datetime().unwrap().$method($($args),*),
             _ => unimplemented!(),
         }
     }
@@ -550,8 +550,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int32, Int64) => Some(Int64),
         (Int32, Float32) => Some(Float32),
         (Int32, Float64) => Some(Float64),
-        (Int32, Date32) => Some(Int32),
-        (Int32, Date64) => Some(Int64),
+        (Int32, Date) => Some(Int32),
+        (Int32, Datetime) => Some(Int64),
         (Int32, Boolean) => Some(Int32),
 
         (Int64, Int8) => Some(Int64),
@@ -560,31 +560,31 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int64, Int64) => Some(Int64),
         (Int64, Float32) => Some(Float32),
         (Int64, Float64) => Some(Float64),
-        (Int64, Date64) => Some(Int64),
-        (Int64, Date32) => Some(Int32),
+        (Int64, Datetime) => Some(Int64),
+        (Int64, Date) => Some(Int32),
         (Int64, Boolean) => Some(Int64),
 
         (Float32, Float32) => Some(Float32),
         (Float32, Float64) => Some(Float64),
-        (Float32, Date32) => Some(Float32),
-        (Float32, Date64) => Some(Float64),
+        (Float32, Date) => Some(Float32),
+        (Float32, Datetime) => Some(Float64),
         (Float64, Float32) => Some(Float64),
         (Float64, Float64) => Some(Float64),
-        (Float64, Date32) => Some(Float64),
-        (Float64, Date64) => Some(Float64),
+        (Float64, Date) => Some(Float64),
+        (Float64, Datetime) => Some(Float64),
         (Float64, Boolean) => Some(Float64),
 
-        (Date32, Int32) => Some(Int32),
-        (Date32, Int64) => Some(Int64),
-        (Date32, Float32) => Some(Float32),
-        (Date32, Float64) => Some(Float64),
-        (Date32, Date64) => Some(Date64),
+        (Date, Int32) => Some(Int32),
+        (Date, Int64) => Some(Int64),
+        (Date, Float32) => Some(Float32),
+        (Date, Float64) => Some(Float64),
+        (Date, Datetime) => Some(Datetime),
 
-        (Date64, Int32) => Some(Int64),
-        (Date64, Int64) => Some(Int64),
-        (Date64, Float32) => Some(Float64),
-        (Date64, Float64) => Some(Float64),
-        (Date64, Date32) => Some(Date64),
+        (Datetime, Int32) => Some(Int64),
+        (Datetime, Int64) => Some(Int64),
+        (Datetime, Float32) => Some(Float64),
+        (Datetime, Float64) => Some(Float64),
+        (Datetime, Date) => Some(Datetime),
 
         (Utf8, _) => Some(Utf8),
         (_, Utf8) => Some(Utf8),

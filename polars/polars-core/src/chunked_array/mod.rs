@@ -31,8 +31,8 @@ mod random;
 pub mod strings;
 #[cfg(any(
     feature = "temporal",
-    feature = "dtype-date64",
-    feature = "dtype-date32"
+    feature = "dtype-datetime",
+    feature = "dtype-date"
 ))]
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
@@ -228,7 +228,7 @@ impl<T> ChunkedArray<T> {
         } else {
             use DataType::*;
             match (self.dtype(), series.dtype()) {
-                (Int64, Date64) | (Int32, Date32) => {
+                (Int64, Datetime) | (Int32, Date) => {
                     let ca = &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>);
                     Ok(ca)
                 }

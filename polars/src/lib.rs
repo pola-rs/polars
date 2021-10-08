@@ -158,8 +158,8 @@
 //!
 //! | data type               | feature flag      |
 //! |-------------------------|-------------------|
-//! | Date32Type              | dtype-date32      |
-//! | Date64Type              | dtype-date64      |
+//! | DateType                | dtype-date        |
+//! | DatetimeType            | dtype-datetime    |
 //! | Int8Type                | dtype-i8          |
 //! | Int16Type               | dtype-i16         |
 //! | UInt8Type               | dtype-u8          |

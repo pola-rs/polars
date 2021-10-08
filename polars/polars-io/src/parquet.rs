@@ -153,14 +153,14 @@ where
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
         let mut fields = df.schema().to_arrow().fields().clone();
 
-        // date64 is not supported by parquet and will be be truncated to date32
+        // datetimeis not supported by parquet and will be be truncated to Date
         // We coerce these to timestamp(ms)
-        let date64_columns = df
+        let datetime_columns = df
             .get_columns()
             .iter()
             .enumerate()
             .filter_map(|(i, s)| match s.dtype() {
-                DataType::Date64 => {
+                DataType::Datetime => {
                     fields[i] = ArrowField::new(
                         s.name(),
                         ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
@@ -178,9 +178,9 @@ where
             .collect::<Vec<_>>();
 
         let iter = df.iter_record_batches().map(|rb| {
-            if !date64_columns.is_empty() {
+            if !datetime_columns.is_empty() {
                 let mut columns = rb.columns().to_vec();
-                for i in &date64_columns {
+                for i in &datetime_columns {
                     let array = cast::cast(columns[*i].as_ref(), &ArrowDataType::Int64).unwrap();
                     let array = cast::cast(
                         array.as_ref(),
@@ -255,17 +255,17 @@ mod test {
     }
 
     #[test]
-    #[cfg(all(feature = "dtype-date64", feature = "parquet"))]
-    fn test_parquet_date64_round_trip() -> Result<()> {
+    #[cfg(all(feature = "dtype-datetime", feature = "parquet"))]
+    fn test_parquet_datetime_round_trip() -> Result<()> {
         use std::io::{Cursor, Seek, SeekFrom};
 
         let mut f = Cursor::new(vec![]);
 
         let mut df = df![
-            "date64" => [Some(191845729i64), Some(89107598), None, Some(3158971092)]
+            "datetime" => [Some(191845729i64), Some(89107598), None, Some(3158971092)]
         ]?;
 
-        df.may_apply("date64", |s| s.cast(&DataType::Date64))?;
+        df.may_apply("datetime", |s| s.cast(&DataType::Datetime))?;
 
         ParquetWriter::new(&mut f).finish(&df)?;
 

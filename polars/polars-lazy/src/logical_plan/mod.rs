@@ -100,7 +100,7 @@ pub enum LiteralValue {
         high: i64,
         data_type: DataType,
     },
-    #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
+    #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
     DateTime(NaiveDateTime),
     Series(NoEq<Series>),
 }
@@ -126,8 +126,8 @@ impl LiteralValue {
             LiteralValue::Float64(_) => DataType::Float64,
             LiteralValue::Utf8(_) => DataType::Utf8,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
-            #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
-            LiteralValue::DateTime(_) => DataType::Date64,
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            LiteralValue::DateTime(_) => DataType::Datetime,
             LiteralValue::Series(s) => s.dtype().clone(),
             LiteralValue::Null => DataType::Null,
         }

@@ -48,8 +48,8 @@ init_method!(new_u8, u8);
 init_method!(new_u16, u16);
 init_method!(new_u32, u32);
 init_method!(new_u64, u64);
-init_method!(new_date32, i32);
-init_method!(new_date64, i64);
+init_method!(new_date, i32);
+init_method!(new_datetime, i64);
 init_method!(new_time_ns, i64);
 
 #[pymethods]
@@ -169,8 +169,8 @@ init_method_opt!(new_opt_i32, Int32Type, i32);
 init_method_opt!(new_opt_i64, Int64Type, i64);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
-init_method_opt!(new_opt_date32, Int32Type, i32);
-init_method_opt!(new_opt_date64, Int64Type, i64);
+init_method_opt!(new_opt_date, Int32Type, i32);
+init_method_opt!(new_opt_datetime, Int64Type, i64);
 init_method_opt!(new_opt_time_ns, Int64Type, i64);
 
 impl From<Series> for PySeries {
@@ -576,8 +576,8 @@ impl PySeries {
             DataType::Int64 => PyList::new(python, series.i64().unwrap()),
             DataType::Float32 => PyList::new(python, series.f32().unwrap()),
             DataType::Float64 => PyList::new(python, series.f64().unwrap()),
-            DataType::Date32 => PyList::new(python, &series.date32().unwrap().0),
-            DataType::Date64 => PyList::new(python, &series.date64().unwrap().0),
+            DataType::Date => PyList::new(python, &series.date().unwrap().0),
+            DataType::Datetime=> PyList::new(python, &series.datetime().unwrap().0),
             DataType::Object(_) => {
                 let v = PyList::empty(python);
                 for i in 0..series.len() {
@@ -794,7 +794,7 @@ impl PySeries {
                 )?;
                 ca.into_series()
             }
-            Some(DataType::Date32) => {
+            Some(DataType::Date) => {
                 let ca: Int32Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -805,7 +805,7 @@ impl PySeries {
                 )?;
                 ca.into_date().into_series()
             }
-            Some(DataType::Date64) => {
+            Some(DataType::Datetime) => {
                 let ca: Int64Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -913,21 +913,21 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn str_parse_date32(&self, fmt: Option<&str>) -> PyResult<Self> {
+    pub fn str_parse_date(&self, fmt: Option<&str>) -> PyResult<Self> {
         if let Ok(ca) = &self.series.utf8() {
-            let ca = ca.as_date32(fmt).map_err(PyPolarsEr::from)?;
+            let ca = ca.as_date(fmt).map_err(PyPolarsEr::from)?;
             Ok(PySeries::new(ca.into_series()))
         } else {
-            Err(PyPolarsEr::Other("cannot parse date32 expected utf8 type".into()).into())
+            Err(PyPolarsEr::Other("cannot parse Date expected utf8 type".into()).into())
         }
     }
 
-    pub fn str_parse_date64(&self, fmt: Option<&str>) -> PyResult<Self> {
+    pub fn str_parse_datetime(&self, fmt: Option<&str>) -> PyResult<Self> {
         if let Ok(ca) = &self.series.utf8() {
-            let ca = ca.as_date64(fmt).map_err(PyPolarsEr::from)?;
+            let ca = ca.as_datetime(fmt).map_err(PyPolarsEr::from)?;
             Ok(ca.into_series().into())
         } else {
-            Err(PyPolarsEr::Other("cannot parse date64 expected utf8 type".into()).into())
+            Err(PyPolarsEr::Other("cannot parse datetime expected utf8 type".into()).into())
         }
     }
 
@@ -1132,22 +1132,22 @@ impl PySeries {
     pub fn round_datetime(&self, rule: &str, n: u32) -> PyResult<Self> {
         let rule = downsample_str_to_rule(rule, n)?;
         match self.series.dtype() {
-            DataType::Date32 => Ok(self
+            DataType::Date => Ok(self
                 .series
-                .date32()
+                .date()
                 .unwrap()
                 .round(rule)
                 .into_series()
                 .into()),
-            DataType::Date64 => Ok(self
+            DataType::Datetime=> Ok(self
                 .series
-                .date64()
+                .datetime()
                 .unwrap()
                 .round(rule)
                 .into_series()
                 .into()),
             dt => Err(PyPolarsEr::Other(format!(
-                "type: {:?} is not a date. Please use Date32 or Date64",
+                "type: {:?} is not a date. Please use Date or Datetime",
                 dt
             ))
             .into()),
@@ -1410,8 +1410,8 @@ impl_get!(get_i16, i16, i16);
 impl_get!(get_i32, i32, i32);
 impl_get!(get_i64, i64, i64);
 impl_get!(get_str, utf8, &str);
-impl_get!(get_date32, date32, i32);
-impl_get!(get_date64, date64, i64);
+impl_get!(get_date, date, i32);
+impl_get!(get_datetime, datetime, i64);
 
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {

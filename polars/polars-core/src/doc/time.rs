@@ -3,17 +3,17 @@
 //! Polars supports most data types in Arrow related to time and dates.
 //! The datatypes that have most utility support are:
 //!
-//! * Date32
+//! * Date
 //!     - A *Date* object representing the time in days since the unix epoch.
 //!     - Chrono support type: [NaiveDate](https://docs.rs/chrono/0.4.13/chrono/naive/struct.NaiveDate.html)
 //!     - Underlying data type: `i32`
-//! * Date64
+//! * Datetime
 //!     - A *DateTime* object representing the time in milliseconds since the unix epoch.
 //!     - Chrono support type: [NaiveDateTime](https://docs.rs/chrono/0.4.13/chrono/naive/struct.NaiveDateTime.html)
 //!     - Underlying data type: `i64`
 //!
 //! ## Utility methods
-//! Given a `Date32` or `Date64` `ChunkedArray` one can extract various temporal information
+//! Given a `Date` or `Datetime` `ChunkedArray` one can extract various temporal information
 //!
 //! ## Chrono
 //!
@@ -40,7 +40,7 @@
 //! // Create the ChunkedArray
 //! let ca = Utf8Chunked::new_from_slice("datetime", datetime_values);
 //! // Parse strings as DateTime objects
-//! let date_ca = ca.as_date64(Some(fmt));
+//! let date_ca = ca.as_datetime(Some(fmt));
 //! ```
 //! #### Parsing directly from slice
 //!
@@ -58,9 +58,9 @@
 //! let fmt = "%Y-%m-%d %H:%M:%S";
 //!
 //! // Create the ChunkedArray
-//! let ca = Date64Chunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt);
+//! let ca = DatetimeChunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt);
 //!
 //! // or dates in different precision (days)
-//! let ca = Date32Chunked::parse_from_str_slice("date as days since Epoch", datetime_values, fmt);
+//! let ca = DateChunked::parse_from_str_slice("date as days since Epoch", datetime_values, fmt);
 //! ```
 //!

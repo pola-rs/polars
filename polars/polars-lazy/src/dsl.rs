@@ -1226,21 +1226,21 @@ impl Expr {
         )
     }
 
-    /// Get the year of a Date32/Date64
+    /// Get the year of a Date/Datetime
     #[cfg(feature = "temporal")]
     pub fn year(self) -> Expr {
         let function = move |s: Series| s.year().map(|ca| ca.into_series());
         self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
-    /// Get the month of a Date32/Date64
+    /// Get the month of a Date/Datetime
     #[cfg(feature = "temporal")]
     pub fn month(self) -> Expr {
         let function = move |s: Series| s.month().map(|ca| ca.into_series());
         self.map(function, GetOutput::from_type(DataType::UInt32))
     }
     /// Extract the week from the underlying Date representation.
-    /// Can be performed on Date32 and Date64
+    /// Can be performed on Date and Datetime
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
@@ -1251,7 +1251,7 @@ impl Expr {
     }
 
     /// Extract the week day from the underlying Date representation.
-    /// Can be performed on Date32 and Date64.
+    /// Can be performed on Date and Datetime.
 
     /// Returns the weekday number where monday = 0 and sunday = 6
     #[cfg(feature = "temporal")]
@@ -1260,32 +1260,32 @@ impl Expr {
         self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
-    /// Get the month of a Date32/Date64
+    /// Get the month of a Date/Datetime
     #[cfg(feature = "temporal")]
     pub fn day(self) -> Expr {
         let function = move |s: Series| s.day().map(|ca| ca.into_series());
         self.map(function, GetOutput::from_type(DataType::UInt32))
     }
-    /// Get the ordinal_day of a Date32/Date64
+    /// Get the ordinal_day of a Date/Datetime
     #[cfg(feature = "temporal")]
     pub fn ordinal_day(self) -> Expr {
         let function = move |s: Series| s.ordinal_day().map(|ca| ca.into_series());
         self.map(function, GetOutput::from_type(DataType::UInt32))
     }
-    /// Get the hour of a Date64/Time64
+    /// Get the hour of a Datetime/Time64
     #[cfg(feature = "temporal")]
     pub fn hour(self) -> Expr {
         let function = move |s: Series| s.hour().map(|ca| ca.into_series());
         self.map(function, GetOutput::from_type(DataType::UInt32))
     }
-    /// Get the minute of a Date64/Time64
+    /// Get the minute of a Datetime/Time64
     #[cfg(feature = "temporal")]
     pub fn minute(self) -> Expr {
         let function = move |s: Series| s.minute().map(|ca| ca.into_series());
         self.map(function, GetOutput::from_type(DataType::UInt32))
     }
 
-    /// Get the second of a Date64/Time64
+    /// Get the second of a Datetime/Time64
     #[cfg(feature = "temporal")]
     pub fn second(self) -> Expr {
         let function = move |s: Series| s.second().map(|ca| ca.into_series());
@@ -1868,14 +1868,14 @@ impl Literal for Null {
     }
 }
 
-#[cfg(all(feature = "temporal", feature = "dtype-date64"))]
+#[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::DateTime(self))
     }
 }
 
-#[cfg(all(feature = "temporal", feature = "dtype-date64"))]
+#[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::DateTime(self.and_hms(0, 0, 0)))

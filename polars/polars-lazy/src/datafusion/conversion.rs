@@ -27,8 +27,8 @@ pub fn to_datafusion_lit(lit: LiteralValue) -> Result<ScalarValue> {
         Int64(v) => ScalarValue::Int64(Some(v)),
         Float32(v) => ScalarValue::Float32(Some(v)),
         Float64(v) => ScalarValue::Float64(Some(v)),
-        #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
-        DateTime(v) => ScalarValue::Date64(Some(v.timestamp_millis())),
+        #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+        DateTime(v) => ScalarValue::Datetime(Some(v.timestamp_millis())),
         lit => {
             return Err(PolarsError::ComputeError(
                 format!("Literal conversion for literal {:?} not yet supported", lit).into(),

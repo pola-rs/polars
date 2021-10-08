@@ -1,8 +1,8 @@
 pub(crate) mod take;
 #[cfg(any(
     feature = "temporal",
-    feature = "dtype-date64",
-    feature = "dtype-date32"
+    feature = "dtype-datetime",
+    feature = "dtype-date"
 ))]
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;

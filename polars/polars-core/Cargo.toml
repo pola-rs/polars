@@ -38,7 +38,7 @@ plain_fmt = ["prettytable-rs"]
 # pivot operation on DataFrame
 pivot = []
 # resample operation on DataFrame
-downsample = ["temporal", "dtype-date64"]
+downsample = ["temporal", "dtype-datetime"]
 # sort by multiple columns
 sort_multiple = []
 # create from row values
@@ -78,8 +78,8 @@ moment = []
 
 
 # opt-in datatypes for Series
-dtype-date32 = ["temporal"]
-dtype-date64 = ["temporal"]
+dtype-date = ["temporal"]
+dtype-datetime= ["temporal"]
 dtype-i8 = []
 dtype-i16 = []
 dtype-u8 = []

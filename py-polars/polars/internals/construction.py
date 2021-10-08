@@ -7,8 +7,8 @@ import numpy as np
 import polars as pl
 from polars.datatypes import (
     DataType,
-    Date32,
-    Date64,
+    Date,
+    Datetime,
     Float32,
     numpy_type_to_constructor,
     polars_type_to_constructor,
@@ -106,10 +106,10 @@ def sequence_to_pyseries(
     if dtype is not None:
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values, strict)
-        if dtype == Date32:
-            pyseries = pyseries.cast(str(pl.Date32), True)
-        elif dtype == Date64:
-            pyseries = pyseries.cast(str(pl.Date64), True)
+        if dtype == Date:
+            pyseries = pyseries.cast(str(pl.Date), True)
+        elif dtype == Datetime:
+            pyseries = pyseries.cast(str(pl.Datetime), True)
         return pyseries
 
     else:
@@ -159,8 +159,8 @@ def _pandas_series_to_arrow(
     """
     dtype = values.dtype
     if dtype == "datetime64[ns]":
-        # We first cast to ms because that's the unit of Date64,
-        # Then we cast to via int64 to date64. Casting directly to Date64 lead to
+        # We first cast to ms because that's the unit of Datetime,
+        # Then we cast to via int64 to datetime. Casting directly to Datetime lead to
         # loss of time information https://github.com/pola-rs/polars/issues/476
         arr = pa.array(
             np.array(values.values, dtype="datetime64[ms]"), from_pandas=nan_to_none

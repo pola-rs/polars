@@ -24,9 +24,11 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
-    let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsEr::from)?;
-    let array = ffi::import_array_from_c(array, &field).map_err(PyPolarsEr::from)?;
-    Ok(array.into())
+    unsafe {
+        let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsEr::from)?;
+        let array = ffi::import_array_from_c(array, &field).map_err(PyPolarsEr::from)?;
+        Ok(array.into())
+    }
 }
 
 pub fn to_rust_rb(rb: &[&PyAny]) -> PyResult<Vec<RecordBatch>> {

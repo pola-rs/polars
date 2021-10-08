@@ -11,7 +11,7 @@
 //!     - Utf8Chunked::replace method
 //!     - Utf8Chunked::replace_all method
 //! * Temporal utilities
-//!     - Utf8Chunked to dat32 / date64
+//!     - Utf8Chunked to dat32 / datetime
 //! * Lazy
 //!     - fill_null expression
 //!     - shift expression

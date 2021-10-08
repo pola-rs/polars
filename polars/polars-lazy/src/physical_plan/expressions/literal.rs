@@ -73,10 +73,10 @@ impl PhysicalExpr for LiteralExpr {
                 }
             },
             Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
-            #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             DateTime(ndt) => {
                 use polars_core::chunked_array::temporal::conversion::*;
-                let timestamp = naive_datetime_to_date64(ndt);
+                let timestamp = naive_datetime_to_datetime(ndt);
                 Int64Chunked::full("literal", timestamp, 1)
                     .into_date()
                     .into_series()
@@ -119,8 +119,8 @@ impl PhysicalExpr for LiteralExpr {
             Utf8(_) => Field::new(name, DataType::Utf8),
             Null => Field::new(name, DataType::Null),
             Range { data_type, .. } => Field::new(name, data_type.clone()),
-            #[cfg(all(feature = "temporal", feature = "dtype-date64"))]
-            DateTime(_) => Field::new(name, DataType::Date64),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            DateTime(_) => Field::new(name, DataType::Datetime),
             Series(s) => s.field().into_owned(),
         };
         Ok(field)

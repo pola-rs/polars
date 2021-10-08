@@ -15,12 +15,12 @@ def df() -> pl.DataFrame:
             "floats_nulls": [1.0, None, 3.0],
             "strings": ["foo", "bar", "ham"],
             "strings_nulls": ["foo", None, "ham"],
-            "date32": [1324, 123, 1234],
-            "date64": [13241324, 12341256, 12341234],
+            "Date": [1324, 123, 1234],
+            "datetime": [13241324, 12341256, 12341234],
         }
     )
     return df.with_columns(
-        [pl.col("date32").cast(pl.Date32), pl.col("date64").cast(pl.Date64)]
+        [pl.col("Date").cast(pl.Date), pl.col("datetime").cast(pl.Datetime)]
     )
 
 

@@ -320,14 +320,14 @@ impl Series {
     /// Cast a datelike Series to their physical representation.
     /// Primitives remain unchanged
     ///
-    /// * Date32 -> Int32
-    /// * Date64 -> Int64
+    /// * Date -> Int32
+    /// * Datetime-> Int64
     ///
     pub fn to_physical_repr(&self) -> Series {
         use DataType::*;
         let out = match self.dtype() {
-            Date32 => self.cast(&DataType::Int32),
-            Date64 => self.cast(&DataType::Int64),
+            Date => self.cast(&DataType::Int32),
+            Datetime => self.cast(&DataType::Int64),
             _ => return self.clone(),
         };
         out.unwrap()
@@ -608,9 +608,9 @@ impl Series {
 
     pub(crate) fn into_date(self) -> Series {
         match self.dtype() {
-            #[cfg(feature = "dtype-date32")]
+            #[cfg(feature = "dtype-date")]
             DataType::Int32 => self.i32().unwrap().clone().into_date().into_series(),
-            #[cfg(feature = "dtype-date64")]
+            #[cfg(feature = "dtype-datetime")]
             DataType::Int64 => self.i64().unwrap().clone().into_date().into_series(),
             _ => unreachable!(),
         }

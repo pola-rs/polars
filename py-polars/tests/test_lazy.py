@@ -366,10 +366,10 @@ def test_literal_projection():
 def test_to_python_datetime():
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert (
-        df.select(col("a").cast(pl.Date64).dt.to_python_datetime())["a"].dtype
+        df.select(col("a").cast(pl.Datetime).dt.to_python_datetime())["a"].dtype
         == pl.Object
     )
-    assert df.select(col("a").cast(pl.Date64).dt.timestamp())["a"].dtype == pl.Int64
+    assert df.select(col("a").cast(pl.Datetime).dt.timestamp())["a"].dtype == pl.Int64
 
 
 def test_interpolate():

@@ -25,9 +25,9 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.f64() {
             ca.serialize(serializer)
-        } else if let Ok(ca) = self.date32() {
+        } else if let Ok(ca) = self.date() {
             ca.serialize(serializer)
-        } else if let Ok(ca) = self.date64() {
+        } else if let Ok(ca) = self.datetime() {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.utf8() {
             ca.serialize(serializer)
@@ -134,15 +134,17 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<u64>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
-                    #[cfg(feature = "dtype-date32")]
-                    DeDataType::Date32 => {
+                    #[cfg(feature = "dtype-date")]
+                    DeDataType::Date => {
                         let values: Vec<Option<i32>> = map.next_value()?;
-                        Ok(Series::new(&name, values).cast(&DataType::Date32).unwrap())
+                        Ok(Series::new(&name, values).cast(&DataType::Date).unwrap())
                     }
-                    #[cfg(feature = "dtype-date64")]
-                    DeDataType::Date64 => {
+                    #[cfg(feature = "dtype-datetime")]
+                    DeDataType::Datetime => {
                         let values: Vec<Option<i64>> = map.next_value()?;
-                        Ok(Series::new(&name, values).cast(&DataType::Date64).unwrap())
+                        Ok(Series::new(&name, values)
+                            .cast(&DataType::Datetime)
+                            .unwrap())
                     }
                     DeDataType::Boolean => {
                         let values: Vec<Option<bool>> = map.next_value()?;

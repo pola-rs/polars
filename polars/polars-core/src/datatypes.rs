@@ -59,8 +59,8 @@ impl_polars_datatype!(Int32Type, Int32, i32);
 impl_polars_datatype!(Int64Type, Int64, i64);
 impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
-impl_polars_datatype!(Date32Type, Date32, i32);
-impl_polars_datatype!(Date64Type, Date64, i64);
+impl_polars_datatype!(DateType, Date, i32);
+impl_polars_datatype!(DatetimeType, Datetime, i64);
 
 impl PolarsDataType for Utf8Type {
     fn get_dtype() -> DataType {
@@ -231,12 +231,12 @@ pub enum AnyValue<'a> {
     Float64(f64),
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
-    #[cfg(feature = "dtype-date32")]
-    Date32(i32),
+    #[cfg(feature = "dtype-date")]
+    Date(i32),
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
-    #[cfg(feature = "dtype-date64")]
-    Date64(i64),
+    #[cfg(feature = "dtype-datetime")]
+    Datetime(i64),
     #[cfg(feature = "dtype-categorical")]
     Categorical(u32, &'a RevMapping),
     /// Nested type, contains arrays that are filled with one of the datetypes.
@@ -313,10 +313,10 @@ where
 impl<'a> AnyValue<'a> {
     pub(crate) fn into_date(self) -> Self {
         match self {
-            #[cfg(feature = "dtype-date32")]
-            AnyValue::Int32(v) => AnyValue::Date32(v),
-            #[cfg(feature = "dtype-date64")]
-            AnyValue::Int64(v) => AnyValue::Date64(v),
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Int32(v) => AnyValue::Date(v),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Int64(v) => AnyValue::Datetime(v),
             _ => panic!("cannot create date from other type"),
         }
     }
@@ -366,8 +366,8 @@ impl Display for DataType {
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             DataType::Utf8 => "str",
-            DataType::Date32 => "date32(days)",
-            DataType::Date64 => "date64(ms)",
+            DataType::Date => "Date(days)",
+            DataType::Datetime => "datetime(ms)",
             DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
@@ -393,10 +393,10 @@ impl PartialEq for AnyValue<'_> {
             (Int64(l), Int64(r)) => l == r,
             (Float32(l), Float32(r)) => l == r,
             (Float64(l), Float64(r)) => l == r,
-            #[cfg(all(feature = "dtype-date64", feature = "dtype-date32"))]
-            (Date32(l), Date32(r)) => l == r,
-            #[cfg(all(feature = "dtype-date64", feature = "dtype-date32"))]
-            (Date64(l), Date64(r)) => l == r,
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
+            (Date(l), Date(r)) => l == r,
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
+            (Datetime(l), Datetime(r)) => l == r,
             (Boolean(l), Boolean(r)) => l == r,
             (List(_), List(_)) => panic!("eq between list series not supported"),
             #[cfg(feature = "object")]
@@ -454,10 +454,10 @@ pub enum DataType {
     Utf8,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
-    Date32,
+    Date,
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
-    Date64,
+    Datetime,
     List(ArrowDataType),
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
@@ -472,8 +472,8 @@ impl DataType {
     pub(crate) fn to_physical(&self) -> DataType {
         use DataType::*;
         match self {
-            Date32 => Int32,
-            Date64 => Int64,
+            Date => Int32,
+            Datetime => Int64,
             _ => self.clone(),
         }
     }
@@ -494,8 +494,8 @@ impl DataType {
             Float32 => ArrowDataType::Float32,
             Float64 => ArrowDataType::Float64,
             Utf8 => ArrowDataType::LargeUtf8,
-            Date32 => ArrowDataType::Date32,
-            Date64 => ArrowDataType::Date64,
+            Date => ArrowDataType::Date32,
+            Datetime => ArrowDataType::Date64,
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",
                 dt.clone(),
@@ -701,8 +701,8 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             ArrowDataType::LargeList(f) => DataType::List(f.data_type().clone()),
-            ArrowDataType::Date32 => DataType::Date32,
-            ArrowDataType::Date64 => DataType::Date64,
+            ArrowDataType::Date32 => DataType::Date,
+            ArrowDataType::Date64 => DataType::Datetime,
             ArrowDataType::Utf8 => DataType::Utf8,
             dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }

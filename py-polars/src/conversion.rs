@@ -140,8 +140,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let s = rev.get(idx);
                 s.into_py(py)
             }
-            AnyValue::Date32(v) => v.into_py(py),
-            AnyValue::Date64(v) => v.into_py(py),
+            AnyValue::Date(v) => v.into_py(py),
+            AnyValue::Datetime(v) => v.into_py(py),
             AnyValue::List(v) => {
                 let pypolars = PyModule::import(py, "polars").expect("polars installed");
                 let pyseries = PySeries::new(v);
@@ -218,7 +218,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 loc_tz.call_method0("timestamp")?;
                 // s to ms
                 let v = ts.extract::<f64>()? as i64;
-                Ok(AnyValue::Date64(v * 1000).into())
+                Ok(AnyValue::Datetime(v * 1000).into())
             }
             // unix
             #[cfg(not(target_arch = "windows"))]
@@ -231,7 +231,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 let ts = dt.call_method0("timestamp")?;
                 // s to ms
                 let v = ts.extract::<f64>()? as i64;
-                Ok(AnyValue::Date64(v * 1000).into())
+                Ok(AnyValue::Datetime(v * 1000).into())
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())

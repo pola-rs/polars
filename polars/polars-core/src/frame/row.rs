@@ -197,10 +197,10 @@ impl<'a> From<&AnyValue<'a>> for Field {
             Int64(_) => Field::new("", DataType::Int64),
             Float32(_) => Field::new("", DataType::Float32),
             Float64(_) => Field::new("", DataType::Float64),
-            #[cfg(feature = "dtype-date32")]
-            Date32(_) => Field::new("", DataType::Date32),
-            #[cfg(feature = "dtype-date64")]
-            Date64(_) => Field::new("", DataType::Date64),
+            #[cfg(feature = "dtype-date")]
+            Date(_) => Field::new("", DataType::Date),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_) => Field::new("", DataType::Datetime),
             _ => unimplemented!(),
         }
     }
@@ -228,10 +228,10 @@ pub(crate) enum Buffer {
     Int64(PrimitiveChunkedBuilder<Int64Type>),
     UInt32(PrimitiveChunkedBuilder<UInt32Type>),
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
-    #[cfg(feature = "dtype-date32")]
-    Date32(PrimitiveChunkedBuilder<Int32Type>),
-    #[cfg(feature = "dtype-date64")]
-    Date64(PrimitiveChunkedBuilder<Int64Type>),
+    #[cfg(feature = "dtype-date")]
+    Date(PrimitiveChunkedBuilder<Int32Type>),
+    #[cfg(feature = "dtype-datetime")]
+    Datetime(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
@@ -246,10 +246,10 @@ impl Debug for Buffer {
             Int64(_) => f.write_str("i64"),
             UInt32(_) => f.write_str("u32"),
             UInt64(_) => f.write_str("u64"),
-            #[cfg(feature = "dtype-date32")]
-            Date32(_) => f.write_str("date32"),
-            #[cfg(feature = "dtype-date64")]
-            Date64(_) => f.write_str("date64"),
+            #[cfg(feature = "dtype-date")]
+            Date(_) => f.write_str("Date"),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_) => f.write_str("datetime"),
             Float32(_) => f.write_str("f32"),
             Float64(_) => f.write_str("f64"),
             Utf8(_) => f.write_str("utf8"),
@@ -271,10 +271,10 @@ impl Buffer {
             (UInt32(builder), AnyValue::Null) => builder.append_null(),
             (UInt64(builder), AnyValue::UInt64(v)) => builder.append_value(v),
             (UInt64(builder), AnyValue::Null) => builder.append_null(),
-            #[cfg(feature = "dtype-date32")]
-            (Date32(builder), AnyValue::Null) => builder.append_null(),
-            #[cfg(feature = "dtype-date64")]
-            (Date64(builder), AnyValue::Date64(v)) => builder.append_value(v),
+            #[cfg(feature = "dtype-date")]
+            (Date(builder), AnyValue::Null) => builder.append_null(),
+            #[cfg(feature = "dtype-datetime")]
+            (Datetime(builder), AnyValue::Datetime(v)) => builder.append_value(v),
             (Float32(builder), AnyValue::Null) => builder.append_null(),
             (Float64(builder), AnyValue::Float64(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
@@ -293,10 +293,10 @@ impl Buffer {
             Int64(b) => b.finish().into_series(),
             UInt32(b) => b.finish().into_series(),
             UInt64(b) => b.finish().into_series(),
-            #[cfg(feature = "dtype-date32")]
-            Date32(b) => b.finish().into_date().into_series(),
-            #[cfg(feature = "dtype-date64")]
-            Date64(b) => b.finish().into_date().into_series(),
+            #[cfg(feature = "dtype-date")]
+            Date(b) => b.finish().into_date().into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(b) => b.finish().into_date().into_series(),
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
@@ -315,10 +315,10 @@ impl From<(&DataType, usize)> for Buffer {
             Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new("", len)),
             UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new("", len)),
             UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new("", len)),
-            #[cfg(feature = "dtype-date32")]
-            Date32 => Buffer::Date32(PrimitiveChunkedBuilder::new("", len)),
-            #[cfg(feature = "dtype-date64")]
-            Date64 => Buffer::Date64(PrimitiveChunkedBuilder::new("", len)),
+            #[cfg(feature = "dtype-date")]
+            Date => Buffer::Date(PrimitiveChunkedBuilder::new("", len)),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime => Buffer::Datetime(PrimitiveChunkedBuilder::new("", len)),
             Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => Buffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),

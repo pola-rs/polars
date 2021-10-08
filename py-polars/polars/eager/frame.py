@@ -899,7 +899,7 @@ class DataFrame:
                 else:
                     name = column._name
 
-                # parquet casts date64 to date32 for some reason
+                # parquet casts date64 to date32
                 if column.type == pa.date64():
                     column = pa.compute.cast(column, pa.timestamp("ms", None))
                 data[name] = column
@@ -1843,7 +1843,7 @@ class DataFrame:
         ----------
         by
             Column that will be used as key in the groupby operation.
-            This should be a date64/date32 column.
+            This should be a datetime/date column.
         rule
             Units of the downscaling operation.
 
@@ -1869,7 +1869,7 @@ class DataFrame:
         >>>         "D": [12.0, 5.0, 9.0, 2.0, 11.0, 2.0],
         >>>     }
         >>> )
-        >>> df['A'] = df['A'].str.strptime(pl.datatypes.Date32, "%Y-%m-%d")
+        >>> df['A'] = df['A'].str.strptime(pl.datatypes.Date, "%Y-%m-%d")
         >>>
         >>> df.downsample("A", rule="day", n=3).agg(
         >>>     {
@@ -1882,7 +1882,7 @@ class DataFrame:
         ┌──────────────┬───────┬───────┬────────┐
         │ A            ┆ B_max ┆ C_min ┆ D_last │
         │ ---          ┆ ---   ┆ ---   ┆ ---    │
-        │ date32(days) ┆ f64   ┆ f64   ┆ f64    │
+        │ date(days)   ┆ f64   ┆ f64   ┆ f64    │
         ╞══════════════╪═══════╪═══════╪════════╡
         │ 2019-12-31   ┆ 8     ┆ 3     ┆ 5      │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤

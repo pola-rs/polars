@@ -449,7 +449,7 @@ where
                             to_cast.push(fld);
                             Some(Field::new(fld.name(), DataType::Utf8))
                         }
-                        DataType::Date32 | DataType::Date64 => {
+                        DataType::Date | DataType::Datetime => {
                             to_cast.push(fld);
                             // let inference decide the column type
                             None
@@ -542,9 +542,9 @@ fn parse_dates(df: DataFrame) -> DataFrame {
     for s in cols.iter_mut() {
         if let Ok(ca) = s.utf8() {
             // the order is important. A datetime can always be parsed as date.
-            if let Ok(ca) = ca.as_date64(None) {
+            if let Ok(ca) = ca.as_datetime(None) {
                 *s = ca.into_series()
-            } else if let Ok(ca) = ca.as_date32(None) {
+            } else if let Ok(ca) = ca.as_date(None) {
                 *s = ca.into_series()
             }
         }
@@ -920,7 +920,7 @@ id090,id048,id0000067778,24,2,51862,4,9,
 
     #[test]
     fn test_with_dtype() -> Result<()> {
-        // test if timestamps can be parsed as Date64
+        // test if timestamps can be parsed as Datetime
         let csv = r#"a,b,c,d,e
 AUDCAD,1616455919,0.91212,0.95556,1
 AUDCAD,1616455920,0.92212,0.95556,1
@@ -929,14 +929,17 @@ AUDCAD,1616455921,0.96212,0.95666,1
         let file = Cursor::new(csv);
         let df = CsvReader::new(file)
             .has_header(true)
-            .with_dtypes(Some(&Schema::new(vec![Field::new("b", DataType::Date64)])))
+            .with_dtypes(Some(&Schema::new(vec![Field::new(
+                "b",
+                DataType::Datetime,
+            )])))
             .finish()?;
 
         assert_eq!(
             df.dtypes(),
             &[
                 DataType::Utf8,
-                DataType::Date64,
+                DataType::Datetime,
                 DataType::Float64,
                 DataType::Float64,
                 DataType::Int64
@@ -1096,7 +1099,7 @@ bar,bar";
         let df = CsvReader::new(file).with_parse_dates(true).finish()?;
 
         let ts = df.column("timestamp")?;
-        assert_eq!(ts.dtype(), &DataType::Date64);
+        assert_eq!(ts.dtype(), &DataType::Datetime);
         assert_eq!(ts.null_count(), 0);
 
         Ok(())

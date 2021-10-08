@@ -43,114 +43,114 @@ macro_rules! to_temporal_unit {
     };
 }
 to_temporal_unit!(
-    date32_to_week,
+    date_to_week,
     week,
-    date32_as_datetime,
+    date_as_datetime,
     i32,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date32_to_weekday,
+    date_to_weekday,
     p_weekday,
-    date32_as_datetime,
+    date_as_datetime,
     i32,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date32_to_year,
+    date_to_year,
     year,
-    date32_as_datetime,
+    date_as_datetime,
     i32,
     ArrowDataType::Int32
 );
 to_temporal_unit!(
-    date32_to_month,
+    date_to_month,
     month,
-    date32_as_datetime,
+    date_as_datetime,
     i32,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date32_to_day,
+    date_to_day,
     day,
-    date32_as_datetime,
+    date_as_datetime,
     i32,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date32_to_ordinal,
+    date_to_ordinal,
     ordinal,
-    date32_as_datetime,
+    date_as_datetime,
     i32,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_week,
+    datetime_to_week,
     week,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_weekday,
+    datetime_to_weekday,
     p_weekday,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_year,
+    datetime_to_year,
     year,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::Int32
 );
 to_temporal_unit!(
-    date64_to_month,
+    datetime_to_month,
     month,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_day,
+    datetime_to_day,
     day,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_hour,
+    datetime_to_hour,
     hour,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_minute,
+    datetime_to_minute,
     minute,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_second,
+    datetime_to_second,
     second,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_nanosecond,
+    datetime_to_nanosecond,
     nanosecond,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
 to_temporal_unit!(
-    date64_to_ordinal,
+    datetime_to_ordinal,
     ordinal,
-    date64_as_datetime,
+    datetime_as_datetime,
     i64,
     ArrowDataType::UInt32
 );
