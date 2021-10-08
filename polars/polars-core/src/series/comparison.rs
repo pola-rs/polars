@@ -30,6 +30,12 @@ macro_rules! impl_compare {
                 .unwrap()
                 .$method(rhs.datetime().unwrap().deref()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical => lhs
+                .categorical()
+                .unwrap()
+                .$method(rhs.categorical().unwrap().deref()),
+
             _ => unimplemented!(),
         }
     }};
@@ -76,7 +82,33 @@ where
 
 impl ChunkCompare<&Series> for Series {
     fn eq_missing(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, eq_missing)
+        #[cfg(feature = "dtype-categorical")]
+        use DataType::*;
+        match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
+            #[cfg(feature = "dtype-categorical")]
+            (Categorical, Utf8, _, 1) => {
+                return compare_cat_to_str_series(
+                    self,
+                    rhs,
+                    self.name(),
+                    |s, idx| s.eq_missing(idx),
+                    false,
+                );
+            }
+            #[cfg(feature = "dtype-categorical")]
+            (Utf8, Categorical, 1, _) => {
+                return compare_cat_to_str_series(
+                    rhs,
+                    self,
+                    self.name(),
+                    |s, idx| s.eq_missing(idx),
+                    false,
+                );
+            }
+            _ => {
+                impl_compare!(self, rhs, eq_missing)
+            }
+        }
     }
 
     /// Create a boolean mask by checking for equality.

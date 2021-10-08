@@ -291,7 +291,7 @@ impl Debug for Series {
                 limit,
                 f,
                 self.date().unwrap(),
-                "Date",
+                "date",
                 self.name(),
                 "Series"
             ),

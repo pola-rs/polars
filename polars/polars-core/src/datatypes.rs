@@ -317,7 +317,8 @@ impl<'a> AnyValue<'a> {
             AnyValue::Int32(v) => AnyValue::Date(v),
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Int64(v) => AnyValue::Datetime(v),
-            _ => panic!("cannot create date from other type"),
+            AnyValue::Null => AnyValue::Null,
+            dt => panic!("cannot create date from other type. dtype: {}", dt),
         }
     }
 

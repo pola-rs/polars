@@ -4,7 +4,6 @@ use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use rayon::prelude::*;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct ApplyExpr {
@@ -44,14 +43,7 @@ impl PhysicalExpr for ApplyExpr {
                 "function with multiple inputs not yet supported in aggregation context".into(),
             ));
         }
-        let mut ac = if let Ok(ae) = self.inputs[0].as_agg_expr() {
-            AggregationContext::new(
-                ae.aggregate(df, groups, state)?.unwrap(),
-                Cow::Borrowed(groups),
-            )
-        } else {
-            self.inputs[0].evaluate_on_groups(df, groups, state)?
-        };
+        let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
         match self.collect_groups {
             ApplyOptions::ApplyGroups => {

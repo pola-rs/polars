@@ -20,7 +20,11 @@ def df() -> pl.DataFrame:
         }
     )
     return df.with_columns(
-        [pl.col("date").cast(pl.Date), pl.col("datetime").cast(pl.Datetime)]
+        [
+            pl.col("date").cast(pl.Date),
+            pl.col("datetime").cast(pl.Datetime),
+            pl.col("strings").cast(pl.Categorical).alias("cat"),
+        ]
     )
 
 

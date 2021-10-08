@@ -1899,3 +1899,23 @@ fn test_fill_nan() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_agg_exprs() -> Result<()> {
+    let df = fruits_cars();
+
+    // a binary expression followed by a function and an aggregation. See if it runs
+    let out = df
+        .lazy()
+        .stable_groupby([col("cars")])
+        .agg([(lit(1) - col("A"))
+            .map(|s| Ok(&s * 2), GetOutput::same_type())
+            .list()
+            .alias("foo")])
+        .collect()?;
+    let ca = out.column("foo")?.list()?;
+    let out = ca.lst_lengths();
+
+    assert_eq!(Vec::from(&out), &[Some(4), Some(1)]);
+    Ok(())
+}
