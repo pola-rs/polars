@@ -854,7 +854,7 @@ impl PyExpr {
                 |s| Ok(s.list()?.lst_max()),
                 GetOutput::map_field(|f| {
                     if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), adt.into())
+                        Field::new(f.name(), *adt.clone())
                     } else {
                         // inner type
                         f.clone()
@@ -871,7 +871,7 @@ impl PyExpr {
                 |s| Ok(s.list()?.lst_min()),
                 GetOutput::map_field(|f| {
                     if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), adt.into())
+                        Field::new(f.name(), *adt.clone())
                     } else {
                         // inner type
                         f.clone()
@@ -888,7 +888,7 @@ impl PyExpr {
                 |s| Ok(s.list()?.lst_sum()),
                 GetOutput::map_field(|f| {
                     if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), adt.into())
+                        Field::new(f.name(), *adt.clone())
                     } else {
                         // inner type
                         f.clone()

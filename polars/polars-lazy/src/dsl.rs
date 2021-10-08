@@ -1318,7 +1318,7 @@ impl Expr {
         map_binary_lazy_field(self, by, function, |_schema, _ctxt, l, _r| {
             Some(Field::new(
                 l.name(),
-                DataType::List(l.data_type().to_arrow()),
+                DataType::List(l.data_type().clone().into()),
             ))
         })
     }

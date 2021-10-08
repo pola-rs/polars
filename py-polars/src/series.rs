@@ -577,7 +577,7 @@ impl PySeries {
             DataType::Float32 => PyList::new(python, series.f32().unwrap()),
             DataType::Float64 => PyList::new(python, series.f64().unwrap()),
             DataType::Date => PyList::new(python, &series.date().unwrap().0),
-            DataType::Datetime=> PyList::new(python, &series.datetime().unwrap().0),
+            DataType::Datetime => PyList::new(python, &series.datetime().unwrap().0),
             DataType::Object(_) => {
                 let v = PyList::empty(python);
                 for i in 0..series.len() {
@@ -1132,14 +1132,8 @@ impl PySeries {
     pub fn round_datetime(&self, rule: &str, n: u32) -> PyResult<Self> {
         let rule = downsample_str_to_rule(rule, n)?;
         match self.series.dtype() {
-            DataType::Date => Ok(self
-                .series
-                .date()
-                .unwrap()
-                .round(rule)
-                .into_series()
-                .into()),
-            DataType::Datetime=> Ok(self
+            DataType::Date => Ok(self.series.date().unwrap().round(rule).into_series().into()),
+            DataType::Datetime => Ok(self
                 .series
                 .datetime()
                 .unwrap()

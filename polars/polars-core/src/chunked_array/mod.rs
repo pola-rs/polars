@@ -743,7 +743,7 @@ impl ListChunked {
     /// Get the inner data type of the list.
     pub fn inner_dtype(&self) -> DataType {
         match self.dtype() {
-            DataType::List(dt) => dt.into(),
+            DataType::List(dt) => *dt.clone(),
             _ => unreachable!(),
         }
     }

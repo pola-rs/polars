@@ -177,10 +177,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             low,
             high,
             f,
-            Some(Field::new(
-                "arange",
-                DataType::List(DataType::Int64.to_arrow()),
-            )),
+            Some(Field::new("arange", DataType::List(DataType::Int64.into()))),
         )
     }
 }

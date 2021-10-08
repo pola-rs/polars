@@ -1049,8 +1049,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
         match self.dtype() {
             DataType::List(dt) => {
-                let mut builder =
-                    get_list_builder(&dt.into(), self.len() * 5, self.len(), self.name());
+                let mut builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
                 if self.null_count() == 0 {
                     let mut it = self.into_no_null_iter();
                     // use first value to get dtype and replace default builder
@@ -1061,7 +1060,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
                         builder.append_opt_series(Some(&out_series));
                     } else {
-                        let mut builder = get_list_builder(&dt.into(), 0, 1, self.name());
+                        let mut builder = get_list_builder(dt, 0, 1, self.name());
                         let ca = builder.finish();
                         return Ok(PySeries::new(ca.into_series()));
                     }

@@ -79,7 +79,7 @@ impl PolarsDataType for BooleanType {
 impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
         // null as we cannot no anything without self.
-        DataType::List(ArrowDataType::Null)
+        DataType::List(Box::new(DataType::Null))
     }
 }
 
@@ -368,7 +368,7 @@ impl Display for DataType {
             DataType::Utf8 => "str",
             DataType::Date => "Date(days)",
             DataType::Datetime => "datetime(ms)",
-            DataType::List(tp) => return write!(f, "list [{}]", DataType::from(tp)),
+            DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
             DataType::Categorical => "cat",
@@ -458,7 +458,7 @@ pub enum DataType {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
     Datetime,
-    List(ArrowDataType),
+    List(Box<DataType>),
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
@@ -498,7 +498,7 @@ impl DataType {
             Datetime => ArrowDataType::Date64,
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",
-                dt.clone(),
+                dt.to_arrow(),
                 true,
             ))),
             Null => ArrowDataType::Null,
@@ -631,7 +631,7 @@ impl Schema {
                         f.name(),
                         ArrowDataType::LargeList(Box::new(ArrowField::new(
                             "item",
-                            dt.clone(),
+                            dt.to_arrow(),
                             true,
                         ))),
                         true,
@@ -700,7 +700,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Boolean => DataType::Boolean,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
-            ArrowDataType::LargeList(f) => DataType::List(f.data_type().clone()),
+            ArrowDataType::LargeList(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Date64 => DataType::Datetime,
             ArrowDataType::Utf8 => DataType::Utf8,

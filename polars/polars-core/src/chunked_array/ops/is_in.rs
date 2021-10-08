@@ -45,10 +45,10 @@ where
         // We check implicitly cast to supertype here
         match other.dtype() {
             DataType::List(dt) => {
-                let st = get_supertype(self.dtype(), &dt.into())?;
+                let st = get_supertype(self.dtype(), dt)?;
                 if &st != self.dtype() {
                     let left = self.cast(&st)?;
-                    let right = other.cast(&DataType::List(st.to_arrow()))?;
+                    let right = other.cast(&DataType::List(Box::new(st)))?;
                     return left.is_in(&right);
                 }
 
@@ -104,7 +104,7 @@ where
 impl IsIn for Utf8Chunked {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         match other.dtype() {
-            DataType::List(dt) if self.dtype() == dt => {
+            DataType::List(dt) if self.dtype() == &**dt => {
                 let ca: BooleanChunked = self
                     .into_iter()
                     .zip(other.list()?.into_iter())
@@ -149,7 +149,7 @@ impl IsIn for Utf8Chunked {
 impl IsIn for BooleanChunked {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         match other.dtype() {
-            DataType::List(dt) if self.dtype() == dt => {
+            DataType::List(dt) if self.dtype() == &**dt => {
                 let ca: BooleanChunked = self
                     .into_iter()
                     .zip(other.list()?.into_iter())
