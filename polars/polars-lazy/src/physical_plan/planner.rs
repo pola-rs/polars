@@ -264,8 +264,16 @@ impl DefaultPlanner {
 
                     for agg in &aggs {
                         // make sure that we don't have a binary expr in the expr tree
-                        let matches =
-                            |e: &AExpr| matches!(e, AExpr::SortBy { .. } | AExpr::Filter { .. });
+                        let matches = |e: &AExpr| {
+                            matches!(
+                                e,
+                                AExpr::SortBy { .. }
+                                    | AExpr::Filter { .. }
+                                    | AExpr::BinaryExpr { .. }
+                                    | AExpr::BinaryFunction { .. }
+                                    | AExpr::Function { .. }
+                            )
+                        };
                         if aexpr_to_root_nodes(*agg, expr_arena).len() != 1
                             || has_aexpr(*agg, expr_arena, matches)
                         {
