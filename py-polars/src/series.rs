@@ -8,6 +8,7 @@ use crate::{arrow_interop, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
+use polars_core::utils::CustomIterTools;
 
 #[pyclass]
 #[repr(transparent)]
@@ -64,7 +65,7 @@ impl PySeries {
                     .expect("contiguous array")
                     .iter()
                     .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
-                    .collect();
+                    .collect_trusted();
                 ca.rename(name);
                 ca.into_series().into()
             } else {
@@ -83,7 +84,7 @@ impl PySeries {
                     .expect("contiguous array")
                     .iter()
                     .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
-                    .collect();
+                    .collect_trusted();
                 ca.rename(name);
                 ca.into_series().into()
             } else {
@@ -201,7 +202,7 @@ impl PySeries {
 
     #[staticmethod]
     pub fn repeat(name: &str, val: &str, n: usize) -> Self {
-        let mut ca: Utf8Chunked = (0..n).map(|_| val).collect();
+        let mut ca: Utf8Chunked = (0..n).map(|_| val).collect_trusted();
         ca.rename(name);
         ca.into_series().into()
     }

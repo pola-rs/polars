@@ -62,7 +62,7 @@ def arrow_to_pyseries(name: str, values: "pa.Array") -> "PySeries":
 
 
 def numpy_to_pyseries(
-    name: str, values: np.ndarray, nullable: bool = True, strict: bool = True
+    name: str, values: np.ndarray, strict: bool = True, nan_to_null: bool = False
 ) -> "PySeries":
     """
     Construct a PySeries from a numpy array.
@@ -74,7 +74,7 @@ def numpy_to_pyseries(
         dtype = values.dtype.type
         constructor = numpy_type_to_constructor(dtype)
         if dtype == np.float32 or dtype == np.float64:
-            return constructor(name, values, nullable)
+            return constructor(name, values, nan_to_null)
         else:
             return constructor(name, values, strict)
     else:
@@ -199,7 +199,6 @@ def pandas_to_pyseries(
 def _handle_columns_arg(
     data: List["PySeries"],
     columns: Optional[Sequence[str]] = None,
-    nullable: bool = True,
 ) -> List["PySeries"]:
     """
     Rename data according to columns argument.
@@ -208,7 +207,7 @@ def _handle_columns_arg(
         return data
     else:
         if not data:
-            return [pl.Series(c, None, nullable=nullable).inner() for c in columns]
+            return [pl.Series(c, None).inner() for c in columns]
         elif len(data) == len(columns):
             for i, c in enumerate(columns):
                 data[i].rename(c)
@@ -220,16 +219,12 @@ def _handle_columns_arg(
 def dict_to_pydf(
     data: Dict[str, Sequence[Any]],
     columns: Optional[Sequence[str]] = None,
-    nullable: bool = True,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a dictionary of sequences.
     """
-    data_series = [
-        pl.Series(name, values, nullable=nullable).inner()
-        for name, values in data.items()
-    ]
-    data_series = _handle_columns_arg(data_series, columns=columns, nullable=nullable)
+    data_series = [pl.Series(name, values).inner() for name, values in data.items()]
+    data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
 
@@ -237,7 +232,6 @@ def numpy_to_pydf(
     data: np.ndarray,
     columns: Optional[Sequence[str]] = None,
     orient: Optional[str] = None,
-    nullable: bool = True,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a numpy ndarray.
@@ -248,7 +242,7 @@ def numpy_to_pydf(
         data_series = []
 
     elif len(shape) == 1:
-        s = pl.Series("column_0", data, nullable=False).inner()
+        s = pl.Series("column_0", data).inner()
         data_series = [s]
 
     elif len(shape) == 2:
@@ -268,18 +262,16 @@ def numpy_to_pydf(
 
         if orient == "row":
             data_series = [
-                pl.Series(f"column_{i}", data[:, i], nullable=False).inner()
-                for i in range(shape[1])
+                pl.Series(f"column_{i}", data[:, i]).inner() for i in range(shape[1])
             ]
         else:
             data_series = [
-                pl.Series(f"column_{i}", data[i], nullable=False).inner()
-                for i in range(shape[0])
+                pl.Series(f"column_{i}", data[i]).inner() for i in range(shape[0])
             ]
     else:
         raise ValueError("A numpy array should not have more than two dimensions.")
 
-    data_series = _handle_columns_arg(data_series, columns=columns, nullable=nullable)
+    data_series = _handle_columns_arg(data_series, columns=columns)
 
     return PyDataFrame(data_series)
 
@@ -288,7 +280,6 @@ def sequence_to_pydf(
     data: Sequence[Any],
     columns: Optional[Sequence[str]] = None,
     orient: Optional[str] = None,
-    nullable: bool = True,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a sequence.
@@ -322,15 +313,14 @@ def sequence_to_pydf(
             return pydf
         else:
             data_series = [
-                pl.Series(f"column_{i}", data[i], nullable=nullable).inner()
-                for i in range(len(data))
+                pl.Series(f"column_{i}", data[i]).inner() for i in range(len(data))
             ]
 
     else:
-        s = pl.Series("column_0", data, nullable=nullable).inner()
+        s = pl.Series("column_0", data).inner()
         data_series = [s]
 
-    data_series = _handle_columns_arg(data_series, columns=columns, nullable=nullable)
+    data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
 

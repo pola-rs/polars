@@ -478,7 +478,7 @@ def read_ipc(
                     "'pyarrow' is required when using 'read_ipc(..., use_pyarrow=True)'."
                 )
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
-            return pl.DataFrame.from_arrow(tbl)
+            return pl.DataFrame._from_arrow(tbl)
         return pl.DataFrame.read_ipc(data)
 
 
