@@ -130,12 +130,12 @@ class Series:
     values : ArrayLike, default None
         One-dimensional data in various forms. Supported are: Sequence, Series,
         pyarrow Array, and numpy ndarray.
-    nullable : bool, default True
-        deprecated: does not do a thing
     dtype : DataType, default None
         Polars dtype of the Series data. If not specified, the dtype is inferred.
     strict
         Throw error on numeric overflow
+    nan_to_null
+        In case a numpy arrow is used to create this Series, indicate how to deal with np.nan
 
     Examples
     --------
@@ -172,7 +172,7 @@ class Series:
     This syntax considered an anti-pattern, but it can be useful in certain
     scenarios. You must specify any other arguments through keywords.
 
-    >>> s3 = pl.Series([1, 2, 3], nullable=False)
+    >>> s3 = pl.Series([1, 2, 3])
     >>> s3
     shape: (3,)
     Series: '' [i64]
@@ -188,13 +188,10 @@ class Series:
         self,
         name: Optional[Union[str, ArrayLike]] = None,
         values: Optional[ArrayLike] = None,
-        nullable: bool = True,
         dtype: Optional[Type[DataType]] = None,
         strict: bool = True,
+        nan_to_null: bool = False,
     ):
-        # this prevents errors with users setting dtype to nullable
-        if not isinstance(nullable, bool):
-            raise ValueError(f"invalid type set to nullable: {type(nullable)}")
 
         # Handle case where values are passed as the first argument
         if name is not None and not isinstance(name, str):
@@ -215,7 +212,7 @@ class Series:
         elif _PYARROW_AVAILABLE and isinstance(values, pa.Array):
             self._s = arrow_to_pyseries(name, values)
         elif isinstance(values, np.ndarray):
-            self._s = numpy_to_pyseries(name, values, strict)
+            self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(name, values, dtype=dtype, strict=strict)
         elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
@@ -299,7 +296,7 @@ class Series:
 
     def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other, nullable=True)
+            other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.eq(other._s))
         f = get_ffi_func("eq_<>", self.dtype, self._s)
@@ -309,7 +306,7 @@ class Series:
 
     def __ne__(self, other: Any) -> "Series":  # type: ignore[override]
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other, nullable=True)
+            other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.neq(other._s))
         f = get_ffi_func("neq_<>", self.dtype, self._s)
@@ -319,7 +316,7 @@ class Series:
 
     def __gt__(self, other: Any) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other, nullable=True)
+            other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.gt(other._s))
         f = get_ffi_func("gt_<>", self.dtype, self._s)
@@ -329,7 +326,7 @@ class Series:
 
     def __lt__(self, other: Any) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other, nullable=True)
+            other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.lt(other._s))
         f = get_ffi_func("lt_<>", self.dtype, self._s)
@@ -339,7 +336,7 @@ class Series:
 
     def __ge__(self, other: Any) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other, nullable=True)
+            other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.gt_eq(other._s))
         f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
@@ -349,7 +346,7 @@ class Series:
 
     def __le__(self, other: Any) -> "Series":
         if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other, nullable=True)
+            other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.lt_eq(other._s))
         f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
@@ -1735,7 +1732,7 @@ class Series:
             >>> pl.Series([1, 3, 5]).sort().view()
 
             >>> # Sums invalid data that is missing.
-            >>> pl.Series([1, 2, None], nullable=True).view().sum()
+            >>> pl.Series([1, 2, None]).view().sum()
 
         """
         if not ignore_nulls:

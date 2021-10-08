@@ -388,64 +388,6 @@ def test_groupby():
         }
     )
 
-    # use __getitem__ to map to select
-    assert (
-        df.groupby("a")["b"]
-        .sum()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
-    )
-
-    assert (
-        df.groupby("a")
-        .select("b")
-        .sum()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
-    )
-    assert (
-        df.groupby("a")
-        .select("c")
-        .sum()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [10, 10, 1]}))
-    )
-    assert (
-        df.groupby("a")
-        .select("b")
-        .min()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [1, 2, 6]}))
-    )
-    assert (
-        df.groupby("a")
-        .select("b")
-        .max()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
-    )
-    assert (
-        df.groupby("a")
-        .select("b")
-        .mean()
-        .sort(by="a")
-        .frame_equal(
-            pl.DataFrame({"a": ["a", "b", "c"], "": [2.0, (2 + 4 + 5) / 3, 6.0]})
-        )
-    )
-    assert (
-        df.groupby("a")
-        .select("b")
-        .last()
-        .sort(by="a")
-        .frame_equal(pl.DataFrame({"a": ["a", "b", "c"], "": [3, 5, 6]}))
-    )
-    # check if it runs
-    (df.groupby("a").select("b").n_unique())
-
-    (df.groupby("a").select("b").quantile(0.3))
-    (df.groupby("a").select("b").agg_list())
-
     gb_df = df.groupby("a").agg({"b": ["sum", "min"], "c": "count"})
     assert "b_sum" in gb_df.columns
     assert "b_min" in gb_df.columns
@@ -581,7 +523,9 @@ def test_melt():
 def test_shift():
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
     a = df.shift(1)
-    b = pl.DataFrame({"A": [None, "a", "b"], "B": [None, 1, 3]}, nullable=True)
+    b = pl.DataFrame(
+        {"A": [None, "a", "b"], "B": [None, 1, 3]},
+    )
     assert a.frame_equal(b, null_equal=True)
 
 
@@ -635,15 +579,6 @@ def test_from_pandas_nan_to_none():
 
 
 def test_custom_groupby():
-    df = pl.DataFrame({"A": ["a", "a", "c", "c"], "B": [1, 3, 5, 2]})
-    assert df.groupby("A").select("B").apply(lambda x: x.sum()).shape == (2, 2)
-    assert df.groupby("A").select("B").apply(
-        lambda x: pl.Series("", np.array(x))
-    ).shape == (
-        2,
-        2,
-    )
-
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
 
     out = (
@@ -667,7 +602,7 @@ def test_concat():
     assert pl.concat([df, df]).shape == (6, 3)
 
     # check if a remains unchanged
-    a = pl.from_rows(((1, 2), (1, 2)))
+    a = pl.from_records(((1, 2), (1, 2)))
     _ = pl.concat([a, a, a])
     assert a.shape == (2, 2)
 
@@ -927,16 +862,14 @@ def test_to_json(df):
 
 
 def test_from_rows():
-    df = pl.DataFrame.from_rows(
-        [[1, 2, "foo"], [2, 3, "bar"]], column_name_mapping={1: "foo"}
-    )
+    df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]], orient="row")
     assert df.frame_equal(
         pl.DataFrame({"column_0": [1, 2], "foo": [2, 3], "column_2": ["foo", "bar"]})
     )
 
-    df = pl.DataFrame.from_rows(
+    df = pl.from_records(
         [[1, datetime.fromtimestamp(100)], [2, datetime.fromtimestamp(2398754908)]],
-        column_name_mapping={1: "foo"},
+        orient="row",
     )
     assert df.dtypes == [pl.Int64, pl.Datetime]
 
@@ -944,7 +877,7 @@ def test_from_rows():
 def test_repeat_by():
     df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
 
-    out = df[col("n").repeat_by("n")]
+    out = df[pl.col("n").repeat_by("n")]
     s = out["n"]
     assert s[0] == [2, 2]
     assert s[1] == [3, 3, 3]
@@ -1064,9 +997,9 @@ def test_filter_date():
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
     )
     df = dataset.with_column(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
-    assert df.filter(pl.col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
-    assert df.filter(pl.col("date") < pl.lit_date(datetime(2020, 1, 4))).shape[0] == 2
-    assert df.filter(pl.col("date") < pl.lit_date(datetime(2020, 1, 5))).shape[0] == 3
+    assert df.filter(pl.col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
+    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
+    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
     assert df.filter(pl.col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
     assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
     assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3

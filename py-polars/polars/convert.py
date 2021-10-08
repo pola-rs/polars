@@ -24,15 +24,12 @@ __all__ = [
     "from_records",
     "from_arrow",
     "from_pandas",
-    "from_rows",  # deprecated
-    "from_arrow_table",  # deprecated
 ]
 
 
 def from_dict(
     data: Dict[str, Sequence[Any]],
     columns: Optional[Sequence[str]] = None,
-    nullable: bool = True,
 ) -> "pl.DataFrame":
     """
     Construct a DataFrame from a dictionary of sequences.
@@ -45,9 +42,6 @@ def from_dict(
     columns : Sequence of str, default None
         Column labels to use for resulting DataFrame. If specified, overrides any
         labels already present in the data. Must match data dimensions.
-    nullable : bool, default True
-        If your data does not contain null values, set to False to speed up
-        DataFrame creation.
 
     Returns
     -------
@@ -70,14 +64,13 @@ def from_dict(
     │ 2   ┆ 4   │
     ╰─────┴─────╯
     """
-    return pl.DataFrame._from_dict(data=data, columns=columns, nullable=nullable)
+    return pl.DataFrame._from_dict(data=data, columns=columns)
 
 
 def from_records(
     data: Union[np.ndarray, Sequence[Sequence[Any]]],
     columns: Optional[Sequence[str]] = None,
     orient: Optional[str] = None,
-    nullable: bool = True,
 ) -> "pl.DataFrame":
     """
     Construct a DataFrame from a numpy ndarray or sequence of sequences.
@@ -93,9 +86,6 @@ def from_records(
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
-    nullable : bool, default True
-        If your data does not contain null values, set to False to speed up
-        DataFrame creation.
 
     Returns
     -------
@@ -120,9 +110,7 @@ def from_records(
     │ 3   ┆ 6   │
     ╰─────┴─────╯
     """
-    return pl.DataFrame._from_records(
-        data, columns=columns, orient=orient, nullable=nullable
-    )
+    return pl.DataFrame._from_records(data, columns=columns, orient=orient)
 
 
 def from_dicts(dicts: Sequence[Dict[str, Any]]) -> "pl.DataFrame":
@@ -290,58 +278,3 @@ def from_pandas(
         return pl.DataFrame._from_pandas(df, rechunk=rechunk, nan_to_none=nan_to_none)
     else:
         raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")
-
-
-def from_rows(
-    rows: Sequence[Sequence[Any]],
-    column_names: Optional[Sequence[str]] = None,
-    column_name_mapping: Optional[Dict[int, str]] = None,
-) -> "pl.DataFrame":
-    """
-    .. deprecated:: 0.8.13
-          `from_rows` will be removed in Polars 0.9.0, it is replaced by
-          `from_records` because the latter offers more versatility. To keep the same
-          functionality, call `from_records` with `orient='row'`
-
-    Create a DataFrame from rows. This should only be used as a last resort, as this is
-    more expensive than creating from columnar data.
-
-    Parameters
-    ----------
-    rows
-        rows.
-    column_names
-        column names to use for the DataFrame.
-    column_name_mapping
-        map column index to a new name:
-
-        Example:
-        --------
-
-        >>> column_mapping: {0: "first_column", 3: "fourth column"}
-    """
-    return pl.DataFrame.from_rows(rows, column_names, column_name_mapping)
-
-
-def from_arrow_table(table: "pa.Table", rechunk: bool = True) -> "pl.DataFrame":
-    """
-    .. deprecated:: 7.3
-        use `from_arrow`
-
-    Create a DataFrame from an Arrow Table.
-
-    Parameters
-    ----------
-    a
-        Arrow Table.
-    rechunk
-        Make sure that all data is contiguous.
-    """
-    import warnings
-
-    warnings.warn(
-        "from_arrow_table is deprecated, use DataFrame.from_arrow instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return pl.DataFrame.from_arrow(table, rechunk)

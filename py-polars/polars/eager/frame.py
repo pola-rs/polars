@@ -3,7 +3,6 @@ Module containing logic related to eager DataFrames
 """
 import os
 import typing as tp
-import warnings
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -98,9 +97,6 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
-    nullable : bool, default True
-        If your data does not contain null values, set to False to speed up
-        DataFrame creation.
 
     Examples
     --------
@@ -190,37 +186,21 @@ class DataFrame:
         ] = None,
         columns: Optional[Sequence[str]] = None,
         orient: Optional[str] = None,
-        nullable: bool = True,
     ):
-        # Handle positional arguments for old constructor
-        if isinstance(columns, bool):
-            warnings.warn(
-                "Specifying nullable as a positional argument is deprecated. "
-                "Use a keyword argument to silence this warning.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            nullable = columns
-            columns = None
-
         if data is None:
-            self._df = dict_to_pydf({}, columns=columns, nullable=nullable)
+            self._df = dict_to_pydf({}, columns=columns)
 
         elif isinstance(data, dict):
-            self._df = dict_to_pydf(data, columns=columns, nullable=nullable)
+            self._df = dict_to_pydf(data, columns=columns)
 
         elif isinstance(data, np.ndarray):
-            self._df = numpy_to_pydf(
-                data, columns=columns, orient=orient, nullable=nullable
-            )
+            self._df = numpy_to_pydf(data, columns=columns, orient=orient)
 
         elif _PYARROW_AVAILABLE and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(data, columns=columns)
 
         elif isinstance(data, Sequence) and not isinstance(data, str):
-            self._df = sequence_to_pydf(
-                data, columns=columns, orient=orient, nullable=nullable
-            )
+            self._df = sequence_to_pydf(data, columns=columns, orient=orient)
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(data, columns=columns)
@@ -254,7 +234,6 @@ class DataFrame:
         cls,
         data: Dict[str, Sequence[Any]],
         columns: Optional[Sequence[str]] = None,
-        nullable: bool = True,
     ) -> "DataFrame":
         """
         Construct a DataFrame from a dictionary of sequences.
@@ -267,15 +246,12 @@ class DataFrame:
         columns : Sequence of str, default None
             Column labels to use for resulting DataFrame. If specified, overrides any
             labels already present in the data. Must match data dimensions.
-        nullable : bool, default True
-            If your data does not contain null values, set to False to speed up
-            DataFrame creation.
 
         Returns
         -------
         DataFrame
         """
-        return cls._from_pydf(dict_to_pydf(data, columns=columns, nullable=nullable))
+        return cls._from_pydf(dict_to_pydf(data, columns=columns))
 
     @classmethod
     def _from_records(
@@ -283,7 +259,6 @@ class DataFrame:
         data: Union[np.ndarray, Sequence[Sequence[Any]]],
         columns: Optional[Sequence[str]] = None,
         orient: Optional[str] = None,
-        nullable: bool = True,
     ) -> "DataFrame":
         """
         Construct a DataFrame from a numpy ndarray or sequence of sequences.
@@ -299,22 +274,15 @@ class DataFrame:
             Whether to interpret two-dimensional data as columns or as rows. If None,
             the orientation is inferred by matching the columns and data dimensions. If
             this does not yield conclusive results, column orientation is used.
-        nullable : bool, default True
-            If your data does not contain null values, set to False to speed up
-            DataFrame creation.
 
         Returns
         -------
         DataFrame
         """
         if isinstance(data, np.ndarray):
-            pydf = numpy_to_pydf(
-                data, columns=columns, orient=orient, nullable=nullable
-            )
+            pydf = numpy_to_pydf(data, columns=columns, orient=orient)
         else:
-            pydf = sequence_to_pydf(
-                data, columns=columns, orient=orient, nullable=nullable
-            )
+            pydf = sequence_to_pydf(data, columns=columns, orient=orient)
         return cls._from_pydf(pydf)
 
     @classmethod
@@ -379,79 +347,6 @@ class DataFrame:
                 data, columns=columns, rechunk=rechunk, nan_to_none=nan_to_none
             )
         )
-
-    @classmethod
-    def from_arrow(cls, table: "pa.Table", rechunk: bool = True) -> "DataFrame":
-        """
-        .. deprecated:: 0.8.13
-            `DataFrame.from_arrow` will be removed in Polars 0.9.0. Use `pl.from_arrow`
-            instead, or call the DataFrame constructor directly.
-
-        Construct a DataFrame from an Arrow Table.
-
-        Most will be zero copy. Types that are not supported by Polars may be cast to a
-        closest supported type.
-
-        Parameters
-        ----------
-        table
-            Arrow Table.
-        rechunk
-            Make sure that all data is contiguous.
-        """
-        warnings.warn(
-            "DataFrame.from_arrow is deprecated, Use `pl.from_arrow` instead, "
-            "or call the DataFrame constructor directly.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return cls._from_arrow(table, rechunk=rechunk)
-
-    @classmethod
-    def from_rows(
-        cls,
-        rows: Sequence[Sequence[Any]],
-        column_names: Optional[Sequence[str]] = None,
-        column_name_mapping: Optional[Dict[int, str]] = None,
-    ) -> "DataFrame":
-        """
-        .. deprecated:: 0.8.13
-          `from_rows` will be removed in Polars 0.9.0, it is replaced by
-          `from_records` because the latter offers more versatility. To keep the same
-          functionality, call `from_records` with `orient='row'`
-
-        Create a DataFrame from rows. This should only be used as a last resort,
-        as this is more expensive than creating from columnar data.
-
-        Parameters
-        ----------
-        rows
-            rows.
-        column_names
-            column names to use for the DataFrame.
-        column_name_mapping
-            map column index to a new name:
-            Example:
-
-            >>> column_mapping: {0: "first_column, 3: "fourth column"}
-
-        """
-        warnings.warn(
-            "from_rows is deprecated, use from_records with orient='row'.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        df = DataFrame.__new__(DataFrame)
-        df._df = PyDataFrame.read_rows(rows)
-        if column_names is not None:
-            df.columns = list(column_names)
-        if column_name_mapping is not None:
-            for i, name in column_name_mapping.items():
-                s = df[:, i]
-                s.rename(name, in_place=True)
-                df.replace_at_idx(i, s)
-        return df
 
     @staticmethod
     def read_csv(
@@ -3137,7 +3032,22 @@ class GroupBy:
         self.downsample_n = downsample_n
 
     def __getitem__(self, item: Any) -> "GBSelection":
-        return self.select(item)
+        return self._select(item)
+
+    def _select(self, columns: Union[str, tp.List[str]]) -> "GBSelection":
+        """
+        Select the columns that will be aggregated.
+
+        Parameters
+        ----------
+        columns
+            One or multiple columns.
+        """
+        if self.downsample:
+            raise ValueError("select not supported in downsample operation")
+        if isinstance(columns, str):
+            columns = [columns]
+        return GBSelection(self._df, self.by, columns)
 
     def __iter__(self) -> Iterable[Any]:
         groups_df = self.groups()
@@ -3427,29 +3337,8 @@ class GroupBy:
             .collect(no_optimization=True, string_cache=False)
         )
 
-    def select(self, columns: Union[str, tp.List[str]]) -> "GBSelection":
+    def _select_all(self) -> "GBSelection":
         """
-        .. deprecated:: 0.8.16
-            Use `groupby.agg(col("selection"))` instead
-
-        Select the columns that will be aggregated.
-
-        Parameters
-        ----------
-        columns
-            One or multiple columns.
-        """
-        if self.downsample:
-            raise ValueError("select not supported in downsample operation")
-        if isinstance(columns, str):
-            columns = [columns]
-        return GBSelection(self._df, self.by, columns)
-
-    def select_all(self) -> "GBSelection":
-        """
-        .. deprecated:: 0.8.16
-            Use `groupby.agg(col("*"))` instead
-
         Select all columns for aggregation.
         """
         return GBSelection(
@@ -3475,67 +3364,67 @@ class GroupBy:
         """
         Aggregate the first values in the group.
         """
-        return self.select_all().first()
+        return self._select_all().first()
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
-        return self.select_all().last()
+        return self._select_all().last()
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
-        return self.select_all().sum()
+        return self._select_all().sum()
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
-        return self.select_all().min()
+        return self._select_all().min()
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
-        return self.select_all().max()
+        return self._select_all().max()
 
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
-        return self.select_all().count()
+        return self._select_all().count()
 
     def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
         """
-        return self.select_all().mean()
+        return self._select_all().mean()
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
-        return self.select_all().n_unique()
+        return self._select_all().n_unique()
 
     def quantile(self, quantile: float) -> DataFrame:
         """
         Compute the quantile per group.
         """
-        return self.select_all().quantile(quantile)
+        return self._select_all().quantile(quantile)
 
     def median(self) -> DataFrame:
         """
         Return the median per group.
         """
-        return self.select_all().median()
+        return self._select_all().median()
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
-        return self.select_all().agg_list()
+        return self._select_all().agg_list()
 
 
 class PivotOps:

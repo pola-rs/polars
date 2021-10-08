@@ -27,7 +27,6 @@ These functions can be used as expression and sometimes also in eager contexts.
    last
    head
    tail
-   lit_date
    lit
    pearson_corr
    cov

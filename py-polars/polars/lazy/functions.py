@@ -42,7 +42,6 @@ __all__ = [
     "last",
     "head",
     "tail",
-    "lit_date",
     "lit",
     "pearson_corr",
     "cov",
@@ -345,23 +344,6 @@ def tail(
     return col(column).tail(n)
 
 
-def lit_date(dt: datetime) -> "pl.Expr":
-    """
-    Converts a Python DateTime to a literal Expression.
-
-    .. deprecated:: 0.9.5
-        Use polars.lit
-
-    Parameters
-    ----------
-    dt
-        datetime.datetime
-    """
-    return lit(int((dt.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
-        pl.Datetime
-    )
-
-
 def lit(
     value: Optional[Union[float, int, str, datetime, "pl.Series"]],
     dtype: Optional[Type[DataType]] = None,
@@ -395,7 +377,9 @@ def lit(
     >>> lit(Series("a", [1, 2, 3])
     """
     if isinstance(value, datetime):
-        return lit(pl.Series("literal", [value]))
+        return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
+            pl.Datetime
+        )
 
     if isinstance(value, pl.Series):
         name = value.name
@@ -616,7 +600,6 @@ def arange(
     low: Union[int, "pl.Expr", "pl.Series"],
     high: Union[int, "pl.Expr", "pl.Series"],
     step: int = 1,
-    dtype: Optional[Type[DataType]] = None,
     eager: bool = False,
 ) -> Union["pl.Expr", "pl.Series"]:
     """
@@ -638,8 +621,6 @@ def arange(
         Upper bound of range.
     step
         Step size of the range
-    dtype
-        deprecated, cast later
     eager
         If eager evaluation is `True`, a Series is returned instead of an Expr
     """

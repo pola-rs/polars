@@ -182,7 +182,7 @@ def test_to_python():
     assert isinstance(b, list)
     assert len(b) == 20
 
-    a = pl.Series("a", [1, None, 2], nullable=True)
+    a = pl.Series("a", [1, None, 2])
     assert a.null_count() == 1
     assert a.to_list() == [1, None, 2]
 
@@ -245,7 +245,7 @@ def test_ufunc():
     assert b == [4, 8, 12, 16]
 
     # test if null bitmask is preserved
-    a = pl.Series("a", [1.0, None, 3.0], nullable=True)
+    a = pl.Series("a", [1.0, None, 3.0])
     b = np.exp(a)
     assert b.null_count() == 1
 
@@ -263,7 +263,7 @@ def test_set():
 
 
 def test_fill_null():
-    a = pl.Series("a", [1, 2, None], nullable=True)
+    a = pl.Series("a", [1, 2, None])
     b = a.fill_null("forward")
     assert b == [1, 2, 2]
     b = a.fill_null(14)
@@ -271,11 +271,11 @@ def test_fill_null():
 
 
 def test_apply():
-    a = pl.Series("a", [1, 2, None], nullable=True)
+    a = pl.Series("a", [1, 2, None])
     b = a.apply(lambda x: x ** 2)
     assert b == [1, 4, None]
 
-    a = pl.Series("a", ["foo", "bar", None], nullable=True)
+    a = pl.Series("a", ["foo", "bar", None])
     b = a.apply(lambda x: x + "py")
     assert b == ["foopy", "barpy", None]
 
