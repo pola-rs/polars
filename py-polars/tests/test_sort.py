@@ -13,17 +13,17 @@ def test_sort_dates_multiples():
                     "2021-01-02 00:00:00",
                     "2021-01-03 00:00:00",
                 ],
-            ).str.strptime(pl.datatypes.Date64, "%Y-%m-%d %T"),
+            ).str.strptime(pl.datatypes.Datetime, "%Y-%m-%d %T"),
             pl.Series("values", [5, 4, 3, 2, 1]),
         ]
     )
 
     expected = [4, 5, 2, 3, 1]
 
-    # date64
+    # datetime
     out = df.sort(["date", "values"])
     assert out["values"].to_list() == expected
 
-    # date32
-    out = df.with_column(pl.col("date").cast(pl.Date32)).sort(["date", "values"])
+    # Date
+    out = df.with_column(pl.col("date").cast(pl.Date)).sort(["date", "values"])
     assert out["values"].to_list() == expected

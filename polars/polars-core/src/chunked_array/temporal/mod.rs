@@ -26,7 +26,7 @@ mod test {
         .collect();
 
         // NOTE: the values are checked and correct.
-        let dt = Date64Chunked::new_from_naive_datetime("name", &datetimes);
+        let dt = DatetimeChunked::new_from_naive_datetime("name", &datetimes);
         assert_eq!(
             [588470416000, 1441497364000, 1356048000000],
             dt.cont_slice().unwrap()
@@ -43,7 +43,7 @@ mod test {
             "2020-08-22",
         ];
         let fmt = "%Y-%m-%d";
-        let ca = Date32Chunked::parse_from_str_slice("dates", dates, fmt);
+        let ca = DateChunked::parse_from_str_slice("dates", dates, fmt);
         assert_eq!(
             [18495, 18495, 18496, 18497, 18496],
             ca.cont_slice().unwrap()

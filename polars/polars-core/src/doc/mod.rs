@@ -2,7 +2,7 @@
 pub mod changelog;
 #[cfg(all(
     feature = "temporal",
-    feature = "dtype-date32",
-    feature = "dtype-date64"
+    feature = "dtype-date",
+    feature = "dtype-datetime"
 ))]
 pub mod time;

@@ -14,7 +14,7 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-from ..datatypes import Boolean, DataType, Date32, Date64, Float64, Int64, Utf8
+from ..datatypes import Boolean, DataType, Date, Datetime, Float64, Int64, Utf8
 from .functions import col, lit
 
 __all__ = [
@@ -1149,15 +1149,15 @@ class Expr:
         """
         Check if this expression is between start and end.
         """
-        cast_to_date64 = False
+        cast_to_datetime = False
         if isinstance(start, datetime):
             start = lit(start)
-            cast_to_date64 = True
+            cast_to_datetime = True
         if isinstance(end, datetime):
             end = lit(end)
-            cast_to_date64 = True
-        if cast_to_date64:
-            expr = self.cast(Date64)
+            cast_to_datetime = True
+        if cast_to_datetime:
+            expr = self.cast(Datetime)
         else:
             expr = self
         return ((expr > start) & (expr < end)).alias("is_between")
@@ -1187,7 +1187,7 @@ class Expr:
         """
         Hash the Series.
 
-        The hash value is of type `Date64`
+        The hash value is of type `Datetime`
 
         Parameters
         ----------
@@ -1782,23 +1782,23 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[Date32, Date64],
+        datatype: Union[Date, Datetime],
         fmt: Optional[str] = None,
     ) -> Expr:
         """
-        Parse utf8 expression as a Date32/Date64 type.
+        Parse utf8 expression as a Date/Datetimetype.
 
         Parameters
         ----------
         datatype
-            Date32 | Date64.
+            Date | Datetime.
         fmt
             "yyyy-mm-dd".
         """
-        if datatype == Date32:
-            return wrap_expr(self._pyexpr.str_parse_date32(fmt))
-        elif datatype == Date64:
-            return wrap_expr(self._pyexpr.str_parse_date64(fmt))
+        if datatype == Date:
+            return wrap_expr(self._pyexpr.str_parse_date(fmt))
+        elif datatype == Datetime:
+            return wrap_expr(self._pyexpr.str_parse_datetime(fmt))
         else:
             raise NotImplementedError
 
@@ -1920,14 +1920,14 @@ class ExprDateTimeNameSpace:
 
     def strftime(self, fmt: str) -> Expr:
         """
-        Format date32/date64 with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+        Format Date/datetime with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
         """
         return wrap_expr(self._pyexpr.strftime(fmt))
 
     def year(self) -> Expr:
         """
         Extract year from underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Can be performed on Date and Datetime.
 
         Returns the year number in the calendar date.
 
@@ -1940,7 +1940,7 @@ class ExprDateTimeNameSpace:
     def month(self) -> Expr:
         """
         Extract month from underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Can be performed on Date and Datetime.
 
         Returns the month number starting from 1.
         The return value ranges from 1 to 12.
@@ -1954,7 +1954,7 @@ class ExprDateTimeNameSpace:
     def week(self) -> Expr:
         """
         Extract the week from the underlying Date representation.
-        Can be performed on Date32 and Date64
+        Can be performed on Date and Datetime
 
         Returns the ISO week number starting from 1.
         The return value ranges from 1 to 53. (The last week of year differs by years.)
@@ -1968,7 +1968,7 @@ class ExprDateTimeNameSpace:
     def weekday(self) -> Expr:
         """
         Extract the week day from the underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Can be performed on Date and Datetime.
 
         Returns the weekday number where monday = 0 and sunday = 6
 
@@ -1981,7 +1981,7 @@ class ExprDateTimeNameSpace:
     def day(self) -> Expr:
         """
         Extract day from underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Can be performed on Date and Datetime.
 
         Returns the day of month starting from 1.
         The return value ranges from 1 to 31. (The last day of month differs by months.)
@@ -1995,7 +1995,7 @@ class ExprDateTimeNameSpace:
     def ordinal_day(self) -> Expr:
         """
         Extract ordinal day from underlying Date representation.
-        Can be performed on Date32 and Date64.
+        Can be performed on Date and Datetime.
 
         Returns the day of year starting from 1.
         The return value ranges from 1 to 366. (The last day of year differs by years.)
@@ -2009,7 +2009,7 @@ class ExprDateTimeNameSpace:
     def hour(self) -> Expr:
         """
         Extract hour from underlying DateTime representation.
-        Can be performed on Date64.
+        Can be performed on Datetime.
 
         Returns the hour number from 0 to 23.
 
@@ -2022,7 +2022,7 @@ class ExprDateTimeNameSpace:
     def minute(self) -> Expr:
         """
         Extract minutes from underlying DateTime representation.
-        Can be performed on Date64.
+        Can be performed on Datetime.
 
         Returns the minute number from 0 to 59.
 
@@ -2035,7 +2035,7 @@ class ExprDateTimeNameSpace:
     def second(self) -> Expr:
         """
         Extract seconds from underlying DateTime representation.
-        Can be performed on Date64.
+        Can be performed on Datetime.
 
         Returns the second number from 0 to 59.
 
@@ -2048,7 +2048,7 @@ class ExprDateTimeNameSpace:
     def nanosecond(self) -> Expr:
         """
         Extract seconds from underlying DateTime representation.
-        Can be performed on Date64.
+        Can be performed on Datetime.
 
         Returns the number of nanoseconds since the whole non-leap second.
         The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
@@ -2083,7 +2083,7 @@ class ExprDateTimeNameSpace:
 
     def to_python_datetime(self) -> Expr:
         """
-        Go from Date32/Date64 to python DateTime objects
+        Go from Date/Datetime to python DateTime objects
         """
         return wrap_expr(self._pyexpr).map(
             lambda s: s.dt.to_python_datetime(), return_dtype=pl.Object

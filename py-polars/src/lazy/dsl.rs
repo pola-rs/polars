@@ -328,25 +328,25 @@ impl PyExpr {
         self.clone().inner.cummin(reverse).into()
     }
 
-    pub fn str_parse_date32(&self, fmt: Option<String>) -> PyExpr {
+    pub fn str_parse_date(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_date32(fmt.as_deref()).map(|ca| ca.into_series())
+            ca.as_date(fmt.as_deref()).map(|ca| ca.into_series())
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(DataType::Date32))
+            .map(function, GetOutput::from_type(DataType::Date))
             .into()
     }
 
-    pub fn str_parse_date64(&self, fmt: Option<String>) -> PyExpr {
+    pub fn str_parse_datetime(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_date64(fmt.as_deref()).map(|ca| ca.into_series())
+            ca.as_datetime(fmt.as_deref()).map(|ca| ca.into_series())
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(DataType::Date64))
+            .map(function, GetOutput::from_type(DataType::Datetime))
             .into()
     }
 

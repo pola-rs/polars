@@ -194,7 +194,7 @@ fn test_lazy_pushdown_through_agg() {
 #[test]
 #[cfg(feature = "temporal")]
 fn test_lazy_agg() {
-    let s0 = Date32Chunked::parse_from_str_slice(
+    let s0 = DateChunked::parse_from_str_slice(
         "date",
         &[
             "2020-08-21",
@@ -505,7 +505,7 @@ fn test_lazy_query_7() {
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
     let df = DataFrame::new(vec![
-        Date64Chunked::new_from_naive_datetime("date", &*dates).into(),
+        DatetimeChunked::new_from_naive_datetime("date", &*dates).into(),
         Series::new("data", data),
     ])
     .unwrap();
@@ -969,7 +969,7 @@ fn test_lazy_groupby_sort_by() {
 }
 
 #[test]
-#[cfg(feature = "dtype-date64")]
+#[cfg(feature = "dtype-datetime")]
 fn test_lazy_groupby_cast() {
     let df = df! {
         "a" => ["a", "a", "a", "b", "b", "c"],
@@ -981,7 +981,7 @@ fn test_lazy_groupby_cast() {
     let _out = df
         .lazy()
         .groupby([col("a")])
-        .agg([col("b").mean().cast(DataType::Date64)])
+        .agg([col("b").mean().cast(DataType::Datetime)])
         .collect()
         .unwrap();
 }
@@ -1887,9 +1887,9 @@ fn test_power_in_agg_list2() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "dtype-date32")]
+#[cfg(feature = "dtype-date")]
 fn test_fill_nan() -> Result<()> {
-    let s0 = Series::new("date", &[1, 2, 3]).cast(&DataType::Date32)?;
+    let s0 = Series::new("date", &[1, 2, 3]).cast(&DataType::Date)?;
     let s1 = Series::new("float", &[Some(1.0), Some(f32::NAN), Some(3.0)]);
 
     let df = DataFrame::new(vec![s0, s1])?;

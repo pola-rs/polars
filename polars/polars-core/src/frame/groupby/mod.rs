@@ -460,7 +460,7 @@ impl DataFrame {
 /// // date format
 /// let fmt = "%Y-%m-%d";
 /// // create date series
-/// let s0 = Date32Chunked::parse_from_str_slice("date", dates, fmt)
+/// let s0 = DateChunked::parse_from_str_slice("date", dates, fmt)
 ///         .into_series();
 /// // create temperature series
 /// let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
@@ -477,7 +477,7 @@ impl DataFrame {
 /// +------------+------+------+
 /// | date       | temp | rain |
 /// | ---        | ---  | ---  |
-/// | date32     | i32  | f64  |
+/// | Date     | i32  | f64  |
 /// +============+======+======+
 /// | 2020-08-21 | 20   | 0.2  |
 /// +------------+------+------+
@@ -594,7 +594,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+-----------+-----------+
     /// | date       | temp_mean | rain_mean |
     /// | ---        | ---       | ---       |
-    /// | date32     | f64       | f64       |
+    /// | Date     | f64       | f64       |
     /// +============+===========+===========+
     /// | 2020-08-23 | 9         | 0.1       |
     /// +------------+-----------+-----------+
@@ -633,7 +633,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+----------+
     /// | date       | temp_sum |
     /// | ---        | ---      |
-    /// | date32     | i32      |
+    /// | Date     | i32      |
     /// +============+==========+
     /// | 2020-08-23 | 9        |
     /// +------------+----------+
@@ -672,7 +672,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+----------+
     /// | date       | temp_min |
     /// | ---        | ---      |
-    /// | date32     | i32      |
+    /// | Date     | i32      |
     /// +============+==========+
     /// | 2020-08-23 | 9        |
     /// +------------+----------+
@@ -710,7 +710,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+----------+
     /// | date       | temp_max |
     /// | ---        | ---      |
-    /// | date32     | i32      |
+    /// | Date     | i32      |
     /// +============+==========+
     /// | 2020-08-23 | 9        |
     /// +------------+----------+
@@ -748,7 +748,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+------------+
     /// | date       | temp_first |
     /// | ---        | ---        |
-    /// | date32     | i32        |
+    /// | Date     | i32        |
     /// +============+============+
     /// | 2020-08-23 | 9          |
     /// +------------+------------+
@@ -784,7 +784,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+------------+
     /// | date       | temp_last |
     /// | ---        | ---        |
-    /// | date32     | i32        |
+    /// | Date     | i32        |
     /// +============+============+
     /// | 2020-08-23 | 9          |
     /// +------------+------------+
@@ -820,7 +820,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+---------------+
     /// | date       | temp_n_unique |
     /// | ---        | ---           |
-    /// | date32     | u32           |
+    /// | Date     | u32           |
     /// +============+===============+
     /// | 2020-08-23 | 1             |
     /// +------------+---------------+
@@ -937,7 +937,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+------------+
     /// | date       | temp_count |
     /// | ---        | ---        |
-    /// | date32     | u32        |
+    /// | Date     | u32        |
     /// +============+============+
     /// | 2020-08-23 | 1          |
     /// +------------+------------+
@@ -977,7 +977,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +--------------+------------+
     /// | date         | groups     |
     /// | ---          | ---        |
-    /// | date32(days) | list [u32] |
+    /// | Date(days) | list [u32] |
     /// +==============+============+
     /// | 2020-08-23   | "[3]"      |
     /// +--------------+------------+
@@ -1030,7 +1030,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///  +--------------+---------------+----------+----------+
     ///  | date         | temp_n_unique | temp_sum | temp_min |
     ///  | ---          | ---           | ---      | ---      |
-    ///  | date32(days) | u32           | i32      | i32      |
+    ///  | Date(days) | u32           | i32      | i32      |
     ///  +==============+===============+==========+==========+
     ///  | 2020-08-23   | 1             | 9        | 9        |
     ///  +--------------+---------------+----------+----------+
@@ -1126,7 +1126,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +------------+------------------------+
     /// | date       | temp_agg_list          |
     /// | ---        | ---                    |
-    /// | date32     | list [i32]             |
+    /// | Date     | list [i32]             |
     /// +============+========================+
     /// | 2020-08-23 | "[Some(9)]"            |
     /// +------------+------------------------+
@@ -1230,10 +1230,10 @@ mod test {
     use num::traits::FloatConst;
 
     #[test]
-    #[cfg(feature = "dtype-date32")]
+    #[cfg(feature = "dtype-date")]
     #[cfg_attr(miri, ignore)]
     fn test_group_by() {
-        let s0 = Date32Chunked::parse_from_str_slice(
+        let s0 = DateChunked::parse_from_str_slice(
             "date",
             &[
                 "2020-08-21",

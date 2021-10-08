@@ -423,17 +423,17 @@ pub trait SeriesTrait:
         ))
     }
 
-    /// Unpack to ChunkedArray of dtype date32
-    fn date32(&self) -> Result<&Date32Chunked> {
+    /// Unpack to ChunkedArray of dtype Date
+    fn date(&self) -> Result<&DateChunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} != date32", self.dtype()).into(),
+            format!("{:?} != Date", self.dtype()).into(),
         ))
     }
 
-    /// Unpack to ChunkedArray of dtype date64
-    fn date64(&self) -> Result<&Date64Chunked> {
+    /// Unpack to ChunkedArray of dtype datetime
+    fn datetime(&self) -> Result<&DatetimeChunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("{:?} != date64", self.dtype()).into(),
+            format!("{:?} != datetime", self.dtype()).into(),
         ))
     }
 
@@ -473,8 +473,8 @@ pub trait SeriesTrait:
             DataType::Utf8
             | DataType::List(_)
             | DataType::Categorical
-            | DataType::Date32
-            | DataType::Date64
+            | DataType::Date
+            | DataType::Datetime
             | DataType::Boolean
             | DataType::Null => false,
             #[cfg(feature = "object")]
@@ -841,7 +841,7 @@ pub trait SeriesTrait:
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> Result<UInt32Chunked> {
-        self.date64().map(|ca| ca.hour())
+        self.datetime().map(|ca| ca.hour())
     }
 
     #[cfg(feature = "temporal")]
@@ -849,7 +849,7 @@ pub trait SeriesTrait:
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
     fn minute(&self) -> Result<UInt32Chunked> {
-        self.date64().map(|ca| ca.minute())
+        self.datetime().map(|ca| ca.minute())
     }
 
     #[cfg(feature = "temporal")]
@@ -857,7 +857,7 @@ pub trait SeriesTrait:
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
     fn second(&self) -> Result<UInt32Chunked> {
-        self.date64().map(|ca| ca.second())
+        self.datetime().map(|ca| ca.second())
     }
 
     #[cfg(feature = "temporal")]
@@ -865,7 +865,7 @@ pub trait SeriesTrait:
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Result<UInt32Chunked> {
-        self.date64().map(|ca| ca.nanosecond())
+        self.datetime().map(|ca| ca.nanosecond())
     }
 
     #[cfg(feature = "temporal")]
@@ -876,8 +876,8 @@ pub trait SeriesTrait:
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
-            DataType::Date32 => self.date32().map(|ca| ca.day()),
-            DataType::Date64 => self.date64().map(|ca| ca.day()),
+            DataType::Date => self.date().map(|ca| ca.day()),
+            DataType::Datetime => self.datetime().map(|ca| ca.day()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -888,8 +888,8 @@ pub trait SeriesTrait:
     /// Returns the weekday number where monday = 0 and sunday = 6
     fn weekday(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
-            DataType::Date32 => self.date32().map(|ca| ca.weekday()),
-            DataType::Date64 => self.date64().map(|ca| ca.weekday()),
+            DataType::Date => self.date().map(|ca| ca.weekday()),
+            DataType::Datetime => self.datetime().map(|ca| ca.weekday()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -902,8 +902,8 @@ pub trait SeriesTrait:
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
-            DataType::Date32 => self.date32().map(|ca| ca.week()),
-            DataType::Date64 => self.date64().map(|ca| ca.week()),
+            DataType::Date => self.date().map(|ca| ca.week()),
+            DataType::Datetime => self.datetime().map(|ca| ca.week()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -917,8 +917,8 @@ pub trait SeriesTrait:
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal_day(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
-            DataType::Date32 => self.date32().map(|ca| ca.ordinal()),
-            DataType::Date64 => self.date64().map(|ca| ca.ordinal()),
+            DataType::Date => self.date().map(|ca| ca.ordinal()),
+            DataType::Datetime => self.datetime().map(|ca| ca.ordinal()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -933,8 +933,8 @@ pub trait SeriesTrait:
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
-            DataType::Date32 => self.date32().map(|ca| ca.month()),
-            DataType::Date64 => self.date64().map(|ca| ca.month()),
+            DataType::Date => self.date().map(|ca| ca.month()),
+            DataType::Datetime => self.datetime().map(|ca| ca.month()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -947,8 +947,8 @@ pub trait SeriesTrait:
     /// Returns the year number in the calendar date.
     fn year(&self) -> Result<Int32Chunked> {
         match self.dtype() {
-            DataType::Date32 => self.date32().map(|ca| ca.year()),
-            DataType::Date64 => self.date64().map(|ca| ca.year()),
+            DataType::Date => self.date().map(|ca| ca.year()),
+            DataType::Datetime => self.datetime().map(|ca| ca.year()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -957,11 +957,11 @@ pub trait SeriesTrait:
 
     #[cfg(feature = "temporal")]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Format Date32/Date64 with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// Format Date/Datetimewith a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     fn strftime(&self, fmt: &str) -> Result<Series> {
         match self.dtype() {
-            DataType::Date32 => self.date32().map(|ca| ca.strftime(fmt).into_series()),
-            DataType::Date64 => self.date64().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Date => self.date().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Datetime => self.datetime().map(|ca| ca.strftime(fmt).into_series()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -973,12 +973,12 @@ pub trait SeriesTrait:
     /// Convert date(time) object to timestamp in ms.
     fn timestamp(&self) -> Result<Int64Chunked> {
         match self.dtype() {
-            DataType::Date32 => self
+            DataType::Date => self
                 .cast(&DataType::Int64)
                 .unwrap()
-                .date64()
+                .datetime()
                 .map(|ca| (ca.deref() * 1000)),
-            DataType::Date64 => self.date64().map(|ca| ca.deref().clone()),
+            DataType::Datetime => self.datetime().map(|ca| ca.deref().clone()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),

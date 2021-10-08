@@ -1,7 +1,7 @@
-mod date32;
-mod date64;
+mod date;
+mod datetime;
 
-pub use {date32::*, date64::*};
+pub use {date::*, datetime::*};
 
 use crate::prelude::*;
 use std::marker::PhantomData;

@@ -138,14 +138,14 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Float64 => {
                 Ok(Float64Chunked::new_from_chunks(name, chunks).into_series())
             }
-            #[cfg(feature = "dtype-date32")]
+            #[cfg(feature = "dtype-date")]
             ArrowDataType::Date32 => {
                 let chunks = cast_chunks(&chunks, &DataType::Int32).unwrap();
                 Ok(Int32Chunked::new_from_chunks(name, chunks)
                     .into_date()
                     .into_series())
             }
-            #[cfg(feature = "dtype-date64")]
+            #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Date64 => {
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 Ok(Int64Chunked::new_from_chunks(name, chunks)
@@ -163,9 +163,9 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 #[cfg(not(feature = "dtype-i8"))]
                 Ok(UInt32Chunked::full_null(name, len).into_series())
             }
-            #[cfg(feature = "dtype-date64")]
+            #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
-                let chunks = cast_chunks(&chunks, &DataType::Date64).unwrap();
+                let chunks = cast_chunks(&chunks, &DataType::Datetime).unwrap();
                 Ok(Int64Chunked::new_from_chunks(name, chunks)
                     .into_date()
                     .into_series())
@@ -344,16 +344,16 @@ where
     }
 }
 
-#[cfg(feature = "dtype-date32")]
-impl From<Date32Chunked> for Series {
-    fn from(a: Date32Chunked) -> Self {
+#[cfg(feature = "dtype-date")]
+impl From<DateChunked> for Series {
+    fn from(a: DateChunked) -> Self {
         a.into_series()
     }
 }
 
-#[cfg(feature = "dtype-date64")]
-impl From<Date64Chunked> for Series {
-    fn from(a: Date64Chunked) -> Self {
+#[cfg(feature = "dtype-datetime")]
+impl From<DatetimeChunked> for Series {
+    fn from(a: DatetimeChunked) -> Self {
         a.into_series()
     }
 }

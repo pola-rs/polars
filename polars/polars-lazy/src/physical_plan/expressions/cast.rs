@@ -23,14 +23,14 @@ impl CastExpr {
                 DataType::List(_) => {
                     return Ok(ListChunked::full_null(input.name(), input.len()).into_series())
                 }
-                #[cfg(feature = "dtype-date32")]
-                DataType::Date32 => {
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => {
                     return Ok(Int32Chunked::full_null(input.name(), input.len())
                         .into_date()
                         .into_series())
                 }
-                #[cfg(feature = "dtype-date64")]
-                DataType::Date64 => {
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime => {
                     return Ok(Int64Chunked::full_null(input.name(), input.len())
                         .into_date()
                         .into_series())

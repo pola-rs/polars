@@ -1,5 +1,5 @@
 //! This module exists to reduce compilation times.
-//! All the data types are backed by a physical type in memory e.g. Date32 -> i32, Date64 -> i64.
+//! All the data types are backed by a physical type in memory e.g. Date -> i32, Datetime-> i64.
 //!
 //! Series lead to code implementations of all traits. Whereas there are a lot of duplicates due to
 //! data types being backed by the same physical type. In this module we reduce compile times by
@@ -30,8 +30,8 @@ impl<T> ChunkedArray<T> {
     /// get the physical memory type of a date type
     fn physical_type(&self) -> DataType {
         match self.dtype() {
-            DataType::Date64 => DataType::Int64,
-            DataType::Date32 => DataType::Int32,
+            DataType::Datetime => DataType::Int64,
+            DataType::Date => DataType::Int32,
             dt => panic!("already a physical type: {:?}", dt),
         }
     }
@@ -93,7 +93,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-                let other = if self.dtype() == &DataType::Date32 {
+                let other = if self.dtype() == &DataType::Date {
                     other.cast(&DataType::Int32)?
                 } else {
                     other.cast(&DataType::Int64)?
@@ -223,12 +223,12 @@ macro_rules! impl_dyn_series {
             }
             fn subtract(&self, rhs: &Series) -> Result<Series> {
                 match (self.dtype(), rhs.dtype()) {
-                    (DataType::Date32, DataType::Date32) => {
+                    (DataType::Date, DataType::Date) => {
                         let lhs = self.cast(&DataType::Int32).unwrap();
                         let rhs = rhs.cast(&DataType::Int32).unwrap();
                         Ok(lhs.subtract(&rhs)?.into_date().into_series())
                     }
-                    (DataType::Date64, DataType::Date64) => {
+                    (DataType::Datetime, DataType::Datetime) => {
                         let lhs = self.cast(&DataType::Int64).unwrap();
                         let rhs = rhs.cast(&DataType::Int64).unwrap();
                         Ok(lhs.subtract(&rhs)?.into_date().into_series())
@@ -306,13 +306,13 @@ macro_rules! impl_dyn_series {
                 self.0.shrink_to_fit()
             }
 
-            fn date32(&self) -> Result<&Date32Chunked> {
-                if matches!(self.0.dtype(), DataType::Date32) {
-                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Date32Chunked)) }
+            fn date(&self) -> Result<&DateChunked> {
+                if matches!(self.0.dtype(), DataType::Date) {
+                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DateChunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
                         format!(
-                            "cannot unpack Series: {:?} of type {:?} into date32",
+                            "cannot unpack Series: {:?} of type {:?} into Date",
                             self.name(),
                             self.dtype(),
                         )
@@ -321,13 +321,13 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn date64(&self) -> Result<&Date64Chunked> {
-                if matches!(self.0.dtype(), DataType::Date64) {
-                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Date64Chunked)) }
+            fn datetime(&self) -> Result<&DatetimeChunked> {
+                if matches!(self.0.dtype(), DataType::Datetime) {
+                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DatetimeChunked)) }
                 } else {
                     Err(PolarsError::DataTypeMisMatch(
                         format!(
-                            "cannot unpack Series: {:?} of type {:?} into date64",
+                            "cannot unpack Series: {:?} of type {:?} into datetime",
                             self.name(),
                             self.dtype(),
                         )
@@ -431,14 +431,14 @@ macro_rules! impl_dyn_series {
                 const MS_IN_DAY: i64 = 86400000;
                 use DataType::*;
                 let ca = match (self.dtype(), data_type) {
-                    #[cfg(feature = "dtype-date64")]
-                    (Date32, Date64) => {
+                    #[cfg(feature = "dtype-datetime")]
+                    (Date, Datetime) => {
                         let casted = self.0.cast(data_type)?;
-                        let casted = casted.date64().unwrap();
+                        let casted = casted.datetime().unwrap();
                         return Ok((casted.deref() * MS_IN_DAY).into_date().into_series());
                     }
-                    #[cfg(feature = "dtype-date32")]
-                    (Date64, Date32) => {
+                    #[cfg(feature = "dtype-date")]
+                    (Datetime, Date) => {
                         let ca = self.0.deref() / MS_IN_DAY;
                         Cow::Owned(ca)
                     }
@@ -622,7 +622,7 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "repeat_by")]
             fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
                 match self.0.dtype() {
-                    DataType::Date32 => self
+                    DataType::Date => self
                         .0
                         .repeat_by(by)
                         .cast(&DataType::List(ArrowDataType::Date32))
@@ -630,7 +630,7 @@ macro_rules! impl_dyn_series {
                         .list()
                         .unwrap()
                         .clone(),
-                    DataType::Date64 => self
+                    DataType::Datetime => self
                         .0
                         .repeat_by(by)
                         .cast(&DataType::List(ArrowDataType::Date64))
@@ -659,16 +659,16 @@ macro_rules! impl_dyn_series {
     };
 }
 
-#[cfg(feature = "dtype-date32")]
-impl_dyn_series!(Date32Chunked);
-#[cfg(feature = "dtype-date64")]
-impl_dyn_series!(Date64Chunked);
+#[cfg(feature = "dtype-date")]
+impl_dyn_series!(DateChunked);
+#[cfg(feature = "dtype-datetime")]
+impl_dyn_series!(DatetimeChunked);
 
 macro_rules! impl_dyn_series_numeric {
     ($ca: ident) => {
         impl private::PrivateSeriesNumeric for SeriesWrap<$ca> {
             fn bit_repr_is_large(&self) -> bool {
-                if let DataType::Date64 = self.dtype() {
+                if let DataType::Datetime = self.dtype() {
                     true
                 } else {
                     false
@@ -684,20 +684,20 @@ macro_rules! impl_dyn_series_numeric {
     };
 }
 
-#[cfg(feature = "dtype-date32")]
-impl_dyn_series_numeric!(Date32Chunked);
-#[cfg(feature = "dtype-date64")]
-impl_dyn_series_numeric!(Date64Chunked);
+#[cfg(feature = "dtype-date")]
+impl_dyn_series_numeric!(DateChunked);
+#[cfg(feature = "dtype-datetime")]
+impl_dyn_series_numeric!(DatetimeChunked);
 
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    #[cfg(feature = "dtype-date64")]
+    #[cfg(feature = "dtype-datetime")]
     fn test_agg_list_type() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let s = s.cast(&DataType::Date64)?;
+        let s = s.cast(&DataType::Datetime)?;
 
         let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
         assert!(matches!(l.dtype(), DataType::List(ArrowDataType::Date64)));
@@ -706,34 +706,34 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "dtype-date64")]
+    #[cfg(feature = "dtype-datetime")]
     #[cfg_attr(miri, ignore)]
     fn test_datelike_join() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let mut s1 = s.cast(&DataType::Date64)?;
+        let mut s1 = s.cast(&DataType::Datetime)?;
         s1.rename("bar");
 
         let df = DataFrame::new(vec![s, s1])?;
 
         let out = df.left_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Date64));
+        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime));
 
         let out = df.inner_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Date64));
+        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime));
 
         let out = df.outer_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Date64));
+        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime));
         Ok(())
     }
 
     #[test]
-    #[cfg(feature = "dtype-date64")]
+    #[cfg(feature = "dtype-datetime")]
     fn test_datelike_methods() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let s = s.cast(&DataType::Date64)?;
+        let s = s.cast(&DataType::Datetime)?;
 
         let out = s.subtract(&s)?;
-        assert!(matches!(out.dtype(), DataType::Date64));
+        assert!(matches!(out.dtype(), DataType::Datetime));
         Ok(())
     }
 }

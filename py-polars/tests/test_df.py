@@ -311,7 +311,7 @@ def test_downsample():
             946685880000,
             946685940000,
         ],
-    ).cast(Date64)
+    ).cast(Datetime)
     s2 = s.clone()
     df = pl.DataFrame({"a": s, "b": s2})
     out = df.downsample("a", rule="minute", n=5).first()
@@ -938,7 +938,7 @@ def test_from_rows():
         [[1, datetime.fromtimestamp(100)], [2, datetime.fromtimestamp(2398754908)]],
         column_name_mapping={1: "foo"},
     )
-    assert df.dtypes == [pl.Int64, pl.Date64]
+    assert df.dtypes == [pl.Int64, pl.Datetime]
 
 
 def test_repeat_by():
@@ -957,7 +957,7 @@ def test_join_dates():
     dts = (
         pl.from_pandas(date_times)
         .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
-        .cast(pl.Date64)
+        .cast(pl.Datetime)
     )
 
     # some df with sensor id, (randomish) datetime and some value
@@ -1063,7 +1063,7 @@ def test_filter_date():
     dataset = pl.DataFrame(
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
     )
-    df = dataset.with_column(pl.col("date").str.strptime(pl.Date32, "%Y-%m-%d"))
+    df = dataset.with_column(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
     assert df.filter(pl.col("date") <= pl.lit_date(datetime(2019, 1, 3))).is_empty()
     assert df.filter(pl.col("date") < pl.lit_date(datetime(2020, 1, 4))).shape[0] == 2
     assert df.filter(pl.col("date") < pl.lit_date(datetime(2020, 1, 5))).shape[0] == 3

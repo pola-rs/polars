@@ -35,8 +35,8 @@ __all__ = [
     "Boolean",
     "Utf8",
     "List",
-    "Date32",
-    "Date64",
+    "Date",
+    "Datetime",
     "Object",
     "Categorical",
     "DTYPES",
@@ -103,11 +103,11 @@ class List(DataType):
     pass
 
 
-class Date32(DataType):
+class Date(DataType):
     pass
 
 
-class Date64(DataType):
+class Datetime(DataType):
     pass
 
 
@@ -134,8 +134,8 @@ DTYPES: tp.List[Type[DataType]] = [
     Boolean,
     Utf8,
     List,
-    Date32,
-    Date64,
+    Date,
+    Datetime,
     Object,
     Categorical,
 ]
@@ -153,8 +153,8 @@ DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Boolean: "bool",
     Utf8: "str",
     List: "list",
-    Date32: "date32",
-    Date64: "date64",
+    Date: "date",
+    Datetime: "datetime",
     Object: "object",
     Categorical: "categorical",
 }
@@ -162,9 +162,9 @@ DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
 
 def date_like_to_physical(dtype: Type[DataType]) -> Type[DataType]:
     #  TODO: add more
-    if dtype == Date32:
+    if dtype == Date:
         return Int32
-    if dtype == Date64:
+    if dtype == Datetime:
         return Int64
     return dtype
 
@@ -191,9 +191,9 @@ def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:  # noqa: F821
         ptr_type = ctypes.c_float
     elif dtype == Float64:
         ptr_type = ctypes.c_double
-    elif dtype == Date32:
+    elif dtype == Date:
         ptr_type = ctypes.c_int
-    elif dtype == Date64:
+    elif dtype == Datetime:
         ptr_type = ctypes.c_long
     else:
         raise NotImplementedError
@@ -225,8 +225,8 @@ if not _DOCUMENTING:
         UInt16: PySeries.new_opt_u16,
         UInt32: PySeries.new_opt_u32,
         UInt64: PySeries.new_opt_u64,
-        Date32: PySeries.new_opt_i32,
-        Date64: PySeries.new_opt_i32,
+        Date: PySeries.new_opt_i32,
+        Datetime: PySeries.new_opt_i32,
         Boolean: PySeries.new_opt_bool,
         Utf8: PySeries.new_str,
         Object: PySeries.new_object,

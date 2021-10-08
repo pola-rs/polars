@@ -44,10 +44,10 @@ unsafe fn arr_to_any_value<'a>(
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
-        #[cfg(feature = "dtype-date32")]
-        DataType::Date32 => downcast_and_pack!(Int32Array, Date32),
-        #[cfg(feature = "dtype-date64")]
-        DataType::Date64 => downcast_and_pack!(Int64Array, Date64),
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => downcast_and_pack!(Int32Array, Date),
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime => downcast_and_pack!(Int64Array, Datetime),
         DataType::List(_) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
             let s = Series::try_from(("", v));

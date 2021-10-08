@@ -10,11 +10,11 @@ const MILLISECONDS_IN_SECOND: i64 = 1_000;
 /// Number of microseconds in a second
 const MICROSECONDS_IN_SECOND: i64 = 1_000_000;
 
-pub(crate) fn date32_as_datetime(v: i32) -> NaiveDateTime {
+pub(crate) fn date_as_datetime(v: i32) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(v as i64 * SECONDS_IN_DAY, 0)
 }
 
-pub(crate) fn date64_as_datetime(v: i64) -> NaiveDateTime {
+pub(crate) fn datetime_as_datetime(v: i64) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(
         // extract seconds from milliseconds
         v / MILLISECONDS_IN_SECOND,
@@ -23,11 +23,11 @@ pub(crate) fn date64_as_datetime(v: i64) -> NaiveDateTime {
     )
 }
 
-// date64 is number of milliseconds since the Unix Epoch
-pub fn naive_datetime_to_date64(v: &NaiveDateTime) -> i64 {
+// datetimeis number of milliseconds since the Unix Epoch
+pub fn naive_datetime_to_datetime(v: &NaiveDateTime) -> i64 {
     v.timestamp_millis()
 }
 
-pub fn naive_datetime_to_date32(v: &NaiveDateTime) -> i32 {
-    (naive_datetime_to_date64(v) / (MILLISECONDS_IN_SECOND * SECONDS_IN_DAY)) as i32
+pub fn naive_datetime_to_date(v: &NaiveDateTime) -> i32 {
+    (naive_datetime_to_datetime(v) / (MILLISECONDS_IN_SECOND * SECONDS_IN_DAY)) as i32
 }

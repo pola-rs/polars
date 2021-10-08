@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
-#[cfg(any(feature = "dtype-date32", feature = "dtype-date64"))]
-use crate::chunked_array::temporal::{date32_as_datetime, date64_as_datetime};
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+use crate::chunked_array::temporal::{date_as_datetime, datetime_as_datetime};
 use num::{Num, NumCast};
 use std::{
     fmt,
@@ -33,10 +33,10 @@ mod temporal {
         }
     }
 
-    pub fn date32_as_datetime(v: i32) -> DateTime<i32> {
+    pub fn Date_as_datetime(v: i32) -> DateTime<i32> {
         DateTime(v)
     }
-    pub fn date64_as_datetime(v: i64) -> DateTime<i64> {
+    pub fn datetime_as_datetime(v: i64) -> DateTime<i64> {
         DateTime(v)
     }
     pub fn time32_millisecond_as_time(v: i32) -> i32 {
@@ -287,19 +287,19 @@ impl Debug for Series {
             DataType::Float64 => {
                 format_array!(limit, f, self.f64().unwrap(), "f64", self.name(), "Series")
             }
-            DataType::Date32 => format_array!(
+            DataType::Date => format_array!(
                 limit,
                 f,
-                self.date32().unwrap(),
-                "date32",
+                self.date().unwrap(),
+                "Date",
                 self.name(),
                 "Series"
             ),
-            DataType::Date64 => format_array!(
+            DataType::Datetime => format_array!(
                 limit,
                 f,
-                self.date64().unwrap(),
-                "date64",
+                self.datetime().unwrap(),
+                "datetime",
                 self.name(),
                 "Series"
             ),
@@ -547,10 +547,10 @@ impl Display for AnyValue<'_> {
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
-            #[cfg(feature = "dtype-date32")]
-            AnyValue::Date32(v) => write!(f, "{}", date32_as_datetime(*v).date()),
-            #[cfg(feature = "dtype-date64")]
-            AnyValue::Date64(v) => write!(f, "{}", date64_as_datetime(*v)),
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Date(v) => write!(f, "{}", date_as_datetime(*v).date()),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v) => write!(f, "{}", datetime_as_datetime(*v)),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev) => {
                 let s = rev.get(*idx);
@@ -637,13 +637,13 @@ impl FmtList for CategoricalChunked {
     }
 }
 
-impl FmtList for Date32Chunked {
+impl FmtList for DateChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }
 }
 
-impl FmtList for Date64Chunked {
+impl FmtList for DatetimeChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }
@@ -659,8 +659,8 @@ impl<T> FmtList for ObjectChunked<T> {
 #[cfg(all(
     test,
     feature = "temporal",
-    feature = "dtype-date32",
-    feature = "dtype-date64"
+    feature = "dtype-date",
+    feature = "dtype-datetime"
 ))]
 mod test {
     use crate::prelude::*;
@@ -687,10 +687,10 @@ Series: 'a' [list]
     #[test]
     #[cfg(feature = "dtype-time64-ns")]
     fn test_fmt_temporal() {
-        let s = Date32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
+        let s = DateChunked::new_from_opt_slice("Date", &[Some(1), None, Some(3)]);
         assert_eq!(
             r#"shape: (3,)
-Series: 'date32' [date32]
+Series: 'Date' [Date]
 [
 	1970-01-02
 	null
@@ -699,10 +699,10 @@ Series: 'date32' [date32]
             format!("{:?}", s.into_series())
         );
 
-        let s = Date64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)]);
+        let s = DatetimeChunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)]);
         assert_eq!(
             r#"shape: (3,)
-Series: '' [date64]
+Series: '' [datetime]
 [
 	1970-01-01 00:00:00.001
 	null
@@ -727,11 +727,11 @@ Series: '' [time64(ns)]
     }
     #[test]
     fn test_fmt_chunkedarray() {
-        let ca = Int32Chunked::new_from_opt_slice("date32", &[Some(1), None, Some(3)]);
+        let ca = Int32Chunked::new_from_opt_slice("Date", &[Some(1), None, Some(3)]);
         println!("{:?}", ca);
         assert_eq!(
             r#"shape: (3,)
-ChunkedArray: 'date32' [Int32]
+ChunkedArray: 'Date' [Int32]
 [
 	1
 	null

@@ -357,7 +357,9 @@ def lit_date(dt: datetime) -> "pl.Expr":
     dt
         datetime.datetime
     """
-    return lit(int((dt.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(pl.Date64)
+    return lit(int((dt.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
+        pl.Datetime
+    )
 
 
 def lit(
@@ -383,7 +385,7 @@ def lit(
     >>> # literal str.
     >>> lit("foo")
 
-    >>> # literal date64
+    >>> # literal datetime
     >>> lit(datetime(2021, 1, 20))
 
     >>> # literal Null

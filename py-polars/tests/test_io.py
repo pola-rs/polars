@@ -62,7 +62,7 @@ def test_parquet_chunks():
 
 def test_parquet_datetime():
     """
-    This failed because parquet writers cast date64 to date32
+    This failed because parquet writers cast datetimeto Date
     """
     f = io.BytesIO()
     data = {
@@ -77,7 +77,7 @@ def test_parquet_datetime():
         "laf_eq": [59.5999984741, 61.0, 62.2999992371, 56.9000015259, 60.0],
     }
     df = pl.DataFrame(data)
-    df = df.with_column(df["datetime"].cast(pl.Date64))
+    df = df.with_column(df["datetime"].cast(pl.Datetime))
 
     df.to_parquet(f, use_pyarrow=True)
     f.seek(0)
@@ -126,7 +126,7 @@ timestamp,open,high
 
     f = io.StringIO(csv)
     df = pl.read_csv(f)
-    assert df.dtypes == [pl.Date64, pl.Float64, pl.Float64]
+    assert df.dtypes == [pl.Datetime, pl.Float64, pl.Float64]
 
 
 def test_partial_dtype_overwrite():

@@ -13,8 +13,8 @@ pub enum SampleRule {
     Second(u32),
 }
 
-impl Date32Chunked {
-    pub fn round(&self, rule: SampleRule) -> Date32Chunked {
+impl DateChunked {
+    pub fn round(&self, rule: SampleRule) -> DateChunked {
         use SampleRule::*;
         let mut out = match rule {
             Month(n) => {
@@ -56,15 +56,15 @@ impl Date32Chunked {
                 self.deref() / n * n
             }
             Hour(_) => {
-                // date32 does not have hours
+                // Date does not have hours
                 self.deref().clone()
             }
             Minute(_) => {
-                // date32 does not have minutes
+                // Date does not have minutes
                 self.deref().clone()
             }
             Second(_) => {
-                // date32 does not have minutes
+                // Date does not have minutes
                 self.deref().clone()
             }
         };
@@ -73,8 +73,8 @@ impl Date32Chunked {
     }
 }
 
-impl Date64Chunked {
-    pub fn round(&self, rule: SampleRule) -> Date64Chunked {
+impl DatetimeChunked {
+    pub fn round(&self, rule: SampleRule) -> DatetimeChunked {
         use SampleRule::*;
         let mut out = match rule {
             Month(n) => {
@@ -145,7 +145,7 @@ impl DataFrame {
     /// ╭─────────────────────┬─────╮
     /// │ ms                  ┆ i   │
     /// │ ---                 ┆ --- │
-    /// │ date64(ms)          ┆ u8  │
+    /// │ datetime(ms)          ┆ u8  │
     /// ╞═════════════════════╪═════╡
     /// │ 2000-01-01 00:00:00 ┆ 0   │
     /// ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
@@ -183,7 +183,7 @@ impl DataFrame {
     ///  ╭─────────────────────┬─────────╮
     ///  │ ms                  ┆ i_first │
     ///  │ ---                 ┆ ---     │
-    ///  │ date64(ms)          ┆ u8      │
+    ///  │ datetime(ms)          ┆ u8      │
     ///  ╞═════════════════════╪═════════╡
     ///  │ 2000-01-01 00:00:00 ┆ 0       │
     ///  ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
@@ -220,11 +220,11 @@ impl DataFrame {
         let key_name = key.name().to_string();
         let wrong_key_dtype = || {
             Err(PolarsError::ComputeError(
-                "key should be date32 || date64".into(),
+                "key should be Date || datetime".into(),
             ))
         };
-        let wrong_key_dtype_date64 =
-            || Err(PolarsError::ComputeError("key should be date64".into()));
+        let wrong_key_dtype_datetime =
+            || Err(PolarsError::ComputeError("key should be datetime".into()));
 
         // We add columns to group on. We need to make sure that we do not groupby seconds
         // that belong to another minute, or another day, year, etc. That's why we add all
@@ -318,12 +318,12 @@ impl DataFrame {
                 df.hstack_mut(&[year, day])?;
 
                 match key_dtype {
-                    DataType::Date32 => {
+                    DataType::Date => {
                         // round to lower bucket
                         key_phys = key_phys / n;
                         key_phys = key_phys * n;
                     }
-                    DataType::Date64 => {
+                    DataType::Datetime => {
                         let fact = 1000 * 3600 * 24 * n;
                         // round to lower bucket
                         key_phys = key_phys / fact;
@@ -345,7 +345,7 @@ impl DataFrame {
                 df.hstack_mut(&[year, day, hour])?;
 
                 match key_dtype {
-                    DataType::Date64 => {
+                    DataType::Datetime => {
                         let fact = 1000 * 3600 * n;
                         // round to lower bucket
                         key_phys = key_phys / fact;
@@ -369,13 +369,13 @@ impl DataFrame {
                 df.hstack_mut(&[year, day, hour, minute])?;
 
                 match key_dtype {
-                    DataType::Date64 => {
+                    DataType::Datetime => {
                         let fact = 1000 * 60 * n;
                         // round to lower bucket
                         key_phys = key_phys / fact;
                         key_phys = key_phys * fact;
                     }
-                    _ => return wrong_key_dtype_date64(),
+                    _ => return wrong_key_dtype_datetime(),
                 }
                 key = key_phys.cast(key_dtype).expect("back to original type");
 
@@ -396,13 +396,13 @@ impl DataFrame {
                 df.hstack_mut(&[year, day, hour, minute, second])?;
 
                 match key_dtype {
-                    DataType::Date64 => {
+                    DataType::Datetime => {
                         let fact = 1000 * n;
                         // round to lower bucket
                         key_phys = key_phys / fact;
                         key_phys = key_phys * fact;
                     }
-                    _ => return wrong_key_dtype_date64(),
+                    _ => return wrong_key_dtype_datetime(),
                 }
                 key = key_phys.cast(key_dtype).expect("back to original type");
 
@@ -487,7 +487,7 @@ mod test {
         let data: Vec<_> = data.split('\n').collect();
 
         let date = Utf8Chunked::new_from_slice("date", &data);
-        let date = date.as_date64(None)?.into_series();
+        let date = date.as_datetime(None)?.into_series();
         let values =
             UInt32Chunked::new_from_iter("values", (0..date.len()).map(|v| v as u32)).into_series();
 

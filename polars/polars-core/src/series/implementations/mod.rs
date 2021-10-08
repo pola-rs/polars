@@ -2,8 +2,8 @@ mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 #[cfg(any(
-    feature = "dtype-date64",
-    feature = "dtype-date32",
+    feature = "dtype-datetime",
+    feature = "dtype-date",
     feature = "dtype-time64-ns"
 ))]
 mod dates;
