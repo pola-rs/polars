@@ -63,8 +63,8 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
 name = "arrow2"
-version = "0.5.3"
-source = "git+https://github.com/ritchie46/arrow2?branch=dev#142f05a50bf4554a1ec8c7bafcf77218ad0aefc3"
+version = "0.6.1"
+source = "git+https://github.com/ritchie46/arrow2?branch=dev#84ed3a0d106b1faf10a793c7481ac1df5a603256"
 dependencies = [
  "ahash",
  "base64",
@@ -1165,9 +1165,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.5.0"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19f7a559e610a513b181d4ba28f49e92c9a8d7fcc9e8d3a85e2f9ffb6f0d3ab6"
+checksum = "a58d579bfb3d87f18d348d15f7fce0ac4229b0df16e81c4668fe13bfd1f0d0c9"
 dependencies = [
  "async-stream",
  "bitpacking",
