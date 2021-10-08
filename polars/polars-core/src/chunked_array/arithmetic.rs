@@ -106,7 +106,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::add::add, |lhs, rhs| lhs + rhs)
+        arithmetic_helper(self, rhs, basic::add, |lhs, rhs| lhs + rhs)
     }
 }
 
@@ -117,7 +117,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::div::div, |lhs, rhs| lhs / rhs)
+        arithmetic_helper(self, rhs, basic::div, |lhs, rhs| lhs / rhs)
     }
 }
 
@@ -128,7 +128,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::mul::mul, |lhs, rhs| lhs * rhs)
+        arithmetic_helper(self, rhs, basic::mul, |lhs, rhs| lhs * rhs)
     }
 }
 
@@ -139,7 +139,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn rem(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::rem::rem, |lhs, rhs| lhs % rhs)
+        arithmetic_helper(self, rhs, basic::rem, |lhs, rhs| lhs % rhs)
     }
 }
 
@@ -150,7 +150,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::sub::sub, |lhs, rhs| lhs - rhs)
+        arithmetic_helper(self, rhs, basic::sub, |lhs, rhs| lhs - rhs)
     }
 }
 
@@ -246,7 +246,7 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(basic::div::div_scalar(arr, &rhs)))
+        self.apply_kernel(|arr| Arc::new(basic::div_scalar(arr, &rhs)))
     }
 }
 
@@ -272,7 +272,7 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(basic::rem::rem_scalar(arr, &rhs)))
+        self.apply_kernel(|arr| Arc::new(basic::rem_scalar(arr, &rhs)))
     }
 }
 
