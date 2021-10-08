@@ -146,6 +146,7 @@ Manipulation/ selection
     Series.zip_with
     Series.interpolate
     Series.clip
+    Series.str_concat
 
 Various
 --------

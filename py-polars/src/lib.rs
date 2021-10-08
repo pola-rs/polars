@@ -176,6 +176,19 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     Ok(dict.to_object(py))
 }
 
+#[pyfunction]
+fn collect_all(lfs: Vec<PyLazyFrame>) -> PyResult<Vec<PyDataFrame>> {
+    use polars_core::utils::rayon::prelude::*;
+    let out = polars_core::POOL.install(|| {
+        lfs.par_iter().map(|lf| {
+            let df = lf.ldf.clone().collect()?;
+            Ok(PyDataFrame::new(df))
+        }).collect::<polars_core::error::Result<Vec<_>>>().map_err(PyPolarsEr::from)
+    });
+
+    Ok(out?)
+}
+
 #[pymodule]
 fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -202,5 +215,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(collect_all)).unwrap();
     Ok(())
 }

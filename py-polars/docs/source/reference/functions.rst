@@ -32,3 +32,9 @@ Eager functions
    repeat
    arg_where
 
+Parallelization
+~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   collect_all
