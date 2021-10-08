@@ -1,0 +1,6 @@
+since-tag=py-polars-v0.8.18
+future-release=v0.10.1
+base=py-polars/CHANGELOG.md
+output=AUTO_CHANGELOG.md
+exclude-labels=no-changelog,question
+add-sections={"features":{"prefix":"**Enhancements:**","labels":["enhancement"]}, "documentation":{"prefix":"**Documentation updates:**","labels":["documentation"]}, "testing":{"prefix":"**Testing updates:**","labels":["testing"]}}
