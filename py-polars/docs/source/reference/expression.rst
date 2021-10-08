@@ -164,6 +164,7 @@ Manipulation/ selection
     Expr.interpolate
     Expr.argsort
     Expr.clip
+    Expr.str_concat
 
 Column names
 ------------

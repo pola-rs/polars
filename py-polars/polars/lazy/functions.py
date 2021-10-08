@@ -11,6 +11,7 @@ try:
     from polars.polars import argsort_by as pyargsort_by
     from polars.polars import binary_function as pybinary_function
     from polars.polars import col as pycol
+    from polars.polars import collect_all as _collect_all
     from polars.polars import cols as pycols
     from polars.polars import concat_lst as _concat_lst
     from polars.polars import concat_str as _concat_str
@@ -55,6 +56,7 @@ __all__ = [
     "argsort_by",
     "concat_str",
     "concat_list",
+    "collect_all",
 ]
 
 
@@ -683,3 +685,67 @@ def concat_list(exprs: tp.List["pl.Expr"]) -> "pl.Expr":
     """
     exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
     return pl.lazy.expr.wrap_expr(_concat_lst(exprs))
+
+
+def collect_all(
+    lazy_frames: "tp.List[pl.LazyFrame]",
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    string_cache: bool = False,
+    no_optimization: bool = False,
+) -> "tp.List[pl.DataFrame]":
+    """
+    Collect multiple LazyFrames at the same time. This runs all the computation graphs in parallel on
+    Polars threadpool.
+
+    Parameters
+    ----------
+    type_coercion
+        Do type coercion optimization.
+    predicate_pushdown
+        Do predicate pushdown optimization.
+    projection_pushdown
+        Do projection pushdown optimization.
+    simplify_expression
+        Run simplify expressions optimization.
+    string_cache
+        Use a global string cache in this query.
+        This is needed if you want to join on categorical columns.
+
+        Caution!
+            If you already have set a global string cache, set this to `False` as this will reset the
+            global cache when the query is finished.
+    no_optimization
+        Turn off optimizations.
+
+    Returns
+    -------
+    List[DataFrame]
+    """
+    if no_optimization:
+        predicate_pushdown = False
+        projection_pushdown = False
+
+    prepared = []
+
+    for lf in lazy_frames:
+        ldf = lf._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            string_cache,
+        )
+        prepared.append(ldf)
+
+    out = _collect_all(prepared)
+
+    # wrap the pydataframes into dataframe
+
+    result = []
+    for pydf in out:
+        result.append(pl.eager.frame.wrap_df(pydf))
+
+    return result

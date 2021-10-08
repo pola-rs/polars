@@ -610,3 +610,11 @@ def test_str_concat():
     df = pl.DataFrame({"foo": [1, None, 2]})
     df = df.select(pl.col("foo").str_concat("-"))
     assert df[0, 0] == "1-null-2"
+
+
+def test_collect_all(df):
+    lf1 = df.lazy().select(pl.col("int").sum())
+    lf2 = df.lazy().select((pl.col("floats") * 2).sum())
+    out = pl.collect_all([lf1, lf2])
+    out[0][0, 0] == 6
+    out[1][0, 0] == 12.0
