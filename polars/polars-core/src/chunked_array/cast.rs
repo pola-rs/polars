@@ -116,15 +116,12 @@ impl ChunkCast for BooleanChunked {
     }
 }
 
-fn cast_inner_list_type(
-    list: &ListArray<i64>,
-    child_type: &arrow::datatypes::DataType,
-) -> Result<ArrayRef> {
+fn cast_inner_list_type(list: &ListArray<i64>, child_type: &DataType) -> Result<ArrayRef> {
     let child = list.values();
     let offsets = list.offsets();
-    let child = cast::cast(child.as_ref(), child_type)?.into();
+    let child = cast::cast(child.as_ref(), &child_type.to_arrow())?.into();
 
-    let data_type = ListArray::<i64>::default_datatype(child_type.clone());
+    let data_type = ListArray::<i64>::default_datatype(child_type.to_arrow());
     let list = ListArray::from_data(data_type, offsets.clone(), child, list.validity().cloned());
     Ok(Arc::new(list) as ArrayRef)
 }
@@ -137,7 +134,7 @@ impl ChunkCast for ListChunked {
             DataType::List(child_type) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|list| cast_inner_list_type(list, child_type))
+                    .map(|list| cast_inner_list_type(list, &**child_type))
                     .collect::<Result<_>>()?;
                 let ca = ListChunked::new_from_chunks(self.name(), chunks);
                 Ok(ca.into_series())
@@ -158,9 +155,9 @@ mod test {
         builder.append_slice(Some(&[1i32, 2, 3]));
         let ca = builder.finish();
 
-        let new = ca.cast(&DataType::List(ArrowDataType::Float64))?;
+        let new = ca.cast(&DataType::List(DataType::Float64.into()))?;
 
-        assert_eq!(new.dtype(), &DataType::List(ArrowDataType::Float64));
+        assert_eq!(new.dtype(), &DataType::List(DataType::Float64.into()));
         Ok(())
     }
 

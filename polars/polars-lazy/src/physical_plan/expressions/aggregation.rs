@@ -211,7 +211,7 @@ impl PhysicalAggregation for AggregationExpr {
                 let new_name = fmt_groupby_column(ca.name(), self.agg_type);
 
                 let values_type = match ca.dtype() {
-                    DataType::List(dt) => DataType::from(dt),
+                    DataType::List(dt) => *dt.clone(),
                     _ => unreachable!(),
                 };
 

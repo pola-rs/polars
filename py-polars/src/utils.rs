@@ -19,7 +19,7 @@ pub fn str_to_polarstype(s: &str) -> DataType {
         "<class 'polars.datatypes.Utf8'>" => DataType::Utf8,
         "<class 'polars.datatypes.Date'>" => DataType::Date,
         "<class 'polars.datatypes.Datetime'>" => DataType::Datetime,
-        "<class 'polars.datatypes.List'>" => DataType::List(ArrowDataType::Null),
+        "<class 'polars.datatypes.List'>" => DataType::List(DataType::Null.into()),
         "<class 'polars.datatypes.Categorical'>" => DataType::Categorical,
         "<class 'polars.datatypes.Object'>" => DataType::Object("object"),
         tp => panic!("Type {} not implemented in str_to_polarstype", tp),

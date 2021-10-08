@@ -40,7 +40,7 @@ impl From<&DataType> for PyDataType {
             DataType::Utf8 => Utf8,
             DataType::List(_) => List,
             DataType::Date => Date,
-            DataType::Datetime=> Datetime,
+            DataType::Datetime => Datetime,
             DataType::Object(_) => Object,
             DataType::Categorical => Categorical,
             dt => panic!("datatype: {:?} not supported", dt),

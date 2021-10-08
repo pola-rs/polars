@@ -368,7 +368,7 @@ where
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
         let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
-        let field = Field::new(name, DataType::List(T::get_dtype().to_arrow()));
+        let field = Field::new(name, DataType::List(Box::new(T::get_dtype())));
 
         Self {
             builder,
@@ -477,7 +477,7 @@ impl ListUtf8ChunkedBuilder {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableUtf8Array::<i64>::with_capacity(values_capacity);
         let builder = LargeListUtf8Builder::new_with_capacity(values, capacity);
-        let field = Field::new(name, DataType::List(ArrowDataType::LargeUtf8));
+        let field = Field::new(name, DataType::List(Box::new(DataType::Utf8)));
 
         ListUtf8ChunkedBuilder {
             builder,
@@ -528,7 +528,7 @@ impl ListBooleanChunkedBuilder {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableBooleanArray::with_capacity(values_capacity);
         let builder = LargeListBooleanBuilder::new_with_capacity(values, capacity);
-        let field = Field::new(name, DataType::List(ArrowDataType::Boolean));
+        let field = Field::new(name, DataType::List(Box::new(DataType::Boolean)));
 
         Self {
             builder,

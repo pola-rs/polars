@@ -157,9 +157,10 @@ macro_rules! impl_dyn_series {
 
             fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
                 // we cannot cast and dispatch as the inner type of the list would be incorrect
-                self.0
-                    .agg_list(groups)
-                    .map(|s| s.cast(&DataType::List(self.dtype().to_arrow())).unwrap())
+                self.0.agg_list(groups).map(|s| {
+                    s.cast(&DataType::List(Box::new(self.dtype().clone())))
+                        .unwrap()
+                })
             }
 
             fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
@@ -625,7 +626,7 @@ macro_rules! impl_dyn_series {
                     DataType::Date => self
                         .0
                         .repeat_by(by)
-                        .cast(&DataType::List(ArrowDataType::Date32))
+                        .cast(&DataType::List(Box::new(DataType::Date)))
                         .unwrap()
                         .list()
                         .unwrap()
@@ -633,7 +634,7 @@ macro_rules! impl_dyn_series {
                     DataType::Datetime => self
                         .0
                         .repeat_by(by)
-                        .cast(&DataType::List(ArrowDataType::Date64))
+                        .cast(&DataType::List(Box::new(DataType::Datetime)))
                         .unwrap()
                         .list()
                         .unwrap()
@@ -700,7 +701,13 @@ mod test {
         let s = s.cast(&DataType::Datetime)?;
 
         let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
-        assert!(matches!(l.dtype(), DataType::List(ArrowDataType::Date64)));
+
+        match l.dtype() {
+            DataType::List(inner) => {
+                assert!(matches!(&**inner, DataType::Datetime))
+            }
+            _ => assert!(false),
+        }
 
         Ok(())
     }

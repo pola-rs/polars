@@ -271,7 +271,7 @@ impl AExpr {
                     AggGroups(expr) => {
                         let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-                        Field::new(&new_name, DataType::List(ArrowDataType::UInt32))
+                        Field::new(&new_name, DataType::List(DataType::UInt32.into()))
                     }
                     Quantile { expr, quantile } => {
                         let mut field = field_by_context(
