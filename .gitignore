@@ -8,3 +8,5 @@ __pycache__/
 polars/vendor
 *.so
 .ENV
+.env
+AUTO_CHANGELOG.md
