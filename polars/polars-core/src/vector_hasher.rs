@@ -317,7 +317,7 @@ impl Hasher for IdHasher {
 
 pub type IdBuildHasher = BuildHasherDefault<IdHasher>;
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 /// Contains an idx of a row in a DataFrame and the precomputed hash of that row.
 /// That hash still needs to be used to create another hash to be able to resize hashmaps without
 /// accidental quadratic behavior. So do not use an Identity function!
@@ -326,12 +326,6 @@ pub(crate) struct IdxHash {
     pub(crate) idx: u32,
     // precomputed hash of T
     hash: u64,
-}
-
-impl PartialEq for IdxHash {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash && self.idx == other.idx
-    }
 }
 
 impl Hash for IdxHash {
