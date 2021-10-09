@@ -202,10 +202,39 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn repeat(name: &str, val: &str, n: usize) -> Self {
-        let mut ca: Utf8Chunked = (0..n).map(|_| val).collect_trusted();
-        ca.rename(name);
-        ca.into_series().into()
+    pub fn repeat(name: &str, val: &PyAny, n: usize, dtype: &PyAny) -> Self {
+        let str_repr = dtype.str().unwrap().to_str().unwrap();
+        let dtype = str_to_polarstype(str_repr);
+
+        match dtype {
+            DataType::Utf8 => {
+                let val = val.extract::<&str>().unwrap();
+                let mut ca: Utf8Chunked = (0..n).map(|_| val).collect_trusted();
+                ca.rename(name);
+                ca.into_series().into()
+            }
+            DataType::Int64 => {
+                let val = val.extract::<i64>().unwrap();
+                let mut ca: NoNull<Int64Chunked> = (0..n).map(|_| val).collect_trusted();
+                ca.rename(name);
+                ca.into_inner().into_series().into()
+            }
+            DataType::Float64 => {
+                let val = val.extract::<f64>().unwrap();
+                let mut ca: NoNull<Float64Chunked> = (0..n).map(|_| val).collect_trusted();
+                ca.rename(name);
+                ca.into_inner().into_series().into()
+            }
+            DataType::Boolean => {
+                let val = val.extract::<bool>().unwrap();
+                let mut ca: BooleanChunked = (0..n).map(|_| val).collect_trusted();
+                ca.rename(name);
+                ca.into_series().into()
+            }
+            dt => {
+                panic!("cannot create repeat with dtype: {:?}", dt);
+            }
+        }
     }
 
     #[staticmethod]

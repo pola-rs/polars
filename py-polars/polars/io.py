@@ -442,7 +442,7 @@ def read_ipc_schema(
 
 def read_ipc(
     file: Union[str, BinaryIO, Path, bytes],
-    use_pyarrow: bool = True,
+    use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
     columns: Optional[List[str]] = None,
     storage_options: Optional[Dict] = None,
@@ -484,7 +484,7 @@ def read_ipc(
 
 def read_parquet(
     source: Union[str, List[str], Path, BinaryIO, bytes],
-    use_pyarrow: bool = True,
+    use_pyarrow: bool = _PYARROW_AVAILABLE,
     stop_after_n_rows: Optional[int] = None,
     memory_map: bool = True,
     columns: Optional[List[str]] = None,

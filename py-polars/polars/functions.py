@@ -1,15 +1,9 @@
 from typing import Optional, Sequence, Union
 
-try:
-    import pyarrow as pa
-
-    _PYARROW_AVAILABLE = True
-except ImportError:
-    _PYARROW_AVAILABLE = False
-
 import polars as pl
 
 try:
+    from polars.datatypes import py_type_to_polars_type
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_series as _concat_series
 
@@ -65,7 +59,7 @@ def concat(
 
 
 def repeat(
-    val: Union[int, float, str], n: int, name: Optional[str] = None
+    val: Union[int, float, str, bool], n: int, name: Optional[str] = None
 ) -> "pl.Series":
     """
     Repeat a single value n times and collect into a Series.
@@ -81,16 +75,10 @@ def repeat(
     """
     if name is None:
         name = ""
-    if isinstance(val, str):
-        s = pl.Series._repeat(name, val, n)
-        s.rename(name)
-        return s
-    else:
-        if not _PYARROW_AVAILABLE:
-            raise ImportError(
-                "'pyarrow' is required for repeating a int or a float value."
-            )
-        return pl.Series._from_arrow(name, pa.repeat(val, n))
+
+    dtype = py_type_to_polars_type(type(val))
+    s = pl.Series._repeat(name, val, n, dtype)
+    return s
 
 
 def arg_where(mask: "pl.Series") -> "pl.Series":

@@ -756,7 +756,7 @@ class DataFrame:
         self,
         file: Union[str, Path],
         compression: str = "snappy",
-        use_pyarrow: bool = True,
+        use_pyarrow: bool = _PYARROW_AVAILABLE,
         **kwargs: Any,
     ) -> None:
         """
