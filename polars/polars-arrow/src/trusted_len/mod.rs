@@ -13,6 +13,8 @@ use std::slice::Iter;
 /// This is re-defined here and implemented for some iterators until `std::iter::TrustedLen`
 /// is stabilized.
 /// *Implementation from Jorge Leitao on Arrow2
+/// # Safety
+/// length of the iterator must be correct
 pub unsafe trait TrustedLen: Iterator {}
 
 unsafe impl<T> TrustedLen for Iter<'_, T> {}

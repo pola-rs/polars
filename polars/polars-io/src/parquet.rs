@@ -18,9 +18,11 @@ use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::compute::cast;
-use arrow::io::parquet::write::Encoding;
+use arrow::datatypes::PhysicalType;
+use arrow::io::parquet::write::{array_to_pages, DynIter, Encoding};
 use arrow::io::parquet::{read, write};
 use polars_core::prelude::*;
+use rayon::prelude::*;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -128,6 +130,8 @@ pub struct ParquetWriter<W> {
     compression: write::Compression,
 }
 
+pub use write::Compression;
+
 impl<W> ParquetWriter<W>
 where
     W: Write + Seek,
@@ -151,9 +155,24 @@ where
 
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
+        // temp coerce cat to utf8 until supported in https://github.com/jorgecarleitao/parquet2/issues/57 is fixed
+
+        let columns = df
+            .get_columns()
+            .iter()
+            .map(|s| {
+                if let DataType::Categorical = s.dtype() {
+                    s.cast(&DataType::Utf8).unwrap()
+                } else {
+                    s.clone()
+                }
+            })
+            .collect();
+        let df = DataFrame::new_no_checks(columns);
+
         let mut fields = df.schema().to_arrow().fields().clone();
 
-        // datetimeis not supported by parquet and will be be truncated to Date
+        // date64 is not supported by parquet and will be be truncated to date32
         // We coerce these to timestamp(ms)
         let datetime_columns = df
             .get_columns()
@@ -177,7 +196,7 @@ where
             .map(|s| s.name().to_string())
             .collect::<Vec<_>>();
 
-        let iter = df.iter_record_batches().map(|rb| {
+        let rb_iter = df.iter_record_batches().map(|rb| {
             if !datetime_columns.is_empty() {
                 let mut columns = rb.columns().to_vec();
                 for i in &datetime_columns {
@@ -203,30 +222,48 @@ where
         };
         let schema = ArrowSchema::new(fields);
         let parquet_schema = write::to_parquet_schema(&schema)?;
+        let encodings = schema
+            .fields()
+            .iter()
+            .map(|field| match field.data_type().to_physical_type() {
+                // delta encoding
+                // Not yet supported by pyarrow
+                // PhysicalType::LargeUtf8 => Encoding::DeltaLengthByteArray,
+                // dictionaries are kept dict-encoded
+                PhysicalType::Dictionary(_) => Encoding::RleDictionary,
+                // remaining is plain
+                _ => Encoding::Plain,
+            })
+            .collect::<Vec<_>>();
 
+        // clone is needed because parquet schema is moved into `write_file`
         let parquet_schema_iter = parquet_schema.clone();
-        let iter = iter.map(|batch| {
-            let columns = batch.columns().to_vec();
-            Ok(write::DynIter::new(
-                columns
-                    .into_iter()
-                    .zip(parquet_schema_iter.columns().to_vec().into_iter())
-                    .map(|(array, type_)| {
-                        // one parquet page per array.
-                        // we could use `array.slice()` to split it based on some number of rows.
-                        Ok(write::DynIter::new(std::iter::once(write::array_to_page(
-                            array.as_ref(),
-                            type_,
-                            options,
-                            Encoding::Plain,
-                        ))))
-                    }),
-            ))
+        let row_group_iter = rb_iter.map(|batch| {
+            let columns = batch
+                .columns()
+                .par_iter()
+                .zip(parquet_schema_iter.columns().par_iter())
+                .zip(encodings.par_iter())
+                .map(|((array, descriptor), encoding)| {
+                    let array = array.clone();
+
+                    let pages =
+                        array_to_pages(array, descriptor.clone(), options, *encoding).unwrap();
+                    pages.collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+
+            let out = write::DynIter::new(columns.into_iter().map(|column| {
+                // one parquet page per array.
+                // we could use `array.slice()` to split it based on some number of rows.
+                Ok(DynIter::new(column.into_iter()))
+            }));
+            ArrowResult::Ok(out)
         });
 
         write::write_file(
             &mut self.writer,
-            iter,
+            row_group_iter,
             &schema,
             parquet_schema,
             options,

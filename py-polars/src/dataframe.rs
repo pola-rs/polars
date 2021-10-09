@@ -297,9 +297,22 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    pub fn to_parquet(&self, path: &str) -> PyResult<()> {
-        let f = std::fs::File::create(path).expect("to open a new file");
-        ParquetWriter::new(f)
+    pub fn to_parquet(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
+        let buf = get_file_like(py_f, true)?;
+
+        let compression = match compression {
+            "uncompressed" => Compression::Uncompressed,
+            "snappy" => Compression::Snappy,
+            "gzip" => Compression::Gzip,
+            "lzo" => Compression::Lzo,
+            "brotli" => Compression::Brotli,
+            "lz4" => Compression::Lz4,
+            "zstd" => Compression::Zstd,
+            s => panic!("compression {} not supported", s)
+        };
+
+        ParquetWriter::new(buf)
+            .with_compression(compression)
             .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
