@@ -227,11 +227,10 @@ class Series:
         return series
 
     @classmethod
-    def _repeat(cls, name: str, val: str, n: int) -> "Series":
-        """
-        Only used for strings.
-        """
-        return cls._from_pyseries(PySeries.repeat(name, val, n))
+    def _repeat(
+        cls, name: str, val: Union[int, float, str, bool], n: int, dtype: Type[DataType]
+    ) -> "Series":
+        return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
 
     @classmethod
     def _from_arrow(cls, name: str, values: "pa.Array") -> "Series":

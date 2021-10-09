@@ -131,9 +131,6 @@ def sequence_to_pyseries(
             if not _PYARROW_AVAILABLE:
                 dtype = py_type_to_polars_type(nested_dtype)
                 return PySeries.new_list(name, values, dtype)
-                # raise ImportError(
-                #     f"'pyarrow' is required for converting a Sequence of {nested_dtype} to a PySeries."
-                # )
 
             try:
                 nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)

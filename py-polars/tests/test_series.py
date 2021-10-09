@@ -327,6 +327,13 @@ def test_repeat():
     s = pl.repeat("foo", 10)
     assert s.dtype == pl.Utf8
     assert s.len() == 10
+    s = pl.repeat(1.0, 5)
+    assert s.dtype == pl.Float64
+    assert s.len() == 5
+    assert s == [1.0, 1.0, 1.0, 1.0, 1.0]
+    s = pl.repeat(True, 5)
+    assert s.dtype == pl.Boolean
+    assert s.len() == 5
 
 
 def test_median():
