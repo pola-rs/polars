@@ -1814,7 +1814,14 @@ class Series:
         kwargs
             kwargs will be sent to pyarrow.Array.to_numpy
         """
-        return self.to_arrow().to_numpy(*args, zero_copy_only=zero_copy_only, **kwargs)
+        if _PYARROW_AVAILABLE:
+            return self.to_arrow().to_numpy(
+                *args, zero_copy_only=zero_copy_only, **kwargs
+            )
+        else:
+            if self.null_count() == 0:
+                return self.view(ignore_nulls=True)
+            return self._s.to_numpy()
 
     def to_arrow(self) -> "pa.Array":
         """
