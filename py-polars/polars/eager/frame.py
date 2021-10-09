@@ -756,7 +756,7 @@ class DataFrame:
         self,
         file: Union[str, Path],
         compression: str = "snappy",
-        use_pyarrow: bool = _PYARROW_AVAILABLE,
+        use_pyarrow: bool = False,
         **kwargs: Any,
     ) -> None:
         """
@@ -767,7 +767,14 @@ class DataFrame:
         file
             File path to which the file should be written.
         compression
-            Compression method (only supported if `use_pyarrow`).
+            Compression method. Choose one of:
+                - "uncompressed" (not supported by pyarrow)
+                - "snappy"
+                - "gzip"
+                - "lzo"
+                - "brotli"
+                - "lz4"
+                - "zstd"
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
@@ -804,7 +811,7 @@ class DataFrame:
                 table=tbl, where=file, compression=compression, **kwargs
             )
         else:
-            self._df.to_parquet(file)
+            self._df.to_parquet(file, compression)
 
     def to_numpy(self) -> np.ndarray:
         """
