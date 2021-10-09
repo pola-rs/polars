@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 macro_rules! impl_take_random_get {
     ($self:ident, $index:ident, $array_type:ty) => {{
+        assert!($index < $self.len());
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
         // Safety:
         // bounds are checked above
@@ -175,5 +176,20 @@ impl TakeRandom for ListChunked {
             let s = Series::try_from((self.name(), arr));
             s.unwrap()
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    #[should_panic]
+    fn test_oob() {
+        let data: Series = [1.0, 2.0, 3.0].iter().collect();
+        let data = data.f64().unwrap();
+        let matches = data.eq(5.0);
+        let matches_indexes = matches.arg_true();
+        matches_indexes.get(0);
     }
 }

@@ -395,21 +395,12 @@ macro_rules! impl_agg_n_unique {
                 }
                 let taker = $self.take_rand();
 
-                if $self.null_count() == 0 {
-                    let mut set = HashSet::with_hasher(RandomState::new());
-                    for i in idx {
-                        let v = unsafe { taker.get_unchecked(*i as usize) };
-                        set.insert(v);
-                    }
-                    set.len() as u32
-                } else {
-                    let mut set = HashSet::with_hasher(RandomState::new());
-                    for i in idx {
-                        let opt_v = taker.get(*i as usize);
-                        set.insert(opt_v);
-                    }
-                    set.len() as u32
+                let mut set = HashSet::with_hasher(RandomState::new());
+                for i in idx {
+                    let v = unsafe { taker.get_unchecked(*i as usize) };
+                    set.insert(v);
                 }
+                set.len() as u32
             })
             .collect::<$ca_type>()
             .into_inner()

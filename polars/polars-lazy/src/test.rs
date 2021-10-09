@@ -1635,6 +1635,7 @@ fn test_filter_after_shift_in_groups() -> Result<()> {
                 .alias("filtered"),
         ])
         .collect()?;
+    dbg!(out.column("filtered")?);
 
     assert_eq!(
         out.column("filtered")?
@@ -1656,14 +1657,7 @@ fn test_filter_after_shift_in_groups() -> Result<()> {
             .unwrap(),
         5
     );
-    assert!(out
-        .column("filtered")?
-        .list()?
-        .get(2)
-        .unwrap()
-        .i32()?
-        .get(0)
-        .is_some());
+    assert_eq!(out.column("filtered")?.list()?.get(2).unwrap().len(), 0);
 
     Ok(())
 }

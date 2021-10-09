@@ -146,7 +146,8 @@ pub trait TakeRandom {
 
     /// Get a nullable value by index.
     ///
-    /// Out of bounds access doesn't Error but will return a Null value
+    /// # Panics
+    /// Panics if `index >= self.len()`
     fn get(&self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
@@ -167,7 +168,8 @@ pub trait TakeRandomUtf8 {
 
     /// Get a nullable value by index.
     ///
-    /// Out of bounds access doesn't Error but will return a Null value
+    /// # Panics
+    /// Panics if `index >= self.len()`
     fn get(self, index: usize) -> Option<Self::Item>;
 
     /// Get a value by index and ignore the null bit.
