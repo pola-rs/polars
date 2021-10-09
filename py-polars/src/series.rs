@@ -215,6 +215,34 @@ impl PySeries {
         Ok(series.into())
     }
 
+
+    /// Should only be called for Series with null types.
+    /// This will cast to floats so that `None = np.nan`
+    pub fn to_numpy(&self, py: Python) -> PyObject {
+        let s = &self.series;
+        if s.bit_repr_is_large() {
+            let s = s.cast(&DataType::Float64).unwrap();
+            let ca = s.f64().unwrap();
+            let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|opt_v| {
+                match opt_v {
+                    Some(v) => v,
+                    None => f64::NAN
+                }
+            }));
+            np_arr.into_py(py)
+        } else {
+            let s = s.cast(&DataType::Float32).unwrap();
+            let ca = s.f32().unwrap();
+            let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|opt_v| {
+                match opt_v {
+                    Some(v) => v,
+                    None => f32::NAN
+                }
+            }));
+            np_arr.into_py(py)
+        }
+    }
+
     pub fn get_object(&self, index: usize) -> PyObject {
         let gil = Python::acquire_gil();
         let python = gil.python();

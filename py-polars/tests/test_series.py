@@ -664,3 +664,11 @@ def test_bitwise():
     out["and"].to_list() == [1, 0, 1]
     out["or"].to_list() == [3, 6, 7]
     out["xor"].to_list() == [2, 6, 6]
+
+
+def test_to_numpy():
+    pl.eager.series._PYARROW_AVAILABLE = False
+    a = pl.Series("a", [1, 2, 3])
+    a.to_numpy() == np.array([1, 2, 3])
+    a = pl.Series("a", [1, 2, None])
+    a.to_numpy() == np.array([1.0, 2.0, np.nan])
