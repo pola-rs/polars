@@ -672,3 +672,21 @@ def test_to_numpy():
     a.to_numpy() == np.array([1, 2, 3])
     a = pl.Series("a", [1, 2, None])
     a.to_numpy() == np.array([1.0, 2.0, np.nan])
+
+
+def test_from_sequences():
+    # test int, str, bool, flt
+    values = [
+        [[1], [None, 3]],
+        [["foo"], [None, "bar"]],
+        [[True], [None, False]],
+        [[1.0], [None, 3.0]],
+    ]
+
+    for vals in values:
+        pl.internals.construction._PYARROW_AVAILABLE = False
+        a = pl.Series("a", vals)
+        pl.internals.construction._PYARROW_AVAILABLE = True
+        b = pl.Series("a", vals)
+        assert a.series_equal(b, null_equal=True)
+        assert a.to_list() == vals

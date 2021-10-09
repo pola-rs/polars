@@ -24,6 +24,7 @@ pub mod datatypes;
 pub mod error;
 pub mod file;
 pub mod lazy;
+mod list_construction;
 pub mod npy;
 pub mod prelude;
 pub mod series;
@@ -180,10 +181,13 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 fn collect_all(lfs: Vec<PyLazyFrame>) -> PyResult<Vec<PyDataFrame>> {
     use polars_core::utils::rayon::prelude::*;
     let out = polars_core::POOL.install(|| {
-        lfs.par_iter().map(|lf| {
-            let df = lf.ldf.clone().collect()?;
-            Ok(PyDataFrame::new(df))
-        }).collect::<polars_core::error::Result<Vec<_>>>().map_err(PyPolarsEr::from)
+        lfs.par_iter()
+            .map(|lf| {
+                let df = lf.ldf.clone().collect()?;
+                Ok(PyDataFrame::new(df))
+            })
+            .collect::<polars_core::error::Result<Vec<_>>>()
+            .map_err(PyPolarsEr::from)
     });
 
     Ok(out?)

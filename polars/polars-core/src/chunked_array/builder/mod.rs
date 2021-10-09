@@ -407,6 +407,20 @@ where
         self.builder.try_push_valid().unwrap();
     }
 
+    /// Appends from an iterator over values
+    #[inline]
+    pub fn append_iter<I: Iterator<Item = Option<T::Native>> + TrustedLen>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        // Safety
+        // trusted len, trust the type system
+        unsafe { values.extend_trusted_len_unchecked(iter) };
+        self.builder.try_push_valid().unwrap();
+    }
+
     pub fn append_null(&mut self) {
         self.builder.push_null();
     }
@@ -485,6 +499,19 @@ impl ListUtf8ChunkedBuilder {
             fast_explode: true,
         }
     }
+
+    #[inline]
+    pub fn append_iter<'a, I: Iterator<Item = Option<&'a str>> + TrustedLen>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        // Safety
+        // trusted len, trust the type system
+        unsafe { values.extend_trusted_len_unchecked(iter) };
+        self.builder.try_push_valid().unwrap();
+    }
 }
 
 impl ListBuilderTrait for ListUtf8ChunkedBuilder {
@@ -535,6 +562,19 @@ impl ListBooleanChunkedBuilder {
             field,
             fast_explode: true,
         }
+    }
+
+    #[inline]
+    pub fn append_iter<I: Iterator<Item = Option<bool>> + TrustedLen>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        // Safety
+        // trusted len, trust the type system
+        unsafe { values.extend_trusted_len_unchecked(iter) };
+        self.builder.try_push_valid().unwrap();
     }
 }
 

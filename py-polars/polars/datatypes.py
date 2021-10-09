@@ -280,6 +280,13 @@ if not _DOCUMENTING:
         bool: PySeries.new_opt_bool,
     }
 
+    _PY_TYPE_TO_DTYPE = {
+        float: Float64,
+        int: Int64,
+        str: Utf8,
+        bool: Boolean,
+    }
+
 
 def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
     """
@@ -308,3 +315,13 @@ def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
         return _PY_TYPE_TO_ARROW_TYPE[dtype]
     except KeyError:
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
+
+
+def py_type_to_polars_type(dtype: Type[Any]) -> "Type[DataType]":
+    """
+    Convert a Python dtype to a Polars dtype.
+    """
+    try:
+        return _PY_TYPE_TO_DTYPE[dtype]
+    except KeyError:
+        raise ValueError(f"Cannot parse dtype {dtype} into Polars dtype.")
