@@ -356,6 +356,12 @@ def test_regex_selection():
     assert df.select([col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
 
 
+def test_exclude_selection():
+    df = pl.DataFrame({"a": [1], "b": [1], "c": [1]}).lazy()
+
+    assert df.select([pl.exclude("a")]).columns == ["b", "c"]
+
+
 def test_literal_projection():
     df = pl.DataFrame({"a": [1, 2]})
     assert df.select([True]).dtypes == [pl.Boolean]
