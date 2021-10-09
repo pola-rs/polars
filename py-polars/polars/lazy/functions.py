@@ -57,7 +57,7 @@ __all__ = [
     "concat_str",
     "concat_list",
     "collect_all",
-    "exclude"
+    "exclude",
 ]
 
 
