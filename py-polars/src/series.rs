@@ -3,12 +3,13 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
+use crate::list_construction::py_seq_to_list;
 use crate::utils::{downsample_str_to_rule, reinterpret, str_to_polarstype};
 use crate::{arrow_interop, npy::aligned_array, prelude::*};
 use numpy::PyArray1;
+use polars_core::utils::CustomIterTools;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
-use polars_core::utils::CustomIterTools;
 
 #[pyclass]
 #[repr(transparent)]
@@ -215,6 +216,10 @@ impl PySeries {
         Ok(series.into())
     }
 
+    #[staticmethod]
+    pub fn new_list(name: &str, seq: &PyAny, dtype: &PyAny) -> PyResult<Self> {
+        py_seq_to_list(name, seq, dtype).map(|s| s.into())
+    }
 
     /// Should only be called for Series with null types.
     /// This will cast to floats so that `None = np.nan`
@@ -223,22 +228,24 @@ impl PySeries {
         if s.bit_repr_is_large() {
             let s = s.cast(&DataType::Float64).unwrap();
             let ca = s.f64().unwrap();
-            let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|opt_v| {
-                match opt_v {
+            let np_arr = PyArray1::from_iter(
+                py,
+                ca.into_iter().map(|opt_v| match opt_v {
                     Some(v) => v,
-                    None => f64::NAN
-                }
-            }));
+                    None => f64::NAN,
+                }),
+            );
             np_arr.into_py(py)
         } else {
             let s = s.cast(&DataType::Float32).unwrap();
             let ca = s.f32().unwrap();
-            let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|opt_v| {
-                match opt_v {
+            let np_arr = PyArray1::from_iter(
+                py,
+                ca.into_iter().map(|opt_v| match opt_v {
                     Some(v) => v,
-                    None => f32::NAN
-                }
-            }));
+                    None => f32::NAN,
+                }),
+            );
             np_arr.into_py(py)
         }
     }

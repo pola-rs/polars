@@ -14,6 +14,7 @@ from polars.datatypes import (
     polars_type_to_constructor,
     py_type_to_arrow_type,
     py_type_to_constructor,
+    py_type_to_polars_type,
 )
 
 try:
@@ -128,9 +129,11 @@ def sequence_to_pyseries(
             nested_dtype = type(nested_value) if value is not None else float
 
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
-                    f"'pyarrow' is required for converting a Sequence of {nested_dtype} to a PySeries."
-                )
+                dtype = py_type_to_polars_type(nested_dtype)
+                return PySeries.new_list(name, values, dtype)
+                # raise ImportError(
+                #     f"'pyarrow' is required for converting a Sequence of {nested_dtype} to a PySeries."
+                # )
 
             try:
                 nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
