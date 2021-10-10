@@ -392,6 +392,11 @@ def test_fill_nan():
     assert df.lazy().fill_nan(2.0).collect()["a"] == [1.0, 2.0, 3.0]
 
 
+def test_fill_null():
+    df = pl.DataFrame({"a": [1.0, None, 3.0]})
+    assert df.select([pl.col("a").fill_null("min")])["a"][1] == 1.0
+
+
 def test_take(fruits_cars):
     df = fruits_cars
 

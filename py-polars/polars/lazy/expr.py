@@ -773,8 +773,21 @@ class Expr:
 
     def fill_null(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
         """
-        Fill none value with a fill value
+        Fill none value with a fill value or strategy
+
+        fill_value
+            Fill null strategy or a value
+                   * "backward"
+                   * "forward"
+                   * "min"
+                   * "max"
+                   * "mean"
+                   * "one"
+                   * "zero"
         """
+        if fill_value in ["backward", "forward", "min", "max", "mean", "zero", "one"]:
+            return wrap_expr(self._pyexpr.fill_null_with_strategy(fill_value))
+
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
 

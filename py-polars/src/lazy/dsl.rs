@@ -1,6 +1,6 @@
 use crate::conversion::str_to_null_behavior;
 use crate::lazy::utils::py_exprs_to_exprs;
-use crate::prelude::str_to_rankmethod;
+use crate::prelude::{parse_strategy, str_to_rankmethod};
 use crate::series::PySeries;
 use crate::utils::{reinterpret, str_to_polarstype};
 use polars::lazy::dsl;
@@ -230,6 +230,14 @@ impl PyExpr {
 
     pub fn fill_null(&self, expr: PyExpr) -> PyExpr {
         self.clone().inner.fill_null(expr.inner).into()
+    }
+
+    pub fn fill_null_with_strategy(&self, strategy: &str) -> PyExpr {
+        let strat = parse_strategy(strategy);
+        self.clone()
+            .inner
+            .apply(move |s| s.fill_null(strat), GetOutput::same_type())
+            .into()
     }
 
     pub fn fill_nan(&self, expr: PyExpr) -> PyExpr {
