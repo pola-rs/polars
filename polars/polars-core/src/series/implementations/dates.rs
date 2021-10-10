@@ -26,17 +26,6 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
-impl<T> ChunkedArray<T> {
-    /// get the physical memory type of a date type
-    fn physical_type(&self) -> DataType {
-        match self.dtype() {
-            DataType::Datetime => DataType::Int64,
-            DataType::Date => DataType::Int32,
-            dt => panic!("already a physical type: {:?}", dt),
-        }
-    }
-}
-
 macro_rules! impl_dyn_series {
     ($ca: ident) => {
         impl IntoSeries for $ca {
@@ -93,11 +82,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-                let other = if self.dtype() == &DataType::Date {
-                    other.cast(&DataType::Int32)?
-                } else {
-                    other.cast(&DataType::Int64)?
-                };
+                let other = other.to_physical_repr();
                 self.0
                     .zip_with(mask, &other.as_ref().as_ref())
                     .map(|ca| ca.into_date().into_series())
@@ -268,12 +253,7 @@ macro_rules! impl_dyn_series {
             }
             #[cfg(feature = "sort_multiple")]
             fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
-                let phys_type = self.0.physical_type();
-                let s = self.cast(&phys_type).unwrap();
-
-                self.0
-                    .unpack_series_matching_type(&s)?
-                    .argsort_multiple(by, reverse)
+                self.0.deref().argsort_multiple(by, reverse)
             }
 
             fn str_value(&self, index: usize) -> Cow<str> {
@@ -355,7 +335,7 @@ macro_rules! impl_dyn_series {
 
             fn append(&mut self, other: &Series) -> Result<()> {
                 if self.0.dtype() == other.dtype() {
-                    // todo! add object
+                    let other = other.to_physical_repr();
                     self.0.append(other.as_ref().as_ref());
                     Ok(())
                 } else {
@@ -741,6 +721,11 @@ mod test {
 
         let out = s.subtract(&s)?;
         assert!(matches!(out.dtype(), DataType::Datetime));
+
+        let mut a = s.clone();
+        a.append(&s).unwrap();
+        assert_eq!(a.len(), 6);
+
         Ok(())
     }
 }
