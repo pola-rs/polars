@@ -62,7 +62,7 @@ pub struct IpcReader<R> {
     rechunk: bool,
 }
 
-impl<'a, R> ArrowReader for read::FileReader<'a, R>
+impl<R> ArrowReader for read::FileReader<R>
 where
     R: Read + Seek,
 {
