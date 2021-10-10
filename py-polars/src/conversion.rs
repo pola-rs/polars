@@ -423,3 +423,16 @@ pub(crate) fn dicts_to_rows(records: &PyAny) -> PyResult<(Vec<Row>, Vec<String>)
     }
     Ok((rows, keys_first))
 }
+
+pub(crate) fn parse_strategy(strat: &str) -> FillNullStrategy {
+    match strat {
+        "backward" => FillNullStrategy::Backward,
+        "forward" => FillNullStrategy::Forward,
+        "min" => FillNullStrategy::Min,
+        "max" => FillNullStrategy::Max,
+        "mean" => FillNullStrategy::Mean,
+        "zero" => FillNullStrategy::Zero,
+        "one" => FillNullStrategy::One,
+        s => panic!("Strategy {} not supported", s),
+    }
+}

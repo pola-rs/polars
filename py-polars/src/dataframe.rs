@@ -308,7 +308,7 @@ impl PyDataFrame {
             "brotli" => Compression::Brotli,
             "lz4" => Compression::Lz4,
             "zstd" => Compression::Zstd,
-            s => panic!("compression {} not supported", s)
+            s => panic!("compression {} not supported", s),
         };
 
         ParquetWriter::new(buf)
