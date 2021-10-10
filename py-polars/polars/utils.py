@@ -32,7 +32,7 @@ def coerce_arrow(array: "pa.Array") -> "pa.Array":
         ts_ms = pa.compute.cast(array, pa.timestamp("ms"), safe=False)
         ms = pa.compute.cast(ts_ms, pa.int64())
         del ts_ms
-        array = pa.compute.cast(ms, pa.date64())
+        array = pa.compute.cast(ms, pa.timestamp("ms"))
         del ms
     # note: Decimal256 could not be cast to float
     elif isinstance(array.type, pa.Decimal128Type):

@@ -146,7 +146,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .into_series())
             }
             #[cfg(feature = "dtype-datetime")]
-            ArrowDataType::Date64 => {
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 Ok(Int64Chunked::new_from_chunks(name, chunks)
                     .into_date()

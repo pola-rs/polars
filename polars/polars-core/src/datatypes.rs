@@ -496,7 +496,7 @@ impl DataType {
             Float64 => ArrowDataType::Float64,
             Utf8 => ArrowDataType::LargeUtf8,
             Date => ArrowDataType::Date32,
-            Datetime => ArrowDataType::Date64,
+            Datetime => ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",
                 dt.to_arrow(),
@@ -703,7 +703,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Float64 => DataType::Float64,
             ArrowDataType::LargeList(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
-            ArrowDataType::Date64 => DataType::Datetime,
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => DataType::Datetime,
             ArrowDataType::Utf8 => DataType::Utf8,
             dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }

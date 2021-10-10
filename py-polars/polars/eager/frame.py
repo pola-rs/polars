@@ -801,9 +801,6 @@ class DataFrame:
                 else:
                     name = column._name
 
-                # parquet casts date64 to date32
-                if column.type == pa.date64():
-                    column = pa.compute.cast(column, pa.timestamp("ms", None))
                 data[name] = column
             tbl = pa.table(data)
 
