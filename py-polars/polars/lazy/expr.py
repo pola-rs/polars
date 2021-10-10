@@ -263,7 +263,9 @@ class Expr:
 
     def exclude(self, columns: Union[str, tp.List[str]]) -> "Expr":
         """
-         Exclude certain columns from a wildcard expression.
+         Exclude certain columns from a wildcard/regex selection.
+
+         You may also use regexes int he exclude list. They must start with `^` and end with `$`.
 
          Parameters
          ----------
