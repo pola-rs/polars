@@ -1390,7 +1390,9 @@ impl Expr {
         }
     }
 
-    /// Exclude a column from a wildcard selection
+    /// Exclude a column from a wildcard/regex selection.
+    ///
+    /// You may also use regexes in the exclude as long as they start with `^` and end with `$`/
     ///
     /// # Example
     ///
