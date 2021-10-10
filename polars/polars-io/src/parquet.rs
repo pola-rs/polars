@@ -155,21 +155,6 @@ where
 
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
-        // temp coerce cat to utf8 until supported in https://github.com/jorgecarleitao/parquet2/issues/57 is fixed
-
-        let columns = df
-            .get_columns()
-            .iter()
-            .map(|s| {
-                if let DataType::Categorical = s.dtype() {
-                    s.cast(&DataType::Utf8).unwrap()
-                } else {
-                    s.clone()
-                }
-            })
-            .collect();
-        let df = DataFrame::new_no_checks(columns);
-
         let mut fields = df.schema().to_arrow().fields().clone();
 
         // date64 is not supported by parquet and will be be truncated to date32
