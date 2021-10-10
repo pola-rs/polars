@@ -81,21 +81,6 @@ where
 
     fn finish(self, df: &DataFrame) -> Result<()> {
         let mut writer = self.writer_builder.from_writer(self.buffer);
-
-        // temp coerce cat to utf8 until supported in csv writer
-        let columns = df
-            .get_columns()
-            .iter()
-            .map(|s| {
-                if let DataType::Categorical = s.dtype() {
-                    s.cast(&DataType::Utf8).unwrap()
-                } else {
-                    s.clone()
-                }
-            })
-            .collect();
-        let df = DataFrame::new_no_checks(columns);
-
         let iter = df.iter_record_batches();
         write::write_header(&mut writer, &df.schema().to_arrow())?;
         for batch in iter {
