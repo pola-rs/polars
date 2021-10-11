@@ -67,10 +67,17 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
+        // 6f because our precision is milliseconds
+        // no need for 3 traling zeros
+        let options = write::SerializeOptions {
+            timestamp_format: "%FT%H:%M:%S.%6f".to_string(),
+            ..Default::default()
+        };
+
         CsvWriter {
             buffer,
             writer_builder: write::WriterBuilder::new(),
-            options: Default::default(),
+            options,
         }
     }
 

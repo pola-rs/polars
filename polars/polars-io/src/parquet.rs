@@ -17,7 +17,6 @@
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
-use arrow::compute::cast;
 use arrow::datatypes::PhysicalType;
 use arrow::io::parquet::write::{array_to_pages, DynIter, Encoding};
 use arrow::io::parquet::{read, write};
@@ -155,14 +154,7 @@ where
 
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
-        let mut fields = df.schema().to_arrow().fields().clone();
-
-        let column_names = df
-            .get_columns()
-            .iter()
-            .map(|s| s.name().to_string())
-            .collect::<Vec<_>>();
-
+        let fields = df.schema().to_arrow().fields().clone();
         let rb_iter = df.iter_record_batches();
 
         let options = write::WriteOptions {
