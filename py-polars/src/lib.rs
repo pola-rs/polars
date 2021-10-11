@@ -178,16 +178,19 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 }
 
 #[pyfunction]
-fn collect_all(lfs: Vec<PyLazyFrame>) -> PyResult<Vec<PyDataFrame>> {
+fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
     use polars_core::utils::rayon::prelude::*;
-    let out = polars_core::POOL.install(|| {
-        lfs.par_iter()
-            .map(|lf| {
-                let df = lf.ldf.clone().collect()?;
-                Ok(PyDataFrame::new(df))
-            })
-            .collect::<polars_core::error::Result<Vec<_>>>()
-            .map_err(PyPolarsEr::from)
+
+    let out = py.allow_threads(|| {
+        polars_core::POOL.install(|| {
+            lfs.par_iter()
+                .map(|lf| {
+                    let df = lf.ldf.clone().collect()?;
+                    Ok(PyDataFrame::new(df))
+                })
+                .collect::<polars_core::error::Result<Vec<_>>>()
+                .map_err(PyPolarsEr::from)
+        })
     });
 
     Ok(out?)
