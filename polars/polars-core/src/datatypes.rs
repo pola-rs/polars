@@ -367,8 +367,8 @@ impl Display for DataType {
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             DataType::Utf8 => "str",
-            DataType::Date => "Date(days)",
-            DataType::Datetime => "datetime(ms)",
+            DataType::Date => "date",
+            DataType::Datetime => "datetime",
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
