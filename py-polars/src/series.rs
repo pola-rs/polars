@@ -50,9 +50,6 @@ init_method!(new_u8, u8);
 init_method!(new_u16, u16);
 init_method!(new_u32, u32);
 init_method!(new_u64, u64);
-init_method!(new_date, i32);
-init_method!(new_datetime, i64);
-init_method!(new_time_ns, i64);
 
 #[pymethods]
 impl PySeries {
@@ -171,9 +168,6 @@ init_method_opt!(new_opt_i32, Int32Type, i32);
 init_method_opt!(new_opt_i64, Int64Type, i64);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
-init_method_opt!(new_opt_date, Int32Type, i32);
-init_method_opt!(new_opt_datetime, Int64Type, i64);
-init_method_opt!(new_opt_time_ns, Int64Type, i64);
 
 impl From<Series> for PySeries {
     fn from(s: Series) -> Self {

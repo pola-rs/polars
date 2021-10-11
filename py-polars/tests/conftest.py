@@ -17,6 +17,7 @@ def df() -> pl.DataFrame:
             "strings_nulls": ["foo", None, "ham"],
             "date": [1324, 123, 1234],
             "datetime": [13241324, 12341256, 12341234],
+            "time": [13241324, 12341256, 12341234],
         }
     )
     return df.with_columns(
@@ -24,6 +25,7 @@ def df() -> pl.DataFrame:
             pl.col("date").cast(pl.Date),
             pl.col("datetime").cast(pl.Datetime),
             pl.col("strings").cast(pl.Categorical).alias("cat"),
+            pl.col("time").cast(pl.Time),
         ]
     )
 

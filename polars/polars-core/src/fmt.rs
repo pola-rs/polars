@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-use crate::chunked_array::temporal::{date_as_datetime, datetime_as_datetime};
+use arrow::temporal_conversions::{date32_to_date, timestamp_ms_to_datetime};
 use num::{Num, NumCast};
 use std::{
     fmt,
@@ -13,61 +13,10 @@ const LIMIT: usize = 25;
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
 #[cfg(feature = "pretty_fmt")]
 use comfy_table::*;
-
 #[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
 use prettytable::{Cell, Row, Table};
-
-/// Some unit functions that just pass the integer values if we don't want all chrono functionality
-#[cfg(not(feature = "temporal"))]
-mod temporal {
-    pub struct DateTime<T>(T)
-    where
-        T: Copy;
-
-    impl<T> DateTime<T>
-    where
-        T: Copy,
-    {
-        pub fn date(&self) -> T {
-            self.0
-        }
-    }
-
-    pub fn Date_as_datetime(v: i32) -> DateTime<i32> {
-        DateTime(v)
-    }
-    pub fn datetime_as_datetime(v: i64) -> DateTime<i64> {
-        DateTime(v)
-    }
-    pub fn time32_millisecond_as_time(v: i32) -> i32 {
-        v
-    }
-    pub fn time32_second_as_time(v: i32) -> i32 {
-        v
-    }
-    pub fn time64_nanosecond_as_time(v: i64) -> i64 {
-        v
-    }
-    pub fn time64_microsecond_as_time(v: i64) -> i64 {
-        v
-    }
-    pub fn timestamp_nanoseconds_as_datetime(v: i64) -> i64 {
-        v
-    }
-    pub fn timestamp_microseconds_as_datetime(v: i64) -> i64 {
-        v
-    }
-    pub fn timestamp_milliseconds_as_datetime(v: i64) -> i64 {
-        v
-    }
-    pub fn timestamp_seconds_as_datetime(v: i64) -> i64 {
-        v
-    }
-}
 #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
 use std::borrow::Cow;
-#[cfg(not(feature = "temporal"))]
-use temporal::*;
 
 macro_rules! format_array {
     ($limit:expr, $f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
@@ -548,9 +497,14 @@ impl Display for AnyValue<'_> {
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
             #[cfg(feature = "dtype-date")]
-            AnyValue::Date(v) => write!(f, "{}", date_as_datetime(*v).date()),
+            AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v) => write!(f, "{}", datetime_as_datetime(*v)),
+            AnyValue::Datetime(v) => write!(f, "{}", timestamp_ms_to_datetime(*v)),
+            #[cfg(feature = "dtype-time")]
+            AnyValue::Time(_) => {
+                let nt: chrono::NaiveTime = self.into();
+                write!(f, "{}", nt)
+            }
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(idx, rev) => {
                 let s = rev.get(*idx);
@@ -637,13 +591,22 @@ impl FmtList for CategoricalChunked {
     }
 }
 
+#[cfg(feature = "dtype-date")]
 impl FmtList for DateChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
 impl FmtList for DatetimeChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl FmtList for TimeChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }

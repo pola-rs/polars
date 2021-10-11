@@ -4,9 +4,9 @@ mod categorical;
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-date",
-    feature = "dtype-time64-ns"
+    feature = "dtype-time"
 ))]
-mod dates;
+mod dates_time;
 mod floats;
 mod list;
 #[cfg(feature = "object")]

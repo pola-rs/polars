@@ -24,7 +24,11 @@ macro_rules! impl_compare {
             DataType::Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
             DataType::Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             DataType::Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
+            #[cfg(feature = "dtype-date")]
             DataType::Date => lhs.date().unwrap().$method(rhs.date().unwrap().deref()),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => lhs.time().unwrap().$method(rhs.time().unwrap().deref()),
+            #[cfg(feature = "dtype-datetime")]
             DataType::Datetime => lhs
                 .datetime()
                 .unwrap()

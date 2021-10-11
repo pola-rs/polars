@@ -61,6 +61,7 @@ impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
 impl_polars_datatype!(DatetimeType, Datetime, i64);
+impl_polars_datatype!(TimeType, Time, i64);
 
 impl PolarsDataType for Utf8Type {
     fn get_dtype() -> DataType {
@@ -237,6 +238,9 @@ pub enum AnyValue<'a> {
     /// in milliseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
     Datetime(i64),
+    /// A 64-bit time representing the elapsed time since midnight in nanoseconds
+    #[cfg(feature = "dtype-time")]
+    Time(i64),
     #[cfg(feature = "dtype-categorical")]
     Categorical(u32, &'a RevMapping),
     /// Nested type, contains arrays that are filled with one of the datetypes.
@@ -322,6 +326,15 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    #[cfg(feature = "dtype-time")]
+    pub(crate) fn into_time(self) -> Self {
+        match self {
+            AnyValue::Int64(v) => AnyValue::Time(v),
+            AnyValue::Null => AnyValue::Null,
+            dt => panic!("cannot create date from other type. dtype: {}", dt),
+        }
+    }
+
     pub fn add<'b>(&self, rhs: &AnyValue<'b>) -> Self {
         use AnyValue::*;
         match (self, rhs) {
@@ -369,6 +382,7 @@ impl Display for DataType {
             DataType::Utf8 => "str",
             DataType::Date => "date",
             DataType::Datetime => "datetime",
+            DataType::Time => "time",
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
@@ -394,6 +408,8 @@ impl PartialEq for AnyValue<'_> {
             (Int64(l), Int64(r)) => l == r,
             (Float32(l), Float32(r)) => l == r,
             (Float64(l), Float64(r)) => l == r,
+            #[cfg(feature = "dtype-time")]
+            (Time(l), Time(r)) => l == r,
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Date(l), Date(r)) => l == r,
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -452,6 +468,7 @@ pub enum DataType {
     Int64,
     Float32,
     Float64,
+    /// String data
     Utf8,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
@@ -459,6 +476,8 @@ pub enum DataType {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
     Datetime,
+    /// A 64-bit time representing the elapsed time since midnight in nanoseconds
+    Time,
     List(Box<DataType>),
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
@@ -475,6 +494,8 @@ impl DataType {
         match self {
             Date => Int32,
             Datetime => Int64,
+            Time => Int64,
+            Categorical => UInt32,
             _ => self.clone(),
         }
     }
@@ -497,6 +518,7 @@ impl DataType {
             Utf8 => ArrowDataType::LargeUtf8,
             Date => ArrowDataType::Date32,
             Datetime => ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
+            Time => ArrowDataType::Time64(TimeUnit::Nanosecond),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",
                 dt.to_arrow(),

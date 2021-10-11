@@ -1,52 +1,17 @@
 //! Traits and utilities for temporal data.
 pub mod conversion;
-pub(crate) mod conversions_utils;
-pub use self::conversion::{AsNaiveDate, AsNaiveDateTime};
-pub(crate) use self::conversions_utils::*;
-use chrono::NaiveDateTime;
+#[cfg(feature = "dtype-date")]
+mod date;
+#[cfg(feature = "dtype-datetime")]
+mod datetime;
+#[cfg(feature = "dtype-time")]
+mod time;
+mod utf8;
+
+pub use self::conversion::*;
+use crate::chunked_array::kernels::temporal::*;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 pub fn unix_time() -> NaiveDateTime {
     NaiveDateTime::from_timestamp(0, 0)
-}
-
-#[cfg(all(test, feature = "temporal"))]
-mod test {
-    use crate::prelude::*;
-    use chrono::NaiveDateTime;
-
-    #[test]
-    fn from_datetime() {
-        let datetimes: Vec<_> = [
-            "1988-08-25 00:00:16",
-            "2015-09-05 23:56:04",
-            "2012-12-21 00:00:00",
-        ]
-        .iter()
-        .map(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap())
-        .collect();
-
-        // NOTE: the values are checked and correct.
-        let dt = DatetimeChunked::new_from_naive_datetime("name", &datetimes);
-        assert_eq!(
-            [588470416000, 1441497364000, 1356048000000],
-            dt.cont_slice().unwrap()
-        );
-    }
-
-    #[test]
-    fn from_date() {
-        let dates = &[
-            "2020-08-21",
-            "2020-08-21",
-            "2020-08-22",
-            "2020-08-23",
-            "2020-08-22",
-        ];
-        let fmt = "%Y-%m-%d";
-        let ca = DateChunked::parse_from_str_slice("dates", dates, fmt);
-        assert_eq!(
-            [18495, 18495, 18496, 18497, 18496],
-            ca.cont_slice().unwrap()
-        );
-    }
 }

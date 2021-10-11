@@ -80,6 +80,7 @@ moment = []
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
 dtype-datetime= ["temporal"]
+dtype-time = ["temporal"]
 dtype-i8 = []
 dtype-i16 = []
 dtype-u8 = []

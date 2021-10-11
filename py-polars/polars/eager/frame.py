@@ -670,7 +670,6 @@ class DataFrame:
         >>> pandas_df = df.to_pandas()
         >>> type(pandas_df)
         pandas.core.frame.DataFrame
-
         """
         return self.to_arrow().to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
