@@ -146,11 +146,23 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .into_series())
             }
             #[cfg(feature = "dtype-datetime")]
-            ArrowDataType::Date64 => {
-                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
-                Ok(Int64Chunked::new_from_chunks(name, chunks)
-                    .into_date()
-                    .into_series())
+            ArrowDataType::Timestamp(tu, tz) => {
+                let s = if tz.is_none() || tz == &Some("".to_string()) {
+                    let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                    Int64Chunked::new_from_chunks(name, chunks)
+                        .into_date()
+                        .into_series()
+                } else {
+                    return Err(PolarsError::InvalidOperation(
+                        "Cannot create polars series timestamp with timezone".into(),
+                    ));
+                };
+                Ok(match tu {
+                    TimeUnit::Second => &s / 1000,
+                    TimeUnit::Millisecond => s,
+                    TimeUnit::Microsecond => &s * 1000,
+                    TimeUnit::Nanosecond => &s * 1000000,
+                })
             }
             ArrowDataType::LargeList(_) => {
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
@@ -162,13 +174,6 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 return Ok(Int8Chunked::full_null(name, len).into_series());
                 #[cfg(not(feature = "dtype-i8"))]
                 Ok(UInt32Chunked::full_null(name, len).into_series())
-            }
-            #[cfg(feature = "dtype-datetime")]
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
-                let chunks = cast_chunks(&chunks, &DataType::Datetime).unwrap();
-                Ok(Int64Chunked::new_from_chunks(name, chunks)
-                    .into_date()
-                    .into_series())
             }
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type) => {

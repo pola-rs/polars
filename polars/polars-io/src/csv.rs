@@ -67,8 +67,10 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
+        // 6f because our precision is milliseconds
+        // no need for 3 traling zeros
         let options = write::SerializeOptions {
-            date64_format: "%FT%H:%M:%S.%6f".to_string(),
+            timestamp_format: "%FT%H:%M:%S.%6f".to_string(),
             ..Default::default()
         };
 
@@ -121,8 +123,7 @@ where
 
     /// Set the CSV file's timestamp format array in
     pub fn with_timestamp_format(mut self, format: String) -> Self {
-        self.options.timestamp_format = format.clone();
-        self.options.date64_format = format;
+        self.options.timestamp_format = format;
         self
     }
 

@@ -17,7 +17,6 @@
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
-use arrow::compute::cast;
 use arrow::datatypes::PhysicalType;
 use arrow::io::parquet::write::{array_to_pages, DynIter, Encoding};
 use arrow::io::parquet::{read, write};
@@ -155,50 +154,8 @@ where
 
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
-        let mut fields = df.schema().to_arrow().fields().clone();
-
-        // date64 is not supported by parquet and will be be truncated to date32
-        // We coerce these to timestamp(ms)
-        let datetime_columns = df
-            .get_columns()
-            .iter()
-            .enumerate()
-            .filter_map(|(i, s)| match s.dtype() {
-                DataType::Datetime => {
-                    fields[i] = ArrowField::new(
-                        s.name(),
-                        ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
-                        s.null_count() > 0,
-                    );
-                    Some(i)
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        let column_names = df
-            .get_columns()
-            .iter()
-            .map(|s| s.name().to_string())
-            .collect::<Vec<_>>();
-
-        let rb_iter = df.iter_record_batches().map(|rb| {
-            if !datetime_columns.is_empty() {
-                let mut columns = rb.columns().to_vec();
-                for i in &datetime_columns {
-                    let array = cast::cast(columns[*i].as_ref(), &ArrowDataType::Int64).unwrap();
-                    let array = cast::cast(
-                        array.as_ref(),
-                        &ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
-                    )
-                    .unwrap()
-                    .into();
-                    columns[*i] = array;
-                }
-                RecordBatch::try_from_iter(column_names.iter().zip(columns)).unwrap()
-            } else {
-                rb
-            }
-        });
+        let fields = df.schema().to_arrow().fields().clone();
+        let rb_iter = df.iter_record_batches();
 
         let options = write::WriteOptions {
             write_statistics: false,
