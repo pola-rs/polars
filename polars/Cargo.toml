@@ -103,6 +103,7 @@ private = []
 dtype-full = [
     "dtype-date",
     "dtype-datetime",
+    "dtype-time",
     "dtype-i8",
     "dtype-i16",
     "dtype-u8",
@@ -116,8 +117,9 @@ dtype-slim = [
 ]
 
 # opt-in datatypes for Series
-dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date"]
-dtype-datetime= ["polars-core/dtype-datetime", "polars-lazy/dtype-datetime"]
+dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date", "polars-io/dtype-date"]
+dtype-datetime= ["polars-core/dtype-datetime", "polars-lazy/dtype-datetime", "polars-io/dtype-datetime"]
+dtype-time= ["polars-core/dtype-time", "polars-io/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8"]

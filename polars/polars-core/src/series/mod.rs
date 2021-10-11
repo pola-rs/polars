@@ -605,6 +605,14 @@ impl Series {
             Ok(s)
         }
     }
+    #[cfg(feature = "dtype-time")]
+    pub(crate) fn into_time(self) -> Series {
+        self.i64()
+            .expect("impl error")
+            .clone()
+            .into_time()
+            .into_series()
+    }
 
     pub(crate) fn into_date(self) -> Series {
         match self.dtype() {

@@ -1,7 +1,6 @@
 use crate::frame::groupby::GroupBy;
 use crate::prelude::*;
 use crate::utils::chrono::{Datelike, NaiveDate};
-use crate::utils::CustomIterTools;
 use std::ops::Deref;
 
 pub enum SampleRule {
@@ -13,6 +12,7 @@ pub enum SampleRule {
     Second(u32),
 }
 
+#[cfg(feature = "dtype-date")]
 impl DateChunked {
     pub fn round(&self, rule: SampleRule) -> DateChunked {
         use SampleRule::*;
@@ -73,6 +73,7 @@ impl DateChunked {
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
 impl DatetimeChunked {
     pub fn round(&self, rule: SampleRule) -> DatetimeChunked {
         use SampleRule::*;

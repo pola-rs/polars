@@ -146,6 +146,13 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .into_series())
             }
             #[cfg(feature = "dtype-datetime")]
+            ArrowDataType::Date64 => {
+                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                Ok(Int64Chunked::new_from_chunks(name, chunks)
+                    .into_date()
+                    .into_series())
+            }
+            #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
                 let s = if tz.is_none() || tz == &Some("".to_string()) {
                     let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
@@ -162,6 +169,19 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     TimeUnit::Millisecond => s,
                     TimeUnit::Microsecond => &s * 1000,
                     TimeUnit::Nanosecond => &s * 1000000,
+                })
+            }
+            #[cfg(feature = "dtype-time")]
+            ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
+                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                let s = Int64Chunked::new_from_chunks(name, chunks)
+                    .into_time()
+                    .into_series();
+                Ok(match tu {
+                    TimeUnit::Second => &s * 1000000000,
+                    TimeUnit::Millisecond => &s * 1000000,
+                    TimeUnit::Microsecond => &s * 1000,
+                    TimeUnit::Nanosecond => s,
                 })
             }
             ArrowDataType::LargeList(_) => {
@@ -359,6 +379,13 @@ impl From<DateChunked> for Series {
 #[cfg(feature = "dtype-datetime")]
 impl From<DatetimeChunked> for Series {
     fn from(a: DatetimeChunked) -> Self {
+        a.into_series()
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl From<TimeChunked> for Series {
+    fn from(a: TimeChunked) -> Self {
         a.into_series()
     }
 }

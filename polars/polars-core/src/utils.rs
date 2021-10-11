@@ -280,8 +280,6 @@ macro_rules! match_arrow_data_type_apply_macro {
             DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
             DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
-            // DataType::Date => $macro!(DateType $(, $opt_args)*),
-            // DataType::Datetime=> $macro!(DatetimeType $(, $opt_args)*),
             _ => unimplemented!(),
         }
     }};
@@ -308,10 +306,6 @@ macro_rules! match_arrow_data_type_apply_macro_ca {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
-            // #[cfg(feature = "dtype-date")]
-            // DataType::Date => $macro!($self.date().unwrap() $(, $opt_args)*),
-            // #[cfg(feature = "dtype-datetime")]
-            // DataType::Datetime=> $macro!($self.datetime().unwrap() $(, $opt_args)*),
             _ => unimplemented!(),
         }
     }};
@@ -468,7 +462,6 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         return Some(l.clone());
     }
 
-    // TODO! add list and temporal types
     match (l, r) {
         (UInt8, Int8) => Some(Int8),
         (UInt8, Int16) => Some(Int16),
@@ -550,8 +543,12 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int32, Int64) => Some(Int64),
         (Int32, Float32) => Some(Float32),
         (Int32, Float64) => Some(Float64),
+        #[cfg(feature = "dtype-date")]
         (Int32, Date) => Some(Int32),
+        #[cfg(feature = "dtype-datetime")]
         (Int32, Datetime) => Some(Int64),
+        #[cfg(feature = "dtype-time")]
+        (Int32, Time) => Some(Int64),
         (Int32, Boolean) => Some(Int32),
 
         (Int64, Int8) => Some(Int64),
@@ -560,31 +557,71 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int64, Int64) => Some(Int64),
         (Int64, Float32) => Some(Float32),
         (Int64, Float64) => Some(Float64),
+        #[cfg(feature = "dtype-datetime")]
         (Int64, Datetime) => Some(Int64),
+        #[cfg(feature = "dtype-date")]
         (Int64, Date) => Some(Int32),
+        #[cfg(feature = "dtype-time")]
+        (Int64, Time) => Some(Int64),
         (Int64, Boolean) => Some(Int64),
 
         (Float32, Float32) => Some(Float32),
         (Float32, Float64) => Some(Float64),
+        #[cfg(feature = "dtype-date")]
         (Float32, Date) => Some(Float32),
+        #[cfg(feature = "dtype-datetime")]
         (Float32, Datetime) => Some(Float64),
+        #[cfg(feature = "dtype-time")]
+        (Float32, Time) => Some(Float64),
         (Float64, Float32) => Some(Float64),
         (Float64, Float64) => Some(Float64),
+        #[cfg(feature = "dtype-date")]
         (Float64, Date) => Some(Float64),
+        #[cfg(feature = "dtype-datetime")]
         (Float64, Datetime) => Some(Float64),
+        #[cfg(feature = "dtype-time")]
+        (Float64, Time) => Some(Float64),
         (Float64, Boolean) => Some(Float64),
 
+        #[cfg(feature = "dtype-datetime")]
         (Date, Int32) => Some(Int32),
+        #[cfg(feature = "dtype-datetime")]
         (Date, Int64) => Some(Int64),
+        #[cfg(feature = "dtype-datetime")]
         (Date, Float32) => Some(Float32),
+        #[cfg(feature = "dtype-datetime")]
         (Date, Float64) => Some(Float64),
+        #[cfg(feature = "dtype-datetime")]
         (Date, Datetime) => Some(Datetime),
 
+        #[cfg(feature = "dtype-date")]
         (Datetime, Int32) => Some(Int64),
+        #[cfg(feature = "dtype-date")]
         (Datetime, Int64) => Some(Int64),
+        #[cfg(feature = "dtype-date")]
         (Datetime, Float32) => Some(Float64),
+        #[cfg(feature = "dtype-date")]
         (Datetime, Float64) => Some(Float64),
+        #[cfg(feature = "dtype-date")]
         (Datetime, Date) => Some(Datetime),
+
+        #[cfg(feature = "dtype-time")]
+        (Time, Int32) => Some(Int64),
+        #[cfg(feature = "dtype-time")]
+        (Time, Int64) => Some(Int64),
+        #[cfg(feature = "dtype-time")]
+        (Time, Float32) => Some(Float64),
+        #[cfg(feature = "dtype-time")]
+        (Time, Float64) => Some(Float64),
+
+        #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
+        (Time, Datetime) => Some(Int64),
+        #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
+        (Datetime, Time) => Some(Int64),
+        #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
+        (Time, Date) => Some(Int64),
+        #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
+        (Date, Time) => Some(Int64),
 
         (Utf8, _) => Some(Utf8),
         (_, Utf8) => Some(Utf8),

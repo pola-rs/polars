@@ -14,7 +14,6 @@ import polars as pl
 
 def test_to_from_buffer(df):
     df = df.drop("strings_nulls")
-    df
 
     for to_fn, from_fn in zip(
         [df.to_parquet, df.to_csv], [pl.read_parquet, pl.read_csv]

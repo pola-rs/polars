@@ -19,12 +19,19 @@ impl Series {
                 let arr: DictionaryArray<u32> = (&new).into();
                 Arc::new(arr) as ArrayRef
             }
+            #[cfg(feature = "dtype-date")]
             DataType::Date => {
                 let arr = cast(&*self.chunks()[chunk_idx], &DataType::Date.to_arrow()).unwrap();
                 Arc::from(arr)
             }
+            #[cfg(feature = "dtype-datetime")]
             DataType::Datetime => {
                 let arr = cast(&*self.chunks()[chunk_idx], &DataType::Datetime.to_arrow()).unwrap();
+                Arc::from(arr)
+            }
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => {
+                let arr = cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap();
                 Arc::from(arr)
             }
             _ => self.chunks()[chunk_idx].clone(),

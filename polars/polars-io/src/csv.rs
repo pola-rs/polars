@@ -70,6 +70,9 @@ where
         // 6f because our precision is milliseconds
         // no need for 3 traling zeros
         let options = write::SerializeOptions {
+            // 9f: all nanoseconds
+            time64_format: "%T%.9f".to_string(),
+            // 6f: all milliseconds
             timestamp_format: "%FT%H:%M:%S.%6f".to_string(),
             ..Default::default()
         };
@@ -443,13 +446,25 @@ where
                 .fields()
                 .iter()
                 .filter_map(|fld| {
+                    use DataType::*;
                     match fld.data_type() {
                         // For categorical we first read as utf8 and later cast to categorical
-                        DataType::Categorical => {
+                        Categorical => {
                             to_cast.push(fld);
                             Some(Field::new(fld.name(), DataType::Utf8))
                         }
-                        DataType::Date | DataType::Datetime => {
+                        Date | Datetime => {
+                            to_cast.push(fld);
+                            // let inference decide the column type
+                            None
+                        }
+                        Time => {
+                            to_cast.push(fld);
+                            // let inference decide the column type
+                            None
+                        }
+                        Int8 | Int16 | UInt8 | UInt16 | Boolean => {
+                            // We have not compiled these buffers, so we cast them later.
                             to_cast.push(fld);
                             // let inference decide the column type
                             None
@@ -541,6 +556,11 @@ fn parse_dates(df: DataFrame) -> DataFrame {
 
     for s in cols.iter_mut() {
         if let Ok(ca) = s.utf8() {
+            #[cfg(feature = "dtype-time")]
+            if let Ok(ca) = ca.as_time(None) {
+                *s = ca.into_series();
+                continue;
+            }
             // the order is important. A datetime can always be parsed as date.
             if let Ok(ca) = ca.as_datetime(None) {
                 *s = ca.into_series()

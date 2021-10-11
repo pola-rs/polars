@@ -37,6 +37,7 @@ __all__ = [
     "List",
     "Date",
     "Datetime",
+    "Time",
     "Object",
     "Categorical",
     "DTYPES",
@@ -111,6 +112,10 @@ class Datetime(DataType):
     pass
 
 
+class Time(DataType):
+    pass
+
+
 class Object(DataType):
     pass
 
@@ -136,6 +141,7 @@ DTYPES: tp.List[Type[DataType]] = [
     List,
     Date,
     Datetime,
+    Time,
     Object,
     Categorical,
 ]
@@ -155,6 +161,7 @@ DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     List: "list",
     Date: "date",
     Datetime: "datetime",
+    Time: "time",
     Object: "object",
     Categorical: "categorical",
 }

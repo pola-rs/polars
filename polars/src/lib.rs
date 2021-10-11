@@ -160,6 +160,7 @@
 //! |-------------------------|-------------------|
 //! | DateType                | dtype-date        |
 //! | DatetimeType            | dtype-datetime    |
+//! | TimeType                | dtype-time        |
 //! | Int8Type                | dtype-i8          |
 //! | Int16Type               | dtype-i16         |
 //! | UInt8Type               | dtype-u8          |

@@ -609,7 +609,8 @@ def test_concat():
 
 def test_to_pandas(df):
     # pyarrow cannot deal with unsigned dictionary integer yet.
-    df = df.drop("cat")
+    # pyarrow cannot convert a time64 w/ non-zero nanoseconds
+    df = df.drop(["cat", "time"])
     df.to_arrow()
     df.to_pandas()
     # test shifted df

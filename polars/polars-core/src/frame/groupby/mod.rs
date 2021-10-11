@@ -306,7 +306,6 @@ fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
 
 impl DataFrame {
     pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
-        use polars_arrow::utils::CustomIterTools;
         macro_rules! finish_packed_bit_path {
             ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
                 let n_partitions = set_partition_size();

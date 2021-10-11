@@ -18,6 +18,7 @@ pub enum PyDataType {
     List,
     Date,
     Datetime,
+    Time,
     Object,
     Categorical,
 }
@@ -41,6 +42,7 @@ impl From<&DataType> for PyDataType {
             DataType::List(_) => List,
             DataType::Date => Date,
             DataType::Datetime => Datetime,
+            DataType::Time => Time,
             DataType::Object(_) => Object,
             DataType::Categorical => Categorical,
             dt => panic!("datatype: {:?} not supported", dt),
