@@ -41,7 +41,7 @@
 //! }
 //! ```
 //!
-use crate::csv_core::csv::build_csv_reader;
+use crate::csv_core::csv::CoreReader;
 use crate::csv_core::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
 use crate::utils::resolve_homedir;
@@ -127,12 +127,6 @@ where
     /// Set the CSV file's timestamp format array in
     pub fn with_timestamp_format(mut self, format: String) -> Self {
         self.options.timestamp_format = format;
-        self
-    }
-
-    #[deprecated(since = "0.14.1", note = "is a no-op")]
-    /// Set the size of the write buffers. Batch size is the amount of rows written at once.
-    pub fn with_batch_size(self, _batch_size: usize) -> Self {
         self
     }
 }
@@ -223,6 +217,7 @@ where
     null_values: Option<NullValues>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
+    quote_char: Option<u8>,
     #[cfg(feature = "temporal")]
     parse_dates: bool,
 }
@@ -370,7 +365,13 @@ where
         self
     }
 
-    /// Automatically try to parse logical/ datetimes. If parsing fails, columns remain of dtype Utf8.
+    /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
+    pub fn with_quote_char(mut self, quote: Option<u8>) -> Self {
+        self.quote_char = quote;
+        self
+    }
+
+    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
     #[cfg(feature = "temporal")]
     pub fn with_parse_dates(mut self, toggle: bool) -> Self {
         self.parse_dates = toggle;
@@ -428,6 +429,7 @@ where
             null_values: None,
             predicate: None,
             aggregate: None,
+            quote_char: Some(b'"'),
             #[cfg(feature = "temporal")]
             parse_dates: false,
         }
@@ -479,7 +481,7 @@ where
             // the lifetime that accompanies this scope is shorter.
             // So we just build_csv_reader from here
             let reader_bytes = get_reader_bytes(&mut self.reader)?;
-            let mut csv_reader = build_csv_reader(
+            let mut csv_reader = CoreReader::new(
                 reader_bytes,
                 self.stop_after_n_rows,
                 self.skip_rows,
@@ -498,6 +500,7 @@ where
                 self.chunk_size,
                 self.low_memory,
                 self.comment_char,
+                self.quote_char,
                 self.null_values,
                 self.predicate,
                 self.aggregate,
@@ -511,7 +514,7 @@ where
             df
         } else {
             let reader_bytes = get_reader_bytes(&mut self.reader)?;
-            let mut csv_reader = build_csv_reader(
+            let mut csv_reader = CoreReader::new(
                 reader_bytes,
                 self.stop_after_n_rows,
                 self.skip_rows,
@@ -530,6 +533,7 @@ where
                 self.chunk_size,
                 self.low_memory,
                 self.comment_char,
+                self.quote_char,
                 self.null_values,
                 self.predicate,
                 self.aggregate,

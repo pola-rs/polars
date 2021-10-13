@@ -117,20 +117,20 @@ where
 pub(crate) struct Utf8Field {
     name: String,
     // buffer that holds the string data
-    data: AlignedVec<u8>,
+    data: Vec<u8>,
     // offsets in the string data buffer
-    offsets: AlignedVec<i64>,
+    offsets: Vec<i64>,
     validity: MutableBitmap,
     rdr: csv_core::Reader,
 }
 
 impl Utf8Field {
     fn new(name: &str, capacity: usize, str_capacity: usize, delimiter: u8) -> Self {
-        let mut offsets = AlignedVec::with_capacity(capacity + 1);
+        let mut offsets = Vec::with_capacity(capacity + 1);
         offsets.push(0);
         Self {
             name: name.to_string(),
-            data: AlignedVec::with_capacity(str_capacity),
+            data: Vec::with_capacity(str_capacity),
             offsets,
             validity: MutableBitmap::with_capacity(capacity),
             rdr: csv_core::ReaderBuilder::new().delimiter(delimiter).build(),
