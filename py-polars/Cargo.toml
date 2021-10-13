@@ -74,7 +74,7 @@ features = [
     "moment",
     "arange",
     "true_div",
-    "dtype-categorical"
+    "dtype-categorical",
 ]
 
 #[patch.crates-io]

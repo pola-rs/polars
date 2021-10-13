@@ -155,6 +155,7 @@ impl Executor for CsvExec {
             .with_aggregate(aggregate)
             .with_encoding(CsvEncoding::LossyUtf8)
             .with_comment_char(self.options.comment_char)
+            .with_quote_char(self.options.quote_char)
             .finish()?;
 
         if self.options.cache {

@@ -97,10 +97,12 @@ impl PyLazyFrame {
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
         low_memory: bool,
         comment_char: Option<&str>,
+        quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
     ) -> Self {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
+        let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let delimiter = sep.as_bytes()[0];
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
@@ -125,6 +127,7 @@ impl PyLazyFrame {
             .with_dtype_overwrite(overwrite_dtype.as_ref())
             .low_memory(low_memory)
             .with_comment_char(comment_char)
+            .with_quote_char(quote_char)
             .with_null_values(null_values)
             .finish()
             .into()

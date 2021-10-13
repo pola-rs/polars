@@ -39,6 +39,7 @@ pub struct LazyCsvReader<'a> {
     schema_overwrite: Option<&'a Schema>,
     low_memory: bool,
     comment_char: Option<u8>,
+    quote_char: Option<u8>,
     null_values: Option<NullValues>,
 }
 
@@ -57,6 +58,7 @@ impl<'a> LazyCsvReader<'a> {
             schema_overwrite: None,
             low_memory: false,
             comment_char: None,
+            quote_char: Some(b'"'),
             null_values: None,
         }
     }
@@ -111,6 +113,12 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
+    pub fn with_quote_char(mut self, quote: Option<u8>) -> Self {
+        self.quote_char = quote;
+        self
+    }
+
     /// Set values that will be interpreted as missing/ null.
     pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
         self.null_values = null_values;
@@ -142,6 +150,7 @@ impl<'a> LazyCsvReader<'a> {
             self.schema_overwrite,
             self.low_memory,
             self.comment_char,
+            self.quote_char,
             self.null_values,
         )
         .build()

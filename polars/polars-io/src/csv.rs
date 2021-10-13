@@ -579,6 +579,7 @@ fn parse_dates(df: DataFrame) -> DataFrame {
 
 #[cfg(test)]
 mod test {
+    use crate::csv_core::utils::get_file_chunks;
     use crate::prelude::*;
     use polars_core::datatypes::AnyValue;
     use polars_core::prelude::*;
@@ -622,13 +623,12 @@ mod test {
 "#;
 
         let file = Cursor::new(s);
-        let df = CsvReader::new(file)
+        CsvReader::new(file)
             .infer_schema(Some(100))
             .has_header(true)
             .with_ignore_parser_errors(true)
             .finish()
             .unwrap();
-        dbg!(df.select_at_idx(0).unwrap().n_chunks());
 
         let s = r#"
          "sepal.length","sepal.width","petal.length","petal.width","variety"
@@ -722,6 +722,13 @@ mod test {
         dbg!(&df);
         let col_1 = df.select_at_idx(0).unwrap();
         assert_eq!(col_1.get(0), AnyValue::Utf8("vegetables"));
+        assert_eq!(col_1.get(1), AnyValue::Utf8("seafood"));
+        assert_eq!(col_1.get(2), AnyValue::Utf8("meat"));
+
+        let col_2 = df.select_at_idx(1).unwrap();
+        assert_eq!(col_2.get(0), AnyValue::Float64(0.5));
+        assert_eq!(col_2.get(1), AnyValue::Float64(5.0));
+        assert_eq!(col_2.get(2), AnyValue::Float64(5.0));
     }
 
     #[test]
@@ -771,6 +778,8 @@ mod test {
 "#;
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).finish().unwrap();
+        println!("GET: {}", df.column("column_2").unwrap().get(1));
+        println!("EXPECTEd: {}", r#"with "double quotes followed", by comma"#);
         assert_eq!(df.shape(), (2, 3));
         assert!(df.column("column_2").unwrap().series_equal(&Series::new(
             "column_2",
@@ -917,7 +926,11 @@ id090,id048,id0000067778,24,2,51862,4,9,
             "\"foo\",\"bar\"\r\n\"158252579.00\",\"7.5800\"\r\n\"158252579.00\",\"7.5800\"\r\n";
 
         let file = Cursor::new(csv);
-        let df = CsvReader::new(file).has_header(true).finish().unwrap();
+        let df = CsvReader::new(file)
+            .has_header(true)
+            .with_n_threads(Some(1))
+            .finish()
+            .unwrap();
         assert_eq!(df.shape(), (2, 2));
     }
 
@@ -1031,6 +1044,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
 
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).has_header(false).finish()?;
+
         use polars_core::df;
         let expect = df![
             "column_1" => [1, 1, 1, 1],
@@ -1125,6 +1139,28 @@ bar,bar";
         let ts = df.column("timestamp")?;
         assert_eq!(ts.dtype(), &DataType::Datetime);
         assert_eq!(ts.null_count(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_quotes() -> Result<()> {
+        let rolling_stones = r#"
+linenum,last_name,first_name
+1,Jagger,Mick
+2,O"Brian,Mary
+3,Richards,Keith
+4,L"Etoile,Bennet
+5,Watts,Charlie
+6,Smith,D"Shawn
+7,Wyman,Bill
+8,Woods,Ron
+9,Jones,Brian
+"#;
+
+        let file = Cursor::new(rolling_stones);
+        let df = CsvReader::new(file).with_quote_char(None).finish()?;
+        assert_eq!(df.shape(), (9, 3));
 
         Ok(())
     }

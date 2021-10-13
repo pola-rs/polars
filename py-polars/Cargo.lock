@@ -1282,6 +1282,7 @@ dependencies = [
  "polars-core",
  "rayon",
  "regex",
+ "simdutf8",
 ]
 
 [[package]]

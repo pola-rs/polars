@@ -366,6 +366,7 @@ class DataFrame:
         dtype: Union[Dict[str, Type[DataType]], tp.List[Type[DataType]], None] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
+        quote_char: Optional[str] = r'"',
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
         parse_dates: bool = True,
     ) -> "DataFrame":
@@ -409,6 +410,9 @@ class DataFrame:
             Reduce memory usage in expense of performance.
         comment_char
             character that indicates the start of a comment line, for instance '#'.
+        quote_char
+            single byte character that is used for csv quoting, default = ''. Set to None to turn special handling and escaping
+            of quotes off.
         null_values
             Values to interpret as null values. You can provide a:
 
@@ -471,6 +475,7 @@ class DataFrame:
             dtype_slice,
             low_memory,
             comment_char,
+            quote_char,
             processed_null_values,
             parse_dates,
         )
