@@ -334,6 +334,7 @@ pub(crate) fn parse_lines(
     offset: usize,
     delimiter: u8,
     comment_char: Option<u8>,
+    quote_char: Option<u8>,
     null_values: Option<&Vec<String>>,
     projection: &[usize],
     buffers: &mut [Buffer],

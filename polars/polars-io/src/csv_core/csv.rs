@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
 /// CSV file reader
-pub struct CoreReader<'a> {
+pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     /// Explicit schema for the CSV file
     schema: Cow<'a, Schema>,
@@ -34,6 +34,7 @@ pub struct CoreReader<'a> {
     chunk_size: usize,
     low_memory: bool,
     comment_char: Option<u8>,
+    quote_char: Option<u8>,
     null_values: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
@@ -98,6 +99,120 @@ impl RunningSize {
 }
 
 impl<'a> CoreReader<'a> {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        #[cfg(any(feature = "decompress", feature = "decompress-fast"))] mut reader_bytes: ReaderBytes<
+            'a,
+        >,
+        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))] reader_bytes: ReaderBytes<
+            'a,
+        >,
+        n_rows: Option<usize>,
+        skip_rows: usize,
+        mut projection: Option<Vec<usize>>,
+        max_records: Option<usize>,
+        delimiter: Option<u8>,
+        has_header: bool,
+        ignore_parser_errors: bool,
+        schema: Option<&'a Schema>,
+        columns: Option<Vec<String>>,
+        encoding: CsvEncoding,
+        n_threads: Option<usize>,
+        schema_overwrite: Option<&'a Schema>,
+        dtype_overwrite: Option<&'a [DataType]>,
+        sample_size: usize,
+        chunk_size: usize,
+        low_memory: bool,
+        comment_char: Option<u8>,
+        quote_char: Option<u8>,
+        null_values: Option<NullValues>,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        aggregate: Option<&'a [ScanAggregation]>,
+    ) -> Result<CoreReader<'a>> {
+        // check if schema should be inferred
+        let delimiter = delimiter.unwrap_or(b',');
+
+        let mut schema = match schema {
+            Some(schema) => Cow::Borrowed(schema),
+            None => {
+                #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+                {
+                    // We keep track of the inferred schema bool
+                    // In case the file is compressed this schema inference is wrong and has to be done
+                    // again after decompression.
+                    if let Some(b) = decompress(&reader_bytes) {
+                        reader_bytes = ReaderBytes::Owned(b);
+                    }
+
+                    let (inferred_schema, _) = infer_file_schema(
+                        &reader_bytes,
+                        delimiter,
+                        max_records,
+                        has_header,
+                        schema_overwrite,
+                        skip_rows,
+                        comment_char,
+                    )?;
+                    Cow::Owned(inferred_schema)
+                }
+                #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
+                {
+                    let (inferred_schema, _) = infer_file_schema(
+                        &reader_bytes,
+                        delimiter,
+                        max_records,
+                        has_header,
+                        schema_overwrite,
+                        skip_rows,
+                        comment_char,
+                    )?;
+                    Cow::Owned(inferred_schema)
+                }
+            }
+        };
+        if let Some(dtypes) = dtype_overwrite {
+            let mut s = schema.into_owned();
+            let fields = s.fields_mut();
+            for (dt, field) in dtypes.iter().zip(fields) {
+                *field = Field::new(field.name(), dt.clone())
+            }
+            schema = Cow::Owned(s);
+        }
+
+        let null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
+
+        if let Some(cols) = columns {
+            let mut prj = Vec::with_capacity(cols.len());
+            for col in cols {
+                let i = schema.index_of(&col)?;
+                prj.push(i);
+            }
+            projection = Some(prj);
+        }
+
+        Ok(CoreReader {
+            reader_bytes: Some(reader_bytes),
+            schema,
+            projection,
+            line_number: if has_header { 1 } else { 0 },
+            ignore_parser_errors,
+            skip_rows,
+            n_rows,
+            encoding,
+            n_threads,
+            has_header,
+            delimiter,
+            sample_size,
+            chunk_size,
+            low_memory,
+            comment_char,
+            quote_char,
+            null_values,
+            predicate,
+            aggregate,
+        })
+    }
+
     fn find_starting_point<'b>(&self, mut bytes: &'b [u8]) -> Result<&'b [u8]> {
         // Skip all leading white space and the occasional utf8-bom
         bytes = skip_line_ending(skip_whitespace(skip_bom(bytes)).0).0;
@@ -290,6 +405,7 @@ impl<'a> CoreReader<'a> {
                                 read,
                                 delimiter,
                                 self.comment_char,
+                                self.quote_char,
                                 self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
@@ -398,6 +514,7 @@ impl<'a> CoreReader<'a> {
                                 read,
                                 delimiter,
                                 self.comment_char,
+                                self.quote_char,
                                 self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
@@ -440,6 +557,7 @@ impl<'a> CoreReader<'a> {
                 0,
                 self.delimiter,
                 self.comment_char,
+                self.quote_char,
                 self.null_values.as_ref(),
                 projection,
                 buffers,
@@ -479,116 +597,4 @@ impl<'a> CoreReader<'a> {
         }
         Ok(df)
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn build_csv_reader<'a>(
-    #[cfg(any(feature = "decompress", feature = "decompress-fast"))] mut reader_bytes: ReaderBytes<
-        'a,
-    >,
-    #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))] reader_bytes: ReaderBytes<
-        'a,
-    >,
-    n_rows: Option<usize>,
-    skip_rows: usize,
-    mut projection: Option<Vec<usize>>,
-    max_records: Option<usize>,
-    delimiter: Option<u8>,
-    has_header: bool,
-    ignore_parser_errors: bool,
-    schema: Option<&'a Schema>,
-    columns: Option<Vec<String>>,
-    encoding: CsvEncoding,
-    n_threads: Option<usize>,
-    schema_overwrite: Option<&'a Schema>,
-    dtype_overwrite: Option<&'a [DataType]>,
-    sample_size: usize,
-    chunk_size: usize,
-    low_memory: bool,
-    comment_char: Option<u8>,
-    null_values: Option<NullValues>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    aggregate: Option<&'a [ScanAggregation]>,
-) -> Result<CoreReader<'a>> {
-    // check if schema should be inferred
-    let delimiter = delimiter.unwrap_or(b',');
-
-    let mut schema = match schema {
-        Some(schema) => Cow::Borrowed(schema),
-        None => {
-            #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-            {
-                // We keep track of the inferred schema bool
-                // In case the file is compressed this schema inference is wrong and has to be done
-                // again after decompression.
-                if let Some(b) = decompress(&reader_bytes) {
-                    reader_bytes = ReaderBytes::Owned(b);
-                }
-
-                let (inferred_schema, _) = infer_file_schema(
-                    &reader_bytes,
-                    delimiter,
-                    max_records,
-                    has_header,
-                    schema_overwrite,
-                    skip_rows,
-                    comment_char,
-                )?;
-                Cow::Owned(inferred_schema)
-            }
-            #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-            {
-                let (inferred_schema, _) = infer_file_schema(
-                    &reader_bytes,
-                    delimiter,
-                    max_records,
-                    has_header,
-                    schema_overwrite,
-                    skip_rows,
-                    comment_char,
-                )?;
-                Cow::Owned(inferred_schema)
-            }
-        }
-    };
-    if let Some(dtypes) = dtype_overwrite {
-        let mut s = schema.into_owned();
-        let fields = s.fields_mut();
-        for (dt, field) in dtypes.iter().zip(fields) {
-            *field = Field::new(field.name(), dt.clone())
-        }
-        schema = Cow::Owned(s);
-    }
-
-    let null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
-
-    if let Some(cols) = columns {
-        let mut prj = Vec::with_capacity(cols.len());
-        for col in cols {
-            let i = schema.index_of(&col)?;
-            prj.push(i);
-        }
-        projection = Some(prj);
-    }
-
-    Ok(CoreReader {
-        reader_bytes: Some(reader_bytes),
-        schema,
-        projection,
-        line_number: if has_header { 1 } else { 0 },
-        ignore_parser_errors,
-        skip_rows,
-        n_rows,
-        encoding,
-        n_threads,
-        has_header,
-        delimiter,
-        sample_size,
-        chunk_size,
-        low_memory,
-        comment_char,
-        null_values,
-        predicate,
-        aggregate,
-    })
 }
