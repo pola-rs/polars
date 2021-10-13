@@ -162,6 +162,7 @@ def read_csv(
     use_pyarrow: bool = False,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
+    quote_char: Optional[str] = r'"',
     storage_options: Optional[Dict] = None,
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
     parse_dates: bool = True,
@@ -218,6 +219,9 @@ def read_csv(
         Reduce memory usage in expense of performance.
     comment_char
         character that indicates the start of a comment line, for instance '#'.
+    quote_char
+        single byte character that is used for csv quoting, default = ''. Set to None to turn special handling and escaping
+        of quotes off.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
     null_values
@@ -319,6 +323,7 @@ def read_csv(
             dtype=dtype,
             low_memory=low_memory,
             comment_char=comment_char,
+            quote_char=quote_char,
             null_values=null_values,
             parse_dates=parse_dates,
         )
@@ -339,6 +344,7 @@ def scan_csv(
     dtype: Optional[Dict[str, Type["pl.DataType"]]] = None,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
+    quote_char: Optional[str] = r'"',
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
 ) -> "pl.LazyFrame":
     """
@@ -370,6 +376,9 @@ def scan_csv(
         Reduce memory usage in expense of performance.
     comment_char
         character that indicates the start of a comment line, for instance '#'.
+    quote_char
+        single byte character that is used for csv quoting, default = ''. Set to None to turn special handling and escaping
+        of quotes off.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -390,6 +399,7 @@ def scan_csv(
         dtype=dtype,
         low_memory=low_memory,
         comment_char=comment_char,
+        quote_char=quote_char,
         null_values=null_values,
     )
 

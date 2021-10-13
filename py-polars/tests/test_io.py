@@ -249,3 +249,20 @@ def test_categorical_round_trip():
 
     df = pl.from_arrow(tbl)
     assert df.dtypes == [pl.Int64, pl.Categorical]
+
+
+def test_csq_quote_char():
+    rolling_stones = """
+    linenum,last_name,first_name
+    1,Jagger,Mick
+    2,O"Brian,Mary
+    3,Richards,Keith
+    4,L"Etoile,Bennet
+    5,Watts,Charlie
+    6,Smith,D"Shawn
+    7,Wyman,Bill
+    8,Woods,Ron
+    9,Jones,Brian
+    """
+
+    assert pl.read_csv(rolling_stones.encode(), quote_char=None).shape == (9, 3)

@@ -56,6 +56,7 @@ class LazyFrame:
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
+        quote_char: Optional[str] = r'"',
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
     ) -> "LazyFrame":
         """
@@ -80,6 +81,7 @@ class LazyFrame:
             dtype_list,
             low_memory,
             comment_char,
+            quote_char,
             processed_null_values,
         )
         return self

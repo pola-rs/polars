@@ -140,6 +140,7 @@ impl LiteralValue {
 pub struct CsvParserOptions {
     pub(crate) delimiter: u8,
     pub(crate) comment_char: Option<u8>,
+    pub(crate) quote_char: Option<u8>,
     pub(crate) has_header: bool,
     pub(crate) skip_rows: usize,
     pub(crate) stop_after_n_rows: Option<usize>,
@@ -767,6 +768,7 @@ impl LogicalPlanBuilder {
         schema_overwrite: Option<&Schema>,
         low_memory: bool,
         comment_char: Option<u8>,
+        quote_char: Option<u8>,
         null_values: Option<NullValues>,
     ) -> Self {
         let path = path.into();
@@ -782,6 +784,7 @@ impl LogicalPlanBuilder {
                 schema_overwrite,
                 skip_rows,
                 comment_char,
+                quote_char,
             )
             .expect("could not read schema");
             Arc::new(schema)
@@ -799,6 +802,7 @@ impl LogicalPlanBuilder {
                 low_memory,
                 cache,
                 comment_char,
+                quote_char,
                 null_values,
             },
             predicate: None,

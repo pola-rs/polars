@@ -1,5 +1,4 @@
 use super::buffer::*;
-use crate::csv::CsvEncoding;
 use num::traits::Pow;
 use polars_core::prelude::*;
 
@@ -36,6 +35,7 @@ pub(crate) fn next_line_position(
     mut input: &[u8],
     expected_fields: usize,
     delimiter: u8,
+    quote_char: Option<u8>,
 ) -> Option<usize> {
     let mut total_pos = 0;
     if input.is_empty() {
@@ -48,7 +48,11 @@ pub(crate) fn next_line_position(
         }
         let line = SplitLines::new(&input[pos..], b'\n').next();
         if let Some(line) = line {
-            if SplitFields::new(line, delimiter).into_iter().count() == expected_fields {
+            if SplitFields::new(line, delimiter, quote_char)
+                .into_iter()
+                .count()
+                == expected_fields
+            {
                 return input.get(pos + 1).and_then(|&b| {
                     Option::from({
                         if b == b'\r' {
@@ -239,14 +243,27 @@ pub(crate) struct SplitFields<'a> {
     v: &'a [u8],
     delimiter: u8,
     finished: bool,
+    quote_char: u8,
+    quoting: bool,
 }
 
 impl<'a> SplitFields<'a> {
-    pub(crate) fn new(slice: &'a [u8], delimiter: u8) -> Self {
+    pub(crate) fn new(slice: &'a [u8], delimiter: u8, quote_char: Option<u8>) -> Self {
         Self {
             v: slice,
             delimiter,
             finished: false,
+            quote_char: quote_char.unwrap_or(b'"'),
+            quoting: quote_char.is_some(),
+        }
+    }
+
+    fn finish_eol(&mut self, need_escaping: bool, idx: usize) -> Option<(&'a [u8], bool)> {
+        if self.finished {
+            None
+        } else {
+            self.finished = true;
+            Some((&self.v[..idx], need_escaping))
         }
     }
 
@@ -258,6 +275,32 @@ impl<'a> SplitFields<'a> {
             Some((self.v, need_escaping))
         }
     }
+
+    fn eof_oel(&self, current_ch: u8) -> bool {
+        current_ch == self.delimiter || current_ch == b'\n'
+    }
+}
+
+fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
+    let mut in_field = false;
+
+    let mut idx = 0u32;
+    // micro optimizations
+    #[allow(clippy::explicit_counter_loop)]
+    for &c in bytes.iter() {
+        if c == quote_char {
+            // toggle between string field enclosure
+            //      if we encounter a starting '"' -> in_field = true;
+            //      if we encounter a closing '"' -> in_field = false;
+            in_field = !in_field;
+        }
+
+        if !in_field && c == needle {
+            return Some(idx as usize);
+        }
+        idx += 1;
+    }
+    None
 }
 
 impl<'a> Iterator for SplitFields<'a> {
@@ -265,57 +308,80 @@ impl<'a> Iterator for SplitFields<'a> {
     type Item = (&'a [u8], bool);
 
     #[inline]
-    //
     fn next(&mut self) -> Option<(&'a [u8], bool)> {
         if self.finished {
             return None;
         }
+
         let mut needs_escaping = false;
         // There can be strings with delimiters:
         // "Street, City",
-        let pos = if !self.v.is_empty() && self.v[0] == b'"' {
+
+        let pos = if self.quoting && !self.v.is_empty() && self.v[0] == self.quote_char {
             needs_escaping = true;
             // There can be pair of double-quotes within string.
             // Each of the embedded double-quote characters must be represented
             // by a pair of double-quote characters:
             // e.g. 1997,Ford,E350,"Super, ""luxurious"" truck",20020
 
-            // To find the last double-quote we check for the last uneven double-quote
-            // character followed by a comma.
-            let mut previous_char = b'"';
+            // denotes if we are in a string field, started with a quote
+            let mut in_field = false;
+
             let mut idx = 0u32;
             let mut current_idx = 0u32;
             // micro optimizations
             #[allow(clippy::explicit_counter_loop)]
-            for &current_char in self.v.iter() {
-                if current_char == self.delimiter && previous_char == b'"' {
+            for &c in self.v.iter() {
+                if c == self.quote_char {
+                    // toggle between string field enclosure
+                    //      if we encounter a starting '"' -> in_field = true;
+                    //      if we encounter a closing '"' -> in_field = false;
+                    in_field = !in_field;
+                }
+
+                if !in_field && self.eof_oel(c) {
+                    if c == b'\n' {
+                        return self.finish_eol(needs_escaping, current_idx as usize);
+                    }
                     idx = current_idx;
                     break;
-                }
-                if current_char == b'"' && previous_char != b'"' {
-                    previous_char = b'"';
-                } else {
-                    // Replace previous char by '#' when the number of double-quote is even.
-                    previous_char = b'#';
                 }
                 current_idx += 1;
             }
 
-            if idx == 0 && previous_char == b'"' {
+            if idx == 0 {
                 return self.finish(needs_escaping);
             }
 
             idx as usize
         } else {
-            match self.v.iter().position(|x| *x == self.delimiter) {
+            match self
+                .v
+                .iter()
+                .position(|x| *x == self.delimiter || *x == b'\n')
+            {
                 None => return self.finish(needs_escaping),
-                Some(idx) => idx,
+                Some(idx) => match self.v[idx] {
+                    b'\n' => return self.finish_eol(needs_escaping, idx),
+                    _ => idx,
+                },
             }
         };
 
         let ret = Some((&self.v[..pos], needs_escaping));
         self.v = &self.v[pos + 1..];
         ret
+    }
+}
+
+fn skip_this_line(bytes: &[u8], quote: Option<u8>) -> (&[u8], usize) {
+    let pos = match quote {
+        Some(quote) => find_quoted(bytes, quote, b'\n'),
+        None => bytes.iter().position(|x| *x == b'\n'),
+    };
+    match pos {
+        None => (&[], bytes.len()),
+        Some(pos) => (&bytes[pos + 1..], pos + 1),
     }
 }
 
@@ -330,7 +396,7 @@ impl<'a> Iterator for SplitFields<'a> {
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn parse_lines(
-    bytes: &[u8],
+    mut bytes: &[u8],
     offset: usize,
     delimiter: u8,
     comment_char: Option<u8>,
@@ -339,44 +405,31 @@ pub(crate) fn parse_lines(
     projection: &[usize],
     buffers: &mut [Buffer],
     ignore_parser_errors: bool,
-    encoding: CsvEncoding,
     n_lines: usize,
 ) -> Result<usize> {
     // This variable will store the number of bytes we read. It is important to do this bookkeeping
     // to be able to correctly parse the strings later.
     let mut read = offset;
 
-    // We split the lines by the new line characters in the outer loop.
-    // in the inner loop we deal with the fields/columns.
-    // Any primitive type is directly parsed and stored in a Vec buffer.
-    // String types are not parsed. We store strings the starting index in the bytes array and store
-    // the length of the string field. We also store the total length of processed string fields per column.
-    // Later we use that meta information to exactly allocate the required buffers and parse the strings.
-    let iter_lines = SplitLines::new(bytes, b'\n');
-    for mut line in iter_lines.take(n_lines) {
-        let len = line.len();
-
-        // two adjacent '\n\n' will lead to an empty line.
-        if len == 0 {
-            read += 1;
-            continue;
+    let mut line_count = 0;
+    loop {
+        if line_count > n_lines {
+            return Ok(read);
         }
-        // including the '\n' character
-        let line_length = len + 1;
-
-        let trailing_byte = line[len - 1];
-        if trailing_byte == b'\r' {
-            line = &line[..len - 1];
+        let (b, r) = skip_whitespace(bytes);
+        bytes = b;
+        if bytes.is_empty() {
+            return Ok(read);
         }
-        // read at start of the line
-        let read_sol = read;
-        // // +1 is the split character
-        // read += 1;
+        read += r;
 
+        // deal with comments
         if let Some(c) = comment_char {
             // line is a comment -> skip
-            if line[0] == c {
-                read = read_sol + line_length;
+            if bytes[0] == c {
+                let (bytes_rem, len) = skip_this_line(bytes, quote_char);
+                bytes = bytes_rem;
+                read += len;
                 continue;
             }
         }
@@ -390,54 +443,84 @@ pub(crate) fn parse_lines(
             .expect("at least one column should be projected");
         let mut processed_fields = 0;
 
-        let iter = SplitFields::new(line, delimiter);
+        let mut iter = SplitFields::new(bytes, delimiter, quote_char);
+        let mut idx = 0;
+        loop {
+            let mut read_sol = 0;
 
-        for (idx, (field, needs_escaping)) in iter.enumerate() {
-            if idx == next_projected {
-                debug_assert!(processed_fields < buffers.len());
-                let buf = unsafe {
-                    // SAFETY: processed fields index can never exceed the projection indices.
-                    buffers.get_unchecked_mut(processed_fields)
-                };
-                let mut add_null = false;
+            let track_bytes = |read: &mut usize, bytes: &mut &[u8], read_sol: usize| {
+                *read += read_sol;
+                *bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
+            };
 
-                // if we have null values argument, check if this field equal null value
-                if let Some(null_values) = &null_values {
-                    if let Some(null_value) = null_values.get(processed_fields) {
-                        if field == null_value.as_bytes() {
-                            add_null = true;
+            match iter.next() {
+                None => break,
+                Some((mut field, needs_escaping)) => {
+                    idx += 1;
+                    let field_len = field.len();
+
+                    // +1 is the split character that is consumed by the iterator.
+                    read_sol += field_len + 1;
+
+                    if (idx - 1) == next_projected {
+                        // the iterator is finished when it encounters a `\n`
+                        // this could be preceded by a '\r'
+                        if field_len > 0 && field[field_len - 1] == b'\r' {
+                            field = &field[..field_len - 1];
+                        }
+
+                        debug_assert!(processed_fields < buffers.len());
+                        let buf = unsafe {
+                            // SAFETY: processed fields index can never exceed the projection indices.
+                            buffers.get_unchecked_mut(processed_fields)
+                        };
+                        let mut add_null = false;
+
+                        // if we have null values argument, check if this field equal null value
+                        if let Some(null_values) = &null_values {
+                            if let Some(null_value) = null_values.get(processed_fields) {
+                                if field == null_value.as_bytes() {
+                                    add_null = true;
+                                }
+                            }
+                        }
+                        if add_null {
+                            buf.add_null()
+                        } else {
+                            buf.add(field, ignore_parser_errors, read, needs_escaping)
+                                .map_err(|e| {
+                                    PolarsError::ComputeError(
+                                        format!(
+                                            "{:?} on thread line {}; on input: {}",
+                                            e,
+                                            idx,
+                                            String::from_utf8_lossy(field)
+                                        )
+                                        .into(),
+                                    )
+                                })?;
+                        }
+
+                        processed_fields += 1;
+
+                        let a = projection_iter.next();
+
+                        // if we have all projected columns we are done with this line
+                        match a {
+                            Some(p) => {
+                                track_bytes(&mut read, &mut bytes, read_sol);
+                                next_projected = p
+                            }
+                            None => {
+                                let (bytes_rem, len) = skip_this_line(bytes, quote_char);
+                                bytes = bytes_rem;
+                                read += len;
+                                break;
+                            }
                         }
                     }
                 }
-                if add_null {
-                    buf.add_null()
-                } else {
-                    buf.add(field, ignore_parser_errors, read, encoding, needs_escaping)
-                        .map_err(|e| {
-                            PolarsError::ComputeError(
-                                format!(
-                                    "{:?} on thread line {}; on input: {}",
-                                    e,
-                                    idx,
-                                    String::from_utf8_lossy(field)
-                                )
-                                .into(),
-                            )
-                        })?;
-                }
-
-                processed_fields += 1;
-
-                // if we have all projected columns we are done with this line
-                match projection_iter.next() {
-                    Some(p) => next_projected = p,
-                    None => {
-                        break;
-                    }
-                }
             }
-            // +1 is the split character that is consumed by the iterator.
-            read += field.len() + 1;
         }
 
         // there can be lines that miss fields (also the comma values)
@@ -454,11 +537,8 @@ pub(crate) fn parse_lines(
             processed_fields += 1;
         }
 
-        // this way we also include the trailing '\n' or '\r\n' in the bytes read
-        // and any skipped fields.
-        read = read_sol + line_length;
+        line_count += 1;
     }
-    Ok(read)
 }
 
 #[cfg(test)]
@@ -479,14 +559,14 @@ mod test {
     #[test]
     fn test_splitfields() {
         let input = "\"foo\",\"bar\"";
-        let mut fields = SplitFields::new(input.as_bytes(), b',');
+        let mut fields = SplitFields::new(input.as_bytes(), b',', Some(b'"'));
 
         assert_eq!(fields.next(), Some(("\"foo\"".as_bytes(), true)));
         assert_eq!(fields.next(), Some(("\"bar\"".as_bytes(), true)));
         assert_eq!(fields.next(), None);
 
         let input2 = "\"foo\n bar\";\"baz\";12345";
-        let mut fields2 = SplitFields::new(input2.as_bytes(), b';');
+        let mut fields2 = SplitFields::new(input2.as_bytes(), b';', Some(b'"'));
 
         assert_eq!(fields2.next(), Some(("\"foo\n bar\"".as_bytes(), true)));
         assert_eq!(fields2.next(), Some(("\"baz\"".as_bytes(), true)));

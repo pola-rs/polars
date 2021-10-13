@@ -15,6 +15,7 @@ pub(crate) fn get_file_chunks(
     n_threads: usize,
     expected_fields: usize,
     delimiter: u8,
+    quote_char: Option<u8>,
 ) -> Vec<(usize, usize)> {
     let mut last_pos = 0;
     let total_len = bytes.len();
@@ -27,13 +28,18 @@ pub(crate) fn get_file_chunks(
             break;
         }
 
-        let end_pos = match next_line_position(&bytes[search_pos..], expected_fields, delimiter) {
+        let end_pos = match next_line_position(
+            &bytes[search_pos..],
+            expected_fields,
+            delimiter,
+            quote_char,
+        ) {
             Some(pos) => search_pos + pos,
             None => {
                 break;
             }
         };
-        offsets.push((last_pos, end_pos + 1));
+        offsets.push((last_pos, end_pos));
         last_pos = end_pos;
     }
     offsets.push((last_pos, total_len));
@@ -95,7 +101,7 @@ fn infer_field_schema(string: &str) -> DataType {
 #[inline]
 pub(crate) fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> Result<Cow<str>> {
     let s = match encoding {
-        CsvEncoding::Utf8 => std::str::from_utf8(bytes)
+        CsvEncoding::Utf8 => simdutf8::basic::from_utf8(bytes)
             .map_err(anyhow::Error::from)?
             .into(),
         CsvEncoding::LossyUtf8 => String::from_utf8_lossy(bytes),
@@ -109,6 +115,7 @@ pub(crate) fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> 
 /// If `max_read_records` is not set, the whole file is read to infer its schema.
 ///
 /// Return inferred schema and number of records used for inference.
+#[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
     delimiter: u8,
@@ -117,6 +124,7 @@ pub fn infer_file_schema(
     schema_overwrite: Option<&Schema>,
     skip_rows: usize,
     comment_char: Option<u8>,
+    quote_char: Option<u8>,
 ) -> Result<(Schema, usize)> {
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
@@ -137,7 +145,7 @@ pub fn infer_file_schema(
             }
         }
 
-        let byterecord = SplitFields::new(header_line, delimiter);
+        let byterecord = SplitFields::new(header_line, delimiter, quote_char);
         if has_header {
             byterecord
                 .map(|(slice, needs_escaping)| {
@@ -191,7 +199,7 @@ pub fn infer_file_schema(
             }
         }
 
-        let mut record = SplitFields::new(line, delimiter);
+        let mut record = SplitFields::new(line, delimiter, quote_char);
 
         for i in 0..header_length {
             if let Some((slice, needs_escaping)) = record.next() {
@@ -271,6 +279,29 @@ pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+// replace double quotes by single ones
+pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [u8]) -> usize {
+    let mut prev_quote = false;
+
+    let mut count = 0;
+    for c in bytes {
+        if *c == quote {
+            if prev_quote {
+                prev_quote = false;
+                *buf.get_unchecked_mut(count) = *c;
+                count += 1;
+            } else {
+                prev_quote = true;
+            }
+        } else {
+            prev_quote = false;
+            *buf.get_unchecked_mut(count) = *c;
+            count += 1;
+        }
+    }
+    count
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -299,7 +330,7 @@ mod test {
         let s = std::fs::read_to_string(path).unwrap();
         let bytes = s.as_bytes();
         // can be within -1 / +1 bounds.
-        assert!((get_file_chunks(bytes, 10, 4, b',').len() as i32 - 10).abs() <= 1);
-        assert!((get_file_chunks(bytes, 8, 4, b',').len() as i32 - 8).abs() <= 1);
+        assert!((get_file_chunks(bytes, 10, 4, b',', None).len() as i32 - 10).abs() <= 1);
+        assert!((get_file_chunks(bytes, 8, 4, b',', None).len() as i32 - 8).abs() <= 1);
     }
 }

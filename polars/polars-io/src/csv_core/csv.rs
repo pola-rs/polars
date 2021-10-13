@@ -101,12 +101,7 @@ impl RunningSize {
 impl<'a> CoreReader<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        #[cfg(any(feature = "decompress", feature = "decompress-fast"))] mut reader_bytes: ReaderBytes<
-            'a,
-        >,
-        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))] reader_bytes: ReaderBytes<
-            'a,
-        >,
+        reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
         skip_rows: usize,
         mut projection: Option<Vec<usize>>,
@@ -129,6 +124,9 @@ impl<'a> CoreReader<'a> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&'a [ScanAggregation]>,
     ) -> Result<CoreReader<'a>> {
+        #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+        let mut reader_bytes = reader_bytes;
+
         // check if schema should be inferred
         let delimiter = delimiter.unwrap_or(b',');
 
@@ -152,6 +150,7 @@ impl<'a> CoreReader<'a> {
                         schema_overwrite,
                         skip_rows,
                         comment_char,
+                        quote_char,
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -165,6 +164,7 @@ impl<'a> CoreReader<'a> {
                         schema_overwrite,
                         skip_rows,
                         comment_char,
+                        quote_char,
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -271,6 +271,7 @@ impl<'a> CoreReader<'a> {
                         &bytes[n_bytes..],
                         self.schema.fields().len(),
                         self.delimiter,
+                        self.quote_char,
                     ) {
                         bytes = &bytes[..n_bytes + pos]
                     }
@@ -326,8 +327,13 @@ impl<'a> CoreReader<'a> {
 
         // split the file by the nearest new line characters such that every thread processes
         // approximately the same number of rows.
-        let file_chunks =
-            get_file_chunks(bytes, n_threads, self.schema.fields().len(), self.delimiter);
+        let file_chunks = get_file_chunks(
+            bytes,
+            n_threads,
+            self.schema.fields().len(),
+            self.delimiter,
+            self.quote_char,
+        );
 
         // If the number of threads given by the user is lower than our global thread pool we create
         // new one.
@@ -363,10 +369,15 @@ impl<'a> CoreReader<'a> {
                     0,
                     &self.schema,
                     &str_capacities,
-                    self.delimiter,
+                    self.quote_char,
+                    self.encoding,
+                    self.ignore_parser_errors,
                 )?;
                 let df = DataFrame::new_no_checks(
-                    buffers.into_iter().map(|buf| buf.into_series()).collect(),
+                    buffers
+                        .into_iter()
+                        .map(|buf| buf.into_series())
+                        .collect::<Result<_>>()?,
                 );
                 return Ok(df);
             }
@@ -394,7 +405,9 @@ impl<'a> CoreReader<'a> {
                                 chunk_size,
                                 &schema,
                                 &str_capacities,
-                                self.delimiter,
+                                self.quote_char,
+                                self.encoding,
+                                self.ignore_parser_errors,
                             )?;
 
                             let local_bytes = &bytes[read..stop_at_nbytes];
@@ -410,13 +423,14 @@ impl<'a> CoreReader<'a> {
                                 projection,
                                 &mut buffers,
                                 ignore_parser_errors,
-                                self.encoding,
                                 chunk_size,
                             )?;
 
-                            self.may_parse_last_line(read, bytes, projection, &mut buffers)?;
                             let mut local_df = DataFrame::new_no_checks(
-                                buffers.into_iter().map(|buf| buf.into_series()).collect(),
+                                buffers
+                                    .into_iter()
+                                    .map(|buf| buf.into_series())
+                                    .collect::<Result<_>>()?,
                             );
                             if let Some(predicate) = predicate {
                                 let s = predicate.evaluate(&local_df)?;
@@ -498,7 +512,9 @@ impl<'a> CoreReader<'a> {
                             capacity,
                             &schema,
                             &str_capacities,
-                            self.delimiter,
+                            self.quote_char,
+                            self.encoding,
+                            self.ignore_parser_errors,
                         )?;
 
                         let mut last_read = usize::MAX;
@@ -519,55 +535,22 @@ impl<'a> CoreReader<'a> {
                                 projection,
                                 &mut buffers,
                                 ignore_parser_errors,
-                                self.encoding,
                                 // chunk size doesn't really matter anymore,
                                 // less calls if we increase the size
                                 chunk_size * 320000,
                             )?;
                         }
-                        self.may_parse_last_line(read, bytes, projection, &mut buffers)?;
                         Ok(DataFrame::new_no_checks(
-                            buffers.into_iter().map(|buf| buf.into_series()).collect(),
+                            buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series())
+                                .collect::<Result<_>>()?,
                         ))
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
             accumulate_dataframes_vertical(dfs.into_iter())
         }
-    }
-
-    // the parser and some unsafe code assumes '\n' char
-    fn may_parse_last_line(
-        &self,
-        read: usize,
-        bytes: &[u8],
-        projection: &[usize],
-        buffers: &mut [Buffer],
-    ) -> Result<()> {
-        let remaining = &bytes[read..];
-        let len = remaining.len();
-        // if there is no new line char we try to parse the last line
-        if len > 0 && !remaining.iter().any(|&c| c == b'\n') {
-            let mut last_line = Vec::with_capacity(len + 1);
-            last_line.extend_from_slice(remaining);
-            last_line.push(b'\n');
-
-            parse_lines(
-                &last_line,
-                0,
-                self.delimiter,
-                self.comment_char,
-                self.quote_char,
-                self.null_values.as_ref(),
-                projection,
-                buffers,
-                self.ignore_parser_errors,
-                self.encoding,
-                // does not matter
-                10,
-            )?;
-        }
-        Ok(())
     }
 
     /// Read the csv into a DataFrame. The predicate can come from a lazy physical plan.
