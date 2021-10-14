@@ -29,6 +29,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    tail
    lit
    pearson_corr
+   spearman_rank_corr
    cov
    map_binary
    fold
