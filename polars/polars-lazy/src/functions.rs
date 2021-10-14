@@ -61,6 +61,13 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
     map_binary(a, b, function, Some(Field::new(name, DataType::Float32))).alias(name)
 }
 
+/// Compute the spearman rank correlation between two columns.
+#[cfg(feature = "rank")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
+pub fn spearman_rank_corr(a: Expr, b: Expr) -> Expr {
+    pearson_corr(a.rank(RankMethod::Min), b.rank(RankMethod::Min)).alias("spearman_rank_corr")
+}
+
 /// Find the indexes that would sort these series in order of appearance.
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will

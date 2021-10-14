@@ -629,3 +629,21 @@ def test_collect_all(df):
     out = pl.collect_all([lf1, lf2])
     out[0][0, 0] == 6
     out[1][0, 0] == 12.0
+
+
+def test_spearman_corr():
+    df = pl.DataFrame(
+        {
+            "era": [1, 1, 1, 2, 2, 2],
+            "prediction": [2, 4, 5, 190, 1, 4],
+            "target": [1, 3, 2, 1, 43, 3],
+        }
+    )
+
+    out = (
+        df.groupby("era", maintain_order=True).agg(
+            pl.spearman_rank_corr(pl.col("prediction"), pl.col("target")).alias("c"),
+        )
+    )["c"]
+    assert np.isclose(out[0], 0.5)
+    assert np.isclose(out[1], -1.0)

@@ -87,6 +87,11 @@ fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn spearman_rank_corr(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
+    polars::lazy::functions::spearman_rank_corr(a.inner, b.inner).into()
+}
+
+#[pyfunction]
 fn cov(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
     polars::lazy::functions::cov(a.inner, b.inner).into()
 }
@@ -223,5 +228,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
     m.add_wrapped(wrap_pyfunction!(collect_all)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     Ok(())
 }

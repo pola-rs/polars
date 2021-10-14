@@ -19,6 +19,7 @@ try:
     from polars.polars import fold as pyfold
     from polars.polars import lit as pylit
     from polars.polars import pearson_corr as pypearson_corr
+    from polars.polars import spearman_rank_corr as pyspearman_rank_corr
 
     _DOCUMENTING = False
 except ImportError:
@@ -45,6 +46,7 @@ __all__ = [
     "tail",
     "lit",
     "pearson_corr",
+    "spearman_rank_corr",
     "cov",
     "map_binary",
     "fold",
@@ -395,6 +397,27 @@ def lit(
     if dtype:
         return pl.lazy.expr.wrap_expr(pylit(value)).cast(dtype)
     return pl.lazy.expr.wrap_expr(pylit(value))
+
+
+def spearman_rank_corr(
+    a: Union[str, "pl.Expr"],
+    b: Union[str, "pl.Expr"],
+) -> "pl.Expr":
+    """
+    Compute the spearman rank correlation between two columns.
+
+    Parameters
+    ----------
+    a
+        Column name or Expression.
+    b
+        Column name or Expression.
+    """
+    if isinstance(a, str):
+        a = col(a)
+    if isinstance(b, str):
+        b = col(b)
+    return pl.lazy.expr.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr))
 
 
 def pearson_corr(
