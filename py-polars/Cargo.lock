@@ -1275,6 +1275,7 @@ dependencies = [
  "flate2",
  "lazy_static",
  "lexical",
+ "memchr",
  "memmap2",
  "num",
  "num_cpus",
