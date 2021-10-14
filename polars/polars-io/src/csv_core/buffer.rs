@@ -98,13 +98,15 @@ where
             self.append_null()
         } else {
             let bytes = drop_quotes(bytes);
-            let result = T::parse(bytes);
+            // its faster to work on options.
+            // if we need to throw an error, we parse again to be able to throw the error
+            let result = T::parse(bytes).ok();
 
             match (result, ignore_errors) {
-                (Ok(value), _) => self.append_value(value),
-                (Err(_), true) => self.append_null(),
-                (Err(err), _) => {
-                    return Err(err);
+                (Some(value), _) => self.append_value(value),
+                (None, true) => self.append_null(),
+                (None, _) => {
+                    T::parse(bytes)?;
                 }
             };
         }
@@ -161,11 +163,10 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         needs_escaping: bool,
     ) -> Result<()> {
         // Only for lossy utf8 we check utf8 now. Otherwise we check all utf8 at the end.
-        let parse_result = if !delay_utf8_validation(self.encoding, ignore_errors) {
-            // first check utf8 validity
-            simdutf8::basic::from_utf8(bytes).is_ok()
-        } else {
+        let parse_result = if delay_utf8_validation(self.encoding, ignore_errors) {
             true
+        } else {
+            simdutf8::basic::from_utf8(bytes).is_ok()
         };
         let data_len = self.data.len();
 
@@ -179,13 +180,7 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         let n_written = if needs_escaping {
             // Safety:
             // we just allocated enough capacity and data_len is correct.
-            unsafe {
-                let out_buf = std::slice::from_raw_parts_mut(
-                    self.data.as_mut_ptr().add(data_len),
-                    bytes.len(),
-                );
-                escape_field(bytes, self.quote_char, out_buf)
-            }
+            unsafe { escape_field(bytes, self.quote_char, &mut self.data[data_len..]) }
         } else {
             self.data.extend_from_slice(bytes);
             bytes.len()

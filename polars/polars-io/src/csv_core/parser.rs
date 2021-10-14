@@ -259,21 +259,13 @@ impl<'a> SplitFields<'a> {
     }
 
     fn finish_eol(&mut self, need_escaping: bool, idx: usize) -> Option<(&'a [u8], bool)> {
-        if self.finished {
-            None
-        } else {
-            self.finished = true;
-            Some((&self.v[..idx], need_escaping))
-        }
+        self.finished = true;
+        Some((&self.v[..idx], need_escaping))
     }
 
     fn finish(&mut self, need_escaping: bool) -> Option<(&'a [u8], bool)> {
-        if self.finished {
-            None
-        } else {
-            self.finished = true;
-            Some((self.v, need_escaping))
-        }
+        self.finished = true;
+        Some((self.v, need_escaping))
     }
 
     fn eof_oel(&self, current_ch: u8) -> bool {
@@ -309,7 +301,7 @@ impl<'a> Iterator for SplitFields<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<(&'a [u8], bool)> {
-        if self.finished {
+        if self.v.is_empty() || self.finished {
             return None;
         }
 
@@ -317,7 +309,7 @@ impl<'a> Iterator for SplitFields<'a> {
         // There can be strings with delimiters:
         // "Street, City",
 
-        let pos = if self.quoting && !self.v.is_empty() && self.v[0] == self.quote_char {
+        let pos = if self.quoting && self.v[0] == self.quote_char {
             needs_escaping = true;
             // There can be pair of double-quotes within string.
             // Each of the embedded double-quote characters must be represented
@@ -355,11 +347,7 @@ impl<'a> Iterator for SplitFields<'a> {
 
             idx as usize
         } else {
-            match self
-                .v
-                .iter()
-                .position(|x| *x == self.delimiter || *x == b'\n')
-            {
+            match memchr::memchr2(self.delimiter, b'\n', self.v) {
                 None => return self.finish(needs_escaping),
                 Some(idx) => match self.v[idx] {
                     b'\n' => return self.finish_eol(needs_escaping, idx),
@@ -407,11 +395,12 @@ pub(crate) fn parse_lines(
     ignore_parser_errors: bool,
     n_lines: usize,
 ) -> Result<usize> {
+    let n_lines = n_lines as u32;
     // This variable will store the number of bytes we read. It is important to do this bookkeeping
     // to be able to correctly parse the strings later.
     let mut read = offset;
 
-    let mut line_count = 0;
+    let mut line_count = 0u32;
     loop {
         if line_count > n_lines {
             return Ok(read);
@@ -444,12 +433,14 @@ pub(crate) fn parse_lines(
         let mut processed_fields = 0;
 
         let mut iter = SplitFields::new(bytes, delimiter, quote_char);
-        let mut idx = 0;
+        let mut idx = 0u32;
         loop {
             let mut read_sol = 0;
 
             let track_bytes = |read: &mut usize, bytes: &mut &[u8], read_sol: usize| {
                 *read += read_sol;
+                // benchmarking showed it is 6% faster to take the min of these two
+                // not needed for correctness.
                 *bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
             };
 
@@ -462,7 +453,7 @@ pub(crate) fn parse_lines(
                     // +1 is the split character that is consumed by the iterator.
                     read_sol += field_len + 1;
 
-                    if (idx - 1) == next_projected {
+                    if (idx - 1) == next_projected as u32 {
                         // the iterator is finished when it encounters a `\n`
                         // this could be preceded by a '\r'
                         if field_len > 0 && field[field_len - 1] == b'\r' {
