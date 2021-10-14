@@ -280,7 +280,7 @@ macro_rules! match_arrow_data_type_apply_macro {
             DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
             DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for dtype {:?}", dt),
         }
     }};
 }

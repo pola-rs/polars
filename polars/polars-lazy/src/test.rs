@@ -1925,3 +1925,20 @@ fn test_exclude_regex() -> Result<()> {
     assert_eq!(out.get_column_names(), &["A", "B"]);
     Ok(())
 }
+
+#[test]
+fn test_groupby_rank() -> Result<()> {
+    let df = fruits_cars();
+    let out = df
+        .lazy()
+        .stable_groupby([col("cars")])
+        .agg([col("B").rank(RankMethod::Dense)])
+        .collect()?;
+
+    let out = out.column("B")?;
+    let out = out.list()?.get(1).unwrap();
+    let out = out.u32()?;
+
+    assert_eq!(Vec::from(out), &[Some(1)]);
+    Ok(())
+}

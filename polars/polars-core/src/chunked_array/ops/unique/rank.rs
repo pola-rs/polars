@@ -10,6 +10,13 @@ pub enum RankMethod {
 }
 
 pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
+    if s.len() == 1 {
+        return match method {
+            Average => Series::new(s.name(), &[1.0]),
+            _ => Series::new(s.name(), &[1u32]),
+        };
+    }
+
     // See: https://github.com/scipy/scipy/blob/v1.7.1/scipy/stats/stats.py#L8631-L8737
 
     let len = s.len();
