@@ -213,6 +213,13 @@ impl DataFrame {
         self
     }
 
+    /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
+    /// This may lead to more peak memory consumption.
+    pub fn as_single_chunk_par(&mut self) -> &mut Self {
+        self.columns = self.columns.par_iter().map(|s| s.rechunk()).collect();
+        self
+    }
+
     /// Ensure all the chunks in the DataFrame are aligned.
     pub fn rechunk(&mut self) -> &mut Self {
         let hb = RandomState::default();
@@ -246,7 +253,7 @@ impl DataFrame {
         {
             self
         } else {
-            self.as_single_chunk()
+            self.as_single_chunk_par()
         }
     }
 
