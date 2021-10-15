@@ -1,4 +1,4 @@
-since-tag=py-polars-v0.8.18
+since-tag=py-polars-v0.10.1
 future-release=v0.10.1
 base=py-polars/CHANGELOG.md
 output=AUTO_CHANGELOG.md
