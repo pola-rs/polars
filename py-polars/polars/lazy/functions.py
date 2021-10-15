@@ -18,6 +18,7 @@ try:
     from polars.polars import cov as pycov
     from polars.polars import fold as pyfold
     from polars.polars import lit as pylit
+    from polars.polars import map_mul as _map_mul
     from polars.polars import pearson_corr as pypearson_corr
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
 
@@ -48,6 +49,8 @@ __all__ = [
     "pearson_corr",
     "spearman_rank_corr",
     "cov",
+    "map",
+    "apply",
     "map_binary",
     "fold",
     "any",
@@ -462,6 +465,66 @@ def cov(
     return pl.lazy.expr.wrap_expr(pycov(a._pyexpr, b._pyexpr))
 
 
+def map(
+    exprs: Union[tp.List[str], tp.List["pl.Expr"]],
+    f: Callable[[tp.List["pl.Series"]], "pl.Series"],
+    return_dtype: Optional[Type[DataType]] = None,
+) -> "pl.Expr":
+    """
+    Map a custom function over multiple columns/expressions and produce a single Series result.
+
+    Parameters
+    ----------
+    columns
+        Input Series to f
+    f
+        Function to apply over the input
+    return_dtype
+        dtype of the output Series
+
+    Returns
+    -------
+    Expr
+    """
+    exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
+    return pl.lazy.expr.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=False))
+
+
+def apply(
+    exprs: Union[tp.List[str], tp.List["pl.Expr"]],
+    f: Callable[[tp.List["pl.Series"]], "pl.Series"],
+    return_dtype: Optional[Type[DataType]] = None,
+) -> "pl.Expr":
+    """
+    Apply a custom function in a GroupBy context.
+
+    Depending on the context it has the following behavior:
+
+    ## Context
+
+    * Select/Project
+        Don't do this, use `map_mul`
+    * GroupBy
+        expected type `f`: Callable[[Series], Series]
+        Applies a python function over each group.
+
+    Parameters
+    ----------
+    columns
+        Input Series to f
+    f
+        Function to apply over the input
+    return_dtype
+        dtype of the output Series
+
+    Returns
+    -------
+    Expr
+    """
+    exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
+    return pl.lazy.expr.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=True))
+
+
 def map_binary(
     a: Union[str, "pl.Expr"],
     b: Union[str, "pl.Expr"],
@@ -469,6 +532,8 @@ def map_binary(
     return_dtype: Optional[Type[DataType]] = None,
 ) -> "pl.Expr":
     """
+     .. deprecated:: 0.10.4
+       use `map` or `apply`
     Map a custom function over two columns and produce a single Series result.
 
     Parameters
