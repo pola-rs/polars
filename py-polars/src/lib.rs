@@ -78,7 +78,7 @@ fn binary_function(
     lambda: PyObject,
     output_type: &PyAny,
 ) -> dsl::PyExpr {
-    dsl::binary_function(a, b, lambda, output_type)
+    lazy::binary_function(a, b, lambda, output_type)
 }
 
 #[pyfunction]
@@ -201,6 +201,17 @@ fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> 
     Ok(out?)
 }
 
+#[pyfunction]
+pub fn map_mul(
+    py: Python,
+    pyexpr: Vec<PyExpr>,
+    lambda: PyObject,
+    output_type: &PyAny,
+    apply_groups: bool,
+) -> PyExpr {
+   lazy::map_mul(&pyexpr, py, lambda, output_type, apply_groups)
+}
+
 #[pymodule]
 fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -229,5 +240,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
     m.add_wrapped(wrap_pyfunction!(collect_all)).unwrap();
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     Ok(())
 }

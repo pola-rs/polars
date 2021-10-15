@@ -31,7 +31,8 @@ These functions can be used as expression and sometimes also in eager contexts.
    pearson_corr
    spearman_rank_corr
    cov
-   map_binary
+   map
+   apply
    fold
    any
    all

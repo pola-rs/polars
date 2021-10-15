@@ -96,7 +96,7 @@ arange = ["polars-lazy/arange"]
 true_div = ["polars-lazy/true_div"]
 
 # don't use this
-private = []
+private = ["polars-lazy/private"]
 
 # all opt-in datatypes
 dtype-full = [
