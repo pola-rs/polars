@@ -23,3 +23,19 @@ def test_apply_none():
 
     out = df.select(pl.map(exprs=["a", "b"], f=lambda s: s[0] * s[1]))
     assert out["a"].to_list() == (df["a"] * df["b"]).to_list()
+
+    # check if we can return None
+    def func(s):
+        if s[0][0] == 190:
+            return None
+        else:
+            return s[0]
+
+    out = (
+        df.groupby("g", maintain_order=True).agg(
+            pl.apply(exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], f=func).alias(
+                "multiple"
+            )
+        )
+    )["multiple"]
+    assert out[1] is None

@@ -187,6 +187,11 @@ pub fn map_mul(
         // this is a python Series
         let out = call_lambda_with_series_slice(py, s, &lambda, &pypolars);
 
+        // we return an error, because that will become a null value polars lazy apply list
+        if apply_groups && out.is_none(py) {
+            return Err(PolarsError::NoData("".into()))
+        }
+
         // unpack the wrapper in a PySeries
         let py_pyseries = out.getattr(py, "_s").expect(
             "Could net get series attribute '_s'. \
