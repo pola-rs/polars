@@ -1703,6 +1703,7 @@ pub fn quantile(name: &str, quantile: f64) -> Expr {
 }
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
+#[cfg(feature = "private")]
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_field: Option<Field>) -> Expr
 where
     F: Fn(Series, Series) -> Result<Series> + Send + Sync,
@@ -1718,6 +1719,7 @@ where
 }
 
 /// Binary function where the output type is determined at runtime when the schema is known.
+#[cfg(feature = "private")]
 pub fn map_binary_lazy_field<F: 'static, Fld: 'static>(
     a: Expr,
     b: Expr,
@@ -1984,6 +1986,85 @@ impl Rem for Expr {
 
     fn rem(self, rhs: Self) -> Self::Output {
         binary_expr(self, Operator::Modulus, rhs)
+    }
+}
+
+/// Apply a function/closure over multiple columns once the logical plan get executed.
+///
+/// This function is very similar to `[apply_mul]`, but differs in how it handles aggregations.
+///
+///  * `map_mul` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+///  * `apply_mul` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+///
+/// It is the responsibility of the caller that the schema is correct by giving
+/// the correct output_type. If None given the output type of the input expr is used.
+pub fn map_mul<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+where
+    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    E: AsRef<[Expr]>,
+{
+    let input = expr.as_ref().to_vec();
+
+    Expr::Function {
+        input,
+        function: NoEq::new(Arc::new(function)),
+        output_type,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: false,
+        },
+    }
+}
+
+/// Apply a function/closure over multiple columns once the logical plan get executed.
+///
+/// This function is very similar to `[apply_mul]`, but differs in how it handles aggregations.
+///
+///  * `map_mul` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+///  * `apply_mul` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+///  * `map_list_mul` should be used when the function expects a list aggregated series.
+pub fn map_list_mul<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+where
+    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    E: AsRef<[Expr]>,
+{
+    let input = expr.as_ref().to_vec();
+
+    Expr::Function {
+        input,
+        function: NoEq::new(Arc::new(function)),
+        output_type,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyList,
+            input_wildcard_expansion: false,
+        },
+    }
+}
+
+/// Apply a function/closure over the groups of multiple columns. This should only be used in a groupby aggregation.
+///
+/// It is the responsibility of the caller that the schema is correct by giving
+/// the correct output_type. If None given the output type of the input expr is used.
+///
+/// This difference with `[map_mul]` is that `[apply_mul]` will create a separate `[Series]` per group.
+///
+/// * `[map_mul]` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+/// * `[apply_mul]` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+pub fn apply_mul<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+where
+    F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
+    E: AsRef<[Expr]>,
+{
+    let input = expr.as_ref().to_vec();
+
+    Expr::Function {
+        input,
+        function: NoEq::new(Arc::new(function)),
+        output_type,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: false,
+        },
     }
 }
 

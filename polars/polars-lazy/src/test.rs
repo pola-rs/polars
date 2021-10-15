@@ -1942,3 +1942,43 @@ fn test_groupby_rank() -> Result<()> {
     assert_eq!(Vec::from(out), &[Some(1)]);
     Ok(())
 }
+
+#[test]
+fn test_apply_multiple_columns() -> Result<()> {
+    let df = fruits_cars();
+
+    let multiply = |s: &mut [Series]| Ok(&s[0].pow(2.0).unwrap() * &s[1]);
+
+    let out = df
+        .clone()
+        .lazy()
+        .select([map_mul(
+            multiply,
+            [col("A"), col("B")],
+            GetOutput::from_type(DataType::Float64),
+        )])
+        .collect()?;
+    let out = out.column("A")?;
+    let out = out.f64()?;
+    assert_eq!(
+        Vec::from(out),
+        &[Some(5.0), Some(16.0), Some(27.0), Some(32.0), Some(25.0)]
+    );
+
+    let out = df
+        .lazy()
+        .stable_groupby([col("cars")])
+        .agg([apply_mul(
+            multiply,
+            [col("A"), col("B")],
+            GetOutput::from_type(DataType::Float64),
+        )])
+        .collect()?;
+
+    let out = out.column("A")?;
+    let out = out.list()?.get(1).unwrap();
+    let out = out.f64()?;
+
+    assert_eq!(Vec::from(out), &[Some(16.0)]);
+    Ok(())
+}
