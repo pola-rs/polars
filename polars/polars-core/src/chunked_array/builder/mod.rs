@@ -420,10 +420,6 @@ where
         unsafe { values.extend_trusted_len_unchecked(iter) };
         self.builder.try_push_valid().unwrap();
     }
-
-    pub fn append_null(&mut self) {
-        self.builder.push_null();
-    }
 }
 
 impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
@@ -436,14 +432,13 @@ where
             Some(s) => {
                 self.append_series(s);
             }
-            None => {
-                self.builder.push_null();
-            }
+            None => self.append_null(),
         }
     }
 
     #[inline]
     fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null();
     }
 
@@ -519,13 +514,14 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         match opt_s {
             Some(s) => self.append_series(s),
             None => {
-                self.builder.push_null();
+                self.append_null();
             }
         }
     }
 
     #[inline]
     fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null();
     }
 
@@ -583,13 +579,14 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
         match opt_s {
             Some(s) => self.append_series(s),
             None => {
-                self.builder.push_null();
+                self.append_null();
             }
         }
     }
 
     #[inline]
     fn append_null(&mut self) {
+        self.fast_explode = false;
         self.builder.push_null();
     }
 
@@ -684,6 +681,15 @@ mod test {
         let out = [&s1, &s2].iter().copied().collect::<ListChunked>();
         assert_eq!(out.get(0).unwrap().len(), 6);
         assert_eq!(out.get(1).unwrap().len(), 3);
+
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 5);
+        builder.append_series(&s1);
+        builder.append_null();
+
+        let out = builder.finish();
+        let out = out.explode().unwrap();
+        assert_eq!(out.len(), 7);
+        assert_eq!(out.get(6), AnyValue::Null);
     }
 
     #[test]
