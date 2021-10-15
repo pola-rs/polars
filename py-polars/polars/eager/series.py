@@ -485,6 +485,8 @@ class Series:
                     return NotImplemented
                 out = f(item)
                 if self.dtype == List:
+                    if out is None:
+                        return None
                     return wrap_s(out)
                 return out
 
