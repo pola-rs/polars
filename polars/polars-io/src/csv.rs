@@ -544,7 +544,11 @@ where
         // Important that this rechunk is never done in parallel.
         // As that leads to great memory overhead.
         if rechunk && df.n_chunks()? > 1 {
-            df.as_single_chunk();
+            if self.low_memory {
+                df.as_single_chunk();
+            } else {
+                df.as_single_chunk_par();
+            }
         }
         #[cfg(feature = "temporal")]
         if self.parse_dates {
