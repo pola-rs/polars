@@ -697,3 +697,62 @@ def test_from_sequences():
         b = pl.Series("a", vals)
         assert a.series_equal(b, null_equal=True)
         assert a.to_list() == vals
+
+
+def test_comparisons_int_series_to_float():
+    srs_int = pl.Series([1, 2, 3, 4])
+    assert (srs_int - 1.0).to_list() == [0, 1, 2, 3]
+    assert (srs_int + 1.0).to_list() == [2, 3, 4, 5]
+    assert (srs_int * 2.0).to_list() == [2, 4, 6, 8]
+    # todo: this is inconsistant
+    assert (srs_int / 2.0).to_list() == [0.5, 1.0, 1.5, 2.0]
+    assert (srs_int % 2.0).to_list() == [1, 0, 1, 0]
+    assert (4.0 % srs_int).to_list() == [0, 0, 1, 0]
+    # floordiv is implemented as div
+    assert (srs_int // 2.0).to_list() == [0, 1, 1, 2]
+    assert (srs_int < 3.0).to_list() == [True, True, False, False]
+    assert (srs_int <= 3.0).to_list() == [True, True, True, False]
+    assert (srs_int > 3.0).to_list() == [False, False, False, True]
+    assert (srs_int >= 3.0).to_list() == [False, False, True, True]
+    assert (srs_int == 3.0).to_list() == [False, False, True, False]
+    assert (srs_int - True).to_list() == [0, 1, 2, 3]
+
+
+def test_comparisons_float_series_to_int():
+    srs_float = pl.Series([1.0, 2.0, 3.0, 4.0])
+    assert (srs_float - 1).to_list() == [0.0, 1.0, 2.0, 3.0]
+    assert (srs_float + 1).to_list() == [2.0, 3.0, 4.0, 5.0]
+    assert (srs_float * 2).to_list() == [2.0, 4.0, 6.0, 8.0]
+    assert (srs_float / 2).to_list() == [0.5, 1.0, 1.5, 2.0]
+    assert (srs_float % 2).to_list() == [1.0, 0.0, 1.0, 0.0]
+    assert (4 % srs_float).to_list() == [0.0, 0.0, 1.0, 0.0]
+    # floordiv is implemented as div
+    assert (srs_float // 2).to_list() == [0.5, 1.0, 1.5, 2.0]
+    assert (srs_float < 3).to_list() == [True, True, False, False]
+    assert (srs_float <= 3).to_list() == [True, True, True, False]
+    assert (srs_float > 3).to_list() == [False, False, False, True]
+    assert (srs_float >= 3).to_list() == [False, False, True, True]
+    assert (srs_float == 3).to_list() == [False, False, True, False]
+    assert (srs_float - True).to_list() == [0.0, 1.0, 2.0, 3.0]
+
+
+def test_comparisons_bool_series_to_int():
+    srs_bool = pl.Series([True, False])
+    # todo: do we want this to work?
+    assert (srs_bool / 1).to_list() == [True, False]
+    with pytest.raises(TypeError, match=r"\-: 'Series' and 'int'"):
+        srs_bool - 1
+    with pytest.raises(TypeError, match=r"\+: 'Series' and 'int'"):
+        srs_bool + 1
+    with pytest.raises(TypeError, match=r"\%: 'Series' and 'int'"):
+        srs_bool % 2
+    with pytest.raises(TypeError, match=r"\*: 'Series' and 'int'"):
+        srs_bool * 1
+    with pytest.raises(
+        TypeError, match=r"'<' not supported between instances of 'Series' and 'int'"
+    ):
+        srs_bool < 2
+    with pytest.raises(
+        TypeError, match=r"'>' not supported between instances of 'Series' and 'int'"
+    ):
+        srs_bool > 2
