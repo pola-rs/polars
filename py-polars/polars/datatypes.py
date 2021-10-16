@@ -294,6 +294,21 @@ if not _DOCUMENTING:
         bool: Boolean,
     }
 
+    _DTYPE_TO_PY_TYPE = {
+        Float64: float,
+        Float32: float,
+        Int64: int,
+        Int32: int,
+        Int16: int,
+        Int8: int,
+        Utf8: str,
+        UInt8: int,
+        UInt16: int,
+        UInt32: int,
+        UInt64: int,
+        Boolean: bool,
+    }
+
 
 def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
     """

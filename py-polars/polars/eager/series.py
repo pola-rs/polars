@@ -29,6 +29,7 @@ except ImportError:
     _DOCUMENTING = True
 
 from ..datatypes import (
+    _DTYPE_TO_PY_TYPE,
     DTYPE_TO_FFINAME,
     DTYPES,
     Boolean,
@@ -111,6 +112,13 @@ def get_ffi_func(
 
 def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
+
+
+def _maybe_cast(el: "Type[DataType]", dtype: Type) -> "Type[DataType]":
+    # cast el if it doesn't match
+    if not isinstance(el, _DTYPE_TO_PY_TYPE[dtype]):
+        el = _DTYPE_TO_PY_TYPE[dtype](el)
+    return el
 
 
 ArrayLike = Union[
@@ -298,6 +306,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.eq(other._s))
+        other = _maybe_cast(other, self.dtype)
         f = get_ffi_func("eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -308,6 +317,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.neq(other._s))
+        other = _maybe_cast(other, self.dtype)
         f = get_ffi_func("neq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -318,6 +328,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.gt(other._s))
+        other = _maybe_cast(other, self.dtype)
         f = get_ffi_func("gt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -328,6 +339,8 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.lt(other._s))
+        # cast other if it doesn't match
+        other = _maybe_cast(other, self.dtype)
         f = get_ffi_func("lt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -338,6 +351,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.gt_eq(other._s))
+        other = _maybe_cast(other, self.dtype)
         f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -348,6 +362,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.lt_eq(other._s))
+        other = _maybe_cast(other, self.dtype)
         f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -358,6 +373,7 @@ class Series:
             other = Series("", [other])
         if isinstance(other, Series):
             return wrap_s(self._s.add(other._s))
+        other = _maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("add_<>", dtype, self._s)
         if f is None:
@@ -367,6 +383,7 @@ class Series:
     def __sub__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.sub(other._s))
+        other = _maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("sub_<>", dtype, self._s)
         if f is None:
@@ -382,6 +399,7 @@ class Series:
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.div(other._s))
+        other = _maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("div_<>", dtype, self._s)
         return wrap_s(f(other))
@@ -389,6 +407,7 @@ class Series:
     def __mul__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
+        other = _maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
@@ -398,6 +417,7 @@ class Series:
     def __mod__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.rem(other._s))
+        other = _maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("rem_<>", dtype, self._s)
         if f is None:
@@ -408,6 +428,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.rem(self._s))
         dtype = date_like_to_physical(self.dtype)
+        other = _maybe_cast(other, self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("rem_<>_rhs", dtype, self._s)
         if f is None:
@@ -418,6 +439,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
         dtype = date_like_to_physical(self.dtype)
+        other = _maybe_cast(other, self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("add_<>_rhs", dtype, self._s)
         if f is None:
