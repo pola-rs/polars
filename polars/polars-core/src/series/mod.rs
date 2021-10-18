@@ -504,6 +504,22 @@ impl Series {
         }
     }
 
+    /// Get an array with the cumulative product computed at every element
+    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
+    pub fn cumprod(&self, _reverse: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            match self.dtype() {
+                DataType::Boolean => self.cast(&DataType::UInt32).unwrap()._cumprod(_reverse),
+                _ => self._cumprod(_reverse),
+            }
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
+    }
+
     /// Apply a rolling variance to a Series. See:
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_var(&self, _options: RollingOptions) -> Result<Series> {

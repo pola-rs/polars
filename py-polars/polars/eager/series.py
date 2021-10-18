@@ -980,6 +980,17 @@ class Series:
         """
         return wrap_s(self._s.cummax(reverse))
 
+    def cumprod(self, reverse: bool = False) -> "Series":
+        """
+        Get an array with the cumulative product computed at every element.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+        """
+        return wrap_s(self._s.cumprod(reverse))
+
     def limit(self, num_elements: int = 10) -> "Series":
         """
         Take n elements from this Series.

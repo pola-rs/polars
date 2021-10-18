@@ -110,6 +110,7 @@ Computations
     Expr.cumsum
     Expr.cummin
     Expr.cummax
+    Expr.cumprod
     Expr.dot
     Expr.mode
     Expr.n_unique

@@ -1004,6 +1004,15 @@ impl Expr {
         )
     }
 
+    /// Get an array with the cumulative product computed at every element
+    #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
+    pub fn cumprod(self, reverse: bool) -> Self {
+        self.apply(
+            move |s: Series| Ok(s.cumprod(reverse)),
+            GetOutput::same_type(),
+        )
+    }
+
     /// Get an array with the cumulative min computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cummin(self, reverse: bool) -> Self {

@@ -334,6 +334,10 @@ impl PySeries {
         self.series.cummin(reverse).into()
     }
 
+    pub fn cumprod(&self, reverse: bool) -> Self {
+        self.series.cumprod(reverse).into()
+    }
+
     pub fn chunk_lengths(&self) -> Vec<usize> {
         self.series.chunk_lengths().collect()
     }
