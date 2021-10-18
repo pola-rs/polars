@@ -590,6 +590,17 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cumsum(reverse))
 
+    def cumprod(self, reverse: bool = False) -> "Expr":
+        """
+        Get an array with the cumulative product computed at every element.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return wrap_expr(self._pyexpr.cumprod(reverse))
+
     def cummin(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative min computed at every element.

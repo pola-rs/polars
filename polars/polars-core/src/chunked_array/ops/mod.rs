@@ -105,6 +105,10 @@ pub trait ChunkCumAgg<T> {
     fn cumsum(&self, _reverse: bool) -> ChunkedArray<T> {
         panic!("operation cumsum not supported for this dtype")
     }
+    /// Get an array with the cumulative product computed at every element
+    fn cumprod(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cumprod not supported for this dtype")
+    }
 }
 
 /// Traverse and collect every nth element

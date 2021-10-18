@@ -315,6 +315,10 @@ impl PyExpr {
         self.clone().inner.cummin(reverse).into()
     }
 
+    pub fn cumprod(&self, reverse: bool) -> PyExpr {
+        self.clone().inner.cumprod(reverse).into()
+    }
+
     pub fn str_parse_date(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;

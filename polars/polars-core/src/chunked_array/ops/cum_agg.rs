@@ -2,7 +2,7 @@ use crate::prelude::*;
 use crate::utils::CustomIterTools;
 use itertools::__std_iter::FromIterator;
 use num::Bounded;
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Mul};
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
@@ -41,6 +41,23 @@ where
     match (*state, v) {
         (Some(state_inner), Some(v)) => {
             *state = Some(state_inner + v);
+            Some(*state)
+        }
+        (None, Some(v)) => {
+            *state = Some(v);
+            Some(*state)
+        }
+        (_, None) => Some(None),
+    }
+}
+
+fn det_prod<T>(state: &mut Option<T>, v: Option<T>) -> Option<Option<T>>
+where
+    T: Copy + PartialOrd + Mul<Output = T>,
+{
+    match (*state, v) {
+        (Some(state_inner), Some(v)) => {
+            *state = Some(state_inner * v);
             Some(*state)
         }
         (None, Some(v)) => {
@@ -108,6 +125,26 @@ where
                 .into_iter()
                 .rev()
                 .scan(init, det_sum)
+                .trust_my_length(self.len())
+                .collect_reversed(),
+        };
+
+        ca.rename(self.name());
+        ca
+    }
+
+    fn cumprod(&self, reverse: bool) -> ChunkedArray<T> {
+        let init = None;
+        let mut ca: Self = match reverse {
+            false => self
+                .into_iter()
+                .scan(init, det_prod)
+                .trust_my_length(self.len())
+                .collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .scan(init, det_prod)
                 .trust_my_length(self.len())
                 .collect_reversed(),
         };
