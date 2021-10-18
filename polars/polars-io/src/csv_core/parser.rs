@@ -362,14 +362,14 @@ impl<'a> Iterator for SplitFields<'a> {
     }
 }
 
-fn skip_this_line(bytes: &[u8], quote: Option<u8>) -> (&[u8], usize) {
+fn skip_this_line(bytes: &[u8], quote: Option<u8>, offset: usize) -> (&[u8], usize) {
     let pos = match quote {
         Some(quote) => find_quoted(bytes, quote, b'\n'),
         None => bytes.iter().position(|x| *x == b'\n'),
     };
     match pos {
-        None => (&[], bytes.len()),
-        Some(pos) => (&bytes[pos + 1..], pos + 1),
+        None => (&[], bytes.len() + offset),
+        Some(pos) => (&bytes[pos + 1..], pos + 1 + offset),
     }
 }
 
@@ -416,7 +416,7 @@ pub(crate) fn parse_lines(
         if let Some(c) = comment_char {
             // line is a comment -> skip
             if bytes[0] == c {
-                let (bytes_rem, len) = skip_this_line(bytes, quote_char);
+                let (bytes_rem, len) = skip_this_line(bytes, quote_char, 0);
                 bytes = bytes_rem;
                 read += len;
                 continue;
@@ -503,9 +503,16 @@ pub(crate) fn parse_lines(
                                 next_projected = p
                             }
                             None => {
-                                let (bytes_rem, len) = skip_this_line(bytes, quote_char);
-                                bytes = bytes_rem;
-                                read += len;
+                                let offset = read_sol - 1;
+                                if let Some(b'\n') = bytes.get(0) {
+                                    bytes = &bytes[read_sol..];
+                                    read += read_sol
+                                } else {
+                                    let (bytes_rem, len) =
+                                        skip_this_line(&bytes[offset..], quote_char, offset);
+                                    bytes = bytes_rem;
+                                    read += len;
+                                }
                                 break;
                             }
                         }
