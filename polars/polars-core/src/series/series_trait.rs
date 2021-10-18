@@ -405,7 +405,7 @@ pub trait SeriesTrait:
     /// Unpack to ChunkedArray of dtype u64
     fn u64(&self) -> Result<&UInt64Chunked> {
         Err(PolarsError::DataTypeMisMatch(
-            format!("Series dtype {:?} != u32", self.dtype()).into(),
+            format!("Series dtype {:?} != u64", self.dtype()).into(),
         ))
     }
 
