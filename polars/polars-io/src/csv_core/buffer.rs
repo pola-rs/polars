@@ -341,10 +341,19 @@ impl Buffer {
                 v.offsets.shrink_to_fit();
                 v.data.shrink_to_fit();
 
+                let mut is_valid = true;
                 if delay_utf8_validation(v.encoding, v.ignore_errors) {
-                    simdutf8::basic::from_utf8(v.data.as_slice()).map_err(|_| {
-                        PolarsError::ComputeError("invalid utf8 data in csv".into())
-                    })?;
+                    let mut start = 0usize;
+
+                    for &end in &v.offsets[1..] {
+                        let slice = v.data.get_unchecked(start..end as usize);
+                        start = end as usize;
+                        is_valid &= simdutf8::basic::from_utf8(slice).is_ok();
+                    }
+
+                    if !is_valid {
+                        return Err(PolarsError::ComputeError("invalid utf8 data in csv".into()));
+                    }
                 }
 
                 let arr = Utf8Array::<i64>::from_data_unchecked_default(
