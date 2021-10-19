@@ -1168,4 +1168,19 @@ linenum,last_name,first_name
 
         Ok(())
     }
+
+    #[test]
+    fn test_utf8() -> Result<()> {
+        // first part is valid ascii. later we have removed some bytes from the emoji.
+        let invalid_utf8 = [
+            111, 10, 98, 97, 114, 10, 104, 97, 109, 10, 115, 112, 97, 109, 10, 106, 97, 109, 10,
+            107, 97, 109, 10, 108, 97, 109, 10, 207, 128, 10, 112, 97, 109, 10, 115, 116, 97, 109,
+            112, 10, 240, 159, 137, 10, 97, 115, 99, 105, 105, 10, 240, 159, 144, 172, 10, 99, 105,
+            97, 111,
+        ];
+        let file = Cursor::new(invalid_utf8);
+        assert!(CsvReader::new(file).finish().is_err());
+
+        Ok(())
+    }
 }
