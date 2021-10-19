@@ -13,6 +13,7 @@ use crate::utils::NoNull;
 use arrow::buffer::MutableBuffer;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::trusted_len::PushUnchecked;
+use std::ops::Deref;
 
 fn agg_helper<T, F>(groups: &[(u32, Vec<u32>)], f: F) -> Option<Series>
 where
@@ -542,6 +543,24 @@ impl AggList for Utf8Chunked {
 }
 
 impl AggList for ListChunked {}
+impl AggList for CategoricalChunked {
+    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        match self.deref().agg_list(groups) {
+            None => None,
+            Some(s) => {
+                let ca = s.list().unwrap();
+                let mut out = ListChunked::new_from_chunks(ca.name(), ca.chunks.clone());
+                out.field = Arc::new(Field::new(
+                    ca.name(),
+                    DataType::List(Box::new(DataType::Categorical)),
+                ));
+                out.categorical_map = self.categorical_map.clone();
+                out.bit_settings = ca.bit_settings;
+                Some(out.into_series())
+            }
+        }
+    }
+}
 #[cfg(feature = "object")]
 impl<T> AggList for ObjectChunked<T> {}
 

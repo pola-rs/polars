@@ -48,10 +48,17 @@ unsafe fn arr_to_any_value<'a>(
         DataType::Date => downcast_and_pack!(Int32Array, Date),
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime => downcast_and_pack!(Int64Array, Datetime),
-        DataType::List(_) => {
+        DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
-            let s = Series::try_from(("", v));
-            AnyValue::List(s.unwrap())
+            let mut s = Series::try_from(("", v)).unwrap();
+
+            if let DataType::Categorical = **dt {
+                let mut s_new = s.cast(&DataType::Categorical).unwrap();
+                let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut();
+                ca.categorical_map = categorical_map.clone();
+                s = s_new;
+            }
+            AnyValue::List(s)
         }
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical => {
@@ -137,11 +144,19 @@ impl ChunkAnyValue for ListChunked {
 impl ChunkAnyValue for CategoricalChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
-        get_any_value_unchecked!(self, index)
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let arr = &self.chunks[chunk_idx];
+        debug_assert!(idx < arr.len());
+        arr_to_any_value(&**arr, idx, &self.categorical_map, &DataType::Categorical)
     }
 
     fn get_any_value(&self, index: usize) -> AnyValue {
-        get_any_value!(self, index)
+        let (chunk_idx, idx) = self.index_to_chunked_index(index);
+        let arr = &self.chunks[chunk_idx];
+        assert!(idx < arr.len());
+        // SAFETY
+        // bounds are checked
+        unsafe { arr_to_any_value(&**arr, idx, &self.categorical_map, &DataType::Categorical) }
     }
 }
 

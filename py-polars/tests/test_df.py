@@ -1029,3 +1029,33 @@ def test_apply_list_return():
     df = pl.DataFrame({"start": [1, 2], "end": [3, 5]})
     out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1)))
     assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
+
+
+def test_groupby_cat_list():
+    grouped = (
+        pl.DataFrame(
+            [
+                pl.Series("str_column", ["a", "b", "b", "a", "b"]),
+                pl.Series("int_column", [1, 1, 2, 2, 3]),
+            ]
+        )
+        .with_column(pl.col("str_column").cast(pl.Categorical).alias("cat_column"))
+        .groupby("int_column", maintain_order=True)
+        .agg([pl.col("cat_column")])["cat_column"]
+    )
+
+    out = grouped.explode()
+    assert out.dtype == pl.Categorical
+    assert out[0] == "a"
+
+    # test if we can also correctly fmt the categorical in list
+    assert (
+        str(grouped)
+        == """shape: (3,)
+Series: 'cat_column' [list]
+[
+	["a", "b"]
+	["b", "a"]
+	["b"]
+]"""
+    )

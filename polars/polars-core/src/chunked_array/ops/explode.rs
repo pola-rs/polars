@@ -230,7 +230,7 @@ impl ChunkExplode for ListChunked {
             .values()
             .slice(listarr.offset(), (offsets[offsets.len() - 1]) as usize);
 
-        let s = if ca.can_fast_explode() {
+        let mut s = if ca.can_fast_explode() {
             Series::try_from((self.name(), values)).unwrap()
         } else {
             // during tests
@@ -254,6 +254,13 @@ impl ChunkExplode for ListChunked {
             values.explode_by_offsets(offsets)
         };
         debug_assert_eq!(s.name(), self.name());
+        if let DataType::Categorical = self.inner_dtype() {
+            let ca = s.u32().unwrap();
+            let mut ca = ca.clone();
+            ca.categorical_map = self.categorical_map.clone();
+            s = ca.cast(&DataType::Categorical)?;
+        }
+
         Ok((s, offsets_buf))
     }
 }
