@@ -19,4 +19,9 @@ impl LogicalType for TimeChunked {
     fn dtype(&self) -> &'static DataType {
         &DataType::Time
     }
+
+    #[cfg(feature = "dtype-time")]
+    fn get_any_value(&self, i: usize) -> AnyValue<'_> {
+        self.0.get_any_value(i).into_time()
+    }
 }

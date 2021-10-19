@@ -459,7 +459,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn get(&self, index: usize) -> AnyValue {
-                self.0.get_any_value(index).$into_logical()
+                self.0.get_any_value(index)
             }
 
             #[inline]

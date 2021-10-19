@@ -517,36 +517,23 @@ impl Display for AnyValue<'_> {
     }
 }
 
-macro_rules! fmt_option {
-    ($opt:expr) => {{
-        match $opt {
-            Some(v) => format!("{}", v),
-            None => "null".to_string(),
-        }
-    }};
-}
-
 macro_rules! impl_fmt_list {
     ($self:ident) => {{
         match $self.len() {
             0 => format!("[]"),
-            1 => format!("[{}]", fmt_option!($self.get(0))),
-            2 => format!(
-                "[{}, {}]",
-                fmt_option!($self.get(0)),
-                fmt_option!($self.get(1))
-            ),
+            1 => format!("[{}]", $self.get_any_value(0)),
+            2 => format!("[{}, {}]", $self.get_any_value(0), $self.get_any_value(1)),
             3 => format!(
                 "[{}, {}, {}]",
-                fmt_option!($self.get(0)),
-                fmt_option!($self.get(1)),
-                fmt_option!($self.get(2))
+                $self.get_any_value(0),
+                $self.get_any_value(1),
+                $self.get_any_value(2)
             ),
             _ => format!(
                 "[{}, {}, ... {}]",
-                fmt_option!($self.get(0)),
-                fmt_option!($self.get(1)),
-                fmt_option!($self.get($self.len() - 1))
+                $self.get_any_value(0),
+                $self.get_any_value(1),
+                $self.get_any_value($self.len() - 1)
             ),
         }
     }};
@@ -648,12 +635,11 @@ Series: 'a' [list]
     }
 
     #[test]
-    #[cfg(feature = "dtype-time64-ns")]
     fn test_fmt_temporal() {
-        let s = DateChunked::new_from_opt_slice("Date", &[Some(1), None, Some(3)]);
+        let s = Int32Chunked::new_from_opt_slice("Date", &[Some(1), None, Some(3)]).into_date();
         assert_eq!(
             r#"shape: (3,)
-Series: 'Date' [Date]
+Series: 'Date' [date]
 [
 	1970-01-02
 	null
@@ -662,7 +648,8 @@ Series: 'Date' [Date]
             format!("{:?}", s.into_series())
         );
 
-        let s = DatetimeChunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)]);
+        let s = Int64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)])
+            .into_date();
         assert_eq!(
             r#"shape: (3,)
 Series: '' [datetime]
@@ -673,21 +660,8 @@ Series: '' [datetime]
 ]"#,
             format!("{:?}", s.into_series())
         );
-        let s = Time64NanosecondChunked::new_from_slice(
-            "",
-            &[1_000_000, 37_800_005_000_000, 86_399_210_000_000],
-        );
-        assert_eq!(
-            r#"shape: (3,)
-Series: '' [time64(ns)]
-[
-	00:00:00.001
-	10:30:00.005
-	23:59:59.210
-]"#,
-            format!("{:?}", s.into_series())
-        )
     }
+
     #[test]
     fn test_fmt_chunkedarray() {
         let ca = Int32Chunked::new_from_opt_slice("Date", &[Some(1), None, Some(3)]);

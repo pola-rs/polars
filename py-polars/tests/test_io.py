@@ -266,3 +266,23 @@ def test_csq_quote_char():
     """
 
     assert pl.read_csv(rolling_stones.encode(), quote_char=None).shape == (9, 3)
+
+
+def test_date_list_fmt():
+    df = pl.DataFrame(
+        {
+            "mydate": ["2020-01-01", "2020-01-02", "2020-01-05", "2020-01-05"],
+            "index": [1, 2, 5, 5],
+        }
+    )
+
+    df = df.with_column(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
+    str(
+        df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"]
+    ) == """shape: (3,)
+Series: 'mydate' [list]
+[
+	[2020-01-01]
+	[2020-01-02]
+	[2020-01-05, 2020-01-05]
+]"""
