@@ -1,4 +1,7 @@
+from datetime import datetime, timedelta
 from typing import Optional, Sequence, Union
+
+import numpy as np
 
 import polars as pl
 
@@ -11,12 +14,7 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-__all__ = [
-    "get_dummies",
-    "concat",
-    "repeat",
-    "arg_where",
-]
+__all__ = ["get_dummies", "concat", "repeat", "arg_where", "date_range"]
 
 
 def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
@@ -95,3 +93,64 @@ def arg_where(mask: "pl.Series") -> "pl.Series":
     UInt32 Series
     """
     return mask.arg_true()
+
+
+def date_range(
+    low: datetime, high: datetime, interval: timedelta, name: Optional[str] = None
+) -> pl.Series:
+    """
+    Create a date range of type `Datetime`.
+
+    Parameters
+    ----------
+    low
+        Lower bound of the date range
+    high
+        Upper bound of the date range
+    interval
+        Interval periods
+    name
+        Name of the output Series
+    Returns
+    -------
+    A Series of type `Datetime`
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> from datetime import datetime, timedelta
+    >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12))
+    shape: (7426,)
+    Series: '' [datetime]
+    [
+        1985-01-01 00:00:00
+        1985-01-02 12:00:00
+        1985-01-04 00:00:00
+        1985-01-05 12:00:00
+        1985-01-07 00:00:00
+        1985-01-08 12:00:00
+        1985-01-10 00:00:00
+        1985-01-11 12:00:00
+        1985-01-13 00:00:00
+        1985-01-14 12:00:00
+        1985-01-16 00:00:00
+        1985-01-17 12:00:00
+        ...
+        2015-06-14 00:00:00
+        2015-06-15 12:00:00
+        2015-06-17 00:00:00
+        2015-06-18 12:00:00
+        2015-06-20 00:00:00
+        2015-06-21 12:00:00
+        2015-06-23 00:00:00
+        2015-06-24 12:00:00
+        2015-06-26 00:00:00
+        2015-06-27 12:00:00
+        2015-06-29 00:00:00
+        2015-06-30 12:00:00
+    ]
+    """
+    return pl.Series(
+        name=name,
+        values=np.arange(low, high, interval, dtype="datetime64[ms]").astype(int),
+    ).cast(pl.Datetime)

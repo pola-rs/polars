@@ -31,6 +31,7 @@ Eager functions
    concat
    repeat
    arg_where
+   date_range
 
 Parallelization
 ~~~~~~~~~~~~~~~
