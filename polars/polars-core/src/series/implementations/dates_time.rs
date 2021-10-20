@@ -66,7 +66,6 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "asof_join")]
             fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-                use crate::frame::asof_join::JoinAsof;
                 self.0.deref().join_asof(other)
             }
 
