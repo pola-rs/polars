@@ -22,7 +22,7 @@ where
 {
     fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
         let other = self.unpack_series_matching_type(other)?;
-        let mut rhs_iter = other.into_iter();
+        let mut rhs_iter = other.into_iter().peekable();
         let mut tuples = Vec::with_capacity(self.len());
         if self.null_count() > 0 {
             return Err(PolarsError::ComputeError(
@@ -33,21 +33,19 @@ where
             eprintln!("right key of asof join is not explicitly sorted, this may lead to unexpected results");
         }
 
-        let mut count = 0;
         let mut rhs_idx = 0;
 
-        let mut previous_rhs_val: T::Native = Bounded::min_value();
         let mut previous_lhs_val: T::Native = Bounded::min_value();
+
+        let mut sorted = true;
 
         for arr in self.downcast_iter() {
             for &lhs_val in arr.values().as_slice() {
                 if lhs_val < previous_lhs_val {
-                    return Err(PolarsError::ComputeError(
-                        "left key of asof join must be sorted".into(),
-                    ));
+                    sorted = false;
                 }
                 if lhs_val == previous_lhs_val {
-                    tuples.push(Some(rhs_idx + 1));
+                    tuples.push(Some(rhs_idx - 1));
                     continue;
                 }
                 previous_lhs_val = lhs_val;
@@ -56,18 +54,19 @@ where
                     match rhs_iter.next() {
                         Some(Some(rhs_val)) => {
                             if rhs_val > lhs_val {
-                                if previous_rhs_val <= lhs_val && rhs_idx > 0 {
-                                    tuples.push(Some(rhs_idx - 1));
-                                    rhs_idx += 1;
-                                    previous_rhs_val = rhs_val;
-                                } else {
-                                    rhs_idx += 1;
-                                    previous_rhs_val = rhs_val;
-                                    tuples.push(None);
+                                if previous_lhs_val <= lhs_val {
+                                    if rhs_idx == 0 {
+                                        tuples.push(None);
+                                    } else {
+                                        tuples.push(Some(rhs_idx - 1));
+                                    }
                                 }
+
+                                rhs_idx += 1;
+
+                                // breaks from the loop, not the right iter
                                 break;
                             }
-                            previous_rhs_val = rhs_val;
                             rhs_idx += 1;
                         }
                         Some(None) => {
@@ -75,29 +74,28 @@ where
                         }
                         // exhausted rhs
                         None => {
-                            let remaining = self.len() - count;
-                            // all remaining values in left hand side
-                            if previous_rhs_val < lhs_val {
-                                // all remaining values in the rhs are smaller
-                                // so we join with the last: the biggest
-                                let iter = std::iter::repeat(Some(rhs_idx - 1))
-                                    .take(remaining)
-                                    .trust_my_length(remaining);
-                                tuples.extend_trusted_len(iter);
-                            } else {
-                                // TODO: check if this branch should be removed
-                                let iter = std::iter::repeat(None)
-                                    .take(remaining)
-                                    .trust_my_length(remaining);
-                                tuples.extend_trusted_len(iter);
-                            }
+                            let remaining = self.len() - tuples.len();
+
+                            // all remaining values in the rhs are smaller
+                            // so we join with the last: the biggest
+                            let item = tuples.last().map(|_| rhs_idx - 1);
+
+                            let iter = std::iter::repeat(item)
+                                .take(remaining)
+                                .trust_my_length(remaining);
+                            tuples.extend_trusted_len(iter);
 
                             return Ok(tuples);
                         }
                     }
                 }
-                count += 1;
             }
+        }
+
+        if !sorted {
+            return Err(PolarsError::ComputeError(
+                "left key of asof join must be sorted".into(),
+            ));
         }
 
         Ok(tuples)
@@ -117,6 +115,12 @@ impl DataFrame {
         let right_key = other.column(right_on)?;
 
         let take_idx = left_key.join_asof(right_key)?;
+
+        // take_idx are sorted so this is a bound check for all
+        if let Some(Some(idx)) = take_idx.last() {
+            assert!((*idx as usize) < other.height())
+        }
+
         // Safety:
         // join tuples are in bounds
         let right_df = unsafe {
