@@ -2845,7 +2845,7 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_json_path_match(json_path))
 
-    def extract_regex(self, pattern: str, group_index: int = 1):
+    def extract_regex(self, pattern: str, group_index: int = 1) -> Series:
         """
         Extract the target capture group from provided patterns.
 

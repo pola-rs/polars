@@ -1881,7 +1881,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
-    def extract_regex(self, pattern: str, group_index: int):
+    def extract_regex(self, pattern: str, group_index: int) -> Expr:
         """
         Extract the target capture group from provided patterns.
 
