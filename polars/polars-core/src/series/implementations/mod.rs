@@ -31,8 +31,6 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "asof_join")]
-use crate::frame::asof_join::JoinAsof;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;

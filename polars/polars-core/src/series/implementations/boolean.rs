@@ -10,8 +10,6 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "asof_join")]
-use crate::frame::asof_join::JoinAsof;
 #[cfg(feature = "pivot")]
 use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
@@ -41,11 +39,6 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
-    }
-
-    #[cfg(feature = "asof_join")]
-    fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-        self.0.join_asof(other)
     }
 
     fn set_sorted(&mut self, reverse: bool) {

@@ -3,24 +3,12 @@ use crate::utils::CustomIterTools;
 use num::Bounded;
 use polars_arrow::trusted_len::PushUnchecked;
 
-pub(crate) trait JoinAsof<T: PolarsDataType> {
-    fn join_asof(&self, _other: &Series) -> Result<Vec<Option<u32>>> {
-        Err(PolarsError::InvalidOperation(
-            format!(
-                "asof join not implemented for key with dtype: {:?}",
-                T::get_dtype()
-            )
-            .into(),
-        ))
-    }
-}
-
-impl<T> JoinAsof<T> for ChunkedArray<T>
+impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Bounded + PartialOrd,
 {
-    fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
+    pub(crate) fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
         let other = self.unpack_series_matching_type(other)?;
         let mut rhs_iter = other.into_iter().peekable();
         let mut tuples = Vec::with_capacity(self.len());
@@ -101,11 +89,6 @@ where
         Ok(tuples)
     }
 }
-
-impl JoinAsof<BooleanType> for BooleanChunked {}
-impl JoinAsof<Utf8Type> for Utf8Chunked {}
-impl JoinAsof<ListType> for ListChunked {}
-impl JoinAsof<CategoricalType> for CategoricalChunked {}
 
 impl DataFrame {
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
