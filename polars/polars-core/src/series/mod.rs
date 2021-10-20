@@ -24,6 +24,7 @@ pub use from::*;
 use num::NumCast;
 use rayon::prelude::*;
 pub use series_trait::*;
+use std::borrow::Cow;
 #[cfg(feature = "groupby_list")]
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
@@ -323,14 +324,13 @@ impl Series {
     /// * Date -> Int32
     /// * Datetime-> Int64
     ///
-    pub fn to_physical_repr(&self) -> Series {
+    pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
-        let out = match self.dtype() {
-            Date => self.cast(&DataType::Int32),
-            Datetime => self.cast(&DataType::Int64),
-            _ => return self.clone(),
-        };
-        out.unwrap()
+        match self.dtype() {
+            Date => Cow::Owned(self.cast(&DataType::Int32).unwrap()),
+            Datetime => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
+            _ => Cow::Borrowed(self),
+        }
     }
 
     /// Take by index if ChunkedArray contains a single chunk.

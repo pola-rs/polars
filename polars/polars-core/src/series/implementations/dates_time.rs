@@ -85,7 +85,7 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-                let other = other.to_physical_repr();
+                let other = other.to_physical_repr().into_owned();
                 self.0
                     .zip_with(mask, &other.as_ref().as_ref())
                     .map(|ca| ca.$into_logical().into_series())
@@ -188,15 +188,15 @@ macro_rules! impl_dyn_series {
                 self.0.pivot_count(pivot_series, keys, groups)
             }
             fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
-                let other = other.to_physical_repr();
+                let other = other.to_physical_repr().into_owned();
                 self.0.hash_join_inner(&other.as_ref().as_ref())
             }
             fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
-                let other = other.to_physical_repr();
+                let other = other.to_physical_repr().into_owned();
                 self.0.hash_join_left(&other.as_ref().as_ref())
             }
             fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-                let other = other.to_physical_repr();
+                let other = other.to_physical_repr().into_owned();
                 self.0.hash_join_outer(&other.as_ref().as_ref())
             }
             fn zip_outer_join_column(
@@ -204,7 +204,7 @@ macro_rules! impl_dyn_series {
                 right_column: &Series,
                 opt_join_tuples: &[(Option<u32>, Option<u32>)],
             ) -> Series {
-                let right_column = right_column.to_physical_repr();
+                let right_column = right_column.to_physical_repr().into_owned();
                 self.0
                     .zip_outer_join_column(&right_column, opt_join_tuples)
                     .$into_logical()
@@ -353,7 +353,7 @@ macro_rules! impl_dyn_series {
 
             fn append(&mut self, other: &Series) -> Result<()> {
                 if self.0.dtype() == other.dtype() {
-                    let other = other.to_physical_repr();
+                    let other = other.to_physical_repr().into_owned();
                     self.0.append(other.as_ref().as_ref());
                     Ok(())
                 } else {
@@ -753,5 +753,18 @@ mod test {
         assert_eq!(a.len(), 6);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_arithmetic_dispatch() {
+        let s = Int64Chunked::new_from_slice("", &[1, 2, 3])
+            .into_date()
+            .into_series();
+
+        // check if we don't panic.
+        let _ = &s * 100;
+        let _ = &s / 100;
+        let _ = &s + 100;
+        let _ = &s - 100;
     }
 }

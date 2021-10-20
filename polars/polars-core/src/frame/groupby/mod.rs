@@ -359,7 +359,7 @@ impl DataFrame {
                     _ => {
                         // is date like
                         if !s.is_numeric() && s.is_numeric_physical() {
-                            s.to_physical_repr()
+                            s.to_physical_repr().into_owned()
                         } else {
                             s.clone()
                         }

@@ -396,13 +396,14 @@ where
     type Output = Series;
 
     fn sub(self, rhs: T) -> Self::Output {
+        let s = self.to_physical_repr();
         macro_rules! sub {
             ($ca:expr) => {{
                 $ca.sub(rhs).into_series()
             }};
         }
 
-        match_arrow_data_type_apply_macro_ca_logical_num!(self, sub)
+        match_arrow_data_type_apply_macro_ca_logical_num!(s, sub)
     }
 }
 
@@ -424,12 +425,13 @@ where
     type Output = Series;
 
     fn add(self, rhs: T) -> Self::Output {
+        let s = self.to_physical_repr();
         macro_rules! add {
             ($ca:expr) => {{
                 $ca.add(rhs).into_series()
             }};
         }
-        match_arrow_data_type_apply_macro_ca_logical_num!(self, add)
+        match_arrow_data_type_apply_macro_ca_logical_num!(s, add)
     }
 }
 
@@ -451,13 +453,14 @@ where
     type Output = Series;
 
     fn div(self, rhs: T) -> Self::Output {
+        let s = self.to_physical_repr();
         macro_rules! div {
             ($ca:expr) => {{
                 $ca.div(rhs).into_series()
             }};
         }
 
-        match_arrow_data_type_apply_macro_ca_logical_num!(self, div)
+        match_arrow_data_type_apply_macro_ca_logical_num!(s, div)
     }
 }
 
@@ -479,12 +482,13 @@ where
     type Output = Series;
 
     fn mul(self, rhs: T) -> Self::Output {
+        let s = self.to_physical_repr();
         macro_rules! mul {
             ($ca:expr) => {{
                 $ca.mul(rhs).into_series()
             }};
         }
-        match_arrow_data_type_apply_macro_ca_logical_num!(self, mul)
+        match_arrow_data_type_apply_macro_ca_logical_num!(s, mul)
     }
 }
 
@@ -506,12 +510,13 @@ where
     type Output = Series;
 
     fn rem(self, rhs: T) -> Self::Output {
+        let s = self.to_physical_repr();
         macro_rules! rem {
             ($ca:expr) => {{
                 $ca.rem(rhs).into_series()
             }};
         }
-        match_arrow_data_type_apply_macro_ca_logical_num!(self, rem)
+        match_arrow_data_type_apply_macro_ca_logical_num!(s, rem)
     }
 }
 
