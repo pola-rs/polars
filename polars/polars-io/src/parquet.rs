@@ -18,8 +18,11 @@ use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::datatypes::PhysicalType;
-use arrow::io::parquet::write::{array_to_pages, DynIter, Encoding};
-use arrow::io::parquet::{read, write};
+use arrow::io::parquet::write::{array_to_pages, DynIter, DynStreamingIterator, Encoding};
+use arrow::io::parquet::{
+    read,
+    write::{self, *},
+};
 use polars_core::prelude::*;
 use rayon::prelude::*;
 use std::io::{Read, Seek, Write};
@@ -129,6 +132,7 @@ pub struct ParquetWriter<W> {
     compression: write::Compression,
 }
 
+use arrow::io::parquet::read::fallible_streaming_iterator;
 pub use write::Compression;
 
 impl<W> ParquetWriter<W>
@@ -187,18 +191,21 @@ where
                 .zip(parquet_schema_iter.columns().par_iter())
                 .zip(encodings.par_iter())
                 .map(|((array, descriptor), encoding)| {
-                    let array = array.clone();
-
-                    let pages =
-                        array_to_pages(array, descriptor.clone(), options, *encoding).unwrap();
-                    pages.collect::<Vec<_>>()
+                    let encoded_pages =
+                        array_to_pages(array.as_ref(), descriptor.clone(), options, *encoding)?;
+                    encoded_pages
+                        .map(|page| {
+                            compress(page?, vec![], options.compression).map_err(|x| x.into())
+                        })
+                        .collect::<ArrowResult<Vec<_>>>()
                 })
-                .collect::<Vec<_>>();
+                .collect::<ArrowResult<Vec<Vec<CompressedPage>>>>()?;
 
             let out = write::DynIter::new(columns.into_iter().map(|column| {
                 // one parquet page per array.
-                // we could use `array.slice()` to split it based on some number of rows.
-                Ok(DynIter::new(column.into_iter()))
+                Ok(DynStreamingIterator::new(
+                    fallible_streaming_iterator::convert(column.iter().map(Ok)),
+                ))
             }));
             ArrowResult::Ok(out)
         });

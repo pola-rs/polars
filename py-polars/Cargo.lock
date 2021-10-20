@@ -62,15 +62,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
+name = "arrow-format"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a27331907748dae13980603aca25f39e4504b6e047e2cd93c4f4e5f21a80829"
+dependencies = [
+ "flatbuffers",
+]
+
+[[package]]
 name = "arrow2"
 version = "0.6.2"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=0b3756802ed239505bf72661907dc064e73b9382#0b3756802ed239505bf72661907dc064e73b9382"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=b62184d32a56465f145e4692e1a90fc4fe418d82#b62184d32a56465f145e4692e1a90fc4fe418d82"
 dependencies = [
  "ahash",
+ "arrow-format",
  "base64",
  "chrono",
  "csv",
- "flatbuffers",
  "futures",
  "hash_hasher",
  "lexical-core",
@@ -432,6 +441,12 @@ name = "encode_unicode"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "flatbuffers"
@@ -1165,9 +1180,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.5.2"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a58d579bfb3d87f18d348d15f7fce0ac4229b0df16e81c4668fe13bfd1f0d0c9"
+checksum = "db82df54cdd88931d29b850190915b9069bb93fba8e1aefc0d59d8ca81603d6d"
 dependencies = [
  "async-stream",
  "bitpacking",
@@ -1177,7 +1192,7 @@ dependencies = [
  "lz4",
  "parquet-format-async-temp",
  "snap",
- "streaming-iterator",
+ "streaming-decompression",
  "zstd",
 ]
 
@@ -1661,6 +1676,15 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "streaming-decompression"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bc687acd5dc742c4a7094f2927a8614a68e4743ef682e7a2f9f0f711656cc92"
+dependencies = [
+ "fallible-streaming-iterator",
+]
 
 [[package]]
 name = "streaming-iterator"
