@@ -1,9 +1,16 @@
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
+use std::borrow::Cow;
+
 use crate::prelude::*;
 use arrow::compute::substring::substring;
 use polars_arrow::kernels::string::*;
 use regex::Regex;
+
+fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
+    reg.captures(input)
+        .and_then(|cap| cap.get(group_index).map(|m| Cow::Borrowed(m.as_str())))
+}
 
 impl Utf8Chunked {
     /// Get the length of the string values.
@@ -36,6 +43,12 @@ impl Utf8Chunked {
         let reg = Regex::new(pat)?;
         let f = |s| reg.replace_all(s, val);
         Ok(self.apply(f))
+    }
+
+    /// Extract the nth capture group from pattern
+    pub fn extract(&self, pat: &str, group_index: usize) -> Result<Utf8Chunked> {
+        let reg = Regex::new(pat)?;
+        Ok(self.apply_on_opt(|e| e.and_then(|input| f_regex_extract(&reg, input, group_index))))
     }
 
     /// Modify the strings to their lowercase equivalent

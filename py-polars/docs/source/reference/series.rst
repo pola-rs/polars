@@ -203,6 +203,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.lengths
     StringNameSpace.contains
     StringNameSpace.json_path_match
+    StringNameSpace.extract
     StringNameSpace.replace
     StringNameSpace.replace_all
     StringNameSpace.to_lowercase

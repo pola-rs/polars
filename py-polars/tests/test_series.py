@@ -537,6 +537,21 @@ def test_jsonpath_single():
     ]
 
 
+def test_extract_regex():
+    s = pl.Series(
+        [
+            "http://vote.com/ballon_dor?candidate=messi&ref=polars",
+            "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
+            "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
+        ]
+    )
+    assert s.str.extract("candidate=(\w+)", 1).to_list() == [
+        "messi",
+        None,
+        "ronaldo",
+    ]
+
+
 def test_rank_dispatch():
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
