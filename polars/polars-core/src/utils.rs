@@ -331,7 +331,7 @@ macro_rules! match_arrow_data_type_apply_macro_ca_logical_num {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
-            _ => unimplemented!(),
+            dt => panic!("not implemented for {:?}", dt),
         }
     }};
 }

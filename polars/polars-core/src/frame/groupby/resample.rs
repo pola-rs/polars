@@ -216,7 +216,7 @@ impl DataFrame {
         let temp_key = "__POLAR_TEMP_NAME";
 
         let key_dtype = key.dtype();
-        let mut key_phys = key.to_physical_repr();
+        let mut key_phys = key.to_physical_repr().into_owned();
         let mut key = key.clone();
         let key_name = key.name().to_string();
         let wrong_key_dtype = || {
