@@ -18,6 +18,7 @@ use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::datatypes::PhysicalType;
+use arrow::error::ArrowError;
 use arrow::io::parquet::write::{array_to_pages, DynIter, DynStreamingIterator, Encoding};
 use arrow::io::parquet::{
     read,
@@ -25,6 +26,7 @@ use arrow::io::parquet::{
 };
 use polars_core::prelude::*;
 use rayon::prelude::*;
+use std::collections::VecDeque;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -122,6 +124,34 @@ where
     }
 }
 
+struct Bla {
+    columns: VecDeque<CompressedPage>,
+    current: Option<CompressedPage>,
+}
+
+impl Bla {
+    pub fn new(columns: VecDeque<CompressedPage>) -> Self {
+        Self {
+            columns,
+            current: None,
+        }
+    }
+}
+
+impl FallibleStreamingIterator for Bla {
+    type Item = CompressedPage;
+    type Error = ArrowError;
+
+    fn advance(&mut self) -> ArrowResult<()> {
+        self.current = self.columns.pop_front();
+        Ok(())
+    }
+
+    fn get(&self) -> Option<&Self::Item> {
+        self.current.as_ref()
+    }
+}
+
 /// Write a DataFrame to parquet format
 ///
 /// # Example
@@ -132,7 +162,6 @@ pub struct ParquetWriter<W> {
     compression: write::Compression,
 }
 
-use arrow::io::parquet::read::fallible_streaming_iterator;
 pub use write::Compression;
 
 impl<W> ParquetWriter<W>
@@ -197,17 +226,16 @@ where
                         .map(|page| {
                             compress(page?, vec![], options.compression).map_err(|x| x.into())
                         })
-                        .collect::<ArrowResult<Vec<_>>>()
+                        .collect::<ArrowResult<VecDeque<_>>>()
                 })
-                .collect::<ArrowResult<Vec<Vec<CompressedPage>>>>()?;
+                .collect::<ArrowResult<Vec<VecDeque<CompressedPage>>>>()?;
 
-            let out = write::DynIter::new(columns.into_iter().map(|column| {
-                // one parquet page per array.
-                Ok(DynStreamingIterator::new(
-                    fallible_streaming_iterator::convert(column.iter().map(Ok)),
-                ))
-            }));
-            ArrowResult::Ok(out)
+            let row_group = DynIter::new(
+                columns
+                    .into_iter()
+                    .map(|column| Ok(DynStreamingIterator::new(Bla::new(column)))),
+            );
+            ArrowResult::Ok(row_group)
         });
 
         write::write_file(
