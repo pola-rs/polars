@@ -2845,7 +2845,7 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_json_path_match(json_path))
 
-    def extract_regex(self, pattern: str, group_index: int = 1) -> Series:
+    def extract(self, pattern: str, group_index: int = 1) -> Series:
         """
         Extract the target capture group from provided patterns.
 
@@ -2872,7 +2872,7 @@ class StringNameSpace:
         ...             'http://vote.com/ballon_dor?candidate=ronaldo&ref=polars'
         ...         ]})
         >>> df.select([
-        ...             pl.col('a').str.extract_regex('candidate=(\w+)', 1)
+        ...             pl.col('a').str.extract('candidate=(\w+)', 1)
         ...         ])
         shape: (3, 1)
         ┌─────────┐
@@ -2887,7 +2887,7 @@ class StringNameSpace:
         │ ronaldo │
         └─────────┘
         """
-        return wrap_s(self._s.str_extract_regex(pattern, group_index))
+        return wrap_s(self._s.str_extract(pattern, group_index))
 
     def replace(self, pattern: str, value: str) -> Series:
         """

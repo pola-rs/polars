@@ -933,10 +933,10 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn str_extract_regex(&self, pat: &str, group_index: usize) -> PyResult<Self> {
+    pub fn str_extract(&self, pat: &str, group_index: usize) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
         let s = ca
-            .extract_regex(pat, group_index)
+            .extract(pat, group_index)
             .map_err(PyPolarsEr::from)?
             .into_series();
         Ok(s.into())

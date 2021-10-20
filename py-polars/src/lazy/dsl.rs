@@ -437,10 +437,10 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_extract_regex(&self, pat: String, group_index: usize) -> PyExpr {
+    pub fn str_extract(&self, pat: String, group_index: usize) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.extract_regex(&pat, group_index) {
+            match ca.extract(&pat, group_index) {
                 Ok(ca) => Ok(ca.into_series()),
                 Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
             }
