@@ -403,7 +403,13 @@ where
             }};
         }
 
-        match_arrow_data_type_apply_macro_ca_logical_num!(s, sub)
+        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, sub);
+        match self.dtype() {
+            DataType::Datetime | DataType::Date => out.into_date(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => out.into_time(),
+            _ => out,
+        }
     }
 }
 
@@ -431,7 +437,13 @@ where
                 $ca.add(rhs).into_series()
             }};
         }
-        match_arrow_data_type_apply_macro_ca_logical_num!(s, add)
+        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, add);
+        match self.dtype() {
+            DataType::Datetime | DataType::Date => out.into_date(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => out.into_time(),
+            _ => out,
+        }
     }
 }
 
@@ -460,7 +472,13 @@ where
             }};
         }
 
-        match_arrow_data_type_apply_macro_ca_logical_num!(s, div)
+        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, div);
+        match self.dtype() {
+            DataType::Datetime | DataType::Date => out.into_date(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => out.into_time(),
+            _ => out,
+        }
     }
 }
 
@@ -488,7 +506,13 @@ where
                 $ca.mul(rhs).into_series()
             }};
         }
-        match_arrow_data_type_apply_macro_ca_logical_num!(s, mul)
+        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, mul);
+        match self.dtype() {
+            DataType::Datetime | DataType::Date => out.into_date(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => out.into_time(),
+            _ => out,
+        }
     }
 }
 
@@ -516,7 +540,14 @@ where
                 $ca.rem(rhs).into_series()
             }};
         }
-        match_arrow_data_type_apply_macro_ca_logical_num!(s, rem)
+        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, rem);
+
+        match self.dtype() {
+            DataType::Datetime | DataType::Date => out.into_date(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => out.into_time(),
+            _ => out,
+        }
     }
 }
 
@@ -579,33 +610,57 @@ where
         rhs + self
     }
     fn sub(self, rhs: &Series) -> Self::Output {
+        let s = rhs.to_physical_repr();
         macro_rules! sub {
             ($rhs:expr) => {{
                 $rhs.lhs_sub(self).into_series()
             }};
         }
-        match_arrow_data_type_apply_macro_ca_logical_num!(rhs, sub)
+        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, sub);
+
+        match rhs.dtype() {
+            DataType::Datetime | DataType::Date => out.into_date(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => out.into_time(),
+            _ => out,
+        }
     }
     fn div(self, rhs: &Series) -> Self::Output {
+        let s = rhs.to_physical_repr();
         macro_rules! div {
             ($rhs:expr) => {{
                 $rhs.lhs_div(self).into_series()
             }};
         }
-        match_arrow_data_type_apply_macro_ca_logical_num!(rhs, div)
+        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, div);
+
+        match rhs.dtype() {
+            DataType::Datetime | DataType::Date => out.into_date(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => out.into_time(),
+            _ => out,
+        }
     }
     fn mul(self, rhs: &Series) -> Self::Output {
         // order doesn't matter, dispatch to rhs * lhs
         rhs * self
     }
     fn rem(self, rhs: &Series) -> Self::Output {
+        let s = rhs.to_physical_repr();
         macro_rules! rem {
             ($rhs:expr) => {{
                 $rhs.lhs_rem(self).into_series()
             }};
         }
 
-        match_arrow_data_type_apply_macro_ca_logical_num!(rhs, rem)
+        let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, rem);
+
+        match rhs.dtype() {
+            DataType::Datetime | DataType::Date => out.into_date(),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => out.into_time(),
+            _ => out,
+        }
     }
 }
 

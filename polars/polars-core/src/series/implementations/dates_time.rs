@@ -762,9 +762,26 @@ mod test {
             .into_series();
 
         // check if we don't panic.
-        let _ = &s * 100;
-        let _ = &s / 100;
-        let _ = &s + 100;
-        let _ = &s - 100;
+        let out = &s * 100;
+        assert_eq!(out.dtype(), &DataType::Datetime);
+        let out = &s / 100;
+        assert_eq!(out.dtype(), &DataType::Datetime);
+        let out = &s + 100;
+        assert_eq!(out.dtype(), &DataType::Datetime);
+        let out = &s - 100;
+        assert_eq!(out.dtype(), &DataType::Datetime);
+        let out = &s % 100;
+        assert_eq!(out.dtype(), &DataType::Datetime);
+
+        let out = 100.mul(&s);
+        assert_eq!(out.dtype(), &DataType::Datetime);
+        let out = 100.div(&s);
+        assert_eq!(out.dtype(), &DataType::Datetime);
+        let out = 100.sub(&s);
+        assert_eq!(out.dtype(), &DataType::Datetime);
+        let out = 100.add(&s);
+        assert_eq!(out.dtype(), &DataType::Datetime);
+        let out = 100.rem(&s);
+        assert_eq!(out.dtype(), &DataType::Datetime);
     }
 }
