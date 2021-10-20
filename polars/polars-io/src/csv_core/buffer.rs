@@ -342,53 +342,28 @@ impl Buffer {
                 v.data.shrink_to_fit();
 
                 if delay_utf8_validation(v.encoding, v.ignore_errors) {
-                    // We first check valid ascii as that is much cheaper.
-                    // if we find an invalid ascii char, we continue from that offset
-                    // with utf8 checking.
                     let mut valid_utf8 = true;
-                    let mut valid_ascii = true;
-                    let mut offset = 0;
 
-                    // first we scan through the data checking ascii
-                    // if a byte is invalid we break the loop
-                    // and use that loop idx to find the offsets in the utf8 buffer
-                    // the offsets in the buffer are needed to recreate the substrings
-                    // in utf8 checking
-                    for (i, &v) in v.data.iter().enumerate() {
-                        if v > 127 {
-                            valid_ascii = false;
-                            offset = i as i64;
-                            break;
+                    // ascii checking is a lot cheaper
+                    if !v.data.is_ascii() {
+                        const SIMD_CHUNK_SIZE: usize = 64;
+                        let mut start = 0usize;
+                        // create substrings and check utf8 validity
+                        for &end in &v.offsets[1..] {
+                            let slice = v.data.get_unchecked(start..end as usize);
+                            start = end as usize;
+
+                            // fast ascii check per item
+                            if slice.len() < SIMD_CHUNK_SIZE && slice.is_ascii() {
+                                continue;
+                            }
+
+                            valid_utf8 &= simdutf8::basic::from_utf8(slice).is_ok();
                         }
                     }
 
-                    // if valid ascii, we are done here.
-                    if !valid_ascii {
-                        let mut idx = 0usize;
-
-                        // find offset in offset buffer that matched the failing ascii bytes
-                        for (i, &v) in v.offsets.iter().enumerate() {
-                            if v > offset {
-                                idx = i;
-                                break;
-                            }
-                        }
-
-                        // if the first byte was already invalid, we maximize by an offset of 0.
-                        let mut start = v.offsets[std::cmp::max(0, idx - 1)] as usize;
-
-                        // create substrings and check utf8 validity
-                        for &end in &v.offsets[idx..] {
-                            let slice = v.data.get_unchecked(start..end as usize);
-                            start = end as usize;
-                            valid_utf8 &= simdutf8::basic::from_utf8(slice).is_ok();
-                        }
-
-                        if !valid_utf8 {
-                            return Err(PolarsError::ComputeError(
-                                "invalid utf8 data in csv".into(),
-                            ));
-                        }
+                    if !valid_utf8 {
+                        return Err(PolarsError::ComputeError("invalid utf8 data in csv".into()));
                     }
                 }
 
