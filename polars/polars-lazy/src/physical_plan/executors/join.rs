@@ -12,9 +12,12 @@ pub struct JoinExec {
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
     suffix: Option<String>,
+    asof_by_left: Vec<String>,
+    asof_by_right: Vec<String>,
 }
 
 impl JoinExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input_left: Box<dyn Executor>,
         input_right: Box<dyn Executor>,
@@ -23,6 +26,8 @@ impl JoinExec {
         right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
         suffix: Option<String>,
+        asof_by_left: Vec<String>,
+        asof_by_right: Vec<String>,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
@@ -32,6 +37,8 @@ impl JoinExec {
             right_on,
             parallel,
             suffix,
+            asof_by_left,
+            asof_by_right,
         }
     }
 }
@@ -76,6 +83,35 @@ impl Executor for JoinExec {
             .map(|e| e.evaluate(&df_right, state).map(|s| s.name().to_string()))
             .collect::<Result<Vec<_>>>()?;
 
+        #[cfg(feature = "asof_join")]
+        let df = if let (JoinType::AsOf, true, true) = (
+            self.how,
+            !self.asof_by_right.is_empty(),
+            !self.asof_by_left.is_empty(),
+        ) {
+            if left_names.len() > 1 || right_names.len() > 1 {
+                return Err(PolarsError::ValueError(
+                    "only one column allowed in asof join".into(),
+                ));
+            }
+            df_left.join_asof_by(
+                &df_right,
+                &left_names[0],
+                &right_names[0],
+                &self.asof_by_left,
+                &self.asof_by_right,
+            )
+        } else {
+            df_left.join(
+                &df_right,
+                &left_names,
+                &right_names,
+                self.how,
+                self.suffix.clone(),
+            )
+        };
+
+        #[cfg(not(feature = "asof_join"))]
         let df = df_left.join(
             &df_right,
             &left_names,
@@ -83,6 +119,7 @@ impl Executor for JoinExec {
             self.how,
             self.suffix.clone(),
         );
+
         if state.verbose {
             eprintln!("{:?} join dataframes finished", self.how);
         };

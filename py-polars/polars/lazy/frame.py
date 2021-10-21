@@ -432,6 +432,9 @@ class LazyFrame:
         suffix: str = "_right",
         allow_parallel: bool = True,
         force_parallel: bool = False,
+        asof_by: Optional[Union[str, tp.List[str]]] = None,
+        asof_by_left: Optional[Union[str, tp.List[str]]] = None,
+        asof_by_right: Optional[Union[str, tp.List[str]]] = None,
     ) -> "LazyFrame":
         """
         Add a join operation to the Logical Plan.
@@ -468,7 +471,15 @@ class LazyFrame:
         if how == "cross":
             return wrap_ldf(
                 self._ldf.join(
-                    ldf._ldf, [], [], allow_parallel, force_parallel, how, suffix
+                    ldf._ldf,
+                    [],
+                    [],
+                    allow_parallel,
+                    force_parallel,
+                    how,
+                    suffix,
+                    [],
+                    [],
                 )
             )
 
@@ -505,6 +516,32 @@ class LazyFrame:
                 column = col(column)
             new_right_on.append(column._pyexpr)
 
+        # set asof_by
+
+        left_asof_by_: Union[tp.List[str], None]
+        if isinstance(asof_by_left, str):
+            left_asof_by_ = [asof_by_left]  # type: ignore[assignment]
+        else:
+            left_asof_by_ = asof_by_left
+
+        right_asof_by_: Union[tp.List[str], None]
+        if isinstance(asof_by_right, (str, Expr)):
+            right_asof_by_ = [asof_by_right]  # type: ignore[assignment]
+        else:
+            right_asof_by_ = asof_by_right
+
+        if isinstance(asof_by, str):
+            left_asof_by_ = [asof_by]
+            right_asof_by_ = [asof_by]
+        elif isinstance(on, list):
+            left_asof_by_ = asof_by
+            right_asof_by_ = asof_by
+
+        if left_asof_by_ is None:
+            left_asof_by_ = []
+        if right_asof_by_ is None:
+            right_asof_by_ = []
+
         return wrap_ldf(
             self._ldf.join(
                 ldf._ldf,
@@ -514,6 +551,8 @@ class LazyFrame:
                 force_parallel,
                 how,
                 suffix,
+                left_asof_by_,
+                right_asof_by_,
             )
         )
 

@@ -200,4 +200,38 @@ mod test {
         );
         Ok(())
     }
+
+    #[test]
+    fn test_asof_by2() -> Result<()> {
+        let trades = df![
+            "time" => [1464183000023i64, 1464183000038, 1464183000048, 1464183000048, 1464183000048],
+            "ticker" => ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+            "bid" => [51.95, 51.95, 720.77, 720.92, 98.0]
+        ]?;
+
+        let quotes = df![
+                   "time" => [1464183000023i64,
+        1464183000023,
+        1464183000030,
+        1464183000041,
+        1464183000048,
+        1464183000049,
+        1464183000072,
+        1464183000075],
+                   "ticker" => ["GOOG", "MSFT", "MSFT", "MSFT", "GOOG", "AAPL", "GOOG", "MSFT"],
+                   "bid" => [720.5, 51.95, 51.97, 51.99, 720.5, 97.99, 720.5, 52.01]
+
+               ]?;
+
+        let out = trades.join_asof_by(&quotes, "time", "time", "ticker", "ticker")?;
+        let a = out.column("bid_right").unwrap();
+        let a = a.f64().unwrap();
+
+        assert_eq!(
+            Vec::from(a),
+            &[Some(51.95), Some(51.97), Some(720.5), Some(720.5), None]
+        );
+
+        Ok(())
+    }
 }

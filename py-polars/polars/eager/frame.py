@@ -1816,6 +1816,9 @@ class DataFrame:
         on: Optional[Union[str, tp.List[str]]] = None,
         how: str = "inner",
         suffix: str = "_right",
+        asof_by: Optional[Union[str, tp.List[str]]] = None,
+        asof_by_left: Optional[Union[str, tp.List[str]]] = None,
+        asof_by_right: Optional[Union[str, tp.List[str]]] = None,
     ) -> Union["DataFrame", "pl.LazyFrame"]:
         """
         SQL like joins.
@@ -1913,9 +1916,27 @@ class DataFrame:
         if left_on_ is None or right_on_ is None:
             raise ValueError("You should pass the column to join on as an argument.")
 
-        if isinstance(left_on_[0], pl.Expr) or isinstance(right_on_[0], pl.Expr):
-            return self.lazy().join(
-                df.lazy(), left_on, right_on, how=how, suffix=suffix
+        if (
+            isinstance(left_on_[0], pl.Expr)
+            or isinstance(right_on_[0], pl.Expr)
+            or asof_by_left is not None
+            or asof_by_right is not None
+            or asof_by is not None
+        ):
+            return (
+                self.lazy()
+                .join(
+                    df.lazy(),
+                    left_on,
+                    right_on,
+                    on=on,
+                    how=how,
+                    suffix=suffix,
+                    asof_by_right=asof_by_right,
+                    asof_by_left=asof_by_left,
+                    asof_by=asof_by,
+                )
+                .collect(no_optimization=True)
             )
         else:
             return wrap_df(self._df.join(df._df, left_on_, right_on_, how, suffix))

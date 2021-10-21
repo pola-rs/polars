@@ -238,6 +238,8 @@ impl PyLazyFrame {
         force_parallel: bool,
         how: &str,
         suffix: String,
+        asof_by_left: Vec<String>,
+        asof_by_right: Vec<String>,
     ) -> PyLazyFrame {
         let how = match how {
             "left" => JoinType::Left,
@@ -261,6 +263,7 @@ impl PyLazyFrame {
             .force_parallel(force_parallel)
             .how(how)
             .suffix(suffix)
+            .asof_by(asof_by_left, asof_by_right)
             .finish()
             .into()
     }
