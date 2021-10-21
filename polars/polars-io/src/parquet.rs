@@ -18,10 +18,15 @@ use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::datatypes::PhysicalType;
-use arrow::io::parquet::write::{array_to_pages, DynIter, Encoding};
-use arrow::io::parquet::{read, write};
+use arrow::error::ArrowError;
+use arrow::io::parquet::write::{array_to_pages, DynIter, DynStreamingIterator, Encoding};
+use arrow::io::parquet::{
+    read,
+    write::{self, *},
+};
 use polars_core::prelude::*;
 use rayon::prelude::*;
+use std::collections::VecDeque;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -119,6 +124,34 @@ where
     }
 }
 
+struct Bla {
+    columns: VecDeque<CompressedPage>,
+    current: Option<CompressedPage>,
+}
+
+impl Bla {
+    pub fn new(columns: VecDeque<CompressedPage>) -> Self {
+        Self {
+            columns,
+            current: None,
+        }
+    }
+}
+
+impl FallibleStreamingIterator for Bla {
+    type Item = CompressedPage;
+    type Error = ArrowError;
+
+    fn advance(&mut self) -> ArrowResult<()> {
+        self.current = self.columns.pop_front();
+        Ok(())
+    }
+
+    fn get(&self) -> Option<&Self::Item> {
+        self.current.as_ref()
+    }
+}
+
 /// Write a DataFrame to parquet format
 ///
 /// # Example
@@ -187,20 +220,22 @@ where
                 .zip(parquet_schema_iter.columns().par_iter())
                 .zip(encodings.par_iter())
                 .map(|((array, descriptor), encoding)| {
-                    let array = array.clone();
-
-                    let pages =
-                        array_to_pages(array, descriptor.clone(), options, *encoding).unwrap();
-                    pages.collect::<Vec<_>>()
+                    let encoded_pages =
+                        array_to_pages(array.as_ref(), descriptor.clone(), options, *encoding)?;
+                    encoded_pages
+                        .map(|page| {
+                            compress(page?, vec![], options.compression).map_err(|x| x.into())
+                        })
+                        .collect::<ArrowResult<VecDeque<_>>>()
                 })
-                .collect::<Vec<_>>();
+                .collect::<ArrowResult<Vec<VecDeque<CompressedPage>>>>()?;
 
-            let out = write::DynIter::new(columns.into_iter().map(|column| {
-                // one parquet page per array.
-                // we could use `array.slice()` to split it based on some number of rows.
-                Ok(DynIter::new(column.into_iter()))
-            }));
-            ArrowResult::Ok(out)
+            let row_group = DynIter::new(
+                columns
+                    .into_iter()
+                    .map(|column| Ok(DynStreamingIterator::new(Bla::new(column)))),
+            );
+            ArrowResult::Ok(row_group)
         });
 
         write::write_file(
