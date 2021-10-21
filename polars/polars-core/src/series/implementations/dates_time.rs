@@ -66,7 +66,8 @@ macro_rules! impl_dyn_series {
 
             #[cfg(feature = "asof_join")]
             fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-                self.0.deref().join_asof(other)
+                let other = other.to_physical_repr();
+                self.0.deref().join_asof(&other)
             }
 
             fn set_sorted(&mut self, reverse: bool) {

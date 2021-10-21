@@ -2,6 +2,7 @@ use crate::prelude::*;
 use crate::utils::CustomIterTools;
 use num::Bounded;
 use polars_arrow::trusted_len::PushUnchecked;
+use std::borrow::Cow;
 
 impl<T> ChunkedArray<T>
 where
@@ -103,6 +104,13 @@ impl DataFrame {
         if let Some(Some(idx)) = take_idx.last() {
             assert!((*idx as usize) < other.height())
         }
+
+        // drop right join column
+        let other = if left_on == right_on {
+            Cow::Owned(other.drop(right_on)?)
+        } else {
+            Cow::Borrowed(other)
+        };
 
         // Safety:
         // join tuples are in bounds
