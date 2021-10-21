@@ -1127,3 +1127,17 @@ AAPL""".split(
         1464183000048,
         1464183000048,
     ]
+    out = trades.join(quotes, on="dates", how="asof", asof_by="ticker")
+    assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
+
+    out = quotes.join(trades, on="dates", asof_by="ticker", how="asof")
+    assert out["bid_right"].to_list() == [
+        None,
+        51.95,
+        51.95,
+        51.95,
+        720.92,
+        98.0,
+        720.92,
+        51.95,
+    ]
