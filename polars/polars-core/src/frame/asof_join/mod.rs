@@ -1,3 +1,5 @@
+mod groups;
+
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
 use num::Bounded;
@@ -94,6 +96,7 @@ where
 impl DataFrame {
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
     /// The keys must be sorted to perform an asof join
+    #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
     pub fn join_asof(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;

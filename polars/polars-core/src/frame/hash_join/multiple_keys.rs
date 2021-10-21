@@ -11,7 +11,7 @@ use hashbrown::HashMap;
 use rayon::prelude::*;
 
 /// Compare the rows of two DataFrames
-unsafe fn compare_df_rows2(
+pub(crate) unsafe fn compare_df_rows2(
     left: &DataFrame,
     right: &DataFrame,
     left_idx: usize,
@@ -26,7 +26,7 @@ unsafe fn compare_df_rows2(
     true
 }
 
-fn create_build_table(
+pub(crate) fn create_build_table(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
 ) -> Vec<HashMap<IdxHash, Vec<u32>, IdBuildHasher>> {
@@ -159,7 +159,7 @@ fn probe_inner<F>(
     }
 }
 
-fn get_offsets(probe_hashes: &[UInt64Chunked]) -> Vec<usize> {
+pub(crate) fn get_offsets(probe_hashes: &[UInt64Chunked]) -> Vec<usize> {
     probe_hashes
         .iter()
         .map(|ph| ph.len())

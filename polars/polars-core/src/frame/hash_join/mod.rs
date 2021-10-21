@@ -1,4 +1,4 @@
-mod multiple_keys;
+pub(crate) mod multiple_keys;
 use polars_arrow::utils::CustomIterTools;
 
 use crate::frame::hash_join::multiple_keys::{
@@ -70,7 +70,7 @@ pub enum JoinType {
     Cross,
 }
 
-unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
+pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
     h: u64,
     hash_tables: &[HashMap<T, Vec<u32>, H>],
     len: u64,
