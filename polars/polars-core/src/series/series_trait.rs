@@ -126,7 +126,7 @@ pub(crate) mod private {
 
         #[cfg(feature = "asof_join")]
         fn join_asof(&self, _other: &Series) -> Result<Vec<Option<u32>>> {
-            unimplemented!()
+            invalid_operation!(self)
         }
 
         fn set_sorted(&mut self, _reverse: bool) {

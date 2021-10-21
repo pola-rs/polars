@@ -913,10 +913,10 @@ def test_asof_cross_join():
 
     # only test dispatch of asof join
     out = left.join(right, on="a", how="asof")
-    assert out.shape == (3, 4)
+    assert out.shape == (3, 3)
 
     left.lazy().join(right.lazy(), on="a", how="asof").collect()
-    assert out.shape == (3, 4)
+    assert out.shape == (3, 3)
 
     # only test dispatch of cross join
     out = left.join(right, how="cross")
@@ -1059,3 +1059,71 @@ Series: 'cat_column' [list]
 	["b"]
 ]"""
     )
+
+
+def test_asof_join():
+    fmt = "%F %T%.3f"
+    dates = """2016-05-25 13:30:00.023
+2016-05-25 13:30:00.023
+2016-05-25 13:30:00.030
+2016-05-25 13:30:00.041
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.049
+2016-05-25 13:30:00.072
+2016-05-25 13:30:00.075""".split(
+        "\n"
+    )
+    dates
+
+    ticker = """GOOG
+MSFT
+MSFT
+MSFT
+GOOG
+AAPL
+GOOG
+MSFT""".split(
+        "\n"
+    )
+
+    quotes = pl.DataFrame(
+        {
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "ticker": ticker,
+            "bid": [720.5, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
+        }
+    )
+
+    dates = """2016-05-25 13:30:00.023
+2016-05-25 13:30:00.038
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.048""".split(
+        "\n"
+    )
+
+    ticker = """MSFT
+MSFT
+GOOG
+GOOG
+AAPL""".split(
+        "\n"
+    )
+
+    trades = pl.DataFrame(
+        {
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "ticker": ticker,
+            "bid": [51.95, 51.95, 720.77, 720.92, 98.0],
+        }
+    )
+
+    out = trades.join(quotes, on="dates", how="asof")
+    assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
+    assert out["dates"].cast(int).to_list() == [
+        1464183000023,
+        1464183000038,
+        1464183000048,
+        1464183000048,
+        1464183000048,
+    ]

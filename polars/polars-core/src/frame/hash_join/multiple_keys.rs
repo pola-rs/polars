@@ -242,9 +242,6 @@ pub fn private_left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32
 }
 
 pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32, Option<u32>)> {
-    // we assume that the b DataFrame is the shorter relation.
-    // b will be used for the build phase.
-
     let n_threads = POOL.current_num_threads();
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
