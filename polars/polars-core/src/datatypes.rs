@@ -719,14 +719,17 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Int16 => DataType::Int16,
             ArrowDataType::Int32 => DataType::Int32,
             ArrowDataType::Int64 => DataType::Int64,
-            ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Boolean => DataType::Boolean,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             ArrowDataType::LargeList(f) => DataType::List(Box::new(f.data_type().into())),
+            ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
-            ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => DataType::Datetime,
+            ArrowDataType::Timestamp(_, _) | ArrowDataType::Date64 => DataType::Datetime,
+            ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Utf8 => DataType::Utf8,
+            ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
+            ArrowDataType::Dictionary(_, _) => DataType::Categorical,
             dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }
     }
@@ -758,3 +761,85 @@ impl From<ArrowSchema> for Schema {
 pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
 #[cfg(feature = "private")]
 pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_arrow_dtypes_to_polars() {
+        let dtypes = [
+            (ArrowDataType::Date64, DataType::Datetime),
+            (
+                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+                DataType::Datetime,
+            ),
+            (
+                ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
+                DataType::Datetime,
+            ),
+            (
+                ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
+                DataType::Datetime,
+            ),
+            (
+                ArrowDataType::Timestamp(TimeUnit::Second, None),
+                DataType::Datetime,
+            ),
+            (
+                ArrowDataType::Timestamp(TimeUnit::Second, Some("".to_string())),
+                DataType::Datetime,
+            ),
+            (ArrowDataType::LargeUtf8, DataType::Utf8),
+            (ArrowDataType::Utf8, DataType::Utf8),
+            (ArrowDataType::Time64(TimeUnit::Nanosecond), DataType::Time),
+            (ArrowDataType::Time64(TimeUnit::Millisecond), DataType::Time),
+            (ArrowDataType::Time64(TimeUnit::Microsecond), DataType::Time),
+            (ArrowDataType::Time64(TimeUnit::Second), DataType::Time),
+            (ArrowDataType::Time32(TimeUnit::Nanosecond), DataType::Time),
+            (ArrowDataType::Time32(TimeUnit::Millisecond), DataType::Time),
+            (ArrowDataType::Time32(TimeUnit::Microsecond), DataType::Time),
+            (ArrowDataType::Time32(TimeUnit::Second), DataType::Time),
+            (
+                ArrowDataType::List(Box::new(ArrowField::new(
+                    "item",
+                    ArrowDataType::Float64,
+                    true,
+                ))),
+                DataType::List(DataType::Float64.into()),
+            ),
+            (
+                ArrowDataType::LargeList(Box::new(ArrowField::new(
+                    "item",
+                    ArrowDataType::Float64,
+                    true,
+                ))),
+                DataType::List(DataType::Float64.into()),
+            ),
+            (
+                ArrowDataType::Dictionary(ArrowDataType::UInt32.into(), ArrowDataType::Utf8.into()),
+                DataType::Categorical,
+            ),
+            (
+                ArrowDataType::Dictionary(
+                    ArrowDataType::UInt32.into(),
+                    ArrowDataType::LargeUtf8.into(),
+                ),
+                DataType::Categorical,
+            ),
+            (
+                ArrowDataType::Dictionary(
+                    ArrowDataType::UInt64.into(),
+                    ArrowDataType::LargeUtf8.into(),
+                ),
+                DataType::Categorical,
+            ),
+        ];
+
+        for (dt_a, dt_p) in dtypes {
+            let dt: DataType = (&dt_a).into();
+
+            assert_eq!(dt_p, dt_a);
+        }
+    }
+}
