@@ -209,7 +209,7 @@ pub fn map_mul(
     output_type: &PyAny,
     apply_groups: bool,
 ) -> PyExpr {
-   lazy::map_mul(&pyexpr, py, lambda, output_type, apply_groups)
+    lazy::map_mul(&pyexpr, py, lambda, output_type, apply_groups)
 }
 
 #[pymodule]
