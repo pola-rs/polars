@@ -1,4 +1,5 @@
 use crate::error::PyPolarsEr;
+use crate::prelude::ArrowDataType;
 use polars_core::prelude::Arc;
 use polars_core::utils::arrow::{
     array::ArrayRef,
@@ -6,6 +7,7 @@ use polars_core::utils::arrow::{
     ffi,
     record_batch::RecordBatch,
 };
+use polars_core::utils::arrow::{array::PrimitiveArray, bitmap::MutableBitmap};
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 
@@ -26,7 +28,17 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
 
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsEr::from)?;
-        let array = ffi::import_array_from_c(array, &field).map_err(PyPolarsEr::from)?;
+        let array = if field.data_type == ArrowDataType::Null {
+            let mut validity = MutableBitmap::new();
+            validity.extend_constant(1, false);
+            Box::new(PrimitiveArray::from_data(
+                ArrowDataType::Float64,
+                vec![1.0f64].into(),
+                Some(validity.into()),
+            ))
+        } else {
+            ffi::import_array_from_c(array, &field).map_err(PyPolarsEr::from)?
+        };
         Ok(array.into())
     }
 }

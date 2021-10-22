@@ -53,3 +53,10 @@ def test_arrow_list_chunked_array():
     ca = pa.chunked_array([a, a, a])
     s = pl.from_arrow(ca)
     assert s.dtype == pl.List
+
+
+def test_from_pandas_null():
+    test_df = pd.DataFrame([{0: None}, {0: None}])
+    out = pl.DataFrame(test_df)
+    assert out.dtypes == [pl.Float64]
+    assert out["0"][0] is None

@@ -189,7 +189,7 @@ pub fn map_mul(
 
         // we return an error, because that will become a null value polars lazy apply list
         if apply_groups && out.is_none(py) {
-            return Err(PolarsError::NoData("".into()))
+            return Err(PolarsError::NoData("".into()));
         }
 
         // unpack the wrapper in a PySeries
