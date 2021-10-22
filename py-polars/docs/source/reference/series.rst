@@ -119,6 +119,7 @@ Manipulation/ selection
 .. autosummary::
    :toctree: api/
 
+    Series.alias
     Series.rename
     Series.limit
     Series.slice

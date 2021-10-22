@@ -902,6 +902,23 @@ class Series:
         """
         return self._s.name()
 
+    def alias(self, name: str) -> "Series":
+        """
+        Rename the Series
+
+        Parameters
+        ----------
+        name
+            New name
+
+        Returns
+        -------
+
+        """
+        s = self.clone()
+        s._s.rename(name)
+        return s
+
     def rename(self, name: str, in_place: bool = False) -> Optional["Series"]:
         """
         Rename this Series.
@@ -930,9 +947,7 @@ class Series:
             self._s.rename(name)
             return None
         else:
-            s = self.clone()
-            s._s.rename(name)
-            return s
+            return self.alias(name)
 
     def chunk_lengths(self) -> tp.List[int]:
         """
