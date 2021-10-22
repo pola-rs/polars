@@ -31,7 +31,7 @@ jobs:
           make html
       - name: deploy docs
         run: |
-          RUSTFLAGS="--cfg docsrs" cargo doc --all-features --package polars && \
+          RUSTFLAGS="--cfg docsrs" cargo doc --package polars && \
           echo '<meta http-equiv=refresh content=0;url=polars/index.html>' > target/doc/index.html && \
           mkdir target/doc/py-polars
           cp -r py-polars/docs/build/html target/doc/py-polars
