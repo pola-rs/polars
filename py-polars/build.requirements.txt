@@ -5,10 +5,10 @@ isort~=5.9.2
 mypy~=0.910
 numpy
 pyarrow
-ghp-import
+ghp-import==2.0.1
 pandas
 flake8
-sphinx
+sphinx==4.2.0
 pydata-sphinx-theme==0.6.3
 sphinx-panels==0.6.0
 sphinxcontrib-applehelp==1.0.2
