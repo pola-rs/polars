@@ -153,6 +153,43 @@ a,b,c
         assert df.columns == ["foo", "b", "c"]
 
 
+def test_column_rename_and_dtype_overwrite():
+    csv = """
+a,b,c
+1,2,3
+1,2,3
+"""
+    f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        new_columns=["A", "B", "C"],
+        dtype={"A": pl.Utf8, "B": pl.Int64, "C": pl.Float32},
+    )
+    assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
+
+    f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        columns=["a", "c"],
+        new_columns=["A", "C"],
+        dtype={"A": pl.Utf8, "C": pl.Float32},
+    )
+    assert df.dtypes == [pl.Utf8, pl.Float32]
+
+    csv = """
+1,2,3
+1,2,3
+"""
+    f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        new_columns=["A", "B", "C"],
+        dtype={"A": pl.Utf8, "C": pl.Float32},
+        has_headers=False,
+    )
+    assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
+
+
 def test_compressed_csv():
     # gzip compression
     csv = """
