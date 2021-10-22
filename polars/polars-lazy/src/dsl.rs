@@ -1054,6 +1054,13 @@ impl Expr {
         self.map(move |s: Series| s.round(decimals), GetOutput::same_type())
     }
 
+    /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn floor(self) -> Self {
+        self.map(move |s: Series| s.floor(), GetOutput::same_type())
+    }
+
     /// Apply window function over a subgroup.
     /// This is similar to a groupby + aggregation + self join.
     /// Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).

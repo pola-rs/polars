@@ -269,6 +269,10 @@ impl PyExpr {
         self.clone().inner.round(decimals).into()
     }
 
+    pub fn floor(&self) -> PyExpr {
+        self.clone().inner.floor().into()
+    }
+
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }

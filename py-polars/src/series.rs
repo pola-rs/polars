@@ -1238,6 +1238,11 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn floor(&self) -> PyResult<Self> {
+        let s = self.series.floor().map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
     pub fn shrink_to_fit(&mut self) {
         self.series.shrink_to_fit();
     }

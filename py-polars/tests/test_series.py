@@ -723,7 +723,7 @@ def test_comparisons_int_series_to_float():
     assert (srs_int / 2.0).to_list() == [0.5, 1.0, 1.5, 2.0]
     assert (srs_int % 2.0).to_list() == [1, 0, 1, 0]
     assert (4.0 % srs_int).to_list() == [0, 0, 1, 0]
-    # floordiv is implemented as div
+
     assert (srs_int // 2.0).to_list() == [0, 1, 1, 2]
     assert (srs_int < 3.0).to_list() == [True, True, False, False]
     assert (srs_int <= 3.0).to_list() == [True, True, True, False]
@@ -741,8 +741,8 @@ def test_comparisons_float_series_to_int():
     assert (srs_float / 2).to_list() == [0.5, 1.0, 1.5, 2.0]
     assert (srs_float % 2).to_list() == [1.0, 0.0, 1.0, 0.0]
     assert (4 % srs_float).to_list() == [0.0, 0.0, 1.0, 0.0]
-    # floordiv is implemented as div
-    assert (srs_float // 2).to_list() == [0.5, 1.0, 1.5, 2.0]
+
+    assert (srs_float // 2).to_list() == [0.0, 1.0, 1.0, 2.0]
     assert (srs_float < 3).to_list() == [True, True, False, False]
     assert (srs_float <= 3).to_list() == [True, True, True, False]
     assert (srs_float > 3).to_list() == [False, False, False, True]
