@@ -294,7 +294,8 @@ where
         self
     }
 
-    /// Set values that will be interpreted as missing/ null.
+    /// Set values that will be interpreted as missing/ null. Note that any value you set as null value
+    /// will not be escaped, so if quotation marks are part of the null value you should include them.
     pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
         self.null_values = null_values;
         self
