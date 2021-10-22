@@ -76,12 +76,12 @@ impl<'de> Deserialize<'de> for Series {
                 let mut dtype = None;
                 let mut values_set = false;
                 let mut count = 0;
-                while let Some(key) = map.next_key().unwrap() {
+                while let Some(key) = map.next_key::<Cow<str>>().unwrap() {
                     count += 1;
-                    match key {
+                    match key.as_ref() {
                         "name" => {
-                            name = match map.next_value::<&str>() {
-                                Ok(s) => Some(Cow::Borrowed(s)),
+                            name = match map.next_value::<Cow<str>>() {
+                                Ok(s) => Some(s),
                                 Err(_) => Some(Cow::Owned(map.next_value::<String>()?)),
                             };
                         }
