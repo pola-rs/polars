@@ -142,6 +142,7 @@ Manipulation/ selection
     Series.rechunk
     Series.cast
     Series.round
+    Series.floor
     Series.set_at_idx
     Series.fill_null
     Series.zip_with

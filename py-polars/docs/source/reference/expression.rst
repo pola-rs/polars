@@ -147,6 +147,7 @@ Manipulation/ selection
     Expr.take_every
     Expr.repeat_by
     Expr.round
+    Expr.floor
     Expr.cast
     Expr.sort
     Expr.arg_sort

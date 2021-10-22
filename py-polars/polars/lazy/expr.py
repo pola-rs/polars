@@ -623,6 +623,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cummax(reverse))
 
+    def floor(self) -> "Expr":
+        """
+        Floor underlying floating point array to the lowest integers smaller or equal to the float value.
+
+        Only works on floating point Series
+        """
+        return wrap_expr(self._pyexpr.floor())
+
     def round(self, decimals: int) -> "Expr":
         """
         Round underlying floating point data by `decimals` digits.

@@ -449,6 +449,23 @@ impl Series {
         ))
     }
 
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
+    pub fn floor(&self) -> Result<Self> {
+        if let Ok(ca) = self.f32() {
+            let s = ca.apply(|val| val.floor()).into_series();
+            return Ok(s);
+        }
+        if let Ok(ca) = self.f64() {
+            let s = ca.apply(|val| val.floor()).into_series();
+            return Ok(s);
+        }
+        Err(PolarsError::DataTypeMisMatch(
+            format!("{:?} is not a floating point datatype", self.dtype()).into(),
+        ))
+    }
+
     #[cfg(feature = "dot_product")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
     pub fn dot(&self, other: &Series) -> Option<f64> {

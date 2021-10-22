@@ -392,16 +392,32 @@ class Series:
 
     def __truediv__(self, other: Any) -> "Series":
         physical_type = date_like_to_physical(self.dtype)
-        if self.dtype != physical_type or self.is_float():
+
+        # this branch is exactly the floordiv function without rounding the floats
+        if self.is_float():
+            if isinstance(other, Series):
+                return Series._from_pyseries(self._s.div(other._s))
+
+            other = _maybe_cast(other, self.dtype)
+            dtype = date_like_to_physical(self.dtype)
+            f = get_ffi_func("div_<>", dtype, self._s)
+            return wrap_s(f(other))
+
+        if self.dtype != physical_type:
             return self.__floordiv__(other)
         return self.cast(pl.Float64) / other
 
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
+            if self.is_float():
+                return Series._from_pyseries(self._s.div(other._s)).floor()
             return Series._from_pyseries(self._s.div(other._s))
+
         other = _maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("div_<>", dtype, self._s)
+        if self.is_float():
+            return wrap_s(f(other)).floor()
         return wrap_s(f(other))
 
     def __mul__(self, other: Any) -> "Series":
@@ -1985,6 +2001,14 @@ class Series:
                 self.name
             ]
         return wrap_s(self._s.fill_null(strategy))
+
+    def floor(self) -> "Series":
+        """
+        Floor underlying floating point array to the lowest integers smaller or equal to the float value.
+
+        Only works on floating point Series
+        """
+        return wrap_s(self._s.floor())
 
     def round(self, decimals: int) -> "Series":
         """
