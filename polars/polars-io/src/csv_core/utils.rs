@@ -167,6 +167,10 @@ pub fn infer_file_schema(
     } else {
         return Err(PolarsError::NoData("empty csv".into()));
     };
+    if !has_header {
+        // re-init lines so that the header is included in type inference.
+        lines = SplitLines::new(bytes, b'\n').skip(skip_rows);
+    }
 
     let header_length = headers.len();
     // keep track of inferred field types
