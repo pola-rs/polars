@@ -1323,7 +1323,7 @@ mod test {
         let gb = df.groupby("date").unwrap().n_unique().unwrap();
         println!("{:?}", df.groupby("date").unwrap().n_unique().unwrap());
         // check the group by column is filtered out.
-        assert_eq!(gb.width(), 2);
+        assert_eq!(gb.width(), 3);
         println!(
             "{:?}",
             df.groupby("date")
