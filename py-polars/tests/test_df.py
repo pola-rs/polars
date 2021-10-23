@@ -1141,3 +1141,14 @@ AAPL""".split(
         720.92,
         51.95,
     ]
+
+
+def test_groupby_agg_n_unique_floats():
+    # tests proper dispatch
+    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
+
+    for dtype in [pl.Float32, pl.Float64]:
+        out = df.groupby("a", maintain_order=True).agg(
+            [pl.col("b").cast(dtype).n_unique()]
+        )
+        out["b_n_unique"].to_list() == [2, 1]

@@ -418,9 +418,16 @@ where
     }
 }
 
-// todo! could use mantissa method here
-impl AggNUnique for Float32Chunked {}
-impl AggNUnique for Float64Chunked {}
+impl AggNUnique for Float32Chunked {
+    fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
+        self.bit_repr_small().agg_n_unique(groups)
+    }
+}
+impl AggNUnique for Float64Chunked {
+    fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
+        self.bit_repr_large().agg_n_unique(groups)
+    }
+}
 impl AggNUnique for ListChunked {}
 #[cfg(feature = "dtype-categorical")]
 impl AggNUnique for CategoricalChunked {
