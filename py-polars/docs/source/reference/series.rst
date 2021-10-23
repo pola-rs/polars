@@ -19,7 +19,7 @@ Attributes
    Series.dtype
    Series.name
    Series.shape
-   Series.dtyskew
+   Series.skew
    Series.dt
    Series.str
 

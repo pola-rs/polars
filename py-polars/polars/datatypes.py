@@ -279,6 +279,7 @@ def numpy_type_to_constructor(dtype: Type[np.dtype]) -> Callable[..., "PySeries"
         return PySeries.new_object
 
 
+# watch out putting stuff in this branch, it may break the docs build
 if not _DOCUMENTING:
     _PY_TYPE_TO_CONSTRUCTOR = {
         float: PySeries.new_opt_f64,
@@ -287,27 +288,27 @@ if not _DOCUMENTING:
         bool: PySeries.new_opt_bool,
     }
 
-    _PY_TYPE_TO_DTYPE = {
-        float: Float64,
-        int: Int64,
-        str: Utf8,
-        bool: Boolean,
-    }
+_PY_TYPE_TO_DTYPE = {
+    float: Float64,
+    int: Int64,
+    str: Utf8,
+    bool: Boolean,
+}
 
-    _DTYPE_TO_PY_TYPE = {
-        Float64: float,
-        Float32: float,
-        Int64: int,
-        Int32: int,
-        Int16: int,
-        Int8: int,
-        Utf8: str,
-        UInt8: int,
-        UInt16: int,
-        UInt32: int,
-        UInt64: int,
-        Boolean: bool,
-    }
+_DTYPE_TO_PY_TYPE = {
+    Float64: float,
+    Float32: float,
+    Int64: int,
+    Int32: int,
+    Int16: int,
+    Int8: int,
+    Utf8: str,
+    UInt8: int,
+    UInt16: int,
+    UInt32: int,
+    UInt64: int,
+    Boolean: bool,
+}
 
 
 def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:

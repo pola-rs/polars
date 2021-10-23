@@ -147,8 +147,6 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
     GroupBy.tail
     GroupBy.get_group
     GroupBy.groups
-    GroupBy.select
-    GroupBy.select_all
     GroupBy.pivot
     GroupBy.first
     GroupBy.last
