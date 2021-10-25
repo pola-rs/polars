@@ -1152,3 +1152,10 @@ def test_groupby_agg_n_unique_floats():
             [pl.col("b").cast(dtype).n_unique()]
         )
         out["b_n_unique"].to_list() == [2, 1]
+
+
+def test_select_by_dtype(df):
+    out = df.select(pl.col(pl.Utf8))
+    assert out.columns == ["strings", "strings_nulls"]
+    out = df.select(pl.col([pl.Utf8, pl.Boolean]))
+    assert out.columns == ["strings", "strings_nulls", "bools", "bools_nulls"]

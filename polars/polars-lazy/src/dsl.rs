@@ -248,6 +248,7 @@ pub enum Expr {
     Alias(Box<Expr>, Arc<String>),
     Column(Arc<String>),
     Columns(Vec<String>),
+    DtypeColumn(Vec<DataType>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Box<Expr>,
@@ -442,6 +443,7 @@ impl fmt::Debug for Expr {
             KeepName(e) => write!(f, "KEEP NAME {:?}", e),
             SufPreFix { expr, .. } => write!(f, "SUF-PREFIX {:?}", expr),
             Columns(names) => write!(f, "COLUMNS({:?})", names),
+            DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {:?}", dt),
         }
     }
 }
@@ -1673,6 +1675,17 @@ pub fn col(name: &str) -> Expr {
 /// Select multiple columns by name
 pub fn cols(names: Vec<String>) -> Expr {
     Expr::Columns(names)
+}
+
+/// Select multiple columns by dtype.
+pub fn dtype_col(dtype: &DataType) -> Expr {
+    Expr::DtypeColumn(vec![dtype.clone()])
+}
+
+/// Select multiple columns by dtype.
+pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
+    let dtypes = dtype.as_ref().to_vec();
+    Expr::DtypeColumn(dtypes)
 }
 
 /// Count the number of values in this Expression.

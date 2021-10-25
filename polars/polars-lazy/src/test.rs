@@ -1982,3 +1982,20 @@ fn test_apply_multiple_columns() -> Result<()> {
     assert_eq!(Vec::from(out), &[Some(16.0)]);
     Ok(())
 }
+
+#[test]
+pub fn test_select_by_dtypes() -> Result<()> {
+    let df = df![
+        "bools" => [true, false, true],
+        "ints" => [1, 2, 3],
+        "strings" => ["a", "b", "c"],
+        "floats" => [1.0, 2.0, 3.0f32]
+    ]?;
+    let out = df
+        .lazy()
+        .select([dtype_cols([DataType::Float32, DataType::Utf8])])
+        .collect()?;
+    assert_eq!(out.dtypes(), &[DataType::Float32, DataType::Utf8]);
+
+    Ok(())
+}
