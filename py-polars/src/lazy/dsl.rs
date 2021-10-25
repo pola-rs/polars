@@ -1002,6 +1002,10 @@ pub fn cols(names: Vec<String>) -> PyExpr {
     dsl::cols(names).into()
 }
 
+pub fn dtype_cols(dtypes: Vec<DataType>) -> PyExpr {
+    dsl::dtype_cols(dtypes).into()
+}
+
 pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     let left = l.inner;
     let right = r.inner;

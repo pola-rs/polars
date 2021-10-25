@@ -1,5 +1,6 @@
 import typing as tp
 from datetime import datetime, timezone
+from inspect import isclass
 from typing import Any, Callable, Optional, Type, Union
 
 import numpy as np
@@ -16,6 +17,7 @@ try:
     from polars.polars import concat_lst as _concat_lst
     from polars.polars import concat_str as _concat_str
     from polars.polars import cov as pycov
+    from polars.polars import dtype_cols as _dtype_cols
     from polars.polars import fold as pyfold
     from polars.polars import lit as pylit
     from polars.polars import map_mul as _map_mul
@@ -66,7 +68,9 @@ __all__ = [
 ]
 
 
-def col(name: Union[str, tp.List[str]]) -> "pl.Expr":
+def col(
+    name: Union[str, tp.List[str], tp.List[Type[DataType]], Type[DataType]]
+) -> "pl.Expr":
     """
     A column in a DataFrame.
     Can be used to select:
@@ -153,8 +157,17 @@ def col(name: Union[str, tp.List[str]]) -> "pl.Expr":
     ╰───────────┴─────╯
 
     """
+
+    if isclass(name) and issubclass(name, DataType):  # type: ignore
+        name = [name]  # type: ignore
+
     if isinstance(name, list):
-        return pl.lazy.expr.wrap_expr(pycols(name))
+        if len(name) == 0 or isinstance(name[0], str):
+            return pl.lazy.expr.wrap_expr(pycols(name))
+        elif isclass(name[0]) and issubclass(name[0], DataType):
+            return pl.lazy.expr.wrap_expr(_dtype_cols(name))
+        else:
+            raise ValueError("did expect argument of List[str] or List[DataType]")
     return pl.lazy.expr.wrap_expr(pycol(name))
 
 

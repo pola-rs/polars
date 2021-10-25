@@ -115,7 +115,7 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) {
     }
 }
 
-/// replace columns(["A", "B"]).. with col("A").., col("B")..
+/// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
 fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
     for name in names {
         let mut new_expr = expr.clone();
@@ -132,7 +132,28 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
     }
 }
 
-fn prepare_exluded(expr: &Expr, schema: &Schema) -> Vec<Arc<String>> {
+/// replace `DtypeColumn` with `col("foo")..col("bar")`
+fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &[DataType]) {
+    for dtype in dtypes {
+        for field in schema.fields().iter().filter(|f| f.data_type() == dtype) {
+            let name = field.name();
+
+            let mut new_expr = expr.clone();
+            new_expr.mutate().apply(|e| {
+                if let Expr::DtypeColumn(_) = &e {
+                    *e = Expr::Column(Arc::new(name.clone()));
+                }
+                // always keep iterating all inputs
+                true
+            });
+
+            let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+            result.push(new_expr)
+        }
+    }
+}
+
+fn prepare_excluded(expr: &Expr, schema: &Schema) -> Vec<Arc<String>> {
     let mut exclude = vec![];
     expr.into_iter().for_each(|e| {
         if let Expr::Exclude(_, names) = e {
@@ -168,20 +189,22 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
 
     for mut expr in exprs {
-        // in case of multiple cols, we still want to check wildcard for function input,
-        // but in case of no wildcard, we don't want this expr pushed to results.
-        let mut push_current = true;
         // has multiple column names
-        if let Some(e) = expr.into_iter().find(|e| matches!(e, Expr::Columns(_))) {
+        if let Some(e) = expr
+            .into_iter()
+            .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
+        {
             if let Expr::Columns(names) = e {
                 expand_columns(&expr, &mut result, names)
+            } else if let Expr::DtypeColumn(dtypes) = e {
+                expand_dtypes(&expr, &mut result, schema, dtypes)
             }
-            push_current = false;
+            continue;
         }
 
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
-            let exclude = prepare_exluded(&expr, schema);
+            let exclude = prepare_excluded(&expr, schema);
 
             // if count wildcard. count one column
             if has_expr(&expr, |e| matches!(e, Expr::Agg(AggExpr::Count(_)))) {
@@ -233,16 +256,14 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr
             replace_wilcard(&expr, &mut result, &exclude, schema);
         } else {
             #[allow(clippy::collapsible_else_if)]
-            if push_current {
-                #[cfg(feature = "regex")]
-                {
-                    replace_regex(&expr, &mut result, schema)
-                }
-                #[cfg(not(feature = "regex"))]
-                {
-                    let expr = rewrite_keep_name_and_sufprefix(expr);
-                    result.push(expr)
-                }
+            #[cfg(feature = "regex")]
+            {
+                replace_regex(&expr, &mut result, schema)
+            }
+            #[cfg(not(feature = "regex"))]
+            {
+                let expr = rewrite_keep_name_and_sufprefix(expr);
+                result.push(expr)
             }
         };
     }

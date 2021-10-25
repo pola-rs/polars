@@ -33,7 +33,7 @@ pub mod utils;
 use crate::conversion::{get_df, get_pyseq, get_series, Wrap};
 use crate::error::PyPolarsEr;
 use crate::file::get_either_file;
-use crate::prelude::DataType;
+use crate::prelude::{DataType, PyDataType};
 use mimalloc::MiMalloc;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use pyo3::types::PyDict;
@@ -49,6 +49,22 @@ fn col(name: &str) -> dsl::PyExpr {
 #[pyfunction]
 fn cols(names: Vec<String>) -> dsl::PyExpr {
     dsl::cols(names)
+}
+
+#[pyfunction]
+fn dtype_cols(dtypes: &PyAny) -> PyResult<dsl::PyExpr> {
+    let (seq, len) = get_pyseq(dtypes)?;
+    let iter = seq.iter()?;
+
+    let mut dtypes = Vec::with_capacity(len);
+
+    for res in iter {
+        let item = res?;
+        let pydt = item.extract::<PyDataType>()?;
+        let dt: DataType = pydt.into();
+        dtypes.push(dt)
+    }
+    Ok(dsl::dtype_cols(dtypes))
 }
 
 #[pyfunction]
@@ -221,6 +237,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<dsl::PyExpr>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cols)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(dtype_cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
