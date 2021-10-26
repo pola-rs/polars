@@ -362,6 +362,13 @@ def test_exclude_selection():
     assert df.select([pl.exclude("a")]).columns == ["b", "c"]
 
 
+def test_col_series_selection():
+    df = pl.DataFrame({"a": [1], "b": [1], "c": [1]}).lazy()
+    srs = pl.Series(["b", "c"])
+
+    assert df.select(pl.col(srs)).columns == ["b", "c"]
+
+
 def test_literal_projection():
     df = pl.DataFrame({"a": [1, 2]})
     assert df.select([True]).dtypes == [pl.Boolean]

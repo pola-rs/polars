@@ -157,6 +157,8 @@ def col(
     ╰───────────┴─────╯
 
     """
+    if isinstance(name, pl.Series):
+        name = name.to_list()
 
     if isclass(name) and issubclass(name, DataType):  # type: ignore
         name = [name]  # type: ignore
