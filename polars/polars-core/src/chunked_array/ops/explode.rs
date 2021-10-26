@@ -226,9 +226,11 @@ impl ChunkExplode for ListChunked {
             .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
         let offsets_buf = listarr.offsets().clone();
         let offsets = listarr.offsets().as_slice();
-        let values = listarr
-            .values()
-            .slice(listarr.offset(), (offsets[offsets.len() - 1]) as usize);
+        let mut values = listarr.values().clone();
+        if !offsets.is_empty() {
+            let offset = offsets[0];
+            values = Arc::from(values.slice(offset as usize, offsets[offsets.len() - 1] as usize));
+        }
 
         let mut s = if ca.can_fast_explode() {
             Series::try_from((self.name(), values)).unwrap()
