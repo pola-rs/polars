@@ -122,6 +122,7 @@ where
     }
 }
 
+#[allow(clippy::type_complexity)]
 impl<'a, T> IntoTakeRandom<'a> for &'a ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -129,8 +130,8 @@ where
     type Item = T::Native;
     type TakeRandom = TakeRandBranch3<
         NumTakeRandomCont<'a, T::Native>,
-        NumTakeRandomSingleChunk<'a, T>,
-        NumTakeRandomChunked<'a, T>,
+        NumTakeRandomSingleChunk<'a, T::Native>,
+        NumTakeRandomChunked<'a, T::Native>,
     >;
 
     #[inline]
@@ -271,17 +272,17 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
 
 pub struct NumTakeRandomChunked<'a, T>
 where
-    T: PolarsNumericType,
+    T: NumericNative,
 {
-    pub(crate) chunks: Vec<&'a PrimitiveArray<T::Native>>,
+    pub(crate) chunks: Vec<&'a PrimitiveArray<T>>,
     pub(crate) chunk_lens: Vec<u32>,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomChunked<'a, T>
 where
-    T: PolarsNumericType,
+    T: NumericNative,
 {
-    type Item = T::Native;
+    type Item = T;
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
@@ -317,16 +318,16 @@ where
 
 pub struct NumTakeRandomSingleChunk<'a, T>
 where
-    T: PolarsNumericType,
+    T: NumericNative,
 {
-    pub(crate) arr: &'a PrimitiveArray<T::Native>,
+    pub(crate) arr: &'a PrimitiveArray<T>,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomSingleChunk<'a, T>
 where
-    T: PolarsNumericType,
+    T: NumericNative,
 {
-    type Item = T::Native;
+    type Item = T;
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {

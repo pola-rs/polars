@@ -137,9 +137,11 @@ impl DataFrame {
 
         let iter = columns.iter().map(|s| {
             (0..s.len()).zip(row.0.iter_mut()).for_each(|(i, av)| {
-                *av = s.get(i);
+                // Safety:
+                // we iterate over the length of s, so we are in bounds
+                unsafe { *av = s.get_unchecked(i) };
             });
-            // borrow checkery does not allow row borrow, so we deref from raw ptr.
+            // borrow checker does not allow row borrow, so we deref from raw ptr.
             // we do all this to amortize allocs
             // Safety:
             // row is still alive
@@ -201,6 +203,8 @@ impl<'a> From<&AnyValue<'a>> for Field {
             Date(_) => Field::new("", DataType::Date),
             #[cfg(feature = "dtype-datetime")]
             Datetime(_) => Field::new("", DataType::Datetime),
+            #[cfg(feature = "dtype-time")]
+            Time(_) => Field::new("", DataType::Time),
             _ => unimplemented!(),
         }
     }
@@ -232,6 +236,8 @@ pub(crate) enum Buffer {
     Date(PrimitiveChunkedBuilder<Int32Type>),
     #[cfg(feature = "dtype-datetime")]
     Datetime(PrimitiveChunkedBuilder<Int64Type>),
+    #[cfg(feature = "dtype-time")]
+    Time(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
@@ -250,6 +256,8 @@ impl Debug for Buffer {
             Date(_) => f.write_str("Date"),
             #[cfg(feature = "dtype-datetime")]
             Datetime(_) => f.write_str("datetime"),
+            #[cfg(feature = "dtype-time")]
+            Time(_) => f.write_str("time"),
             Float32(_) => f.write_str("f32"),
             Float64(_) => f.write_str("f64"),
             Utf8(_) => f.write_str("utf8"),
@@ -275,6 +283,8 @@ impl Buffer {
             (Date(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder), AnyValue::Datetime(v)) => builder.append_value(v),
+            #[cfg(feature = "dtype-time")]
+            (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             (Float32(builder), AnyValue::Null) => builder.append_null(),
             (Float64(builder), AnyValue::Float64(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
@@ -297,6 +307,8 @@ impl Buffer {
             Date(b) => b.finish().into_date().into_series(),
             #[cfg(feature = "dtype-datetime")]
             Datetime(b) => b.finish().into_date().into_series(),
+            #[cfg(feature = "dtype-time")]
+            Time(b) => b.finish().into_date().into_series(),
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
@@ -319,6 +331,8 @@ impl From<(&DataType, usize)> for Buffer {
             Date => Buffer::Date(PrimitiveChunkedBuilder::new("", len)),
             #[cfg(feature = "dtype-datetime")]
             Datetime => Buffer::Datetime(PrimitiveChunkedBuilder::new("", len)),
+            #[cfg(feature = "dtype-time")]
+            Time => Buffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => Buffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
