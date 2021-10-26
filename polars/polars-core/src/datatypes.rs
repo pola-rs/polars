@@ -128,6 +128,7 @@ pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
 pub trait NumericNative:
     PartialOrd
+    + NativeType
     + Num
     + NumCast
     + Zero
@@ -156,7 +157,7 @@ impl NumericNative for f32 {}
 impl NumericNative for f64 {}
 
 pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
-    type Native: NativeType + NumericNative;
+    type Native: NumericNative;
 }
 impl PolarsNumericType for UInt8Type {
     type Native = u8;

@@ -43,7 +43,7 @@ macro_rules! impl_traits {
     ($struct:ty, $T:tt) => {
         impl<$T> PartialEqInner for $struct
         where
-            $T: PolarsNumericType + Sync,
+            $T: NumericNative + Sync,
         {
             #[inline]
             unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
@@ -53,7 +53,7 @@ macro_rules! impl_traits {
 
         impl<$T> PartialOrdInner for $struct
         where
-            $T: PolarsNumericType + Sync,
+            $T: NumericNative + Sync,
         {
             #[inline]
             unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
@@ -106,11 +106,11 @@ where
                 };
                 Box::new(t)
             } else {
-                let t = NumTakeRandomSingleChunk::<'_, T> { arr };
+                let t = NumTakeRandomSingleChunk::<'_, T::Native> { arr };
                 Box::new(t)
             }
         } else {
-            let t = NumTakeRandomChunked::<'_, T> {
+            let t = NumTakeRandomChunked::<'_, T::Native> {
                 chunks: chunks.collect(),
                 chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
             };
@@ -219,11 +219,11 @@ where
                 };
                 Box::new(t)
             } else {
-                let t = NumTakeRandomSingleChunk::<'_, T> { arr };
+                let t = NumTakeRandomSingleChunk::<'_, T::Native> { arr };
                 Box::new(t)
             }
         } else {
-            let t = NumTakeRandomChunked::<'_, T> {
+            let t = NumTakeRandomChunked::<'_, T::Native> {
                 chunks: chunks.collect(),
                 chunk_lens: self.chunks.iter().map(|a| a.len() as u32).collect(),
             };
