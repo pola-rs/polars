@@ -7,8 +7,6 @@ use crate::chunked_array::ops::sort::prepare_argsort;
 use crate::prelude::*;
 use arrow::compute;
 use arrow::types::simd::Simd;
-#[cfg(feature = "concat_str")]
-use itertools::Itertools;
 use num::{Float, NumCast};
 #[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
@@ -66,6 +64,24 @@ pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
     first.argsort_multiple(&by, &reverse)
 }
 
+// utility to be able to also add literals ot concat_str function
+#[cfg(feature = "concat_str")]
+enum IterBroadCast<'a> {
+    Column(Box<dyn PolarsIterator<Item = Option<&'a str>> + 'a>),
+    Value(Option<&'a str>),
+}
+
+#[cfg(feature = "concat_str")]
+impl<'a> IterBroadCast<'a> {
+    fn next(&mut self) -> Option<Option<&'a str>> {
+        use IterBroadCast::*;
+        match self {
+            Column(iter) => iter.next(),
+            Value(val) => Some(*val),
+        }
+    }
+}
+
 /// Casts all series to string data and will concat them in linear time.
 /// The concatenated strings are separated by a `delimiter`.
 /// If no `delimiter` is needed, an empty &str should be passed as argument.
@@ -92,12 +108,19 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
         })
         .collect::<Result<Vec<_>>>()?;
 
-    if !s.iter().map(|s| s.len()).all_equal() {
+    if !s.iter().all(|s| s.len() == 1 || s.len() == len) {
         return Err(PolarsError::ValueError(
-            "all series in concat_str function should have equal length".into(),
+            "all series in concat_str function should have equal length or unit length".into(),
         ));
     }
-    let mut iters = cas.iter().map(|ca| ca.into_iter()).collect::<Vec<_>>();
+    let mut iters = cas
+        .iter()
+        .map(|ca| match ca.len() {
+            1 => IterBroadCast::Value(ca.get(0)),
+            _ => IterBroadCast::Column(ca.into_iter()),
+        })
+        .collect::<Vec<_>>();
+
     let bytes_cap = cas.iter().map(|ca| ca.get_values_size()).sum();
     let mut builder = Utf8ChunkedBuilder::new(s[0].name(), len, bytes_cap);
 
@@ -150,7 +173,14 @@ mod test {
         let a = Series::new("a", &["foo", "bar"]);
         let b = Series::new("b", &["spam", "ham"]);
 
-        let a = concat_str(&[a, b], "_").unwrap();
-        assert_eq!(Vec::from(&a), &[Some("foo_spam"), Some("bar_ham")]);
+        let out = concat_str(&[a.clone(), b.clone()], "_").unwrap();
+        assert_eq!(Vec::from(&out), &[Some("foo_spam"), Some("bar_ham")]);
+
+        let c = Series::new("b", &["literal"]);
+        let out = concat_str(&[a, b, c], "_").unwrap();
+        assert_eq!(
+            Vec::from(&out),
+            &[Some("foo_spam_literal"), Some("bar_ham_literal")]
+        );
     }
 }
