@@ -76,6 +76,7 @@ Manipulation/ selection
    :toctree: api/
 
     DataFrame.rename
+    DataFrame.with_row_count
     DataFrame.insert_at_idx
     DataFrame.filter
     DataFrame.replace_at_idx

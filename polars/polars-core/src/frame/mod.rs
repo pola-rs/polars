@@ -177,6 +177,18 @@ impl DataFrame {
         Ok(df)
     }
 
+    /// Add a new column at index 0 that counts the rows.
+    pub fn with_row_count(&self, name: &str) -> Result<Self> {
+        let mut columns = Vec::with_capacity(self.columns.len() + 1);
+        columns.push(
+            UInt32Chunked::new_from_aligned_vec(name, (0..self.height() as u32).collect())
+                .into_series(),
+        );
+
+        self.columns.iter().for_each(|s| columns.push(s.clone()));
+        DataFrame::new(columns)
+    }
+
     /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the `Series`.
     ///
     /// It is advised to use [Series::new](Series::new) in favor of this method.

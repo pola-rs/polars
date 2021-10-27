@@ -720,6 +720,17 @@ class LazyFrame:
         """
         return self.slice(0, 1)
 
+    def with_row_count(self, name: str = "row_nr") -> "LazyFrame":
+        """
+        Add a column at index 0 that counts the rows.
+
+        Parameters
+        ----------
+        name
+            Name of the column to add.
+        """
+        return wrap_ldf(self._ldf.with_row_count(name))
+
     def fill_null(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
         """
         Fill missing values

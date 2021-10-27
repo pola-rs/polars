@@ -1669,6 +1669,17 @@ class DataFrame:
         """
         return func(self, *args, **kwargs)
 
+    def with_row_count(self, name: str = "row_nr") -> "DataFrame":
+        """
+        Add a column at index 0 that counts the rows.
+
+        Parameters
+        ----------
+        name
+            Name of the column to add.
+        """
+        return wrap_df(self._df.with_row_count(name))
+
     def groupby(
         self, by: Union[str, tp.List[str]], maintain_order: bool = False
     ) -> "GroupBy":
