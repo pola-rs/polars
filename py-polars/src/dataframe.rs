@@ -630,6 +630,11 @@ impl PyDataFrame {
         }
     }
 
+    pub fn with_row_count(&self, name: &str) -> PyResult<Self> {
+        let df = self.df.with_row_count(name).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     #[cfg(feature = "downsample")]
     pub fn downsample_agg(
         &self,

@@ -1044,6 +1044,23 @@ impl LazyFrame {
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
+
+    /// Add a new column at index 0 that counts the rows.
+    pub fn with_row_count(self, name: &str) -> LazyFrame {
+        let schema = self.schema();
+
+        let mut fields = schema.fields().clone();
+        fields.insert(0, Field::new(name, DataType::UInt32));
+        let new_schema = Schema::new(fields);
+
+        let name = name.to_owned();
+
+        self.map(
+            move |df: DataFrame| df.with_row_count(&name),
+            Some(AllowedOptimizations::default()),
+            Some(new_schema),
+        )
+    }
 }
 
 /// Utility struct for lazy groupby operation.

@@ -385,6 +385,11 @@ impl PyLazyFrame {
         ldf.melt(id_vars, value_vars).into()
     }
 
+    pub fn with_row_count(&self, name: &str) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.with_row_count(name).into()
+    }
+
     pub fn map(&self, lambda: PyObject, predicate_pd: bool, projection_pd: bool) -> Self {
         let opt = AllowedOptimizations {
             predicate_pushdown: predicate_pd,
