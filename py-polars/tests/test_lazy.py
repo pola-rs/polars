@@ -232,6 +232,10 @@ def test_concat_str():
     out = df[[pl.concat_str(["a", "b"], sep="-")]]
     assert out["a"] == ["a-1", "a-2", "a-3"]
 
+    out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
+
+    assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
+
 
 def test_fold_filter():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
@@ -240,7 +244,7 @@ def test_fold_filter():
         pl.fold(
             acc=pl.lit(True),
             f=lambda a, b: a & b,
-            exprs=[col(c) > 1 for c in df.columns],
+            exprs=[pl.col(c) > 1 for c in df.columns],
         )
     )
 
@@ -250,7 +254,7 @@ def test_fold_filter():
         pl.fold(
             acc=pl.lit(True),
             f=lambda a, b: a | b,
-            exprs=[col(c) > 1 for c in df.columns],
+            exprs=[pl.col(c) > 1 for c in df.columns],
         )
     )
 

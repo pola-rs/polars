@@ -65,6 +65,7 @@ __all__ = [
     "concat_list",
     "collect_all",
     "exclude",
+    "format",
 ]
 
 
@@ -776,6 +777,56 @@ def concat_str(exprs: tp.List["pl.Expr"], sep: str = "") -> "pl.Expr":
     """
     exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
     return pl.lazy.expr.wrap_expr(_concat_str(exprs, sep))
+
+
+def format(fstring: str, *args: Union["pl.Expr", str]) -> "pl.Expr":
+    """
+    String format utility for expressions
+
+    Parameters
+    ----------
+    fstring
+        A string that with placeholders.
+        For example: "hello_{}" or "{}_world
+    args
+        Expression(s) that fill the placeholders
+
+    Examples
+    --------
+
+    >>> df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
+    >>> df.select([
+    >>>     pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")
+    >>> ])
+    shape: (3, 1)
+    ┌─────────────┐
+    │ fmt         │
+    │ ---         │
+    │ str         │
+    ╞═════════════╡
+    │ foo_a_bar_1 │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ foo_b_bar_2 │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ foo_c_bar_3 │
+    └─────────────┘
+
+    """
+    if fstring.count("{}") != len(args):
+        raise ValueError("number of placeholders should equal the number of arguments")
+
+    exprs = []
+
+    arguments = iter(args)
+    for i, s in enumerate(fstring.split("{}")):
+        if i > 0:
+            e = pl.lazy.expr_to_lit_or_expr(next(arguments), str_to_lit=False)
+            exprs.append(e)
+
+        if len(s) > 0:
+            exprs.append(pl.lit(s))
+
+    return concat_str(exprs, sep="")
 
 
 def concat_list(exprs: tp.List["pl.Expr"]) -> "pl.Expr":
