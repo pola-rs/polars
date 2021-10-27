@@ -165,10 +165,10 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     ));
                 };
                 Ok(match tu {
-                    TimeUnit::Second => &s / 1000,
+                    TimeUnit::Second => &s * 1000,
                     TimeUnit::Millisecond => s,
-                    TimeUnit::Microsecond => &s * 1000,
-                    TimeUnit::Nanosecond => &s * 1000000,
+                    TimeUnit::Microsecond => &s / 1000,
+                    TimeUnit::Nanosecond => &s / 1000000,
                 })
             }
             #[cfg(feature = "dtype-time")]
