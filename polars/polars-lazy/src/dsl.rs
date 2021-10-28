@@ -1780,7 +1780,7 @@ where
             let mut acc = series.pop().unwrap();
 
             for s in series {
-                acc = f(acc, s)?
+                acc = f(acc, s)?;
             }
             Ok(acc)
         }) as Arc<dyn SeriesUdf>);

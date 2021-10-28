@@ -220,26 +220,21 @@ impl<T> ChunkedArray<T> {
     pub(crate) unsafe fn unpack_series_matching_physical_type(
         &self,
         series: &Series,
-    ) -> Result<&ChunkedArray<T>> {
+    ) -> &ChunkedArray<T> {
         let series_trait = &**series;
         if self.dtype() == series.dtype() {
-            let ca = &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>);
-            Ok(ca)
+            &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
         } else {
             use DataType::*;
             match (self.dtype(), series.dtype()) {
                 (Int64, Datetime) | (Int32, Date) => {
-                    let ca = &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>);
-                    Ok(ca)
+                    &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
                 }
-                _ => Err(PolarsError::DataTypeMisMatch(
-                    format!(
-                        "cannot unpack series {:?} into matching type {:?}",
-                        series,
-                        self.dtype()
-                    )
-                    .into(),
-                )),
+                _ => panic!(
+                    "cannot unpack series {:?} into matching type {:?}",
+                    series,
+                    self.dtype()
+                ),
             }
         }
     }
@@ -249,7 +244,7 @@ impl<T> ChunkedArray<T> {
         if self.dtype() == series.dtype() {
             // Safety
             // dtype will be correct.
-            unsafe { self.unpack_series_matching_physical_type(series) }
+            Ok(unsafe { self.unpack_series_matching_physical_type(series) })
         } else {
             Err(PolarsError::DataTypeMisMatch(
                 format!(

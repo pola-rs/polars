@@ -909,10 +909,8 @@ impl LogicalPlanBuilder {
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| matches!(e, Expr::Wildcard)) {
-            let it = self.0.schema().fields().iter().map(|field| {
-                replace_wildcard_with_column(predicate.clone(), Arc::new(field.name().clone()))
-            });
-            combine_predicates_expr(it)
+            let rewritten = rewrite_projections(vec![predicate], self.0.schema());
+            combine_predicates_expr(rewritten.into_iter())
         } else {
             predicate
         };

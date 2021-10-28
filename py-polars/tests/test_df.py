@@ -1169,3 +1169,15 @@ def test_with_row_count():
 
     out = df.lazy().with_row_count().collect()
     assert out["row_nr"].to_list() == [0, 1, 2]
+
+
+def test_filter_with_all_expansion():
+    df = pl.DataFrame(
+        {
+            "b": [1, 2, None],
+            "c": [1, 2, None],
+            "a": [None, None, None],
+        }
+    )
+    out = df.filter(~pl.fold(True, lambda acc, s: acc & s.is_null(), pl.all()))
+    assert out.shape == (2, 3)
