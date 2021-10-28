@@ -60,3 +60,13 @@ def test_from_pandas_null():
     out = pl.DataFrame(test_df)
     assert out.dtypes == [pl.Float64]
     assert out["0"][0] is None
+
+
+def test_from_pandas_nested_list():
+    # this panicked in https://github.com/pola-rs/polars/issues/1615
+    pddf = pd.DataFrame(
+        {"a": [1, 2, 3, 4], "b": [["x", "y"], ["x", "y", "z"], ["x"], ["x", "y"]]}
+    )
+    pldf = pl.from_pandas(pddf)
+    print(pldf)
+    assert pldf.shape == (4, 2)

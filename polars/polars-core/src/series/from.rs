@@ -2,6 +2,7 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::cast::cast_chunks;
 use crate::prelude::*;
 use arrow::compute::cast;
+use arrow::compute::cast::utf8_to_large_utf8;
 use std::convert::TryFrom;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
@@ -77,6 +78,29 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     }
 }
 
+fn convert_list_inner(arr: &ArrayRef, fld: &ArrowField) -> ArrayRef {
+    // if inner type is Utf8, we need to convert that to large utf8
+    match fld.data_type() {
+        ArrowDataType::Utf8 => {
+            let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+            let offsets = arr.offsets().iter().map(|x| *x as i64).collect();
+            let values = arr.values();
+            let values =
+                utf8_to_large_utf8(values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap());
+
+            Arc::new(LargeListArray::from_data(
+                ArrowDataType::LargeList(
+                    ArrowField::new(fld.name(), ArrowDataType::LargeUtf8, true).into(),
+                ),
+                offsets,
+                Arc::new(values),
+                arr.validity().cloned(),
+            ))
+        }
+        _ => arr.clone(),
+    }
+}
+
 // TODO: add types
 impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
     type Error = PolarsError;
@@ -110,9 +134,11 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 let chunks = chunks
                     .iter()
                     .map(|arr| {
-                        cast::cast(arr.as_ref(), &ArrowDataType::LargeList(fld.clone()))
-                            .unwrap()
-                            .into()
+                        let arr: ArrayRef =
+                            cast::cast(arr.as_ref(), &ArrowDataType::LargeList(fld.clone()))
+                                .unwrap()
+                                .into();
+                        convert_list_inner(&arr, fld)
                     })
                     .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
@@ -184,7 +210,11 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     TimeUnit::Nanosecond => s,
                 })
             }
-            ArrowDataType::LargeList(_) => {
+            ArrowDataType::LargeList(fld) => {
+                let chunks = chunks
+                    .iter()
+                    .map(|arr| convert_list_inner(arr, fld))
+                    .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Null => {
