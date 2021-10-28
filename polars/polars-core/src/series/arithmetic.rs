@@ -64,27 +64,35 @@ where
         // we now only create the potentially wrong dtype for a short time.
         // Note that the physical type correctness is checked!
         // The ChunkedArray with the wrong dtype is dropped after this operation
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self - rhs;
         Ok(out.into_series())
     }
     fn add_to(&self, rhs: &Series) -> Result<Series> {
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+        // Safety:
+        // see subtract
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self + rhs;
         Ok(out.into_series())
     }
     fn multiply(&self, rhs: &Series) -> Result<Series> {
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+        // Safety:
+        // see subtract
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self * rhs;
         Ok(out.into_series())
     }
     fn divide(&self, rhs: &Series) -> Result<Series> {
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+        // Safety:
+        // see subtract
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self / rhs;
         Ok(out.into_series())
     }
     fn remainder(&self, rhs: &Series) -> Result<Series> {
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+        // Safety:
+        // see subtract
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
         let out = self % rhs;
         Ok(out.into_series())
     }
@@ -134,7 +142,12 @@ pub mod checked {
         ChunkedArray<T>: IntoSeries,
     {
         fn checked_div(&self, rhs: &Series) -> Result<Series> {
-            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+            // Safety:
+            // There will be UB if a ChunkedArray is alive with the wrong datatype.
+            // we now only create the potentially wrong dtype for a short time.
+            // Note that the physical type correctness is checked!
+            // The ChunkedArray with the wrong dtype is dropped after this operation
+            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
             let (l, r) = align_chunks_binary(self, rhs);
 
             Ok((l)
@@ -159,7 +172,9 @@ pub mod checked {
 
     impl NumOpsDispatchChecked for Float32Chunked {
         fn checked_div(&self, rhs: &Series) -> Result<Series> {
-            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+            // Safety:
+            // see check_div for chunkedarray<T>
+            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
             let (l, r) = align_chunks_binary(self, rhs);
 
             Ok((l)
@@ -190,7 +205,9 @@ pub mod checked {
 
     impl NumOpsDispatchChecked for Float64Chunked {
         fn checked_div(&self, rhs: &Series) -> Result<Series> {
-            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs)? };
+            // Safety:
+            // see check_div
+            let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
             let (l, r) = align_chunks_binary(self, rhs);
 
             Ok((l)
