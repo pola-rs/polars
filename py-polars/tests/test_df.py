@@ -212,6 +212,10 @@ def test_selection():
     # get_column by name
     assert df.get_column("a").to_list() == [1, 2, 3]
 
+    # select columns by mask
+    assert df[:2, [True, False, False]].shape == (2, 1)
+    assert df[:2, pl.Series([True, False, False])].shape == (2, 1)
+
     # column selection by string(s) in first dimension
     assert df["a"].to_list() == [1, 2, 3]
     assert df["b"].to_list() == [1.0, 2.0, 3.0]

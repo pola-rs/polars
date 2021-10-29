@@ -941,6 +941,21 @@ class DataFrame:
                     df = self.__getitem__(self.columns[col_selection])
                     return df[row_selection]
 
+                # slice and boolean mask
+                # df[:2, [True, False, True]]
+                if isinstance(col_selection, (Sequence, pl.Series)):
+                    if (
+                        isinstance(col_selection[0], bool)
+                        or isinstance(col_selection, pl.Series)
+                        and col_selection.dtype() == pl.Boolean
+                    ):
+                        df = self.__getitem__(row_selection)
+                        select = []
+                        for col, valid in zip(df.columns, col_selection):
+                            if valid:
+                                select.append(col)
+                        return df.select(select)
+
                 # single slice
                 # df[:, unknown]
                 series = self.__getitem__(col_selection)
