@@ -893,6 +893,71 @@ class LazyFrame:
     ) -> "LazyFrame":
         """
         Drop rows with null values from this DataFrame.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, None, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.lazy().drop_nulls().collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ "a" │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 8   ┆ "c" │
+        └─────┴─────┴─────┘
+
+        See Also
+        --------
+        This method only drops nulls row-wise if any single value of the row is null.
+
+        Below are some example snippets that show how you could drop null values based on other
+        conditions
+
+        >>> df = pl.DataFrame(
+        >>>    {
+        >>>        "a": [None, None, None, None],
+        >>>        "b": [1, 2, None, 1],
+        >>>        "c": [1, None, None, 1],
+        >>>    }
+        >>> )
+        >>> df
+        shape: (4, 3)
+        ┌──────┬──────┬──────┐
+        │ a    ┆ b    ┆ c    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ f64  ┆ i64  ┆ i64  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ 1    ┆ 1    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ null ┆ 2    ┆ null │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ null ┆ null ┆ null │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ null ┆ 1    ┆ 1    │
+        └──────┴──────┴──────┘
+
+        >>> # drop a row only if all values are null
+        >>> df.filter(~pl.fold(acc=True, f=lambda acc, s: acc & s.is_null(), exprs=pl.all()))
+        shape: (3, 3)
+        ┌──────┬─────┬──────┐
+        │ a    ┆ b   ┆ c    │
+        │ ---  ┆ --- ┆ ---  │
+        │ f64  ┆ i64 ┆ i64  │
+        ╞══════╪═════╪══════╡
+        │ null ┆ 1   ┆ 1    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ null ┆ 2   ┆ null │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ null ┆ 1   ┆ 1    │
+        └──────┴─────┴──────┘
+
         """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
