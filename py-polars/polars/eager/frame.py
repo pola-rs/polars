@@ -1094,8 +1094,14 @@ class DataFrame:
         # df[a, b]
         elif isinstance(key, tuple):
             row_selection, col_selection = key
+
             # get series column selection
-            s = self.__getitem__(col_selection)
+            if isinstance(col_selection, str):
+                s = self.__getitem__(col_selection)
+            elif isinstance(col_selection, int):
+                s = self[:, col_selection]
+            else:
+                raise ValueError(f"column selection not understood: {col_selection}")
 
             # dispatch to __setitem__ of Series to do modification
             s[row_selection] = value

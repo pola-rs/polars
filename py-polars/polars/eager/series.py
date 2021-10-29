@@ -571,7 +571,7 @@ class Series:
                 self._s = self.set_at_idx(key.cast(UInt64), value)._s
         # TODO: implement for these types without casting to series
         elif isinstance(key, (np.ndarray, list, tuple)):
-            s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64)))
+            s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64), True))
             self.__setitem__(s, value)
         elif isinstance(key, int):
             self.__setitem__([key], value)
