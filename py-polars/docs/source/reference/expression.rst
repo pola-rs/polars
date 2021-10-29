@@ -13,6 +13,7 @@ These functions can be used as expression and sometimes also in eager contexts.
 
    col
    count
+   len
    to_list
    std
    var

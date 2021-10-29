@@ -558,6 +558,13 @@ class Expr:
         """Count the number of values in this expression"""
         return wrap_expr(self._pyexpr.count())
 
+    def len(self) -> "Expr":
+        """
+        Alias for count
+        Count the number of values in this expression
+        """
+        return self.count()
+
     def slice(self, offset: int, length: int) -> "Expr":
         """
         Slice the Series.
