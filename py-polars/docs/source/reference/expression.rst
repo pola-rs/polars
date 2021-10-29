@@ -13,7 +13,6 @@ These functions can be used as expression and sometimes also in eager contexts.
 
    col
    count
-   len
    to_list
    std
    var
@@ -81,6 +80,7 @@ Aggregation
     Expr.list
     Expr.agg_groups
     Expr.count
+    Expr.len
     Expr.quantile
     Expr.arg_min
     Expr.arg_max

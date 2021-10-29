@@ -85,7 +85,7 @@ def col(
         A string that holds the name of the column
 
     Examples
-    -------
+    --------
 
     >>> df = pl.DataFrame({
     >>> "ham": [1, 2, 3],
@@ -622,8 +622,9 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pl.Expr":
      columns
          Column(s) to exclude from selection
 
-     Examples
-     --------
+
+    Examples
+    --------
 
      >>> df = pl.DataFrame({
      >>>     "a": [1, 2, 3],
@@ -643,8 +644,9 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pl.Expr":
      ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
      │ 3   ┆ null ┆ 1    │
      ╰─────┴──────┴──────╯
+
      >>> df.select(pl.exclude("b"))
-    shape: (3, 2)
+     shape: (3, 2)
      ╭─────┬──────╮
      │ a   ┆ c    │
      │ --- ┆ ---  │
@@ -656,6 +658,7 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pl.Expr":
      ├╌╌╌╌╌┼╌╌╌╌╌╌┤
      │ 3   ┆ 1    │
      ╰─────┴──────╯
+
     """
     return col("*").exclude(columns)
 

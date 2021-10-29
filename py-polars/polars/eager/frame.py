@@ -1664,8 +1664,6 @@ class DataFrame:
         │ 3   ┆ 8   ┆ "c" │
         └─────┴─────┴─────┘
 
-        See Also
-        --------
         This method only drops nulls row-wise if any single value of the row is null.
 
         Below are some example snippets that show how you could drop null values based on other
