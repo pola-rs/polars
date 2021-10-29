@@ -517,6 +517,13 @@ def test_set():
     assert df["A"] == [1, 1]
     assert df["B"] == [2, 2]
 
+    df = pl.DataFrame({"b": [0, 0]})
+    df[0, "b"] = 1
+    assert df[0, "b"] == 1
+
+    df[0, 0] = 2
+    assert df[0, "b"] == 2
+
 
 def test_melt():
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
