@@ -70,6 +70,7 @@ jobs:
             rustup override set nightly-2021-10-21
             export RUSTFLAGS='-C target-feature=+fxsr,+sse,+sse2,+sse3'
             maturin publish \
+            --no-sdist \
             --skip-existing \
             -o wheels \
             -i python \
