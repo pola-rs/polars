@@ -1262,4 +1262,32 @@ linenum,last_name,first_name
         assert_eq!(df.dtypes(), &[Utf8, Utf8, Utf8]);
         Ok(())
     }
+
+    fn test_projection_and_quoting() -> Result<()> {
+        let csv = "a,b,c,d
+A1,'B1',C1,1
+A2,\"B2\",C2,2
+A3,\"B3\",C3,3
+A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish()?;
+        assert_eq!(df.shape(), (4, 4));
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .with_n_threads(Some(1))
+            .with_projection(Some(vec![0, 2]))
+            .finish()?;
+        assert_eq!(df.shape(), (4, 2));
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .with_n_threads(Some(1))
+            .with_projection(Some(vec![1]))
+            .finish()?;
+        assert_eq!(df.shape(), (4, 1));
+
+        Ok(())
+    }
 }
