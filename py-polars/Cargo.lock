@@ -63,17 +63,18 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
 name = "arrow-format"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a27331907748dae13980603aca25f39e4504b6e047e2cd93c4f4e5f21a80829"
+checksum = "9f7da2d9660bfaebbdb0a44a33b3bd1dcb5a952fafa02c0dfc6a51ea471fef2a"
 dependencies = [
  "flatbuffers",
 ]
 
 [[package]]
 name = "arrow2"
-version = "0.6.2"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=326fc9d89340ccd22cf0f981a98f56be582d8192#326fc9d89340ccd22cf0f981a98f56be582d8192"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d873e2775c3d87a4e8d77aa544cbd43f34a0779d5164c59e7c6a1dd0678eb395"
 dependencies = [
  "ahash",
  "arrow-format",
