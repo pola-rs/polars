@@ -771,3 +771,16 @@ def test_comparisons_bool_series_to_int():
         TypeError, match=r"'>' not supported between instances of 'Series' and 'int'"
     ):
         srs_bool > 2
+
+
+def test_trigonometry_functions():
+    srs_float = pl.Series(np.array((0.0, np.pi)))
+
+    assert srs_float.sin().round(3).to_list() == [0.0, 0.0]
+    assert srs_float.cos().round(3).to_list() == [1.0, -1.0]
+    assert srs_float.tan().round(3).to_list() == [0.0, -0.0]
+
+    srs_float = pl.Series("a", np.array((1.0, 0.0, -1)))
+    assert srs_float.arcsin().round(3).to_list() == [1.571, 0.0, -1.571]
+    assert srs_float.arccos().round(3).to_list() == [0.0, 1.571, 3.142]
+    assert srs_float.arctan().round(3).to_list() == [0.785, 0.0, -0.785]
