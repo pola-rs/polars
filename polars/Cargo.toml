@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.16.0"
+version = "0.17.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -107,6 +107,7 @@ dtype-full = [
     "dtype-i16",
     "dtype-u8",
     "dtype-u16",
+    "dtype-categorical",
 ]
 
 # sensible minimal set of opt-in datatypes
@@ -160,13 +161,15 @@ docs-selection = [
     "rolling_window",
     "interpolate",
     "diff",
-    "dtype-categorical"
+    "rank",
+    "list",
+    "arange"
 ]
 
 [dependencies]
-polars-core = {version = "0.16.0", path = "./polars-core", features= ["docs", "private"], default-features = false}
-polars-io = {version = "0.16.0", path = "./polars-io", features = ["private"], default-features = false, optional=true}
-polars-lazy = {version = "0.16.0", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
+polars-core = {version = "0.17.0", path = "./polars-core", features= ["docs", "private"], default-features = false}
+polars-io = {version = "0.17.0", path = "./polars-io", features = ["private"], default-features = false, optional=true}
+polars-lazy = {version = "0.17.0", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
 
 [dev-dependencies]
 criterion = "0.3"

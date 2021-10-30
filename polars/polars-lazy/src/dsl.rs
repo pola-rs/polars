@@ -1732,7 +1732,6 @@ pub fn quantile(name: &str, quantile: f64) -> Expr {
 }
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
-#[cfg(feature = "private")]
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_field: Option<Field>) -> Expr
 where
     F: Fn(Series, Series) -> Result<Series> + Send + Sync,
@@ -1748,7 +1747,6 @@ where
 }
 
 /// Binary function where the output type is determined at runtime when the schema is known.
-#[cfg(feature = "private")]
 pub fn map_binary_lazy_field<F: 'static, Fld: 'static>(
     a: Expr,
     b: Expr,

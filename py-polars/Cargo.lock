@@ -1236,7 +1236,7 @@ checksum = "3831453b3449ceb48b6d9c7ad7c96d5ea673e9b470a1dc578c2ce6521230884c"
 
 [[package]]
 name = "polars"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "polars-core",
  "polars-io",
@@ -1245,7 +1245,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "arrow2",
  "num",
@@ -1254,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1281,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1304,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "ahash",
  "itertools",
