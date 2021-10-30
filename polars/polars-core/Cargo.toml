@@ -135,7 +135,7 @@ num = "^0.4"
 itertools = "0.10"
 unsafe_unwrap = "^0.1.0"
 rayon = "1.5"
-comfy-table = { version="1", optional = true}
+comfy-table = { version="4.0", optional = true}
 prettytable-rs = {version = "0.8.0", optional = true }
 chrono = {version = "0.4", optional = true}
 rand = {version = "0.7", optional = true}
