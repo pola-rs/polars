@@ -328,3 +328,16 @@ Series: 'mydate' [list]
 def test_csv_empty_quotes_char():
     # panicked in: https://github.com/pola-rs/polars/issues/1622
     pl.read_csv(b"a,b,c,d\nA1,B1,C1,1\nA2,B2,C2,2\n", quote_char="")
+
+
+def test_ignore_parse_dates():
+    csv = """a,b,c
+1,i,16200126
+2,j,16250130
+3,k,17220012
+4,l,17290009""".encode()
+
+    headers = ["a", "b", "c"]
+    dtypes = {k: pl.Utf8 for k in headers}  # Forces Utf8 type for every column
+    df = pl.read_csv(csv, columns=headers, dtype=dtypes)
+    assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Utf8]
