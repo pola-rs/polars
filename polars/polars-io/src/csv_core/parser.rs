@@ -503,13 +503,12 @@ pub(crate) fn parse_lines(
                                 next_projected = p
                             }
                             None => {
-                                let offset = read_sol - 1;
                                 if let Some(b'\n') = bytes.get(0) {
                                     bytes = &bytes[read_sol..];
                                     read += read_sol
                                 } else {
                                     let (bytes_rem, len) =
-                                        skip_this_line(&bytes[offset..], quote_char, offset);
+                                        skip_this_line(bytes, quote_char, offset);
                                     bytes = bytes_rem;
                                     read += len;
                                 }
