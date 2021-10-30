@@ -566,12 +566,12 @@ class Series:
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
             elif key.dtype == UInt64:
-                self._s = self.set_at_idx(key, value)._s
+                self._s = self.set_at_idx(key.cast(pl.UInt32), value)._s
             elif key.dtype == UInt32:
-                self._s = self.set_at_idx(key.cast(UInt64), value)._s
+                self._s = self.set_at_idx(key, value)._s
         # TODO: implement for these types without casting to series
         elif isinstance(key, (np.ndarray, list, tuple)):
-            s = wrap_s(PySeries.new_u64("", np.array(key, np.uint64), True))
+            s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
             self.__setitem__(s, value)
         elif isinstance(key, int):
             self.__setitem__([key], value)
@@ -1942,21 +1942,27 @@ class Series:
         -------
         New allocated Series
         """
+
+        # the set_at_idx function expects a np.array of dtype u32
         f = get_ffi_func("set_at_idx_<>", self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            raise ValueError(
+                f"could not find the FFI function needed to set at idx for series {self._s}"
+            )
         if isinstance(idx, Series):
+            # make sure the dtype matches
+            idx = idx.cast(pl.UInt32)
             idx_array = idx.view()
         elif isinstance(idx, np.ndarray):
             if not idx.data.c_contiguous:
-                idx_array = np.ascontiguousarray(idx, dtype=np.uint64)
+                idx_array = np.ascontiguousarray(idx, dtype=np.uint32)
             else:
                 idx_array = idx
-                if idx_array.dtype != np.uint64:
-                    idx_array = np.array(idx_array, np.uint64)
+                if idx_array.dtype != np.uint32:
+                    idx_array = np.array(idx_array, np.uint32)
 
         else:
-            idx_array = np.array(idx, dtype=np.uint64)
+            idx_array = np.array(idx, dtype=np.uint32)
 
         return wrap_s(f(idx_array, value))
 

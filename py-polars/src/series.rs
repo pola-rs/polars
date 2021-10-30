@@ -1412,15 +1412,15 @@ impl_set_with_mask!(set_with_mask_bool, bool, bool, Boolean);
 
 macro_rules! impl_set_at_idx {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
-        fn $name(series: &Series, idx: &[usize], value: Option<$native>) -> Result<Series> {
+        fn $name(series: &Series, idx: &[u32], value: Option<$native>) -> Result<Series> {
             let ca = series.$cast()?;
-            let new = ca.set_at_idx(idx.iter().copied(), value)?;
+            let new = ca.set_at_idx(idx.iter().map(|idx| *idx as usize), value)?;
             Ok(new.into_series())
         }
 
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, idx: &PyArray1<usize>, value: Option<$native>) -> PyResult<Self> {
+            pub fn $name(&self, idx: &PyArray1<u32>, value: Option<$native>) -> PyResult<Self> {
                 let idx = unsafe { idx.as_slice().unwrap() };
                 let series = $name(&self.series, &idx, value).map_err(PyPolarsEr::from)?;
                 Ok(Self::new(series))
