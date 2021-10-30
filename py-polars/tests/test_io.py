@@ -323,3 +323,8 @@ Series: 'mydate' [list]
 	[2020-01-02]
 	[2020-01-05, 2020-01-05]
 ]"""
+
+
+def test_csv_empty_quotes_char():
+    # panicked in: https://github.com/pola-rs/polars/issues/1622
+    pl.read_csv(b"a,b,c,d\nA1,B1,C1,1\nA2,B2,C2,2\n", quote_char="")

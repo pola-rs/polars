@@ -103,7 +103,16 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
-        let quote_char = quote_char.map(|s| s.as_bytes()[0]);
+
+        let quote_char = if let Some(s) = quote_char {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.as_bytes()[0])
+            }
+        }  else {
+            None
+        };
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
             "utf8-lossy" => CsvEncoding::LossyUtf8,
