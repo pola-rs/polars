@@ -48,6 +48,7 @@ use crate::utils::resolve_homedir;
 use crate::{PhysicalIoExpr, ScanAggregation, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
+use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -557,18 +558,37 @@ where
         }
         #[cfg(feature = "temporal")]
         if self.parse_dates {
-            df = parse_dates(df)
+            // determine the schema that's given by the user. That should not be changed
+            let fixed_schema = match (self.schema_overwrite, self.dtype_overwrite) {
+                (Some(schema), _) => Cow::Borrowed(schema),
+                (None, Some(dtypes)) => {
+                    let fields = dtypes
+                        .iter()
+                        .zip(df.get_column_names())
+                        .map(|(dtype, name)| Field::new(name, dtype.clone()))
+                        .collect();
+
+                    Cow::Owned(Schema::new(fields))
+                }
+                _ => Cow::Owned(Schema::new(vec![])),
+            };
+            df = parse_dates(df, &*fixed_schema)
         }
         Ok(df)
     }
 }
 
 #[cfg(feature = "temporal")]
-fn parse_dates(df: DataFrame) -> DataFrame {
+fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
     let mut cols: Vec<Series> = df.into();
 
     for s in cols.iter_mut() {
         if let Ok(ca) = s.utf8() {
+            // don't change columns that are in the fixed schema.
+            if fixed_schema.column_with_name(s.name()).is_some() {
+                continue;
+            }
+
             #[cfg(feature = "dtype-time")]
             if let Ok(ca) = ca.as_time(None) {
                 *s = ca.into_series();
@@ -1220,6 +1240,26 @@ linenum,last_name,first_name
         // 1 row.
         assert_eq!(df.shape(), (1, 3));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_ignore_parse_dates() -> Result<()> {
+        // if parse dates is set, a given schema should still prevale above date parsing.
+        let csv = r#"a,b,c
+1,i,16200126
+2,j,16250130
+3,k,17220012
+4,l,17290009"#;
+
+        use DataType::*;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .with_parse_dates(true)
+            .with_dtypes_slice(Some(&[Utf8, Utf8, Utf8]))
+            .finish()?;
+
+        assert_eq!(df.dtypes(), &[Utf8, Utf8, Utf8]);
         Ok(())
     }
 }
