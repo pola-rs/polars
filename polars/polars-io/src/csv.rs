@@ -1208,4 +1208,18 @@ linenum,last_name,first_name
         assert_eq!(df.dtypes(), vec![DataType::Utf8; 4]);
         Ok(())
     }
+
+    #[test]
+    fn test_header_with_comments() -> Result<()> {
+        let csv = "# ignore me\na,b,c\nd,e,f";
+
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .with_comment_char(Some(b'#'))
+            .finish()?;
+        // 1 row.
+        assert_eq!(df.shape(), (1, 3));
+
+        Ok(())
+    }
 }
