@@ -761,7 +761,7 @@ impl LogicalPlanBuilder {
         delimiter: u8,
         has_header: bool,
         ignore_errors: bool,
-        skip_rows: usize,
+        mut skip_rows: usize,
         stop_after_n_rows: Option<usize>,
         cache: bool,
         schema: Option<Arc<Schema>>,
@@ -782,7 +782,7 @@ impl LogicalPlanBuilder {
                 Some(100),
                 has_header,
                 schema_overwrite,
-                skip_rows,
+                &mut skip_rows,
                 comment_char,
                 quote_char,
             )

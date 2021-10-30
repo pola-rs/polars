@@ -122,7 +122,9 @@ pub fn infer_file_schema(
     max_read_records: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
-    skip_rows: usize,
+    // we take &mut because we maybe need to skip more rows dependent
+    // on the schema inference
+    skip_rows: &mut usize,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
 ) -> Result<(Schema, usize)> {
@@ -131,11 +133,29 @@ pub fn infer_file_schema(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = &skip_line_ending(skip_whitespace(skip_bom(reader_bytes)).0).0;
-    let mut lines = SplitLines::new(bytes, b'\n').skip(skip_rows);
+    let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
-    let headers: Vec<String> = if let Some(mut header_line) = lines.next() {
+
+    // skip lines that are comments
+    let mut first_line = None;
+    if let Some(comment_ch) = comment_char {
+        for (i, line) in (&mut lines).enumerate() {
+            if let Some(ch) = line.get(0) {
+                if *ch != comment_ch {
+                    first_line = Some(line);
+                    *skip_rows += i;
+                    break;
+                }
+            }
+        }
+    } else {
+        first_line = lines.next();
+    }
+
+    // now that we've found the first non-comment line we parse the headers, or we create a header
+    let headers: Vec<String> = if let Some(mut header_line) = first_line {
         let len = header_line.len();
         if len > 1 {
             // remove carriage return
@@ -169,7 +189,7 @@ pub fn infer_file_schema(
     };
     if !has_header {
         // re-init lines so that the header is included in type inference.
-        lines = SplitLines::new(bytes, b'\n').skip(skip_rows);
+        lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
     }
 
     let header_length = headers.len();
