@@ -2106,7 +2106,7 @@ class Series:
                 1.2246467991473532e-16
         ]
         """
-        return wrap_s(self._s.apply_lambda(np.sin, Float64))
+        return np.sin(self)
 
     def cos(self) -> "Series":
         """
@@ -2125,7 +2125,7 @@ class Series:
                 -1e0
         ]
         """
-        return wrap_s(self._s.apply_lambda(np.cos, Float64))
+        return np.cos(self)
 
     def tan(self) -> "Series":
         """
@@ -2144,7 +2144,7 @@ class Series:
                 -1e0
         ]
         """
-        return wrap_s(self._s.apply_lambda(np.tan, Float64))
+        return np.tan(self)
 
     def arcsin(self) -> "Series":
         """
@@ -2163,7 +2163,7 @@ class Series:
                 -1.5707963267948966e0
         ]
         """
-        return wrap_s(self._s.apply_lambda(np.arcsin, Float64))
+        return np.arcsin(self)
 
     def arccos(self) -> "Series":
         """
@@ -2182,7 +2182,7 @@ class Series:
                 3.141592653589793
         ]
         """
-        return wrap_s(self._s.apply_lambda(np.arccos, Float64))
+        return np.arccos(self)
 
     def arctan(self) -> "Series":
         """
@@ -2201,7 +2201,7 @@ class Series:
                 -7.853981633974483e-1
         ]
         """
-        return wrap_s(self._s.apply_lambda(np.arctan, Float64))
+        return np.arctan(self)
 
     def apply(
         self,

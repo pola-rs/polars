@@ -1759,7 +1759,7 @@ class Expr:
         │ 0.8414709848078965 │
         └────────────────────┘
         """
-        return self.apply(np.sin, return_dtype=Float64)
+        return np.sin(self)
 
     def cos(self) -> "Expr":
         """
@@ -1781,7 +1781,7 @@ class Expr:
         │ 1   │
         └─────┘
         """
-        return self.apply(np.cos, return_dtype=Float64)
+        return np.cos(self)
 
     def tan(self) -> "Expr":
         """
@@ -1803,7 +1803,7 @@ class Expr:
         │ 1.557407724654902 │
         └───────────────────┘
         """
-        return self.apply(np.tan, return_dtype=Float64)
+        return np.tan(self)
 
     def arcsin(self) -> "Expr":
         """
@@ -1825,7 +1825,7 @@ class Expr:
         │ 1.5707963267948966 │
         └────────────────────┘
         """
-        return self.apply(np.arcsin, return_dtype=Float64)
+        return np.arcsin(self)
 
     def arccos(self) -> "Expr":
         """
@@ -1847,7 +1847,7 @@ class Expr:
         │ 1.5707963267948966 │
         └────────────────────┘
         """
-        return self.apply(np.arccos, return_dtype=Float64)
+        return np.arccos(self)
 
     def arctan(self) -> "Expr":
         """
@@ -1869,7 +1869,7 @@ class Expr:
         │ 0.7853981633974483 │
         └────────────────────┘
         """
-        return self.apply(np.arctan, return_dtype=Float64)
+        return np.arctan(self)
 
 
 class ExprListNameSpace:
