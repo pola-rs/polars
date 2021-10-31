@@ -55,7 +55,7 @@ pub(crate) mod private {
     pub trait PrivateSeries {
         /// Get field (used in schema)
         fn _field(&self) -> Cow<Field> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
 
         fn _dtype(&self) -> &DataType {
@@ -63,7 +63,7 @@ pub(crate) mod private {
         }
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
 
         /// Apply a rolling mean to a Series. See:
@@ -130,7 +130,7 @@ pub(crate) mod private {
         }
 
         fn set_sorted(&mut self, _reverse: bool) {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
 
         unsafe fn equal_element(
@@ -139,21 +139,21 @@ pub(crate) mod private {
             _idx_other: usize,
             _other: &Series,
         ) -> bool {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         #[allow(clippy::wrong_self_convention)]
         fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         #[allow(clippy::wrong_self_convention)]
         fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn vec_hash(&self, _build_hasher: RandomState) -> AlignedVec<u64> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             None
@@ -174,10 +174,10 @@ pub(crate) mod private {
             None
         }
         fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
             None
@@ -203,7 +203,7 @@ pub(crate) mod private {
             _groups: &[(u32, Vec<u32>)],
             _agg_type: PivotAgg,
         ) -> Result<DataFrame> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
 
         #[cfg(feature = "pivot")]
@@ -213,46 +213,46 @@ pub(crate) mod private {
             _keys: Vec<Series>,
             _groups: &[(u32, Vec<u32>)],
         ) -> Result<DataFrame> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
 
         fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn hash_join_left(&self, _other: &Series) -> Vec<(u32, Option<u32>)> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn zip_outer_join_column(
             &self,
             _right_column: &Series,
             _opt_join_tuples: &[(Option<u32>, Option<u32>)],
         ) -> Series {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
 
         fn subtract(&self, _rhs: &Series) -> Result<Series> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn add_to(&self, _rhs: &Series) -> Result<Series> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn multiply(&self, _rhs: &Series) -> Result<Series> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn divide(&self, _rhs: &Series) -> Result<Series> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
         #[cfg(feature = "sort_multiple")]
         fn argsort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> Result<UInt32Chunked> {
@@ -262,7 +262,7 @@ pub(crate) mod private {
         }
         /// Formatted string representation. Can used in formatting.
         fn str_value(&self, _index: usize) -> Cow<str> {
-            unimplemented!()
+            invalid_operation_panic!(self)
         }
     }
 }
@@ -300,11 +300,11 @@ pub trait SeriesTrait:
 
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkIdIter {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     /// Name of series.
     fn name(&self) -> &str {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get field (used in schema)
@@ -319,7 +319,7 @@ pub trait SeriesTrait:
 
     /// Underlying chunks.
     fn chunks(&self) -> &Vec<ArrayRef> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Number of chunks in this Series
@@ -498,7 +498,7 @@ pub trait SeriesTrait:
 
     /// Append Arrow array of same dtype to this Series.
     fn append_array(&mut self, _other: ArrayRef) -> Result<()> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Take `num_elements` from the top as a zero copy view.
@@ -511,22 +511,22 @@ pub trait SeriesTrait:
     /// When offset is negative the offset is counted from the
     /// end of the array
     fn slice(&self, _offset: i64, _length: usize) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Append a Series of the same type in place.
     fn append(&mut self, _other: &Series) -> Result<()> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Take by index from an iterator. This operation clones the data.
     fn take_iter(&self, _iter: &mut dyn TakeIterator) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -535,7 +535,7 @@ pub trait SeriesTrait:
     ///
     /// This doesn't check any bounds.
     unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
@@ -543,7 +543,7 @@ pub trait SeriesTrait:
     /// # Safety
     /// This doesn't check any bounds.
     unsafe fn take_unchecked(&self, _idx: &UInt32Chunked) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Take by index from an iterator. This operation clones the data.
@@ -552,24 +552,24 @@ pub trait SeriesTrait:
     ///
     /// This doesn't check any bounds.
     unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Take by index from an iterator. This operation clones the data.
     #[cfg(feature = "take_opt_iter")]
     #[cfg_attr(docsrs, doc(cfg(feature = "take_opt_iter")))]
     fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Take by index. This operation is clone.
     fn take(&self, _indices: &UInt32Chunked) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get length of series.
     fn len(&self) -> usize {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Check if Series is empty.
@@ -579,17 +579,17 @@ pub trait SeriesTrait:
 
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get the head of the Series.
     fn head(&self, _length: Option<usize>) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get the tail of the Series.
     fn tail(&self, _length: Option<usize>) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Take every nth value as a new Series
@@ -627,26 +627,26 @@ pub trait SeriesTrait:
     /// assert_eq!(Vec::from(expanded.i32().unwrap()), &[Some(8), Some(8), Some(8), Some(8)])
     /// ```
     fn expand_at_index(&self, _index: usize, _length: usize) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     fn cast(&self, _data_type: &DataType) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Create dummy variables. See [DataFrame](DataFrame::to_dummies)
     fn to_dummies(&self) -> Result<DataFrame> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     fn value_counts(&self) -> Result<DataFrame> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
     fn get(&self, _index: usize) -> AnyValue {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
@@ -655,26 +655,26 @@ pub trait SeriesTrait:
     /// # Safety
     /// Does not do any bounds checking
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Sort in place.
     fn sort_in_place(&mut self, _reverse: bool) {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     fn sort(&self, _reverse: bool) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Retrieve the indexes needed for a sort.
     fn argsort(&self, _reverse: bool) -> UInt32Chunked {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Count the null values.
     fn null_count(&self) -> usize {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get unique values in the Series.
@@ -684,12 +684,12 @@ pub trait SeriesTrait:
 
     /// Get unique values in the Series.
     fn n_unique(&self) -> Result<usize> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get first indexes of unique values.
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get min index
@@ -711,27 +711,27 @@ pub trait SeriesTrait:
 
     /// Get a mask of the null values.
     fn is_null(&self) -> BooleanChunked {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get a mask of the non-null values.
     fn is_not_null(&self) -> BooleanChunked {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get a mask of all the unique values.
     fn is_unique(&self) -> Result<BooleanChunked> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get a mask of all the duplicated values.
     fn is_duplicated(&self) -> Result<BooleanChunked> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// return a Series in reversed order
     fn reverse(&self) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Rechunk and return a pointer to the start of the Series.
@@ -769,7 +769,7 @@ pub trait SeriesTrait:
     /// example();
     /// ```
     fn shift(&self, _periods: i64) -> Series {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Replace None values with one of the following strategies:
@@ -809,7 +809,7 @@ pub trait SeriesTrait:
     /// example();
     /// ```
     fn fill_null(&self, _strategy: FillNullStrategy) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get the sum of the Series as a new Series of length 1.
@@ -1048,7 +1048,7 @@ pub trait SeriesTrait:
 
     /// Clone inner ChunkedArray and wrap in a new Arc
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     #[cfg(feature = "random")]
@@ -1065,7 +1065,7 @@ pub trait SeriesTrait:
     #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     /// Get the value at this index as a downcastable Any trait ref.
     fn get_object(&self, _index: usize) -> Option<&dyn PolarsObjectSafe> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get a hold to self as `Any` trait reference.
@@ -1073,7 +1073,7 @@ pub trait SeriesTrait:
     #[cfg(feature = "object")]
     #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     fn as_any(&self) -> &dyn Any {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Raise a numeric series to the power of exponent.
@@ -1085,43 +1085,43 @@ pub trait SeriesTrait:
 
     /// Get a boolean mask of the local maximum peaks.
     fn peak_max(&self) -> BooleanChunked {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Get a boolean mask of the local minimum peaks.
     fn peak_min(&self) -> BooleanChunked {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     /// Check if elements of this Series are in the right Series, or List values of the right Series.
     #[cfg(feature = "is_in")]
     #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
     fn is_in(&self, _other: &Series) -> Result<BooleanChunked> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     #[cfg(feature = "repeat_by")]
     #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
     fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
     #[cfg(feature = "checked_arithmetic")]
     #[cfg_attr(docsrs, doc(cfg(feature = "checked_arithmetic")))]
     fn checked_div(&self, _rhs: &Series) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     #[cfg(feature = "is_first")]
     #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
     /// Get a mask of the first unique values.
     fn is_first(&self) -> Result<BooleanChunked> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
     /// Compute the most occurring element in the array.
     fn mode(&self) -> Result<Series> {
-        unimplemented!()
+        invalid_operation_panic!(self)
     }
 
     #[cfg(feature = "rolling_window")]
