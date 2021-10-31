@@ -6,14 +6,10 @@ use polars_core::prelude::*;
 /// Take an input Executor (creates the input DataFrame)
 /// and a multiple PhysicalExpressions (create the output Series)
 pub struct ProjectionExec {
-    input: Box<dyn Executor>,
-    expr: Vec<Arc<dyn PhysicalExpr>>,
-}
-
-impl ProjectionExec {
-    pub(crate) fn new(input: Box<dyn Executor>, expr: Vec<Arc<dyn PhysicalExpr>>) -> Self {
-        Self { input, expr }
-    }
+    pub(crate) input: Box<dyn Executor>,
+    pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
+    #[cfg(test)]
+    pub(crate) schema: SchemaRef,
 }
 
 impl Executor for ProjectionExec {
@@ -21,6 +17,17 @@ impl Executor for ProjectionExec {
         let df = self.input.execute(state)?;
 
         let df = evaluate_physical_expressions(&df, &self.expr, state);
+
+        #[cfg(test)]
+        {
+            // TODO: check also the types.
+            df.as_ref().map(|df| {
+                for (l, r) in df.schema().fields().iter().zip(self.schema.fields()) {
+                    assert_eq!(l.name(), r.name());
+                }
+            });
+        }
+
         state.clear_expr_cache();
         df
     }

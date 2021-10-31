@@ -686,8 +686,8 @@ fn test_lazy_update_column() {
 #[test]
 fn test_lazy_fill_null() {
     let df = df! {
-        "a" => &[None, Some(2)],
-        "b" => &[Some(1), None]
+        "a" => &[None, Some(2.0)],
+        "b" => &[Some(1.0), None]
     }
     .unwrap();
     let out = df.lazy().fill_null(lit(10.0)).collect().unwrap();
@@ -1996,6 +1996,15 @@ pub fn test_select_by_dtypes() -> Result<()> {
         .select([dtype_cols([DataType::Float32, DataType::Utf8])])
         .collect()?;
     assert_eq!(out.dtypes(), &[DataType::Float32, DataType::Utf8]);
+
+    Ok(())
+}
+
+#[test]
+fn test_binary_expr() -> Result<()> {
+    // test panic in schema names
+    let df = fruits_cars();
+    let out = df.lazy().select([col("A").neq(lit(1))]).collect()?;
 
     Ok(())
 }

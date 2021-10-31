@@ -121,6 +121,7 @@ impl ListChunked {
             })
             .collect_trusted();
 
+        ca.rename(self.name());
         if fast_explode {
             ca.set_fast_explode();
         }
@@ -151,6 +152,7 @@ impl ListChunked {
                     .transpose()
             })
             .collect::<Result<_>>()?;
+        ca.rename(self.name());
         if fast_explode {
             ca.set_fast_explode();
         }

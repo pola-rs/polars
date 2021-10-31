@@ -127,7 +127,21 @@ impl AExpr {
     ) -> Result<Field> {
         use AExpr::*;
         match self {
-            Window { function, .. } => arena.get(*function).to_field(schema, ctxt, arena),
+            Window { function, .. } => {
+                let e = arena.get(*function);
+
+                let field = e.to_field(schema, ctxt, arena);
+                match e {
+                    Agg(_) => field,
+                    _ => {
+                        let field = field?;
+                        Ok(Field::new(
+                            field.name(),
+                            DataType::List(Box::new(field.data_type().clone())),
+                        ))
+                    }
+                }
+            }
             IsUnique(expr) => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                 Ok(Field::new(field.name(), DataType::Boolean))
@@ -137,7 +151,15 @@ impl AExpr {
                 Ok(Field::new(field.name(), DataType::Boolean))
             }
             Reverse(expr) => arena.get(*expr).to_field(schema, ctxt, arena),
-            Explode(expr) => arena.get(*expr).to_field(schema, ctxt, arena),
+            Explode(expr) => {
+                let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+
+                if let DataType::List(inner) = field.data_type() {
+                    Ok(Field::new(field.name(), *inner.clone()))
+                } else {
+                    Ok(field)
+                }
+            }
             Alias(expr, name) => Ok(Field::new(
                 name,
                 arena.get(*expr).get_type(schema, ctxt, arena)?,
@@ -163,15 +185,10 @@ impl AExpr {
                     _ => get_supertype(&left_type, &right_type)?,
                 };
 
-                use Operator::*;
                 let out_field;
-                let out_name = match op {
-                    Plus | Minus | Multiply | Divide | Modulus => {
-                        out_field = arena.get(*left).to_field(schema, ctxt, arena)?;
-                        out_field.name().as_str()
-                    }
-                    Eq | Lt | GtEq | LtEq => "",
-                    _ => "binary_expr",
+                let out_name = {
+                    out_field = arena.get(*left).to_field(schema, ctxt, arena)?;
+                    out_field.name().as_str()
                 };
 
                 Ok(Field::new(out_name, expr_type))
@@ -196,11 +213,17 @@ impl AExpr {
                         ctxt,
                         GroupByMethod::Max,
                     ),
-                    Median(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Median,
-                    ),
+                    Median(expr) => {
+                        let mut field = field_by_context(
+                            arena.get(*expr).to_field(schema, ctxt, arena)?,
+                            ctxt,
+                            GroupByMethod::Median,
+                        );
+                        if field.data_type() != &DataType::Utf8 {
+                            field.coerce(DataType::Float64);
+                        }
+                        field
+                    }
                     Mean(expr) => {
                         let mut field = field_by_context(
                             arena.get(*expr).to_field(schema, ctxt, arena)?,
@@ -292,11 +315,14 @@ impl AExpr {
                 Ok(Field::new(field.name(), data_type.clone()))
             }
             Ternary { truthy, falsy, .. } => {
-                let truthy = arena.get(*truthy).to_field(schema, ctxt, arena)?;
+                let mut truthy = arena.get(*truthy).to_field(schema, ctxt, arena)?;
+                let falsy = arena.get(*falsy).to_field(schema, ctxt, arena)?;
                 if let DataType::Null = *truthy.data_type() {
-                    let falsy = arena.get(*falsy).to_field(schema, ctxt, arena)?;
-                    Ok(Field::new(truthy.name(), falsy.data_type().clone()))
+                    truthy.coerce(falsy.data_type().clone());
+                    Ok(truthy)
                 } else {
+                    let st = get_supertype(truthy.data_type(), falsy.data_type())?;
+                    truthy.coerce(st);
                     Ok(truthy)
                 }
             }
