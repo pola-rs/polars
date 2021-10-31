@@ -3,6 +3,7 @@ Module containing logic related to eager DataFrames
 """
 import os
 import typing as tp
+from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -1858,13 +1859,13 @@ class DataFrame:
 
         >>> df = pl.DataFrame(
         >>>     {
-        >>>         "A": ["2020-01-01", "2020-01-02", "2020-01-03","2020-01-04","2020-01-05"],
+        >>>         "A": ["2020-01-01", "2020-01-02", "2020-01-03","2020-01-04","2020-01-05","2020-01-06"],
         >>>         "B": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0],
         >>>         "C": [3.0, 6.0, 9.0, 2.0, 13.0, 8.0],
         >>>         "D": [12.0, 5.0, 9.0, 2.0, 11.0, 2.0],
         >>>     }
         >>> )
-        >>> df['A'] = df['A'].str.strptime(pl.datatypes.Date, "%Y-%m-%d")
+        >>> df['A'] = df['A'].str.strptime(pl.Date, "%Y-%m-%d")
         >>>
         >>> df.downsample("A", rule="day", n=3).agg(
         >>>     {
@@ -1895,6 +1896,38 @@ class DataFrame:
             rule=rule,
             downsample_n=n,
         )
+
+    def upsample(
+        self, by: str, interval: timedelta
+    ) -> Union["DataFrame", "pl.LazyFrame"]:
+        """
+        Upsample a DataFrame at a regular frequency.
+
+        Parameters
+        ----------
+        by
+            Column that will be used as key in the upsampling operation.
+            This should be a datetime column.
+        interval
+            Interval periods.
+        """
+        if self[by].dtype != pl.Datetime:
+            raise ValueError(
+                f"Column {by} should be of type datetime. Got {self[by].dtype}"
+            )
+        bounds = self.select(
+            [
+                pl.col(by).min().alias("low").dt.to_python_datetime(),
+                pl.col(by).max().alias("high").dt.to_python_datetime(),
+            ]
+        )
+        low: datetime = bounds[0, "low"]
+        high: datetime = bounds[0, "high"]
+        upsampled = pl.date_range(low, high, interval, name=by)
+        # pl.date_range excludes 'high'. Include it when relevant
+        if (high - low) % interval == timedelta(0):
+            upsampled.append(pl.Series(values=[high]))
+        return pl.DataFrame(upsampled).join(self, on=by, how="left")
 
     def join(
         self,
