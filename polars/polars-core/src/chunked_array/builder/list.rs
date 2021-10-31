@@ -9,9 +9,9 @@ pub trait ListBuilderTrait {
 
 pub struct ListPrimitiveChunkedBuilder<T>
 where
-    T: PolarsNumericType,
+    T: NumericNative,
 {
-    pub builder: LargePrimitiveBuilder<T::Native>,
+    pub builder: LargePrimitiveBuilder<T>,
     field: Field,
     fast_explode: bool,
 }
@@ -35,12 +35,17 @@ macro_rules! finish_list_builder {
 
 impl<T> ListPrimitiveChunkedBuilder<T>
 where
-    T: PolarsNumericType,
+    T: NumericNative,
 {
-    pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
-        let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
-        let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
-        let field = Field::new(name, DataType::List(Box::new(T::get_dtype())));
+    pub fn new(
+        name: &str,
+        capacity: usize,
+        values_capacity: usize,
+        logical_type: DataType,
+    ) -> Self {
+        let values = MutablePrimitiveArray::<T>::with_capacity(values_capacity);
+        let builder = LargePrimitiveBuilder::<T>::new_with_capacity(values, capacity);
+        let field = Field::new(name, DataType::List(Box::new(logical_type)));
 
         Self {
             builder,
@@ -49,7 +54,7 @@ where
         }
     }
 
-    pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
+    pub fn append_slice(&mut self, opt_v: Option<&[T]>) {
         match opt_v {
             Some(items) => {
                 let values = self.builder.mut_values();
@@ -67,7 +72,7 @@ where
     }
     /// Appends from an iterator over values
     #[inline]
-    pub fn append_iter_values<I: Iterator<Item = T::Native> + TrustedLen>(&mut self, iter: I) {
+    pub fn append_iter_values<I: Iterator<Item = T> + TrustedLen>(&mut self, iter: I) {
         let values = self.builder.mut_values();
 
         if iter.size_hint().0 == 0 {
@@ -81,7 +86,7 @@ where
 
     /// Appends from an iterator over values
     #[inline]
-    pub fn append_iter<I: Iterator<Item = Option<T::Native>> + TrustedLen>(&mut self, iter: I) {
+    pub fn append_iter<I: Iterator<Item = Option<T>> + TrustedLen>(&mut self, iter: I) {
         let values = self.builder.mut_values();
 
         if iter.size_hint().0 == 0 {
@@ -96,7 +101,7 @@ where
 
 impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
 where
-    T: PolarsNumericType,
+    T: NumericNative,
 {
     #[inline]
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
@@ -123,10 +128,7 @@ where
         let values = self.builder.mut_values();
 
         arrays.iter().for_each(|x| {
-            let arr = x
-                .as_any()
-                .downcast_ref::<PrimitiveArray<T::Native>>()
-                .unwrap();
+            let arr = x.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
             if arr.null_count() == 0 {
                 values.extend_from_slice(arr.values().as_slice())
@@ -284,10 +286,16 @@ pub fn get_list_builder(
     list_capacity: usize,
     name: &str,
 ) -> Box<dyn ListBuilderTrait> {
+    let physical_type = dt.to_physical();
+
     macro_rules! get_primitive_builder {
         ($type:ty) => {{
-            let builder =
-                ListPrimitiveChunkedBuilder::<$type>::new(&name, list_capacity, value_capacity);
+            let builder = ListPrimitiveChunkedBuilder::<$type>::new(
+                &name,
+                list_capacity,
+                value_capacity,
+                dt.clone(),
+            );
             Box::new(builder)
         }};
     }
@@ -304,7 +312,7 @@ pub fn get_list_builder(
         }};
     }
     match_arrow_data_type_apply_macro!(
-        dt,
+        physical_type,
         get_primitive_builder,
         get_utf8_builder,
         get_bool_builder

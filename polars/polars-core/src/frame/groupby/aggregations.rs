@@ -501,8 +501,12 @@ where
                 ListArray::<i64>::from_data(data_type, offsets.into(), Arc::new(array), None)
             }
             _ => {
-                let mut builder =
-                    ListPrimitiveChunkedBuilder::<T>::new(self.name(), groups.len(), self.len());
+                let mut builder = ListPrimitiveChunkedBuilder::<T::Native>::new(
+                    self.name(),
+                    groups.len(),
+                    self.len(),
+                    self.dtype().clone(),
+                );
                 for (_first, idx) in groups {
                     let s = unsafe {
                         self.take_unchecked(idx.iter().map(|i| *i as usize).into())

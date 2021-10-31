@@ -1192,3 +1192,24 @@ def test_filter_with_all_expansion():
     )
     out = df.filter(~pl.fold(True, lambda acc, s: acc & s.is_null(), pl.all()))
     assert out.shape == (2, 3)
+
+
+def test_diff_datetime():
+
+    df = pl.DataFrame(
+        {
+            "timestamp": ["2021-02-01", "2021-03-1", "2021-04-1"],
+            "guild": [1, 2, 3],
+            "char": ["a", "a", "b"],
+        }
+    )
+
+    out = (
+        df.with_columns(
+            [
+                pl.col("timestamp").str.strptime(pl.Date, fmt="%Y-%m-%d"),
+            ]
+        ).with_columns([pl.col("timestamp").diff().over(pl.col("char"))])
+    )["timestamp"]
+
+    assert out[0] == out[1]
