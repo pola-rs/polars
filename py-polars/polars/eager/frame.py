@@ -1924,9 +1924,6 @@ class DataFrame:
         low: datetime = bounds[0, "low"]
         high: datetime = bounds[0, "high"]
         upsampled = pl.date_range(low, high, interval, name=by)
-        # pl.date_range excludes 'high'. Include it when relevant
-        if (high - low) % interval == timedelta(0):
-            upsampled.append(pl.Series(values=[high]))
         return pl.DataFrame(upsampled).join(self, on=by, how="left")
 
     def join(
