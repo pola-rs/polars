@@ -117,6 +117,7 @@ Manipulation/ selection
     DataFrame.join
     DataFrame.interpolate
     DataFrame.transpose
+    DataFrame.upsample
 
 Apply
 -----

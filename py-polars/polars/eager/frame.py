@@ -1897,9 +1897,7 @@ class DataFrame:
             downsample_n=n,
         )
 
-    def upsample(
-        self, by: str, interval: timedelta
-    ) -> Union["DataFrame", "pl.LazyFrame"]:
+    def upsample(self, by: str, interval: timedelta) -> "DataFrame":
         """
         Upsample a DataFrame at a regular frequency.
 
@@ -1921,7 +1919,7 @@ class DataFrame:
         low = bounds["low"].dt[0]
         high = bounds["high"].dt[0]
         upsampled = pl.date_range(low, high, interval, name=by)
-        return pl.DataFrame(upsampled).join(self, on=by, how="left")
+        return pl.DataFrame(upsampled).join(self, on=by, how="left")  # type: ignore
 
     def join(
         self,
