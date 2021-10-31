@@ -162,17 +162,37 @@ impl DefaultPlanner {
                     cache,
                 )))
             }
-            Projection { expr, input, .. } => {
+            Projection {
+                expr,
+                input,
+                schema: _schema,
+                ..
+            } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
-                Ok(Box::new(ProjectionExec::new(input, phys_expr)))
+                Ok(Box::new(ProjectionExec {
+                    input,
+                    expr: phys_expr,
+                    #[cfg(test)]
+                    schema: _schema,
+                }))
             }
-            LocalProjection { expr, input, .. } => {
+            LocalProjection {
+                expr,
+                input,
+                schema: _schema,
+                ..
+            } => {
                 let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
-                Ok(Box::new(ProjectionExec::new(input, phys_expr)))
+                Ok(Box::new(ProjectionExec {
+                    input,
+                    expr: phys_expr,
+                    #[cfg(test)]
+                    schema: _schema,
+                }))
             }
             DataFrameScan {
                 df,
