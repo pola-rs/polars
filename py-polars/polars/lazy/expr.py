@@ -1506,7 +1506,7 @@ class Expr:
     ) -> "Expr":
         """
         Allows a custom rolling window function.
-        Prefer the specific rolling window fucntions over this one, as they are faster.
+        Prefer the specific rolling window functions over this one, as they are faster.
 
         Prefer:
             * rolling_min
