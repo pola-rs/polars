@@ -1759,7 +1759,7 @@ class Expr:
         │ 0.8414709848078965 │
         └────────────────────┘
         """
-        return np.sin(self)
+        return wrap_expr(np.sin(self))  # type: ignore
 
     def cos(self) -> "Expr":
         """
@@ -1781,7 +1781,7 @@ class Expr:
         │ 1   │
         └─────┘
         """
-        return np.cos(self)
+        return wrap_expr(np.cos(self))  # type: ignore
 
     def tan(self) -> "Expr":
         """
@@ -1803,7 +1803,7 @@ class Expr:
         │ 1.557407724654902 │
         └───────────────────┘
         """
-        return np.tan(self)
+        return wrap_expr(np.tan(self))  # type: ignore
 
     def arcsin(self) -> "Expr":
         """
@@ -1825,7 +1825,7 @@ class Expr:
         │ 1.5707963267948966 │
         └────────────────────┘
         """
-        return np.arcsin(self)
+        return wrap_expr(np.arcsin(self))  # type: ignore
 
     def arccos(self) -> "Expr":
         """
@@ -1847,7 +1847,7 @@ class Expr:
         │ 1.5707963267948966 │
         └────────────────────┘
         """
-        return np.arccos(self)
+        return wrap_expr(np.arccos(self))  # type: ignore
 
     def arctan(self) -> "Expr":
         """
@@ -1869,7 +1869,7 @@ class Expr:
         │ 0.7853981633974483 │
         └────────────────────┘
         """
-        return np.arctan(self)
+        return wrap_expr(np.arctan(self))  # type: ignore
 
 
 class ExprListNameSpace:

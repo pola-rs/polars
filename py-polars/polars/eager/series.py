@@ -2106,7 +2106,7 @@ class Series:
                 1.2246467991473532e-16
         ]
         """
-        return np.sin(self)
+        return wrap_s(np.sin(self))
 
     def cos(self) -> "Series":
         """
@@ -2125,7 +2125,7 @@ class Series:
                 -1e0
         ]
         """
-        return np.cos(self)
+        return wrap_s(np.cos(self))
 
     def tan(self) -> "Series":
         """
@@ -2144,7 +2144,7 @@ class Series:
                 -1e0
         ]
         """
-        return np.tan(self)
+        return wrap_s(np.tan(self))
 
     def arcsin(self) -> "Series":
         """
@@ -2163,7 +2163,7 @@ class Series:
                 -1.5707963267948966e0
         ]
         """
-        return np.arcsin(self)
+        return wrap_s(np.arcsin(self))
 
     def arccos(self) -> "Series":
         """
@@ -2182,7 +2182,7 @@ class Series:
                 3.141592653589793
         ]
         """
-        return np.arccos(self)
+        return wrap_s(np.arccos(self))
 
     def arctan(self) -> "Series":
         """
@@ -2201,7 +2201,7 @@ class Series:
                 -7.853981633974483e-1
         ]
         """
-        return np.arctan(self)
+        return wrap_s(np.arctan(self))
 
     def apply(
         self,
