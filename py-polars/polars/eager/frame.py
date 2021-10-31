@@ -3,7 +3,7 @@ Module containing logic related to eager DataFrames
 """
 import os
 import typing as tp
-from datetime import datetime, timedelta
+from datetime import timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -1916,13 +1916,10 @@ class DataFrame:
                 f"Column {by} should be of type datetime. Got {self[by].dtype}"
             )
         bounds = self.select(
-            [
-                pl.col(by).min().alias("low").dt.to_python_datetime(),
-                pl.col(by).max().alias("high").dt.to_python_datetime(),
-            ]
+            [pl.col(by).min().alias("low"), pl.col(by).max().alias("high")]
         )
-        low: datetime = bounds[0, "low"]
-        high: datetime = bounds[0, "high"]
+        low = bounds["low"].dt[0]
+        high = bounds["high"].dt[0]
         upsampled = pl.date_range(low, high, interval, name=by)
         return pl.DataFrame(upsampled).join(self, on=by, how="left")
 
