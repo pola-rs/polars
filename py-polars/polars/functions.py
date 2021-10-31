@@ -96,7 +96,11 @@ def arg_where(mask: "pl.Series") -> "pl.Series":
 
 
 def date_range(
-    low: datetime, high: datetime, interval: timedelta, name: Optional[str] = None
+    low: datetime,
+    high: datetime,
+    interval: timedelta,
+    closed: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> pl.Series:
     """
     Create a date range of type `Datetime`.
@@ -109,6 +113,8 @@ def date_range(
         Upper bound of the date range
     interval
         Interval periods
+    closed {None, 'left', 'right'}
+        Make the interval closed to the 'left', 'right', or both sides (None, the default).
     name
         Name of the output Series
     Returns
@@ -150,7 +156,9 @@ def date_range(
         2015-06-30 12:00:00
     ]
     """
-    return pl.Series(
-        name=name,
-        values=np.arange(low, high, interval, dtype="datetime64[ms]").astype(int),
-    ).cast(pl.Datetime)
+    values = np.arange(low, high, interval, dtype="datetime64[ms]")
+    if closed in (None, "right") and (high - low) % interval == timedelta(0):
+        values = np.append(values, np.array(high, dtype="datetime64[ms]"))
+    if closed == "right":
+        values = values[1:]
+    return pl.Series(name=name, values=values.astype(int)).cast(pl.Datetime)
