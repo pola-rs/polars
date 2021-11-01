@@ -2006,5 +2006,21 @@ fn test_binary_expr() -> Result<()> {
     let df = fruits_cars();
     let out = df.lazy().select([col("A").neq(lit(1))]).collect()?;
 
+    // test type coercion
+    // https://github.com/pola-rs/polars/issues/1649
+    let df = df!(
+            "nrs"=> [Some(1i64), Some(2), Some(3), None, Some(5)],
+            "random"=> [0.1f64, 0.6, 0.2, 0.6, 0.3]
+    )?;
+
+    let out = df
+        .lazy()
+        .select([when(col("random").gt(lit(0.5)))
+            .then(lit(2))
+            .otherwise(col("random"))
+            .alias("other")
+            * col("nrs").sum()])
+        .collect()?;
+    assert_eq!(out.dtypes(), &[DataType::Float64]);
     Ok(())
 }
