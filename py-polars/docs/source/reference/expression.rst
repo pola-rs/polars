@@ -136,6 +136,12 @@ Computations
     Expr.skew
     Expr.kurtosis
     Expr.sqrt
+    Expr.sin
+    Expr.cos
+    Expr.tan
+    Expr.arcsin
+    Expr.arccos
+    Expr.arctan
 
 Manipulation/ selection
 -----------------------

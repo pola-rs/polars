@@ -113,6 +113,12 @@ Computations
     Series.skew
     Series.kurtosis
     Series.sqrt
+    Series.sin
+    Series.cos
+    Series.tan
+    Series.arcsin
+    Series.arccos
+    Series.arctan
 
 Manipulation/ selection
 -----------------------
