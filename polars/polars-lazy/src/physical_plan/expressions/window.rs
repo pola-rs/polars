@@ -75,6 +75,8 @@ impl PhysicalExpr for WindowExpr {
                 Ok(DataFrame::new_no_checks(cols))
             }
         }?;
+        // drop the group tuples before we do the left join to reduce allocated memory.
+        drop(gb);
 
         // 3. get the join tuples and use them to take the new Series
         let out_column = out.select_at_idx(out.width() - 1).unwrap();
