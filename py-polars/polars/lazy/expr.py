@@ -204,6 +204,7 @@ class Expr:
 
         if "dtype" in kwargs:
             return self.map(function, return_dtype=kwargs["dtype"])
+
         return self.map(function, return_dtype=dtype)
 
     def sqrt(self) -> "Expr":
@@ -1023,7 +1024,7 @@ class Expr:
         Apply a custom python function. This function must produce a `Series`. Any other value will be stored as
         null/missing. If you want to apply a function over single values, consider using `apply`.
 
-        [read more in the book](https://ritchie46.github.io/polars-book/how_can_i/use_custom_functions.html#lazy)
+        [read more in the book](https://pola-rs.github.io/polars-book/user-guide/howcani/apply/udfs.html)
 
         Parameters
         ----------
@@ -1737,6 +1738,138 @@ class Expr:
         └──────────┘
         """
         return wrap_expr(self._pyexpr.str_concat(delimiter))
+
+    def sin(self) -> "Expr":
+        """
+        Compute the element-wise value for Trigonometric sine on an array
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> df.select(pl.col("a").sin())
+        shape: (1, 1)
+        ┌────────────────────┐
+        │ a                  │
+        │ ---                │
+        │ f64                │
+        ╞════════════════════╡
+        │ 0.8414709848078965 │
+        └────────────────────┘
+        """
+        return np.sin(self)  # type: ignore
+
+    def cos(self) -> "Expr":
+        """
+        Compute the element-wise value for Trigonometric cosine on an array
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> df.select(pl.col("a").cos())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 1   │
+        └─────┘
+        """
+        return np.cos(self)  # type: ignore
+
+    def tan(self) -> "Expr":
+        """
+        Compute the element-wise value for Trigonometric tangent on an array
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").tan())
+        shape: (1, 1)
+        ┌───────────────────┐
+        │ a                 │
+        │ ---               │
+        │ f64               │
+        ╞═══════════════════╡
+        │ 1.557407724654902 │
+        └───────────────────┘
+        """
+        return np.tan(self)  # type: ignore
+
+    def arcsin(self) -> "Expr":
+        """
+        Compute the element-wise value for Trigonometric sine on an array
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").arcsin())
+        shape: (1, 1)
+        ┌────────────────────┐
+        │ a                  │
+        │ ---                │
+        │ f64                │
+        ╞════════════════════╡
+        │ 1.5707963267948966 │
+        └────────────────────┘
+        """
+        return np.arcsin(self)  # type: ignore
+
+    def arccos(self) -> "Expr":
+        """
+        Compute the element-wise value for Trigonometric cosine on an array
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> df.select(pl.col("a").arccos())
+        shape: (1, 1)
+        ┌────────────────────┐
+        │ a                  │
+        │ ---                │
+        │ f64                │
+        ╞════════════════════╡
+        │ 1.5707963267948966 │
+        └────────────────────┘
+        """
+        return np.arccos(self)  # type: ignore
+
+    def arctan(self) -> "Expr":
+        """
+        Compute the element-wise value for Trigonometric tangent on an array
+
+        Returns
+        -------
+        Series of dtype Float64
+
+        Examples
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").arctan())
+        shape: (1, 1)
+        ┌────────────────────┐
+        │ a                  │
+        │ ---                │
+        │ f64                │
+        ╞════════════════════╡
+        │ 0.7853981633974483 │
+        └────────────────────┘
+        """
+        return np.arctan(self)  # type: ignore
 
 
 class ExprListNameSpace:

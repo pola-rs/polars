@@ -719,7 +719,7 @@ def test_comparisons_int_series_to_float():
     assert (srs_int - 1.0).to_list() == [0, 1, 2, 3]
     assert (srs_int + 1.0).to_list() == [2, 3, 4, 5]
     assert (srs_int * 2.0).to_list() == [2, 4, 6, 8]
-    # todo: this is inconsistant
+    # todo: this is inconsistent
     assert (srs_int / 2.0).to_list() == [0.5, 1.0, 1.5, 2.0]
     assert (srs_int % 2.0).to_list() == [1, 0, 1, 0]
     assert (4.0 % srs_int).to_list() == [0, 0, 1, 0]
@@ -771,3 +771,15 @@ def test_comparisons_bool_series_to_int():
         TypeError, match=r"'>' not supported between instances of 'Series' and 'int'"
     ):
         srs_bool > 2
+
+
+def test_trigonometry_functions():
+    srs_float = pl.Series("t", [0.0, np.pi])
+    assert np.allclose(srs_float.sin(), np.array([0.0, 0.0]))
+    assert np.allclose(srs_float.cos(), np.array([1.0, -1.0]))
+    assert np.allclose(srs_float.tan(), np.array([0.0, -0.0]))
+
+    srs_float = pl.Series("t", [1.0, 0.0, -1])
+    assert np.allclose(srs_float.arcsin(), np.array([1.571, 0.0, -1.571]), atol=0.01)
+    assert np.allclose(srs_float.arccos(), np.array([0.0, 1.571, 3.142]), atol=0.01)
+    assert np.allclose(srs_float.arctan(), np.array([0.785, 0.0, -0.785]), atol=0.01)

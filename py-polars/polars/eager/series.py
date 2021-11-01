@@ -2089,6 +2089,120 @@ class Series:
         """
         return wrap_s(self._s.mode())
 
+    def sin(self) -> "Series":
+        """
+        Compute the element-wise value for Trigonometric sine.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s.sin()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                0.0
+                1
+                1.2246467991473532e-16
+        ]
+        """
+        return np.sin(self)  # type: ignore
+
+    def cos(self) -> "Series":
+        """
+        Compute the element-wise value for Trigonometric cosine.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s.cos()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                1
+                6.123233995736766e-17
+                -1e0
+        ]
+        """
+        return np.cos(self)  # type: ignore
+
+    def tan(self) -> "Series":
+        """
+        Compute the element-wise value for Trigonometric tangent.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s.tan()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                1
+                6.123233995736766e-17
+                -1e0
+        ]
+        """
+        return np.tan(self)  # type: ignore
+
+    def arcsin(self) -> "Series":
+        """
+        Compute the element-wise value for Trigonometric Inverse sine.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s.arcsin()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                1.5707963267948966
+                0.0
+                -1.5707963267948966e0
+        ]
+        """
+        return np.arcsin(self)  # type: ignore
+
+    def arccos(self) -> "Series":
+        """
+        Compute the element-wise value for Trigonometric Inverse cosine.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s.arccos()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                0.0
+                1.5707963267948966
+                3.141592653589793
+        ]
+        """
+        return np.arccos(self)  # type: ignore
+
+    def arctan(self) -> "Series":
+        """
+        Compute the element-wise value for Trigonometric Inverse tangent.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s.arctan()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+                0.7853981633974483
+                0.0
+                -7.853981633974483e-1
+        ]
+        """
+        return np.arctan(self)  # type: ignore
+
     def apply(
         self,
         func: Callable[[Any], Any],
