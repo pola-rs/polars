@@ -17,8 +17,6 @@ where
 impl ListChunked {
     /// If all nested `Series` have the same length, a 2 dimensional `ndarray::Array` is returned.
     #[cfg_attr(docsrs, doc(cfg(feature = "ndarray")))]
-    // allow deprecated for now. Fix when removed
-    #[allow(deprecated)]
     pub fn to_ndarray<N>(&self) -> Result<Array2<N::Native>>
     where
         N: PolarsNumericType,
@@ -37,13 +35,15 @@ impl ListChunked {
             if let Some(series) = iter.next() {
                 width = series.len();
 
-                ndarray = unsafe { ndarray::Array::uninitialized((self.len(), series.len())) };
+                let mut row_idx = 0;
+                ndarray = ndarray::Array::uninit((self.len(), width));
 
                 let series = series.cast(&N::get_dtype())?;
                 let ca = series.unpack::<N>()?;
                 let a = ca.to_ndarray()?;
-                let mut row = ndarray.slice_mut(s![0, ..]);
-                row.assign(&a);
+                let mut row = ndarray.slice_mut(s![row_idx, ..]);
+                a.assign_to(&mut row);
+                row_idx += 1;
 
                 for series in iter {
                     if series.len() != width {
@@ -54,10 +54,15 @@ impl ListChunked {
                     let series = series.cast(&N::get_dtype())?;
                     let ca = series.unpack::<N>()?;
                     let a = ca.to_ndarray()?;
-                    let mut row = ndarray.slice_mut(s![0, ..]);
-                    row.assign(&a)
+                    let mut row = ndarray.slice_mut(s![row_idx, ..]);
+                    a.assign_to(&mut row);
+                    row_idx += 1;
                 }
-                Ok(ndarray)
+
+                debug_assert_eq!(row_idx, self.len());
+                // Safety:
+                // We have assigned to every row and element of the array
+                unsafe { Ok(ndarray.assume_init()) }
             } else {
                 Err(PolarsError::NoData(
                     "cannot create ndarray of empty ListChunked".into(),
