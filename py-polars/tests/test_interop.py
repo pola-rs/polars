@@ -56,10 +56,14 @@ def test_arrow_list_chunked_array():
 
 
 def test_from_pandas_null():
-    test_df = pd.DataFrame([{0: None}, {0: None}])
-    out = pl.DataFrame(test_df)
+    df = pd.DataFrame([{"a": None}, {"a": None}])
+    out = pl.DataFrame(df)
     assert out.dtypes == [pl.Float64]
-    assert out["0"][0] is None
+    assert out["a"][0] is None
+
+    df = pd.DataFrame([{"a": None, "b": 1}, {"a": None, "b": 2}])
+    out = pl.DataFrame(df)
+    assert out.dtypes == [pl.Float64, pl.Int64]
 
 
 def test_from_pandas_nested_list():
