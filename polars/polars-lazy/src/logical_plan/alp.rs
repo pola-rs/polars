@@ -30,7 +30,10 @@ pub enum ALogicalPlan {
     #[cfg(feature = "csv-file")]
     CsvScan {
         path: PathBuf,
+        // schema of the complete file
         schema: SchemaRef,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
         options: CsvParserOptions,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
@@ -38,7 +41,10 @@ pub enum ALogicalPlan {
     #[cfg(feature = "parquet")]
     ParquetScan {
         path: PathBuf,
+        // schema of the complete file
         schema: SchemaRef,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
@@ -129,11 +135,19 @@ impl ALogicalPlan {
             Sort { input, .. } => arena.get(*input).schema(arena),
             Explode { input, .. } => arena.get(*input).schema(arena),
             #[cfg(feature = "parquet")]
-            ParquetScan { schema, .. } => schema,
+            ParquetScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema),
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => arena.get(*input).schema(arena),
             #[cfg(feature = "csv-file")]
-            CsvScan { schema, .. } => schema,
+            CsvScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema),
             Projection { schema, .. } => schema,
             LocalProjection { schema, .. } => schema,
             Aggregate { schema, .. } => schema,
@@ -314,6 +328,7 @@ impl ALogicalPlan {
             ParquetScan {
                 path,
                 schema,
+                output_schema,
                 with_columns,
                 predicate,
                 stop_after_n_rows,
@@ -328,6 +343,7 @@ impl ALogicalPlan {
                 ParquetScan {
                     path: path.clone(),
                     schema: schema.clone(),
+                    output_schema: output_schema.clone(),
                     with_columns: with_columns.clone(),
                     predicate: new_predicate,
                     aggregate: exprs,
@@ -339,6 +355,7 @@ impl ALogicalPlan {
             CsvScan {
                 path,
                 schema,
+                output_schema,
                 predicate,
                 options,
                 ..
@@ -350,6 +367,7 @@ impl ALogicalPlan {
                 CsvScan {
                     path: path.clone(),
                     schema: schema.clone(),
+                    output_schema: output_schema.clone(),
                     options: options.clone(),
                     predicate: new_predicate,
                     aggregate: exprs,

@@ -180,6 +180,7 @@ impl PredicatePushDown {
             ParquetScan {
                 path,
                 schema,
+                output_schema,
                 with_columns,
                 predicate,
                 aggregate,
@@ -191,6 +192,7 @@ impl PredicatePushDown {
                 let lp = ParquetScan {
                     path,
                     schema,
+                    output_schema,
                     with_columns,
                     predicate,
                     aggregate,
@@ -203,6 +205,7 @@ impl PredicatePushDown {
             CsvScan {
                 path,
                 schema,
+                output_schema,
                 options,
                 predicate,
                 aggregate,
@@ -212,6 +215,7 @@ impl PredicatePushDown {
                 let lp = CsvScan {
                     path,
                     schema,
+                    output_schema,
                     options,
                     predicate,
                     aggregate,

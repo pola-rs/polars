@@ -116,6 +116,7 @@ impl OptimizationRule for AggregatePushdown {
             CsvScan {
                 path,
                 schema,
+                output_schema,
                 options,
                 predicate,
                 aggregate,
@@ -126,6 +127,7 @@ impl OptimizationRule for AggregatePushdown {
                         CsvScan {
                             path,
                             schema,
+                            output_schema,
                             options,
                             predicate,
                             aggregate,
@@ -138,6 +140,7 @@ impl OptimizationRule for AggregatePushdown {
                     Some(ALogicalPlan::CsvScan {
                         path,
                         schema,
+                        output_schema,
                         options,
                         predicate,
                         aggregate,
@@ -148,6 +151,7 @@ impl OptimizationRule for AggregatePushdown {
             ParquetScan {
                 path,
                 schema,
+                output_schema,
                 with_columns,
                 predicate,
                 aggregate,
@@ -160,6 +164,7 @@ impl OptimizationRule for AggregatePushdown {
                         ParquetScan {
                             path,
                             schema,
+                            output_schema,
                             with_columns,
                             predicate,
                             aggregate,
@@ -174,6 +179,7 @@ impl OptimizationRule for AggregatePushdown {
                     Some(ALogicalPlan::ParquetScan {
                         path,
                         schema,
+                        output_schema,
                         with_columns,
                         predicate,
                         aggregate,

@@ -188,6 +188,7 @@ pub(crate) fn to_alp(
         } => ALogicalPlan::CsvScan {
             path,
             schema,
+            output_schema: None,
             options,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             aggregate: aggregate
@@ -207,6 +208,7 @@ pub(crate) fn to_alp(
         } => ALogicalPlan::ParquetScan {
             path,
             schema,
+            output_schema: None,
             with_columns,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             aggregate: aggregate
@@ -624,6 +626,7 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::CsvScan {
             path,
             schema,
+            output_schema: _,
             options,
             predicate,
             aggregate,
@@ -638,6 +641,7 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::ParquetScan {
             path,
             schema,
+            output_schema: _,
             with_columns,
             predicate,
             aggregate,

@@ -121,6 +121,7 @@ impl DefaultPlanner {
             CsvScan {
                 path,
                 schema,
+                output_schema: _,
                 options,
                 predicate,
                 aggregate,
@@ -141,6 +142,7 @@ impl DefaultPlanner {
             ParquetScan {
                 path,
                 schema,
+                output_schema: _,
                 with_columns,
                 predicate,
                 aggregate,
