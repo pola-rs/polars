@@ -96,6 +96,7 @@ impl OptimizationRule for AggScanProjection {
                 if let ALogicalPlan::ParquetScan {
                     path,
                     schema,
+                    output_schema,
                     predicate,
                     aggregate,
                     with_columns,
@@ -112,6 +113,7 @@ impl OptimizationRule for AggScanProjection {
                         let lp = ALogicalPlan::ParquetScan {
                             path,
                             schema,
+                            output_schema,
                             predicate,
                             aggregate,
                             with_columns,
@@ -125,6 +127,7 @@ impl OptimizationRule for AggScanProjection {
                     let lp = ALogicalPlan::ParquetScan {
                         path: path.clone(),
                         schema,
+                        output_schema,
                         with_columns: new_with_columns,
                         predicate,
                         aggregate,
@@ -142,6 +145,7 @@ impl OptimizationRule for AggScanProjection {
                 if let ALogicalPlan::CsvScan {
                     path,
                     schema,
+                    output_schema,
                     mut options,
                     predicate,
                     aggregate,
@@ -155,6 +159,7 @@ impl OptimizationRule for AggScanProjection {
                         let lp = ALogicalPlan::CsvScan {
                             path,
                             schema,
+                            output_schema,
                             options,
                             predicate,
                             aggregate,
@@ -166,6 +171,7 @@ impl OptimizationRule for AggScanProjection {
                     let lp = ALogicalPlan::CsvScan {
                         path: path.clone(),
                         schema,
+                        output_schema,
                         options: options.clone(),
                         predicate,
                         aggregate,

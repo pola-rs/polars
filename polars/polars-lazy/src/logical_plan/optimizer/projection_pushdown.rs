@@ -321,9 +321,20 @@ impl ProjectionPushDown {
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let output_schema = if with_columns.is_none() {
+                    None
+                } else {
+                    Some(Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*schema,
+                    )?))
+                };
+
                 let lp = ParquetScan {
                     path,
                     schema,
+                    output_schema,
                     with_columns,
                     predicate,
                     aggregate,
@@ -343,9 +354,20 @@ impl ProjectionPushDown {
             } => {
                 options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
 
+                let output_schema = if options.with_columns.is_none() {
+                    None
+                } else {
+                    Some(Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*schema,
+                    )?))
+                };
+
                 let lp = CsvScan {
                     path,
                     schema,
+                    output_schema,
                     options,
                     predicate,
                     aggregate,

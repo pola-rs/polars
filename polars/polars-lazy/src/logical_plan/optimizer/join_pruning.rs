@@ -118,6 +118,7 @@ fn combine_lp_nodes(
         #[cfg(feature = "csv-file")]
         (CsvScan {path: path_l,
             schema,
+            output_schema,
             options: options_l,
             predicate,
             aggregate,
@@ -138,6 +139,7 @@ fn combine_lp_nodes(
             Some(CsvScan {
                 path,
                 schema: schema.clone(),
+                output_schema: output_schema.clone(),
                 options: options_l,
                 predicate: *predicate,
                 aggregate: aggregate.clone(),
