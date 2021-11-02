@@ -86,6 +86,21 @@ fn add_str_to_accumulated(
     }
 }
 
+fn update_scan_schema(
+    acc_projections: &[Node],
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> Result<Schema> {
+    let mut new_fields = Vec::with_capacity(acc_projections.len());
+    for node in acc_projections.iter() {
+        for name in aexpr_to_root_names(*node, expr_arena) {
+            let field = schema.field_with_name(&*name)?;
+            new_fields.push(field.clone())
+        }
+    }
+    Ok(Schema::new(new_fields))
+}
+
 pub(crate) struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
@@ -278,13 +293,14 @@ impl ProjectionPushDown {
             }
             DataFrameScan {
                 df,
-                schema,
+                mut schema,
                 selection,
                 ..
             } => {
                 let mut projection = None;
                 if !acc_projections.is_empty() {
-                    projection = Some(acc_projections)
+                    schema = Arc::new(update_scan_schema(&acc_projections, expr_arena, &*schema)?);
+                    projection = Some(acc_projections);
                 }
                 let lp = DataFrameScan {
                     df,
@@ -326,6 +342,7 @@ impl ProjectionPushDown {
                 ..
             } => {
                 options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+
                 let lp = CsvScan {
                     path,
                     schema,

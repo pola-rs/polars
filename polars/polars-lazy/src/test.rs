@@ -2024,3 +2024,18 @@ fn test_binary_expr() -> Result<()> {
     assert_eq!(out.dtypes(), &[DataType::Float64]);
     Ok(())
 }
+
+#[test]
+fn test_drop_and_select() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .drop_columns(["A", "B"])
+        .select([col("fruits")])
+        .collect()?;
+
+    assert_eq!(out.get_column_names(), &["fruits"]);
+
+    Ok(())
+}
