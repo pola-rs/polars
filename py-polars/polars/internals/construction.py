@@ -152,10 +152,24 @@ def sequence_to_pyseries(
 
 
 def _pandas_series_to_arrow(
-    values: Union["pd.Series", "pd.DatetimeIndex"], nan_to_none: bool = True
+    values: Union["pd.Series", "pd.DatetimeIndex"],
+    nan_to_none: bool = True,
+    min_len: Optional[int] = None,
 ) -> "pa.Array":
     """
     Convert a pandas Series to an Arrow Array.
+
+    Parameters
+    ----------
+    values
+        Series to convert to arrow
+    nan_to_none
+        Interpret `NaN` as missing values
+    min_len
+        in case of null values, this length will be used to create a dummy f64 array (with all values set to null)
+
+    Returns
+    -------
     """
     dtype = values.dtype
     if dtype == "datetime64[ns]":
@@ -167,8 +181,15 @@ def _pandas_series_to_arrow(
         )
         arr = pa.compute.cast(arr, pa.int64())
         return pa.compute.cast(arr, pa.timestamp("ms"))
-    elif dtype == "object" and len(values) > 0 and isinstance(values.iloc[0], str):
-        return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
+    elif dtype == "object" and len(values) > 0:
+        if isinstance(values.iloc[0], str):
+            return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
+
+        # array is null array, we set to a float64 array
+        if values.iloc[0] is None and min_len is not None:
+            return pa.nulls(min_len, pa.float64())
+        else:
+            return pa.array(values, from_pandas=nan_to_none)
     else:
         return pa.array(values, from_pandas=nan_to_none)
 
@@ -385,8 +406,11 @@ def pandas_to_pydf(
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from a pandas DataFrame."
         )
+    len = data.shape[0]
     arrow_dict = {
-        str(col): _pandas_series_to_arrow(data[col], nan_to_none=nan_to_none)
+        str(col): _pandas_series_to_arrow(
+            data[col], nan_to_none=nan_to_none, min_len=len
+        )
         for col in data.columns
     }
     arrow_table = pa.table(arrow_dict)
