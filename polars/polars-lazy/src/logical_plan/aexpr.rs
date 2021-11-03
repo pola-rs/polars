@@ -31,8 +31,8 @@ pub enum AExpr {
     Duplicated(Node),
     Reverse(Node),
     Explode(Node),
-    Alias(Node, Arc<String>),
-    Column(Arc<String>),
+    Alias(Node, Arc<str>),
+    Column(Arc<str>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,

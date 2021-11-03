@@ -103,7 +103,7 @@ pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
 }
 
 /// output name of expr
-pub(crate) fn output_name(expr: &Expr) -> Result<Arc<String>> {
+pub(crate) fn output_name(expr: &Expr) -> Result<Arc<str>> {
     for e in expr {
         match e {
             Expr::Column(name) => return Ok(name.clone()),
@@ -126,7 +126,7 @@ pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
 
 /// This function should be used to find the name of the start of an expression
 /// Normal iteration would just return the first root column it found
-pub(crate) fn get_single_root(expr: &Expr) -> Result<Arc<String>> {
+pub(crate) fn get_single_root(expr: &Expr) -> Result<Arc<str>> {
     for e in expr {
         match e {
             Expr::Filter { input, .. } => return get_single_root(input),
@@ -143,7 +143,7 @@ pub(crate) fn get_single_root(expr: &Expr) -> Result<Arc<String>> {
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
-pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<String>> {
+pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<str>> {
     expr_to_root_column_exprs(expr)
         .into_iter()
         .map(|e| expr_to_root_column_name(&e).unwrap())
@@ -151,7 +151,7 @@ pub(crate) fn expr_to_root_column_names(expr: &Expr) -> Vec<Arc<String>> {
 }
 
 /// unpack alias(col) to name of the root column name
-pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<String>> {
+pub(crate) fn expr_to_root_column_name(expr: &Expr) -> Result<Arc<str>> {
     let mut roots = expr_to_root_column_exprs(expr);
     match roots.len() {
         0 => Err(PolarsError::ComputeError(
@@ -186,7 +186,7 @@ pub(crate) fn aexpr_to_root_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node>
 pub(crate) fn rename_aexpr_root_name(
     node: Node,
     arena: &mut Arena<AExpr>,
-    new_name: Arc<String>,
+    new_name: Arc<str>,
 ) -> Result<()> {
     let roots = aexpr_to_root_nodes(node, arena);
     match roots.len() {
@@ -216,7 +216,7 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
     out
 }
 
-pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<String>) -> Result<Expr> {
+pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<str>) -> Result<Expr> {
     let mut arena = Arena::with_capacity(32);
     let root = to_aexpr(expr.clone(), &mut arena);
     rename_aexpr_root_name(root, &mut arena, new_name)?;
@@ -261,7 +261,7 @@ pub(crate) fn try_path_to_str(path: &Path) -> Result<&str> {
     })
 }
 
-pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<String>> {
+pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
     aexpr_to_root_nodes(node, arena)
         .into_iter()
         .map(|node| aexpr_to_root_column_name(node, arena).unwrap())
@@ -269,7 +269,7 @@ pub(crate) fn aexpr_to_root_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<S
 }
 
 /// unpack alias(col) to name of the root column name
-pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Result<Arc<String>> {
+pub(crate) fn aexpr_to_root_column_name(root: Node, arena: &Arena<AExpr>) -> Result<Arc<str>> {
     let mut roots = aexpr_to_root_nodes(root, arena);
     match roots.len() {
         0 => Err(PolarsError::ComputeError(

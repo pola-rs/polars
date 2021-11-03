@@ -978,7 +978,7 @@ impl LogicalPlanBuilder {
             .iter()
             .map(|e| {
                 if let Expr::Column(name) = e {
-                    (**name).clone()
+                    (**name).to_owned()
                 } else {
                     panic!("expected column expression")
                 }
@@ -1048,7 +1048,7 @@ impl LogicalPlanBuilder {
         for f in schema_right.fields() {
             let name = f.name();
 
-            if !right_names.contains(name) {
+            if !right_names.iter().any(|s| s.as_ref() == name) {
                 if names.contains(name) {
                     let new_name = format!("{}_right", name);
                     let field = Field::new(&new_name, f.data_type().clone());

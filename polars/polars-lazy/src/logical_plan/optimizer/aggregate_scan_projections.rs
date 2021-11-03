@@ -69,7 +69,7 @@ impl AggScanProjection {
 
                 let projections = with_columns
                     .into_iter()
-                    .map(|s| expr_arena.add(AExpr::Column(Arc::new(s))))
+                    .map(|s| expr_arena.add(AExpr::Column(Arc::from(s))))
                     .collect();
 
                 lp = ALogicalPlanBuilder::new(node, expr_arena, lp_arena)

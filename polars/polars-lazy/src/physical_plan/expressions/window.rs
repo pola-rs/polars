@@ -10,8 +10,8 @@ pub struct WindowExpr {
     /// the root column that the Function will be applied on.
     /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) apply_columns: Vec<Arc<String>>,
-    pub(crate) out_name: Option<Arc<String>>,
+    pub(crate) apply_columns: Vec<Arc<str>>,
+    pub(crate) out_name: Option<Arc<str>>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
@@ -46,7 +46,7 @@ impl PhysicalExpr for WindowExpr {
         }
 
         // 2. create GroupBy object and apply aggregation
-        let apply_columns = self.apply_columns.iter().map(|s| s.as_str()).collect();
+        let apply_columns = self.apply_columns.iter().map(|s| s.as_ref()).collect();
         let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
         let out = match self.phys_function.as_agg_expr() {
@@ -83,7 +83,7 @@ impl PhysicalExpr for WindowExpr {
         if self.options.explode {
             let mut out = out_column.clone();
             if let Some(name) = &self.out_name {
-                out.rename(name.as_str());
+                out.rename(name.as_ref());
             }
             return Ok(out);
         }
@@ -104,7 +104,7 @@ impl PhysicalExpr for WindowExpr {
 
         let mut out = unsafe { out_column.take_opt_iter_unchecked(&mut iter) };
         if let Some(name) = &self.out_name {
-            out.rename(name.as_str());
+            out.rename(name.as_ref());
         }
         Ok(out)
     }

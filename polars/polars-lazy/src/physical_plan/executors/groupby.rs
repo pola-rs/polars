@@ -177,7 +177,7 @@ fn run_partitions(
 fn get_outer_agg_exprs(
     exec: &PartitionGroupByExec,
     df: &DataFrame,
-) -> Result<(Vec<(Node, Arc<String>)>, Vec<Arc<dyn PhysicalExpr>>)> {
+) -> Result<(Vec<(Node, Arc<str>)>, Vec<Arc<dyn PhysicalExpr>>)> {
     // Due to the PARTITIONED GROUPBY the column names are be changed.
     // To make sure sure we can select the columns with the new names, we re-create the physical
     // aggregations with new root column names (being the output of the partitioned aggregation)j
@@ -189,7 +189,7 @@ fn get_outer_agg_exprs(
         .iter()
         .map(|e| {
             let out_field = e.to_field(&schema, Context::Aggregation)?;
-            let out_name = Arc::new(out_field.name().clone());
+            let out_name: Arc<str> = Arc::from(out_field.name().as_str());
             let node = to_aexpr(e.clone(), &mut expr_arena);
             rename_aexpr_root_name(node, &mut expr_arena, out_name.clone())?;
             Ok((node, out_name))

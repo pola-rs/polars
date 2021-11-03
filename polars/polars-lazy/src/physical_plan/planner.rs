@@ -26,28 +26,28 @@ fn aggregate_expr_to_scan_agg(
             let mut alias = None;
             if let AExpr::Alias(e, name) = expr_arena.get(expr) {
                 expr = *e;
-                alias = Some((**name).clone())
+                alias = Some((*name).to_string())
             };
             if let AExpr::Agg(agg) = expr_arena.get(expr) {
                 match agg {
                     AAggExpr::Min(e) => ScanAggregation::Min {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).clone(),
+                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::Max(e) => ScanAggregation::Max {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).clone(),
+                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::Sum(e) => ScanAggregation::Sum {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).clone(),
+                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::First(e) => ScanAggregation::First {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).clone(),
+                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     AAggExpr::Last(e) => ScanAggregation::Last {
-                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).clone(),
+                        column: (*aexpr_to_root_names(*e, expr_arena).pop().unwrap()).to_string(),
                         alias,
                     },
                     _ => todo!(),

@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 pub struct AliasExpr {
     pub(crate) physical_expr: Arc<dyn PhysicalExpr>,
-    pub(crate) name: Arc<String>,
+    pub(crate) name: Arc<str>,
     expr: Expr,
 }
 
 impl AliasExpr {
-    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, name: Arc<String>, expr: Expr) -> Self {
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, name: Arc<str>, expr: Expr) -> Self {
         Self {
             physical_expr,
             name,

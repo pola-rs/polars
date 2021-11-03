@@ -676,7 +676,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
 
         // column names of left table
-        let mut names: HashSet<&String, RandomState> = HashSet::with_capacity_and_hasher(
+        let mut names: HashSet<&str, RandomState> = HashSet::with_capacity_and_hasher(
             schema_left.len() + schema_right.len(),
             Default::default(),
         );
@@ -684,7 +684,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let mut fields = Vec::with_capacity(schema_left.len() + schema_right.len());
 
         for f in schema_left.fields() {
-            names.insert(f.name());
+            names.insert(f.name().as_ref());
             fields.push(f.clone());
         }
 
@@ -699,8 +699,8 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
         for f in schema_right.fields() {
             let name = f.name();
-            if !right_names.contains(name) {
-                if names.contains(name) {
+            if !right_names.contains(name.as_str()) {
+                if names.contains(name.as_str()) {
                     let new_name = format!("{}_right", name);
                     let field = Field::new(&new_name, f.data_type().clone());
                     fields.push(field)
