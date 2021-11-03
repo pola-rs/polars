@@ -1,4 +1,5 @@
 use super::*;
+use polars_arrow::prelude::PolarsArray;
 
 pub trait ListBuilderTrait {
     fn append_opt_series(&mut self, opt_s: Option<&Series>);
@@ -130,7 +131,7 @@ where
         arrays.iter().for_each(|x| {
             let arr = x.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
-            if arr.null_count() == 0 {
+            if !arr.has_validity() {
                 values.extend_from_slice(arr.values().as_slice())
             } else {
                 // Safety:

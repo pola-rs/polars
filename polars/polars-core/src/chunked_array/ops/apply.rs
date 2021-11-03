@@ -4,10 +4,11 @@ use crate::utils::{CustomIterTools, NoNull};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
 use std::borrow::Cow;
 use std::convert::TryFrom;
+use polars_arrow::array::PolarsArray;
 
 macro_rules! try_apply {
     ($self:expr, $f:expr) => {{
-        if $self.null_count() == 0 {
+        if !$self.has_validity() {
             $self.into_no_null_iter().map($f).collect()
         } else {
             $self
@@ -20,7 +21,7 @@ macro_rules! try_apply {
 
 macro_rules! apply {
     ($self:expr, $f:expr) => {{
-        if $self.null_count() == 0 {
+        if !$self.has_validity() {
             $self.into_no_null_iter().map($f).collect_trusted()
         } else {
             $self
@@ -33,7 +34,7 @@ macro_rules! apply {
 
 macro_rules! apply_enumerate {
     ($self:expr, $f:expr) => {{
-        if $self.null_count() == 0 {
+        if !$self.has_validity() {
             $self
                 .into_no_null_iter()
                 .enumerate()
@@ -77,7 +78,7 @@ where
         let chunks = self
             .downcast_iter()
             .map(|array| {
-                let values = if array.null_count() == 0 {
+                let values = if !array.has_validity() {
                     let values = array.values().iter().map(|&v| f(Some(v)));
                     AlignedVec::<_>::from_trusted_len_iter(values)
                 } else {
@@ -144,7 +145,7 @@ where
     where
         F: Fn((usize, T::Native)) -> T::Native + Copy,
     {
-        if self.null_count() == 0 {
+        if !self.has_validity() {
             let ca: NoNull<_> = self
                 .into_no_null_iter()
                 .enumerate()

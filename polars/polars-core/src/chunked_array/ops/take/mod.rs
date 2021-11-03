@@ -17,6 +17,8 @@ use crate::utils::NoNull;
 
 pub use take_random::*;
 pub use traits::*;
+use polars_arrow::array::PolarsArray;
+
 mod take_every;
 pub(crate) mod take_random;
 pub(crate) mod take_single;
@@ -81,7 +83,7 @@ where
                     (_, 1) => take_primitive_unchecked::<T::Native>(chunks.next().unwrap(), array)
                         as ArrayRef,
                     _ => {
-                        return if array.null_count() == 0 {
+                        return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
                             let mut ca = take_primitive_iter_n_chunks(self, iter);
                             ca.rename(self.name());
@@ -172,7 +174,7 @@ impl ChunkTake for BooleanChunked {
                 let array = match self.chunks.len() {
                     1 => take::take(chunks.next().unwrap(), array).unwrap().into(),
                     _ => {
-                        return if array.null_count() == 0 {
+                        return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
                             let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
                             ca.rename(self.name());
@@ -256,7 +258,7 @@ impl ChunkTake for Utf8Chunked {
                 let array = match self.chunks.len() {
                     1 => take_utf8_unchecked(chunks.next().unwrap(), array) as ArrayRef,
                     _ => {
-                        return if array.null_count() == 0 {
+                        return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
                             let mut ca: Utf8Chunked = take_iter_n_chunks_unchecked!(self, iter);
                             ca.rename(self.name());
@@ -334,7 +336,7 @@ impl ChunkTake for ListChunked {
                 let array = match self.chunks.len() {
                     1 => Arc::new(take_list_unchecked(chunks.next().unwrap(), array)) as ArrayRef,
                     _ => {
-                        return if array.null_count() == 0 {
+                        return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
                             let mut ca: ListChunked = take_iter_n_chunks_unchecked!(self, iter);
                             ca.rename(self.name());
@@ -435,7 +437,7 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
                     ca
                 }
                 _ => {
-                    return if array.null_count() == 0 {
+                    return if !array.has_validity() {
                         let iter = array.values().iter().map(|i| *i as usize);
 
                         let taker = self.take_rand();

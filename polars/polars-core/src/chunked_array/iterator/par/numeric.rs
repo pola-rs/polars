@@ -635,7 +635,7 @@ where
         let chunks = self.downcast_iter();
         match chunks.len() {
             1 => {
-                if self.null_count() == 0 {
+                if !self.has_validity() {
                     NumParIterDispatcher::SingleChunk(NumParIterSingleChunkReturnOption::new(self))
                 } else {
                     NumParIterDispatcher::SingleChunkNullCheck(
@@ -644,7 +644,7 @@ where
                 }
             }
             _ => {
-                if self.null_count() == 0 {
+                if !self.has_validity() {
                     NumParIterDispatcher::ManyChunk(NumParIterManyChunkReturnOption::new(self))
                 } else {
                     NumParIterDispatcher::ManyChunkNullCheck(

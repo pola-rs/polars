@@ -17,7 +17,7 @@ where
     fn interpolate(&self) -> Self {
         // This implementation differs from pandas as that boundary None's are not removed
         // this prevents a lot of errors due to expressions leading to different lengths
-        if self.null_count() == 0 || self.null_count() == self.len() {
+        if !self.has_validity() || self.null_count() == self.len() {
             return self.clone();
         }
 

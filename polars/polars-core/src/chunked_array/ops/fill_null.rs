@@ -81,7 +81,7 @@ where
 {
     fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
         // nothing to fill
-        if self.null_count() == 0 {
+        if !self.has_validity() {
             return Ok(self.clone());
         }
         let mut ca = match strategy {
@@ -126,7 +126,7 @@ where
 impl ChunkFillNull for BooleanChunked {
     fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
         // nothing to fill
-        if self.null_count() == 0 {
+        if !self.has_validity() {
             return Ok(self.clone());
         }
         match strategy {
@@ -171,7 +171,7 @@ impl ChunkFillNullValue<bool> for BooleanChunked {
 impl ChunkFillNull for Utf8Chunked {
     fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
         // nothing to fill
-        if self.null_count() == 0 {
+        if !self.has_validity() {
             return Ok(self.clone());
         }
         match strategy {

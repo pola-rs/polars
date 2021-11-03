@@ -39,7 +39,7 @@ impl ChunkCast for CategoricalChunked {
 
                 let f = |idx: u32| mapping.get(idx);
 
-                if self.null_count() == 0 {
+                if !self.has_validity() {
                     self.into_no_null_iter()
                         .for_each(|idx| builder.append_value(f(idx)));
                 } else {

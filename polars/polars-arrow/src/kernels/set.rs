@@ -5,6 +5,7 @@ use arrow::array::*;
 use arrow::buffer::MutableBuffer;
 use arrow::{datatypes::DataType, types::NativeType};
 use std::ops::BitOr;
+use crate::prelude::PolarsArray;
 
 /// Set values in a primitive array where the primitive array has null values.
 /// this is faster because we don't have to invert and combine bitmaps
@@ -13,7 +14,7 @@ where
     T: NativeType,
 {
     let values = array.values();
-    if array.null_count() == 0 {
+    if !array.has_validity() {
         return array.clone();
     }
 

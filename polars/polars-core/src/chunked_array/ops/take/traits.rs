@@ -1,6 +1,7 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
 use crate::prelude::*;
 use arrow::array::{Array, UInt32Array};
+use polars_arrow::array::PolarsArray;
 
 // Utility traits
 pub trait TakeIterator: Iterator<Item = usize> {
@@ -96,7 +97,7 @@ where
             TakeIdx::Array(arr) => {
                 let mut inbounds = true;
                 let len = bound as u32;
-                if arr.null_count() == 0 {
+                if !arr.has_validity() {
                     for &i in arr.values().as_slice() {
                         if i >= len {
                             inbounds = false;

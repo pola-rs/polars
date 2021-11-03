@@ -142,7 +142,7 @@ where
     T: PolarsNumericType,
 {
     fn sort(&self, reverse: bool) -> ChunkedArray<T> {
-        if self.null_count() == 0 {
+        if !self.has_validity() {
             let mut vals = memcpy_values(self);
 
             sort_branch(vals.as_mut_slice(), reverse, order_default, order_reverse);
@@ -173,7 +173,7 @@ where
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        let ca: NoNull<UInt32Chunked> = if self.null_count() == 0 {
+        let ca: NoNull<UInt32Chunked> = if !self.has_validity() {
             let mut vals = Vec::with_capacity(self.len());
             let mut count: u32 = 0;
             self.downcast_iter().for_each(|arr| {

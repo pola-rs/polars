@@ -178,4 +178,4 @@ pub trait PolarsArray: Array {
     }
 }
 
-impl<A: Array> PolarsArray for A {}
+impl<A: Array + ?Sized> PolarsArray for A {}

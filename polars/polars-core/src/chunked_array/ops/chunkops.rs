@@ -112,7 +112,7 @@ where
 
             // todo! use iterators once implemented
             // no_null path
-            if self.null_count() == 0 {
+            if !self.has_validity() {
                 for arr in chunks {
                     for idx in 0..arr.len() {
                         builder.append_value(arr.value(idx).clone())

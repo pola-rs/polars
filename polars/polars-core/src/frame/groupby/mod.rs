@@ -62,7 +62,7 @@ where
 
         // use the arrays as iterators
         if ca.chunks.len() == 1 {
-            if ca.null_count() == 0 {
+            if !ca.has_validity() {
                 let keys = vec![ca.cont_slice().unwrap()];
                 groupby_threaded_num(keys, group_size_hint, n_partitions)
             } else {
@@ -73,14 +73,14 @@ where
                 groupby_threaded_num(keys, group_size_hint, n_partitions)
             }
             // use the polars-iterators
-        } else if ca.null_count() == 0 {
+        } else if !ca.has_validity() {
             let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
             groupby_threaded_num(keys, group_size_hint, n_partitions)
         } else {
             let keys = vec![ca.into_iter().collect::<Vec<_>>()];
             groupby_threaded_num(keys, group_size_hint, n_partitions)
         }
-    } else if ca.null_count() == 0 {
+    } else if !ca.has_validity() {
         groupby(ca.into_no_null_iter())
     } else {
         groupby(ca.into_iter())

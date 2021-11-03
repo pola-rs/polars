@@ -185,7 +185,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -222,7 +222,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -259,7 +259,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -298,7 +298,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let skip = 1;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -340,7 +340,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -459,7 +459,7 @@ where
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -496,7 +496,7 @@ where
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -533,7 +533,7 @@ where
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -572,7 +572,7 @@ where
         let skip = 1;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -614,7 +614,7 @@ where
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -728,7 +728,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -765,7 +765,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -802,7 +802,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -840,7 +840,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         let skip = 1;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -882,7 +882,7 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1050,7 +1050,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         match self.dtype() {
             DataType::List(dt) => {
                 let mut builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
-                if self.null_count() == 0 {
+                if !self.has_validity() {
                     let mut it = self.into_no_null_iter();
                     // use first value to get dtype and replace default builder
                     if let Some(series) = it.next() {
@@ -1118,7 +1118,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let pypolars = PyModule::import(py, "polars")?;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1178,7 +1178,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let pypolars = PyModule::import(py, "polars")?;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1240,7 +1240,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1301,7 +1301,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let pypolars = PyModule::import(py, "polars")?;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1341,7 +1341,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         let pypolars = PyModule::import(py, "polars")?;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1470,7 +1470,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1507,7 +1507,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1544,7 +1544,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1583,7 +1583,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let skip = 1;
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
@@ -1625,7 +1625,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let skip = if first_value.is_some() { 1 } else { 0 };
         if init_null_count == self.len() {
             Ok(ChunkedArray::full_null(self.name(), self.len()))
-        } else if self.null_count() == 0 {
+        } else if !self.has_validity() {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)

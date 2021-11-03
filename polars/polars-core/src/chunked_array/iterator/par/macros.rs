@@ -557,7 +557,7 @@ macro_rules! impl_into_par_iter {
                 let chunks = self.downcast_iter();
                 match chunks.len() {
                     1 => {
-                        if self.null_count() == 0 {
+                        if !self.has_validity() {
                             $dispatcher::SingleChunk(
                                 <$single_chunk_return_option>::new(self),
                             )
@@ -568,7 +568,7 @@ macro_rules! impl_into_par_iter {
                         }
                     }
                     _ => {
-                        if self.null_count() == 0 {
+                        if !self.has_validity() {
                             $dispatcher::ManyChunk(
                                 <$many_chunk_return_option>::new(self),
                             )
