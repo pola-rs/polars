@@ -14,11 +14,11 @@ lazy_static! {
             .with_stop_after_n_rows(Some(1000000))
             .finish()
             .unwrap();
-        df.may_apply("id1", |s| s.cast::<CategoricalType>())
+        df.may_apply("id1", |s| s.cast(DataType::Categorical)())
             .unwrap();
-        df.may_apply("id2", |s| s.cast::<CategoricalType>())
+        df.may_apply("id2", |s| s.cast(DataType::Categorical)())
             .unwrap();
-        df.may_apply("id3", |s| s.cast::<CategoricalType>())
+        df.may_apply("id3", |s| s.cast(DataType::Categorical)())
             .unwrap();
         df
     };
