@@ -105,7 +105,7 @@ where
         check_bounds!(self, mask);
 
         // Fast path uses the kernel in polars-arrow
-        if let (Some(value), 0) = (value, mask.null_count()) {
+        if let (Some(value), false) = (value, mask.has_validity()) {
             let (left, mask) = align_chunks_binary(self, mask);
 
             // apply binary kernel.

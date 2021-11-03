@@ -261,12 +261,8 @@ where
         ca.into_series()
     }
     fn mean_as_series(&self) -> Series {
-        if self.null_count() == self.len() {
-            Self::full_null(self.name(), 1).into_series()
-        } else {
-            let val = [self.mean()];
-            Series::new(self.name(), val)
-        }
+        let val = [self.mean()];
+        Series::new(self.name(), val)
     }
     fn median_as_series(&self) -> Series {
         let val = [self.median()];
@@ -605,6 +601,6 @@ mod test {
         // all null values case
         let ca = Float32Chunked::full_null("", 3);
         assert_eq!(ca.mean(), None);
-        assert_eq!(ca.mean_as_series().f32().unwrap().get(0), None);
+        assert_eq!(ca.mean_as_series().f64().unwrap().get(0), None);
     }
 }

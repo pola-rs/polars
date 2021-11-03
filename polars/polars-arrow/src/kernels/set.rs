@@ -1,11 +1,11 @@
 use crate::array::default_arrays::FromData;
 use crate::error::{PolarsError, Result};
 use crate::kernels::BinaryMaskedSliceIterator;
+use crate::prelude::PolarsArray;
 use arrow::array::*;
 use arrow::buffer::MutableBuffer;
 use arrow::{datatypes::DataType, types::NativeType};
 use std::ops::BitOr;
-use crate::prelude::PolarsArray;
 
 /// Set values in a primitive array where the primitive array has null values.
 /// this is faster because we don't have to invert and combine bitmaps

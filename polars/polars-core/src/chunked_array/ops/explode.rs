@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
+use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
 use std::convert::TryFrom;
@@ -37,7 +38,7 @@ where
         // value and collect the indices.
         // because the length of the array is not known, we first collect the null indexes, offsetted
         // with the insertion of empty rows (as None) and later create a validity bitmap
-        if arr.null_count() > 0 {
+        if arr.has_validity() {
             let validity_values = arr.validity().unwrap();
 
             for &o in &offsets[1..] {

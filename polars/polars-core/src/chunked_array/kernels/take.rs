@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use arrow::bitmap::MutableBitmap;
+use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::kernels::take::take_value_indices_from_list;
 use std::convert::TryFrom;
@@ -52,7 +53,8 @@ pub(crate) unsafe fn take_list_unchecked(
     let taken = taken.chunks()[0].clone();
 
     let validity =
-        if values.null_count() > 0 || indices.null_count() > 0 {
+        // if null count > 0
+        if values.has_validity() || indices.has_validity() {
             // determine null buffer, which are a function of `values` and `indices`
             let mut validity = MutableBitmap::with_capacity(indices.len());
             let validity_ptr = validity.as_slice().as_ptr() as *mut u8;

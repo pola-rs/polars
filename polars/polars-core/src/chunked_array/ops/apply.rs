@@ -2,9 +2,9 @@
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use arrow::array::{Array, ArrayRef, BooleanArray, PrimitiveArray};
+use polars_arrow::array::PolarsArray;
 use std::borrow::Cow;
 use std::convert::TryFrom;
-use polars_arrow::array::PolarsArray;
 
 macro_rules! try_apply {
     ($self:expr, $f:expr) => {{

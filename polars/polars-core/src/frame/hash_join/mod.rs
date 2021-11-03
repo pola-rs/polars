@@ -504,12 +504,12 @@ where
     let splitted_a = split_ca(a, n_threads).unwrap();
     let splitted_b = split_ca(b, n_threads).unwrap();
     match (
-        left.null_count(),
-        right.null_count(),
+        left.has_validity(),
+        right.has_validity(),
         left.chunks.len(),
         right.chunks.len(),
     ) {
-        (0, 0, 1, 1) => {
+        (false, false, 1, 1) => {
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| ca.cont_slice().unwrap())
@@ -520,7 +520,7 @@ where
                 .collect::<Vec<_>>();
             hash_join_tuples_inner(keys_a, keys_b, swap)
         }
-        (0, 0, _, _) => {
+        (false, false, _, _) => {
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
@@ -580,12 +580,12 @@ where
     let splitted_a = split_ca(left, n_threads).unwrap();
     let splitted_b = split_ca(right, n_threads).unwrap();
     match (
-        left.null_count(),
-        right.null_count(),
+        left.has_validity(),
+        right.has_validity(),
         left.chunks.len(),
         right.chunks.len(),
     ) {
-        (0, 0, 1, 1) => {
+        (false, false, 1, 1) => {
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| ca.cont_slice().unwrap())
@@ -596,7 +596,7 @@ where
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
         }
-        (0, 0, _, _) => {
+        (false, false, _, _) => {
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| ca.into_no_null_iter().collect_trusted::<Vec<_>>())
@@ -749,8 +749,8 @@ where
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
 
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
+        match (a.has_validity(), b.has_validity()) {
+            (false, false) => {
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
@@ -794,8 +794,8 @@ impl HashJoin<BooleanType> for BooleanChunked {
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
 
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
+        match (a.has_validity(), b.has_validity()) {
+            (false, false) => {
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
@@ -867,8 +867,8 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
 
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
+        match (a.has_validity(), b.has_validity()) {
+            (false, false) => {
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())

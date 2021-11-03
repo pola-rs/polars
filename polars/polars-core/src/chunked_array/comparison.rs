@@ -44,8 +44,8 @@ where
 
 macro_rules! impl_eq_missing {
     ($self:ident, $rhs:ident) => {{
-        match ($self.null_count(), $rhs.null_count()) {
-            (0, 0) => $self
+        match ($self.has_validity(), $rhs.has_validity()) {
+            (false, false) => $self
                 .into_no_null_iter()
                 .zip($rhs.into_no_null_iter())
                 .map(|(opt_a, opt_b)| opt_a == opt_b)
@@ -535,22 +535,22 @@ impl ChunkCompare<&str> for Utf8Chunked {
 
 macro_rules! impl_cmp_list {
     ($self:ident, $rhs:ident, $cmp_method:ident) => {{
-        match ($self.null_count(), $rhs.null_count()) {
-            (0, 0) => $self
+        match ($self.has_validity(), $rhs.has_validity()) {
+            (false, false) => $self
                 .into_no_null_iter()
                 .zip($rhs.into_no_null_iter())
                 .map(|(left, right)| left.$cmp_method(&right))
-                .collect(),
-            (0, _) => $self
+                .collect_trusted(),
+            (false, _) => $self
                 .into_no_null_iter()
                 .zip($rhs.into_iter())
                 .map(|(left, opt_right)| opt_right.map(|right| left.$cmp_method(&right)))
-                .collect(),
-            (_, 0) => $self
+                .collect_trusted(),
+            (_, false) => $self
                 .into_iter()
                 .zip($rhs.into_no_null_iter())
                 .map(|(opt_left, right)| opt_left.map(|left| left.$cmp_method(&right)))
-                .collect(),
+                .collect_trusted(),
             (_, _) => $self
                 .into_iter()
                 .zip($rhs.into_iter())
