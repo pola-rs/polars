@@ -6,7 +6,7 @@
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
-use arrow::array::{Array, ArrayRef};
+use arrow::array::ArrayRef;
 use arrow::compute::take::take;
 use polars_arrow::kernels::take::*;
 

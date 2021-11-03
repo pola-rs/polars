@@ -50,6 +50,7 @@ use polars_arrow::prelude::*;
 use crate::chunked_array::categorical::RevMapping;
 use crate::utils::{slice_offsets, CustomIterTools};
 use std::mem;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(not(feature = "dtype-categorical"))]
 pub struct RevMapping {}
@@ -155,6 +156,11 @@ pub struct ChunkedArray<T> {
     ///     - unset: unknown or not all arrays have at least one value
     ///     - set: all list arrays are filled (this allows for cheap explode)
     pub(crate) bit_settings: u8,
+    // lazy cached null count.
+    // if set to U64::MAX, we it is not set.
+    // we start with an unset null_count, but once its computed once, we set it.
+    // there are operations that should invalidate this, e.g. an append for instance.
+    pub(crate) null_count: AtomicU64,
 }
 
 impl<T> ChunkedArray<T> {
@@ -291,7 +297,16 @@ impl<T> ChunkedArray<T> {
     /// Count the null values.
     #[inline]
     pub fn null_count(&self) -> usize {
-        self.chunks.iter().map(|arr| arr.null_count()).sum()
+        // self.chunks.iter().map(|arr| arr.null_count()).sum()
+
+        let null_count_cached = self.null_count.load(Ordering::Relaxed);
+        if null_count_cached != u64::MAX {
+            null_count_cached as usize
+        } else {
+            let null_count = self.chunks.iter().map(|arr| arr.null_count()).sum();
+            self.null_count.store(null_count as u64, Ordering::Relaxed);
+            null_count
+        }
     }
 
     /// Take a view of top n elements
@@ -310,6 +325,7 @@ impl<T> ChunkedArray<T> {
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+        self.null_count = AtomicU64::new(u64::MAX);
         if matches!(self.dtype(), DataType::Categorical) {
             return Err(PolarsError::InvalidOperation(
                 "append_array not supported for categorical type".into(),
@@ -338,6 +354,7 @@ impl<T> ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
+            null_count: AtomicU64::new(u64::MAX),
         }
     }
 
@@ -513,6 +530,7 @@ where
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: 0,
+            null_count: AtomicU64::new(u64::MAX),
         }
     }
 }
@@ -539,6 +557,7 @@ where
             chunks: vec![arr],
             phantom: PhantomData,
             categorical_map: None,
+            null_count: AtomicU64::new(u64::MAX),
             ..Default::default()
         }
     }
@@ -620,6 +639,7 @@ impl<T> Clone for ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: self.categorical_map.clone(),
             bit_settings: self.bit_settings,
+            null_count: AtomicU64::from(self.null_count.load(Ordering::Relaxed)),
         }
     }
 }

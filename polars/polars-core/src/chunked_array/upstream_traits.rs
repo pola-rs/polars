@@ -14,6 +14,7 @@ use std::borrow::{Borrow, Cow};
 use std::collections::LinkedList;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 impl<T> Default for ChunkedArray<T> {
@@ -24,6 +25,7 @@ impl<T> Default for ChunkedArray<T> {
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: 0,
+            null_count: AtomicU64::new(u64::MAX),
         }
     }
 }
@@ -246,6 +248,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             phantom: PhantomData,
             categorical_map: None,
             bit_settings: 0,
+            null_count: AtomicU64::new(u64::MAX),
         }
     }
 }
