@@ -12,8 +12,8 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
 
     ($self:ident, $rhs:ident, $operand:tt) => {
             {
-                match ($self.null_count(), $rhs.null_count()) {
-                    (0, 0) => {
+                match ($self.has_validity(), $rhs.has_validity()) {
+                    (false, false) => {
                         let a: NoNull<ChunkedArray<_>> = $self
                         .into_no_null_iter()
                         .zip($rhs.into_no_null_iter())
@@ -21,14 +21,14 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
                         .collect();
                         a.into_inner()
                     },
-                    (0, _) => {
+                    (false, _) => {
                         $self
                         .into_no_null_iter()
                         .zip($rhs.into_iter())
                         .map(|(left, opt_right)| opt_right.map(|right| left $operand right))
-                        .collect()
+                        .collect_trusted()
                     },
-                    (_, 0) => {
+                    (_, false) => {
                         $self
                         .into_iter()
                         .zip($rhs.into_no_null_iter())
@@ -44,7 +44,7 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
                             (Some(_), None) => None,
                             (Some(left), Some(right)) => Some(left $operand right),
                         })
-                        .collect()
+                        .collect_trusted()
 
                     }
                 }
@@ -388,8 +388,8 @@ impl Add<&str> for &Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: &str) -> Self::Output {
-        match self.null_count() {
-            0 => self
+        match self.has_validity() {
+            false => self
                 .into_no_null_iter()
                 .map(|l| concat_strings(l, rhs))
                 .collect(),

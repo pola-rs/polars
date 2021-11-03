@@ -48,8 +48,8 @@ mod inner_mod {
                     check_input(options.window_size, options.min_periods)?;
                     let ca = self.rechunk();
                     let arr = ca.downcast_iter().next().unwrap();
-                    let arr = match self.null_count() {
-                        0 => rolling::no_nulls::rolling_mean(
+                    let arr = match self.has_validity() {
+                        false => rolling::no_nulls::rolling_mean(
                             arr.values(),
                             options.window_size,
                             options.min_periods,
@@ -94,8 +94,8 @@ mod inner_mod {
             }
 
             let arr = ca.downcast_iter().next().unwrap();
-            let arr = match self.null_count() {
-                0 => rolling::no_nulls::rolling_sum(
+            let arr = match self.has_validity() {
+                false => rolling::no_nulls::rolling_sum(
                     arr.values(),
                     options.window_size,
                     options.min_periods,
@@ -128,8 +128,8 @@ mod inner_mod {
             }
 
             let arr = ca.downcast_iter().next().unwrap();
-            let arr = match self.null_count() {
-                0 => rolling::no_nulls::rolling_min(
+            let arr = match self.has_validity() {
+                false => rolling::no_nulls::rolling_min(
                     arr.values(),
                     options.window_size,
                     options.min_periods,
@@ -162,8 +162,8 @@ mod inner_mod {
             }
 
             let arr = ca.downcast_iter().next().unwrap();
-            let arr = match self.null_count() {
-                0 => rolling::no_nulls::rolling_max(
+            let arr = match self.has_validity() {
+                false => rolling::no_nulls::rolling_max(
                     arr.values(),
                     options.window_size,
                     options.min_periods,
@@ -304,8 +304,8 @@ mod inner_mod {
             }
 
             let arr = ca.downcast_iter().next().unwrap();
-            let arr = match self.null_count() {
-                0 => rolling::no_nulls::rolling_var(
+            let arr = match self.has_validity() {
+                false => rolling::no_nulls::rolling_var(
                     arr.values(),
                     options.window_size,
                     options.min_periods,

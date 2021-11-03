@@ -162,8 +162,8 @@ where
 
 macro_rules! arg_unique_ca {
     ($ca:expr) => {{
-        match $ca.null_count() {
-            0 => arg_unique($ca.into_no_null_iter(), $ca.len()),
+        match $ca.has_validity() {
+            false => arg_unique($ca.into_no_null_iter(), $ca.len()),
             _ => arg_unique($ca.into_iter(), $ca.len()),
         }
     }};

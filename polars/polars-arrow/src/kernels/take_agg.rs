@@ -1,4 +1,5 @@
 //! kernels that combine take and aggregations.
+use crate::array::PolarsArray;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 
@@ -16,7 +17,7 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     f: F,
     init: T,
 ) -> T {
-    debug_assert_eq!(arr.null_count(), 0);
+    debug_assert_eq!(arr.has_validity(), false);
 
     let array_values = arr.values().as_slice();
 
@@ -39,10 +40,6 @@ pub unsafe fn take_agg_primitive_iter_unchecked<
     f: F,
     init: T,
 ) -> Option<T> {
-    if arr.null_count() == arr.len() {
-        return None;
-    }
-
     let array_values = arr.values().as_slice();
     let validity = arr.validity().expect("null buffer should be there");
 
@@ -74,10 +71,6 @@ pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
     f: F,
     init: T,
 ) -> Option<(T, u32)> {
-    if arr.null_count() == arr.len() {
-        return None;
-    }
-
     let array_values = arr.values().as_slice();
     let validity = arr.validity().expect("null buffer should be there");
 

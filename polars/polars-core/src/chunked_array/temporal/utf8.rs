@@ -103,8 +103,8 @@ impl Utf8Chunked {
             None => self.sniff_fmt_time()?,
         };
 
-        let mut ca: Int64Chunked = match self.null_count() {
-            0 => self
+        let mut ca: Int64Chunked = match self.has_validity() {
+            false => self
                 .into_no_null_iter()
                 .map(|s| {
                     NaiveTime::parse_from_str(s, fmt)
@@ -141,8 +141,8 @@ impl Utf8Chunked {
             None => self.sniff_fmt_date()?,
         };
 
-        let mut ca: Int32Chunked = match self.null_count() {
-            0 => self
+        let mut ca: Int32Chunked = match self.has_validity() {
+            false => self
                 .into_no_null_iter()
                 .map(|s| {
                     NaiveDate::parse_from_str(s, fmt)
@@ -177,8 +177,8 @@ impl Utf8Chunked {
             None => self.sniff_fmt_datetime()?,
         };
 
-        let mut ca: Int64Chunked = match self.null_count() {
-            0 => self
+        let mut ca: Int64Chunked = match self.has_validity() {
+            false => self
                 .into_no_null_iter()
                 .map(|s| {
                     NaiveDateTime::parse_from_str(s, fmt)

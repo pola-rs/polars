@@ -76,8 +76,8 @@ where
             } else if idx.len() == 1 {
                 self.get(*first as usize)
             } else {
-                match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => Some(unsafe {
+                match (self.has_validity(), self.chunks.len()) {
+                    (false, 1) => Some(unsafe {
                         take_agg_no_null_primitive_iter_unchecked(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
@@ -111,8 +111,8 @@ where
             } else if idx.len() == 1 {
                 self.get(*first as usize)
             } else {
-                match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => Some(unsafe {
+                match (self.has_validity(), self.chunks.len()) {
+                    (false, 1) => Some(unsafe {
                         take_agg_no_null_primitive_iter_unchecked(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
@@ -146,8 +146,8 @@ where
             } else if idx.len() == 1 {
                 self.get(*first as usize)
             } else {
-                match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => Some(unsafe {
+                match (self.has_validity(), self.chunks.len()) {
+                    (false, 1) => Some(unsafe {
                         take_agg_no_null_primitive_iter_unchecked(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
@@ -196,8 +196,8 @@ where
             } else if idx.len() == 1 {
                 self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
             } else {
-                match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => unsafe {
+                match (self.has_validity(), self.chunks.len()) {
+                    (false, 1) => unsafe {
                         take_agg_no_null_primitive_iter_unchecked(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
@@ -287,8 +287,8 @@ where
             } else if idx.len() == 1 {
                 self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
             } else {
-                match (self.null_count(), self.chunks.len()) {
-                    (0, 1) => unsafe {
+                match (self.has_validity(), self.chunks.len()) {
+                    (false, 1) => unsafe {
                         take_agg_no_null_primitive_iter_unchecked(
                             self.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),

@@ -29,7 +29,8 @@ impl Series {
         if self.get_data_ptr() == other.get_data_ptr() {
             return true;
         }
-        if self.len() != other.len() || self.null_count() != other.null_count() {
+        let null_count_left = self.null_count();
+        if self.len() != other.len() || null_count_left != other.null_count() {
             return false;
         }
         if self.dtype() != other.dtype()
@@ -40,7 +41,7 @@ impl Series {
             return false;
         }
         // if all null and previous check did not return (so other is also all null)
-        if self.null_count() == self.len() {
+        if null_count_left == self.len() {
             return true;
         }
         match self.eq_missing(other).sum() {
