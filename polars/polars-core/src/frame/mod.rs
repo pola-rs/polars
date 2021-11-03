@@ -37,7 +37,6 @@ use crate::vector_hasher::boost_hash_combine;
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
 use hashbrown::HashMap;
-use polars_arrow::array::PolarsArray;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::hash::{BuildHasher, Hash, Hasher};

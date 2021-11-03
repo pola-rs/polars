@@ -1,6 +1,6 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
 use crate::prelude::*;
-use arrow::array::{Array, UInt32Array};
+use arrow::array::UInt32Array;
 use polars_arrow::array::PolarsArray;
 
 // Utility traits

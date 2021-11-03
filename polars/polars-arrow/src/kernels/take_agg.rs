@@ -1,6 +1,6 @@
 //! kernels that combine take and aggregations.
 use crate::array::PolarsArray;
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
@@ -17,8 +17,7 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     f: F,
     init: T,
 ) -> T {
-    debug_assert_eq!(arr.has_validity(), false);
-
+    debug_assert!(!arr.has_validity());
     let array_values = arr.values().as_slice();
 
     indices

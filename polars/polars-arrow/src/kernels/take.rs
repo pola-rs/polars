@@ -60,8 +60,7 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
     arr: &PrimitiveArray<T>,
     indices: &UInt32Array,
 ) -> Arc<PrimitiveArray<T>> {
-    debug_assert_eq!(arr.has_validity(), false);
-
+    debug_assert!(!arr.has_validity());
     let array_values = arr.values().as_slice();
     let index_values = indices.values().as_slice();
 
@@ -87,8 +86,7 @@ pub unsafe fn take_no_null_primitive_iter_unchecked<
     arr: &PrimitiveArray<T>,
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {
-    debug_assert_eq!(arr.has_validity(), false);
-
+    debug_assert!(!arr.has_validity());
     let array_values = arr.values().as_slice();
 
     let iter = indices
@@ -189,7 +187,7 @@ pub unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &BooleanArray,
     indices: I,
 ) -> Arc<BooleanArray> {
-    debug_assert_eq!(arr.has_validity(), false);
+    debug_assert!(!arr.has_validity());
     let iter = indices
         .into_iter()
         .map(|idx| Some(arr.values().get_bit_unchecked(idx)));

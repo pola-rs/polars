@@ -14,11 +14,11 @@ lazy_static! {
             .with_stop_after_n_rows(Some(1000000))
             .finish()
             .unwrap();
-        df.may_apply("id1", |s| s.cast(DataType::Categorical)())
+        df.may_apply("id1", |s| s.cast(&DataType::Categorical))
             .unwrap();
-        df.may_apply("id2", |s| s.cast(DataType::Categorical)())
+        df.may_apply("id2", |s| s.cast(&DataType::Categorical))
             .unwrap();
-        df.may_apply("id3", |s| s.cast(DataType::Categorical)())
+        df.may_apply("id3", |s| s.cast(&DataType::Categorical))
             .unwrap();
         df
     };
@@ -129,7 +129,7 @@ fn q8(c: &mut Criterion) {
                 .sort("v3", true)
                 .groupby([col("id6")])
                 .agg([col("v3").head(Some(2)).alias("v3_top_2")])
-                .explode(&[col("v3_top_2")])
+                .explode(vec![col("v3_top_2")])
                 .collect()
                 .unwrap();
         })
