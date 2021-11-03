@@ -358,7 +358,7 @@ pub unsafe fn take_utf8_unchecked(
     let mut values_buf = AlignedVec::<u8>::with_capacity(values_capacity);
 
     // both 0 nulls
-    if arr.null_count() == 0 && indices.null_count() == 0 {
+    if !arr.has_validity() && !indices.has_validity() {
         offset_typed
             .iter_mut()
             .skip(1)
@@ -377,7 +377,7 @@ pub unsafe fn take_utf8_unchecked(
                 values_buf.extend_from_slice(s.as_bytes())
             });
         validity = None;
-    } else if arr.null_count() == 0 {
+    } else if !arr.has_validity() {
         offset_typed
             .iter_mut()
             .skip(1)
@@ -402,7 +402,7 @@ pub unsafe fn take_utf8_unchecked(
         let mut builder = MutableUtf8Array::with_capacities(data_len, length_so_far as usize);
         let validity_arr = arr.validity().expect("should have nulls");
 
-        if indices.null_count() == 0 {
+        if !indices.has_validity() {
             (0..data_len).for_each(|idx| {
                 let index = indices.value_unchecked(idx) as usize;
                 builder.push(if validity_arr.get_bit_unchecked(index) {
@@ -469,7 +469,7 @@ pub unsafe fn take_value_indices_from_list(
 
     let indices_values = indices.values();
 
-    if indices.null_count() == 0 {
+    if !indices.has_validity() {
         for i in 0..indices.len() {
             let idx = *indices_values.get_unchecked(i) as usize;
             let start = *offsets.get_unchecked(idx);

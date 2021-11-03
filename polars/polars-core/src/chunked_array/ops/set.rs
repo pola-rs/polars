@@ -59,7 +59,7 @@ where
         idx: I,
         value: Option<T::Native>,
     ) -> Result<Self> {
-        if self.null_count() == 0 {
+        if !self.has_validity() {
             if let Some(value) = value {
                 // fast path uses kernel
                 if self.chunks.len() == 1 {

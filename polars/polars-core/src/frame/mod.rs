@@ -40,6 +40,7 @@ use hashbrown::HashMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::hash::{BuildHasher, Hash, Hasher};
+use polars_arrow::array::PolarsArray;
 
 #[derive(Copy, Clone, Debug)]
 pub enum NullStrategy {
@@ -509,7 +510,7 @@ impl DataFrame {
         };
 
         // fast path for no nulls in df
-        if iter.clone().all(|s| s.null_count() == 0) {
+        if iter.clone().all(|s| !s.has_validity()) {
             return Ok(self.clone());
         }
 
@@ -1565,10 +1566,11 @@ impl DataFrame {
                         let mut s = s.as_ref().clone();
 
                         if let NullStrategy::Ignore = none_strategy {
-                            if acc.null_count() != 0 {
+                            // if has nulls
+                            if acc.has_validity() {
                                 acc = acc.fill_null(FillNullStrategy::Zero)?;
                             }
-                            if s.null_count() != 0 {
+                            if s.has_validity() {
                                 s = s.fill_null(FillNullStrategy::Zero)?;
                             }
                         }

@@ -1329,6 +1329,14 @@ class Series:
         """
         return self._s.null_count()
 
+
+    def has_validity(self) -> bool:
+        """
+        Returns True if the Series has a validity bitmask. If there is none, it means that there are no null values.
+        Use this to swiftly assert a Series does not have null values.
+        """
+        return self._s.has_validity()
+
     def is_null(self) -> "Series":
         """
         Get mask of null values.
@@ -1801,7 +1809,7 @@ class Series:
 
         """
         if not ignore_nulls:
-            assert self.null_count() == 0
+            assert not self.has_validity()
 
         ptr_type = dtype_to_ctype(self.dtype)
         ptr = self._s.as_single_ptr()
@@ -1884,7 +1892,7 @@ class Series:
                 *args, zero_copy_only=zero_copy_only, **kwargs
             )
         else:
-            if self.null_count() == 0:
+            if not self.has_validity():
                 return self.view(ignore_nulls=True)
             return self._s.to_numpy()
 

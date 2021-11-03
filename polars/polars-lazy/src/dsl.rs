@@ -1137,7 +1137,7 @@ impl Expr {
             self,
             fill_value,
             |a, b| {
-                if a.null_count() == 0 {
+                if !a.has_validity() {
                     Ok(a)
                 } else {
                     let st = get_supertype(a.dtype(), b.dtype())?;

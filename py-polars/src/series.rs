@@ -507,6 +507,10 @@ impl PySeries {
         Ok(self.series.null_count())
     }
 
+    pub fn has_validity(&self) -> bool {
+        self.series.has_validity()
+    }
+
     pub fn is_null(&self) -> PySeries {
         Self::new(self.series.is_null().into_series())
     }

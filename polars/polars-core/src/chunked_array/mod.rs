@@ -285,7 +285,7 @@ impl<T> ChunkedArray<T> {
 
     /// Returns true if contains a single chunk and has no null values
     pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && self.null_count() == 0
+        self.chunks.len() == 1 && !self.has_validity()
     }
 
     /// Count the null values.
@@ -378,7 +378,7 @@ impl<T> ChunkedArray<T> {
 
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
-        if self.null_count() == 0 {
+        if !self.has_validity() {
             return BooleanChunked::full("is_null", false, self.len());
         }
         let chunks = self
@@ -397,7 +397,7 @@ impl<T> ChunkedArray<T> {
 
     /// Get a mask of the valid values.
     pub fn is_not_null(&self) -> BooleanChunked {
-        if self.null_count() == 0 {
+        if !self.has_validity() {
             return BooleanChunked::full("is_not_null", true, self.len());
         }
         let chunks = self
@@ -579,7 +579,7 @@ where
 {
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
-        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
+        if self.chunks.len() == 1 && !self.chunks[0].has_validity() {
             Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
         } else {
             Err(PolarsError::NoSlice)

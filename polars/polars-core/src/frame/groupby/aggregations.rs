@@ -48,7 +48,7 @@ where
             debug_assert!(idx.len() <= self.len());
             if idx.is_empty() {
                 None
-            } else if self.null_count() == 0 {
+            } else if !self.has_validity() {
                 Some(idx.len() as u32)
             } else {
                 let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };

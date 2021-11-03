@@ -22,7 +22,7 @@ impl Utf8Chunked {
     pub fn contains(&self, pat: &str) -> Result<BooleanChunked> {
         let reg = Regex::new(pat)?;
         let f = |s| reg.is_match(s);
-        let mut ca: BooleanChunked = if self.null_count() == 0 {
+        let mut ca: BooleanChunked = if !self.has_validity() {
             self.into_no_null_iter().map(f).collect()
         } else {
             self.into_iter().map(|opt_s| opt_s.map(f)).collect()
