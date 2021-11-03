@@ -1329,7 +1329,6 @@ class Series:
         """
         return self._s.null_count()
 
-
     def has_validity(self) -> bool:
         """
         Returns True if the Series has a validity bitmask. If there is none, it means that there are no null values.
