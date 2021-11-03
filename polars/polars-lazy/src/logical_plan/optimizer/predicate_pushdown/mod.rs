@@ -32,7 +32,7 @@ impl PredicatePushDown {
     fn finish_at_leaf(
         &self,
         lp: ALogicalPlan,
-        acc_predicates: PlHashMap<Arc<String>, Node>,
+        acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> ALogicalPlan {
@@ -49,7 +49,7 @@ impl PredicatePushDown {
     fn pushdown_and_assign(
         &self,
         input: Node,
-        acc_predicates: PlHashMap<Arc<String>, Node>,
+        acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<()> {
@@ -73,7 +73,7 @@ impl PredicatePushDown {
     fn push_down(
         &self,
         logical_plan: ALogicalPlan,
-        mut acc_predicates: PlHashMap<Arc<String>, Node>,
+        mut acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<ALogicalPlan> {
@@ -142,9 +142,11 @@ impl PredicatePushDown {
                 schema,
             } => {
                 // predicates that will be done at this level
-                let condition = |name: Arc<String>| {
+                let condition = |name: Arc<str>| {
                     let name = &*name;
-                    name == "variable" || name == "value" || value_vars.contains(name)
+                    name == "variable"
+                        || name == "value"
+                        || value_vars.iter().any(|s| s.as_str() == name)
                 };
                 let local_predicates =
                     transfer_to_local(expr_arena, &mut acc_predicates, condition);
@@ -223,7 +225,7 @@ impl PredicatePushDown {
                 Ok(lp)
             }
             Explode { input, columns } => {
-                let condition = |name: Arc<String>| columns.contains(&*name);
+                let condition = |name: Arc<str>| columns.iter().any(|s| s.as_str() == &*name);
                 let local_predicates =
                     transfer_to_local(expr_arena, &mut acc_predicates, condition);
 
@@ -492,11 +494,11 @@ mod test {
         let predicate = to_aexpr(predicate_expr.clone(), &mut expr_arena);
         insert_and_combine_predicate(
             &mut acc_predicates,
-            Arc::new("foo".into()),
+            Arc::from("foo"),
             predicate,
             &mut expr_arena,
         );
-        let root = *acc_predicates.get(&String::from("foo")).unwrap();
+        let root = *acc_predicates.get("foo").unwrap();
         let expr = node_to_exp(root, &expr_arena);
         assert_eq!(
             format!("{:?}", &expr),

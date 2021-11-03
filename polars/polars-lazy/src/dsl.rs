@@ -245,8 +245,8 @@ impl From<AggExpr> for Expr {
 /// Queries consists of multiple expressions.
 #[derive(Clone, PartialEq)]
 pub enum Expr {
-    Alias(Box<Expr>, Arc<String>),
-    Column(Arc<String>),
+    Alias(Box<Expr>, Arc<str>),
+    Column(Arc<str>),
     Columns(Vec<String>),
     DtypeColumn(Vec<DataType>),
     Literal(LiteralValue),
@@ -328,7 +328,7 @@ pub enum Expr {
         output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
     },
     /// Can be used in a select statement to exclude a column from selection
-    Exclude(Box<Expr>, Vec<Arc<String>>),
+    Exclude(Box<Expr>, Vec<Arc<str>>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
     SufPreFix {
@@ -641,7 +641,7 @@ impl Expr {
 
     /// Rename Column.
     pub fn alias(self, name: &str) -> Expr {
-        Expr::Alias(Box::new(self), Arc::new(name.into()))
+        Expr::Alias(Box::new(self), Arc::from(name))
     }
 
     /// Run is_null operation on `Expr`.
@@ -1433,7 +1433,7 @@ impl Expr {
         let v = columns
             .to_selection_vec()
             .iter()
-            .map(|s| Arc::new(s.to_string()))
+            .map(|s| Arc::from(*s))
             .collect();
         Expr::Exclude(Box::new(self), v)
     }
@@ -1668,7 +1668,7 @@ impl Expr {
 pub fn col(name: &str) -> Expr {
     match name {
         "*" => Expr::Wildcard,
-        _ => Expr::Column(Arc::new(name.to_owned())),
+        _ => Expr::Column(Arc::from(name)),
     }
 }
 

@@ -24,8 +24,8 @@ impl Dsl for Node {
 
 /// Don't overwrite predicates but combine them.
 pub(super) fn insert_and_combine_predicate(
-    acc_predicates: &mut PlHashMap<Arc<String>, Node>,
-    name: Arc<String>,
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
+    name: Arc<str>,
     predicate: Node,
     arena: &mut Arena<AExpr>,
 ) {
@@ -61,7 +61,7 @@ where
 }
 
 pub(super) fn predicate_at_scan(
-    acc_predicates: PlHashMap<Arc<String>, Node>,
+    acc_predicates: PlHashMap<Arc<str>, Node>,
     predicate: Option<Node>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
@@ -78,7 +78,7 @@ pub(super) fn predicate_at_scan(
 }
 
 /// Determine the hashmap key by combining all the root column names of a predicate
-pub(super) fn roots_to_key(roots: &[Arc<String>]) -> Arc<String> {
+pub(super) fn roots_to_key(roots: &[Arc<str>]) -> Arc<str> {
     if roots.len() == 1 {
         roots[0].clone()
     } else {
@@ -86,7 +86,7 @@ pub(super) fn roots_to_key(roots: &[Arc<String>]) -> Arc<String> {
         for name in roots {
             new.push_str(name);
         }
-        Arc::new(new)
+        Arc::from(new)
     }
 }
 
@@ -94,14 +94,14 @@ pub(super) fn get_insertion_name(
     expr_arena: &Arena<AExpr>,
     predicate: Node,
     schema: &Schema,
-) -> Arc<String> {
-    Arc::new(
+) -> Arc<str> {
+    Arc::from(
         expr_arena
             .get(predicate)
             .to_field(schema, Context::Default, expr_arena)
             .unwrap()
             .name()
-            .clone(),
+            .as_ref(),
     )
 }
 
@@ -139,7 +139,7 @@ pub(super) fn is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> boo
 pub(super) fn rewrite_projection_node(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
-    acc_predicates: &mut PlHashMap<Arc<String>, Node>,
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
     expr: Vec<Node>,
     input: Node,
 ) -> (Vec<Node>, Vec<Node>)
@@ -237,7 +237,7 @@ pub(super) fn no_pushdown_preds<F>(
     matches: F,
     // predicates that will be filtered at this node in the LP
     local_predicates: &mut Vec<Node>,
-    acc_predicates: &mut PlHashMap<Arc<String>, Node>,
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
 ) where
     F: Fn(&AExpr) -> bool,
 {
@@ -246,7 +246,7 @@ pub(super) fn no_pushdown_preds<F>(
         // columns that are projected. We check if we can push down the predicates past this projection
         let columns = aexpr_to_root_names(node, arena);
 
-        let condition = |name: Arc<String>| columns.contains(&name);
+        let condition = |name: Arc<str>| columns.contains(&name);
         local_predicates.extend(transfer_to_local(arena, acc_predicates, condition));
     }
 }
@@ -255,11 +255,11 @@ pub(super) fn no_pushdown_preds<F>(
 /// to a local_predicates vec based on a condition.
 pub(super) fn transfer_to_local<F>(
     expr_arena: &Arena<AExpr>,
-    acc_predicates: &mut PlHashMap<Arc<String>, Node>,
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
     mut condition: F,
 ) -> Vec<Node>
 where
-    F: FnMut(Arc<String>) -> bool,
+    F: FnMut(Arc<str>) -> bool,
 {
     let mut remove_keys = Vec::with_capacity(acc_predicates.len());
 

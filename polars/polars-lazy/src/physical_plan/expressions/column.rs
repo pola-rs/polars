@@ -5,10 +5,10 @@ use polars_core::prelude::*;
 use std::borrow::Cow;
 use std::sync::Arc;
 
-pub struct ColumnExpr(Arc<String>, Expr);
+pub struct ColumnExpr(Arc<str>, Expr);
 
 impl ColumnExpr {
-    pub fn new(name: Arc<String>, expr: Expr) -> Self {
+    pub fn new(name: Arc<str>, expr: Expr) -> Self {
         Self(name, expr)
     }
 }
@@ -18,7 +18,7 @@ impl PhysicalExpr for ColumnExpr {
         &self.1
     }
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
-        let column = match &**self.0 {
+        let column = match &*self.0 {
             "" => df.select_at_idx(0).ok_or_else(|| {
                 PolarsError::NoData("could not select a column from an empty DataFrame".into())
             })?,

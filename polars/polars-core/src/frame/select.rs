@@ -35,9 +35,9 @@ pub trait AsRefPolars<T: ?Sized> {
     fn as_ref_p(&self) -> &T;
 }
 
-impl AsRefPolars<str> for std::sync::Arc<String> {
+impl AsRefPolars<str> for std::sync::Arc<str> {
     fn as_ref_p(&self) -> &str {
-        &**self
+        &*self
     }
 }
 

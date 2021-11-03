@@ -6,7 +6,7 @@ use polars_core::{datatypes::PlHashSet, prelude::*};
 fn init_vec() -> Vec<Node> {
     Vec::with_capacity(100)
 }
-fn init_set() -> PlHashSet<Arc<String>> {
+fn init_set() -> PlHashSet<Arc<str>> {
     PlHashSet::with_capacity(32)
 }
 
@@ -21,7 +21,7 @@ fn get_scan_columns(
         let mut columns = Vec::with_capacity(acc_projections.len());
         for expr in acc_projections {
             for name in aexpr_to_root_names(*expr, expr_arena) {
-                columns.push((*name).clone())
+                columns.push((*name).to_owned())
             }
         }
         with_columns = Some(columns);
@@ -38,7 +38,7 @@ fn split_acc_projections(
     acc_projections: Vec<Node>,
     down_schema: &Schema,
     expr_arena: &mut Arena<AExpr>,
-) -> (Vec<Node>, Vec<Node>, PlHashSet<Arc<String>>) {
+) -> (Vec<Node>, Vec<Node>, PlHashSet<Arc<str>>) {
     // If node above has as many columns as the projection there is nothing to pushdown.
     if down_schema.fields().len() == acc_projections.len() {
         let local_projections = acc_projections;
@@ -61,7 +61,7 @@ fn split_acc_projections(
 fn add_expr_to_accumulated(
     expr: Node,
     acc_projections: &mut Vec<Node>,
-    projected_names: &mut PlHashSet<Arc<String>>,
+    projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
 ) {
     for root_node in aexpr_to_root_nodes(expr, expr_arena) {
@@ -76,12 +76,12 @@ fn add_expr_to_accumulated(
 fn add_str_to_accumulated(
     name: &str,
     acc_projections: &mut Vec<Node>,
-    projected_names: &mut PlHashSet<Arc<String>>,
+    projected_names: &mut PlHashSet<Arc<str>>,
     expr_arena: &mut Arena<AExpr>,
 ) {
     // if empty: all columns are already projected.
     if !acc_projections.is_empty() {
-        let node = expr_arena.add(AExpr::Column(Arc::new(name.to_string())));
+        let node = expr_arena.add(AExpr::Column(Arc::from(name)));
         add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
     }
 }
@@ -124,8 +124,8 @@ impl ProjectionPushDown {
         proj: Node,
         pushdown_left: &mut Vec<Node>,
         pushdown_right: &mut Vec<Node>,
-        names_left: &mut PlHashSet<Arc<String>>,
-        names_right: &mut PlHashSet<Arc<String>>,
+        names_left: &mut PlHashSet<Arc<str>>,
+        names_right: &mut PlHashSet<Arc<str>>,
         expr_arena: &mut Arena<AExpr>,
     ) -> bool {
         let mut pushed_at_least_one = false;
@@ -155,7 +155,7 @@ impl ProjectionPushDown {
         &self,
         input: Node,
         acc_projections: Vec<Node>,
-        names: PlHashSet<Arc<String>>,
+        names: PlHashSet<Arc<str>>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
@@ -188,7 +188,7 @@ impl ProjectionPushDown {
         &self,
         logical_plan: ALogicalPlan,
         mut acc_projections: Vec<Node>,
-        mut projected_names: PlHashSet<Arc<String>>,
+        mut projected_names: PlHashSet<Arc<str>>,
         projections_seen: usize,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
@@ -675,16 +675,16 @@ impl ProjectionPushDown {
                                     .split_at(root_column_name.len() - suffix.len());
 
                                 let downwards_name_column =
-                                    expr_arena.add(AExpr::Column(Arc::new(downwards_name.into())));
+                                    expr_arena.add(AExpr::Column(Arc::from(downwards_name)));
                                 // project downwards and locally immediately alias to prevent wrong projections
-                                if names_right.insert(Arc::new(downwards_name.to_string())) {
+                                if names_right.insert(Arc::from(downwards_name)) {
                                     pushdown_right.push(downwards_name_column);
                                 }
 
                                 // locally we project and alias
                                 let projection = expr_arena.add(AExpr::Alias(
                                     downwards_name_column,
-                                    Arc::new(format!("{}{}", downwards_name, suffix)),
+                                    Arc::from(format!("{}{}", downwards_name, suffix)),
                                 ));
                                 local_projection.push(projection);
                             }
