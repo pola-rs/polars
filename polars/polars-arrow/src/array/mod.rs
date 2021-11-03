@@ -1,7 +1,7 @@
 pub mod default_arrays;
 
 use crate::utils::CustomIterTools;
-use arrow::array::{ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::MutableBuffer;
 use arrow::datatypes::DataType;
@@ -171,3 +171,11 @@ pub trait ListFromIter {
     }
 }
 impl ListFromIter for ListArray<i64> {}
+
+pub trait PolarsArray: Array {
+    fn has_validity(&self) -> bool {
+        self.validity().is_some()
+    }
+}
+
+impl<A: Array> PolarsArray for A {}

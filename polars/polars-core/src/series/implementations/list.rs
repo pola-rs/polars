@@ -244,6 +244,10 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.null_count()
     }
 
+    fn has_validity(&self) -> bool {
+        self.0.has_validity()
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }

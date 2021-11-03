@@ -141,7 +141,7 @@ where
         if self.chunks.len() == 1 {
             let arr = chunks.next().unwrap();
 
-            if self.null_count() == 0 {
+            if !self.has_validity() {
                 let t = NumTakeRandomCont {
                     slice: arr.values(),
                 };

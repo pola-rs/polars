@@ -677,6 +677,10 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
+    /// Return if any the chunks in this `[ChunkedArray]` have a validity bitmap.
+    /// no bitmap means no null values.
+    fn has_validity(&self) -> bool;
+
     /// Get unique values in the Series.
     fn unique(&self) -> Result<Series> {
         invalid_operation!(self)
