@@ -180,14 +180,14 @@ impl<T> ChunkedArray<T> {
     /// Get the index of the first non null value in this ChunkedArray.
     pub fn first_non_null(&self) -> Option<usize> {
         let mut offset = 0;
-        for (_, null_bitmap) in self.null_bits() {
-            if let Some(null_bitmap) = null_bitmap {
-                for (idx, is_valid) in null_bitmap.iter().enumerate() {
+        for validity in self.iter_validities() {
+            if let Some(validity) = validity {
+                for (idx, is_valid) in validity.iter().enumerate() {
                     if is_valid {
                         return Some(offset + idx);
                     }
                 }
-                offset += null_bitmap.len()
+                offset += validity.len()
             } else {
                 return Some(offset);
             }
@@ -196,10 +196,8 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Get the buffer of bits representing null values
-    pub fn null_bits(&self) -> impl Iterator<Item = (usize, Option<&Bitmap>)> + '_ {
-        self.chunks
-            .iter()
-            .map(|arr| (arr.null_count(), arr.validity()))
+    pub fn iter_validities(&self) -> impl Iterator<Item = Option<&Bitmap>> + '_ {
+        self.chunks.iter().map(|arr| arr.validity())
     }
 
     /// Shrink the capacity of this array to fit it's length.

@@ -60,8 +60,8 @@ where
     {
         let chunks = self
             .data_views()
-            .zip(self.null_bits())
-            .map(|(slice, (_, validity))| {
+            .zip(self.iter_validities())
+            .map(|(slice, validity)| {
                 let values = AlignedVec::<_>::from_trusted_len_iter(slice.iter().map(|&v| f(v)));
                 to_array::<S>(values, validity.cloned())
             })
@@ -97,8 +97,8 @@ where
         let chunks = self
             .data_views()
             .into_iter()
-            .zip(self.null_bits())
-            .map(|(slice, (_, validity))| {
+            .zip(self.iter_validities())
+            .map(|(slice, validity)| {
                 let values = slice.iter().copied().map(f);
                 let values = AlignedVec::<_>::from_trusted_len_iter(values);
                 to_array::<T>(values, validity.cloned())
@@ -114,8 +114,8 @@ where
         let mut ca: ChunkedArray<T> = self
             .data_views()
             .into_iter()
-            .zip(self.null_bits())
-            .map(|(slice, (_null_count, validity))| {
+            .zip(self.iter_validities())
+            .map(|(slice, validity)| {
                 let vec: Result<AlignedVec<_>> = slice.iter().copied().map(f).collect();
                 Ok((vec?, validity.cloned()))
             })
