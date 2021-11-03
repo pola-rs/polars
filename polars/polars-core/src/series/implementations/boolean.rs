@@ -322,6 +322,10 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.null_count()
     }
 
+    fn has_validity(&self) -> bool {
+        self.0.has_validity()
+    }
+
     fn unique(&self) -> Result<Series> {
         ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
     }

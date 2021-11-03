@@ -185,6 +185,10 @@ where
         ObjectChunked::null_count(&self.0)
     }
 
+    fn has_validity(&self) -> bool {
+        ObjectChunked::has_validity(&self.0)
+    }
+
     fn unique(&self) -> Result<Series> {
         ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
     }

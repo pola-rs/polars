@@ -196,8 +196,16 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Get the buffer of bits representing null values
+    #[inline]
     pub fn iter_validities(&self) -> impl Iterator<Item = Option<&Bitmap>> + '_ {
         self.chunks.iter().map(|arr| arr.validity())
+    }
+
+    #[inline]
+    /// Return if any the chunks in this `[ChunkedArray]` have a validity bitmap.
+    /// no bitmap means no null values.
+    pub fn has_validity(&self) -> bool {
+        self.iter_validities().any(|valid| valid.is_some())
     }
 
     /// Shrink the capacity of this array to fit it's length.
