@@ -352,7 +352,7 @@ class DataFrame:
     @staticmethod
     def read_csv(
         file: Union[str, BinaryIO, bytes],
-        infer_schema_length: int = 100,
+        infer_schema_length: Optional[int] = 100,
         batch_size: int = 64,
         has_headers: bool = True,
         ignore_errors: bool = False,
@@ -379,7 +379,8 @@ class DataFrame:
         file
             Path to a file or a file like object. Any valid filepath can be used. Example: `file.csv`.
         infer_schema_length
-            Maximum number of lines to read to infer schema.
+            Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
+            If set to `None`, a full table scan will be done (slow).
         batch_size
             Number of lines to read into the buffer at once. Modify this to change performance.
         has_headers
