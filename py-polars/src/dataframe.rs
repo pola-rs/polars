@@ -80,7 +80,7 @@ impl PyDataFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn read_csv(
         py_f: &PyAny,
-        infer_schema_length: usize,
+        infer_schema_length: Option<usize>,
         chunk_size: usize,
         has_header: bool,
         ignore_errors: bool,
@@ -147,7 +147,7 @@ impl PyDataFrame {
 
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         let df = CsvReader::new(mmap_bytes_r)
-            .infer_schema(Some(infer_schema_length))
+            .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_stop_after_n_rows(stop_after_n_rows)
             .with_delimiter(sep.as_bytes()[0])

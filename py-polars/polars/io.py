@@ -145,7 +145,7 @@ def update_columns(df: "pl.DataFrame", new_columns: List[str]) -> "pl.DataFrame"
 
 def read_csv(
     file: Union[str, TextIO, Path, BinaryIO, bytes],
-    infer_schema_length: int = 100,
+    infer_schema_length: Optional[int] = 100,
     batch_size: int = 8192,
     has_headers: bool = True,
     ignore_errors: bool = False,
@@ -181,7 +181,8 @@ def read_csv(
         or ``StringIO`` or ``BytesIO``.
         If ``fsspec`` is installed, it will be used to open remote files
     infer_schema_length
-        Maximum number of lines to read to infer schema.
+        Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
+        If set to `None`, a full table scan will be done (slow).
     batch_size
         Number of lines to read into the buffer at once. Modify this to change performance.
     has_headers
