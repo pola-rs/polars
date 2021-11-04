@@ -117,3 +117,47 @@ impl DataFrame {
         Ok(ndarr)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_ndarray_from_ca() -> Result<()> {
+        let ca = Float64Chunked::new_from_slice("", &[1.0, 2.0, 3.0]);
+        let ndarr = ca.to_ndarray()?;
+        assert_eq!(ndarr, ArrayView1::from(&[1.0, 2.0, 3.0]));
+
+        let mut builder = ListPrimitiveChunkedBuilder::new("", 10, 10, DataType::Float64);
+        builder.append_slice(Some(&[1.0, 2.0, 3.0]));
+        builder.append_slice(Some(&[2.0, 4.0, 5.0]));
+        builder.append_slice(Some(&[6.0, 7.0, 8.0]));
+        let list = builder.finish();
+
+        let ndarr = list.to_ndarray::<Float64Type>()?;
+        let expected = array![[1.0, 2.0, 3.0], [2.0, 4.0, 5.0], [6.0, 7.0, 8.0]];
+        assert_eq!(ndarr, expected);
+
+        // test list array that is not square
+        let mut builder = ListPrimitiveChunkedBuilder::new("", 10, 10, DataType::Float64);
+        builder.append_slice(Some(&[1.0, 2.0, 3.0]));
+        builder.append_slice(Some(&[2.0]));
+        builder.append_slice(Some(&[6.0, 7.0, 8.0]));
+        let list = builder.finish();
+        assert!(list.to_ndarray::<Float64Type>().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_ndarray_from_df() -> Result<()> {
+        let df = df!["a"=> [1.0, 2.0, 3.0],
+            "b" => [2.0, 3.0, 4.0]
+        ]?;
+
+        let ndarr = df.to_ndarray::<Float64Type>()?;
+        let expected = array![[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]];
+        assert_eq!(ndarr, expected);
+
+        Ok(())
+    }
+}
