@@ -770,6 +770,7 @@ impl LogicalPlanBuilder {
         comment_char: Option<u8>,
         quote_char: Option<u8>,
         null_values: Option<NullValues>,
+        infer_schema_length: Option<usize>,
     ) -> Self {
         let path = path.into();
         let mut file = std::fs::File::open(&path).expect("could not open file");
@@ -779,7 +780,7 @@ impl LogicalPlanBuilder {
             let (schema, _) = infer_file_schema(
                 &reader_bytes,
                 delimiter,
-                Some(100),
+                infer_schema_length,
                 has_header,
                 schema_overwrite,
                 &mut skip_rows,

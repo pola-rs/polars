@@ -99,6 +99,7 @@ impl PyLazyFrame {
         comment_char: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
+        infer_schema_length: Option<usize>
     ) -> Self {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -118,6 +119,7 @@ impl PyLazyFrame {
         });
 
         LazyCsvReader::new(path)
+            .with_infer_schema_length(infer_schema_length)
             .with_delimiter(delimiter)
             .has_header(has_header)
             .with_ignore_parser_errors(ignore_errors)

@@ -47,6 +47,7 @@ class LazyFrame:
     @staticmethod
     def scan_csv(
         file: str,
+        infer_schema_length: Optional[int] = 100,
         has_headers: bool = True,
         ignore_errors: bool = False,
         sep: str = ",",
@@ -83,6 +84,7 @@ class LazyFrame:
             comment_char,
             quote_char,
             processed_null_values,
+            infer_schema_length,
         )
         return self
 

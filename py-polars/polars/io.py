@@ -396,6 +396,7 @@ def read_csv(
 
 def scan_csv(
     file: Union[str, Path],
+    infer_schema_length: Optional[int] = 100,
     has_headers: bool = True,
     ignore_errors: bool = False,
     sep: str = ",",
@@ -462,6 +463,7 @@ def scan_csv(
         comment_char=comment_char,
         quote_char=quote_char,
         null_values=null_values,
+        infer_schema_length=infer_schema_length,
     )
 
 
