@@ -1694,7 +1694,8 @@ class Series:
         <class 'list'>
 
         """
-        if self.dtype != Object:
+        # maybe we should not use pyarrow at all.
+        if (self.dtype != Object) and _PYARROW_AVAILABLE:
             return self.to_arrow().to_pylist()
         return self._s.to_list()
 
