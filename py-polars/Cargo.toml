@@ -75,6 +75,7 @@ features = [
     "arange",
     "true_div",
     "dtype-categorical",
+    "diagonal_concat"
 ]
 
 #[patch.crates-io]

@@ -94,6 +94,7 @@ diff = ["polars-core/diff", "polars-lazy/diff"]
 moment = ["polars-core/moment", "polars-lazy/moment"]
 arange = ["polars-lazy/arange"]
 true_div = ["polars-lazy/true_div"]
+diagonal_concat = ["polars-core/diagonal_concat"]
 
 # don't use this
 private = ["polars-lazy/private"]

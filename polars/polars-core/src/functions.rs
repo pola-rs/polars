@@ -5,6 +5,10 @@
 #[cfg(feature = "sort_multiple")]
 use crate::chunked_array::ops::sort::prepare_argsort;
 use crate::prelude::*;
+#[cfg(feature = "diagonal_concat")]
+use crate::utils::concat_df;
+#[cfg(feature = "diagonal_concat")]
+use ahash::AHashSet;
 use arrow::compute;
 use arrow::types::simd::Simd;
 use num::{Float, NumCast};
@@ -86,6 +90,7 @@ impl<'a> IterBroadCast<'a> {
 /// The concatenated strings are separated by a `delimiter`.
 /// If no `delimiter` is needed, an empty &str should be passed as argument.
 #[cfg(feature = "concat_str")]
+#[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
     if s.is_empty() {
         return Err(PolarsError::NoData(
@@ -155,6 +160,42 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
     Ok(builder.finish())
 }
 
+/// Concat `[DataFrame]`s diagonally.
+#[cfg(feature = "diagonal_concat")]
+#[cfg_attr(docsrs, doc(cfg(feature = "diagonal_concat")))]
+pub fn diag_concat_df(dfs: &[DataFrame]) -> Result<DataFrame> {
+    let upper_bound_width = dfs.iter().map(|df| df.width()).sum();
+    let mut column_names = AHashSet::with_capacity(upper_bound_width);
+    let mut schema = Vec::with_capacity(upper_bound_width);
+
+    for df in dfs {
+        df.get_columns().iter().for_each(|s| {
+            let name = s.name();
+            if column_names.insert(name) {
+                schema.push((name, s.dtype()))
+            }
+        });
+    }
+
+    let dfs = dfs
+        .iter()
+        .map(|df| {
+            let height = df.height();
+            let mut columns = Vec::with_capacity(schema.len());
+
+            for (name, dtype) in &schema {
+                match df.column(name).ok() {
+                    Some(s) => columns.push(s.clone()),
+                    None => columns.push(Series::full_null(name, height, dtype)),
+                }
+            }
+            DataFrame::new_no_checks(columns)
+        })
+        .collect::<Vec<_>>();
+
+    concat_df(&dfs)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -182,5 +223,38 @@ mod test {
             Vec::from(&out),
             &[Some("foo_spam_literal"), Some("bar_ham_literal")]
         );
+    }
+
+    #[test]
+    #[cfg(feature = "diagonal_concat")]
+    fn test_diag_concat() -> Result<()> {
+        let a = df![
+            "a" => [1, 2],
+            "b" => ["a", "b"]
+        ]?;
+
+        let b = df![
+            "b" => ["a", "b"],
+            "c" => [1, 2]
+        ]?;
+
+        let c = df![
+            "a" => [5, 7],
+            "c" => [1, 2],
+            "d" => [1, 2]
+        ]?;
+
+        let out = diag_concat_df(&[a, b, c])?;
+
+        let expected = df![
+            "a" => [Some(1), Some(2), None, None, Some(5), Some(7)],
+            "b" => [Some("a"), Some("b"), Some("a"), Some("b"), None, None],
+            "c" => [None, None, Some(1), Some(2), Some(1), Some(2)],
+            "d" => [None, None, None, None, Some(1), Some(2)]
+        ]?;
+
+        assert!(out.frame_equal_missing(&expected));
+
+        Ok(())
     }
 }
