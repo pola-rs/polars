@@ -16,6 +16,14 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
             _ => Series::new(s.name(), &[1u32]),
         };
     }
+    // don't fully understand how to deal with nulls yet
+    // impute with the maximum value possible.
+    // todo! maybe add + 1 at the end on the null values.
+    if s.has_validity() {
+        // replace null values with the maximum value of that dtype
+        let s = s.fill_null(FillNullStrategy::MaxBound).unwrap();
+        return rank(&s, method);
+    }
 
     // See: https://github.com/scipy/scipy/blob/v1.7.1/scipy/stats/stats.py#L8631-L8737
 
@@ -199,11 +207,30 @@ mod test {
                 Some(3.5),
                 Some(5.0),
                 Some(3.5),
-                None,
-                None,
+                Some(6.5),
+                Some(6.5),
                 Some(1.0)
             ]
         );
+        let s = Series::new(
+            "a",
+            &[
+                Some(5),
+                Some(6),
+                Some(4),
+                None,
+                Some(78),
+                Some(4),
+                Some(2),
+                Some(8),
+            ],
+        );
+        let out = rank(&s, RankMethod::Max)
+            .u32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[4, 5, 3, 8, 7, 3, 1, 6]);
+
         Ok(())
     }
 }
