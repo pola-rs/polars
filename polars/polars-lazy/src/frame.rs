@@ -41,6 +41,7 @@ pub struct LazyCsvReader<'a> {
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     null_values: Option<NullValues>,
+    infer_schema_length: Option<usize>,
 }
 
 #[cfg(feature = "csv-file")]
@@ -60,6 +61,7 @@ impl<'a> LazyCsvReader<'a> {
             comment_char: None,
             quote_char: Some(b'"'),
             null_values: None,
+            infer_schema_length: Some(100),
         }
     }
 
@@ -67,6 +69,14 @@ impl<'a> LazyCsvReader<'a> {
     /// be guaranteed.
     pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.stop_after_n_rows = num_rows;
+        self
+    }
+
+    /// Set the number of rows to use when inferring the csv schema.
+    /// the default is 100 rows.
+    /// Setting to `None` will do a full table scan, very slow.
+    pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
+        self.infer_schema_length = num_rows;
         self
     }
 
@@ -152,6 +162,7 @@ impl<'a> LazyCsvReader<'a> {
             self.comment_char,
             self.quote_char,
             self.null_values,
+            self.infer_schema_length,
         )
         .build()
         .into();
