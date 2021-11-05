@@ -75,6 +75,7 @@ list = []
 rank = []
 diff = []
 moment = []
+diagonal_concat = []
 
 
 # opt-in datatypes for Series
@@ -123,6 +124,7 @@ docs-selection = [
     "dtype-categorical",
     "rank",
     "list",
+    "diagonal_concat"
 ]
 
 [dependencies]

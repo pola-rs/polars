@@ -312,7 +312,7 @@ pub fn get_list_builder(
             Box::new(builder)
         }};
     }
-    match_arrow_data_type_apply_macro!(
+    match_dtype_to_physical_apply_macro!(
         physical_type,
         get_primitive_builder,
         get_utf8_builder,

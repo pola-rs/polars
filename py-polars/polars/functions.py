@@ -9,6 +9,7 @@ try:
     from polars.datatypes import py_type_to_polars_type
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_series as _concat_series
+    from polars.polars import py_diag_concat_df as _diag_concat_df
 
     _DOCUMENTING = False
 except ImportError:
@@ -30,7 +31,9 @@ def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
 
 
 def concat(
-    items: Union[Sequence["pl.DataFrame"], Sequence["pl.Series"]], rechunk: bool = True
+    items: Union[Sequence["pl.DataFrame"], Sequence["pl.Series"]],
+    rechunk: bool = True,
+    how: str = "vertical",
 ) -> Union["pl.DataFrame", "pl.Series"]:
     """
     Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single DataFrame/Series.
@@ -41,13 +44,26 @@ def concat(
         DataFrames/Series to concatenate.
     rechunk
         rechunk the final DataFrame/Series.
+    how
+        Only used if the items are DataFrames.
+
+        On of {"vertical", "diagonal"}.
+        Vertical: Applies multiple `vstack` operations.
+        Diagonal: Finds a union between the column schemas and fills missing column values with null.
     """
     if not len(items) > 0:
         raise ValueError("cannot concat empty list")
 
     out: Union["pl.Series", "pl.DataFrame"]
     if isinstance(items[0], pl.DataFrame):
-        out = pl.wrap_df(_concat_df(items))
+        if how == "vertical":
+            out = pl.wrap_df(_concat_df(items))
+        elif how == "diagonal":
+            out = pl.wrap_df(_diag_concat_df(items))
+        else:
+            raise ValueError(
+                f"how should be one of {'vertical', 'diagonal'}, got {how}"
+            )
     else:
         out = pl.wrap_s(_concat_series(items))
 

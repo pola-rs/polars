@@ -261,7 +261,7 @@ impl<T: Default> Arena<T> {
 
 /// Apply a macro on the Series
 #[macro_export]
-macro_rules! match_arrow_data_type_apply_macro {
+macro_rules! match_dtype_to_physical_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
             DataType::Utf8 => $macro_utf8!($($opt_args)*),
@@ -280,6 +280,32 @@ macro_rules! match_arrow_data_type_apply_macro {
             DataType::Int64 => $macro!(i64 $(, $opt_args)*),
             DataType::Float32 => $macro!(f32 $(, $opt_args)*),
             DataType::Float64 => $macro!(f64 $(, $opt_args)*),
+            dt => panic!("not implemented for dtype {:?}", dt),
+        }
+    }};
+}
+
+/// Apply a macro on the Series
+#[macro_export]
+macro_rules! match_dtype_to_logical_apply_macro {
+    ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
+        match $obj {
+            DataType::Utf8 => $macro_utf8!($($opt_args)*),
+            DataType::Boolean => $macro_bool!($($opt_args)*),
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => $macro!(UInt8Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => $macro!(UInt16Type $(, $opt_args)*),
+            DataType::UInt32 => $macro!(UInt32Type $(, $opt_args)*),
+            DataType::UInt64 => $macro!(UInt64Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => $macro!(Int8Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => $macro!(Int16Type $(, $opt_args)*),
+            DataType::Int32 => $macro!(Int32Type $(, $opt_args)*),
+            DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
+            DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
+            DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
         }
     }};

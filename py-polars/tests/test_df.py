@@ -1213,3 +1213,21 @@ def test_diff_datetime():
     )["timestamp"]
 
     assert out[0] == out[1]
+
+
+def test_diag_concat():
+    a = pl.DataFrame({"a": [1, 2]})
+    b = pl.DataFrame({"b": ["a", "b"], "c": [1, 2]})
+    c = pl.DataFrame({"a": [5, 7], "c": [1, 2], "d": [1, 2]})
+
+    out = pl.concat([a, b, c], how="diagonal")
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2, None, None, 5, 7],
+            "b": [None, None, "a", "b", None, None],
+            "c": [None, None, 1, 2, 1, 2],
+            "d": [None, None, None, None, 1, 2],
+        }
+    )
+
+    assert out.frame_equal(expected, null_equal=True)

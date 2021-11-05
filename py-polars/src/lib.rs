@@ -37,6 +37,7 @@ use crate::prelude::{DataType, PyDataType};
 use mimalloc::MiMalloc;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use pyo3::types::PyDict;
+use polars::functions::diag_concat_df;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -166,6 +167,20 @@ fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
+fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
+    let (seq, _len) = get_pyseq(dfs)?;
+    let iter = seq.iter()?;
+
+    let dfs = iter.map(|item| {
+        let item = item?;
+        get_df(item)
+    }).collect::<PyResult<Vec<_>>>()?;
+
+    let df = diag_concat_df(&dfs).map_err(PyPolarsEr::from)?;
+    Ok(df.into())
+}
+
+#[pyfunction]
 fn concat_series(series: &PyAny) -> PyResult<PySeries> {
     let (seq, _len) = get_pyseq(series)?;
     let mut iter = seq.iter()?;
@@ -258,5 +273,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(collect_all)).unwrap();
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
     Ok(())
 }
