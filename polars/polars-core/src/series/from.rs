@@ -1,8 +1,8 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::cast::cast_chunks;
 use crate::prelude::*;
-use arrow::compute::cast;
 use arrow::compute::cast::utf8_to_large_utf8;
+use polars_arrow::compute::cast::cast;
 use std::convert::TryFrom;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
@@ -135,7 +135,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .iter()
                     .map(|arr| {
                         let arr: ArrayRef =
-                            cast::cast(arr.as_ref(), &ArrowDataType::LargeList(fld.clone()))
+                            cast(arr.as_ref(), &ArrowDataType::LargeList(fld.clone()))
                                 .unwrap()
                                 .into();
                         convert_list_inner(&arr, fld)
@@ -228,7 +228,6 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type) => {
                 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
-                use arrow::compute::cast::cast;
                 let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let arr = arrow::compute::concat::concatenate(&chunks)?;
 

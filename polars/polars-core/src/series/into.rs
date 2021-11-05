@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use arrow::compute::cast::cast;
+use polars_arrow::compute::cast::cast;
 
 impl Series {
     /// Convert a chunk in the Series to the correct Arrow type.

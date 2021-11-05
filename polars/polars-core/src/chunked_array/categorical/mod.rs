@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use arrow::array::DictionaryArray;
-use arrow::compute::cast::cast;
+use polars_arrow::compute::cast::cast;
 mod builder;
 mod merge;
 

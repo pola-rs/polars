@@ -2,7 +2,7 @@
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 use crate::prelude::*;
-use arrow::compute::cast;
+use polars_arrow::compute::cast;
 use std::convert::TryFrom;
 
 pub(crate) fn cast_chunks(chunks: &[ArrayRef], dtype: &DataType) -> Result<Vec<ArrayRef>> {
