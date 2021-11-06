@@ -86,10 +86,11 @@ def test_init_ndarray():
 
 # TODO: Remove this test case when removing deprecated behaviour
 def test_init_ndarray_deprecated():
-    # 2D array - default to row orientation
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
-    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
-    assert df.frame_equal(truth)
+    with pytest.deprecated_call():
+        # 2D array - default to row orientation
+        df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
+        truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
+        assert df.frame_equal(truth)
 
 
 def test_init_arrow():
