@@ -786,7 +786,9 @@ def test_trigonometry_functions():
 
 
 def test_date_range():
-    result = pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12))
+    result = pl.date_range(
+        datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
+    )
     assert len(result) == 7426
     assert result.dt[0] == datetime(1985, 1, 1)
     assert result.dt[1] == datetime(1985, 1, 2, 12, 0)
