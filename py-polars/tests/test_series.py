@@ -545,7 +545,7 @@ def test_extract_regex():
             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
         ]
     )
-    assert s.str.extract("candidate=(\w+)", 1).to_list() == [
+    assert s.str.extract(r"candidate=(\w+)", 1).to_list() == [
         "messi",
         None,
         "ronaldo",
