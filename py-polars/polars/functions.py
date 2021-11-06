@@ -177,4 +177,4 @@ def date_range(
         values = np.append(values, np.array(high, dtype="datetime64[ms]"))
     if closed == "right":
         values = values[1:]
-    return pl.Series(name=name, values=values.astype(int)).cast(pl.Datetime)
+    return pl.Series(name=name, values=values.astype(np.int64)).cast(pl.Datetime)

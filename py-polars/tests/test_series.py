@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -783,3 +783,14 @@ def test_trigonometry_functions():
     assert np.allclose(srs_float.arcsin(), np.array([1.571, 0.0, -1.571]), atol=0.01)
     assert np.allclose(srs_float.arccos(), np.array([0.0, 1.571, 3.142]), atol=0.01)
     assert np.allclose(srs_float.arctan(), np.array([0.785, 0.0, -0.785]), atol=0.01)
+
+
+def test_date_range():
+    result = pl.date_range(
+        datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
+    )
+    assert len(result) == 7426
+    assert result.dt[0] == datetime(1985, 1, 1)
+    assert result.dt[1] == datetime(1985, 1, 2, 12, 0)
+    assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
+    assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
