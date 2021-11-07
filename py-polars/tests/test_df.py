@@ -9,6 +9,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars import get_dummies
 from polars.datatypes import *
 from polars.lazy import *
 
@@ -611,12 +612,28 @@ def test_multiple_columns_drop():
 def test_concat():
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
-    assert pl.concat([df, df]).shape == (6, 3)
+    df2 = pl.concat([df, df])
+    assert df2.shape == (6, 3)
+    assert df2.n_chunks() == 1  # the default is to rechunk
+
+    assert pl.concat([df, df], rechunk=False).n_chunks() == 2
 
     # check if a remains unchanged
     a = pl.from_records(((1, 2), (1, 2)))
     _ = pl.concat([a, a, a])
     assert a.shape == (2, 2)
+
+
+def test_arg_where():
+    s = pl.Series([True, False, True, False])
+    assert pl.arg_where(s).series_equal(pl.Series([0, 2]))
+
+
+def test_get_dummies():
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = get_dummies(df)
+    expected = pl.DataFrame({"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]})
+    assert res.frame_equal(expected)
 
 
 def test_to_pandas(df):
