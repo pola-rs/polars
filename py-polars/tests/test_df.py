@@ -431,7 +431,7 @@ def test_groupby():
     )
 
     # check if this query runs and thus column names propagate
-    df.groupby("b").agg(col("c").forward_fill()).explode("c")
+    df.groupby("b").agg(pl.col("c").forward_fill()).explode("c")
 
 
 def test_join():
@@ -474,6 +474,49 @@ def test_join():
 
     lazy_join = df_a.lazy().join(df_b.lazy(), left_on="a", right_on="foo").collect()
     assert lazy_join.shape == eager_join.shape
+
+
+def test_joins_dispatch():
+    # this just flexes the dispatch a bit
+    dfa = pl.DataFrame(
+        {
+            "a": ["a", "b", "c"],
+            "b": [1, 2, 3],
+            "date": ["2021-01-01", "2021-01-02", "2021-01-03"],
+            "datetime": [13241324, 12341256, 12341234],
+        }
+    ).with_columns(
+        [pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)]
+    )
+    dfa = pl.concat([dfa, dfa], rechunk=False)
+
+    dfb = pl.DataFrame(
+        {
+            "a": ["a", "b", "c"],
+            "b": [1, 2, 3],
+            "date": ["2021-01-01", "2021-01-02", "2021-01-03"],
+            "datetime": [13241324, 12341256, 12341234],
+        }
+    ).with_columns(
+        [pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)]
+    )
+
+    dfa.join(dfb, on=["a", "b", "date", "datetime"], how="left")
+    dfa.join(dfb, on=["a", "b", "date", "datetime"], how="inner")
+    dfa.join(dfb, on=["a", "b", "date", "datetime"], how="outer")
+    dfa.join(dfb, on=["date", "datetime"], how="left")
+    dfa.join(dfb, on=["date", "datetime"], how="inner")
+    dfa.join(dfb, on=["date", "datetime"], how="outer")
+    dfa.join(dfb, on=["date", "datetime", "a"], how="left")
+    dfa.join(dfb, on=["date", "datetime", "a"], how="inner")
+    dfa.join(dfb, on=["date", "a"], how="outer")
+    dfa.join(dfb, on=["date", "a"], how="left")
+    dfa.join(dfb, on=["date", "a"], how="inner")
+    dfa.join(dfb, on=["date", "a"], how="outer")
+    dfa.join(dfb, on=["date"], how="outer")
+    dfa.join(dfb, on=["date"], how="left")
+    dfa.join(dfb, on=["date"], how="inner")
+    dfa.join(dfb, on=["date"], how="outer")
 
 
 def test_hstack():
