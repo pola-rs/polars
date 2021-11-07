@@ -1655,21 +1655,21 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", ["2020-01-01", "2020-01-02", "2020-01-03"])
+        >>> s = pl.Series("a", [True, False, True])
         shape: (3,)
-        Series: 'a' [str]
+        Series: 'a' [bool]
         [
-            "2020-01-01"
-            "2020-01-02"
-            "2020-01-03"
+            true
+            false
+            true
         ]
-        >>> s.cast(pl.datatypes.Date)
+        >>> s.cast(pl.UInt32)
         shape: (3,)
-        Series: 'a' [date]
+        Series: 'a' [u32]
         [
-            2020-01-01
-            2020-01-02
-            2020-01-03
+            1
+            0
+            1
         ]
 
         """
