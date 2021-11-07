@@ -628,7 +628,8 @@ impl Series {
         if self.null_count() != s.null_count() {
             Err(PolarsError::ComputeError(
                 format!(
-                    "strict conversion of cast from {:?} to {:?} failed. consider non-strict cast.",
+                    "strict conversion of cast from {:?} to {:?} failed. consider non-strict cast.\n
+                    If you were trying to cast Utf8 to Date,Time,Datetime, consider using `strptime`",
                     self.dtype(),
                     data_type
                 )
