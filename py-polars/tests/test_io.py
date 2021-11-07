@@ -17,7 +17,8 @@ def test_to_from_buffer(df):
     df = df.drop("strings_nulls")
 
     for to_fn, from_fn in zip(
-        [df.to_parquet, df.to_csv, df.to_ipc, df.to_json], [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_json]
+        [df.to_parquet, df.to_csv, df.to_ipc, df.to_json],
+        [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_json],
     ):
         f = io.BytesIO()
         to_fn(f)
