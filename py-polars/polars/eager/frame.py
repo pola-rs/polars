@@ -743,9 +743,18 @@ class DataFrame:
             for i in range(0, self.height)
         ]
 
-    def transpose(self) -> "pl.DataFrame":
+    def transpose(
+        self, include_header: bool = False, header_name: str = "column"
+    ) -> "pl.DataFrame":
         """
         Transpose a DataFrame over the diagonal.
+
+        Parameters
+        ----------
+        include_header:
+            If set, the column names will be added as first column.
+        header_name:
+            If `include_header` is set, this determines the name of the column that will be inserted
 
         Notes
         -----
@@ -756,7 +765,7 @@ class DataFrame:
         DataFrame
 
         """
-        return wrap_df(self._df.transpose())
+        return wrap_df(self._df.transpose(include_header, header_name))
 
     def to_parquet(
         self,

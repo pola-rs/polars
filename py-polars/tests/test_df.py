@@ -1274,3 +1274,17 @@ def test_diag_concat():
     )
 
     assert out.frame_equal(expected, null_equal=True)
+
+
+def test_transpose():
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    expected = pl.DataFrame(
+        {
+            "columns": ["a", "b"],
+            "column_0": [1, 1],
+            "column_1": [2, 2],
+            "column_2": [3, 3],
+        }
+    )
+    out = df.transpose(include_header=True)
+    assert expected.frame_equal(out)
