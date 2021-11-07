@@ -1,3 +1,5 @@
+pub(crate) mod series;
+
 use crate::prelude::*;
 use crate::POOL;
 pub use arrow;

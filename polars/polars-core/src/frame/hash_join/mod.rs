@@ -26,6 +26,7 @@ use unsafe_unwrap::UnsafeUnwrap;
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::utils::series::to_physical;
 
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
@@ -1113,12 +1114,16 @@ impl DataFrame {
                 self.height()
             }
         }
+        // make sure that we don't have logical types.
+        // we don't overwrite the original selected as that might be used to create a column in the new df
+        let selected_left_physical = to_physical(&selected_left);
+        let selected_right_physical = to_physical(&selected_right);
 
         // multiple keys
         match how {
             JoinType::Inner => {
-                let left = DataFrame::new_no_checks(selected_left);
-                let right = DataFrame::new_no_checks(selected_right.clone());
+                let left = DataFrame::new_no_checks(selected_left_physical);
+                let right = DataFrame::new_no_checks(selected_right_physical);
                 let (left, right, swap) = det_hash_prone_order!(left, right);
                 let join_tuples = inner_join_multiple_keys(&left, &right, swap);
 
@@ -1134,8 +1139,8 @@ impl DataFrame {
                 self.finish_join(df_left, df_right, suffix)
             }
             JoinType::Left => {
-                let left = DataFrame::new_no_checks(selected_left);
-                let right = DataFrame::new_no_checks(selected_right.clone());
+                let left = DataFrame::new_no_checks(selected_left_physical);
+                let right = DataFrame::new_no_checks(selected_right_physical);
                 let join_tuples = left_join_multiple_keys(&left, &right);
 
                 let (df_left, df_right) = POOL.join(
@@ -1152,8 +1157,8 @@ impl DataFrame {
                 self.finish_join(df_left, df_right, suffix)
             }
             JoinType::Outer => {
-                let left = DataFrame::new_no_checks(selected_left.clone());
-                let right = DataFrame::new_no_checks(selected_right.clone());
+                let left = DataFrame::new_no_checks(selected_left_physical);
+                let right = DataFrame::new_no_checks(selected_right_physical);
 
                 let (left, right, swap) = det_hash_prone_order!(left, right);
                 let opt_join_tuples = outer_join_multiple_keys(&left, &right, swap);
