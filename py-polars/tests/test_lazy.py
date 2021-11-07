@@ -29,6 +29,11 @@ def test_apply():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
+    expected = df.clone()
+    expected["foo"] = expected["a"] * 2
+
+    assert new.frame_equal(expected)
+
 
 def test_add_eager_column():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
@@ -98,7 +103,10 @@ def test_filter_str():
     )
     q = df.lazy()
     # last row based on a filter
-    q.filter(pl.col("bools")).select(pl.last("*"))
+    result = q.filter(pl.col("bools")).select(pl.last("*")).collect()
+
+    expected = pl.DataFrame({"time": ["11:13:00"], "bools": [True]})
+    assert result.frame_equal(expected)
 
 
 def test_apply_custom_function():
@@ -139,6 +147,9 @@ def test_apply_custom_function():
 def test_groupby():
     df = pl.DataFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
     out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
+
+    expected = pl.DataFrame({"groups": ["b", "a"], "a_mean": [3.5, 1.0]})
+    assert out.frame_equal(expected)
 
 
 def test_shift_and_fill():
@@ -423,15 +434,15 @@ def test_take(fruits_cars):
         [col("B").reverse().take([0, 1]).list().over("fruits"), "fruits"]
     )
 
-    out[0, "B"] == [2, 3]
-    out[4, "B"] == [1, 4]
+    assert out[0, "B"] == [2, 3]
+    assert out[4, "B"] == [1, 4]
 
 
 def test_select_by_col_list(fruits_cars):
     df = fruits_cars
     out = df.select(col(["A", "B"]).sum())
-    out.columns == ["A", "B"]
-    out.shape == (1, 2)
+    assert out.columns == ["A", "B"]
+    assert out.shape == (1, 2)
 
 
 def test_rolling(fruits_cars):
@@ -551,14 +562,14 @@ def test_ufunc():
 def test_datetime_consistency():
     dt = datetime(2021, 1, 1)
     df = pl.DataFrame({"date": [dt]})
-    df["date"].dt[0] == dt
-    df.select(lit(dt))["literal"].dt[0] == dt
+    assert df["date"].dt[0] == dt
+    assert df.select(lit(dt))["literal"].dt[0] == dt
 
 
 def test_clip():
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
-    pl.Series([1, 2, 3, 4, 5]).clip(2, 4).to_list() == [2, 2, 3, 4, 4]
+    assert df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
+    assert pl.Series([1, 2, 3, 4, 5]).clip(2, 4).to_list() == [2, 2, 3, 4, 4]
 
 
 def test_argminmax():
@@ -638,8 +649,8 @@ def test_collect_all(df):
     lf1 = df.lazy().select(pl.col("int").sum())
     lf2 = df.lazy().select((pl.col("floats") * 2).sum())
     out = pl.collect_all([lf1, lf2])
-    out[0][0, 0] == 6
-    out[1][0, 0] == 12.0
+    assert out[0][0, 0] == 6
+    assert out[1][0, 0] == 12.0
 
 
 def test_spearman_corr():
