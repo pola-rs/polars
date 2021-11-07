@@ -478,45 +478,27 @@ def test_join():
 
 def test_joins_dispatch():
     # this just flexes the dispatch a bit
+
+    # don't change the data of this dataframe, this triggered:
+    # https://github.com/pola-rs/polars/issues/1688
     dfa = pl.DataFrame(
         {
-            "a": ["a", "b", "c"],
-            "b": [1, 2, 3],
-            "date": ["2021-01-01", "2021-01-02", "2021-01-03"],
-            "datetime": [13241324, 12341256, 12341234],
-        }
-    ).with_columns(
-        [pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)]
-    )
-    dfa = pl.concat([dfa, dfa], rechunk=False)
-
-    dfb = pl.DataFrame(
-        {
-            "a": ["a", "b", "c"],
-            "b": [1, 2, 3],
-            "date": ["2021-01-01", "2021-01-02", "2021-01-03"],
-            "datetime": [13241324, 12341256, 12341234],
+            "a": ["a", "b", "c", "a"],
+            "b": [1, 2, 3, 1],
+            "date": ["2021-01-01", "2021-01-02", "2021-01-03", "2021-01-01"],
+            "datetime": [13241324, 12341256, 12341234, 13241324],
         }
     ).with_columns(
         [pl.col("date").str.strptime(pl.Date), pl.col("datetime").cast(pl.Datetime)]
     )
 
-    dfa.join(dfb, on=["a", "b", "date", "datetime"], how="left")
-    dfa.join(dfb, on=["a", "b", "date", "datetime"], how="inner")
-    dfa.join(dfb, on=["a", "b", "date", "datetime"], how="outer")
-    dfa.join(dfb, on=["date", "datetime"], how="left")
-    dfa.join(dfb, on=["date", "datetime"], how="inner")
-    dfa.join(dfb, on=["date", "datetime"], how="outer")
-    dfa.join(dfb, on=["date", "datetime", "a"], how="left")
-    dfa.join(dfb, on=["date", "datetime", "a"], how="inner")
-    dfa.join(dfb, on=["date", "a"], how="outer")
-    dfa.join(dfb, on=["date", "a"], how="left")
-    dfa.join(dfb, on=["date", "a"], how="inner")
-    dfa.join(dfb, on=["date", "a"], how="outer")
-    dfa.join(dfb, on=["date"], how="outer")
-    dfa.join(dfb, on=["date"], how="left")
-    dfa.join(dfb, on=["date"], how="inner")
-    dfa.join(dfb, on=["date"], how="outer")
+    for how in ["left", "inner", "outer"]:
+        dfa.join(dfa, on=["a", "b", "date", "datetime"], how=how)
+        dfa.join(dfa, on=["date", "datetime"], how=how)
+        dfa.join(dfa, on=["date", "datetime", "a"], how=how)
+        dfa.join(dfa, on=["date", "a"], how=how)
+        dfa.join(dfa, on=["a", "datetime"], how=how)
+        dfa.join(dfa, on=["date"], how=how)
 
 
 def test_hstack():
