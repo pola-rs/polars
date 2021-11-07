@@ -9,7 +9,6 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars import get_dummies
 from polars.datatypes import *
 from polars.lazy import *
 
@@ -656,7 +655,7 @@ def test_arg_where():
 
 def test_get_dummies():
     df = pl.DataFrame({"a": [1, 2, 3]})
-    res = get_dummies(df)
+    res = pl.get_dummies(df)
     expected = pl.DataFrame({"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]})
     assert res.frame_equal(expected)
 
