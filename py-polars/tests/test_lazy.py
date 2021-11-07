@@ -148,8 +148,8 @@ def test_groupby():
     df = pl.DataFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
     out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
 
-    expected = pl.DataFrame({"groups": ["b", "a"], "a_mean": [3.5, 1.0]})
-    assert out.frame_equal(expected)
+    expected = pl.DataFrame({"groups": ["a", "b"], "a_mean": [1.0, 3.5]})
+    assert out.sort(by="groups").frame_equal(expected)
 
 
 def test_shift_and_fill():
