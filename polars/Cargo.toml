@@ -167,6 +167,10 @@ docs-selection = [
     "arange"
 ]
 
+bench = [
+    "lazy"
+]
+
 [dependencies]
 polars-core = {version = "0.17.0", path = "./polars-core", features= ["docs", "private"], default-features = false}
 polars-io = {version = "0.17.0", path = "./polars-io", features = ["private"], default-features = false, optional=true}
