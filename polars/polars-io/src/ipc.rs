@@ -34,6 +34,7 @@
 //! ```
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
+use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
@@ -129,7 +130,11 @@ where
     }
 
     fn finish(mut self, df: &DataFrame) -> Result<()> {
-        let mut ipc_writer = write::FileWriter::try_new(&mut self.writer, &df.schema().to_arrow())?;
+        let mut ipc_writer = write::FileWriter::try_new(
+            &mut self.writer,
+            &df.schema().to_arrow(),
+            WriteOptions { compression: None },
+        )?;
 
         let iter = df.iter_record_batches();
 
