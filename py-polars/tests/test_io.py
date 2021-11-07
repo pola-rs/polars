@@ -58,6 +58,7 @@ def test_parquet_chunks():
 
         # read it with polars
         polars_df = pl.read_parquet(f)
+        assert pl.DataFrame(df).frame_equal(polars_df)
 
 
 def test_parquet_datetime():
@@ -252,12 +253,12 @@ def test_pickle():
 
 def test_copy():
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
-    copy.copy(df).frame_equal(df, True)
-    copy.deepcopy(df).frame_equal(df, True)
+    assert copy.copy(df).frame_equal(df, True)
+    assert copy.deepcopy(df).frame_equal(df, True)
 
     a = pl.Series("a", [1, 2])
-    copy.copy(a).series_equal(a, True)
-    copy.deepcopy(a).series_equal(a, True)
+    assert copy.copy(a).series_equal(a, True)
+    assert copy.deepcopy(a).series_equal(a, True)
 
 
 def test_to_json():
@@ -314,15 +315,16 @@ def test_date_list_fmt():
     )
 
     df = df.with_column(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
-    str(
-        df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"]
-    ) == """shape: (3,)
+    assert (
+        str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
+        == """shape: (3,)
 Series: 'mydate' [list]
 [
 	[2020-01-01]
 	[2020-01-02]
 	[2020-01-05, 2020-01-05]
 ]"""
+    )
 
 
 def test_csv_empty_quotes_char():

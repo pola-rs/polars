@@ -353,7 +353,7 @@ def test_assignment():
     # make sure that assignment does not change column order
     assert df.columns == ["foo", "bar"]
     df[df["foo"] > 1, "foo"] = 9
-    df["foo"].to_list() == [1, 9, 9]
+    assert df["foo"].to_list() == [1, 9, 9]
 
 
 def test_slice():
@@ -381,8 +381,8 @@ def test_head_tail():
 def test_explode():
     df = pl.DataFrame({"letters": ["c", "a"], "nrs": [[1, 2], [1, 3]]})
     out = df.explode("nrs")
-    out["letters"].to_list() == ["c", "c", "a", "a"]
-    out["nrs"].to_list() == [1, 2, 1, 3]
+    assert out["letters"].to_list() == ["c", "c", "a", "a"]
+    assert out["nrs"].to_list() == [1, 2, 1, 3]
 
 
 def test_groupby():
@@ -1180,7 +1180,7 @@ def test_groupby_agg_n_unique_floats():
         out = df.groupby("a", maintain_order=True).agg(
             [pl.col("b").cast(dtype).n_unique()]
         )
-        out["b_n_unique"].to_list() == [2, 1]
+        assert out["b_n_unique"].to_list() == [2, 1]
 
 
 def test_select_by_dtype(df):
