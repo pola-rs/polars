@@ -372,6 +372,7 @@ pub(crate) fn str_to_rankmethod(method: &str) -> PyResult<RankMethod> {
         "average" => RankMethod::Average,
         "dense" => RankMethod::Dense,
         "ordinal" => RankMethod::Ordinal,
+        "random" => RankMethod::Random,
         _ => {
             return Err(PyValueError::new_err(
                 "use one of 'avg, min, max, dense, ordinal'".to_string(),

@@ -2839,7 +2839,7 @@ class Series:
         Parameters
         ----------
         method
-            {'average', 'min', 'max', 'dense', 'ordinal'}, optional
+            {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
               * 'average': The average of the ranks that would have been assigned to
@@ -2854,6 +2854,8 @@ class Series:
                 elements.
               * 'ordinal': All values are given a distinct rank, corresponding to
                 the order that the values occur in `a`.
+              * 'random': Like 'ordinal', but the rank for ties is not dependent
+                on the order that the values occur in `a`.
         """
         return wrap_s(self._s.rank(method))
 
