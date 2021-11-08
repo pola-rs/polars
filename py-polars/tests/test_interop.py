@@ -74,3 +74,10 @@ def test_from_pandas_nested_list():
     pldf = pl.from_pandas(pddf)
     print(pldf)
     assert pldf.shape == (4, 2)
+
+
+def test_from_pandas_categorical_none():
+    s = pd.Series(["a", "b", "c", pd.NA], dtype="category")
+    out = pl.from_pandas(s)
+    assert out.dtype == pl.Categorical
+    assert out.to_list() == ["a", "b", "c", None]

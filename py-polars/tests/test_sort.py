@@ -13,7 +13,7 @@ def test_sort_dates_multiples():
                     "2021-01-02 00:00:00",
                     "2021-01-03 00:00:00",
                 ],
-            ).str.strptime(pl.datatypes.Datetime, "%Y-%m-%d %T"),
+            ).str.strptime(pl.Datetime, "%Y-%m-%d %T"),
             pl.Series("values", [5, 4, 3, 2, 1]),
         ]
     )
