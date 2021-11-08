@@ -3,6 +3,7 @@ import gzip
 import io
 import pickle
 import zlib
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,7 +17,8 @@ def test_to_from_buffer(df):
     df = df.drop("strings_nulls")
 
     for to_fn, from_fn in zip(
-        [df.to_parquet, df.to_csv], [pl.read_parquet, pl.read_csv]
+        [df.to_parquet, df.to_csv, df.to_ipc, df.to_json],
+        [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_json],
     ):
         f = io.BytesIO()
         to_fn(f)
@@ -343,3 +345,13 @@ def test_ignore_parse_dates():
     dtypes = {k: pl.Utf8 for k in headers}  # Forces Utf8 type for every column
     df = pl.read_csv(csv, columns=headers, dtype=dtypes)
     assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Utf8]
+
+
+def test_scan_csv():
+    df = pl.scan_csv(Path(__file__).parent / "files" / "small.csv")
+    assert df.collect().shape == (4, 3)
+
+
+def test_scan_parquet():
+    df = pl.scan_parquet(Path(__file__).parent / "files" / "small.parquet")
+    assert df.collect().shape == (4, 3)
