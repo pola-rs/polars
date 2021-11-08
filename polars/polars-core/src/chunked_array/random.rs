@@ -6,25 +6,22 @@ use rand::prelude::*;
 use rand::seq::IteratorRandom;
 use rand_distr::{Distribution, Normal, StandardNormal, Uniform};
 
-fn create_rand_index_with_replacement(n: usize, len: usize) -> (ThreadRng, UInt32Chunked) {
+fn create_rand_index_with_replacement(n: usize, len: usize) -> UInt32Chunked {
     let mut rng = rand::thread_rng();
-    (
-        rng,
-        (0u32..n as u32)
-            .map(move |_| Uniform::new(0u32, len as u32).sample(&mut rng))
-            .collect_trusted::<NoNull<UInt32Chunked>>()
-            .into_inner(),
-    )
+    (0u32..n as u32)
+        .map(move |_| Uniform::new(0u32, len as u32).sample(&mut rng))
+        .collect_trusted::<NoNull<UInt32Chunked>>()
+        .into_inner()
 }
 
-fn create_rand_index_no_replacement(n: usize, len: usize) -> (ThreadRng, UInt32Chunked) {
+fn create_rand_index_no_replacement(n: usize, len: usize) -> UInt32Chunked {
     // TODO! prevent allocation.
     let mut rng = rand::thread_rng();
     let mut buf = AlignedVec::with_capacity(n);
     // Safety: will be filled
     unsafe { buf.set_len(n) };
     (0u32..len as u32).choose_multiple_fill(&mut rng, buf.as_mut_slice());
-    (rng, UInt32Chunked::new_from_aligned_vec("", buf))
+    UInt32Chunked::new_from_aligned_vec("", buf)
 }
 
 impl<T> ChunkedArray<T>
@@ -42,13 +39,13 @@ where
 
         match with_replacement {
             true => {
-                let (_, idx) = create_rand_index_with_replacement(n, len);
+                let idx = create_rand_index_with_replacement(n, len);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked((&idx).into())) }
             }
             false => {
-                let (_, idx) = create_rand_index_no_replacement(n, len);
+                let idx = create_rand_index_no_replacement(n, len);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked((&idx).into())) }
@@ -73,8 +70,8 @@ impl DataFrame {
         }
         // all columns should used the same indices. So we first create the indices.
         let idx: UInt32Chunked = match with_replacement {
-            true => create_rand_index_with_replacement(n, self.height()).1,
-            false => create_rand_index_no_replacement(n, self.height()).1,
+            true => create_rand_index_with_replacement(n, self.height()),
+            false => create_rand_index_no_replacement(n, self.height()),
         };
         // Safety:
         // indices are within bounds
