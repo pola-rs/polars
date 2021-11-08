@@ -225,14 +225,19 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 #[cfg(not(feature = "dtype-i8"))]
                 Ok(UInt32Chunked::full_null(name, len).into_series())
             }
+            #[cfg(not(feature = "dtype-categorical"))]
+            ArrowDataType::Dictionary(_, _) => {
+                panic!("activate dtype-categorical to convert dictionary arrays")
+            }
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type) => {
                 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
+                use arrow::datatypes::IntegerType;
                 let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let arr = arrow::compute::concat::concatenate(&chunks)?;
 
-                let (keys, values) = match (&**key_type, &**value_type) {
-                    (ArrowDataType::Int8, ArrowDataType::LargeUtf8) => {
+                let (keys, values) = match (key_type, &**value_type) {
+                    (IntegerType::Int8, ArrowDataType::LargeUtf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<i8>>().unwrap();
                         let keys = arr.keys();
                         let keys = cast(keys, &ArrowDataType::UInt32)
@@ -245,7 +250,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                         let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
                         (keys, values.clone())
                     }
-                    (ArrowDataType::Int16, ArrowDataType::LargeUtf8) => {
+                    (IntegerType::Int16, ArrowDataType::LargeUtf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<i16>>().unwrap();
                         let keys = arr.keys();
                         let keys = cast(keys, &ArrowDataType::UInt32)
@@ -258,7 +263,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                         let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
                         (keys, values.clone())
                     }
-                    (ArrowDataType::Int32, ArrowDataType::LargeUtf8) => {
+                    (IntegerType::Int32, ArrowDataType::LargeUtf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<i32>>().unwrap();
                         let keys = arr.keys();
                         let keys = cast(keys, &ArrowDataType::UInt32)
@@ -271,14 +276,14 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                         let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
                         (keys, values.clone())
                     }
-                    (ArrowDataType::UInt32, ArrowDataType::LargeUtf8) => {
+                    (IntegerType::UInt32, ArrowDataType::LargeUtf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<u32>>().unwrap();
                         let keys = arr.keys();
                         let values = arr.values();
                         let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
                         (keys.clone(), values.clone())
                     }
-                    (ArrowDataType::Int8, ArrowDataType::Utf8) => {
+                    (IntegerType::Int8, ArrowDataType::Utf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<i8>>().unwrap();
                         let keys = arr.keys();
                         let keys = cast(keys, &ArrowDataType::UInt32)
@@ -297,7 +302,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                             .clone();
                         (keys, values)
                     }
-                    (ArrowDataType::Int16, ArrowDataType::Utf8) => {
+                    (IntegerType::Int16, ArrowDataType::Utf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<i16>>().unwrap();
                         let keys = arr.keys();
                         let keys = cast(keys, &ArrowDataType::UInt32)
@@ -316,7 +321,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                             .clone();
                         (keys, values)
                     }
-                    (ArrowDataType::Int32, ArrowDataType::Utf8) => {
+                    (IntegerType::Int32, ArrowDataType::Utf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<i32>>().unwrap();
                         let keys = arr.keys();
                         let keys = cast(keys, &ArrowDataType::UInt32)

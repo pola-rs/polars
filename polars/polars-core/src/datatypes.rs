@@ -14,6 +14,7 @@ use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use ahash::RandomState;
 use arrow::compute::comparison::Simd8;
+use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
@@ -663,7 +664,7 @@ impl Schema {
                     DataType::Categorical => ArrowField::new(
                         f.name(),
                         ArrowDataType::Dictionary(
-                            Box::new(ArrowDataType::UInt32),
+                            IntegerType::UInt32,
                             Box::new(ArrowDataType::LargeUtf8),
                         ),
                         true,
@@ -818,21 +819,15 @@ mod test {
                 DataType::List(DataType::Float64.into()),
             ),
             (
-                ArrowDataType::Dictionary(ArrowDataType::UInt32.into(), ArrowDataType::Utf8.into()),
+                ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into()),
                 DataType::Categorical,
             ),
             (
-                ArrowDataType::Dictionary(
-                    ArrowDataType::UInt32.into(),
-                    ArrowDataType::LargeUtf8.into(),
-                ),
+                ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::LargeUtf8.into()),
                 DataType::Categorical,
             ),
             (
-                ArrowDataType::Dictionary(
-                    ArrowDataType::UInt64.into(),
-                    ArrowDataType::LargeUtf8.into(),
-                ),
+                ArrowDataType::Dictionary(IntegerType::UInt64, ArrowDataType::LargeUtf8.into()),
                 DataType::Categorical,
             ),
         ];
@@ -840,7 +835,7 @@ mod test {
         for (dt_a, dt_p) in dtypes {
             let dt: DataType = (&dt_a).into();
 
-            assert_eq!(dt_p, dt_a);
+            assert_eq!(dt_p, dt);
         }
     }
 }
