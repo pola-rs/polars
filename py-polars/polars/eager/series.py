@@ -1681,9 +1681,14 @@ class Series:
             dtype = Float64
         return wrap_s(self._s.cast(str(dtype), strict))
 
-    def to_list(self) -> tp.List[Optional[Any]]:
+    def to_list(self, use_pyarrow: bool = False) -> tp.List[Optional[Any]]:
         """
         Convert this Series to a Python List. This operation clones data.
+
+        Parameters
+        ----------
+        use_pyarrow
+            Use pyarrow for the conversion.
 
         Examples
         --------
@@ -1694,8 +1699,7 @@ class Series:
         <class 'list'>
 
         """
-        # maybe we should not use pyarrow at all.
-        if (self.dtype != Object) and _PYARROW_AVAILABLE:
+        if use_pyarrow:
             return self.to_arrow().to_pylist()
         return self._s.to_list()
 

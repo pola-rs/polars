@@ -649,7 +649,7 @@ impl PySeries {
         };
 
         let pylist = match series.dtype() {
-            DataType::Categorical => PyList::new(python, series.categorical().unwrap()),
+            DataType::Categorical => PyList::new(python, series.categorical().unwrap().iter_str()),
             DataType::Object(_) => {
                 let v = PyList::empty(python);
                 for i in 0..series.len() {
