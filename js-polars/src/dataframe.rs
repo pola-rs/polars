@@ -1,35 +1,53 @@
-use polars_core::prelude::DataFrame as PDataFrame;
-use polars_core::prelude::Series as PSeries;
-use super::{
-    JsPolarsError,
-    series::*,
-};
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
+use crate::conversion::*;
+use neon::prelude::*;
+use polars::prelude::*;
+use polars::prelude::{CsvReader, DataFrame};
 
-#[wasm_bindgen]
-pub struct DataFrame {
-    df: PDataFrame,
+#[derive(Clone)]
+pub struct JsDataFrame {
+    pub df: DataFrame,
 }
 
-impl From<PDataFrame> for DataFrame {
-    fn from(df: PDataFrame) -> Self {
+impl From<DataFrame> for JsDataFrame {
+    fn from(df: DataFrame) -> Self {
         Self { df }
     }
 }
 
-
-#[wasm_bindgen]
-impl DataFrame {
-
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        PDataFrame::new_no_checks(vec![]).into()
+impl JsDataFrame {
+    pub fn new(df: DataFrame) -> Self {
+        JsDataFrame { df }
     }
 
-    pub fn assign(&self, series: Series) -> Result<DataFrame, JsValue> {
-        let mut df = self.df.clone();
-        df.with_column(series.series).map_err(JsPolarsError::from)?;
-        Ok(df.into())
+    pub fn read_csv(mut cx: FunctionContext) -> DataFrameResult {
+        let path = get_string_param(&mut cx, "path")?;
+        println!("JsDataFrame::read_csv::{:#?}", path);
+
+        let f = CsvReader::from_path(path).expect("error reading csv");
+        let df = f.finish().expect("error reading csv");
+        Ok(cx.boxed(df.into()))
+    }
+
+    pub fn head(mut cx: FunctionContext) -> DataFrameResult {
+        let boxed_df: _ = get_df(&mut cx)?;
+        let df: &DataFrame = &boxed_df.df;
+        let length = get_num_param(&mut cx, "length")?;
+
+        Ok(cx.boxed(df.head(Some(length as usize)).into()))
+    }
+
+    pub fn show(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let boxed_df: _ = get_df(&mut cx)?;
+        let df: &DataFrame = &boxed_df.df;
+        let length = get_num_param(&mut cx, "length")?;
+
+        let head = df.head(Some(length as usize));
+
+        println!("JsDataFrame::show::{:#?}", head);
+        Ok(cx.undefined())
+    }
+
+    pub fn schema(mut _cx: FunctionContext) -> JsResult<JsBox<Schema>> {
+        unimplemented!()
     }
 }

@@ -10,3 +10,4 @@ polars/vendor
 .ENV
 .env
 AUTO_CHANGELOG.md
+node_modules/

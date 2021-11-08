@@ -1,36 +1,17 @@
-mod series;
-mod dataframe;
+use neon::prelude::*;
 
-use wasm_bindgen::prelude::*;
-use polars_core::error::PolarsError;
+pub mod conversion;
+pub mod dataframe;
+pub mod errors;
 
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
+use crate::dataframe::*;
 
-#[macro_export]
-macro_rules! console_log {
-    // Note that this is using the `log` function imported above during
-    // `bare_bones`
-    ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
-}
+pub type BoxedDataFrame = JsBox<JsDataFrame>;
+impl Finalize for JsDataFrame {}
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-
-pub struct JsPolarsError(PolarsError);
-
-impl From<PolarsError> for JsPolarsError {
-    fn from(e: PolarsError) -> Self {
-        Self(e)
-    }
-}
-
-impl From<JsPolarsError> for JsValue {
-    fn from(e: JsPolarsError) -> Self {
-        format!("{:?}", e.0).into()
-    }
-}
+register_module!(mut cx, {
+    cx.export_function("read_csv", JsDataFrame::read_csv)?;
+    cx.export_function("head", JsDataFrame::head)?;
+    cx.export_function("show", JsDataFrame::show)?;
+    Ok(())
+});

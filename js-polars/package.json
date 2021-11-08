@@ -1,0 +1,16 @@
+{
+  "name": "polars",
+  "version": "0.0.1",
+  "description": "",
+  "main": "libpolars.node",
+  "scripts": {
+    "start": "node app.js",
+    "build": "cargo build -Z unstable-options --out-dir ./bin; mv ./bin/libpolars.so ./bin/libpolars.node",
+    "build-debug": "npm run build --",
+    "build-release": "npm run build -- --release",
+    "install": "npm run build-release",
+    "test": "cargo test"
+  },
+  "author": "",
+  "license": "ISC"
+}

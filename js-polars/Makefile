@@ -1,6 +1,6 @@
 
 build-dev:
-	wasm-pack build --dev --target nodejs
+	npm run build
 
 build-prod:
-	wasm-pack build --target nodejs
+	npm i

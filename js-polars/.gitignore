@@ -1,7 +1,5 @@
 /target
 **/*.rs.bk
 Cargo.lock
-bin/
-pkg/
+bin/libpolars.node
 node_modules/
-wasm-pack.log

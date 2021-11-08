@@ -1,14 +1,24 @@
-const pl = require("./pkg")
-const assert = require("assert")
+const polars_internal = require("./bin/libpolars.node");
 
-let s = new pl.Series("a", [1, 2, 3])
-assert(s.mean() === 2)
-console.log(s.mean())
-console.log(s.toString())
-console.log(s.toJSON())
-s.log()
+const Dataframe = (df) => {
+  const head = (length = 5) => Dataframe.from(polars_internal.head({_df: df, length}));
+  const show = (length = 5) => Dataframe.from(polars_internal.show({_df: df, length}));
 
-let df = new pl.DataFrame();
-df.assign(s);
+  return {
+    head,
+    show
+  }
+}
 
-console.log(df)
+Dataframe.from = (df) => Dataframe(df)
+const read_csv = (path) => Dataframe.from(polars_internal.read_csv({path}))
+
+let path = "../examples/aggregate_multiple_files_in_chunks/datasets/foods5.csv"
+let df = read_csv(path)
+df = df.head(10)
+df.show()
+df = df.head(1)
+df.show()
+
+
+
