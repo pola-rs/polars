@@ -222,11 +222,8 @@ def from_pandas(
 
     Parameters
     ----------
-    data : pandas DataFrame, Series, or DatetimeIndex
+    df : pandas DataFrame, Series, or DatetimeIndex
         Data represented as a pandas DataFrame, Series, or DatetimeIndex.
-    columns : Sequence of str, default None
-        Column labels to use for resulting DataFrame. If specified, overrides any
-        labels already present in the data. Must match data dimensions.
     rechunk : bool, default True
         Make sure that all data is contiguous.
     nan_to_none : bool, default True
