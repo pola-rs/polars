@@ -192,3 +192,104 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
         )
     }
 }
+
+#[cfg(feature = "temporal")]
+pub fn datetime(
+    year: Expr,
+    month: Expr,
+    day: Expr,
+    hour: Option<Expr>,
+    minute: Option<Expr>,
+    second: Option<Expr>,
+    millisecond: Option<Expr>,
+) -> Expr {
+    use polars_core::export::chrono::NaiveDate;
+    use polars_core::utils::CustomIterTools;
+
+    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+        assert_eq!(s.len(), 7);
+        let max_len = s.iter().map(|s| s.len()).max().unwrap();
+        let mut year = s[0].cast(&DataType::Int32)?;
+        if year.len() < max_len {
+            year = year.expand_at_index(0, max_len)
+        }
+        let year = year.i32()?;
+        let mut month = s[1].cast(&DataType::UInt32)?;
+        if month.len() < max_len {
+            month = month.expand_at_index(0, max_len);
+        }
+        let month = month.u32()?;
+        let mut day = s[2].cast(&DataType::UInt32)?;
+        if day.len() < max_len {
+            day = day.expand_at_index(0, max_len);
+        }
+        let day = day.u32()?;
+        let mut hour = s[3].cast(&DataType::UInt32)?;
+        if hour.len() < max_len {
+            hour = hour.expand_at_index(0, max_len);
+        }
+        let hour = hour.u32()?;
+
+        let mut minute = s[4].cast(&DataType::UInt32)?;
+        if minute.len() < max_len {
+            minute = minute.expand_at_index(0, max_len);
+        }
+        let minute = minute.u32()?;
+
+        let mut second = s[5].cast(&DataType::UInt32)?;
+        if second.len() < max_len {
+            second = second.expand_at_index(0, max_len);
+        }
+        let second = second.u32()?;
+
+        let mut millisecond = s[6].cast(&DataType::UInt32)?;
+        if millisecond.len() < max_len {
+            millisecond = millisecond.expand_at_index(0, max_len);
+        }
+        let millisecond = millisecond.u32()?;
+
+        let ca: Int64Chunked = year
+            .into_iter()
+            .zip(month.into_iter())
+            .zip(day.into_iter())
+            .zip(hour.into_iter())
+            .zip(minute.into_iter())
+            .zip(second.into_iter())
+            .zip(millisecond.into_iter())
+            .map(|((((((y, m), d), h), mnt), s), ms)| {
+                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ms)) =
+                    (y, m, d, h, mnt, s, ms)
+                {
+                    Some(
+                        NaiveDate::from_ymd(y, m, d)
+                            .and_hms_milli(h, mnt, s, ms)
+                            .timestamp_millis(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .trust_my_length(max_len)
+            .collect_trusted();
+
+        Ok(ca.into_date().into_series())
+    }) as Arc<dyn SeriesUdf>);
+    Expr::Function {
+        input: vec![
+            year,
+            month,
+            day,
+            hour.unwrap_or_else(|| lit(0)),
+            minute.unwrap_or_else(|| lit(0)),
+            second.unwrap_or_else(|| lit(0)),
+            millisecond.unwrap_or_else(|| lit(0)),
+        ],
+        function,
+        output_type: GetOutput::from_type(DataType::Datetime),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+        },
+    }
+    .alias("datetime")
+}

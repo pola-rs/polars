@@ -630,22 +630,20 @@ impl PySeries {
 
         let series = &self.series;
 
-        let primitive_to_list = |dt: &DataType, series: &Series| {
-            match dt {
-                DataType::Boolean => PyList::new(python, series.bool().unwrap()),
-                DataType::Utf8 => PyList::new(python, series.utf8().unwrap()),
-                DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
-                DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
-                DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
-                DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
-                DataType::Int8 => PyList::new(python, series.i8().unwrap()),
-                DataType::Int16 => PyList::new(python, series.i16().unwrap()),
-                DataType::Int32 => PyList::new(python, series.i32().unwrap()),
-                DataType::Int64 => PyList::new(python, series.i64().unwrap()),
-                DataType::Float32 => PyList::new(python, series.f32().unwrap()),
-                DataType::Float64 => PyList::new(python, series.f64().unwrap()),
-                dt => panic!("to_list() not implemented for {:?}", dt)
-            }
+        let primitive_to_list = |dt: &DataType, series: &Series| match dt {
+            DataType::Boolean => PyList::new(python, series.bool().unwrap()),
+            DataType::Utf8 => PyList::new(python, series.utf8().unwrap()),
+            DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
+            DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
+            DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
+            DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
+            DataType::Int8 => PyList::new(python, series.i8().unwrap()),
+            DataType::Int16 => PyList::new(python, series.i16().unwrap()),
+            DataType::Int32 => PyList::new(python, series.i32().unwrap()),
+            DataType::Int64 => PyList::new(python, series.i64().unwrap()),
+            DataType::Float32 => PyList::new(python, series.f32().unwrap()),
+            DataType::Float64 => PyList::new(python, series.f64().unwrap()),
+            dt => panic!("to_list() not implemented for {:?}", dt),
         };
 
         let pylist = match series.dtype() {
@@ -678,7 +676,7 @@ impl PySeries {
             }
             DataType::Date => PyList::new(python, &series.date().unwrap().0),
             DataType::Datetime => PyList::new(python, &series.datetime().unwrap().0),
-            dt => primitive_to_list(dt, series)
+            dt => primitive_to_list(dt, series),
         };
         pylist.to_object(python)
     }
