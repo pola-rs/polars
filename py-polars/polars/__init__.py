@@ -24,6 +24,8 @@ from .io import *
 
 # explicit imports make mypy happy
 from .lazy import *
+from .lazy import _date as date
+from .lazy import _datetime as datetime
 from .lazy import col, lit
 from .lazy import to_list as list
 from .string_cache import *

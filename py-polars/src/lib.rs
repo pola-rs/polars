@@ -35,9 +35,9 @@ use crate::error::PyPolarsEr;
 use crate::file::get_either_file;
 use crate::prelude::{DataType, PyDataType};
 use mimalloc::MiMalloc;
+use polars::functions::diag_concat_df;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use pyo3::types::PyDict;
-use polars::functions::diag_concat_df;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -151,6 +151,32 @@ fn concat_lst(s: Vec<dsl::PyExpr>) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn py_datetime(
+    year: dsl::PyExpr,
+    month: dsl::PyExpr,
+    day: dsl::PyExpr,
+    hour: Option<dsl::PyExpr>,
+    minute: Option<dsl::PyExpr>,
+    second: Option<dsl::PyExpr>,
+    millisecond: Option<dsl::PyExpr>,
+) -> dsl::PyExpr {
+    let hour = hour.map(|e| e.inner);
+    let minute = minute.map(|e| e.inner);
+    let second = second.map(|e| e.inner);
+    let millisecond = millisecond.map(|e| e.inner);
+    polars::lazy::functions::datetime(
+        year.inner,
+        month.inner,
+        day.inner,
+        hour,
+        minute,
+        second,
+        millisecond,
+    )
+    .into()
+}
+
+#[pyfunction]
 fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let (seq, _len) = get_pyseq(dfs)?;
     let mut iter = seq.iter()?;
@@ -171,10 +197,12 @@ fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let (seq, _len) = get_pyseq(dfs)?;
     let iter = seq.iter()?;
 
-    let dfs = iter.map(|item| {
-        let item = item?;
-        get_df(item)
-    }).collect::<PyResult<Vec<_>>>()?;
+    let dfs = iter
+        .map(|item| {
+            let item = item?;
+            get_df(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
 
     let df = diag_concat_df(&dfs).map_err(PyPolarsEr::from)?;
     Ok(df.into())
@@ -274,5 +302,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
     Ok(())
 }
