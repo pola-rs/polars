@@ -137,7 +137,7 @@ where
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
-                    rhs.gt(value)
+                    rhs.lt(value)
                 } else {
                     BooleanChunked::full("", false, rhs.len())
                 }
@@ -165,7 +165,7 @@ where
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
-                    rhs.gt_eq(value)
+                    rhs.lt_eq(value)
                 } else {
                     BooleanChunked::full("", false, rhs.len())
                 }
@@ -193,7 +193,7 @@ where
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
-                    rhs.lt(value)
+                    rhs.gt(value)
                 } else {
                     BooleanChunked::full("", false, rhs.len())
                 }
@@ -221,7 +221,7 @@ where
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
-                    rhs.lt_eq(value)
+                    rhs.gt_eq(value)
                 } else {
                     BooleanChunked::full("", false, rhs.len())
                 }
@@ -403,7 +403,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, Operator::GtEq)
+                compare_bools(&lhs, &rhs, Operator::Lt)
             }
         }
     }
@@ -434,7 +434,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, Operator::GtEq)
+                compare_bools(&lhs, &rhs, Operator::LtEq)
             }
         }
     }
@@ -1128,5 +1128,66 @@ mod test {
         assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
         let out = false_.lt_eq(&a);
         assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+    }
+
+    #[test]
+    fn test_broadcasting_numeric() {
+        let a = Int32Chunked::new_from_slice("", &[1, 2, 3]);
+        let one = Int32Chunked::new_from_slice("", &[1]);
+        let three = Int32Chunked::new_from_slice("", &[3]);
+
+        let out = a.eq(&one);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = one.eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = a.eq(&three);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
+        let out = three.eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
+
+        let out = a.neq(&one);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = one.neq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = a.neq(&three);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(false)]);
+        let out = three.neq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(false)]);
+
+        let out = a.gt(&one);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = one.gt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = a.gt(&three);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = three.gt(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(false)]);
+
+        let out = a.lt(&one);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = one.lt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = a.lt(&three);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(false)]);
+        let out = three.lt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+
+        let out = a.gt_eq(&one);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = one.gt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = a.gt_eq(&three);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
+        let out = three.gt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+
+        let out = a.lt_eq(&one);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = one.lt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = a.lt_eq(&three);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = three.lt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
     }
 }

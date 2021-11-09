@@ -73,8 +73,6 @@ where
     T: PolarsNumericType,
 {
     fn zip_with(&self, mask: &BooleanChunked, other: &ChunkedArray<T>) -> Result<ChunkedArray<T>> {
-        dbg!(&self, other);
-        dbg!(&mask);
         // broadcasting path
         if self.len() != mask.len() || other.len() != mask.len() {
             impl_ternary_broadcast!(self, self.len(), other.len(), other, mask, T)
