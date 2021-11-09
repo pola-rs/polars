@@ -4,16 +4,15 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.datatypes import *
-from polars.lazy import *
+from polars.lazy import col, lit, map_binary, when
 
 
 def test_lazy():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    ldf = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
+    _ = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
 
     # test if it executes
-    new = (
+    _ = (
         df.lazy()
         .with_column(
             when(col("a").gt(lit(2))).then(lit(10)).otherwise(lit(1)).alias("new")

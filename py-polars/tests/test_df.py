@@ -1,3 +1,4 @@
+# flake8: noqa: W191,E101
 from builtins import range
 from datetime import datetime
 from io import BytesIO
@@ -9,8 +10,6 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import *
-from polars.lazy import *
 
 
 def test_version():
@@ -316,7 +315,7 @@ def test_downsample():
             946685880000,
             946685940000,
         ],
-    ).cast(Datetime)
+    ).cast(pl.Datetime)
     s2 = s.clone()
     df = pl.DataFrame({"a": s, "b": s2})
     out = df.downsample("a", rule="minute", n=5).first()
@@ -621,7 +620,7 @@ def test_custom_groupby():
     out = (
         df.lazy()
         .groupby("b")
-        .agg([col("a").apply(lambda x: x.sum(), return_dtype=int)])
+        .agg([pl.col("a").apply(lambda x: x.sum(), return_dtype=int)])
         .collect()
     )
     assert out.shape == (3, 2)
@@ -805,7 +804,7 @@ def test_lazy_functions():
 
 def test_multiple_column_sort():
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [2, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.sort([col("b"), col("c").reverse()])
+    out = df.sort([pl.col("b"), pl.col("c").reverse()])
     assert out["c"] == [2, 3, 1]
     assert out["b"] == [2, 2, 3]
 
@@ -995,14 +994,14 @@ def dot_product():
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
-    assert df[[col("a").dot("b")]][0, "a"] == 20
+    assert df[[pl.col("a").dot("b")]][0, "a"] == 20
 
 
 def test_hash_rows():
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
     assert df.hash_rows().dtype == pl.UInt64
     assert df["a"].hash().dtype == pl.UInt64
-    assert df[[col("a").hash().alias("foo")]]["foo"].dtype == pl.UInt64
+    assert df[[pl.col("a").hash().alias("foo")]]["foo"].dtype == pl.UInt64
 
 
 def test_create_df_from_object():
@@ -1019,7 +1018,7 @@ def test_hashing_on_python_objects():
     # this requires that the hashing and aggregations are done on python objects
 
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
-    df = df.with_column(col("a").apply(lambda x: datetime(2021, 1, 1)).alias("foo"))
+    df = df.with_column(pl.col("a").apply(lambda x: datetime(2021, 1, 1)).alias("foo"))
     assert df.groupby(["foo"]).first().shape == (1, 3)
     assert df.drop_duplicates().shape == (3, 3)
 
@@ -1084,7 +1083,7 @@ def test_apply_list_return():
     assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
 
 
-def test_groupby_cat_list():
+def test_groupby_cat_list():  # noqa: W191,E101
     grouped = (
         pl.DataFrame(
             [

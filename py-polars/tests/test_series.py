@@ -6,7 +6,6 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import *
 
 
 def create_series() -> pl.Series:
@@ -168,12 +167,12 @@ def test_filter():
 def test_cast():
     a = pl.Series("a", range(20))
 
-    assert a.cast(Float32).dtype == Float32
-    assert a.cast(Float64).dtype == Float64
-    assert a.cast(Int32).dtype == Int32
-    assert a.cast(UInt32).dtype == UInt32
-    assert a.cast(Datetime).dtype == Datetime
-    assert a.cast(Date).dtype == Date
+    assert a.cast(pl.Float32).dtype == pl.Float32
+    assert a.cast(pl.Float64).dtype == pl.Float64
+    assert a.cast(pl.Int32).dtype == pl.Int32
+    assert a.cast(pl.UInt32).dtype == pl.UInt32
+    assert a.cast(pl.Datetime).dtype == pl.Datetime
+    assert a.cast(pl.Date).dtype == pl.Date
 
 
 def test_to_python():
@@ -206,16 +205,16 @@ def test_rechunk():
 def test_indexing():
     a = pl.Series("a", [1, 2, None])
     assert a[1] == 2
-    assert a[2] == None
+    assert a[2] is None
     b = pl.Series("b", [True, False])
     assert b[0]
     assert not b[1]
     a = pl.Series("a", ["a", None])
     assert a[0] == "a"
-    assert a[1] == None
+    assert a[1] is None
     a = pl.Series("a", [0.1, None])
     assert a[0] == 0.1
-    assert a[1] == None
+    assert a[1] is None
 
 
 def test_arrow():
