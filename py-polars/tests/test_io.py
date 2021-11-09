@@ -1,3 +1,4 @@
+# flake8: noqa: W191,E101
 import copy
 import gzip
 import io
@@ -7,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
 import pytest
 
 import polars as pl
