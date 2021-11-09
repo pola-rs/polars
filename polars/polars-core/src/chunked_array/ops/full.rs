@@ -1,6 +1,8 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::NoNull;
+use arrow::bitmap::MutableBitmap;
+use polars_arrow::array::default_arrays::FromData;
 
 impl<T> ChunkFull<T::Native> for ChunkedArray<T>
 where
@@ -28,9 +30,9 @@ where
 }
 impl ChunkFull<bool> for BooleanChunked {
     fn full(name: &str, value: bool, length: usize) -> Self {
-        let mut ca = (0..length).map(|_| value).collect::<BooleanChunked>();
-        ca.rename(name);
-        ca
+        let mut bits = MutableBitmap::with_capacity(length);
+        bits.extend_constant(length, value);
+        (name, BooleanArray::from_data_default(bits.into(), None)).into()
     }
 }
 

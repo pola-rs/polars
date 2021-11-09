@@ -18,7 +18,7 @@ pub use crate::frame::IntoLazy;
 use polars_core::frame::select::Selection;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::get_supertype;
+use polars_core::utils::{get_supertype, CustomIterTools};
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {
@@ -974,7 +974,9 @@ impl Expr {
         if periods > 0 {
             when(self.clone().apply(
                 move |s: Series| {
-                    let ca: BooleanChunked = (0..s.len() as i64).map(|i| i >= periods).collect();
+                    // TODO! create from arrow array.
+                    let ca: BooleanChunked =
+                        (0..s.len() as i64).map(|i| i >= periods).collect_trusted();
                     Ok(ca.into_series())
                 },
                 GetOutput::from_type(DataType::Boolean),
@@ -987,7 +989,8 @@ impl Expr {
                     let length = s.len() as i64;
                     // periods is negative, so subtraction.
                     let tipping_point = length + periods;
-                    let ca: BooleanChunked = (0..length).map(|i| i < tipping_point).collect();
+                    let ca: BooleanChunked =
+                        (0..length).map(|i| i < tipping_point).collect_trusted();
                     Ok(ca.into_series())
                 },
                 GetOutput::from_type(DataType::Boolean),

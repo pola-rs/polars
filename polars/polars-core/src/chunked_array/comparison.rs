@@ -1,4 +1,6 @@
+use crate::utils::align_chunks_binary;
 use crate::{prelude::*, utils::NoNull};
+use arrow::compute::comparison::Operator;
 use arrow::scalar::Utf8Scalar;
 use arrow::{
     array::{ArrayRef, BooleanArray, PrimitiveArray, Utf8Array},
@@ -69,124 +71,181 @@ where
 
     fn eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.eq(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.eq(value)
+                } else {
+                    BooleanChunked::full("", false, self.len())
+                }
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            // should not fail if arrays are equal
-            self.comparison(rhs, |x, y| {
-                comparison::compare(x, y, comparison::Operator::Eq)
-            })
-            .expect("should not fail.")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.eq(value)
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                lhs.comparison(&rhs, |x, y| {
+                    comparison::compare(x, y, comparison::Operator::Eq)
+                })
+                .expect("should not fail.")
+            }
         }
     }
 
     fn neq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.neq(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.neq(value)
+                } else {
+                    BooleanChunked::full("", false, self.len())
+                }
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |x, y| {
-                comparison::compare(x, y, comparison::Operator::Neq)
-            })
-            .expect("should not fail.")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.neq(value)
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                lhs.comparison(&rhs, |x, y| {
+                    comparison::compare(x, y, comparison::Operator::Neq)
+                })
+                .expect("should not fail.")
+            }
         }
     }
 
     fn gt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.gt(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gt(value)
+                } else {
+                    BooleanChunked::full("", false, self.len())
+                }
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |x, y| {
-                comparison::compare(x, y, comparison::Operator::Gt)
-            })
-            .expect("should not fail.")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lt(value)
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                lhs.comparison(&rhs, |x, y| {
+                    comparison::compare(x, y, comparison::Operator::Gt)
+                })
+                .expect("should not fail.")
+            }
         }
     }
 
     fn gt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.gt_eq(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gt_eq(value)
+                } else {
+                    BooleanChunked::full("", false, self.len())
+                }
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |x, y| {
-                comparison::compare(x, y, comparison::Operator::GtEq)
-            })
-            .expect("should not fail.")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lt_eq(value)
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                lhs.comparison(&rhs, |x, y| {
+                    comparison::compare(x, y, comparison::Operator::GtEq)
+                })
+                .expect("should not fail.")
+            }
         }
     }
 
     fn lt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.lt(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lt(value)
+                } else {
+                    BooleanChunked::full("", false, self.len())
+                }
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |x, y| {
-                comparison::compare(x, y, comparison::Operator::Lt)
-            })
-            .expect("should not fail.")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gt(value)
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                lhs.comparison(&rhs, |x, y| {
+                    comparison::compare(x, y, comparison::Operator::Lt)
+                })
+                .expect("should not fail.")
+            }
         }
     }
 
     fn lt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.lt_eq(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lt_eq(value)
+                } else {
+                    BooleanChunked::full("", false, self.len())
+                }
+            }
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gt_eq(value)
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                lhs.comparison(&rhs, |x, y| {
+                    comparison::compare(x, y, comparison::Operator::LtEq)
+                })
+                .expect("should not fail.")
             }
         }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |x, y| {
-                comparison::compare(x, y, comparison::Operator::LtEq)
-            })
-            .expect("should not fail.")
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
-        }
     }
+}
+
+fn compare_bools(lhs: &BooleanChunked, rhs: &BooleanChunked, op: Operator) -> BooleanChunked {
+    let chunks = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(l, r)| Arc::new(compute::comparison::boolean_compare(l, r, op).unwrap()) as ArrayRef)
+        .collect();
+
+    BooleanChunked::new_from_chunks(lhs.name(), chunks)
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
@@ -196,97 +255,187 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
 
     fn eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                match value {
-                    true => self.clone(),
-                    false => self.not(),
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    match value {
+                        true => self.clone(),
+                        false => self.not(),
+                    }
+                } else {
+                    BooleanChunked::full("", false, self.len())
                 }
-            } else {
-                BooleanChunked::full("", false, self.len())
             }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    match value {
+                        true => rhs.clone(),
+                        false => rhs.not(),
+                    }
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                compare_bools(&lhs, &rhs, Operator::Eq)
+            }
         }
     }
 
     fn neq(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                match value {
-                    true => self.not(),
-                    false => self.clone(),
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    match value {
+                        true => self.not(),
+                        false => self.clone(),
+                    }
+                } else {
+                    BooleanChunked::full("", false, self.len())
                 }
-            } else {
-                BooleanChunked::full("", false, self.len())
             }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    match value {
+                        true => rhs.not(),
+                        false => rhs.clone(),
+                    }
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                compare_bools(&lhs, &rhs, Operator::Neq)
+            }
         }
     }
 
     fn gt(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                match value {
-                    true => BooleanChunked::full("", false, self.len()),
-                    false => self.clone(),
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    match value {
+                        true => BooleanChunked::full("", false, self.len()),
+                        false => self.clone(),
+                    }
+                } else {
+                    BooleanChunked::full("", false, self.len())
                 }
-            } else {
-                BooleanChunked::full("", false, self.len())
             }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    match value {
+                        true => rhs.not(),
+                        false => BooleanChunked::full("", false, rhs.len()),
+                    }
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                compare_bools(&lhs, &rhs, Operator::Gt)
+            }
         }
     }
 
     fn gt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                match value {
-                    true => self.clone(),
-                    false => BooleanChunked::full("", true, self.len()),
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    match value {
+                        true => self.clone(),
+                        false => BooleanChunked::full("", true, self.len()),
+                    }
+                } else {
+                    BooleanChunked::full("", false, self.len())
                 }
-            } else {
-                BooleanChunked::full("", false, self.len())
             }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    match value {
+                        true => BooleanChunked::full("", true, rhs.len()),
+                        false => rhs.not(),
+                    }
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                compare_bools(&lhs, &rhs, Operator::GtEq)
+            }
         }
     }
 
     fn lt(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                match value {
-                    true => self.not(),
-                    false => BooleanChunked::full("", false, self.len()),
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    match value {
+                        true => self.not(),
+                        false => BooleanChunked::full("", false, self.len()),
+                    }
+                } else {
+                    BooleanChunked::full("", false, self.len())
                 }
-            } else {
-                BooleanChunked::full("", false, self.len())
             }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    match value {
+                        true => BooleanChunked::full("", false, rhs.len()),
+                        false => rhs.clone(),
+                    }
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                compare_bools(&lhs, &rhs, Operator::Lt)
+            }
         }
     }
 
     fn lt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                match value {
-                    true => BooleanChunked::full("", true, self.len()),
-                    false => self.not(),
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    match value {
+                        true => BooleanChunked::full("", true, self.len()),
+                        false => BooleanChunked::full("", false, self.len()),
+                    }
+                } else {
+                    BooleanChunked::full("", false, self.len())
                 }
-            } else {
-                BooleanChunked::full("", false, self.len())
             }
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    match value {
+                        true => rhs.clone(),
+                        false => BooleanChunked::full("", true, rhs.len()),
+                    }
+                } else {
+                    BooleanChunked::full("", false, rhs.len())
+                }
+            }
+            _ => {
+                // same length
+                let (lhs, rhs) = align_chunks_binary(self, rhs);
+                compare_bools(&lhs, &rhs, Operator::LtEq)
+            }
         }
     }
 }
@@ -918,5 +1067,127 @@ mod test {
 
         let c = &a | &falses;
         assert_eq!(Vec::from(&c), &[Some(true), Some(false), None])
+    }
+
+    #[test]
+    fn test_broadcasting_bools() {
+        let a = BooleanChunked::new_from_slice("", &[true, false, true]);
+        let true_ = BooleanChunked::new_from_slice("", &[true]);
+        let false_ = BooleanChunked::new_from_slice("", &[false]);
+
+        let out = a.eq(&true_);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        let out = true_.eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        let out = a.eq(&false_);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        let out = false_.eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+
+        let out = a.neq(&true_);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        let out = true_.neq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        let out = a.neq(&false_);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        let out = false_.neq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+
+        let out = a.gt(&true_);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = true_.gt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        let out = a.gt(&false_);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        let out = false_.gt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+
+        let out = a.gt_eq(&true_);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        let out = true_.gt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = a.gt_eq(&false_);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = false_.gt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+
+        let out = a.lt(&true_);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        let out = true_.lt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = a.lt(&false_);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = false_.lt(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+
+        let out = a.lt_eq(&true_);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = true_.lt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        let out = a.lt_eq(&false_);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = false_.lt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+    }
+
+    #[test]
+    fn test_broadcasting_numeric() {
+        let a = Int32Chunked::new_from_slice("", &[1, 2, 3]);
+        let one = Int32Chunked::new_from_slice("", &[1]);
+        let three = Int32Chunked::new_from_slice("", &[3]);
+
+        let out = a.eq(&one);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = one.eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = a.eq(&three);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
+        let out = three.eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
+
+        let out = a.neq(&one);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = one.neq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = a.neq(&three);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(false)]);
+        let out = three.neq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(false)]);
+
+        let out = a.gt(&one);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = one.gt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = a.gt(&three);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = three.gt(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(false)]);
+
+        let out = a.lt(&one);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        let out = one.lt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = a.lt(&three);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(false)]);
+        let out = three.lt(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+
+        let out = a.gt_eq(&one);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = one.gt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = a.gt_eq(&three);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
+        let out = three.gt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+
+        let out = a.lt_eq(&one);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = one.lt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = a.lt_eq(&three);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+        let out = three.lt_eq(&a);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
     }
 }
