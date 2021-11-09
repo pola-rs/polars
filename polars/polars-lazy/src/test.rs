@@ -238,6 +238,20 @@ fn test_lazy_shift() {
 }
 
 #[test]
+fn test_shift_and_fill() -> Result<()> {
+    let out = df![
+        "a" => [1, 2, 3]
+    ]?
+    .lazy()
+    .select([col("a").shift_and_fill(-1, lit(5))])
+    .collect()?;
+
+    let out = out.column("a")?;
+    assert_eq!(Vec::from(out.i32()?), &[Some(2), Some(3), Some(5)]);
+    Ok(())
+}
+
+#[test]
 fn test_lazy_ternary_and_predicates() {
     let df = get_df();
     // test if this runs. This failed because is_not_null changes the schema name, so we

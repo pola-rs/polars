@@ -2,6 +2,7 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{expr_to_root_column_name, has_expr, has_wildcard};
+use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
 #[cfg(feature = "temporal")]
@@ -15,10 +16,11 @@ use std::{
 };
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
+use polars_arrow::array::default_arrays::FromData;
 use polars_core::frame::select::Selection;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::{get_supertype, CustomIterTools};
+use polars_core::utils::get_supertype;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {
@@ -974,9 +976,12 @@ impl Expr {
         if periods > 0 {
             when(self.clone().apply(
                 move |s: Series| {
-                    // TODO! create from arrow array.
-                    let ca: BooleanChunked =
-                        (0..s.len() as i64).map(|i| i >= periods).collect_trusted();
+                    let len = s.len();
+                    let mut bits = MutableBitmap::with_capacity(s.len());
+                    bits.extend_constant(periods as usize, false);
+                    bits.extend_constant(len - periods as usize, true);
+                    let mask = BooleanArray::from_data_default(bits.into(), None);
+                    let ca: BooleanChunked = mask.into();
                     Ok(ca.into_series())
                 },
                 GetOutput::from_type(DataType::Boolean),
@@ -989,8 +994,11 @@ impl Expr {
                     let length = s.len() as i64;
                     // periods is negative, so subtraction.
                     let tipping_point = length + periods;
-                    let ca: BooleanChunked =
-                        (0..length).map(|i| i < tipping_point).collect_trusted();
+                    let mut bits = MutableBitmap::with_capacity(s.len());
+                    bits.extend_constant(tipping_point as usize, true);
+                    bits.extend_constant(-periods as usize, false);
+                    let mask = BooleanArray::from_data_default(bits.into(), None);
+                    let ca: BooleanChunked = mask.into();
                     Ok(ca.into_series())
                 },
                 GetOutput::from_type(DataType::Boolean),
