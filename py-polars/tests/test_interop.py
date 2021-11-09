@@ -81,3 +81,39 @@ def test_from_pandas_categorical_none():
     out = pl.from_pandas(s)
     assert out.dtype == pl.Categorical
     assert out.to_list() == ["a", "b", "c", None]
+
+
+def test_from_dict():
+    data = {"a": [1, 2], "b": [3, 4]}
+    df = pl.from_dict(data)
+    assert df.shape == (2, 2)
+
+
+def test_from_dicts():
+    data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
+    df = pl.from_dicts(data)
+    assert df.shape == (3, 2)
+
+
+def test_from_records():
+    data = [[1, 2, 3], [4, 5, 6]]
+    df = pl.from_records(data, columns=["a", "b"])
+    assert df.shape == (3, 2)
+
+
+def test_from_arrow():
+    data = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df = pl.from_arrow(data)
+    assert df.shape == (3, 2)
+
+
+def test_from_pandas_dataframe():
+    pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
+    df = pl.from_pandas(pd_df)
+    assert df.shape == (2, 3)
+
+
+def test_from_pandas_series():
+    pd_series = pd.Series([1, 2, 3], name="pd")
+    df = pl.from_pandas(pd_series)
+    assert df.shape == (3,)
