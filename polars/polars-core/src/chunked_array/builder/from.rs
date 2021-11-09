@@ -19,6 +19,13 @@ impl From<(&str, BooleanArray)> for BooleanChunked {
         ChunkedArray::new_from_chunks(name, vec![Arc::new(arr)])
     }
 }
+
+impl From<BooleanArray> for BooleanChunked {
+    fn from(arr: BooleanArray) -> Self {
+        ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
+    }
+}
+
 impl From<(&str, Utf8Array<i64>)> for BooleanChunked {
     fn from(tpl: (&str, Utf8Array<i64>)) -> Self {
         let name = tpl.0;
