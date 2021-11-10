@@ -100,9 +100,9 @@ impl ListChunked {
 
     /// Apply a closure `F` elementwise.
     #[cfg(feature = "private")]
-    pub fn apply_amortized<'a, F>(&'a self, f: F) -> Self
+    pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self
     where
-        F: Fn(UnsafeSeries<'a>) -> Series + Copy,
+        F: FnMut(UnsafeSeries<'a>) -> Series,
     {
         if self.is_empty() {
             return self.clone();
@@ -128,9 +128,9 @@ impl ListChunked {
         ca
     }
 
-    pub fn try_apply_amortized<'a, F>(&'a self, f: F) -> Result<Self>
+    pub fn try_apply_amortized<'a, F>(&'a self, mut f: F) -> Result<Self>
     where
-        F: Fn(UnsafeSeries<'a>) -> Result<Series> + Copy,
+        F: FnMut(UnsafeSeries<'a>) -> Result<Series>,
     {
         if self.is_empty() {
             return Ok(self.clone());
