@@ -2,7 +2,16 @@
 [![rust docs](https://docs.rs/polars/badge.svg)](https://docs.rs/polars/latest/polars/)
 [![Build and test](https://github.com/pola-rs/polars/workflows/Build%20and%20test/badge.svg)](https://github.com/pola-rs/polars/actions)
 [![](https://img.shields.io/crates/v/polars.svg)](https://crates.io/crates/polars)
-[![Gitter](https://badges.gitter.im/polars-rs/community.svg)](https://gitter.im/polars-rs/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+
+<p align="center">
+  <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python Documentation</a>
+  |
+  <a href="https://pola-rs.github.io/polars/polars/index.html">Rust Documentation</a>
+  |
+  <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
+  | 
+  <a href="https://stackoverflow.com/questions/tagged/python-polars">StackOverflow</a>
+</p>
 
 ## Blazingly fast DataFrames in Rust & Python
 
