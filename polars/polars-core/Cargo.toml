@@ -4,8 +4,8 @@ version = "0.17.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
-description = "Core of the Polars DataFrame library"
 repository = "https://github.com/pola-rs/polars"
+description = "Core of the Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -19,7 +19,7 @@ default = ["docs", "temporal", "performant", "private"]
 lazy = ["sort_multiple"]
 
 # commented out until UB is fixed
-#parallel = []
+# parallel = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 performant = []
@@ -77,10 +77,9 @@ diff = []
 moment = []
 diagonal_concat = []
 
-
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
-dtype-datetime= ["temporal"]
+dtype-datetime = ["temporal"]
 dtype-time = ["temporal"]
 dtype-i8 = []
 dtype-i16 = []
@@ -91,72 +90,72 @@ dtype-categorical = []
 parquet = ["arrow/io_parquet"]
 
 docs-selection = [
-    "ndarray",
-    "pivot",
-    "downsample",
-    "is_in",
-    "sort_multiple",
-    "rows",
-    "docs",
-    "strings",
-    "object",
-    "lazy",
-    "temporal",
-    "random",
-    "zip_with",
-    "round_series",
-    "checked_arithmetic",
-    "repeat_by",
-    "is_first",
-    "is_last",
-    "asof_join",
-    "cross_join",
-    "dot_product",
-    "concat_str",
-    "row_hash",
-    "mode",
-    "extract_jsonpath",
-    "cum_agg",
-    "rolling_window",
-    "interpolate",
-    "diff",
-    "moment",
-    "dtype-categorical",
-    "rank",
-    "list",
-    "diagonal_concat"
+  "ndarray",
+  "pivot",
+  "downsample",
+  "is_in",
+  "sort_multiple",
+  "rows",
+  "docs",
+  "strings",
+  "object",
+  "lazy",
+  "temporal",
+  "random",
+  "zip_with",
+  "round_series",
+  "checked_arithmetic",
+  "repeat_by",
+  "is_first",
+  "is_last",
+  "asof_join",
+  "cross_join",
+  "dot_product",
+  "concat_str",
+  "row_hash",
+  "mode",
+  "extract_jsonpath",
+  "cum_agg",
+  "rolling_window",
+  "interpolate",
+  "diff",
+  "moment",
+  "dtype-categorical",
+  "rank",
+  "list",
+  "diagonal_concat",
 ]
 
 [dependencies]
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6e9ea352b470556e08600274ba2add6106cf6e26", default-features = false, features=["compute"] }
-#arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, features=["compute"], branch="dev" }
-#arrow = { package = "arrow2", version="0.7", default-features = false, features=["compute"]}
-polars-arrow = {version = "0.17.0", path = "../polars-arrow"}
-thiserror = "1.0"
-num = "^0.4"
-itertools = "0.10"
-unsafe_unwrap = "^0.1.0"
-rayon = "1.5"
-comfy-table = { version="4.0", optional = true}
-prettytable-rs = {version = "0.8.0", optional = true }
-chrono = {version = "0.4", optional = true}
-rand = {version = "0.7", optional = true}
-rand_distr = {version = "0.3", optional = true}
-ndarray = {version = "0.15", optional = true, default_features = false}
-regex = {version = "1.4", optional = true}
-serde_json = {version = "1.0", optional = true }
-jsonpath_lib = {version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch="improve_compiled"}
-# activate if you want serde support for Series and DataFrames
-serde = {version = "1", features=["derive"], optional = true }
-anyhow = "1.0"
 ahash = "0.7"
-num_cpus = "1.1"
+anyhow = "1.0"
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6e9ea352b470556e08600274ba2add6106cf6e26", default-features = false, features = ["compute"] }
+# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, features = ["compute"], branch = "dev" }
+# arrow = { package = "arrow2", version = "0.7", default-features = false, features = ["compute"] }
+chrono = { version = "0.4", optional = true }
+comfy-table = { version = "4.0", optional = true }
+hashbrown = { version = "0.11", features = ["rayon"] }
+itertools = "0.10"
+jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 lazy_static = "1.4"
-hashbrown = {version = "0.11", features = ["rayon"] }
+ndarray = { version = "0.15", optional = true, default_features = false }
+num = "^0.4"
+num_cpus = "1.1"
+polars-arrow = { version = "0.17.0", path = "../polars-arrow" }
+prettytable-rs = { version = "0.8.0", optional = true }
+rand = { version = "0.7", optional = true }
+rand_distr = { version = "0.3", optional = true }
+rayon = "1.5"
+regex = { version = "1.4", optional = true }
+# activate if you want serde support for Series and DataFrames
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+thiserror = "1.0"
+unsafe_unwrap = "^0.1.0"
 
 [package.metadata.docs.rs]
 # not all because arrow 4.3 does not compile with simd
-#all-features = true
+# all-features = true
 features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

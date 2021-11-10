@@ -2,12 +2,12 @@
 name = "py-polars"
 version = "0.10.18"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
+documentation = "https://pola-rs.github.io/polars-book/"
 edition = "2018"
+homepage = "https://github.com/pola-rs/polars"
+license = "MIT"
 readme = "README.md"
 repository = "https://github.com/pola-rs/polars"
-license = "MIT"
-documentation = "https://pola-rs.github.io/polars-book/"
-homepage = "https://github.com/pola-rs/polars"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,16 +15,16 @@ homepage = "https://github.com/pola-rs/polars"
 # prevents package from thinking it's in the workspace
 
 [dependencies]
-polars-core = {path = "../polars/polars-core", default-features = false}
-pyo3 = {version = "0.14", features = ["abi3-py36", "extension-module", "multiple-pymethods"] }
-libc = "0.2"
-thiserror = "1.0.20"
-numpy = "0.14"
-ndarray = "0.15"
-mimalloc = { version = "*", default-features = false}
-serde_json = { version = "1", optional = true }
 ahash = "0.7"
 bincode = "1.3"
+libc = "0.2"
+mimalloc = { version = "*", default-features = false }
+ndarray = "0.15"
+numpy = "0.14"
+polars-core = { path = "../polars/polars-core", default-features = false }
+pyo3 = { version = "0.14", features = ["abi3-py36", "extension-module", "multiple-pymethods"] }
+serde_json = { version = "1", optional = true }
+thiserror = "1.0.20"
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
@@ -40,46 +40,46 @@ default = ["pivot", "json", "parquet", "downsample", "ipc", "is_in", "json", "po
 [dependencies.polars]
 path = "../polars"
 features = [
-    "zip_with",
-    "simd",
-    "lazy",
-    "strings",
-    "temporal",
-    "random",
-    "object",
-    "csv-file",
-    "pretty_fmt",
-    "performant",
-    "dtype-full",
-    "rows",
-    "private",
-    "round_series",
-    "is_first",
-    "asof_join",
-    "cross_join",
-    "dot_product",
-    "concat_str",
-    "row_hash",
-    "reinterpret",
-    "decompress-fast",
-    "mode",
-    "extract_jsonpath",
-    "lazy_regex",
-    "cum_agg",
-    "rolling_window",
-    "interpolate",
-    "list",
-    "rank",
-    "diff",
-    "moment",
-    "arange",
-    "true_div",
-    "dtype-categorical",
-    "diagonal_concat"
+  "zip_with",
+  "simd",
+  "lazy",
+  "strings",
+  "temporal",
+  "random",
+  "object",
+  "csv-file",
+  "pretty_fmt",
+  "performant",
+  "dtype-full",
+  "rows",
+  "private",
+  "round_series",
+  "is_first",
+  "asof_join",
+  "cross_join",
+  "dot_product",
+  "concat_str",
+  "row_hash",
+  "reinterpret",
+  "decompress-fast",
+  "mode",
+  "extract_jsonpath",
+  "lazy_regex",
+  "cum_agg",
+  "rolling_window",
+  "interpolate",
+  "list",
+  "rank",
+  "diff",
+  "moment",
+  "arange",
+  "true_div",
+  "dtype-categorical",
+  "diagonal_concat",
 ]
 
-#[patch.crates-io]
-#packed_simd_2 = { git = 'https://github.com/rust-lang/packed_simd' }
+# [patch.crates-io]
+# packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd" }
 
 [lib]
 name = "polars"
