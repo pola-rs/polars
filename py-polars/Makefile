@@ -5,6 +5,7 @@ pre-commit:
 	black .
 	mypy
 	flake8 .
+	make -C .. fmt_toml
 
 pip:
 	pip install --force-reinstall -U wheels/polars-*.whl

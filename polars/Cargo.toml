@@ -4,9 +4,9 @@ version = "0.17.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
-description = "DataFrame Library based on Apache Arrow"
-repository = "https://github.com/pola-rs/polars"
 readme = "../README.md"
+repository = "https://github.com/pola-rs/polars"
+description = "DataFrame Library based on Apache Arrow"
 
 [features]
 rows = ["polars-core/rows"]
@@ -15,13 +15,14 @@ avx512 = ["polars-core/avx512"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal"]
 random = ["polars-core/random"]
-default = ["docs",
-    "zip_with",
-    "csv-file",
-    "temporal",
-    "performant",
-    "plain_fmt",
-    "dtype-slim",
+default = [
+  "docs",
+  "zip_with",
+  "csv-file",
+  "temporal",
+  "performant",
+  "plain_fmt",
+  "dtype-slim",
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
@@ -29,7 +30,7 @@ serde = ["polars-core/serde"]
 parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
 lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 # commented out until UB is fixed
-#parallel = ["polars-core/parallel"]
+# parallel = ["polars-core/parallel"]
 
 # extra utilities for Utf8Chunked
 strings = ["polars-core/strings"]
@@ -101,26 +102,26 @@ private = ["polars-lazy/private"]
 
 # all opt-in datatypes
 dtype-full = [
-    "dtype-date",
-    "dtype-datetime",
-    "dtype-time",
-    "dtype-i8",
-    "dtype-i16",
-    "dtype-u8",
-    "dtype-u16",
-    "dtype-categorical",
+  "dtype-date",
+  "dtype-datetime",
+  "dtype-time",
+  "dtype-i8",
+  "dtype-i16",
+  "dtype-u8",
+  "dtype-u16",
+  "dtype-categorical",
 ]
 
 # sensible minimal set of opt-in datatypes
 dtype-slim = [
-    "dtype-date",
-    "dtype-datetime",
+  "dtype-date",
+  "dtype-datetime",
 ]
 
 # opt-in datatypes for Series
 dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date", "polars-io/dtype-date"]
-dtype-datetime= ["polars-core/dtype-datetime", "polars-lazy/dtype-datetime", "polars-io/dtype-datetime"]
-dtype-time= ["polars-core/dtype-time", "polars-io/dtype-time"]
+dtype-datetime = ["polars-core/dtype-datetime", "polars-lazy/dtype-datetime", "polars-io/dtype-datetime"]
+dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8"]
@@ -128,59 +129,59 @@ dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 
 docs-selection = [
-    "csv-file",
-    "json",
-    "parquet",
-    "ipc",
-    "dtype-full",
-    "pivot",
-    "is_in",
-    "sort_multiple",
-    "rows",
-    "docs",
-    "strings",
-    "object",
-    "lazy",
-    "temporal",
-    "random",
-    "zip_with",
-    "round_series",
-    "checked_arithmetic",
-    "ndarray",
-    "downsample",
-    "repeat_by",
-    "is_first",
-    "is_last",
-    "asof_join",
-    "cross_join",
-    "concat_str",
-    "decompress",
-    "mode",
-    "take_opt_iter",
-    "extract_jsonpath",
-    "cum_agg",
-    "rolling_window",
-    "interpolate",
-    "diff",
-    "rank",
-    "list",
-    "arange"
+  "csv-file",
+  "json",
+  "parquet",
+  "ipc",
+  "dtype-full",
+  "pivot",
+  "is_in",
+  "sort_multiple",
+  "rows",
+  "docs",
+  "strings",
+  "object",
+  "lazy",
+  "temporal",
+  "random",
+  "zip_with",
+  "round_series",
+  "checked_arithmetic",
+  "ndarray",
+  "downsample",
+  "repeat_by",
+  "is_first",
+  "is_last",
+  "asof_join",
+  "cross_join",
+  "concat_str",
+  "decompress",
+  "mode",
+  "take_opt_iter",
+  "extract_jsonpath",
+  "cum_agg",
+  "rolling_window",
+  "interpolate",
+  "diff",
+  "rank",
+  "list",
+  "arange",
 ]
 
 bench = [
-    "lazy"
+  "lazy",
 ]
 
 [dependencies]
-polars-core = {version = "0.17.0", path = "./polars-core", features= ["docs", "private"], default-features = false}
-polars-io = {version = "0.17.0", path = "./polars-io", features = ["private"], default-features = false, optional=true}
-polars-lazy = {version = "0.17.0", path = "./polars-lazy", features=["private"], default-features = false, optional=true}
+polars-core = { version = "0.17.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.17.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.17.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
 
 [dev-dependencies]
+ahash = "0.7"
 criterion = "0.3"
 lazy_static = "1.4"
 rand = "0.8"
-ahash = "0.7"
 
 # see: https://bheisler.github.io/criterion.rs/book/faq.html
 [lib]
@@ -204,7 +205,7 @@ harness = false
 
 [package.metadata.docs.rs]
 # not all because arrow 4.3 does not compile with simd
-#all-features = true
+# all-features = true
 features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

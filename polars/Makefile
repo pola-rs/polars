@@ -1,6 +1,7 @@
 
 fmt:
 	cargo fmt --all
+	$(MAKE) -C .. fmt_toml
 
 check:
 	cargo check --all-features \

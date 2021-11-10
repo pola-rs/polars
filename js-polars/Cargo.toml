@@ -2,11 +2,11 @@
 name = "polars"
 version = "0.0.1"
 authors = ["Ritchie Vink"]
-edition = "2018"
-repository = "https://github.com/pola-rs/polars"
-license = "MIT"
 documentation = "https://pola-rs.github.io/polars-book/"
+edition = "2018"
 homepage = "https://github.com/pola-rs/polars"
+license = "MIT"
+repository = "https://github.com/pola-rs/polars"
 
 [lib]
 crate-type = ["cdylib"]
@@ -21,9 +21,9 @@ wee_alloc = { version = "0.4.5" }
 path = "../polars/polars-core"
 default-features = false
 features = [
-    "strings",
-    "temporal",
-    "performant",
+  "strings",
+  "temporal",
+  "performant",
 ]
 
 [profile.release]

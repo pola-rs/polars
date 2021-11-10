@@ -30,7 +30,7 @@ jobs:
           key: ubuntu-x86-64-target-cache-nightly
       - name: Install dependencies
         run: |
-          cargo install cargo-hack
+          cargo install cargo-hack dprint
       - name: Run formatting checks
         run: |
           cargo fmt --all -- --check

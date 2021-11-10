@@ -4,8 +4,8 @@ version = "0.17.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
-description = "IO related logic for the Polars DataFrame library"
 repository = "https://github.com/pola-rs/polars"
+description = "IO related logic for the Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,10 +14,10 @@ repository = "https://github.com/pola-rs/polars"
 json = ["arrow/io_json"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
-#ipc = []
+# ipc = []
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
-dtype-datetime= ["polars-core/dtype-datetime", "polars-core/temporal"]
+dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal"]
 dtype-date = ["polars-core/dtype-date"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
 csv-file = ["csv-core", "memmap", "lexical", "arrow/io_csv_write"]
@@ -29,25 +29,25 @@ temporal = ["polars-core/dtype-date", "polars-core/dtype-datetime"]
 private = []
 
 [dependencies]
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6e9ea352b470556e08600274ba2add6106cf6e26", default-features = false }
-#arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, branch="dev"}
-#arrow = { package = "arrow2", version="0.7", --default-features=false }
-polars-core = {version = "0.17.0", path = "../polars-core", features = ["private"], default-features=false}
-polars-arrow = {version = "0.17.0", path = "../polars-arrow"}
-lexical = {version = "6", optional = true, default-features=false, features = ["std", "parse-floats", "parse-integers"]}
-num_cpus = "1.13.0"
-csv-core = {version = "0.1.10", optional=true}
-regex = "1.4"
-lazy_static = "1.4"
-memmap = { package = "memmap2", version = "0.5.0", optional=true}
-memchr = "2.4"
-anyhow = "1.0"
-rayon = "1.5"
 ahash = "0.7"
-num = "^0.4.0"
+anyhow = "1.0"
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6e9ea352b470556e08600274ba2add6106cf6e26", default-features = false }
+# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, branch = "dev" }
+# arrow = { package = "arrow2", version = "0.7", --default-features = false }
+csv-core = { version = "0.1.10", optional = true }
 dirs = "4.0"
+flate2 = { version = "1", optional = true, default-features = false }
+lazy_static = "1.4"
+lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-floats", "parse-integers"] }
+memchr = "2.4"
+memmap = { package = "memmap2", version = "0.5.0", optional = true }
+num = "^0.4.0"
+num_cpus = "1.13.0"
+polars-arrow = { version = "0.17.0", path = "../polars-arrow" }
+polars-core = { version = "0.17.0", path = "../polars-core", features = ["private"], default-features = false }
+rayon = "1.5"
+regex = "1.4"
 simdutf8 = "0.1"
-flate2 = {version = "1", optional=true, default-features=false}
 
 [package.metadata.docs.rs]
 all-features = true
