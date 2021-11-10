@@ -92,7 +92,7 @@ where
                 lhs.comparison(&rhs, |x, y| {
                     comparison::compare(x, y, comparison::Operator::Eq)
                 })
-                .expect("should not fail.")
+                .unwrap()
             }
         }
     }
@@ -120,7 +120,7 @@ where
                 lhs.comparison(&rhs, |x, y| {
                     comparison::compare(x, y, comparison::Operator::Neq)
                 })
-                .expect("should not fail.")
+                .unwrap()
             }
         }
     }
@@ -148,7 +148,7 @@ where
                 lhs.comparison(&rhs, |x, y| {
                     comparison::compare(x, y, comparison::Operator::Gt)
                 })
-                .expect("should not fail.")
+                .unwrap()
             }
         }
     }
@@ -176,7 +176,7 @@ where
                 lhs.comparison(&rhs, |x, y| {
                     comparison::compare(x, y, comparison::Operator::GtEq)
                 })
-                .expect("should not fail.")
+                .unwrap()
             }
         }
     }
@@ -204,7 +204,7 @@ where
                 lhs.comparison(&rhs, |x, y| {
                     comparison::compare(x, y, comparison::Operator::Lt)
                 })
-                .expect("should not fail.")
+                .unwrap()
             }
         }
     }
@@ -232,7 +232,7 @@ where
                 lhs.comparison(&rhs, |x, y| {
                     comparison::compare(x, y, comparison::Operator::LtEq)
                 })
-                .expect("should not fail.")
+                .unwrap()
             }
         }
     }

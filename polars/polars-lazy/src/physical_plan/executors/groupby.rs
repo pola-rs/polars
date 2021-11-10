@@ -78,8 +78,7 @@ fn groupby_helper(
     let agg_columns = agg_columns?;
 
     columns.extend(agg_columns.into_iter().flatten());
-    let df = DataFrame::new_no_checks(columns);
-    Ok(df)
+    DataFrame::new(columns)
 }
 
 impl Executor for GroupByExec {
