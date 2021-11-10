@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union, overload
 
 import numpy as np
 
@@ -145,6 +145,16 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> "pl.DataFrame":
     ╰─────┴─────╯
     """
     return pl.DataFrame._from_dicts(dicts)
+
+
+@overload
+def from_arrow(a: "pa.Table", rechunk: bool = True) -> "pl.DataFrame":
+    ...
+
+
+@overload
+def from_arrow(a: "pa.Array", rechunk: bool = True) -> "pl.Series":
+    ...
 
 
 def from_arrow(
