@@ -233,8 +233,8 @@ print("total took:", total_time, "s")
 assert out.shape == (9999995, 8)
 
 if not ON_STRINGS:
-    if total_time > 10:
-        print("query took longer than 10s, may be noise")
+    if total_time > 11:
+        print("query took longer than 11s, may be noise")
         exit(1)
 
 # Additional tests
