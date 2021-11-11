@@ -178,6 +178,43 @@ impl DataFrame {
     }
 
     /// Add a new column at index 0 that counts the rows.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn main() -> Result<()> {
+    ///   let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
+    ///   assert_eq!(df1.shape(), (4, 1));
+    ///
+    ///   let df2: DataFrame = df1.with_row_count("Id")?;
+    ///   assert_eq!(df2.shape(), (4, 2));
+    ///   println!("{}", df2);
+    ///
+    ///   Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    ///  shape: (4, 2)
+    ///  +-----+----------+
+    ///  | Id  | Name     |
+    ///  | --- | ---      |
+    ///  | u32 | str      |
+    ///  +=====+==========+
+    ///  | 0   | James    |
+    ///  +-----+----------+
+    ///  | 1   | Mary     |
+    ///  +-----+----------+
+    ///  | 2   | John     |
+    ///  +-----+----------+
+    ///  | 3   | Patricia |
+    ///  +-----+----------+
+    /// ```
     pub fn with_row_count(&self, name: &str) -> Result<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         columns.push(
