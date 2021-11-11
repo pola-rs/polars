@@ -26,8 +26,13 @@ features = ["napi-6"]
 
 [dependencies.polars]
 path = "../polars"
-
-
+features = [
+    "random",
+    "object",
+    "csv-file",
+    "performant",
+    "rows",
+]
 
 
 [profile.release]

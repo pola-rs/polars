@@ -1,0 +1,1 @@
+declare module "polars_internal.js";

@@ -4,7 +4,7 @@ use neon::result::Throw;
 #[derive(Debug, Error)]
 pub enum JsPolarsEr {
     #[error(transparent)]
-    Any(PolarsError),
+    Any(#[from] PolarsError),
     #[error("{0}")]
     Other(String),
 }

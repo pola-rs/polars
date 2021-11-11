@@ -4,7 +4,7 @@
   "description": "",
   "main": "libpolars.node",
   "scripts": {
-    "start": "node app.js",
+    "start": "ts-node app.ts",
     "build": "cargo build -Z unstable-options --out-dir ./bin; mv ./bin/libpolars.so ./bin/libpolars.node",
     "build-debug": "npm run build --",
     "build-release": "npm run build -- --release",
@@ -12,5 +12,9 @@
     "test": "cargo test"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "ts-node": "^10.4.0",
+    "typescript": "^4.4.4"
+  }
 }
