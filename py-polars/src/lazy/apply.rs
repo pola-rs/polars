@@ -67,12 +67,29 @@ pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<S
                 e.pvalue(py).to_string()
             ),
         };
-    // unpack the wrapper in a PySeries
-    let py_pyseries = result_series_wrapper
-        .getattr(py, "_s")
-        .expect("Could net get series attribute '_s'. Make sure that you return a Series object.");
-    // Downcast to Rust
-    let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
+    let pyseries = if let Some(expr) = result_series_wrapper.getattr(py, "_pyexpr").ok() {
+        let pyexpr = expr.extract::<PyExpr>(py).unwrap();
+        let expr = pyexpr.inner;
+        let df = DataFrame::new_no_checks(vec![]);
+        let out = df
+            .lazy()
+            .select([expr])
+            .with_predicate_pushdown(false)
+            .with_projection_pushdown(false)
+            .with_aggregate_pushdown(false)
+            .collect()?;
+
+        let s = out.select_at_idx(0).unwrap().clone();
+        PySeries::new(s)
+    } else {
+        // unpack the wrapper in a PySeries
+        let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
+            "Could net get series attribute '_s'. Make sure that you return a Series object.",
+        );
+        // Downcast to Rust
+        py_pyseries.extract::<PySeries>(py).unwrap()
+    };
+
     // Finally get the actual Series
     Ok(pyseries.series)
 }

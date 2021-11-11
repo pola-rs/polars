@@ -4,8 +4,8 @@ version = "0.17.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
-description = "Lazy query engine for the Polars DataFrame library"
 repository = "https://github.com/pola-rs/polars"
+description = "Lazy query engine for the Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -25,11 +25,11 @@ dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-date = ["polars-core/dtype-date"]
-dtype-datetime= ["polars-core/dtype-datetime"]
+dtype-datetime = ["polars-core/dtype-datetime"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version
-#ooc = ["datafusion", "tokio"]
+# ooc = ["datafusion", "tokio"]
 true_div = []
 
 # operations
@@ -56,13 +56,13 @@ private = []
 
 [dependencies]
 ahash = "0.7"
-rayon = "1.5"
 itertools = "0.10"
-regex = {version = "1.4", optional = true}
+rayon = "1.5"
+regex = { version = "1.4", optional = true }
 
-polars-io = {version = "0.17.0", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features=false}
-polars-core = {version = "0.17.0", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features=false}
-polars-arrow = {version = "0.17.0", path = "../polars-arrow"}
+polars-arrow = { version = "0.17.0", path = "../polars-arrow" }
+polars-core = { version = "0.17.0", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features = false }
+polars-io = { version = "0.17.0", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version
 # datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-datafusion", rev = "88222b7", default-features=false, optional=true}

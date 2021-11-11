@@ -13,7 +13,7 @@ These functions can be used as expression and sometimes also in eager contexts.
 
    col
    count
-   to_list
+   list
    std
    var
    max
@@ -45,6 +45,8 @@ These functions can be used as expression and sometimes also in eager contexts.
    format
    when
    exclude
+   datetime
+   date
 
 Constructor
 -----------

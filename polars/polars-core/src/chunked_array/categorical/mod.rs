@@ -68,7 +68,37 @@ impl CategoricalChunked {
         self.categorical_map = other.categorical_map.clone();
         self
     }
+
+    /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
+    pub fn iter_str(&self) -> CatIter<'_> {
+        let iter = self.deref().into_iter();
+        CatIter {
+            rev: self.categorical_map.as_ref().unwrap(),
+            iter,
+        }
+    }
 }
+
+pub struct CatIter<'a> {
+    rev: &'a RevMapping,
+    iter: Box<dyn PolarsIterator<Item = Option<u32>> + 'a>,
+}
+
+impl<'a> Iterator for CatIter<'a> {
+    type Item = Option<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter
+            .next()
+            .map(|item| item.map(|idx| self.rev.get(idx)))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+impl<'a> ExactSizeIterator for CatIter<'a> {}
 
 impl Deref for CategoricalChunked {
     type Target = UInt32Chunked;

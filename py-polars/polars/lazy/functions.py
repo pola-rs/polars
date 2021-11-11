@@ -22,6 +22,7 @@ try:
     from polars.polars import lit as pylit
     from polars.polars import map_mul as _map_mul
     from polars.polars import pearson_corr as pypearson_corr
+    from polars.polars import py_datetime
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
 
     _DOCUMENTING = False
@@ -66,6 +67,8 @@ __all__ = [
     "collect_all",
     "exclude",
     "format",
+    "_datetime",
+    "_date",
 ]
 
 
@@ -519,7 +522,7 @@ def apply(
     ## Context
 
     * Select/Project
-        Don't do this, use `map_mul`
+        Don't do this, use `map`
     * GroupBy
         expected type `f`: Callable[[Series], Series]
         Applies a python function over each group.
@@ -765,6 +768,79 @@ def argsort_by(
         reverse = [reverse]
     exprs = pl.lazy.expr._selection_to_pyexpr_list(exprs)
     return pl.lazy.expr.wrap_expr(pyargsort_by(exprs, reverse))
+
+
+def _datetime(
+    year: "pl.Expr",
+    month: "pl.Expr",
+    day: "pl.Expr",
+    hour: Optional["pl.Expr"] = None,
+    minute: Optional["pl.Expr"] = None,
+    second: Optional["pl.Expr"] = None,
+    millisecond: Optional["pl.Expr"] = None,
+) -> "pl.Expr":
+    """
+    Create polars Datetime from distinct time components.
+
+    Parameters
+    ----------
+    year
+        column or literal.
+    month
+        column or literal, ranging from 1-12.
+    day
+        column or literal, ranging from 1-31.
+    hour
+        column or literal, ranging from 1-24.
+    minute
+        column or literal, ranging from 1-60.
+    second
+        column or literal, ranging from 1-60.
+    millisecond
+        column or literal, ranging from 1-1000.
+
+    Returns
+    -------
+    Expr of type pl.Datetime
+    """
+
+    year = pl.expr_to_lit_or_expr(year, str_to_lit=False)  # type: ignore
+    month = pl.expr_to_lit_or_expr(month, str_to_lit=False)  # type: ignore
+    day = pl.expr_to_lit_or_expr(day, str_to_lit=False)  # type: ignore
+
+    if hour is not None:
+        hour = pl.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr  # type: ignore
+    if minute is not None:
+        minute = pl.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr  # type: ignore
+    if second is not None:
+        second = pl.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr  # type: ignore
+    if millisecond is not None:
+        millisecond = pl.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr  # type: ignore
+    return pl.wrap_expr(
+        py_datetime(
+            year._pyexpr, month._pyexpr, day._pyexpr, hour, minute, second, millisecond
+        )
+    )
+
+
+def _date(year: "pl.Expr", month: "pl.Expr", day: "pl.Expr") -> "pl.Expr":
+    """
+    Create polars Date from distinct time components.
+
+    Parameters
+    ----------
+    year
+        column or literal.
+    month
+        column or literal, ranging from 1-12.
+    day
+        column or literal, ranging from 1-31.
+
+    Returns
+    -------
+    Expr of type pl.Date
+    """
+    return _datetime(year, month, day).cast(pl.Date).alias("date")
 
 
 def concat_str(exprs: tp.List["pl.Expr"], sep: str = "") -> "pl.Expr":

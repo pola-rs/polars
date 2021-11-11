@@ -7,6 +7,7 @@ use polars_core::{df, prelude::*};
 
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::prelude::*;
+use itertools::assert_equal;
 use polars_core::chunked_array::builder::get_list_builder;
 use std::iter::FromIterator;
 
@@ -235,6 +236,20 @@ fn test_lazy_shift() {
         .collect()
         .unwrap();
     assert_eq!(new.column("foo").unwrap().f64().unwrap().get(0), None);
+}
+
+#[test]
+fn test_shift_and_fill() -> Result<()> {
+    let out = df![
+        "a" => [1, 2, 3]
+    ]?
+    .lazy()
+    .select([col("a").shift_and_fill(-1, lit(5))])
+    .collect()?;
+
+    let out = out.column("a")?;
+    assert_eq!(Vec::from(out.i32()?), &[Some(2), Some(3), Some(5)]);
+    Ok(())
 }
 
 #[test]
@@ -1587,11 +1602,13 @@ fn test_take_in_groups() -> Result<()> {
         .select([col("B")
             .take(lit(Series::new("", &[0u32])))
             .over([col("fruits")])
-            .explode()
             .alias("taken")])
         .collect()?;
 
-    assert_eq!(Vec::from(out.column("taken")?.i32()?), &[Some(3), Some(5)]);
+    assert_eq!(
+        Vec::from(out.column("taken")?.i32()?),
+        &[Some(3), Some(3), Some(5), Some(5), Some(5)]
+    );
     Ok(())
 }
 
@@ -2048,5 +2065,51 @@ fn test_drop_and_select() -> Result<()> {
         .collect()?;
 
     assert_eq!(out.get_column_names(), &["category"]);
+    Ok(())
+}
+
+#[test]
+fn test_take_consistency() -> Result<()> {
+    let df = fruits_cars();
+    let out = df
+        .clone()
+        .lazy()
+        .select([col("A").arg_sort(true).take(lit(0))])
+        .collect()?;
+
+    assert_eq!(out.column("A")?.get(0), AnyValue::UInt32(4));
+
+    let out = df
+        .clone()
+        .lazy()
+        .stable_groupby([col("cars")])
+        .agg([col("A").arg_sort(true).take(lit(0))])
+        .collect()?;
+
+    let out = out.column("A")?;
+    let out = out.u32()?;
+    assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
+
+    let out_df = df
+        .clone()
+        .lazy()
+        .stable_groupby([col("cars")])
+        .agg([
+            col("A"),
+            col("A").arg_sort(true).take(lit(0)).alias("1"),
+            col("A")
+                .take(col("A").arg_sort(true).take(lit(0)))
+                .alias("2"),
+        ])
+        .collect()?;
+
+    let out = out_df.column("2")?;
+    let out = out.i32()?;
+    assert_eq!(Vec::from(out), &[Some(5), Some(2)]);
+
+    let out = out_df.column("1")?;
+    let out = out.u32()?;
+    assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
+
     Ok(())
 }

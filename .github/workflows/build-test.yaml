@@ -31,9 +31,13 @@ jobs:
       - name: Install dependencies
         run: |
           cargo install cargo-hack
+          curl -fsSLO https://github.com/dprint/dprint/releases/download/0.18.2/dprint-x86_64-unknown-linux-gnu.zip
+          unzip -o dprint-x86_64-unknown-linux-gnu.zip dprint -d ~/.cargo/bin/
+          rm -f dprint-x86_64-unknown-linux-gnu.zip
       - name: Run formatting checks
         run: |
           cargo fmt --all -- --check
+          dprint check
       - name: Run linting checks
         run : |
           # do not produce debug symbols to keep memory usage down

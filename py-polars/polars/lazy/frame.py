@@ -464,6 +464,12 @@ class LazyFrame:
             Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+        asof_by
+            join on these columns before doing asof join
+        asof_by_left
+            join on these columns before doing asof join
+        asof_by_right
+            join on these columns before doing asof join
 
         # Asof joins
         This is similar to a left-join except that we match on nearest key rather than equal keys.
@@ -535,7 +541,7 @@ class LazyFrame:
         if isinstance(asof_by, str):
             left_asof_by_ = [asof_by]
             right_asof_by_ = [asof_by]
-        elif isinstance(on, list):
+        elif isinstance(asof_by, list):
             left_asof_by_ = asof_by
             right_asof_by_ = asof_by
 

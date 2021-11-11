@@ -1681,9 +1681,14 @@ class Series:
             dtype = Float64
         return wrap_s(self._s.cast(str(dtype), strict))
 
-    def to_list(self) -> tp.List[Optional[Any]]:
+    def to_list(self, use_pyarrow: bool = False) -> tp.List[Optional[Any]]:
         """
         Convert this Series to a Python List. This operation clones data.
+
+        Parameters
+        ----------
+        use_pyarrow
+            Use pyarrow for the conversion.
 
         Examples
         --------
@@ -1694,8 +1699,7 @@ class Series:
         <class 'list'>
 
         """
-        # maybe we should not use pyarrow at all.
-        if (self.dtype != Object) and _PYARROW_AVAILABLE:
+        if use_pyarrow:
             return self.to_arrow().to_pylist()
         return self._s.to_list()
 
@@ -2839,7 +2843,7 @@ class Series:
         Parameters
         ----------
         method
-            {'average', 'min', 'max', 'dense', 'ordinal'}, optional
+            {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
               * 'average': The average of the ranks that would have been assigned to
@@ -2854,6 +2858,8 @@ class Series:
                 elements.
               * 'ordinal': All values are given a distinct rank, corresponding to
                 the order that the values occur in `a`.
+              * 'random': Like 'ordinal', but the rank for ties is not dependent
+                on the order that the values occur in `a`.
         """
         return wrap_s(self._s.rank(method))
 

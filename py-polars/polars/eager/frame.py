@@ -1969,6 +1969,12 @@ class DataFrame:
                 - "cross"
         suffix
             Suffix to append to columns with a duplicate name.
+        asof_by
+            join on these columns before doing asof join
+        asof_by_left
+            join on these columns before doing asof join
+        asof_by_right
+            join on these columns before doing asof join
         Returns
         -------
             Joined DataFrame
