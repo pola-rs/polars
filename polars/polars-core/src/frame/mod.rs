@@ -196,7 +196,7 @@ impl DataFrame {
     ///   Ok(())
     /// }
     /// ```
-    /// 
+    ///
     /// Output:
     ///
     /// ```text
