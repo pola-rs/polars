@@ -182,8 +182,8 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars::df;
-    /// use polars::prelude::*;
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
     ///
     /// fn main() -> Result<()> {
     ///   let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
