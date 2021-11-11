@@ -114,6 +114,9 @@ pub enum ALogicalPlan {
         projection_pd: bool,
         schema: Option<SchemaRef>,
     },
+    Union {
+        inputs: Vec<Node>,
+    },
 }
 
 impl Default for ALogicalPlan {
@@ -131,6 +134,7 @@ impl ALogicalPlan {
     pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> &'a Schema {
         use ALogicalPlan::*;
         match self {
+            Union { inputs, .. } => arena.get(inputs[0]).schema(arena),
             Cache { input } => arena.get(*input).schema(arena),
             Sort { input, .. } => arena.get(*input).schema(arena),
             Explode { input, .. } => arena.get(*input).schema(arena),
@@ -241,6 +245,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
 
         match self {
+            Union { .. } => Union { inputs },
             Melt {
                 id_vars,
                 value_vars,
@@ -421,6 +426,7 @@ impl ALogicalPlan {
             | Explode { .. }
             | Cache { .. }
             | Distinct { .. }
+            | Union { .. }
             | Udf { .. } => {}
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
@@ -482,13 +488,19 @@ impl ALogicalPlan {
 
     /// Push inputs of the LP in of this node to an existing container.
     /// Most plans have typically one input. A join has two and a scan (CsvScan)
-    /// or an in-memory DataFrame has none.
+    /// or an in-memory DataFrame has none. A Union has multiple.
     pub(crate) fn copy_inputs<T>(&self, container: &mut T)
     where
         T: PushNode,
     {
         use ALogicalPlan::*;
         let input = match self {
+            Union { inputs, .. } => {
+                for node in inputs {
+                    container.push_node(*node);
+                }
+                return;
+            }
             Melt { input, .. } => *input,
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,

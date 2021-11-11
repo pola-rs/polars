@@ -1,5 +1,6 @@
 use super::expressions as phys_expr;
 use crate::logical_plan::Context;
+use crate::physical_plan::executors::union::UnionExec;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
 use crate::{
@@ -94,6 +95,13 @@ impl DefaultPlanner {
         use ALogicalPlan::*;
         let logical_plan = lp_arena.take(root);
         match logical_plan {
+            Union { inputs } => {
+                let inputs = inputs
+                    .into_iter()
+                    .map(|node| self.create_initial_physical_plan(node, lp_arena, expr_arena))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Box::new(UnionExec { inputs }))
+            }
             Melt {
                 input,
                 id_vars,

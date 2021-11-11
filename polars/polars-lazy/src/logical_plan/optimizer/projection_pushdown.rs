@@ -786,7 +786,8 @@ impl ProjectionPushDown {
                     schema,
                 })
             }
-            lp @ Slice { .. } | lp @ Cache { .. } => {
+            // Slice and Cache have only inputs and exprs, so we can use same logic.
+            lp @ Slice { .. } | lp @ Cache { .. } | lp @ Union { .. } => {
                 let inputs = lp.get_inputs();
                 let exprs = lp.get_exprs();
 

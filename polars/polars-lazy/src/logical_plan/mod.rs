@@ -160,7 +160,9 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache { input: Box<LogicalPlan> },
+    Cache {
+        input: Box<LogicalPlan>,
+    },
     /// Scan a CSV file
     #[cfg(feature = "csv-file")]
     CsvScan {
@@ -269,6 +271,9 @@ pub enum LogicalPlan {
         projection_pd: bool,
         schema: Option<SchemaRef>,
     },
+    Union {
+        inputs: Vec<LogicalPlan>,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -288,6 +293,7 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
+            Union { inputs, .. } => write!(f, "UNION {:?}", inputs),
             Cache { input } => write!(f, "CACHE {:?}", input),
             #[cfg(feature = "parquet")]
             ParquetScan {
@@ -464,6 +470,14 @@ impl LogicalPlan {
         use LogicalPlan::*;
         let (branch, id) = id;
         match self {
+            Union { inputs, .. } => {
+                for input in inputs {
+                    let current_node = format!("UNION [{:?}]", (branch, id));
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    input.dot(acc_str, (branch, id + 1), &current_node)?
+                }
+                Ok(())
+            }
             Cache { input } => {
                 let current_node = format!("CACHE [{:?}]", (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -686,6 +700,7 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &SchemaRef {
         use LogicalPlan::*;
         match self {
+            Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
             Explode { input, .. } => input.schema(),
