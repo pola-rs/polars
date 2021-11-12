@@ -2476,7 +2476,7 @@ class Series:
         ----------
         window_size
             The length of the window.
-        weight
+        weights
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
         min_periods
