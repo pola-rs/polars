@@ -626,9 +626,7 @@ def read_parquet(
             raise ValueError(
                 "'stop_after_n_rows' cannot be used with 'use_pyarrow=True'."
             )
-    # else:
-    #     if columns:
-    #         raise ValueError("'columns' cannot be used with 'use_pyarrow=False'.")
+
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
         if use_pyarrow:
