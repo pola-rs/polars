@@ -85,11 +85,14 @@ impl<R: Read + Seek> IpcReader<R> {
         self
     }
 
+    /// Columns to select/ project
     pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
         self.columns = columns;
         self
     }
 
+    /// Set the reader's column projection. This counts from 0, meaning that
+    /// `vec![0, 4]` would select the 1st and 5th column.
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
         self.projection = projection;
         self
@@ -161,6 +164,9 @@ where
                 let i = schema.index_of(column)?;
                 prj.push(i)
             }
+
+            // Ipc reader panics if the projection is not in increasing order, so sorting is the safer way.
+            prj.sort();
             self.projection = Some(prj)
         } 
 
@@ -219,6 +225,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use polars_core::prelude::*;
+    use polars_core::df;
     use std::io::Cursor;
 
     #[test]
@@ -235,4 +243,32 @@ mod test {
         let df_read = IpcReader::new(buf).finish().unwrap();
         assert!(df.frame_equal(&df_read));
     }
+
+    #[test]
+    fn test_read_ipc_with_projection() {
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new()); 
+        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        
+        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        buf.set_position(0);
+
+        let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let df_read = IpcReader::new(buf).with_projection(Some(vec![1, 2])).finish().unwrap();
+        assert_eq!(df_read.shape(), (3, 2));
+        df_read.frame_equal(&expected);
+    } 
+
+    #[test]
+    fn test_read_ipc_with_columns() {
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new()); 
+        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        
+        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        buf.set_position(0);
+
+        let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let df_read = IpcReader::new(buf).with_columns(Some(vec!["c".to_string(), "b".to_string()])).finish().unwrap();
+        assert_eq!(df_read.shape(), (3, 2));
+        df_read.frame_equal(&expected);
+    } 
 }
