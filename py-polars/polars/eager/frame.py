@@ -486,6 +486,8 @@ class DataFrame:
     @staticmethod
     def read_parquet(
         file: Union[str, BinaryIO],
+        columns: Optional[tp.List[str]] = None,
+        projection: Optional[tp.List[int]] = None,
         stop_after_n_rows: Optional[int] = None,
     ) -> "DataFrame":
         """
@@ -499,11 +501,18 @@ class DataFrame:
             Only read specified number of rows of the dataset. After `n` stops reading.
         """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_parquet(file, stop_after_n_rows)
+        self._df = PyDataFrame.read_parquet(
+            file, columns, projection, stop_after_n_rows
+        )
         return self
 
     @staticmethod
-    def read_ipc(file: Union[str, BinaryIO]) -> "DataFrame":
+    def read_ipc(
+        file: Union[str, BinaryIO],
+        columns: Optional[tp.List[str]] = None,
+        projection: Optional[tp.List[int]] = None,
+        stop_after_n_rows: Optional[int] = None,
+    ) -> "DataFrame":
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -517,7 +526,7 @@ class DataFrame:
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_ipc(file)
+        self._df = PyDataFrame.read_ipc(file, columns, projection, stop_after_n_rows)
         return self
 
     @staticmethod
