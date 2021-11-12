@@ -185,7 +185,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///   let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
     ///   assert_eq!(df1.shape(), (4, 1));
     ///
@@ -1491,7 +1491,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
     ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
     ///     assert_eq!(df1.shape(), (5, 2));
@@ -1529,7 +1529,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
     ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
     ///     assert_eq!(df1.shape(), (5, 2));
@@ -1566,7 +1566,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
     ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
     ///     assert_eq!(df1.shape(), (5, 2));
@@ -1604,7 +1604,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
     ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
     ///     assert_eq!(df1.shape(), (5, 2));
@@ -1642,7 +1642,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
     ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
     ///     assert_eq!(df1.shape(), (5, 2));
@@ -1680,7 +1680,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
     ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
     ///     assert_eq!(df1.shape(), (5, 2));
@@ -1722,7 +1722,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
     ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
     ///     assert_eq!(df1.shape(), (5, 2));
