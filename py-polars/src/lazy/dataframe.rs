@@ -137,8 +137,15 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
-        LazyFrame::new_from_parquet(path, stop_after_n_rows, cache).into()
+    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
+        let lf = LazyFrame::scan_parquet(path, stop_after_n_rows, cache).map_err(PyPolarsEr::from)?;
+        Ok(lf.into())
+    }
+
+    #[staticmethod]
+    pub fn new_from_ipc(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
+        let lf = LazyFrame::scan_ipc(path, stop_after_n_rows, cache).map_err(PyPolarsEr::from)?;
+        Ok(lf.into())
     }
 
     pub fn describe_plan(&self) -> String {

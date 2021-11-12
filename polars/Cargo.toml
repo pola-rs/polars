@@ -42,7 +42,7 @@ object = ["polars-core/object"]
 json = ["polars-io", "polars-io/json"]
 
 # support for arrows ipc file parsing
-ipc = ["polars-io", "polars-io/ipc"]
+ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
 
 # support for arrows csv file parsing
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]

@@ -310,6 +310,37 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                predicate,
+                aggregate,
+                options,
+                ..
+            } => {
+                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let output_schema = if with_columns.is_none() {
+                    None
+                } else {
+                    Some(Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*schema,
+                    )?))
+                };
+
+                let lp = IpcScan {
+                    path,
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    options,
+                };
+                Ok(lp)
+            }
+
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,

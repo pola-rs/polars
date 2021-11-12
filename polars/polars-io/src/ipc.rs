@@ -34,6 +34,7 @@
 //! ```
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
+use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
@@ -61,6 +62,47 @@ pub struct IpcReader<R> {
     reader: R,
     /// Aggregates chunks afterwards to a single chunk.
     rechunk: bool,
+    stop_after_n_rows: Option<usize>,
+}
+
+impl<R: Read + Seek> IpcReader<R> {
+    /// Get schema of the Ipc File
+    pub fn schema(&mut self) -> Result<Schema> {
+        let metadata = read::read_file_metadata(&mut self.reader)?;
+        Ok((&**metadata.schema()).into())
+    }
+
+    /// Get arrow schema of the Ipc File, this is faster than a polars schema.
+    pub fn arrow_schema(&mut self) -> Result<Arc<ArrowSchema>> {
+        let metadata = read::read_file_metadata(&mut self.reader)?;
+        Ok(metadata.schema().clone())
+    }
+    /// Stop reading when `n` rows are read.
+    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.stop_after_n_rows = num_rows;
+        self
+    }
+    #[cfg(feature = "lazy")]
+    // todo! hoist to lazy crate
+    pub fn finish_with_scan_ops(
+        mut self,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        aggregate: Option<&[ScanAggregation]>,
+        projection: Option<&[usize]>,
+    ) -> Result<DataFrame> {
+        let rechunk = self.rechunk;
+        let metadata = read::read_file_metadata(&mut self.reader)?;
+        let reader =
+            read::FileReader::new(&mut self.reader, metadata, projection.map(|x| x.to_vec()));
+
+        finish_reader(
+            reader,
+            rechunk,
+            self.stop_after_n_rows,
+            predicate,
+            aggregate,
+        )
+    }
 }
 
 impl<R> ArrowReader for read::FileReader<R>
@@ -84,6 +126,7 @@ where
         IpcReader {
             reader,
             rechunk: true,
+            stop_after_n_rows: None,
         }
     }
     fn set_rechunk(mut self, rechunk: bool) -> Self {
@@ -95,7 +138,7 @@ where
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
         let ipc_reader = read::FileReader::new(&mut self.reader, metadata, None);
-        finish_reader(ipc_reader, rechunk, None, None, None)
+        finish_reader(ipc_reader, rechunk, self.stop_after_n_rows, None, None)
     }
 }
 

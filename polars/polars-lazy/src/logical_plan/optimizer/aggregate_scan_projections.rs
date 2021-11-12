@@ -36,6 +36,10 @@ pub(crate) fn agg_projection(
         } => {
             process_with_columns(path, with_columns, columns);
         }
+        #[cfg(feature = "ipc")]
+        IpcScan { path, options, .. } => {
+            process_with_columns(path, &options.with_columns, columns);
+        }
         DataFrameScan { .. } => (),
         lp => {
             for input in lp.get_inputs() {
@@ -90,6 +94,51 @@ impl OptimizationRule for AggScanProjection {
     ) -> Option<ALogicalPlan> {
         let lp = lp_arena.get_mut(node);
         match lp {
+            #[cfg(feature = "ipc")]
+            ALogicalPlan::IpcScan { .. } => {
+                let lp = std::mem::take(lp);
+                if let ALogicalPlan::IpcScan {
+                    path,
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    mut options,
+                } = lp
+                {
+                    let new_with_columns = self
+                        .columns
+                        .get(&path)
+                        .map(|agg| agg.iter().cloned().collect());
+                    // prevent infinite loop
+                    if options.with_columns == new_with_columns {
+                        let lp = ALogicalPlan::IpcScan {
+                            path,
+                            schema,
+                            output_schema,
+                            predicate,
+                            aggregate,
+                            options,
+                        };
+                        lp_arena.replace(node, lp);
+                        return None;
+                    }
+
+                    let with_columns = std::mem::take(&mut options.with_columns);
+                    options.with_columns = new_with_columns;
+                    let lp = ALogicalPlan::IpcScan {
+                        path: path.clone(),
+                        schema,
+                        output_schema,
+                        predicate,
+                        aggregate,
+                        options,
+                    };
+                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))
+                } else {
+                    unreachable!()
+                }
+            }
             #[cfg(feature = "parquet")]
             ALogicalPlan::ParquetScan { .. } => {
                 let lp = std::mem::take(lp);

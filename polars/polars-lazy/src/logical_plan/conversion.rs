@@ -203,6 +203,24 @@ pub(crate) fn to_alp(
                 .map(|expr| to_aexpr(expr, expr_arena))
                 .collect(),
         },
+        #[cfg(feature = "ipc")]
+        LogicalPlan::IpcScan {
+            path,
+            schema,
+            predicate,
+            aggregate,
+            options,
+        } => ALogicalPlan::IpcScan {
+            path,
+            schema,
+            output_schema: None,
+            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            aggregate: aggregate
+                .into_iter()
+                .map(|expr| to_aexpr(expr, expr_arena))
+                .collect(),
+            options,
+        },
         #[cfg(feature = "parquet")]
         LogicalPlan::ParquetScan {
             path,
@@ -650,6 +668,21 @@ pub(crate) fn node_to_lp(
             options,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
             aggregate: nodes_to_exprs(&aggregate, expr_arena),
+        },
+        #[cfg(feature = "ipc")]
+        ALogicalPlan::IpcScan {
+            path,
+            schema,
+            output_schema: _,
+            predicate,
+            aggregate,
+            options,
+        } => LogicalPlan::IpcScan {
+            path,
+            schema,
+            predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            aggregate: nodes_to_exprs(&aggregate, expr_arena),
+            options,
         },
         #[cfg(feature = "parquet")]
         ALogicalPlan::ParquetScan {
