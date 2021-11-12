@@ -63,6 +63,8 @@ pub struct IpcReader<R> {
     /// Aggregates chunks afterwards to a single chunk.
     rechunk: bool,
     stop_after_n_rows: Option<usize>,
+    projection: Option<Vec<usize>>,
+    columns: Option<Vec<String>>,
 }
 
 impl<R: Read + Seek> IpcReader<R> {
@@ -82,6 +84,17 @@ impl<R: Read + Seek> IpcReader<R> {
         self.stop_after_n_rows = num_rows;
         self
     }
+
+    pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
+        self.columns = columns;
+        self
+    }
+
+    pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
+        self.projection = projection;
+        self
+    }
+
     #[cfg(feature = "lazy")]
     // todo! hoist to lazy crate
     pub fn finish_with_scan_ops(
@@ -127,8 +140,11 @@ where
             reader,
             rechunk: true,
             stop_after_n_rows: None,
+            columns: None,
+            projection: None
         }
     }
+
     fn set_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
         self
@@ -137,7 +153,18 @@ where
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        let ipc_reader = read::FileReader::new(&mut self.reader, metadata, None);
+        let schema = metadata.schema();
+
+        if let Some(cols) = self.columns {
+            let mut prj = vec![];
+            for column in cols.iter() {
+                let i = schema.index_of(column)?;
+                prj.push(i)
+            }
+            self.projection = Some(prj)
+        } 
+
+        let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);
         finish_reader(ipc_reader, rechunk, self.stop_after_n_rows, None, None)
     }
 }

@@ -35,6 +35,8 @@ pub struct ParquetReader<R: Read + Seek> {
     reader: R,
     rechunk: bool,
     stop_after_n_rows: Option<usize>,
+    columns: Option<Vec<String>>,
+    projection: Option<Vec<usize>>,
 }
 
 impl<R> ParquetReader<R>
@@ -75,6 +77,16 @@ where
         self
     }
 
+    pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
+        self.columns = columns;
+        self
+    }
+
+    pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
+        self.projection = projection;
+        self
+    }
+
     pub fn schema(mut self) -> Result<Schema> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
@@ -102,6 +114,8 @@ where
             reader,
             rechunk: false,
             stop_after_n_rows: None,
+            columns: None,
+            projection: None,
         }
     }
 
@@ -112,10 +126,22 @@ where
 
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
+        let metadata = read::read_metadata(&mut self.reader)?;
+        let schema = read::schema::get_schema(&metadata)?;
+
+        if let Some(cols) = self.columns {
+            let mut prj = vec![];
+            for col in cols.iter() {
+                let i = schema.index_of(col)?;
+                prj.push(i);
+            }
+
+            self.projection = Some(prj);
+        }
 
         let reader = read::RecordReader::try_new(
             &mut self.reader,
-            None,
+            self.projection,
             self.stop_after_n_rows,
             None,
             None,
