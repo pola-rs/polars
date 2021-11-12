@@ -58,6 +58,7 @@ __all__ = [
     "read_sql",
     "read_ipc",
     "scan_csv",
+    "scan_ipc",
     "scan_parquet",
     "read_ipc_schema",
 ]
@@ -464,6 +465,33 @@ def scan_csv(
         quote_char=quote_char,
         null_values=null_values,
         infer_schema_length=infer_schema_length,
+    )
+
+
+def scan_ipc(
+    file: Union[str, Path],
+    stop_after_n_rows: Optional[int] = None,
+    cache: bool = True,
+) -> "pl.LazyFrame":
+    """
+    Lazily read from an IPC file.
+
+    This allows the query optimizer to push down predicates and projections to the scan level,
+    thereby potentially reducing memory overhead.
+
+    Parameters
+    ----------
+    file
+        Path to a file.
+    stop_after_n_rows
+        After n rows are read from the parquet, it stops reading.
+    cache
+        Cache the result after reading.
+    """
+    if isinstance(file, Path):
+        file = str(file)
+    return pl.LazyFrame.scan_ipc(
+        file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
     )
 
 

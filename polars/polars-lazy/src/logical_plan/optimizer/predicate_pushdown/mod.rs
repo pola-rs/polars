@@ -178,6 +178,27 @@ impl PredicatePushDown {
                     schema: Arc::new(schema),
                 })
             }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                output_schema,
+                predicate,
+                aggregate,
+                options,
+            } => {
+                let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
+
+                let lp = IpcScan {
+                    path,
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    options,
+                };
+                Ok(lp)
+            }
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
@@ -442,7 +463,7 @@ impl PredicatePushDown {
                     schema,
                 })
             }
-            lp => {
+            lp @ Slice { .. } | lp @ Cache { .. } | lp @ Union { .. } | lp @ Sort { .. } => {
                 let inputs = lp.get_inputs();
                 let exprs = lp.get_exprs();
 

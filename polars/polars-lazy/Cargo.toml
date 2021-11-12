@@ -15,6 +15,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 compile = []
 default = ["compile"]
 parquet = ["polars-core/parquet", "polars-io/parquet"]
+ipc = ["polars-io/ipc"]
 csv-file = ["polars-io/csv-file"]
 temporal = ["polars-core/temporal"]
 # debugging purposesses

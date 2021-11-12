@@ -100,6 +100,18 @@ class LazyFrame:
         self._ldf = PyLazyFrame.new_from_parquet(file, stop_after_n_rows, cache)
         return self
 
+    @staticmethod
+    def scan_ipc(
+        file: str, stop_after_n_rows: Optional[int] = None, cache: bool = True
+    ) -> "LazyFrame":
+        """
+        See Also: `pl.scan_ipc`
+        """
+
+        self = LazyFrame.__new__(LazyFrame)
+        self._ldf = PyLazyFrame.new_from_ipc(file, stop_after_n_rows, cache)
+        return self
+
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.
