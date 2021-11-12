@@ -166,7 +166,7 @@ where
             }
 
             // Ipc reader panics if the projection is not in increasing order, so sorting is the safer way.
-            prj.sort();
+            prj.sort_unstable();
             self.projection = Some(prj)
         }
 
