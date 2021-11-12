@@ -144,7 +144,7 @@ where
             rechunk: true,
             stop_after_n_rows: None,
             columns: None,
-            projection: None
+            projection: None,
         }
     }
 
@@ -159,7 +159,7 @@ where
         let schema = metadata.schema();
 
         if let Some(cols) = self.columns {
-            let mut prj = vec![];
+            let mut prj = Vec::with_capacity(cols.len());
             for column in cols.iter() {
                 let i = schema.index_of(column)?;
                 prj.push(i)
@@ -168,7 +168,7 @@ where
             // Ipc reader panics if the projection is not in increasing order, so sorting is the safer way.
             prj.sort();
             self.projection = Some(prj)
-        } 
+        }
 
         let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);
         finish_reader(ipc_reader, rechunk, self.stop_after_n_rows, None, None)
@@ -225,8 +225,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use polars_core::prelude::*;
     use polars_core::df;
+    use polars_core::prelude::*;
     use std::io::Cursor;
 
     #[test]
@@ -246,29 +246,35 @@ mod test {
 
     #[test]
     fn test_read_ipc_with_projection() {
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new()); 
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        
+
         IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
         buf.set_position(0);
 
         let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        let df_read = IpcReader::new(buf).with_projection(Some(vec![1, 2])).finish().unwrap();
+        let df_read = IpcReader::new(buf)
+            .with_projection(Some(vec![1, 2]))
+            .finish()
+            .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
         df_read.frame_equal(&expected);
-    } 
+    }
 
     #[test]
     fn test_read_ipc_with_columns() {
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new()); 
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        
+
         IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
         buf.set_position(0);
 
         let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        let df_read = IpcReader::new(buf).with_columns(Some(vec!["c".to_string(), "b".to_string()])).finish().unwrap();
+        let df_read = IpcReader::new(buf)
+            .with_columns(Some(vec!["c".to_string(), "b".to_string()]))
+            .finish()
+            .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
         df_read.frame_equal(&expected);
-    } 
+    }
 }

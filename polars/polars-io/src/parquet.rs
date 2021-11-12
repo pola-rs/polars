@@ -133,7 +133,7 @@ where
         let schema = read::schema::get_schema(&metadata)?;
 
         if let Some(cols) = self.columns {
-            let mut prj = vec![];
+            let mut prj = Vec::with_capacity(cols.len());
             for col in cols.iter() {
                 let i = schema.index_of(col)?;
                 prj.push(i);
@@ -322,29 +322,39 @@ mod test {
 
     #[test]
     fn test_read_parquet_with_projection() {
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new()); 
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        
-        ParquetWriter::new(&mut buf).finish(&df).expect("parquet writer");
+
+        ParquetWriter::new(&mut buf)
+            .finish(&df)
+            .expect("parquet writer");
         buf.set_position(0);
 
         let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        let df_read = ParquetReader::new(buf).with_projection(Some(vec![1, 2])).finish().unwrap();
+        let df_read = ParquetReader::new(buf)
+            .with_projection(Some(vec![1, 2]))
+            .finish()
+            .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
         df_read.frame_equal(&expected);
-    } 
+    }
 
     #[test]
     fn test_read_parquet_with_columns() {
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new()); 
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        
-        ParquetWriter::new(&mut buf).finish(&df).expect("parquet writer");
+
+        ParquetWriter::new(&mut buf)
+            .finish(&df)
+            .expect("parquet writer");
         buf.set_position(0);
 
         let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
-        let df_read = ParquetReader::new(buf).with_columns(Some(vec!["c".to_string(), "b".to_string()])).finish().unwrap();
+        let df_read = ParquetReader::new(buf)
+            .with_columns(Some(vec!["c".to_string(), "b".to_string()]))
+            .finish()
+            .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
         df_read.frame_equal(&expected);
-    } 
+    }
 }
