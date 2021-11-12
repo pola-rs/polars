@@ -9,7 +9,7 @@ import util from "util"
  */
 export default class Dataframe {
   private df: Dataframe;
-  static from = (df: Dataframe) => new Dataframe(df);
+  static from = (js_objects: unknown) => new Dataframe(pl_rs.dataframe_read_objects({js_objects}));
   constructor(df: Dataframe) {
     this.df = df
   }

@@ -2,31 +2,37 @@ use neon::prelude::*;
 
 pub mod conversion;
 pub mod dataframe;
-pub mod errors;
+pub mod error;
 pub mod datatypes;
 pub mod series;
+pub mod prelude;
 
 use crate::dataframe::*;
 use crate::series::*;
 
 
+/// Neon does not give us a good api for exporting as modules like 
+/// 
+/// {
+///   Dataframe: {
+///     read_csv,
+///     head,
+///     ...
+///     },
+///   Series: {
+///     read_objects
+///   }
+/// }
+/// 
+/// 
+/// so we have to export them all as a flattened type and create a wrapper in JS land.
+/// ideally id like to find a way to split this out into one for each main class
+/// So there would be an entrypoint for `DataFrame`, `Series`, etc.
 #[neon::main]
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
-    // Neon does not give us a good api for exporting as modules like 
-    // {
-    //   Dataframe: {
-    //     read_csv,
-    //     head,
-    //     ...
-    //     },
-    //   Series: {
-    //     read_objects
-    //   }
-    // }
-    // so we have to export them all as a flattened type and create a wrapper in JS land.
-    cx.export_function("read_csv", JsDataFrame::read_csv)?;
-    cx.export_function("read_objects", JsDataFrame::read_objects)?;
+    cx.export_function("dataframe_read_csv", JsDataFrame::read_csv)?;
+    cx.export_function("dataframe_read_objects", JsDataFrame::read_objects)?;
 
 
 
@@ -44,9 +50,29 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("series_get_fmt", JsSeries::get_fmt)?;
     cx.export_function("series_head", JsSeries::head)?;
     cx.export_function("series_mul", JsSeries::mul)?;
-    cx.export_function("series_new", JsSeries::new)?;
+    cx.export_function("series_read_objects", JsSeries::read_objects)?;
     cx.export_function("series_sub", JsSeries::sub)?;
     cx.export_function("series_tail", JsSeries::tail)?;
+
+
+    cx.export_function("series_new_i8", JsSeries::new_i8)?;
+    cx.export_function("series_new_i16", JsSeries::new_i16)?;
+    cx.export_function("series_new_i32", JsSeries::new_i32)?;
+    cx.export_function("series_new_i64", JsSeries::new_i64)?;
+    cx.export_function("series_new_u8", JsSeries::new_u8)?;
+    cx.export_function("series_new_u16", JsSeries::new_u16)?;
+    cx.export_function("series_new_u32", JsSeries::new_u32)?;
+    cx.export_function("series_new_u64", JsSeries::new_u64)?;
+    cx.export_function("series_new_bool", JsSeries::new_bool)?;
+    cx.export_function("series_new_opt_u16", JsSeries::new_opt_u16)?;
+    cx.export_function("series_new_opt_u32", JsSeries::new_opt_u32)?;
+    cx.export_function("series_new_opt_u64", JsSeries::new_opt_u64)?;
+    cx.export_function("series_new_opt_i8", JsSeries::new_opt_i8)?;
+    cx.export_function("series_new_opt_i16", JsSeries::new_opt_i16)?;
+    cx.export_function("series_new_opt_i32", JsSeries::new_opt_i32)?;
+    cx.export_function("series_new_opt_i64", JsSeries::new_opt_i64)?;
+    cx.export_function("series_new_opt_f32", JsSeries::new_opt_f32)?;
+    cx.export_function("series_new_opt_f64", JsSeries::new_opt_f64)?;
 
     Ok(())
 }

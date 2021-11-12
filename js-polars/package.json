@@ -4,7 +4,6 @@
   "description": "",
   "main": "libpolars.node",
   "scripts": {
-    "start": "ts-node app.ts",
     "build": "cargo build -Z unstable-options --out-dir ./bin; mv ./bin/libpolars.so ./bin/libpolars.node",
     "build-debug": "npm run build --",
     "build-release": "npm run build -- --release",
