@@ -39,34 +39,6 @@ class Tag:
         self.elements.append(f"</{self.tag}>")
 
 
-def tag(inner: str, tag: str) -> str:
-    return f"<{tag}>{inner}</{tag}>"
-
-
-def th(inner: str) -> str:
-    return tag(inner, "th")
-
-
-def tr(inner: str) -> str:
-    return tag(inner, "tr")
-
-
-def thead(inner: str) -> str:
-    return tag(inner, "thead")
-
-
-def tbody(inner: str) -> str:
-    return tag(inner, "tbody")
-
-
-def table(inner: str) -> str:
-    return tag(inner, "table")
-
-
-def div(inner: str) -> str:
-    return tag(inner, "div")
-
-
 class HTMLFormatter:
     def __init__(self, df: "pl.DataFrame", max_cols: int = 75, max_rows: int = 40):
         self.df = df
