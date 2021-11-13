@@ -580,7 +580,7 @@ def read_ipc(
                 )
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
             return pl.DataFrame._from_arrow(tbl)
-        return pl.DataFrame.read_ipc(data)
+        return pl.DataFrame.read_ipc(data, columns=columns)
 
 
 def read_parquet(
@@ -626,9 +626,7 @@ def read_parquet(
             raise ValueError(
                 "'stop_after_n_rows' cannot be used with 'use_pyarrow=True'."
             )
-    else:
-        if columns:
-            raise ValueError("'columns' cannot be used with 'use_pyarrow=False'.")
+
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
         if use_pyarrow:
@@ -642,7 +640,7 @@ def read_parquet(
                 )
             )
         return pl.DataFrame.read_parquet(
-            source_prep, stop_after_n_rows=stop_after_n_rows
+            source_prep, stop_after_n_rows=stop_after_n_rows, columns=columns
         )
 
 
