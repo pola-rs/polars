@@ -812,7 +812,17 @@ class Expr:
                    * "one"
                    * "zero"
         """
-        if fill_value in ["backward", "forward", "min", "max", "mean", "zero", "one"]:
+        # we first must check if it is not an expr, as expr does not implement __bool__
+        # and thus leads to a value error in the second comparisson.
+        if not isinstance(fill_value, pl.Expr) and fill_value in [
+            "backward",
+            "forward",
+            "min",
+            "max",
+            "mean",
+            "zero",
+            "one",
+        ]:
             return wrap_expr(self._pyexpr.fill_null_with_strategy(fill_value))
 
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
@@ -2335,7 +2345,7 @@ def expr_to_lit_or_expr(
     """
     if isinstance(expr, str) and not str_to_lit:
         return col(expr)
-    elif isinstance(expr, (int, float, str, pl.Series)) or expr is None:
+    elif isinstance(expr, (int, float, str, pl.Series, datetime)) or expr is None:
         return lit(expr)
     elif isinstance(expr, list):
         return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]
