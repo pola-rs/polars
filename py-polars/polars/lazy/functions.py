@@ -1,5 +1,5 @@
 import typing as tp
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from inspect import isclass
 from typing import Any, Callable, Optional, Type, Union
 
@@ -407,6 +407,8 @@ def lit(
         return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
             pl.Datetime
         )
+    if isinstance(value, date):
+        return lit(datetime(value.year, value.month, value.day)).cast(pl.Date)
 
     if isinstance(value, pl.Series):
         name = value.name
