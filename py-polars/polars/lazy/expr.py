@@ -1729,6 +1729,18 @@ class Expr:
             .otherwise(self)
         ).keep_name()
 
+    def lower_bound(self) -> "Expr":
+        """
+        Returns a unit Series with the lowest value possible for the dtype of this expression.
+        """
+        return wrap_expr(self._pyexpr.lower_bound())
+
+    def upper_bound(self) -> "Expr":
+        """
+        Returns a unit Series with the highest value possible for the dtype of this expression.
+        """
+        return wrap_expr(self._pyexpr.upper_bound())
+
     def str_concat(self, delimiter: str = "-") -> "Expr":  # type: ignore
         """
         Vertically concat the values in the Series to a single string value.

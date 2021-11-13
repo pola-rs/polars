@@ -230,10 +230,13 @@ def max(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr",
     elif isinstance(column, list):
 
         def max_(acc: "pl.Series", val: "pl.Series") -> "pl.Series":
-            mask = acc < val
+            mask = acc > val
             return acc.zip_with(mask, val)
 
-        return fold(lit(0), max_, column).alias("max")
+        first = column[0]
+        if isinstance(first, str):
+            first = pl.col(first)
+        return fold(first, max_, column[1:]).alias("max")
     else:
         return col(column).max()
 
@@ -253,10 +256,13 @@ def min(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr",
     elif isinstance(column, list):
 
         def min_(acc: "pl.Series", val: "pl.Series") -> "pl.Series":
-            mask = acc > val
+            mask = acc < val
             return acc.zip_with(mask, val)
 
-        return fold(lit(0), min_, column).alias("min")
+        first = column[0]
+        if isinstance(first, str):
+            first = pl.col(first)
+        return fold(first, min_, column[1:]).alias("min")
     else:
         return col(column).min()
 
@@ -274,7 +280,10 @@ def sum(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr",
     if isinstance(column, pl.Series):
         return column.sum()
     elif isinstance(column, list):
-        return fold(lit(0), lambda a, b: a + b, column).alias("sum")
+        first = column[0]
+        if isinstance(first, str):
+            first = pl.col(first)
+        return fold(first, lambda a, b: a + b, column[1:]).alias("sum")
     else:
         return col(column).sum()
 

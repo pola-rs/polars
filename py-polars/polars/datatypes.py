@@ -173,6 +173,8 @@ def date_like_to_physical(dtype: Type[DataType]) -> Type[DataType]:
         return Int32
     if dtype == Datetime:
         return Int64
+    if dtype == Time:
+        return Int64
     return dtype
 
 
