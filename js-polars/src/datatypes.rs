@@ -1,4 +1,4 @@
-use crate::conversion::FromJsValue;
+use crate::conversion::{FromJsValue, ToJsValue};
 use neon::prelude::*;
 use polars::prelude::*;
 
@@ -87,6 +87,12 @@ impl Into<DataType> for JsDataType {
     }
 }
 
+
+impl<'a> ToJsValue<'a, JsNumber> for JsDataType {
+  fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsNumber> {
+    cx.number(self as u8)
+  }
+}
 impl FromJsValue<'_> for JsDataType {
     fn from_js(cx: &mut FunctionContext<'_>, jsv: Handle<'_, JsValue>) -> NeonResult<Self> {
         let js_str = jsv.downcast_or_throw::<JsString, _>(cx)?.value(cx);

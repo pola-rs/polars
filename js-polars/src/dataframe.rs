@@ -59,7 +59,7 @@ impl JsDataFrame {
             ))),
         }?
         .into();
-        Ok(jsdf.to_js_box(&mut cx))
+        Ok(jsdf.into_js_box(&mut cx))
     }
 
     pub fn head(mut cx: FunctionContext) -> DataFrameResult {
@@ -68,7 +68,7 @@ impl JsDataFrame {
         let df = &jsdf.df;
         let length = params.get_as::<f64,_>(&mut cx, "length")?;
         let jsdf: JsDataFrame = df.head(Some(length as usize)).into();
-        Ok(jsdf.to_js_box(&mut cx))
+        Ok(jsdf.into_js_box(&mut cx))
     }
 
     pub fn get_fmt(mut cx: FunctionContext) -> JsResult<JsString> {
@@ -94,21 +94,21 @@ impl JsDataFrame {
         let params = get_params(&mut cx)?;
         let jsdf = params.extract_boxed::<JsDataFrame>(&mut cx, "_df")?;
         let df = &jsdf.df;
-        Ok(df.height().to_js(&mut cx))
+        Ok(df.height().into_js(&mut cx))
     }
 
     pub fn width(mut cx: FunctionContext) -> JsResult<JsNumber> {
         let params = get_params(&mut cx)?;
         let jsdf = params.extract_boxed::<JsDataFrame>(&mut cx, "_df")?;
         let df = &jsdf.df;
-        Ok(df.width().to_js(&mut cx))
+        Ok(df.width().into_js(&mut cx))
     }
 
     pub fn is_empty(mut cx: FunctionContext) -> JsResult<JsBoolean> {
         let params = get_params(&mut cx)?;
         let jsdf = params.extract_boxed::<JsDataFrame>(&mut cx, "_df")?;
         let df = &jsdf.df;
-        Ok(df.is_empty().to_js(&mut cx))
+        Ok(df.is_empty().into_js(&mut cx))
     }
 
     pub fn read_objects(mut cx: FunctionContext) -> DataFrameResult {
@@ -118,13 +118,13 @@ impl JsDataFrame {
         let (rows, names) = objs_to_rows(&mut cx, &js_arr)?;
         let mut jsdf = Self::finish_from_rows(rows)?;
         jsdf.df.set_column_names(&names).map_err(JsPolarsEr::from)?;
-        Ok(jsdf.to_js_box(&mut cx))
+        Ok(jsdf.into_js_box(&mut cx))
     }
 
     pub fn from_js_array(mut cx: FunctionContext) -> DataFrameResult {
         unimplemented!()
     }
-    pub fn to_js(mut cx: FunctionContext) -> JsResult<JsObject> {
+    pub fn into_js(mut cx: FunctionContext) -> JsResult<JsObject> {
         let obj: Handle<JsObject> = cx
             .argument::<JsObject>(0)
             .map_err(|e| JsPolarsEr::Other(format!("Internal Error {}", e)))?;

@@ -12,46 +12,73 @@ use polars::prelude::*;
 use polars::prelude::{Series, Utf8Chunked};
 use std::path::PathBuf;
 
+pub struct Wrap<T>(pub T);
+
+impl<T> Clone for Wrap<T>
+where
+  T: Clone,
+{
+  fn clone(&self) -> Self {
+    Wrap(self.0.clone())
+  }
+}
+impl<T> From<T> for Wrap<T> {
+  fn from(t: T) -> Self {
+    Wrap(t)
+  }
+}
+impl<T> Finalize for Wrap<T> {}
+
 // ##### Boxed
 pub trait ToJsBox<'a>: Send + 'static + Sized {
-  fn to_js_box(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsBox<Self>>;
+  fn into_js_box(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsBox<Self>>;
 }
 
+pub trait ToJsValue<'a, V: Value>: Send + Sized {
+  fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, V>;
+}
+
+/// FromJsObject and FromJsValue are used to provide some utility functions around the native neon bindings
+pub trait FromJsValue<'a>: Sized + Send + 'a {
+  fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self>;
+}
+
+pub trait FromJsObject<'a, K: PropertyKey>: Sized {
+  fn get_as<V: FromJsValue<'a>>(self, cx: &mut FunctionContext<'a>, key: K) -> NeonResult<V> {
+    let jsv = get_obj_key::<JsValue, _>(cx, key)?;
+    V::from_js(cx, jsv)
+  }
+}
+
+/// Utility to easily wrap and unwrap a js box
+pub trait FromJsBox<'a>: Send + Sized {
+  fn extract_boxed(
+    cx: &mut FunctionContext<'a>,
+    jsv: Handle<'a, JsValue>,
+  ) -> JsResult<'a, JsBox<Self>>;
+}
+/// Uses the 'FromJsBox' to extract a jsboxed value from an object
+pub trait BoxedFromJsObject<'a>: Sized {
+  fn extract_boxed<V: FromJsBox<'a>>(
+    &self,
+    cx: &mut FunctionContext<'a>,
+    key: &'a str,
+  ) -> JsResult<'a, JsBox<V>>;
+}
+fn get_js_arr<'a>(
+  cx: &mut FunctionContext<'a>,
+  jsv: Handle<'a, JsValue>,
+) -> NeonResult<(Handle<'a, JsArray>, usize)> {
+  let js_arr: Handle<neon::prelude::JsArray> = jsv.downcast_or_throw::<JsArray, _>(cx)?;
+  let size = js_arr.len(cx) as usize;
+  Ok((js_arr, size))
+}
 impl<'a, T> ToJsBox<'a> for T
 where
   T: Send + 'static + Sized + Finalize,
 {
-  fn to_js_box(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsBox<Self>> {
+  fn into_js_box(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsBox<Self>> {
     cx.boxed(self)
-  }
-}
-
-pub trait ToJsValue<'a, V: Value>: Send + 'static + Sized {
-  fn to_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, V>;
-}
-
-impl<'a> ToJsValue<'a, JsNumber> for usize {
-  fn to_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsNumber> {
-    cx.number(self as f64)
-  }
-}
-
-impl<'a> ToJsValue<'a, JsString> for String {
-  fn to_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsString> {
-    cx.string(self)
-  }
-}
-
-impl<'a> ToJsValue<'a, JsBoolean> for bool {
-  fn to_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsBoolean> {
-    cx.boolean(self)
-  }
-}
-
-impl<'a> FromJsValue<'a> for String {
-  fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-    let js_string: Handle<JsString> = jsv.downcast_or_throw::<JsString, _>(cx)?;
-    Ok(js_string.value(cx))
   }
 }
 
@@ -62,12 +89,6 @@ impl<'a> FromJsValue<'a> for &'a str {
     Ok(Box::leak::<'a>(v.into_boxed_str()))
   }
 }
-impl<'a> FromJsValue<'a> for bool {
-  fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-    let js_bool: Handle<JsBoolean> = jsv.downcast_or_throw::<JsBoolean, _>(cx)?;
-    Ok(js_bool.value(cx))
-  }
-}
 
 impl<'a> FromJsValue<'a> for PathBuf {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
@@ -75,26 +96,6 @@ impl<'a> FromJsValue<'a> for PathBuf {
     let s = js_string.value(cx);
     Ok(PathBuf::from(s))
   }
-}
-impl<'a> FromJsValue<'a> for Vec<AnyValue<'a>> {
-  fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-    let js_arr: Handle<JsArray> = jsv.downcast_or_throw::<JsArray, _>(cx)?;
-    let mut rows: Vec<AnyValue> = Vec::with_capacity(js_arr.len(cx) as usize);
-    for (i, _) in js_arr.to_vec(cx).iter().enumerate() {
-      let jsv = js_arr.get(cx, i as u32).unwrap();
-      rows.push(Wrap::<AnyValue>::from_js(cx, jsv)?.0)
-    }
-    Ok(rows)
-  }
-}
-
-fn get_js_arr<'a>(
-  cx: &mut FunctionContext<'a>,
-  jsv: Handle<'a, JsValue>,
-) -> NeonResult<(Handle<'a, JsArray>, usize)> {
-  let js_arr: Handle<neon::prelude::JsArray> = jsv.downcast_or_throw::<JsArray, _>(cx)?;
-  let size = js_arr.len(cx) as usize;
-  Ok((js_arr, size))
 }
 
 impl<'a, T> FromJsValue<'a> for Wrap<ChunkedArray<T>>
@@ -133,8 +134,47 @@ impl<'a> FromJsValue<'a> for Wrap<Utf8Chunked> {
   }
 }
 
-
-
+impl<'a> ToJsValue<'a, JsValue> for Wrap<AnyValue<'a>> {
+  fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsValue> {
+    match self.0 {
+      AnyValue::UInt8(v) => v.into_js(cx).upcast(),
+      AnyValue::UInt16(v) => v.into_js(cx).upcast(),
+      AnyValue::UInt32(v) => v.into_js(cx).upcast(),
+      AnyValue::UInt64(v) => v.into_js(cx).upcast(),
+      AnyValue::Int8(v) => v.into_js(cx).upcast(),
+      AnyValue::Int16(v) => v.into_js(cx).upcast(),
+      AnyValue::Int32(v) => v.into_js(cx).upcast(),
+      AnyValue::Int64(v) => v.into_js(cx).upcast(),
+      AnyValue::Float32(v) => v.into_js(cx).upcast(),
+      AnyValue::Float64(v) => v.into_js(cx).upcast(),
+      AnyValue::Null => cx.null().upcast(),
+      AnyValue::Boolean(v) => v.into_js(cx).upcast(),
+      AnyValue::Utf8(v) => v.into_js(cx).upcast(),
+      AnyValue::Categorical(idx, rev) => {
+        let s = rev.get(idx);
+        s.into_js(cx).upcast()
+      }
+      AnyValue::Date(v) => v.into_js(cx).upcast(),
+      AnyValue::Datetime(v) => v.into_js(cx).upcast(),
+      AnyValue::Time(v) => v.into_js(cx).upcast(),
+      AnyValue::List(v) => {
+        // let pypolars = PyModule::import(py, "polars").expect("polars installed");
+        // let pyseries = PySeries::new(v);
+        // let python_series_wrapper = pypolars
+        //     .getattr("wrap_s")
+        //     .unwrap()
+        //     .call1((pyseries,))
+        //     .unwrap();
+        // python_series_wrapper.into()
+        unimplemented!()
+      }
+      AnyValue::Object(v) => {
+        let s = format!("{}", v);
+        s.into_js(cx).upcast()
+      }
+    }
+  }
+}
 /// # Safety
 /// i cant seem to find a workaround for getting the string values.
 /// I can do it with a box.leak, i think there has to be a better way around this
@@ -185,10 +225,6 @@ impl<'a> FromJsValue<'a> for Wrap<AnyValue<'a>> {
     }
   }
 }
-/// FromJsObject and FromJsValue are used to provide some utility functions around the native neon bindings
-pub trait FromJsValue<'a>: Sized + Send + 'a {
-  fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self>;
-}
 
 /// Wrap `Handle<JsObject>` to provide some much needed utility methods to it
 pub struct WrappedObject<'a>(pub Handle<'a, JsObject>);
@@ -217,21 +253,19 @@ impl<'a> WrappedObject<'a> {
   }
 }
 
-pub trait FromJsObject<'a, K: PropertyKey>: Sized {
-  fn get_as<V: FromJsValue<'a>>(self, cx: &mut FunctionContext<'a>, key: K) -> NeonResult<V> {
-    let jsv = get_obj_key::<JsValue, _>(cx, key)?;
-    V::from_js(cx, jsv)
+impl<'a, K> FromJsObject<'a, K> for Handle<'a, JsObject> where K: PropertyKey {}
+/// Wrap `Handle<JsObject>` to provide some much needed utility methods to it
+pub struct WrappedValue<'a>(pub Handle<'a, JsValue>);
+impl<'a> From<Handle<'a, JsValue>> for WrappedValue<'a> {
+  fn from(h: Handle<'a, JsValue>) -> Self {
+    Self(h)
   }
 }
 
-impl<'a, K> FromJsObject<'a, K> for Handle<'a, JsObject> where K: PropertyKey {}
-
-/// Utility to easily wrap and unwrap a js box
-pub trait FromJsBox<'a>: Send + Sized {
-  fn extract_boxed(
-    cx: &mut FunctionContext<'a>,
-    jsv: Handle<'a, JsValue>,
-  ) -> JsResult<'a, JsBox<Self>>;
+impl<'a> WrappedValue<'a> {
+  pub fn get_as<V: FromJsValue<'a>>(self, cx: &mut FunctionContext<'a>) -> NeonResult<V> {
+    V::from_js(cx, self.0)
+  }
 }
 
 impl<'a, T> FromJsBox<'a> for T
@@ -245,15 +279,6 @@ where
     let jsbox: Handle<'a, JsBox<T>> = jsv.downcast_or_throw::<JsBox<T>, _>(cx)?;
     Ok(jsbox)
   }
-}
-
-/// Uses the 'FromJsBox' to extract a jsboxed value from an object
-pub trait BoxedFromJsObject<'a>: Sized {
-  fn extract_boxed<V: FromJsBox<'a>>(
-    &self,
-    cx: &mut FunctionContext<'a>,
-    key: &'a str,
-  ) -> JsResult<'a, JsBox<V>>;
 }
 
 impl<'a> BoxedFromJsObject<'a> for Handle<'a, JsObject> {
@@ -306,9 +331,6 @@ pub(crate) fn get_params<'a>(cx: &mut FunctionContext<'a>) -> NeonResult<Wrapped
     .map_err(|e| JsPolarsEr::Other(format!("Internal Error {}", e)))?;
   Ok(obj.into())
 }
-pub trait FromJsValueOld<'a>: Sized + Send + 'a {
-  fn from_js(jsv: Handle<'a, JsValue>, cx: &mut FunctionContext<'a>) -> NeonResult<Self>;
-}
 
 pub(crate) fn objs_to_rows<'a>(
   cx: &mut FunctionContext<'a>,
@@ -344,66 +366,71 @@ pub(crate) fn objs_to_rows<'a>(
   Ok((rows, names))
 }
 
-pub struct Wrap<T>(pub T);
-
-impl<T> Clone for Wrap<T>
-where
-  T: Clone,
-{
-  fn clone(&self) -> Self {
-    Wrap(self.0.clone())
+impl<'a> ToJsValue<'a, JsString> for &'a str {
+  fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsString> {
+    cx.string(self)
   }
 }
-impl<T> From<T> for Wrap<T> {
-  fn from(t: T) -> Self {
-    Wrap(t)
-  }
-}
-impl<T> Finalize for Wrap<T> {}
 
-macro_rules! impl_numerics {
-  ($type:ty) => {
+macro_rules! impl_conversions {
+  ($jstype:ty, $jsmethod:ident, $type:ty) => {
+    impl<'a> ToJsValue<'a, $jstype> for $type {
+      fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, $jstype> {
+        cx.$jsmethod(self)
+      }
+    }
     impl<'a> FromJsValue<'a> for $type {
       fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-        let js_num: Handle<JsNumber> = jsv.downcast_or_throw::<JsNumber, _>(cx)?;
+        let js_num: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
         Ok(js_num.value(cx) as $type)
       }
     }
     impl<'a> FromJsValue<'a> for Option<$type> {
       fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-        let js_num: Handle<JsNumber> = jsv.downcast_or_throw::<JsNumber, _>(cx)?;
+        let js_num: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
         Ok(Some(js_num.value(cx) as $type))
       }
     }
   };
 }
-
-impl_numerics!(f32);
-impl_numerics!(f64);
-impl_numerics!(i16);
-impl_numerics!(i32);
-impl_numerics!(i64);
-impl_numerics!(i8);
-impl_numerics!(u16);
-impl_numerics!(u32);
-impl_numerics!(u64);
-impl_numerics!(u8);
-impl_numerics!(usize);
-
-
-/// Wrap `Handle<JsObject>` to provide some much needed utility methods to it
-pub struct WrappedValue<'a>(pub Handle<'a, JsValue>);
-impl<'a> From<Handle<'a, JsValue>> for WrappedValue<'a> {
-  fn from(h: Handle<'a, JsValue>) -> Self {
-    Self(h)
-  }
+macro_rules! impl_casted_conversions {
+  ($jstype:ty, $jsmethod:ident, $type:ty, $cast:ty) => {
+    impl<'a> ToJsValue<'a, $jstype> for $type {
+      fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, $jstype> {
+        cx.$jsmethod(self as $cast)
+      }
+    }
+    impl<'a> FromJsValue<'a> for $type {
+      fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
+        let js_num: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
+        Ok(js_num.value(cx) as $type)
+      }
+    }
+    impl<'a> FromJsValue<'a> for Option<$type> {
+      fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
+        let js_num: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
+        Ok(Some(js_num.value(cx) as $type))
+      }
+    }
+  };
 }
+// impl<'a> ToJsValue<'a, JsBoolean> for bool {
+//   fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsBoolean> {
+//     cx.boolean(self as bool)
+//   }
+// }
+impl_conversions!(JsString, string, String);
+// impl_conversions!(JsString, string, &'a str);
 
-impl<'a> WrappedValue<'a> {
-  pub fn get_as<V: FromJsValue<'a>>(
-    self,
-    cx: &mut FunctionContext<'a>
-  ) -> NeonResult<V> {
-    V::from_js(cx, self.0)
-  }
-}
+impl_conversions!(JsNumber, number, f32);
+impl_conversions!(JsNumber, number, f64);
+impl_conversions!(JsNumber, number, i8);
+impl_conversions!(JsNumber, number, i16);
+impl_conversions!(JsNumber, number, i32);
+impl_casted_conversions!(JsNumber, number, i64, f64);
+impl_conversions!(JsNumber, number, u8);
+impl_conversions!(JsNumber, number, u16);
+impl_conversions!(JsNumber, number, u32);
+impl_casted_conversions!(JsNumber, number, u64, f64);
+impl_casted_conversions!(JsNumber, number, usize, f64);
+impl_conversions!(JsBoolean, boolean, bool);

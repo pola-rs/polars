@@ -41,7 +41,6 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("dataframe_height", JsDataFrame::height)?;
     cx.export_function("dataframe_is_empty", JsDataFrame::is_empty)?;
     cx.export_function("dataframe_shape", JsDataFrame::shape)?;
-    cx.export_function("dataframe_to_js", JsDataFrame::to_js)?;
     cx.export_function("dataframe_width", JsDataFrame::width)?;
 
     
@@ -50,11 +49,19 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("series_get_fmt", JsSeries::get_fmt)?;
     cx.export_function("series_head", JsSeries::head)?;
     cx.export_function("series_mul", JsSeries::mul)?;
-    cx.export_function("series_read_objects", JsSeries::read_objects)?;
     cx.export_function("series_sub", JsSeries::sub)?;
     cx.export_function("series_tail", JsSeries::tail)?;
+    cx.export_function("series_dtype", JsSeries::dtype)?;
+    cx.export_function("series_cumsum", JsSeries::cumsum)?;
+    cx.export_function("series_cummin", JsSeries::cummin)?;
+    cx.export_function("series_cummax", JsSeries::cummax)?;
+    cx.export_function("series_cumprod", JsSeries::cumprod)?;
 
+    cx.export_function("series_name", JsSeries::name)?;
+    cx.export_function("series_rename", JsSeries::rename)?;
+    cx.export_function("series_dtype", JsSeries::dtype)?;
 
+    cx.export_function("series_new_str", JsSeries::new_str)?;
     cx.export_function("series_new_i8", JsSeries::new_i8)?;
     cx.export_function("series_new_i16", JsSeries::new_i16)?;
     cx.export_function("series_new_i32", JsSeries::new_i32)?;
@@ -63,7 +70,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("series_new_u16", JsSeries::new_u16)?;
     cx.export_function("series_new_u32", JsSeries::new_u32)?;
     cx.export_function("series_new_u64", JsSeries::new_u64)?;
+    cx.export_function("series_new_f32", JsSeries::new_f32)?;
+    cx.export_function("series_new_f64", JsSeries::new_f64)?;
     cx.export_function("series_new_bool", JsSeries::new_bool)?;
+
     cx.export_function("series_new_opt_u16", JsSeries::new_opt_u16)?;
     cx.export_function("series_new_opt_u32", JsSeries::new_opt_u32)?;
     cx.export_function("series_new_opt_u64", JsSeries::new_opt_u64)?;
