@@ -3,5 +3,5 @@
 max-line-length = 180
 # E203, W504: due to black fmt
 ignore = E203,W503,W605
-exclude = tests, legacy, docs
+exclude = legacy, docs
 

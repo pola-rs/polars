@@ -1,3 +1,4 @@
+# flake8: noqa: W191,E101
 from builtins import range
 from datetime import datetime
 from io import BytesIO
@@ -9,8 +10,6 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import *
-from polars.lazy import *
 
 
 def test_version():
@@ -289,48 +288,6 @@ def test_from_arrow():
         }
     )
     assert pl.from_arrow(tbl).shape == (2, 5)
-
-
-def test_downsample():
-    s = pl.Series(
-        "datetime",
-        [
-            946684800000,
-            946684860000,
-            946684920000,
-            946684980000,
-            946685040000,
-            946685100000,
-            946685160000,
-            946685220000,
-            946685280000,
-            946685340000,
-            946685400000,
-            946685460000,
-            946685520000,
-            946685580000,
-            946685640000,
-            946685700000,
-            946685760000,
-            946685820000,
-            946685880000,
-            946685940000,
-        ],
-    ).cast(Datetime)
-    s2 = s.clone()
-    df = pl.DataFrame({"a": s, "b": s2})
-    out = df.downsample("a", rule="minute", n=5).first()
-    assert out.shape == (4, 2)
-
-    # OLHC
-    out = df.downsample("a", rule="minute", n=5).agg(
-        {"b": ["first", "min", "max", "last"]}
-    )
-    assert out.shape == (4, 5)
-
-    # test to_pandas as well.
-    out = df.to_pandas()
-    assert out["a"].dtype == "datetime64[ns]"
 
 
 def test_sort():
@@ -621,7 +578,7 @@ def test_custom_groupby():
     out = (
         df.lazy()
         .groupby("b")
-        .agg([col("a").apply(lambda x: x.sum(), return_dtype=int)])
+        .agg([pl.col("a").apply(lambda x: x.sum(), return_dtype=int)])
         .collect()
     )
     assert out.shape == (3, 2)
@@ -689,12 +646,6 @@ def test_df_stats(df):
     df.mean()
     df.median()
     df.quantile(0.4)
-
-
-def test_from_pandas_datetime():
-    df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    pl.from_pandas(df)
 
 
 def test_df_fold():
@@ -805,7 +756,7 @@ def test_lazy_functions():
 
 def test_multiple_column_sort():
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [2, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.sort([col("b"), col("c").reverse()])
+    out = df.sort([pl.col("b"), pl.col("c").reverse()])
     assert out["c"] == [2, 3, 1]
     assert out["b"] == [2, 2, 3]
 
@@ -995,14 +946,14 @@ def dot_product():
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
-    assert df[[col("a").dot("b")]][0, "a"] == 20
+    assert df[[pl.col("a").dot("b")]][0, "a"] == 20
 
 
 def test_hash_rows():
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
     assert df.hash_rows().dtype == pl.UInt64
     assert df["a"].hash().dtype == pl.UInt64
-    assert df[[col("a").hash().alias("foo")]]["foo"].dtype == pl.UInt64
+    assert df[[pl.col("a").hash().alias("foo")]]["foo"].dtype == pl.UInt64
 
 
 def test_create_df_from_object():
@@ -1019,7 +970,7 @@ def test_hashing_on_python_objects():
     # this requires that the hashing and aggregations are done on python objects
 
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
-    df = df.with_column(col("a").apply(lambda x: datetime(2021, 1, 1)).alias("foo"))
+    df = df.with_column(pl.col("a").apply(lambda x: datetime(2021, 1, 1)).alias("foo"))
     assert df.groupby(["foo"]).first().shape == (1, 3)
     assert df.drop_duplicates().shape == (3, 3)
 
@@ -1048,19 +999,6 @@ def test_h_agg():
     assert df.mean(axis=1, null_strategy="propagate")[1] is None
 
 
-def test_filter_date():
-    dataset = pl.DataFrame(
-        {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
-    )
-    df = dataset.with_column(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
-    assert df.filter(pl.col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
-    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
-    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
-    assert df.filter(pl.col("date") <= pl.lit(datetime(2019, 1, 3))).is_empty()
-    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 4))).shape[0] == 2
-    assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
-
-
 def test_slicing():
     # https://github.com/pola-rs/polars/issues/1322
     n = 20
@@ -1084,7 +1022,7 @@ def test_apply_list_return():
     assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
 
 
-def test_groupby_cat_list():
+def test_groupby_cat_list():  # noqa: W191,E101
     grouped = (
         pl.DataFrame(
             [
@@ -1234,27 +1172,6 @@ def test_filter_with_all_expansion():
     )
     out = df.filter(~pl.fold(True, lambda acc, s: acc & s.is_null(), pl.all()))
     assert out.shape == (2, 3)
-
-
-def test_diff_datetime():
-
-    df = pl.DataFrame(
-        {
-            "timestamp": ["2021-02-01", "2021-03-1", "2021-04-1"],
-            "guild": [1, 2, 3],
-            "char": ["a", "a", "b"],
-        }
-    )
-
-    out = (
-        df.with_columns(
-            [
-                pl.col("timestamp").str.strptime(pl.Date, fmt="%Y-%m-%d"),
-            ]
-        ).with_columns([pl.col("timestamp").diff().over(pl.col("char"))])
-    )["timestamp"]
-
-    assert out[0] == out[1]
 
 
 def test_diag_concat():

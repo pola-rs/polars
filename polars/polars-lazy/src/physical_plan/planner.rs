@@ -1,5 +1,7 @@
 use super::expressions as phys_expr;
 use crate::logical_plan::Context;
+#[cfg(feature = "ipc")]
+use crate::physical_plan::executors::scan::IpcExec;
 use crate::physical_plan::executors::union::UnionExec;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
@@ -11,7 +13,7 @@ use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::prelude::*;
 use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_io::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -144,6 +146,28 @@ impl DefaultPlanner {
                     options,
                     predicate,
                     aggregate,
+                }))
+            }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                output_schema: _,
+                predicate,
+                aggregate,
+                options,
+            } => {
+                let predicate = predicate
+                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+
+                let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
+                Ok(Box::new(IpcExec {
+                    path,
+                    schema,
+                    predicate,
+                    aggregate,
+                    options,
                 }))
             }
             #[cfg(feature = "parquet")]

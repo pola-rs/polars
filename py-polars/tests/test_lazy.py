@@ -1,19 +1,16 @@
-from datetime import datetime
-
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.datatypes import *
-from polars.lazy import *
+from polars.lazy import col, lit, map_binary, when
 
 
 def test_lazy():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    ldf = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
+    _ = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
 
     # test if it executes
-    new = (
+    _ = (
         df.lazy()
         .with_column(
             when(col("a").gt(lit(2))).then(lit(10)).otherwise(lit(1)).alias("new")
@@ -62,8 +59,16 @@ def test_agg():
 
 def test_fold():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    out = df.lazy().select(pl.sum(["a", "b"])).collect()
+    out = df.select(
+        [
+            pl.sum(["a", "b"]),
+            pl.max(["a", pl.col("b") ** 2]),
+            pl.min(["a", pl.col("b") ** 2]),
+        ]
+    )
     assert out["sum"].series_equal(pl.Series("sum", [2.0, 4.0, 6.0]))
+    assert out["max"].series_equal(pl.Series("max", [1.0, 4.0, 9.0]))
+    assert out["min"].series_equal(pl.Series("max", [1.0, 2.0, 3.0]))
 
     out = df.select(
         pl.fold(acc=lit(0), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("foo")
@@ -391,15 +396,6 @@ def test_literal_projection():
     assert df.select([2.0]).dtypes == [pl.Float64]
 
 
-def test_to_python_datetime():
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    assert (
-        df.select(col("a").cast(pl.Datetime).dt.to_python_datetime())["a"].dtype
-        == pl.Object
-    )
-    assert df.select(col("a").cast(pl.Datetime).dt.timestamp())["a"].dtype == pl.Int64
-
-
 def test_interpolate():
     df = pl.DataFrame({"a": [1, None, 3]})
     assert df.select(col("a").interpolate())["a"] == [1, 2, 3]
@@ -557,13 +553,6 @@ def test_ufunc():
     df = pl.DataFrame({"a": [1, 2]})
     out = df.select(np.log(col("a")))
     assert out["a"][1] == 0.6931471805599453
-
-
-def test_datetime_consistency():
-    dt = datetime(2021, 1, 1)
-    df = pl.DataFrame({"date": [dt]})
-    assert df["date"].dt[0] == dt
-    assert df.select(lit(dt))["literal"].dt[0] == dt
 
 
 def test_clip():

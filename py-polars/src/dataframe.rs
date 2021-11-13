@@ -174,17 +174,26 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    pub fn read_parquet(py_f: PyObject, stop_after_n_rows: Option<usize>) -> PyResult<Self> {
+    pub fn read_parquet(
+        py_f: PyObject,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        stop_after_n_rows: Option<usize>,
+    ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = f.as_buffer();
                 ParquetReader::new(buf)
+                    .with_columns(columns)
+                    .with_stop_after_n_rows(stop_after_n_rows)
                     .with_stop_after_n_rows(stop_after_n_rows)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f)
+                .with_projection(projection)
+                .with_columns(columns)
                 .with_stop_after_n_rows(stop_after_n_rows)
                 .finish(),
         };
@@ -194,9 +203,19 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "ipc")]
-    pub fn read_ipc(py_f: PyObject) -> PyResult<Self> {
+    pub fn read_ipc(
+        py_f: PyObject,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        stop_after_n_rows: Option<usize>,
+    ) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
-        let df = IpcReader::new(file).finish().map_err(PyPolarsEr::from)?;
+        let df = IpcReader::new(file)
+            .with_projection(projection)
+            .with_columns(columns)
+            .with_stop_after_n_rows(stop_after_n_rows)
+            .finish()
+            .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 

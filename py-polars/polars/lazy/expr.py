@@ -1,6 +1,6 @@
 import copy
 import typing as tp
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
@@ -812,7 +812,17 @@ class Expr:
                    * "one"
                    * "zero"
         """
-        if fill_value in ["backward", "forward", "min", "max", "mean", "zero", "one"]:
+        # we first must check if it is not an expr, as expr does not implement __bool__
+        # and thus leads to a value error in the second comparisson.
+        if not isinstance(fill_value, pl.Expr) and fill_value in [
+            "backward",
+            "forward",
+            "min",
+            "max",
+            "mean",
+            "zero",
+            "one",
+        ]:
             return wrap_expr(self._pyexpr.fill_null_with_strategy(fill_value))
 
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
@@ -1719,6 +1729,18 @@ class Expr:
             .otherwise(self)
         ).keep_name()
 
+    def lower_bound(self) -> "Expr":
+        """
+        Returns a unit Series with the lowest value possible for the dtype of this expression.
+        """
+        return wrap_expr(self._pyexpr.lower_bound())
+
+    def upper_bound(self) -> "Expr":
+        """
+        Returns a unit Series with the highest value possible for the dtype of this expression.
+        """
+        return wrap_expr(self._pyexpr.upper_bound())
+
     def str_concat(self, delimiter: str = "-") -> "Expr":  # type: ignore
         """
         Vertically concat the values in the Series to a single string value.
@@ -2335,7 +2357,7 @@ def expr_to_lit_or_expr(
     """
     if isinstance(expr, str) and not str_to_lit:
         return col(expr)
-    elif isinstance(expr, (int, float, str, pl.Series)) or expr is None:
+    elif isinstance(expr, (int, float, str, pl.Series, datetime, date)) or expr is None:
         return lit(expr)
     elif isinstance(expr, list):
         return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]

@@ -34,6 +34,8 @@ pub(crate) mod conversion;
 pub(crate) mod iterator;
 pub(crate) mod optimizer;
 mod projection;
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcReader;
 use projection::*;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
@@ -135,6 +137,13 @@ impl LiteralValue {
         }
     }
 }
+#[derive(Clone, Debug)]
+#[cfg(feature = "ipc")]
+pub struct IpcOptions {
+    pub(crate) stop_after_n_rows: Option<usize>,
+    pub(crate) with_columns: Option<Vec<String>>,
+    pub(crate) cache: bool,
+}
 
 #[derive(Clone, Debug)]
 pub struct CsvParserOptions {
@@ -185,6 +194,15 @@ pub enum LogicalPlan {
         aggregate: Vec<Expr>,
         stop_after_n_rows: Option<usize>,
         cache: bool,
+    },
+    #[cfg(feature = "ipc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
+    IpcScan {
+        path: PathBuf,
+        schema: SchemaRef,
+        options: IpcOptions,
+        predicate: Option<Expr>,
+        aggregate: Vec<Expr>,
     },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     /// In memory DataFrame
@@ -311,6 +329,28 @@ impl fmt::Debug for LogicalPlan {
                 write!(
                     f,
                     "PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    predicate
+                )
+            }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                options,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                write!(
+                    f,
+                    "IPC SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
@@ -664,6 +704,36 @@ impl LogicalPlan {
                     self.write_dot(acc_str, prev_node, &current_node, id)
                 }
             }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                options,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                let pred = fmt_predicate(predicate.as_ref());
+                let current_node = format!(
+                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    pred,
+                    (branch, id)
+                );
+                if id == 0 {
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    write!(acc_str, "\"{}\"", current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, &current_node, id)
+                }
+            }
             Join {
                 input_left,
                 input_right,
@@ -706,6 +776,8 @@ impl LogicalPlan {
             Explode { input, .. } => input.schema(),
             #[cfg(feature = "parquet")]
             ParquetScan { schema, .. } => schema,
+            #[cfg(feature = "ipc")]
+            IpcScan { schema, .. } => schema,
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => input.schema(),
             #[cfg(feature = "csv-file")]
@@ -748,16 +820,12 @@ impl LogicalPlanBuilder {
         path: P,
         stop_after_n_rows: Option<usize>,
         cache: bool,
-    ) -> Self {
+    ) -> Result<Self> {
         let path = path.into();
-        let file = std::fs::File::open(&path).expect("could not open file");
-        let schema = Arc::new(
-            ParquetReader::new(file)
-                .schema()
-                .expect("could not get parquet schema"),
-        );
+        let file = std::fs::File::open(&path)?;
+        let schema = Arc::new(ParquetReader::new(file).schema()?);
 
-        LogicalPlan::ParquetScan {
+        Ok(LogicalPlan::ParquetScan {
             path,
             schema,
             stop_after_n_rows,
@@ -766,7 +834,24 @@ impl LogicalPlanBuilder {
             aggregate: vec![],
             cache,
         }
-        .into()
+        .into())
+    }
+
+    #[cfg(feature = "ipc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
+    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcOptions) -> Result<Self> {
+        let path = path.into();
+        let file = std::fs::File::open(&path)?;
+        let schema = Arc::new(IpcReader::new(file).schema()?);
+
+        Ok(LogicalPlan::IpcScan {
+            path,
+            schema,
+            predicate: None,
+            aggregate: vec![],
+            options,
+        }
+        .into())
     }
 
     #[allow(clippy::too_many_arguments)]

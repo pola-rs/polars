@@ -1,12 +1,10 @@
 from datetime import date, datetime, timedelta
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import *
 
 
 def create_series() -> pl.Series:
@@ -168,12 +166,12 @@ def test_filter():
 def test_cast():
     a = pl.Series("a", range(20))
 
-    assert a.cast(Float32).dtype == Float32
-    assert a.cast(Float64).dtype == Float64
-    assert a.cast(Int32).dtype == Int32
-    assert a.cast(UInt32).dtype == UInt32
-    assert a.cast(Datetime).dtype == Datetime
-    assert a.cast(Date).dtype == Date
+    assert a.cast(pl.Float32).dtype == pl.Float32
+    assert a.cast(pl.Float64).dtype == pl.Float64
+    assert a.cast(pl.Int32).dtype == pl.Int32
+    assert a.cast(pl.UInt32).dtype == pl.UInt32
+    assert a.cast(pl.Datetime).dtype == pl.Datetime
+    assert a.cast(pl.Date).dtype == pl.Date
 
 
 def test_to_python():
@@ -206,16 +204,16 @@ def test_rechunk():
 def test_indexing():
     a = pl.Series("a", [1, 2, None])
     assert a[1] == 2
-    assert a[2] == None
+    assert a[2] is None
     b = pl.Series("b", [True, False])
     assert b[0]
     assert not b[1]
     a = pl.Series("a", ["a", None])
     assert a[0] == "a"
-    assert a[1] == None
+    assert a[1] is None
     a = pl.Series("a", [0.1, None])
     assert a[0] == 0.1
-    assert a[1] == None
+    assert a[1] is None
 
 
 def test_arrow():
@@ -435,61 +433,6 @@ def test_strftime():
     assert a.dtype == pl.Date
     a = a.dt.strftime("%F")
     assert a[2] == "2052-02-20"
-
-
-def test_timestamp():
-    from datetime import datetime
-
-    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Datetime)
-    assert a.dt.timestamp() == [10000, 20000, 30000]
-    out = a.dt.to_python_datetime()
-    assert isinstance(out[0], datetime)
-    assert a.dt.min() == out[0]
-    assert a.dt.max() == out[2]
-
-    df = pl.DataFrame([out])
-    # test if rows returns objects
-    assert isinstance(df.row(0)[0], datetime)
-
-
-def test_from_pydatetime():
-    dates = [
-        datetime(2021, 1, 1),
-        datetime(2021, 1, 2),
-        datetime(2021, 1, 3),
-        datetime(2021, 1, 4, 12, 12),
-        None,
-    ]
-    s = pl.Series("name", dates)
-    assert s.dtype == pl.Datetime
-    assert s.name == "name"
-    assert s.null_count() == 1
-    assert s.dt[0] == dates[0]
-    # fmt dates and nulls
-    print(s)
-
-    dates = [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3), None]
-    s = pl.Series("name", dates)
-    assert s.dtype == pl.Date
-    assert s.name == "name"
-    assert s.null_count() == 1
-    assert s.dt[0] == dates[0]
-
-    # fmt dates and nulls
-    print(s)
-
-
-def test_from_pandas_nan_to_none():
-    from pyarrow import ArrowInvalid
-
-    df = pd.Series([2, np.nan, None], name="pd")
-    out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
-    df.loc[2] = pd.NA
-    assert [val is None for val in out_true]
-    assert [np.isnan(val) for val in out_false[1:]]
-    with pytest.raises(ArrowInvalid, match="Could not convert"):
-        pl.from_pandas(df, nan_to_none=False)
 
 
 def test_round():

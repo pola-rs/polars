@@ -58,6 +58,7 @@ __all__ = [
     "read_sql",
     "read_ipc",
     "scan_csv",
+    "scan_ipc",
     "scan_parquet",
     "read_ipc_schema",
 ]
@@ -467,6 +468,33 @@ def scan_csv(
     )
 
 
+def scan_ipc(
+    file: Union[str, Path],
+    stop_after_n_rows: Optional[int] = None,
+    cache: bool = True,
+) -> "pl.LazyFrame":
+    """
+    Lazily read from an IPC file.
+
+    This allows the query optimizer to push down predicates and projections to the scan level,
+    thereby potentially reducing memory overhead.
+
+    Parameters
+    ----------
+    file
+        Path to a file.
+    stop_after_n_rows
+        After n rows are read from the parquet, it stops reading.
+    cache
+        Cache the result after reading.
+    """
+    if isinstance(file, Path):
+        file = str(file)
+    return pl.LazyFrame.scan_ipc(
+        file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
+    )
+
+
 def scan_parquet(
     file: Union[str, Path],
     stop_after_n_rows: Optional[int] = None,
@@ -552,7 +580,7 @@ def read_ipc(
                 )
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
             return pl.DataFrame._from_arrow(tbl)
-        return pl.DataFrame.read_ipc(data)
+        return pl.DataFrame.read_ipc(data, columns=columns)
 
 
 def read_parquet(
@@ -598,9 +626,7 @@ def read_parquet(
             raise ValueError(
                 "'stop_after_n_rows' cannot be used with 'use_pyarrow=True'."
             )
-    else:
-        if columns:
-            raise ValueError("'columns' cannot be used with 'use_pyarrow=False'.")
+
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
         if use_pyarrow:
@@ -614,7 +640,7 @@ def read_parquet(
                 )
             )
         return pl.DataFrame.read_parquet(
-            source_prep, stop_after_n_rows=stop_after_n_rows
+            source_prep, stop_after_n_rows=stop_after_n_rows, columns=columns
         )
 
 

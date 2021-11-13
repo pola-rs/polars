@@ -3,6 +3,7 @@ import datetime
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pytest
 
 import polars as pl
 
@@ -27,6 +28,10 @@ def test_from_pandas_datetime():
 
     # checks lazy dispatch
     pl.DataFrame([s.rename("foo")])[pl.col("foo").dt.round("hour", 2)]
+
+    df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
+    df["datetime"] = pd.to_datetime(df["datetime"])
+    pl.from_pandas(df)
 
 
 def test_arrow_list_roundtrip():
@@ -117,3 +122,16 @@ def test_from_pandas_series():
     pd_series = pd.Series([1, 2, 3], name="pd")
     df = pl.from_pandas(pd_series)
     assert df.shape == (3,)
+
+
+def test_from_pandas_nan_to_none():
+    from pyarrow import ArrowInvalid
+
+    df = pd.Series([2, np.nan, None], name="pd")
+    out_true = pl.from_pandas(df)
+    out_false = pl.from_pandas(df, nan_to_none=False)
+    df.loc[2] = pd.NA
+    assert [val is None for val in out_true]
+    assert [np.isnan(val) for val in out_false[1:]]
+    with pytest.raises(ArrowInvalid, match="Could not convert"):
+        pl.from_pandas(df, nan_to_none=False)
