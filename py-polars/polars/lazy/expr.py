@@ -1,6 +1,6 @@
 import copy
 import typing as tp
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
@@ -2345,7 +2345,7 @@ def expr_to_lit_or_expr(
     """
     if isinstance(expr, str) and not str_to_lit:
         return col(expr)
-    elif isinstance(expr, (int, float, str, pl.Series, datetime)) or expr is None:
+    elif isinstance(expr, (int, float, str, pl.Series, datetime, date)) or expr is None:
         return lit(expr)
     elif isinstance(expr, list):
         return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]

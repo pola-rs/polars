@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import numpy as np
 import pytest
 
@@ -390,15 +388,6 @@ def test_literal_projection():
     assert df.select([2.0]).dtypes == [pl.Float64]
 
 
-def test_to_python_datetime():
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    assert (
-        df.select(col("a").cast(pl.Datetime).dt.to_python_datetime())["a"].dtype
-        == pl.Object
-    )
-    assert df.select(col("a").cast(pl.Datetime).dt.timestamp())["a"].dtype == pl.Int64
-
-
 def test_interpolate():
     df = pl.DataFrame({"a": [1, None, 3]})
     assert df.select(col("a").interpolate())["a"] == [1, 2, 3]
@@ -556,13 +545,6 @@ def test_ufunc():
     df = pl.DataFrame({"a": [1, 2]})
     out = df.select(np.log(col("a")))
     assert out["a"][1] == 0.6931471805599453
-
-
-def test_datetime_consistency():
-    dt = datetime(2021, 1, 1)
-    df = pl.DataFrame({"date": [dt]})
-    assert df["date"].dt[0] == dt
-    assert df.select(lit(dt))["literal"].dt[0] == dt
 
 
 def test_clip():
