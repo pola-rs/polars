@@ -807,6 +807,14 @@ impl PyExpr {
             .into()
     }
 
+    pub fn lower_bound(&self) -> Self {
+        self.inner.clone().lower_bound().into()
+    }
+
+    pub fn upper_bound(&self) -> Self {
+        self.inner.clone().upper_bound().into()
+    }
+
     fn lst_max(&self) -> Self {
         self.inner
             .clone()

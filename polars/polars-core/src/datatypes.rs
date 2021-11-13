@@ -491,7 +491,7 @@ pub enum DataType {
 
 impl DataType {
     /// Convert to the physical data type
-    pub(crate) fn to_physical(&self) -> DataType {
+    pub fn to_physical(&self) -> DataType {
         use DataType::*;
         match self {
             Date => Int32,

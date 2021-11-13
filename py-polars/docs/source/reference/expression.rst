@@ -178,6 +178,8 @@ Manipulation/ selection
     Expr.interpolate
     Expr.argsort
     Expr.clip
+    Expr.lower_bound
+    Expr.upper_bound
     Expr.str_concat
 
 Column names
