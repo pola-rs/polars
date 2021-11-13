@@ -185,7 +185,7 @@ impl DataFrame {
     /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
-    /// fn main() -> Result<()> {
+    /// fn example() -> Result<()> {
     ///   let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
     ///   assert_eq!(df1.shape(), (4, 1));
     ///
@@ -1484,35 +1484,227 @@ impl DataFrame {
     }
 
     /// Aggregate the columns to their maximum values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.max();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | i32     | i32     |
+    /// +=========+=========+
+    /// | 6       | 5       |
+    /// +---------+---------+
+    /// ```
     pub fn max(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.max_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their standard deviation values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.std();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +-------------------+--------------------+
+    /// | Die n°1           | Die n°2            |
+    /// | ---               | ---                |
+    /// | f64               | f64                |
+    /// +===================+====================+
+    /// | 2.280350850198276 | 1.0954451150103321 |
+    /// +-------------------+--------------------+
+    /// ```
     pub fn std(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.std_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
     /// Aggregate the columns to their variation values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.var();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | f64     | f64     |
+    /// +=========+=========+
+    /// | 5.2     | 1.2     |
+    /// +---------+---------+
+    /// ```
     pub fn var(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.var_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their minimum values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.min();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | i32     | i32     |
+    /// +=========+=========+
+    /// | 1       | 2       |
+    /// +---------+---------+
+    /// ```
     pub fn min(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.min_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their sum values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.sum();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | i32     | i32     |
+    /// +=========+=========+
+    /// | 16      | 16      |
+    /// +---------+---------+
+    /// ```
     pub fn sum(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.sum_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their mean values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.mean();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | f64     | f64     |
+    /// +=========+=========+
+    /// | 3.2     | 3.2     |
+    /// +---------+---------+
+    /// ```
     pub fn mean(&self) -> Self {
         let columns = self
             .columns
@@ -1523,6 +1715,38 @@ impl DataFrame {
     }
 
     /// Aggregate the columns to their median values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.median();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | i32     | i32     |
+    /// +=========+=========+
+    /// | 3       | 3       |
+    /// +---------+---------+
+    /// ```
     pub fn median(&self) -> Self {
         let columns = self
             .columns
