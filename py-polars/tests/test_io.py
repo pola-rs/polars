@@ -52,6 +52,19 @@ def test_select_columns_and_projection_from_buffer():
         assert df_2.frame_equal(expected)
 
 
+def test_compressed_to_ipc():
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
+    compressions = ["uncompressed", "lz4", "zstd"]
+
+    for compression in compressions:
+        f = io.BytesIO()
+        df.to_ipc(f, compression)
+        f.seek(0)
+
+        df_read = pl.read_ipc(f, use_pyarrow=False)
+        assert df_read.frame_equal(df)
+
+
 def test_read_web_file():
     url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
     df = pl.read_csv(url)

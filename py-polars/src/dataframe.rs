@@ -275,9 +275,17 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn to_ipc(&self, py_f: PyObject) -> PyResult<()> {
+    pub fn to_ipc(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
+        let compression = match compression {
+            "uncompressed" => None,
+            "lz4" => Some(IpcCompression::LZ4),
+            "zstd" => Some(IpcCompression::ZSTD),
+            s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
+        };
+
         IpcWriter::new(&mut buf)
+            .with_compression(compression)
             .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
@@ -332,14 +340,14 @@ impl PyDataFrame {
         let buf = get_file_like(py_f, true)?;
 
         let compression = match compression {
-            "uncompressed" => Compression::Uncompressed,
-            "snappy" => Compression::Snappy,
-            "gzip" => Compression::Gzip,
-            "lzo" => Compression::Lzo,
-            "brotli" => Compression::Brotli,
-            "lz4" => Compression::Lz4,
-            "zstd" => Compression::Zstd,
-            s => panic!("compression {} not supported", s),
+            "uncompressed" => ParquetCompression::Uncompressed,
+            "snappy" => ParquetCompression::Snappy,
+            "gzip" => ParquetCompression::Gzip,
+            "lzo" => ParquetCompression::Lzo,
+            "brotli" => ParquetCompression::Brotli,
+            "lz4" => ParquetCompression::Lz4,
+            "zstd" => ParquetCompression::Zstd,
+            s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
         };
 
         ParquetWriter::new(buf)

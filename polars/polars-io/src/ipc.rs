@@ -216,6 +216,20 @@ where
 /// ```
 pub struct IpcWriter<W> {
     writer: W,
+    compression: Option<write::Compression>,
+}
+
+pub use write::Compression as IpcCompression;
+
+impl<W> IpcWriter<W>
+where
+    W: Write + Seek,
+{
+    /// Set the compression used. Defaults to None.
+    pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
+        self.compression = compression;
+        self
+    }
 }
 
 impl<W> SerWriter<W> for IpcWriter<W>
@@ -223,14 +237,19 @@ where
     W: Write,
 {
     fn new(writer: W) -> Self {
-        IpcWriter { writer }
+        IpcWriter {
+            writer,
+            compression: None,
+        }
     }
 
     fn finish(mut self, df: &DataFrame) -> Result<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             &df.schema().to_arrow(),
-            WriteOptions { compression: None },
+            WriteOptions {
+                compression: self.compression,
+            },
         )?;
 
         let iter = df.iter_record_batches();
@@ -246,6 +265,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use arrow::io::ipc::write;
     use polars_core::df;
     use polars_core::prelude::*;
     use std::io::Cursor;
@@ -297,5 +317,30 @@ mod test {
             .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
         df_read.frame_equal(&expected);
+    }
+
+    #[test]
+    fn test_write_with_compression() {
+        let df = create_df();
+
+        let compressions = vec![
+            None,
+            Some(write::Compression::LZ4),
+            Some(write::Compression::ZSTD),
+        ];
+
+        for compression in compressions.into_iter() {
+            let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+            IpcWriter::new(&mut buf)
+                .with_compression(compression)
+                .finish(&df)
+                .expect("ipc writer");
+            buf.set_position(0);
+
+            let df_read = IpcReader::new(buf)
+                .finish()
+                .expect(&format!("IPC reader: {:?}", compression));
+            assert!(df.frame_equal(&df_read));
+        }
     }
 }
