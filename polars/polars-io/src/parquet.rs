@@ -191,7 +191,7 @@ pub struct ParquetWriter<W> {
     compression: write::Compression,
 }
 
-pub use write::Compression;
+pub use write::Compression as ParquetCompression;
 
 impl<W> ParquetWriter<W>
 where
