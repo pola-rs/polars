@@ -29,20 +29,12 @@ def _selection_to_pyexpr_list(
     exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
 ) -> tp.List["PyExpr"]:
     pyexpr_list: tp.List[PyExpr]
-    if isinstance(exprs, str):
-        pyexpr_list = [col(exprs)._pyexpr]
-    elif isinstance(exprs, (bool, int, float)):
-        pyexpr_list = [lit(exprs)._pyexpr]
-    elif isinstance(exprs, Expr):
-        pyexpr_list = [exprs._pyexpr]
-    else:
+    if isinstance(exprs, Sequence) and not isinstance(exprs, str):
         pyexpr_list = []
         for expr in exprs:
-            if isinstance(expr, str):
-                expr = col(expr)
-            elif isinstance(expr, (bool, int, float)):
-                expr = lit(expr)
-            pyexpr_list.append(expr._pyexpr)
+            pyexpr_list.append(expr_to_lit_or_expr(expr, str_to_lit=False)._pyexpr)
+    else:
+        pyexpr_list = [expr_to_lit_or_expr(exprs, str_to_lit=False)._pyexpr]
     return pyexpr_list
 
 
