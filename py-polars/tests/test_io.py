@@ -28,7 +28,7 @@ def test_to_from_buffer(df):
         assert df.frame_equal(df_1, null_equal=True)
 
 
-def test_select_columns_from_buffer():
+def test_select_columns_and_projection_from_buffer():
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
     for to_fn, from_fn in zip(
@@ -37,8 +37,19 @@ def test_select_columns_from_buffer():
         f = io.BytesIO()
         to_fn(f)
         f.seek(0)
+
         df_1 = from_fn(f, columns=["b", "c"], use_pyarrow=False)
         assert df_1.frame_equal(expected)
+
+    for to_fn, from_fn in zip(
+        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
+    ):
+        f = io.BytesIO()
+        to_fn(f)
+        f.seek(0)
+
+        df_2 = from_fn(f, projection=[1, 2], use_pyarrow=False)
+        assert df_2.frame_equal(expected)
 
 
 def test_read_web_file():

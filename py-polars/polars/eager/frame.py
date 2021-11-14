@@ -395,11 +395,11 @@ class DataFrame:
         skip_rows
             Start reading after `skip_rows`.
         projection
-            Indexes of columns to select. Note that column indexes count from zero.
+            Indices of columns to select. Note that column indices start at zero.
         sep
             Character to use as delimiter in the file.
         columns
-            Columns to project/ select.
+            Columns to select.
         rechunk
             Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
         encoding
@@ -497,6 +497,10 @@ class DataFrame:
         ----------
         file
             Path to a file or a file like object. Any valid filepath can be used.
+        columns
+            Columns to select.
+        projection
+            Indices of columns to select. Note that column indices start at zero.
         stop_after_n_rows
             Only read specified number of rows of the dataset. After `n` stops reading.
         """
@@ -520,6 +524,12 @@ class DataFrame:
         ----------
         file
             Path to a file or a file like object.
+        columns
+            Columns to select.
+        projection
+            Indices of columns to select. Note that column indices start at zero.
+        stop_after_n_rows
+            Only read specified number of rows of the dataset. After `n` stops reading.
 
         Returns
         -------
