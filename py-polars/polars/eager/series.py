@@ -1041,6 +1041,19 @@ class Series:
         ----------
         reverse
             reverse the operation.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.cumprod()
+        shape: (3,)
+        Series: 'b' [i64]
+        [
+                1
+                2
+                6
+        ]
+
         """
         return wrap_s(self._s.cumprod(reverse))
 
