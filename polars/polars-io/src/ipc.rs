@@ -35,6 +35,7 @@
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
+use ahash::AHashMap;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
@@ -160,14 +161,34 @@ where
 
         if let Some(cols) = self.columns {
             let mut prj = Vec::with_capacity(cols.len());
-            for column in cols.iter() {
-                let i = schema.index_of(column)?;
-                prj.push(i)
+            if cols.len() > 100 {
+                let mut column_names = AHashMap::with_capacity(schema.fields().len());
+                schema.fields().iter().enumerate().for_each(|(i, c)| {
+                    column_names.insert(c.name(), i);
+                });
+
+                for column in cols.iter() {
+                    if let Some(i) = column_names.get(&column) {
+                        prj.push(*i);
+                    } else {
+                        let valid_fields: Vec<String> =
+                            schema.fields().iter().map(|f| f.name().clone()).collect();
+                        return Err(PolarsError::NotFound(format!(
+                            "Unable to get field named \"{}\". Valid fields: {:?}",
+                            column, valid_fields
+                        )));
+                    }
+                }
+            } else {
+                for column in cols.iter() {
+                    let i = schema.index_of(column)?;
+                    prj.push(i);
+                }
             }
 
             // Ipc reader panics if the projection is not in increasing order, so sorting is the safer way.
             prj.sort_unstable();
-            self.projection = Some(prj)
+            self.projection = Some(prj);
         }
 
         let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);

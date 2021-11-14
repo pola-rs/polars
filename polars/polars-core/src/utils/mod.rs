@@ -463,7 +463,7 @@ macro_rules! static_zip {
 
 #[macro_export]
 macro_rules! df {
-    ($($col_name:expr => $slice:expr), +) => {
+    ($($col_name:expr => $slice:expr), + $(,)?) => {
         {
             DataFrame::new(vec![$(Series::new($col_name, $slice),)+])
         }
@@ -911,5 +911,23 @@ mod test {
             a.chunk_id().collect::<Vec<_>>(),
             b.chunk_id().collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_df_macro_trailing_commas() -> Result<()> {
+        let a = df! {
+            "a" => &["a one", "a two"],
+            "b" => &["b one", "b two"],
+            "c" => &[1, 2]
+        }?;
+
+        let b = df! {
+            "a" => &["a one", "a two"],
+            "b" => &["b one", "b two"],
+            "c" => &[1, 2],
+        }?;
+
+        assert!(a.frame_equal(&b));
+        Ok(())
     }
 }
