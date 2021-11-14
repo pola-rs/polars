@@ -1416,6 +1416,43 @@ impl DataFrame {
     }
 
     /// Get the head of the DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let countries: DataFrame =
+    ///         df!("Rank by GDP (2021)" => &[1, 2, 3, 4, 5],
+    ///          "Continent" => &["North America", "Asia", "Asia", "Europe", "Europe"],
+    ///          "Country" => &["United States", "China", "Japan", "Germany", "United Kingdom"],
+    ///          "Capital" => &["Washington", "Beijing", "Tokyo", "Berlin", "London"])?;
+    ///     assert_eq!(countries.shape(), (5, 4));
+    ///
+    ///     println!("{}", countries.head(Some(3)));
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (3, 4)
+    /// +--------------------+---------------+---------------+------------+
+    /// | Rank by GDP (2021) | Continent     | Country       | Capital    |
+    /// | ---                | ---           | ---           | ---        |
+    /// | i32                | str           | str           | str        |
+    /// +====================+===============+===============+============+
+    /// | 1                  | North America | United States | Washington |
+    /// +--------------------+---------------+---------------+------------+
+    /// | 2                  | Asia          | China         | Beijing    |
+    /// +--------------------+---------------+---------------+------------+
+    /// | 3                  | Asia          | Japan         | Tokyo      |
+    /// +--------------------+---------------+---------------+------------+
+    /// ```
     pub fn head(&self, length: Option<usize>) -> Self {
         let col = self
             .columns
@@ -1426,6 +1463,40 @@ impl DataFrame {
     }
 
     /// Get the tail of the DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let countries: DataFrame =
+    ///         df!("Rank (2021)" => &[105, 106, 107, 108, 109],
+    ///             "Apple Price (€/kg)" => &[0.76, 0.72, 0.70, 0.63],
+    ///             "Country" => &["Kosovo", "Moldova", "North Macedonia", "Syria", "Turkey"])?;
+    ///     assert_eq!(countries.shape(), (5, 3));
+    ///
+    ///     println!("{}", countries.tail(Some(2)));
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (2, 3)
+    /// +-------------+--------------------+---------+
+    /// | Rank (2021) | Apple Price (€/kg) | Country |
+    /// | ---         | ---                | ---     |
+    /// | i32         | f64                | str     |
+    /// +=============+====================+=========+
+    /// | 108         | 0.63               | Syria   |
+    /// +-------------+--------------------+---------+
+    /// | 109         | 0.63               | Turkey  |
+    /// +-------------+--------------------+---------+
+    /// ```
     pub fn tail(&self, length: Option<usize>) -> Self {
         let col = self
             .columns
