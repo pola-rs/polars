@@ -11,6 +11,7 @@ These functions can be used as expression and sometimes also in eager contexts.
 .. autosummary::
    :toctree: api/
 
+   select
    col
    count
    list

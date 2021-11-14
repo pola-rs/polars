@@ -1,7 +1,7 @@
 import typing as tp
 from datetime import date, datetime, timezone
 from inspect import isclass
-from typing import Any, Callable, Optional, Type, Union
+from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
 
@@ -69,6 +69,7 @@ __all__ = [
     "format",
     "_datetime",
     "_date",
+    "select",
 ]
 
 
@@ -994,3 +995,43 @@ def collect_all(
         result.append(pl.eager.frame.wrap_df(pydf))
 
     return result
+
+
+def select(
+    exprs: Union[str, "pl.Expr", Sequence[str], Sequence["pl.Expr"]]
+) -> "pl.DataFrame":
+    """
+    Run polars expressions without a context.
+
+    This is syntactic sugar for running `df.select` on an empty DataFrame.
+
+    Parameters
+    ----------
+    exprs
+        Expressions to run
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+
+    >>> foo = pl.Series("foo", [1, 2, 3])
+    >>> bar = pl.Series("bar", [3, 2, 1])
+    >>> pl.select([
+    >>>     pl.min([foo, bar])
+    >>> ])
+    shape: (3, 1)
+    ┌─────┐
+    │ min │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    ├╌╌╌╌╌┤
+    │ 2   │
+    ├╌╌╌╌╌┤
+    │ 1   │
+    └─────┘
+    """
+    return pl.DataFrame([]).select(exprs)
