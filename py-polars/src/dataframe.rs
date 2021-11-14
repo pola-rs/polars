@@ -281,7 +281,7 @@ impl PyDataFrame {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
             "zstd" => Some(IpcCompression::ZSTD),
-            s => panic!("compression {} not supported", s),
+            s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
         };
 
         IpcWriter::new(&mut buf)
@@ -347,7 +347,7 @@ impl PyDataFrame {
             "brotli" => ParquetCompression::Brotli,
             "lz4" => ParquetCompression::Lz4,
             "zstd" => ParquetCompression::Zstd,
-            s => panic!("compression {} not supported", s),
+            s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
         };
 
         ParquetWriter::new(buf)
