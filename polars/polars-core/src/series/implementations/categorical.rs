@@ -21,6 +21,7 @@ use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
+#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 use std::ops::Deref;

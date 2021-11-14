@@ -153,6 +153,8 @@ fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &
     }
 }
 
+// schema is not used if regex not activated
+#[allow(unused_variables)]
 fn prepare_excluded(expr: &Expr, schema: &Schema) -> Vec<Arc<str>> {
     let mut exclude = vec![];
     expr.into_iter().for_each(|e| {
