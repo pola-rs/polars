@@ -275,9 +275,17 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn to_ipc(&self, py_f: PyObject) -> PyResult<()> {
+    pub fn to_ipc(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
+        let compression = match compression {
+            "uncompressed" => None,
+            "lz4" => Some(IpcCompression::LZ4),
+            "zstd" => Some(IpcCompression::ZSTD),
+            s =>  panic!("compression {} not supported", s),
+        };
+
         IpcWriter::new(&mut buf)
+            .with_compression(compression)
             .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
