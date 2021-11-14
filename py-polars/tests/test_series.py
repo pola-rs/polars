@@ -12,10 +12,11 @@ def create_series() -> pl.Series:
 
 
 def test_cum_agg():
-    s = create_series()
-    assert s.cumsum() == [1, 2]
-    assert s.cummin() == [1, 1]
-    assert s.cummax() == [1, 2]
+    s = pl.Series("a", [1, 2, 3, 2])
+    assert s.cumsum().series_equal(pl.Series([1, 3, 6, 8]))
+    assert s.cummin().series_equal(pl.Series([1, 1, 1, 1]))
+    assert s.cummax().series_equal(pl.Series([1, 2, 3, 3]))
+    assert s.cumprod().series_equal(pl.Series([1, 2, 6, 12]))
 
 
 def test_init_inputs():
