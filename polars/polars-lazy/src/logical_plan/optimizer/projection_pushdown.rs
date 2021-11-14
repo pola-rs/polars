@@ -316,7 +316,7 @@ impl ProjectionPushDown {
                 schema,
                 predicate,
                 aggregate,
-                options,
+                mut options,
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
@@ -329,6 +329,7 @@ impl ProjectionPushDown {
                         &*schema,
                     )?))
                 };
+                options.with_columns = with_columns;
 
                 let lp = IpcScan {
                     path,
