@@ -219,6 +219,8 @@ pub struct IpcWriter<W> {
     compression: Option<write::Compression>,
 }
 
+pub use write::Compression as IpcCompression;
+
 impl<W> IpcWriter<W>
 where
     W: Write + Seek,
