@@ -2,6 +2,7 @@ use crate::conversion::{FromJsValue, ToJsValue};
 use neon::prelude::*;
 use polars::prelude::*;
 
+use std::collections::HashMap;
 
 // Don't change the order of these!
 #[repr(u8)]
@@ -24,6 +25,20 @@ pub enum JsDataType {
     Time,
     Object,
     Categorical,
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsAnyValue {
+    Null,
+    Boolean(bool),
+    Utf8(String),
+    Float64(f64),
+    Date(i32),
+    Datetime(i64),
+    Time(i64),
+    List(Vec<JsAnyValue>),
+    Object(HashMap<String, JsAnyValue>),
 }
 
 impl From<&DataType> for JsDataType {

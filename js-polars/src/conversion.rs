@@ -10,8 +10,16 @@ use polars::datatypes::*;
 use polars::frame::row::Row;
 use polars::prelude::*;
 use polars::prelude::{Series, Utf8Chunked};
+use std::any::Any;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
+use std::fmt::{Display, Formatter};
+
+use polars::chunked_array::object::*;
+
+#[derive(Debug)]
 pub struct Wrap<T>(pub T);
 
 impl<T> Clone for Wrap<T>
@@ -85,8 +93,8 @@ where
 impl<'a> FromJsValue<'a> for &'a str {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
     let js_string: Handle<JsString> = jsv.downcast_or_throw::<JsString, _>(cx)?;
-    let v = js_string.value(cx);
-    Ok(Box::leak::<'a>(v.into_boxed_str()))
+    let s: String = js_string.value(cx);
+    Ok(Box::leak::<'a>(s.into_boxed_str()))
   }
 }
 
@@ -110,7 +118,7 @@ where
     for item in js_arr.to_vec(cx)?.iter() {
       let i = *item;
       let wv: WrappedValue = i.into();
-      match wv.get_as::<T::Native>(cx) {
+      match wv.extract::<T::Native>(cx) {
         Ok(val) => builder.append_value(val),
         Err(_) => builder.append_null(),
       }
@@ -175,39 +183,99 @@ impl<'a> ToJsValue<'a, JsValue> for Wrap<AnyValue<'a>> {
     }
   }
 }
+impl<'a, V> FromJsValue<'a> for Vec<V>
+where
+  V: FromJsValue<'a>,
+{
+  fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
+    let arr: Handle<JsArray> = jsv.downcast_or_throw::<JsArray, _>(cx)?;
+
+    Ok(
+      arr
+        .to_vec(cx)?
+        .iter()
+        .map(|v| {
+          let wv: WrappedValue = (*v).into();
+          wv.extract::<V>(cx).expect("all items in series must be of same type")
+        })
+        .collect(),
+    )
+  }
+}
+
+impl<'a> FromJsValue<'a> for ObjectValue {
+  fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
+    let js_obj: Handle<JsObject> = jsv.downcast_or_throw::<JsObject, _>(cx)?;
+
+    // let js_obj: Handle<JsObject> = jsv.downcast_or_throw::<JsObject, _>(cx)?;
+    let keys: Handle<JsValue> = js_obj.get_own_property_names(cx)?.upcast();
+    let keys: WrappedValue = keys.into();
+    let keys = keys.extract::<Vec<String>>(cx)?;
+    let mut hash: HashMap<String, JsAnyValue> = HashMap::new();
+
+    keys.iter().for_each(|v| {
+      let s = v.as_str();
+      let s_owned = s.to_owned();
+      let jsv: WrappedValue = js_obj.get(cx, s).expect("ok").into();
+      let jsv: WrappedValue = jsv.into();
+      if jsv.is_a::<JsBoolean>(cx) {
+        let v = jsv.extract::<bool>(cx).expect("Ok");
+        hash.insert(s_owned, JsAnyValue::Boolean(v).into());
+      } else if jsv.is_a::<JsString>(cx) {
+        let v = jsv.extract::<String>(cx).expect("Ok");
+        hash.insert(s_owned, JsAnyValue::Utf8(v).into());
+      } else if jsv.is_a::<JsNumber>(cx) {
+        let v = jsv.extract::<f64>(cx).expect("Ok");
+        hash.insert(s_owned, JsAnyValue::Float64(v).into());
+      } else if jsv.is_a::<JsUndefined>(cx) {
+        hash.insert(s_owned, JsAnyValue::Null.into());
+      } else if jsv.is_a::<JsNull>(cx) {
+        hash.insert(s_owned, JsAnyValue::Null.into());
+      } else if jsv.is_a::<JsDate>(cx) {
+        let js_date: Handle<JsDate> = jsv.0.downcast_or_throw::<JsDate, _>(cx).expect("Ok");
+        let v = js_date.value(cx) as i64;
+        hash.insert(s_owned, JsAnyValue::Datetime(v).into());
+      } else if jsv.is_a::<JsBuffer>(cx) {
+        let js_buff: Handle<JsBuffer> = jsv.0.downcast_or_throw::<JsBuffer, _>(cx).expect("Ok");
+        let buff: Vec<u8> = cx.borrow(&js_buff, |data| data.as_slice::<u8>().to_vec());
+        match String::from_utf8(buff) {
+          Ok(s) => {
+            hash.insert(s_owned, JsAnyValue::Utf8(s).into());
+          }
+          Err(_) => {}
+        }
+      } else {
+        unimplemented!()
+      }
+    });
+    Ok(ObjectValue(hash))
+  }
+}
 /// # Safety
 /// i cant seem to find a workaround for getting the string values.
 /// I can do it with a box.leak, i think there has to be a better way around this
 impl<'a> FromJsValue<'a> for Wrap<AnyValue<'a>> {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-    if jsv.is_a::<JsBoolean, _>(cx) {
-      let js_bool: Handle<JsBoolean> = jsv.downcast_or_throw::<JsBoolean, _>(cx)?;
-      let b = js_bool.value(cx);
-      Ok(AnyValue::Boolean(b).into())
-    } else if jsv.is_a::<JsString, _>(cx) {
-      let js_string: Handle<JsString> = jsv.downcast_or_throw::<JsString, _>(cx)?;
-      let v = js_string.value(cx);
-      let ss = Box::leak::<'a>(v.into_boxed_str());
-      Ok(AnyValue::Utf8(ss).into())
-    } else if jsv.is_a::<JsNumber, _>(cx) {
-      let num: Handle<JsNumber> = jsv.downcast_or_throw::<JsNumber, _>(cx)?;
-      let n = num.value(cx);
-      Ok(AnyValue::Float64(n).into())
-    } else if jsv.is_a::<JsUndefined, _>(cx) {
+    let jsv: WrappedValue = jsv.into();
+    if jsv.is_a::<JsBoolean>(cx) {
+      let v = jsv.extract::<bool>(cx)?;
+      Ok(AnyValue::Boolean(v).into())
+    } else if jsv.is_a::<JsString>(cx) {
+      let v = jsv.extract::<&'a str>(cx)?;
+      Ok(AnyValue::Utf8(v).into())
+    } else if jsv.is_a::<JsNumber>(cx) {
+      let v = jsv.extract::<f64>(cx)?;
+      Ok(AnyValue::Float64(v).into())
+    } else if jsv.is_a::<JsUndefined>(cx) {
       Ok(AnyValue::Null.into())
-    } else if jsv.is_a::<JsNull, _>(cx) {
+    } else if jsv.is_a::<JsNull>(cx) {
       Ok(AnyValue::Null.into())
-    } else if jsv.is_a::<JsDate, _>(cx) {
-      let js_date: Handle<JsDate> = jsv.downcast_or_throw::<JsDate, _>(cx)?;
+    } else if jsv.is_a::<JsDate>(cx) {
+      let js_date: Handle<JsDate> = jsv.0.downcast_or_throw::<JsDate, _>(cx)?;
       let v = js_date.value(cx) as i64;
       Ok(AnyValue::Datetime(v).into())
-    } else if jsv.is_a::<JsArray, _>(cx) {
-      let js_arr: Handle<JsArray> = jsv.downcast_or_throw::<JsArray, _>(cx)?;
-      let as_str = js_arr.to_string(cx)?.value(cx);
-      let ss = Box::leak::<'a>(as_str.into_boxed_str());
-      Ok(AnyValue::Utf8(ss).into())
-    } else if jsv.is_a::<JsBuffer, _>(cx) {
-      let js_buff: Handle<JsBuffer> = jsv.downcast_or_throw::<JsBuffer, _>(cx)?;
+    } else if jsv.is_a::<JsBuffer>(cx) {
+      let js_buff: Handle<JsBuffer> = jsv.0.downcast_or_throw::<JsBuffer, _>(cx)?;
       let buff: Vec<u8> = cx.borrow(&js_buff, |data| data.as_slice::<u8>().to_vec());
       match String::from_utf8(buff) {
         Ok(s) => {
@@ -216,13 +284,20 @@ impl<'a> FromJsValue<'a> for Wrap<AnyValue<'a>> {
         }
         Err(_) => Err(JsPolarsEr::Other("unknown buffer type".to_string()).into()),
       }
-    } else if jsv.is_a::<JsObject, _>(cx) {
-      Ok(AnyValue::Utf8("obj").into())
     } else {
-      let unknown = jsv.to_string(cx)?.value(cx);
+      let unknown = jsv.0.to_string(cx)?.value(cx);
       let err = JsPolarsEr::Other(format!("row type not supported {:?}", unknown));
       Err(err.into())
     }
+  }
+}
+
+impl<'s> FromJsValue<'s> for Wrap<Row<'s>> {
+  fn from_js(cx: &mut FunctionContext<'s>, jsv: Handle<'s, JsValue>) -> NeonResult<Self> {
+    let jsv: WrappedValue = jsv.into();
+    let vals = jsv.extract::<Vec<Wrap<AnyValue<'s>>>>(cx)?;
+    let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
+    Ok(Wrap(Row(vals)))
   }
 }
 
@@ -231,6 +306,49 @@ pub struct WrappedObject<'a>(pub Handle<'a, JsObject>);
 impl<'a> From<Handle<'a, JsObject>> for WrappedObject<'a> {
   fn from(h: Handle<'a, JsObject>) -> Self {
     Self(h)
+  }
+}
+
+// Any + Debug + Send + Sync + Display
+pub trait PlRequiredTypes: PolarsObjectSafe {}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectValue(HashMap<String, JsAnyValue>);
+
+impl Display for ObjectValue {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{:#?}", self.0)
+  }
+}
+impl Default for ObjectValue {
+  fn default() -> Self {
+    ObjectValue(HashMap::new())
+  }
+}
+impl Eq for ObjectValue {}
+impl Hash for ObjectValue {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    let h: HashMap<String, JsAnyValue> = (self.clone()).0;
+    for v in h.values() {
+      let v = v.clone();
+      match v {
+        JsAnyValue::Boolean(_) => state.write_usize(0),
+        JsAnyValue::Utf8(s) => state.write(s.as_bytes()),
+        JsAnyValue::Float64(v) => state.write_u64(v as u64),
+        JsAnyValue::Date(v) => state.write_i32(v),
+        JsAnyValue::Datetime(v) => state.write_i64(v),
+        JsAnyValue::Time(v) => state.write_i64(v),
+        JsAnyValue::List(v) => state.write_usize(v.len()),
+        JsAnyValue::Object(_) => state.write_usize(0),
+        _ => state.write_usize(1),
+      }
+    }
+    state.finish();
+  }
+}
+impl PolarsObject for ObjectValue {
+  fn type_name() -> &'static str {
+    "object"
   }
 }
 
@@ -251,6 +369,9 @@ impl<'a> WrappedObject<'a> {
     let jsv = self.0.get(cx, key)?;
     get_js_arr(cx, jsv)
   }
+  pub fn get_as_obj(&self, cx: &mut FunctionContext<'a>) -> NeonResult<ObjectValue> {
+    Ok(ObjectValue::from_js(cx, self.0.upcast())?)
+  }
 }
 
 impl<'a, K> FromJsObject<'a, K> for Handle<'a, JsObject> where K: PropertyKey {}
@@ -263,8 +384,11 @@ impl<'a> From<Handle<'a, JsValue>> for WrappedValue<'a> {
 }
 
 impl<'a> WrappedValue<'a> {
-  pub fn get_as<V: FromJsValue<'a>>(self, cx: &mut FunctionContext<'a>) -> NeonResult<V> {
+  pub fn extract<V: FromJsValue<'a>>(&self, cx: &mut FunctionContext<'a>) -> NeonResult<V> {
     V::from_js(cx, self.0)
+  }
+  pub fn is_a<'b, U: Value>(&self, cx: &mut FunctionContext<'a>) -> bool {
+    self.0.is_a::<U, _>(cx)
   }
 }
 

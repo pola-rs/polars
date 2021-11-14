@@ -5,9 +5,9 @@ console.log(s)
 
 let s2 = pl.Series(
   'series 2',
-  ["apples", "oranges", "bananas"],
-  {type: pl.Utf8, strict: true}
+  [{foo: "bar"}, 1],
+  {type: pl.Object, strict: true}
 )
 
 s2 = s2.rename('renamed series 2')
-console.log(s2.dtype())
+console.log(s2)

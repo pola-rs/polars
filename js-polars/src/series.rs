@@ -134,6 +134,13 @@ impl JsSeries {
         s.rename(name);
         Ok(JsSeries::new(s).into_js_box(&mut cx))
     }
+    pub fn new_object(mut cx: FunctionContext) -> SeriesResult {
+        let params = get_params(&mut cx)?;
+        let name = params.get_as::<&'_ str, _>(&mut cx, "name")?;
+        let values = params.get_as::<Vec<ObjectValue>, _>(&mut cx, "values")?;
+        let s = ObjectChunked::<ObjectValue>::new_from_vec(name, values).into_series();
+        Ok(JsSeries::new(s).into_js_box(&mut cx))
+    }
 
     pub fn dtype(mut cx: FunctionContext) -> JsResult<JsNumber> {
         let params = get_params(&mut cx)?;
@@ -204,18 +211,15 @@ impl JsSeries {
         let series = params.extract_boxed::<JsSeries>(&mut cx, "_series")?;
         let other = params.extract_boxed::<JsSeries>(&mut cx, "other")?;
         let series: JsSeries = (&series.series / &other.series).into();
-        
         Ok(series.into_js_box(&mut cx))
     }
 
     pub fn get_idx(mut cx: FunctionContext) -> JsResult<JsValue> {
         let params = get_params(&mut cx)?;
-        let series = params.extract_boxed::<JsSeries>(&mut cx, "_series")?; 
+        let series = params.extract_boxed::<JsSeries>(&mut cx, "_series")?;
         let idx = params.get_as::<usize, _>(&mut cx, "idx")?;
         let wv = Wrap(series.series.get(idx));
-        
-        unimplemented!()
-        
 
+        unimplemented!()
     }
 }

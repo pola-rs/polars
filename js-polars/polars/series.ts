@@ -44,7 +44,7 @@ const typeToOptInternal = {
   [PolarsDataType.Date]: "series_read_objects",
   [PolarsDataType.Datetime]: "series_read_objects",
   [PolarsDataType.Time]: "series_read_objects",
-  [PolarsDataType.Object]: "series_read_objects",
+  [PolarsDataType.Object]: "series_new_object",
   [PolarsDataType.Categorical]: "series_read_objects",
 }
 
