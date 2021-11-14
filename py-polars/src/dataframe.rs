@@ -281,7 +281,7 @@ impl PyDataFrame {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
             "zstd" => Some(IpcCompression::ZSTD),
-            s =>  panic!("compression {} not supported", s),
+            s => panic!("compression {} not supported", s),
         };
 
         IpcWriter::new(&mut buf)
@@ -340,13 +340,13 @@ impl PyDataFrame {
         let buf = get_file_like(py_f, true)?;
 
         let compression = match compression {
-            "uncompressed" => Compression::Uncompressed,
-            "snappy" => Compression::Snappy,
-            "gzip" => Compression::Gzip,
-            "lzo" => Compression::Lzo,
-            "brotli" => Compression::Brotli,
-            "lz4" => Compression::Lz4,
-            "zstd" => Compression::Zstd,
+            "uncompressed" => ParquetCompression::Uncompressed,
+            "snappy" => ParquetCompression::Snappy,
+            "gzip" => ParquetCompression::Gzip,
+            "lzo" => ParquetCompression::Lzo,
+            "brotli" => ParquetCompression::Brotli,
+            "lz4" => ParquetCompression::Lz4,
+            "zstd" => ParquetCompression::Zstd,
             s => panic!("compression {} not supported", s),
         };
 

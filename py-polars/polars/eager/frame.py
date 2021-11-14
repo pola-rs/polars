@@ -751,6 +751,7 @@ class DataFrame:
             File path to which the file should be written.
         compression
             Compression method. Choose one of:
+                - "uncompressed"
                 - "lz4"
                 - "zstd"
         """
