@@ -739,7 +739,9 @@ class DataFrame:
         self._df.to_csv(file, has_headers, ord(sep))
         return None
 
-    def to_ipc(self, file: Union[BinaryIO, str, Path], compression: str = "uncompressed") -> None:
+    def to_ipc(
+        self, file: Union[BinaryIO, str, Path], compression: str = "uncompressed"
+    ) -> None:
         """
         Write to Arrow IPC binary stream, or a feather file.
 
