@@ -186,8 +186,8 @@ impl PyDataFrame {
             Py(f) => {
                 let buf = f.as_buffer();
                 ParquetReader::new(buf)
+                    .with_projection(projection)
                     .with_columns(columns)
-                    .with_stop_after_n_rows(stop_after_n_rows)
                     .with_stop_after_n_rows(stop_after_n_rows)
                     .finish()
             }

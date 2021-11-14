@@ -198,11 +198,11 @@ def read_csv(
     skip_rows
         Start reading after `skip_rows`.
     projection
-        Indexes of columns to select. Note that column indexes count from zero.
+        Indices of columns to select. Note that column indices start at zero.
     sep
         Delimiter/ value separator.
     columns
-        Columns to project/ select.
+        Columns to select.
     rechunk
         Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
     encoding
@@ -543,9 +543,11 @@ def read_ipc_schema(
 
 def read_ipc(
     file: Union[str, BinaryIO, Path, bytes],
+    columns: Optional[List[str]] = None,
+    projection: Optional[List[int]] = None,
+    stop_after_n_rows: Optional[int] = None,
     use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
-    columns: Optional[List[str]] = None,
     storage_options: Optional[Dict] = None,
 ) -> "pl.DataFrame":
     """
@@ -556,14 +558,17 @@ def read_ipc(
     file
         Path to a file or a file like object.
         If ``fsspec`` is installed, it will be used to open remote files
+    columns
+        Columns to select.
+    projection
+        Indices of columns to select. Note that column indices start at zero.
+    stop_after_n_rows
+        Only read specified number of rows of the dataset. After `n` stops reading.
     use_pyarrow
         Use pyarrow or the native rust reader.
     memory_map
         Memory map underlying file. This will likely increase performance.
         Only used when 'use_pyarrow=True'
-    columns
-        Columns to project/ select.
-        Only valid when 'use_pyarrow=True'
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
 
@@ -571,6 +576,12 @@ def read_ipc(
     -------
     DataFrame
     """
+    if use_pyarrow:
+        if stop_after_n_rows:
+            raise ValueError(
+                "'stop_after_n_rows' cannot be used with 'use_pyarrow=True'."
+            )
+
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
         if use_pyarrow:
@@ -578,17 +589,32 @@ def read_ipc(
                 raise ImportError(
                     "'pyarrow' is required when using 'read_ipc(..., use_pyarrow=True)'."
                 )
-            tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
+
+            # pyarrow accepts column names or column indices.
+            tbl = pa.feather.read_table(
+                data, memory_map=memory_map, columns=columns if columns else projection
+            )
             return pl.DataFrame._from_arrow(tbl)
-        return pl.DataFrame.read_ipc(data, columns=columns)
+
+        if columns:
+            # Unset projection if column names where specified.
+            projection = None
+
+        return pl.DataFrame.read_ipc(
+            data,
+            columns=columns,
+            projection=projection,
+            stop_after_n_rows=stop_after_n_rows,
+        )
 
 
 def read_parquet(
     source: Union[str, List[str], Path, BinaryIO, bytes],
-    use_pyarrow: bool = _PYARROW_AVAILABLE,
-    stop_after_n_rows: Optional[int] = None,
-    memory_map: bool = True,
     columns: Optional[List[str]] = None,
+    projection: Optional[List[int]] = None,
+    stop_after_n_rows: Optional[int] = None,
+    use_pyarrow: bool = _PYARROW_AVAILABLE,
+    memory_map: bool = True,
     storage_options: Optional[Dict] = None,
     **kwargs: Any,
 ) -> "pl.DataFrame":
@@ -601,17 +627,18 @@ def read_parquet(
         Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
         as partition aware scan.
         If ``fsspec`` is installed, it will be used to open remote files
-    use_pyarrow
-        Use pyarrow instead of the rust native parquet reader. The pyarrow reader is more stable.
+    columns
+        Columns to select.
+    projection
+        Indices of columns to select. Note that column indices start at zero.
     stop_after_n_rows
         After n rows are read from the parquet, it stops reading.
         Only valid when 'use_pyarrow=False'
+    use_pyarrow
+        Use pyarrow instead of the rust native parquet reader. The pyarrow reader is more stable.
     memory_map
         Memory map underlying file. This will likely increase performance.
         Only used when 'use_pyarrow=True'
-    columns
-        Columns to project/ select.
-        Only valid when 'use_pyarrow=True'
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
     **kwargs
@@ -634,13 +661,26 @@ def read_parquet(
                 raise ImportError(
                     "'pyarrow' is required when using 'read_parquet(..., use_pyarrow=True)'."
                 )
+
+            # pyarrow accepts column names or column indices.
             return from_arrow(  # type: ignore[return-value]
                 pa.parquet.read_table(
-                    source_prep, memory_map=memory_map, columns=columns, **kwargs
+                    source_prep,
+                    memory_map=memory_map,
+                    columns=columns if columns else projection,
+                    **kwargs,
                 )
             )
+
+        if columns:
+            # Unset projection if column names where specified.
+            projection = None
+
         return pl.DataFrame.read_parquet(
-            source_prep, stop_after_n_rows=stop_after_n_rows, columns=columns
+            source_prep,
+            columns=columns,
+            projection=projection,
+            stop_after_n_rows=stop_after_n_rows,
         )
 
 
