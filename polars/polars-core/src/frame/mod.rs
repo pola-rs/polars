@@ -233,6 +233,25 @@ impl DataFrame {
     /// # Panic
     /// It is the callers responsibility to uphold the contract of all `Series`
     /// having an equal length, if not this may panic down the line.
+    ///
+    /// # Example
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn main() -> Result<()> {
+    ///     let s1: Series = Series::new("Country", &["France", "Netherlands", "United States"]);
+    ///     let s2: Series = Series::new("Capital", &["Paris", "Amsterdam", "Washington"]);
+    ///     assert_eq!(s1.utf8()?.len(), s2.utf8()?.len());
+    ///
+    ///     let df1: DataFrame = DataFrame::new_no_checks(vec![s1, s2]);
+    ///     let df2: DataFrame = df!("Country" => &["France", "Netherlands", "United States"],
+    ///                              "Capital" => &["Paris", "Amsterdam", "Washington"])?;
+    ///     assert!(df1.frame_equal(&df2));
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn new_no_checks(columns: Vec<Series>) -> DataFrame {
         DataFrame { columns }
     }
