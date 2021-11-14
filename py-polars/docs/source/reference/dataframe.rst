@@ -89,7 +89,7 @@ Manipulation/ selection
     DataFrame.drop_nulls
     DataFrame.drop
     DataFrame.drop_in_place
-    DataFrame.select_at_idx
+    DataFrame.to_series
     DataFrame.clone
     DataFrame.get_columns
     DataFrame.get_column

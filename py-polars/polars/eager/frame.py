@@ -1,4 +1,4 @@
-"""
+""""
 Module containing logic related to eager DataFrames
 """
 import os
@@ -862,9 +862,7 @@ class DataFrame:
         numpy.ndarray
 
         """
-        return np.vstack(
-            [self.select_at_idx(i).to_numpy() for i in range(self.width)]
-        ).T
+        return np.vstack([self.to_series(i).to_numpy() for i in range(self.width)]).T
 
     def __getstate__(self):  # type: ignore
         return self.get_columns()
@@ -1007,14 +1005,14 @@ class DataFrame:
 
             # df[:, 1]
             if isinstance(col_selection, int):
-                series = self.select_at_idx(col_selection)
+                series = self.to_series(col_selection)
                 return series[row_selection]
 
             if isinstance(col_selection, list):
                 # df[:, [1, 2]]
                 # select by column indexes
                 if isinstance(col_selection[0], int):
-                    series = [self.select_at_idx(i) for i in col_selection]
+                    series = [self.to_series(i) for i in col_selection]
                     df = DataFrame(series)
                     return df[row_selection]
             df = self.__getitem__(col_selection)
@@ -1161,6 +1159,34 @@ class DataFrame:
         max_cols = int(os.environ.get("POLARS_FMT_MAX_COLS", default=75))
         max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
+
+    def to_series(self, index: int = 0) -> "pl.Series":
+        """
+        Select column as Series at index location.
+
+        Parameters
+        ----------
+        index
+            Location of selection.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, 7, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>>     })
+        >>> df.to_series(1))
+        shape: (3,)
+        Series: 'bar' [i64]
+        [
+                6
+                7
+                8
+        ]
+
+        """
+        return pl.eager.series.wrap_s(self._df.select_at_idx(index))
 
     def rename(self, mapping: Dict[str, str]) -> "DataFrame":
         """
@@ -2315,6 +2341,8 @@ class DataFrame:
         idx
             Location of selection.
 
+        .. deprecated:: 0.10.20
+
         Examples
         --------
         >>> df = pl.DataFrame({
@@ -3085,12 +3113,12 @@ class DataFrame:
 
         """
         if self.width == 1:
-            return self.select_at_idx(0)
+            return self.to_series(0)
         df = self
-        acc = operation(df.select_at_idx(0), df.select_at_idx(1))
+        acc = operation(df.to_series(0), df.to_series(1))
 
         for i in range(2, df.width):
-            acc = operation(acc, df.select_at_idx(i))
+            acc = operation(acc, df.to_series(i))
         return acc
 
     def row(self, index: int) -> Tuple[Any]:
