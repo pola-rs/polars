@@ -64,6 +64,7 @@ def test_compressed_to_ipc():
         df_read = pl.read_ipc(f, use_pyarrow=False)
         assert df_read.frame_equal(df)
 
+
 def test_read_web_file():
     url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
     df = pl.read_csv(url)
