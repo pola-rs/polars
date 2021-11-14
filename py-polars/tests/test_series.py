@@ -737,3 +737,27 @@ def test_date_range():
     assert result.dt[1] == datetime(1985, 1, 2, 12, 0)
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
+
+
+def test_to_dummies():
+    s = pl.Series("a", [1, 2, 3])
+    result = s.to_dummies()
+    expected = pl.DataFrame({"a_1": [1, 0, 0],
+                             "a_2": [0, 1, 0],
+                             "a_3": [0, 0, 1]})
+    assert result.frame_equal(expected)
+
+
+def test_value_counts():
+    s = pl.Series("a", [1, 2, 2, 3])
+    result = s.value_counts()
+    expected = pl.DataFrame({"a": [1, 2, 3],
+                             "counts": [1, 2, 1]})
+    assert result.sort("a").frame_equal(expected)
+
+
+def test_chunk_lengths():
+    s = pl.Series("a", [1, 2, 2, 3])
+    # this is a Series with one chunk, of length 4
+    assert s.n_chunks() == 1
+    assert s.chunk_lengths() == [4]
