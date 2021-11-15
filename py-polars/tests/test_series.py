@@ -743,3 +743,4 @@ def test_date_range():
 def test_abs():
     s = pl.Series([1, -2, 3, -4])
     assert s.abs().to_list() == [1, 2, 3, 4]
+    assert np.abs(s).to_list() == [1, 2, 3, 4]
