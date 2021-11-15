@@ -3,6 +3,7 @@
 // use crate::error::JsPolarsEr;
 use crate::prelude::*;
 use neon::prelude::*;
+use neon::types::JsDate;
 
 #[repr(transparent)]
 #[derive(Clone)]
@@ -27,18 +28,39 @@ macro_rules! init_method {
                 let params = get_params(&mut cx)?;
                 let name = params.get_as::<&str, _>(&mut cx, "name")?;
                 let (js_arr, len) = params.get_arr(&mut cx, "values")?;
-                let mut out: Vec<$type> = Vec::with_capacity(len);
+                let mut items: Vec<$type> = Vec::with_capacity(len);
 
                 for i in js_arr.to_vec(&mut cx)?.iter() {
-                    let v = i.downcast_or_throw::<$js_type, _>(&mut cx)?;
+                    let v = i.downcast_or_throw::<$js_type, _>(&mut cx).expect("err happening here");
                     let item = v.value(&mut cx) as $type;
-                    out.push(item)
+                    items.push(item)
                 }
 
-                Ok(cx.boxed(Series::new(name, out).into()))
+                Ok(cx.boxed(Series::new(name, items).into()))
             }
         }
     };
+}
+
+impl JsSeries {
+    pub fn new_bool(mut cx: FunctionContext) -> SeriesResult {
+        let params = get_params(&mut cx)?;
+        let name = params.get_as::<&str, _>(&mut cx, "name")?;
+        let (js_arr, len) = params.get_arr(&mut cx, "values")?;
+        let mut items: Vec<bool> = Vec::with_capacity(len);
+
+        for i in js_arr.to_vec(&mut cx)?.iter() {
+            let i: &Handle<JsValue> = i;
+            let s = i.to_string(&mut cx)?.value(&mut cx);
+            println!("boolval={:#?}", s);
+            let v = i.downcast_or_throw::<JsBoolean, _>(&mut cx).expect("err happening here");
+
+            let item = v.value(&mut cx) as bool;
+            items.push(item)
+        }
+
+        Ok(cx.boxed(Series::new(name, items).into()))
+    }
 }
 init_method!(new_i8, JsNumber, i8);
 init_method!(new_i16, JsNumber, i16);
@@ -50,7 +72,8 @@ init_method!(new_u32, JsNumber, u32);
 init_method!(new_u64, JsNumber, u64);
 init_method!(new_f32, JsNumber, f32);
 init_method!(new_f64, JsNumber, f64);
-init_method!(new_bool, JsBoolean, bool);
+// init_method!(new_bool, JsBoolean, bool);
+init_method!(new_date, JsDate, i32);
 
 // Init with lists that can contain Nones
 macro_rules! init_method_opt {
@@ -102,9 +125,7 @@ macro_rules! single_arg_method {
         }
     };
 }
-// pub fn rename(&mut self, name: &str) {
-//     self.series.rename(name);
-// }
+
 single_arg_method!(cumsum, bool, "reverse");
 single_arg_method!(cummax, bool, "reverse");
 single_arg_method!(cummin, bool, "reverse");
@@ -126,6 +147,29 @@ impl Finalize for JsSeries {}
 
 type SeriesResult<'a> = JsResult<'a, JsBox<JsSeries>>;
 impl JsSeries {
+    pub fn new_opt_bool(mut cx: FunctionContext) -> SeriesResult {
+        let params = get_params(&mut cx)?;
+        let name = params.get_as::<&'_ str, _>(&mut cx, "name")?;
+        let (js_arr, len) = params.get_arr(&mut cx, "values")?;
+        let mut builder = BooleanChunkedBuilder::new(name, len);
+        for item in js_arr.to_vec(&mut cx)?.iter() {
+            if item.is_a::<JsNull, _>(&mut cx) {
+                builder.append_null()
+            } else if item.is_a::<JsUndefined, _>(&mut cx) {
+                builder.append_null()
+            } else {
+                match <bool>::from_js(&mut cx, *item) {
+                    Ok(val) => builder.append_value(val),
+                    Err(_) => builder.append_null()
+                }
+            }
+        }
+        let ca: ChunkedArray<BooleanType> = builder.finish();
+
+        let s = ca.into_series();
+        Ok(cx.boxed(JsSeries { series: s }))
+    }
+
     pub fn new_str(mut cx: FunctionContext) -> SeriesResult {
         let params = get_params(&mut cx)?;
         let name = params.get_as::<&'_ str, _>(&mut cx, "name")?;
@@ -134,6 +178,7 @@ impl JsSeries {
         s.rename(name);
         Ok(JsSeries::new(s).into_js_box(&mut cx))
     }
+
     pub fn new_object(mut cx: FunctionContext) -> SeriesResult {
         let params = get_params(&mut cx)?;
         let name = params.get_as::<&'_ str, _>(&mut cx, "name")?;
@@ -156,11 +201,9 @@ impl JsSeries {
         Ok(JsString::new(&mut cx, s))
     }
 
-    pub fn chunk_lengths(mut cx: FunctionContext) -> JsResult<JsArray> {
-        let params = get_params(&mut cx)?;
-        let series = params.extract_boxed::<JsSeries>(&mut cx, "_series")?;
-        let v: Vec<usize> = series.series.chunk_lengths().collect();
-        // JsArray::
+    pub fn chunk_lengths(mut _cx: FunctionContext) -> JsResult<JsArray> {
+        // let params = get_params(&mut cx)?;
+        // let series = params.extract_boxed::<JsSeries>(&mut cx, "_series")?;
         unimplemented!()
     }
 
@@ -218,8 +261,8 @@ impl JsSeries {
         let params = get_params(&mut cx)?;
         let series = params.extract_boxed::<JsSeries>(&mut cx, "_series")?;
         let idx = params.get_as::<usize, _>(&mut cx, "idx")?;
-        let wv = Wrap(series.series.get(idx));
+        let _wv = Wrap(series.series.get(idx));
 
-        unimplemented!()
+        todo!()
     }
 }

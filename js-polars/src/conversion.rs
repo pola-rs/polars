@@ -1,17 +1,14 @@
-use crate::dataframe::JsDataFrame;
+// use crate::dataframe::JsDataFrame;
 use crate::datatypes::*;
 use crate::error::JsPolarsEr;
-use crate::series::JsSeries;
 
 use neon::object::PropertyKey;
 use neon::prelude::*;
 use neon::types::JsDate;
 use polars::datatypes::*;
 use polars::frame::row::Row;
+use polars::prelude::Utf8Chunked;
 use polars::prelude::*;
-use polars::prelude::{Series, Utf8Chunked};
-use std::any::Any;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
@@ -165,16 +162,8 @@ impl<'a> ToJsValue<'a, JsValue> for Wrap<AnyValue<'a>> {
       AnyValue::Date(v) => v.into_js(cx).upcast(),
       AnyValue::Datetime(v) => v.into_js(cx).upcast(),
       AnyValue::Time(v) => v.into_js(cx).upcast(),
-      AnyValue::List(v) => {
-        // let pypolars = PyModule::import(py, "polars").expect("polars installed");
-        // let pyseries = PySeries::new(v);
-        // let python_series_wrapper = pypolars
-        //     .getattr("wrap_s")
-        //     .unwrap()
-        //     .call1((pyseries,))
-        //     .unwrap();
-        // python_series_wrapper.into()
-        unimplemented!()
+      AnyValue::List(_) => {
+        todo!()
       }
       AnyValue::Object(v) => {
         let s = format!("{}", v);
@@ -189,14 +178,14 @@ where
 {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
     let arr: Handle<JsArray> = jsv.downcast_or_throw::<JsArray, _>(cx)?;
-
     Ok(
       arr
         .to_vec(cx)?
         .iter()
         .map(|v| {
           let wv: WrappedValue = (*v).into();
-          wv.extract::<V>(cx).expect("all items in series must be of same type")
+          wv.extract::<V>(cx)
+            .expect("all items in series must be of same type")
         })
         .collect(),
     )
@@ -205,50 +194,9 @@ where
 
 impl<'a> FromJsValue<'a> for ObjectValue {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-    let js_obj: Handle<JsObject> = jsv.downcast_or_throw::<JsObject, _>(cx)?;
-
-    // let js_obj: Handle<JsObject> = jsv.downcast_or_throw::<JsObject, _>(cx)?;
-    let keys: Handle<JsValue> = js_obj.get_own_property_names(cx)?.upcast();
-    let keys: WrappedValue = keys.into();
-    let keys = keys.extract::<Vec<String>>(cx)?;
-    let mut hash: HashMap<String, JsAnyValue> = HashMap::new();
-
-    keys.iter().for_each(|v| {
-      let s = v.as_str();
-      let s_owned = s.to_owned();
-      let jsv: WrappedValue = js_obj.get(cx, s).expect("ok").into();
-      let jsv: WrappedValue = jsv.into();
-      if jsv.is_a::<JsBoolean>(cx) {
-        let v = jsv.extract::<bool>(cx).expect("Ok");
-        hash.insert(s_owned, JsAnyValue::Boolean(v).into());
-      } else if jsv.is_a::<JsString>(cx) {
-        let v = jsv.extract::<String>(cx).expect("Ok");
-        hash.insert(s_owned, JsAnyValue::Utf8(v).into());
-      } else if jsv.is_a::<JsNumber>(cx) {
-        let v = jsv.extract::<f64>(cx).expect("Ok");
-        hash.insert(s_owned, JsAnyValue::Float64(v).into());
-      } else if jsv.is_a::<JsUndefined>(cx) {
-        hash.insert(s_owned, JsAnyValue::Null.into());
-      } else if jsv.is_a::<JsNull>(cx) {
-        hash.insert(s_owned, JsAnyValue::Null.into());
-      } else if jsv.is_a::<JsDate>(cx) {
-        let js_date: Handle<JsDate> = jsv.0.downcast_or_throw::<JsDate, _>(cx).expect("Ok");
-        let v = js_date.value(cx) as i64;
-        hash.insert(s_owned, JsAnyValue::Datetime(v).into());
-      } else if jsv.is_a::<JsBuffer>(cx) {
-        let js_buff: Handle<JsBuffer> = jsv.0.downcast_or_throw::<JsBuffer, _>(cx).expect("Ok");
-        let buff: Vec<u8> = cx.borrow(&js_buff, |data| data.as_slice::<u8>().to_vec());
-        match String::from_utf8(buff) {
-          Ok(s) => {
-            hash.insert(s_owned, JsAnyValue::Utf8(s).into());
-          }
-          Err(_) => {}
-        }
-      } else {
-        unimplemented!()
-      }
-    });
-    Ok(ObjectValue(hash))
+    let v: WrappedValue = jsv.into();
+    let value = v.extract::<JsAnyValue>(cx)?;
+    Ok(ObjectValue(value))
   }
 }
 /// # Safety
@@ -271,9 +219,13 @@ impl<'a> FromJsValue<'a> for Wrap<AnyValue<'a>> {
     } else if jsv.is_a::<JsNull>(cx) {
       Ok(AnyValue::Null.into())
     } else if jsv.is_a::<JsDate>(cx) {
-      let js_date: Handle<JsDate> = jsv.0.downcast_or_throw::<JsDate, _>(cx)?;
-      let v = js_date.value(cx) as i64;
-      Ok(AnyValue::Datetime(v).into())
+      let js_date: Handle<JsDate> = jsv.0.downcast_or_throw(cx)?;
+      let v = js_date.value(cx);
+      Ok(AnyValue::Datetime(v as i64).into())
+    } else if jsv.is_a::<JsArray>(cx) {
+      todo!()
+    } else if jsv.is_a::<JsObject>(cx) {
+      todo!()
     } else if jsv.is_a::<JsBuffer>(cx) {
       let js_buff: Handle<JsBuffer> = jsv.0.downcast_or_throw::<JsBuffer, _>(cx)?;
       let buff: Vec<u8> = cx.borrow(&js_buff, |data| data.as_slice::<u8>().to_vec());
@@ -302,6 +254,7 @@ impl<'s> FromJsValue<'s> for Wrap<Row<'s>> {
 }
 
 /// Wrap `Handle<JsObject>` to provide some much needed utility methods to it
+#[derive(Clone)]
 pub struct WrappedObject<'a>(pub Handle<'a, JsObject>);
 impl<'a> From<Handle<'a, JsObject>> for WrappedObject<'a> {
   fn from(h: Handle<'a, JsObject>) -> Self {
@@ -313,7 +266,7 @@ impl<'a> From<Handle<'a, JsObject>> for WrappedObject<'a> {
 pub trait PlRequiredTypes: PolarsObjectSafe {}
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ObjectValue(HashMap<String, JsAnyValue>);
+pub struct ObjectValue(pub JsAnyValue);
 
 impl Display for ObjectValue {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -322,26 +275,26 @@ impl Display for ObjectValue {
 }
 impl Default for ObjectValue {
   fn default() -> Self {
-    ObjectValue(HashMap::new())
+    ObjectValue(JsAnyValue::Null)
   }
 }
 impl Eq for ObjectValue {}
 impl Hash for ObjectValue {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    let h: HashMap<String, JsAnyValue> = (self.clone()).0;
-    for v in h.values() {
-      let v = v.clone();
-      match v {
-        JsAnyValue::Boolean(_) => state.write_usize(0),
-        JsAnyValue::Utf8(s) => state.write(s.as_bytes()),
-        JsAnyValue::Float64(v) => state.write_u64(v as u64),
-        JsAnyValue::Date(v) => state.write_i32(v),
-        JsAnyValue::Datetime(v) => state.write_i64(v),
-        JsAnyValue::Time(v) => state.write_i64(v),
-        JsAnyValue::List(v) => state.write_usize(v.len()),
-        JsAnyValue::Object(_) => state.write_usize(0),
-        _ => state.write_usize(1),
-      }
+    use JsAnyValue::*;
+    let h = self.0.clone();
+    match h {
+      Boolean(v) => match v {
+        true => state.write_u8(1),
+        false => state.write_u8(0),
+      },
+      Utf8(v) => state.write(v.as_bytes()),
+      Float64(v) => state.write_i64(v as i64),
+      Date(v) => state.write_i32(v),
+      Datetime(v) => state.write_i64(v),
+      Time(v) => state.write_i64(v),
+      List(v) => state.write_usize(v.len()),
+      _ => {}
     }
     state.finish();
   }
@@ -369,13 +322,61 @@ impl<'a> WrappedObject<'a> {
     let jsv = self.0.get(cx, key)?;
     get_js_arr(cx, jsv)
   }
-  pub fn get_as_obj(&self, cx: &mut FunctionContext<'a>) -> NeonResult<ObjectValue> {
-    Ok(ObjectValue::from_js(cx, self.0.upcast())?)
+
+  pub fn get_arr_values<K: PropertyKey>(
+    &self,
+    cx: &mut FunctionContext<'a>,
+    key: K,
+  ) -> NeonResult<Vec<WrappedValue<'a>>> {
+    let jsv: WrappedValue = self.0.get(cx, key)?.into();
+    jsv.to_array(cx)
+  }
+  pub fn into_vec<V: FromJsValue<'a>, K: PropertyKey>(
+    &self,
+    cx: &mut FunctionContext<'a>,
+    key: K,
+  ) -> NeonResult<Vec<V>> {
+    let jsv: WrappedValue = self.0.get(cx, key)?.into();
+    jsv.extract::<Vec<V>>(cx)
+  }
+  pub fn keys(&self, cx: &mut FunctionContext<'a>) -> NeonResult<Vec<String>> {
+    let keys: Handle<JsValue> = self.0.get_own_property_names(cx)?.upcast();
+    let keys: WrappedValue = keys.into();
+    let keys = keys.extract::<Vec<String>>(cx)?;
+    Ok(keys)
+  }
+
+  pub fn values(&self, cx: &mut FunctionContext<'a>) -> NeonResult<Vec<WrappedValue<'a>>> {
+    let keys: Handle<JsValue> = self.0.get_own_property_names(cx)?.upcast();
+    let keys: WrappedValue = keys.into();
+    let keys = keys.extract::<Vec<String>>(cx)?;
+    let mut values: Vec<WrappedValue> = Vec::with_capacity(keys.len());
+    for key in keys {
+      let value: WrappedValue = self.0.get(cx, key.as_str())?.into();
+      values.push(value);
+    }
+    Ok(values)
+  }
+
+  pub fn to_pairs(
+    &self,
+    cx: &mut FunctionContext<'a>,
+  ) -> NeonResult<Vec<(String, WrappedValue<'a>)>> {
+    let keys: Handle<JsValue> = self.0.get_own_property_names(cx)?.upcast();
+    let keys: WrappedValue = keys.into();
+    let keys = keys.extract::<Vec<String>>(cx)?;
+    let mut values: Vec<(String, WrappedValue)> = Vec::with_capacity(keys.len());
+    for key in keys {
+      let value: WrappedValue = self.0.get(cx, key.as_str())?.into();
+      values.push((key, value));
+    }
+    Ok(values)
   }
 }
 
 impl<'a, K> FromJsObject<'a, K> for Handle<'a, JsObject> where K: PropertyKey {}
 /// Wrap `Handle<JsObject>` to provide some much needed utility methods to it
+#[derive(Clone)]
 pub struct WrappedValue<'a>(pub Handle<'a, JsValue>);
 impl<'a> From<Handle<'a, JsValue>> for WrappedValue<'a> {
   fn from(h: Handle<'a, JsValue>) -> Self {
@@ -389,6 +390,30 @@ impl<'a> WrappedValue<'a> {
   }
   pub fn is_a<'b, U: Value>(&self, cx: &mut FunctionContext<'a>) -> bool {
     self.0.is_a::<U, _>(cx)
+  }
+  pub fn dtype(&self, cx: &mut FunctionContext<'a>) -> JsDataType {
+    if self.is_a::<JsBoolean>(cx) {
+      JsDataType::Bool
+    } else if self.is_a::<JsString>(cx) {
+      JsDataType::Utf8
+    } else if self.is_a::<JsNumber>(cx) {
+      JsDataType::Float64
+    } else if self.is_a::<JsDate>(cx) {
+      JsDataType::Datetime
+    } else if self.is_a::<JsArray>(cx) {
+      JsDataType::List
+    } else if self.is_a::<JsObject>(cx) {
+      JsDataType::Object
+    } else if self.is_a::<JsBuffer>(cx) {
+      JsDataType::Utf8
+    } else {
+      unimplemented!()
+    }
+  }
+  pub fn to_array(&self, cx: &mut FunctionContext<'a>) -> NeonResult<Vec<WrappedValue<'a>>> {
+    let js_arr: Vec<Handle<JsValue>> = self.0.downcast_or_throw::<JsArray, _>(cx)?.to_vec(cx)?;
+    let values: Vec<WrappedValue> = js_arr.iter().map(|v| WrappedValue(*v)).collect();
+    Ok(values)
   }
 }
 
@@ -427,13 +452,13 @@ impl<'a> BoxedFromJsObject<'a> for WrappedObject<'a> {
   }
 }
 
-pub(crate) fn get_array_param<'a>(
-  cx: &mut FunctionContext<'a>,
-  key: &str,
-) -> JsResult<'a, JsArray> {
-  let js_array = get_obj_key::<JsArray, _>(cx, key)?.downcast_or_throw::<JsArray, _>(cx)?;
-  Ok(js_array)
-}
+// pub(crate) fn get_array_param<'a>(
+//   cx: &mut FunctionContext<'a>,
+//   key: &str,
+// ) -> JsResult<'a, JsArray> {
+//   let js_array = get_obj_key::<JsArray, _>(cx, key)?.downcast_or_throw::<JsArray, _>(cx)?;
+//   Ok(js_array)
+// }
 
 pub(crate) fn get_obj_key<'a, T: Value, K: PropertyKey>(
   cx: &mut FunctionContext<'a>,
@@ -483,10 +508,8 @@ pub(crate) fn objs_to_rows<'a>(
       let val = obj.get_as::<Wrap<AnyValue>, _>(cx, k).unwrap().0;
       row.push(val)
     }
-
     rows.push(Row(row));
   }
-
   Ok((rows, names))
 }
 

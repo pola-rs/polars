@@ -32,8 +32,8 @@ use crate::series::*;
 fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
     cx.export_function("dataframe_read_csv", JsDataFrame::read_csv)?;
-    cx.export_function("dataframe_read_objects", JsDataFrame::read_objects)?;
-
+    cx.export_function("dataframe_new_obj", JsDataFrame::new_obj)?;
+    cx.export_function("dataframe_from_rows", JsDataFrame::from_rows)?;
 
 
     cx.export_function("dataframe_get_fmt", JsDataFrame::get_fmt)?;
@@ -63,6 +63,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
     cx.export_function("series_new_object", JsSeries::new_object)?;
     cx.export_function("series_new_str", JsSeries::new_str)?;
+    cx.export_function("series_new_date", JsSeries::new_date)?;
     cx.export_function("series_new_i8", JsSeries::new_i8)?;
     cx.export_function("series_new_i16", JsSeries::new_i16)?;
     cx.export_function("series_new_i32", JsSeries::new_i32)?;
@@ -84,6 +85,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("series_new_opt_i64", JsSeries::new_opt_i64)?;
     cx.export_function("series_new_opt_f32", JsSeries::new_opt_f32)?;
     cx.export_function("series_new_opt_f64", JsSeries::new_opt_f64)?;
+    cx.export_function("series_new_opt_bool", JsSeries::new_opt_bool)?;
 
     Ok(())
 }

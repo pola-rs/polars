@@ -1,10 +1,10 @@
 use crate::conversion::*;
 use crate::error::JsPolarsEr;
+use crate::series::JsSeries;
 use neon::prelude::*;
 use polars::frame::row::{rows_to_schema, Row};
 use polars::prelude::*;
 use polars::prelude::{CsvReader, DataFrame};
-use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct JsDataFrame {
@@ -23,7 +23,19 @@ impl JsDataFrame {
     pub fn new(df: DataFrame) -> Self {
         JsDataFrame { df }
     }
-
+    pub fn new_obj(mut cx: FunctionContext) -> DataFrameResult {
+        let params = get_params(&mut cx)?;
+        let (js_arr, capacity) = params.get_arr(&mut cx, "columns")?;
+        let mut columns: Vec<Series> = Vec::with_capacity(capacity);
+        for item in js_arr.to_vec(&mut cx)?.iter() {
+            let s = item.downcast_or_throw::<JsBox<JsSeries>, _>(&mut cx)?;
+            columns.push((&s.series).clone())
+        }
+        let df = DataFrame::new(columns).map_err(JsPolarsEr::from)?;
+        let jsdf = JsDataFrame::from(df);
+        Ok(jsdf.into_js_box(&mut cx))
+    }
+    
     fn finish_from_rows(rows: Vec<Row>) -> NeonResult<Self> {
         // replace inferred nulls with boolean
         let schema = rows_to_schema(&rows);
@@ -66,7 +78,7 @@ impl JsDataFrame {
         let params = get_params(&mut cx)?;
         let jsdf = params.extract_boxed::<JsDataFrame>(&mut cx, "_df")?;
         let df = &jsdf.df;
-        let length = params.get_as::<f64,_>(&mut cx, "length")?;
+        let length = params.get_as::<f64, _>(&mut cx, "length")?;
         let jsdf: JsDataFrame = df.head(Some(length as usize)).into();
         Ok(jsdf.into_js_box(&mut cx))
     }
@@ -111,17 +123,16 @@ impl JsDataFrame {
         Ok(df.is_empty().into_js(&mut cx))
     }
 
-    pub fn read_objects(mut cx: FunctionContext) -> DataFrameResult {
+    pub fn from_rows(mut cx: FunctionContext) -> DataFrameResult {
         let params = get_params(&mut cx)?;
-
-        let js_arr = get_array_param(&mut cx, "js_objects")?;
+        let (js_arr, _) = params.get_arr(&mut cx, "js_objects")?;
         let (rows, names) = objs_to_rows(&mut cx, &js_arr)?;
         let mut jsdf = Self::finish_from_rows(rows)?;
         jsdf.df.set_column_names(&names).map_err(JsPolarsEr::from)?;
         Ok(jsdf.into_js_box(&mut cx))
     }
 
-    pub fn from_js_array(mut cx: FunctionContext) -> DataFrameResult {
+    pub fn from_js_array(mut _cx: FunctionContext) -> DataFrameResult {
         unimplemented!()
     }
     pub fn into_js(mut cx: FunctionContext) -> JsResult<JsObject> {
