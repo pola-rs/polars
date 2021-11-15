@@ -185,25 +185,25 @@ def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:  # noqa: F821
     elif dtype == UInt16:
         ptr_type = ctypes.c_uint16
     elif dtype == UInt32:
-        ptr_type = ctypes.c_uint
+        ptr_type = ctypes.c_uint32
     elif dtype == UInt64:
-        ptr_type = ctypes.c_ulong
+        ptr_type = ctypes.c_uint64
     elif dtype == Int8:
         ptr_type = ctypes.c_int8
     elif dtype == Int16:
         ptr_type = ctypes.c_int16
     elif dtype == Int32:
-        ptr_type = ctypes.c_int
+        ptr_type = ctypes.c_int32
     elif dtype == Int64:
-        ptr_type = ctypes.c_long
+        ptr_type = ctypes.c_int64
     elif dtype == Float32:
         ptr_type = ctypes.c_float
     elif dtype == Float64:
         ptr_type = ctypes.c_double
     elif dtype == Date:
-        ptr_type = ctypes.c_int
+        ptr_type = ctypes.c_int32
     elif dtype == Datetime:
-        ptr_type = ctypes.c_long
+        ptr_type = ctypes.c_int64
     else:
         raise NotImplementedError
     return ptr_type
