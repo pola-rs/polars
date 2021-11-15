@@ -2967,11 +2967,12 @@ class Series:
         Series of dtype Utf8
 
         Examples
-        >>> assert pl.Series([1, None, 2]).str_concat("-")[0] == "1-null-2"
+        >>> pl.Series([1, None, 2]).str_concat("-")[0]
+        "1-null-2"
 
         """
         return self.to_frame().select(
-            pl.col(self.name).delimiter(delimiter)  # type: ignore
+            pl.col(self.name).str_concat(delimiter)  # type: ignore
         )[self.name]
 
 

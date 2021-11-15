@@ -744,3 +744,8 @@ def test_abs():
     s = pl.Series([1, -2, 3, -4])
     assert s.abs().to_list() == [1, 2, 3, 4]
     assert np.abs(s).to_list() == [1, 2, 3, 4]
+
+
+def test_str_concat():
+    s = pl.Series(["1", None, "2"])
+    assert s.str_concat()[0] == "1-null-2"
