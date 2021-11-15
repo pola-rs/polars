@@ -738,3 +738,8 @@ def test_date_range():
     assert result.dt[1] == datetime(1985, 1, 2, 12, 0)
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
+
+
+def test_abs():
+    s = pl.Series([1, -2, 3, -4])
+    assert s.abs().to_list() == [1, 2, 3, 4]

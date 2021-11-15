@@ -658,6 +658,29 @@ impl Series {
             _ => unreachable!(),
         }
     }
+
+    #[cfg(feature = "abs")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
+    /// convert numerical values to their absolute value
+    pub fn abs(&self) -> Result<Series> {
+        let a = self.to_physical_repr();
+        use DataType::*;
+        let out = match a.dtype() {
+            #[cfg(feature = "dtype-i8")]
+            Int8 => a.i8().unwrap().abs().into_series(),
+            #[cfg(feature = "dtype-i16")]
+            Int16 => a.i16().unwrap().abs().into_series(),
+            Int32 => a.i32().unwrap().abs().into_series(),
+            Int64 => a.i64().unwrap().abs().into_series(),
+            UInt8 | UInt16 | UInt32 | UInt64 => self.clone(),
+            dt => {
+                return Err(PolarsError::InvalidOperation(
+                    format!("abs not supportedd for series of type {:?}", dt).into(),
+                ))
+            }
+        };
+        Ok(out)
+    }
 }
 
 impl Deref for Series {
