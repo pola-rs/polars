@@ -3521,19 +3521,3 @@ class SeriesIter:
             return self.s[i]
         else:
             raise StopIteration
-
-
-def out_to_dtype(out: Any) -> Union[Type[DataType], Type[np.ndarray]]:
-    if isinstance(out, float):
-        return Float64
-    if isinstance(out, int):
-        return Int64
-    if isinstance(out, str):
-        return Utf8
-    if isinstance(out, bool):
-        return Boolean
-    if isinstance(out, Series):
-        return List
-    if isinstance(out, np.ndarray):
-        return np.ndarray
-    raise NotImplementedError
