@@ -2847,7 +2847,7 @@ class Series:
         """
         Take absolute values
         """
-        return np.abs(self)  # type: ignore
+        return wrap_s(self._s.abs())
 
     def rank(self, method: str = "average") -> "Series":  # type: ignore
         """

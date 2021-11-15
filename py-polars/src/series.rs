@@ -1343,6 +1343,11 @@ impl PySeries {
         let out = out.map_err(PyPolarsEr::from)?;
         Ok(out.into())
     }
+
+    pub fn abs(&self) -> PyResult<Self> {
+        let out = self.series.abs().map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
 }
 
 macro_rules! impl_ufuncs {
