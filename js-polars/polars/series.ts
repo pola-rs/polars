@@ -19,7 +19,7 @@ const typeToInternalFn = {
   [PolarsDataType.Float64]: "series_new_opt_f64",
   [PolarsDataType.Bool]: "series_new_opt_bool",
   [PolarsDataType.Utf8]: "series_new_str",
-  [PolarsDataType.Date]: "series_new_date",
+  [PolarsDataType.Date]: "series_new_opt_date",
   [PolarsDataType.Object]: "series_new_object",
 
   // TODO:

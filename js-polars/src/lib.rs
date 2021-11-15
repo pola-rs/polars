@@ -63,7 +63,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
 
     cx.export_function("series_new_object", JsSeries::new_object)?;
     cx.export_function("series_new_str", JsSeries::new_str)?;
-    cx.export_function("series_new_date", JsSeries::new_date)?;
+    cx.export_function("series_new_opt_date", JsSeries::new_opt_date)?;
     cx.export_function("series_new_i8", JsSeries::new_i8)?;
     cx.export_function("series_new_i16", JsSeries::new_i16)?;
     cx.export_function("series_new_i32", JsSeries::new_i32)?;

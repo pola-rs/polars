@@ -1,4 +1,4 @@
-use crate::conversion::*;
+use crate::conversion::prelude::*;
 use crate::error::JsPolarsEr;
 use crate::series::JsSeries;
 use neon::prelude::*;
@@ -124,12 +124,13 @@ impl JsDataFrame {
     }
 
     pub fn from_rows(mut cx: FunctionContext) -> DataFrameResult {
-        let params = get_params(&mut cx)?;
-        let (js_arr, _) = params.get_arr(&mut cx, "js_objects")?;
-        let (rows, names) = objs_to_rows(&mut cx, &js_arr)?;
-        let mut jsdf = Self::finish_from_rows(rows)?;
-        jsdf.df.set_column_names(&names).map_err(JsPolarsEr::from)?;
-        Ok(jsdf.into_js_box(&mut cx))
+        todo!()
+        // let params = get_params(&mut cx)?;
+        // let (js_arr, _) = params.get_arr(&mut cx, "js_objects")?;
+        // let (rows, names) = objs_to_rows(&mut cx, &js_arr)?;
+        // let mut jsdf = Self::finish_from_rows(rows)?;
+        // jsdf.df.set_column_names(&names).map_err(JsPolarsEr::from)?;
+        // Ok(jsdf.into_js_box(&mut cx))
     }
 
     pub fn from_js_array(mut _cx: FunctionContext) -> DataFrameResult {

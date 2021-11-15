@@ -1,6 +1,7 @@
 // use crate::dataframe::JsDataFrame;
 // use crate::datatypes::JsDataType;
 // use crate::error::JsPolarsEr;
+use crate::conversion::prelude::*;
 use crate::prelude::*;
 use neon::prelude::*;
 use neon::types::JsDate;
@@ -31,7 +32,9 @@ macro_rules! init_method {
                 let mut items: Vec<$type> = Vec::with_capacity(len);
 
                 for i in js_arr.to_vec(&mut cx)?.iter() {
-                    let v = i.downcast_or_throw::<$js_type, _>(&mut cx).expect("err happening here");
+                    let v = i
+                        .downcast_or_throw::<$js_type, _>(&mut cx)
+                        .expect("err happening here");
                     let item = v.value(&mut cx) as $type;
                     items.push(item)
                 }
@@ -53,7 +56,9 @@ impl JsSeries {
             let i: &Handle<JsValue> = i;
             let s = i.to_string(&mut cx)?.value(&mut cx);
             println!("boolval={:#?}", s);
-            let v = i.downcast_or_throw::<JsBoolean, _>(&mut cx).expect("err happening here");
+            let v = i
+                .downcast_or_throw::<JsBoolean, _>(&mut cx)
+                .expect("err happening here");
 
             let item = v.value(&mut cx) as bool;
             items.push(item)
@@ -73,8 +78,6 @@ init_method!(new_u64, JsNumber, u64);
 init_method!(new_f32, JsNumber, f32);
 init_method!(new_f64, JsNumber, f64);
 // init_method!(new_bool, JsBoolean, bool);
-init_method!(new_date, JsDate, i32);
-
 // Init with lists that can contain Nones
 macro_rules! init_method_opt {
     ($name:ident, $type:ty, $native: ty) => {
@@ -147,6 +150,34 @@ impl Finalize for JsSeries {}
 
 type SeriesResult<'a> = JsResult<'a, JsBox<JsSeries>>;
 impl JsSeries {
+    pub fn new_opt_date(mut cx: FunctionContext) -> SeriesResult {
+        let params = get_params(&mut cx)?;
+        let name = params.get_as::<&str, _>(&mut cx, "name")?;
+        let strict = params.get_as::<bool, _>(&mut cx, "strict")?;
+        let arr = params.get_arr_values(&mut cx, "values")?;
+
+        let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(name, arr.len());
+        for item in arr.iter() {
+            if item.is_a::<JsNull>(&mut cx) {
+                builder.append_null()
+            } else if item.is_a::<JsUndefined>(&mut cx) {
+                builder.append_null()
+            } else {
+                match item.0.downcast_or_throw::<JsDate, _>(&mut cx) {
+                    Ok(val) => builder.append_value(val.value(&mut cx) as i64),
+                    Err(e) => {
+                        if strict {
+                            return Err(e);
+                        }
+                        builder.append_null()
+                    }
+                }
+            }
+        }
+        let ca: ChunkedArray<Int64Type> = builder.finish();
+        let s = ca.into_date().into_series();
+        Ok(cx.boxed(JsSeries { series: s }))
+    }
     pub fn new_opt_bool(mut cx: FunctionContext) -> SeriesResult {
         let params = get_params(&mut cx)?;
         let name = params.get_as::<&'_ str, _>(&mut cx, "name")?;
@@ -160,7 +191,7 @@ impl JsSeries {
             } else {
                 match <bool>::from_js(&mut cx, *item) {
                     Ok(val) => builder.append_value(val),
-                    Err(_) => builder.append_null()
+                    Err(_) => builder.append_null(),
                 }
             }
         }
