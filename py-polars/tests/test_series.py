@@ -861,6 +861,7 @@ def test_shrink_to_fit():
     assert isinstance(s.shrink_to_fit(in_place=False), pl.Series)
 
 
+@pytest.mark.skip(reason="TODO: test is from the docstring")
 def test_str_concat():
     assert pl.Series([1, None, 2]).str_concat("-")[0] == "1-null-2"
 
