@@ -1,7 +1,9 @@
 //! Domain specific language for the Lazy api.
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{expr_to_root_column_name, has_expr, has_wildcard};
+#[cfg(feature = "is_in")]
+use crate::utils::expr_to_root_column_name;
+use crate::utils::{has_expr, has_wildcard};
 use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 

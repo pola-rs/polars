@@ -76,6 +76,7 @@ rank = []
 diff = []
 moment = []
 diagonal_concat = []
+abs = []
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
@@ -124,6 +125,7 @@ docs-selection = [
   "rank",
   "list",
   "diagonal_concat",
+  "abs",
 ]
 
 [dependencies]

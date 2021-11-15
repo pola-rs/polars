@@ -11,6 +11,8 @@ use arrow::buffer::Buffer;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
+#[cfg(feature = "abs")]
+mod abs;
 pub(crate) mod aggregate;
 mod any_value;
 mod append;

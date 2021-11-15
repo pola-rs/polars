@@ -1043,6 +1043,43 @@ impl DataFrame {
     }
 
     /// Generic join method. Can be used to join on multiple columns.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
+    ///                              "Phosphorus (mg/100g)" => &[11, 22, 12])?;
+    ///     let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
+    ///                              "Potassium (mg/100g)" => &[107, 358, 115])?;
+    ///
+    ///     let df3: DataFrame = df1.join(&df2, "Fruit", "Name", JoinType::Inner, None)?;
+    ///     assert_eq!(df3.shape(), (3, 3));
+    ///     println!("{}", df3);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (3, 3)
+    /// +--------+----------------------+---------------------+
+    /// | Fruit  | Phosphorus (mg/100g) | Potassium (mg/100g) |
+    /// | ---    | ---                  | ---                 |
+    /// | str    | i32                  | i32                 |
+    /// +========+======================+=====================+
+    /// | Apple  | 11                   | 107                 |
+    /// +--------+----------------------+---------------------+
+    /// | Banana | 22                   | 358                 |
+    /// +--------+----------------------+---------------------+
+    /// | Pear   | 12                   | 115                 |
+    /// +--------+----------------------+---------------------+
+    /// ```
     pub fn join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
         &self,
         other: &DataFrame,

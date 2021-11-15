@@ -1041,6 +1041,19 @@ class Series:
         ----------
         reverse
             reverse the operation.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.cumprod()
+        shape: (3,)
+        Series: 'b' [i64]
+        [
+                1
+                2
+                6
+        ]
+
         """
         return wrap_s(self._s.cumprod(reverse))
 
@@ -2507,7 +2520,7 @@ class Series:
         ----------
         window_size
             The length of the window.
-        weight
+        weights
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
         min_periods
@@ -2865,7 +2878,7 @@ class Series:
         """
         Take absolute values
         """
-        return np.abs(self)  # type: ignore
+        return wrap_s(self._s.abs())
 
     def rank(self, method: str = "average") -> "Series":  # type: ignore
         """
