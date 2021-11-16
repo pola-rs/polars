@@ -325,7 +325,8 @@ impl DataFrame {
     ///                             "Symbol" => &["A", "C", "G", "T"])?;
     ///     let columns: &Vec<Series> = df.get_columns();
     ///
-    ///     assert_eq!(df.shape().1, columns.len());
+    ///     assert_eq!(columns[0].name(), "Name");
+    ///     assert_eq!(columns[1].name(), "Symbol");
     ///
     ///     Ok(())
     /// }
