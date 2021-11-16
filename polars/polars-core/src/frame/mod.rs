@@ -341,11 +341,41 @@ impl DataFrame {
         self.columns.iter()
     }
 
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Language" => &["Rust", "Python"],
+    ///                             "Designer" => &["Graydon Hoare", "Guido van Rossum"])?;
+    ///
+    ///     assert_eq!(df.get_column_names(), &["Language", "Designer"]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn get_column_names(&self) -> Vec<&str> {
         self.columns.iter().map(|s| s.name()).collect()
     }
 
     /// Set the column names.
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let mut df: DataFrame = df!("Mathematical set" => &["ℕ", "ℤ", "𝔻", "ℚ", "ℝ", "ℂ"])?;
+    ///     df.set_column_names(&["Set"])?;
+    ///
+    ///     assert_eq!(df.get_column_names(), &["Set"]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> Result<()> {
         if names.len() != self.columns.len() {
             return Err(PolarsError::ShapeMisMatch("the provided slice with column names has not the same size as the DataFrame's width".into()));
@@ -441,6 +471,24 @@ impl DataFrame {
     }
 
     /// Check if DataFrame is empty
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = DataFrame::default();
+    ///     assert!(df1.is_empty());
+    ///
+    ///     let df2: DataFrame = df!("First name" => &["Forever"],
+    ///                              "Last name" => &["Alone"])?;
+    ///     assert!(!df2.is_empty());
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.columns.is_empty()
     }
