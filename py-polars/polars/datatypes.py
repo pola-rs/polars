@@ -11,7 +11,6 @@ except ImportError:
 
 from _ctypes import _SimpleCData
 
-
 __all__ = [
     "DataType",
     "Int8",

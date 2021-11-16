@@ -1,26 +1,26 @@
-from typing import Type, Callable, Sequence, Any
+from typing import Any, Callable, Sequence, Type
 
 import numpy as np
-from polars.polars import PySeries
 
 from polars.datatypes import (
+    Boolean,
+    DataType,
+    Date,
+    Datetime,
     Float32,
     Float64,
     Int8,
     Int16,
     Int32,
     Int64,
+    Object,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
-    Date,
-    Datetime,
-    Boolean,
     Utf8,
-    Object,
-    DataType,
 )
+from polars.polars import PySeries
 
 _POLARS_TYPE_TO_CONSTRUCTOR = {
     Float32: PySeries.new_opt_f32,

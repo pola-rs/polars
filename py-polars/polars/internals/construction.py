@@ -14,8 +14,8 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.datatypes_constructor import (
-    polars_type_to_constructor,
     numpy_type_to_constructor,
+    polars_type_to_constructor,
     py_type_to_constructor,
 )
 

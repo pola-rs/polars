@@ -4,7 +4,8 @@ from numbers import Number
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
-from polars.datatypes import py_type_to_dtype, _maybe_cast
+
+from polars.datatypes import _maybe_cast, py_type_to_dtype
 
 try:
     import pyarrow as pa
