@@ -369,7 +369,7 @@ class DataFrame:
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
-        parse_dates: bool = True,
+        parse_dates: bool = False,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
