@@ -2998,11 +2998,12 @@ class Series:
         Series of dtype Utf8
 
         Examples
-        >>> assert pl.Series([1, None, 2]).str_concat("-")[0] == "1-null-2"
+        >>> pl.Series([1, None, 2]).str_concat("-")[0]
+        "1-null-2"
 
         """
         return self.to_frame().select(
-            pl.col(self.name).delimiter(delimiter)  # type: ignore
+            pl.col(self.name).str_concat(delimiter)  # type: ignore
         )[self.name]
 
 
@@ -3552,19 +3553,3 @@ class SeriesIter:
             return self.s[i]
         else:
             raise StopIteration
-
-
-def out_to_dtype(out: Any) -> Union[Type[DataType], Type[np.ndarray]]:
-    if isinstance(out, float):
-        return Float64
-    if isinstance(out, int):
-        return Int64
-    if isinstance(out, str):
-        return Utf8
-    if isinstance(out, bool):
-        return Boolean
-    if isinstance(out, Series):
-        return List
-    if isinstance(out, np.ndarray):
-        return np.ndarray
-    raise NotImplementedError
