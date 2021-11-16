@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::{datatypes::PlHashMap, use_string_cache, utils::arrow::array::Array};
+use crate::{datatypes::PlHashMap, use_string_cache};
 use arrow::array::*;
 use std::marker::PhantomData;
 

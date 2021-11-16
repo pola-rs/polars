@@ -796,7 +796,7 @@ class DataFrame:
     def to_parquet(
         self,
         file: Union[str, Path],
-        compression: str = "snappy",
+        compression: Optional[str] = "snappy",
         use_pyarrow: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -822,6 +822,8 @@ class DataFrame:
 
         **kwargs are passed to pyarrow.parquet.write_table
         """
+        if compression is None:
+            compression = "uncompressed"
         if isinstance(file, Path):
             file = str(file)
 

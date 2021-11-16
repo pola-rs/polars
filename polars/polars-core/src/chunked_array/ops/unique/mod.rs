@@ -9,8 +9,6 @@ use crate::datatypes::PlHashSet;
 use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
 use crate::utils::NoNull;
-#[cfg(feature = "dtype-categorical")]
-use arrow::array::Array;
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::hash::Hash;
