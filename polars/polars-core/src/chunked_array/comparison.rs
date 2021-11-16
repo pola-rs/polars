@@ -459,6 +459,12 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             } else {
                 BooleanChunked::full("", false, self.len())
             }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
@@ -473,6 +479,12 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.neq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.neq(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
@@ -493,6 +505,12 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             } else {
                 BooleanChunked::full("", false, self.len())
             }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.lt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
@@ -507,6 +525,12 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.gt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.lt_eq(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
@@ -527,6 +551,12 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             } else {
                 BooleanChunked::full("", false, self.len())
             }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.gt(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
@@ -541,6 +571,12 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
                 self.lt_eq(value)
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        } else if self.len() == 1 {
+            if let Some(value) = self.get(0) {
+                rhs.gt_eq(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
