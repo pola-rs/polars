@@ -1594,7 +1594,7 @@ class Expr:
         """
         Take absolute values
         """
-        return self.map(lambda s: s.abs())
+        return wrap_expr(self._pyexpr.abs())
 
     def argsort(self, reverse: bool = False) -> "Expr":
         """

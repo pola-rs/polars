@@ -51,6 +51,7 @@ rank = ["polars-core/rank"]
 diff = ["polars-core/diff"]
 moment = ["polars-core/moment"]
 list = ["polars-core/list"]
+abs = ["polars-core/abs"]
 
 # no guarantees whatsoever
 private = []

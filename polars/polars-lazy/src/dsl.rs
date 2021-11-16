@@ -1076,6 +1076,13 @@ impl Expr {
         self.map(move |s: Series| s.floor(), GetOutput::same_type())
     }
 
+    /// Convert all values to their absolute/positive value.
+    #[cfg(feature = "abs")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
+    pub fn abs(self) -> Self {
+        self.map(move |s: Series| s.abs(), GetOutput::same_type())
+    }
+
     /// Apply window function over a subgroup.
     /// This is similar to a groupby + aggregation + self join.
     /// Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).
