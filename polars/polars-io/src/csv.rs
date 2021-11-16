@@ -1290,4 +1290,24 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
 
         Ok(())
     }
+
+    #[test]
+    fn test_infer_schema_0_rows() -> Result<()> {
+        let csv = r#"a,b,c,d
+1,a,1.0,true
+1,a,1.0,false
+"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).infer_schema(Some(0)).finish()?;
+        assert_eq!(
+            df.dtypes(),
+            &[
+                DataType::Utf8,
+                DataType::Utf8,
+                DataType::Utf8,
+                DataType::Utf8
+            ]
+        );
+        Ok(())
+    }
 }
