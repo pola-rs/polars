@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Union, overload
 
 import numpy as np
 
@@ -29,6 +29,24 @@ def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
         DataFrame to convert.
     """
     return df.to_dummies()
+
+
+@overload
+def concat(
+    items: Sequence["pl.DataFrame"],
+    rechunk: bool = True,
+    how: str = "vertical",
+) -> "pl.DataFrame":
+    ...
+
+
+@overload
+def concat(
+    items: Sequence["pl.Series"],
+    rechunk: bool = True,
+    how: str = "vertical",
+) -> "pl.Series":
+    ...
 
 
 def concat(
