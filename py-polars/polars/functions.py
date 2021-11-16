@@ -6,7 +6,7 @@ import numpy as np
 import polars as pl
 
 try:
-    from polars.datatypes import py_type_to_polars_type
+    from polars.datatypes import py_type_to_dtype
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_lf as _concat_lf
     from polars.polars import concat_series as _concat_series
@@ -95,7 +95,7 @@ def repeat(
     if name is None:
         name = ""
 
-    dtype = py_type_to_polars_type(type(val))
+    dtype = py_type_to_dtype(type(val))
     s = pl.Series._repeat(name, val, n, dtype)
     return s
 

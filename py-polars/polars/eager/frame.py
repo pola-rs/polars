@@ -50,7 +50,7 @@ except ImportError:
     _DOCUMENTING = True
 
 from .._html import NotebookFormatter
-from ..datatypes import DTYPES, Boolean, DataType, UInt32, pytype_to_polars_type
+from ..datatypes import DTYPES, Boolean, DataType, UInt32, py_type_to_dtype
 from ..utils import _process_null_values
 
 try:
@@ -450,7 +450,7 @@ class DataFrame:
             if isinstance(dtype, dict):
                 dtype_list = []
                 for k, v in dtype.items():
-                    dtype_list.append((k, pytype_to_polars_type(v)))
+                    dtype_list.append((k, py_type_to_dtype(v)))
             elif isinstance(dtype, list):
                 dtype_slice = dtype
             else:
