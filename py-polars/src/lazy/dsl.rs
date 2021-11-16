@@ -273,6 +273,10 @@ impl PyExpr {
         self.clone().inner.floor().into()
     }
 
+    pub fn abs(&self) -> PyExpr {
+        self.clone().inner.abs().into()
+    }
+
     pub fn is_duplicated(&self) -> PyExpr {
         self.clone().inner.is_duplicated().into()
     }

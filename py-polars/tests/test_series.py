@@ -739,9 +739,16 @@ def test_date_range():
 
 
 def test_abs():
+    # ints
     s = pl.Series([1, -2, 3, -4])
     assert s.abs().to_list() == [1, 2, 3, 4]
     assert np.abs(s).to_list() == [1, 2, 3, 4]
+
+    # floats
+    s = pl.Series([1.0, -2.0, 3, -4.0])
+    assert s.abs().to_list() == [1.0, 2.0, 3.0, 4.0]
+    assert np.abs(s).to_list() == [1.0, 2.0, 3.0, 4.0]
+    assert pl.select(pl.lit(s).abs()).to_series().to_list() == [1.0, 2.0, 3.0, 4.0]
 
 
 def test_to_dummies():

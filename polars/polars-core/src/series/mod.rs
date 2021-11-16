@@ -673,6 +673,8 @@ impl Series {
             Int32 => a.i32().unwrap().abs().into_series(),
             Int64 => a.i64().unwrap().abs().into_series(),
             UInt8 | UInt16 | UInt32 | UInt64 => self.clone(),
+            Float32 => a.f32().unwrap().abs().into_series(),
+            Float64 => a.f64().unwrap().abs().into_series(),
             dt => {
                 return Err(PolarsError::InvalidOperation(
                     format!("abs not supportedd for series of type {:?}", dt).into(),
