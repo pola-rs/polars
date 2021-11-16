@@ -1141,6 +1141,19 @@ class Series:
         ----------
         predicate
             Boolean mask.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> mask = pl.Series("", [True, False, True])
+        >>> s.filter(mask)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+                1
+                3
+        ]
+
         """
         if isinstance(predicate, list):
             predicate = Series("", predicate)
@@ -1199,7 +1212,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4])
-        >>> s.take_every(2))
+        >>> s.take_every(2)
         shape: (2,)
         Series: '' [i64]
         [
@@ -1258,6 +1271,20 @@ class Series:
         -------
         indexes
             Indexes that can be used to sort this array.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [5, 3, 4, 1, 2])
+        >>> s.argsort()
+        shape: (4,)
+        Series: 'a' [i64]
+        [
+            3
+            4
+            1
+            2
+            0
+        ]
         """
         return wrap_s(self._s.argsort(reverse))
 
@@ -1407,14 +1434,15 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
+        >>> import numpy as np
+        >>> s = pl.Series("a", [1.0, 2.0, np.inf])
         >>> s.is_finite()
         shape: (3,)
         Series: 'a' [bool]
         [
                 true
                 true
-                true
+                false
         ]
 
         """
@@ -1430,14 +1458,15 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
+        >>> import numpy as np
+        >>> s = pl.Series("a", [1.0, 2.0, np.inf])
         >>> s.is_infinite()
         shape: (3,)
         Series: 'a' [bool]
         [
                 false
                 false
-                false
+                true
         ]
 
         """
@@ -1455,12 +1484,14 @@ class Series:
         --------
         >>> import numpy as np
         >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
-        >>> s.take([1, 3])
-        shape: (2,)
-        Series: 'a' [i64]
+        >>> s.is_nan()
+        shape: (4,)
+        Series: 'a' [bool]
         [
-                2
-                4
+                false
+                false
+                false
+                true
         ]
 
         """
