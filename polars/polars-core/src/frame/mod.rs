@@ -313,6 +313,24 @@ impl DataFrame {
     }
 
     /// Get a reference to the DataFrame columns.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;          // or "use polars::df"
+    /// use polars_core::prelude::*;  // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Name" => &["Adenine", "Cytosine", "Guanine", "Thymine"],
+    ///                             "Symbol" => &["A", "C", "G", "T"])?;
+    ///     let columns: &Vec<Series> = df.get_columns();
+    ///
+    ///     assert_eq!(columns[0].name(), "Name");
+    ///     assert_eq!(columns[1].name(), "Symbol");
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn get_columns(&self) -> &Vec<Series> {
         &self.columns
