@@ -405,7 +405,7 @@ impl DataFrame {
     ///     let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
     ///                                    "Fraction" => &[0.965, 0.035])?;
     ///     
-    ///     assert_eq!(venus_air.dtypes(), vec![DataType::Utf8, DataType::Float64]);
+    ///     assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
     ///
     ///     Ok(())
     /// }
@@ -446,7 +446,7 @@ impl DataFrame {
     ///     let f1: Field = Field::new("Surface type", DataType::Utf8);
     ///     let f2: Field = Field::new("Fraction", DataType::Float64);
     ///
-    ///     assert_eq!(earth.fields(), vec![f1, f2]);
+    ///     assert_eq!(earth.fields(), &[f1, f2]);
     ///
     ///     Ok(())
     /// }
