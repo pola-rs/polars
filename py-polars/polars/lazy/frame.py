@@ -392,13 +392,13 @@ class LazyFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
+        >>> lf = pl.DataFrame({
         >>>     "foo": [1, 2, 3],
         >>>     "bar": [6, 7, 8],
         >>>     "ham": ['a', 'b', 'c']
         >>> }).lazy()
         >>> # Filter on one condition
-        >>> df.filter(pl.col("foo") < 3).collect()
+        >>> lf.filter(pl.col("foo") < 3).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -411,7 +411,7 @@ class LazyFrame:
         └─────┴─────┴─────┘
 
         >>>  # Filter on multiple conditions
-        >>> df.filter((pl.col("foo") < 3) & (pl.col("ham") == "a")).collect()
+        >>> lf.filter((pl.col("foo") < 3) & (pl.col("ham") == "a")).collect()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
