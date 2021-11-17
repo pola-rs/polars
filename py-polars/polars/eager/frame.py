@@ -1262,7 +1262,7 @@ class DataFrame:
         >>>     "ham": ['a', 'b', 'c']
         >>> })
         >>> # Filter on one condition
-        >>> df.filter(col("foo") < 3)
+        >>> df.filter(pl.col("foo") < 3)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -1275,7 +1275,7 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         >>>  # Filter on multiple conditions
-        >>> df.filter((col("foo") < 3) & (col("ham") == "a"))
+        >>> df.filter((pl.col("foo") < 3) & (pl.col("ham") == "a"))
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
