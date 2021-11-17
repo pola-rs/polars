@@ -2000,7 +2000,7 @@ class DataFrame:
         asof_by: Optional[Union[str, tp.List[str]]] = None,
         asof_by_left: Optional[Union[str, tp.List[str]]] = None,
         asof_by_right: Optional[Union[str, tp.List[str]]] = None,
-    ) -> Union["DataFrame", "pl.LazyFrame"]:
+    ) -> "DataFrame":
         """
         SQL like joins.
 
@@ -3152,7 +3152,7 @@ class DataFrame:
         """
         return self._df.row_tuple(index)
 
-    def rows(self) -> tp.List[Tuple[Any]]:
+    def rows(self) -> tp.List[Tuple]:
         """
         Convert columnar data to rows as python tuples.
         """
