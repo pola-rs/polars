@@ -1825,7 +1825,6 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    #[cfg(feature = "dtype-u64")]
     fn test_join_floats() -> Result<()> {
         let df_a = df! {
             "a" => &[1.0, 2.0, 1.0, 1.0],
@@ -1867,6 +1866,22 @@ mod test {
                 DataType::Utf8
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_join_nulls() -> Result<()> {
+        let a = df![
+            "a" => [Some(1), None, None]
+        ]?;
+        let b = df![
+            "a" => [Some(1), None, None, None, None]
+        ]?;
+
+        let out = a.inner_join(&b, "a", "a")?;
+
+        assert_eq!(out.shape(), (9, 1));
         Ok(())
     }
 }

@@ -248,15 +248,15 @@ impl AsU64 for Option<u32> {
     fn as_u64(self) -> u64 {
         match self {
             Some(v) => v as u64,
-            // just a number
-            None => u64::MAX,
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
         }
     }
 }
 
 impl AsU64 for Option<u64> {
     fn as_u64(self) -> u64 {
-        self.unwrap_or(u64::MAX)
+        self.unwrap_or(u64::MAX >> 2)
     }
 }
 
