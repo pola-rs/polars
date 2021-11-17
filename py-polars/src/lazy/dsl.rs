@@ -185,8 +185,9 @@ impl PyExpr {
         self.clone().inner.take(idx.inner).into()
     }
 
-    pub fn sort_by(&self, by: PyExpr, reverse: bool) -> PyExpr {
-        self.clone().inner.sort_by(by.inner, reverse).into()
+    pub fn sort_by(&self, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyExpr {
+        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        self.clone().inner.sort_by(by, reverse).into()
     }
 
     pub fn backward_fill(&self) -> PyExpr {

@@ -47,7 +47,7 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         },
         Expr::SortBy { expr, by, reverse } => AExpr::SortBy {
             expr: to_aexpr(*expr, arena),
-            by: to_aexpr(*by, arena),
+            by: by.into_iter().map(|e| to_aexpr(e, arena)).collect(),
             reverse,
         },
         Expr::Filter { input, by } => AExpr::Filter {
@@ -467,10 +467,13 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         }
         AExpr::SortBy { expr, by, reverse } => {
             let expr = node_to_exp(expr, expr_arena);
-            let by = node_to_exp(by, expr_arena);
+            let by = by
+                .iter()
+                .map(|node| node_to_exp(*node, expr_arena))
+                .collect();
             Expr::SortBy {
                 expr: Box::new(expr),
-                by: Box::new(by),
+                by,
                 reverse,
             }
         }

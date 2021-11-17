@@ -277,8 +277,8 @@ pub enum Expr {
     },
     SortBy {
         expr: Box<Expr>,
-        by: Box<Expr>,
-        reverse: bool,
+        by: Vec<Expr>,
+        reverse: Vec<bool>,
     },
     Agg(AggExpr),
     /// A ternary operation
@@ -391,10 +391,13 @@ impl fmt::Debug for Expr {
                 true => write!(f, "{:?} DESC", expr),
                 false => write!(f, "{:?} ASC", expr),
             },
-            SortBy { expr, by, reverse } => match reverse {
-                true => write!(f, "{:?} DESC BY {:?}", expr, by),
-                false => write!(f, "{:?} ASC BY {:?}", expr, by),
-            },
+            SortBy { expr, by, reverse } => {
+                write!(
+                    f,
+                    "SORT {:?} BY {:?} REVERSE ORDERING {:?}",
+                    expr, by, reverse
+                )
+            }
             Filter { input, by } => {
                 write!(f, "FILTER {:?} BY {:?}", input, by)
             }
@@ -1338,10 +1341,12 @@ impl Expr {
 
     /// Sort this column by the ordering of another column.
     /// Can also be used in a groupby context to sort the groups.
-    pub fn sort_by(self, by: Expr, reverse: bool) -> Expr {
+    pub fn sort_by<E: AsRef<[Expr]>, R: AsRef<[bool]>>(self, by: E, reverse: R) -> Expr {
+        let by = by.as_ref().to_vec();
+        let reverse = reverse.as_ref().to_vec();
         Expr::SortBy {
             expr: Box::new(self),
-            by: Box::new(by),
+            by,
             reverse,
         }
     }
