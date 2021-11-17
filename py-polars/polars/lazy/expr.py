@@ -26,7 +26,7 @@ __all__ = [
 
 
 def _selection_to_pyexpr_list(
-    exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
+    exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]]]
 ) -> tp.List["PyExpr"]:
     pyexpr_list: tp.List[PyExpr]
     if isinstance(exprs, Sequence) and not isinstance(exprs, str):
@@ -723,24 +723,31 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_min())
 
-    def sort_by(self, by: Union["Expr", str], reverse: bool = False) -> "Expr":
+    def sort_by(
+        self,
+        by: Union["Expr", str, tp.List[Union["Expr", str]]],
+        reverse: Union[bool, tp.List[bool]] = False,
+    ) -> "Expr":
         """
-        Sort this column by the ordering of another column.
+        Sort this column by the ordering of another column, or multiple other columns.
         In projection/ selection context the whole column is sorted.
         If used in a groupby context, the groups are sorted.
 
         Parameters
         ----------
         by
-            The column used for sorting.
+            The column(s) used for sorting.
         reverse
             False -> order from small to large.
             True -> order from large to small.
         """
-        if isinstance(by, str):
-            by = col(by)
+        if not isinstance(by, list):
+            by = [by]
+        if not isinstance(reverse, list):
+            reverse = [reverse]
+        by = _selection_to_pyexpr_list(by)
 
-        return wrap_expr(self._pyexpr.sort_by(by._pyexpr, reverse))
+        return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
     def take(self, index: Union[tp.List[int], "Expr", "pl.Series"]) -> "Expr":
         """

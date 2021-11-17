@@ -971,7 +971,7 @@ fn test_lazy_groupby_sort_by() {
     let out = df
         .lazy()
         .groupby([col("a")])
-        .agg([col("b").sort_by(col("c"), true).first()])
+        .agg([col("b").sort_by([col("c")], [true]).first()])
         .collect()
         .unwrap()
         .sort("a", false)
@@ -1623,7 +1623,7 @@ fn test_sort_by_in_groups() -> Result<()> {
             col("fruits"),
             col("cars"),
             col("A")
-                .sort_by(col("B"), false)
+                .sort_by([col("B")], [false])
                 .over([col("cars")])
                 .explode()
                 .alias("sorted_A_by_B"),
@@ -1634,6 +1634,56 @@ fn test_sort_by_in_groups() -> Result<()> {
         Vec::from(out.column("sorted_A_by_B")?.i32()?),
         &[Some(2), Some(5), Some(4), Some(3), Some(1)]
     );
+    Ok(())
+}
+
+#[test]
+fn test_sort_by() -> Result<()> {
+    let df = df![
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 1, 1, 2, 2],
+        "c" => [2, 3, 1, 2, 1]
+    ]?;
+
+    // evaluate
+    let out = df
+        .clone()
+        .lazy()
+        .select([col("a").sort_by([col("b"), col("c")], [false])])
+        .collect()?;
+
+    let a = out.column("a")?;
+    assert_eq!(
+        Vec::from(a.i32().unwrap()),
+        &[Some(3), Some(1), Some(2), Some(5), Some(4)]
+    );
+
+    // aggregate
+    let out = df
+        .clone()
+        .lazy()
+        .stable_groupby([col("b")])
+        .agg([col("a").sort_by([col("b"), col("c")], [false])])
+        .collect()?;
+    let a = out.column("a")?.explode()?;
+    assert_eq!(
+        Vec::from(a.i32().unwrap()),
+        &[Some(3), Some(1), Some(2), Some(5), Some(4)]
+    );
+
+    // evaluate_on_groups
+    let out = df
+        .lazy()
+        .stable_groupby([col("b")])
+        .agg([col("a").sort_by([col("b"), col("c")], [false]).list()])
+        .collect()?;
+
+    let a = out.column("a_agg_list")?.explode()?;
+    assert_eq!(
+        Vec::from(a.i32().unwrap()),
+        &[Some(3), Some(1), Some(2), Some(5), Some(4)]
+    );
+
     Ok(())
 }
 
@@ -1791,7 +1841,7 @@ fn test_sort_by_suffix() -> Result<()> {
     let out = df
         .lazy()
         .select([col("*")
-            .sort_by(col("A"), false)
+            .sort_by([col("A")], [false])
             .over([col("fruits")])
             .flatten()
             .suffix("_sorted")])

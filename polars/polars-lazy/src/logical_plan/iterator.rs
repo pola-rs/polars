@@ -25,7 +25,9 @@ macro_rules! push_expr {
             }
             SortBy { expr, by, .. } => {
                 $push(expr);
-                $push(by)
+                for e in by {
+                    $push(e)
+                }
             }
             Agg(agg_e) => {
                 use AggExpr::*;
@@ -176,7 +178,9 @@ impl AExpr {
             }
             SortBy { expr, by, .. } => {
                 push(expr);
-                push(by);
+                for node in by {
+                    push(node)
+                }
             }
             Filter { input, by } => {
                 push(input);

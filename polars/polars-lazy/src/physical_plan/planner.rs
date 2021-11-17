@@ -540,7 +540,7 @@ impl DefaultPlanner {
             }
             SortBy { expr, by, reverse } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let phys_by = self.create_physical_expr(by, ctxt, expr_arena)?;
+                let phys_by = self.create_physical_expressions(&by, ctxt, expr_arena)?;
                 Ok(Arc::new(SortByExpr::new(
                     phys_expr,
                     phys_by,
