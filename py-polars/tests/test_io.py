@@ -5,14 +5,14 @@ import io
 import pickle
 import zlib
 from pathlib import Path
-from typing import List, Tuple, Callable, Dict, Type
+from typing import Callable, Dict, List, Tuple, Type
 
 import numpy as np
 import pandas as pd
 import pytest
-from polars import DataType
 
 import polars as pl
+from polars import DataType
 
 
 def test_to_from_buffer(df: pl.DataFrame) -> None:
@@ -26,7 +26,7 @@ def test_to_from_buffer(df: pl.DataFrame) -> None:
         to_fn(f)  # type: ignore
         f.seek(0)
 
-        df_1 = from_fn(f) # type: ignore
+        df_1 = from_fn(f)  # type: ignore
         assert df.frame_equal(df_1, null_equal=True)
 
 
@@ -381,7 +381,9 @@ def test_ignore_parse_dates() -> None:
 4,l,17290009""".encode()
 
     headers = ["a", "b", "c"]
-    dtypes: Dict[str, Type[DataType]] = {k: pl.Utf8 for k in headers}  # Forces Utf8 type for every column
+    dtypes: Dict[str, Type[DataType]] = {
+        k: pl.Utf8 for k in headers
+    }  # Forces Utf8 type for every column
     df = pl.read_csv(csv, columns=headers, dtype=dtypes)
     assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Utf8]
 

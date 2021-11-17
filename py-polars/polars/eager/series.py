@@ -2335,7 +2335,9 @@ class Series:
         """
         return wrap_s(self._s.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: Union[int, "pl.Expr"]) -> "Series":
+    def shift_and_fill(
+        self, periods: int, fill_value: Union[int, "pl.Expr"]
+    ) -> "Series":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.

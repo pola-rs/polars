@@ -740,7 +740,9 @@ class DataFrame:
         return None
 
     def to_ipc(
-        self, file: Union[BinaryIO, BytesIO, str, Path], compression: str = "uncompressed"
+        self,
+        file: Union[BinaryIO, BytesIO, str, Path],
+        compression: str = "uncompressed",
     ) -> None:
         """
         Write to Arrow IPC binary stream, or a feather file.

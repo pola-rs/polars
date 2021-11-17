@@ -176,7 +176,7 @@ def test_init_pandas() -> None:
         assert df.frame_equal(truth)
 
     # pandas is not available
-    with patch("polars.eager.frame._PANDAS_AVAILABLE", False) :
+    with patch("polars.eager.frame._PANDAS_AVAILABLE", False):
         with pytest.raises(ValueError):
             pl.DataFrame(pandas_df)
 
