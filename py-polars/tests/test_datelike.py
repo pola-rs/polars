@@ -25,7 +25,7 @@ def test_fill_null() -> None:
         assert out.null_count() == 0
         assert out.dt[0] == dt1
         assert out.dt[1] == dt2
-        assert out.dt[-1] == dt
+        assert out.dt[-1] == dt_2
 
 
 def test_downsample() -> None:
