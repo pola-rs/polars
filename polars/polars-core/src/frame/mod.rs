@@ -540,6 +540,42 @@ impl DataFrame {
 
     /// Add multiple Series to a DataFrame
     /// The added Series are required to have the same length.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"])?;
+    ///     let s1: Series = Series::new("Proton", &[29, 47, 79]);
+    ///     let s2: Series = Series::new("Electron", &[29, 47, 79]);
+    ///
+    ///     let df2: DataFrame = df1.hstack(&[s1, s2])?;
+    ///     assert_eq!(df2.shape(), (3, 3));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (3, 3)
+    /// +---------+--------+----------+
+    /// | Element | Proton | Electron |
+    /// | ---     | ---    | ---      |
+    /// | str     | i32    | i32      |
+    /// +=========+========+==========+
+    /// | Copper  | 29     | 29       |
+    /// +---------+--------+----------+
+    /// | Silver  | 47     | 47       |
+    /// +---------+--------+----------+
+    /// | Gold    | 79     | 79       |
+    /// +---------+--------+----------+
+    /// ```
     pub fn hstack(&self, columns: &[Series]) -> Result<Self> {
         let mut new_cols = self.columns.clone();
         new_cols.extend_from_slice(columns);
@@ -547,6 +583,47 @@ impl DataFrame {
     }
 
     /// Concatenate a DataFrame to this DataFrame and return as newly allocated DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"],
+    ///                              "Melting Point (K)" => &[1357.77, 1234.93, 1337.33])?;
+    ///     let df2: DataFrame = df!("Element" => &["Platinum", "Palladium"],
+    ///                              "Melting Point(K)" => &[2041.4, 1828.05])?;
+    ///     
+    ///     let df3: DataFrame = df1.vstack(&df2)?;
+    ///     assert_eq!(df3.shape(), (5, 2));
+    ///     println!("{}", df3);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (5, 2)
+    /// +-----------+-------------------+
+    /// | Element   | Melting Point (K) |
+    /// | ---       | ---               |
+    /// | str       | f64               |
+    /// +===========+===================+
+    /// | Copper    | 1357.77           |
+    /// +-----------+-------------------+
+    /// | Silver    | 1234.93           |
+    /// +-----------+-------------------+
+    /// | Gold      | 1337.33           |
+    /// +-----------+-------------------+
+    /// | Platinum  | 2041.4            |
+    /// +-----------+-------------------+
+    /// | Palladium | 1828.05           |
+    /// +-----------+-------------------+
+    /// ```
     pub fn vstack(&self, columns: &DataFrame) -> Result<Self> {
         let mut df = self.clone();
         df.vstack_mut(columns)?;
@@ -554,6 +631,47 @@ impl DataFrame {
     }
 
     /// Concatenate a DataFrame to this DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let mut df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"],
+    ///                              "Melting Point (K)" => &[1357.77, 1234.93, 1337.33])?;
+    ///     let df2: DataFrame = df!("Element" => &["Platinum", "Palladium"],
+    ///                              "Melting Point(K)" => &[2041.4, 1828.05])?;
+    ///     
+    ///     df1.vstack_mut(&df2)?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///     println!("{}", df1);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (5, 2)
+    /// +-----------+-------------------+
+    /// | Element   | Melting Point (K) |
+    /// | ---       | ---               |
+    /// | str       | f64               |
+    /// +===========+===================+
+    /// | Copper    | 1357.77           |
+    /// +-----------+-------------------+
+    /// | Silver    | 1234.93           |
+    /// +-----------+-------------------+
+    /// | Gold      | 1337.33           |
+    /// +-----------+-------------------+
+    /// | Platinum  | 2041.4            |
+    /// +-----------+-------------------+
+    /// | Palladium | 1828.05           |
+    /// +-----------+-------------------+
+    /// ```
     pub fn vstack_mut(&mut self, df: &DataFrame) -> Result<&mut Self> {
         if self.width() != df.width() {
             return Err(PolarsError::ShapeMisMatch(
