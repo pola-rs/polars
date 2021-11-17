@@ -382,7 +382,7 @@ def tail(
 
 
 def lit(
-    value: Optional[Union[float, int, str, datetime, "pl.Series"]],
+    value: Optional[Union[float, int, str, date, datetime, "pl.Series"]],
     dtype: Optional[Type[DataType]] = None,
 ) -> "pl.Expr":
     """
