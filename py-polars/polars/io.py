@@ -145,7 +145,7 @@ def update_columns(df: "pl.DataFrame", new_columns: List[str]) -> "pl.DataFrame"
 
 
 def read_csv(
-    file: Union[str, TextIO, Path, BinaryIO, bytes],
+    file: Union[str, TextIO, BytesIO, Path, BinaryIO, bytes],
     infer_schema_length: Optional[int] = 100,
     batch_size: int = 8192,
     has_headers: bool = True,
@@ -542,7 +542,7 @@ def read_ipc_schema(
 
 
 def read_ipc(
-    file: Union[str, BinaryIO, Path, bytes],
+    file: Union[str, BinaryIO, BytesIO, Path, bytes],
     columns: Optional[List[str]] = None,
     projection: Optional[List[int]] = None,
     stop_after_n_rows: Optional[int] = None,
@@ -609,7 +609,7 @@ def read_ipc(
 
 
 def read_parquet(
-    source: Union[str, List[str], Path, BinaryIO, bytes],
+    source: Union[str, List[str], Path, BinaryIO, BytesIO, bytes],
     columns: Optional[List[str]] = None,
     projection: Optional[List[int]] = None,
     stop_after_n_rows: Optional[int] = None,

@@ -1,7 +1,7 @@
 import polars as pl
 
 
-def test_date_datetime():
+def test_date_datetime() -> None:
     df = pl.DataFrame(
         {
             "year": [2001, 2002, 2003],
@@ -13,9 +13,9 @@ def test_date_datetime():
 
     out = df.select(
         [
-            pl.all(),
-            pl.datetime("year", "month", "day", "hour").dt.hour().alias("h2"),
-            pl.date("year", "month", "day").dt.day().alias("date"),
+            pl.all(),  # type: ignore
+            pl.datetime("year", "month", "day", "hour").dt.hour().alias("h2"),  # type: ignore
+            pl.date("year", "month", "day").dt.day().alias("date"),  # type: ignore
         ]
     )
 

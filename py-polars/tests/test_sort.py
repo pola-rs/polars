@@ -1,7 +1,7 @@
 import polars as pl
 
 
-def test_sort_dates_multiples():
+def test_sort_dates_multiples() -> None:
     df = pl.DataFrame(
         [
             pl.Series(
@@ -21,9 +21,9 @@ def test_sort_dates_multiples():
     expected = [4, 5, 2, 3, 1]
 
     # datetime
-    out = df.sort(["date", "values"])
+    out: pl.DataFrame = df.sort(["date", "values"])  # type: ignore
     assert out["values"].to_list() == expected
 
     # Date
-    out = df.with_column(pl.col("date").cast(pl.Date)).sort(["date", "values"])
+    out = df.with_column(pl.col("date").cast(pl.Date)).sort(["date", "values"])  # type: ignore
     assert out["values"].to_list() == expected
