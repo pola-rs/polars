@@ -541,7 +541,7 @@ impl DataFrame {
     /// Add multiple Series to a DataFrame
     /// The added Series are required to have the same length.
     ///
-    /// Example
+    /// # Example
     ///
     /// ```rust
     /// use polars_core::df;         // or "use polars::df"
@@ -584,7 +584,7 @@ impl DataFrame {
 
     /// Concatenate a DataFrame to this DataFrame and return as newly allocated DataFrame
     ///
-    /// Example
+    /// # Example
     ///
     /// ```rust
     /// use polars_core::df;         // or "use polars::df"
@@ -632,7 +632,7 @@ impl DataFrame {
 
     /// Concatenate a DataFrame to this DataFrame
     ///
-    /// Example
+    /// # Example
     ///
     /// ```rust
     /// use polars_core::df;         // or "use polars::df"
