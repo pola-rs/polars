@@ -10,11 +10,13 @@ from polars.datatypes import (
     Date,
     Datetime,
     Float32,
+    py_type_to_arrow_type,
+    py_type_to_dtype,
+)
+from polars.datatypes_constructor import (
     numpy_type_to_constructor,
     polars_type_to_constructor,
-    py_type_to_arrow_type,
     py_type_to_constructor,
-    py_type_to_polars_type,
 )
 
 try:
@@ -129,7 +131,7 @@ def sequence_to_pyseries(
             nested_dtype = type(nested_value) if value is not None else float
 
             if not _PYARROW_AVAILABLE:
-                dtype = py_type_to_polars_type(nested_dtype)
+                dtype = py_type_to_dtype(nested_dtype)
                 return PySeries.new_list(name, values, dtype)
 
             try:

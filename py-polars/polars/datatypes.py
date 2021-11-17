@@ -1,8 +1,6 @@
 import ctypes
 import typing as tp
-from typing import Any, Callable, Dict, Sequence, Type
-
-import numpy as np
+from typing import Any, Dict, Type
 
 try:
     import pyarrow as pa
@@ -12,13 +10,6 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 from _ctypes import _SimpleCData
-
-try:
-    from polars.polars import PySeries
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 __all__ = [
     "DataType",
@@ -44,7 +35,7 @@ __all__ = [
     "DTYPE_TO_FFINAME",
     "date_like_to_physical",
     "dtype_to_ctype",
-    "pytype_to_polars_type",
+    "py_type_to_dtype",
 ]
 
 
@@ -166,127 +157,22 @@ DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Categorical: "categorical",
 }
 
+DTYPE_TO_CTYPE = {
+    UInt8: ctypes.c_uint8,
+    UInt16: ctypes.c_uint16,
+    UInt32: ctypes.c_uint32,
+    UInt64: ctypes.c_uint64,
+    Int8: ctypes.c_int8,
+    Int16: ctypes.c_int16,
+    Int32: ctypes.c_int32,
+    Date: ctypes.c_int32,
+    Int64: ctypes.c_int64,
+    Float32: ctypes.c_float,
+    Float64: ctypes.c_double,
+    Datetime: ctypes.c_int64,
+    Time: ctypes.c_int64,
+}
 
-def date_like_to_physical(dtype: Type[DataType]) -> Type[DataType]:
-    #  TODO: add more
-    if dtype == Date:
-        return Int32
-    if dtype == Datetime:
-        return Int64
-    if dtype == Time:
-        return Int64
-    return dtype
-
-
-def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:  # noqa: F821
-    ptr_type: Type[_SimpleCData]
-    if dtype == UInt8:
-        ptr_type = ctypes.c_uint8
-    elif dtype == UInt16:
-        ptr_type = ctypes.c_uint16
-    elif dtype == UInt32:
-        ptr_type = ctypes.c_uint32
-    elif dtype == UInt64:
-        ptr_type = ctypes.c_uint64
-    elif dtype == Int8:
-        ptr_type = ctypes.c_int8
-    elif dtype == Int16:
-        ptr_type = ctypes.c_int16
-    elif dtype == Int32 or dtype == Date:
-        ptr_type = ctypes.c_int32
-    elif dtype == Int64:
-        ptr_type = ctypes.c_int64
-    elif dtype == Float32:
-        ptr_type = ctypes.c_float
-    elif dtype == Float64:
-        ptr_type = ctypes.c_double
-    elif dtype == Datetime or dtype == Time:
-        ptr_type = ctypes.c_int64
-    else:
-        raise NotImplementedError
-    return ptr_type
-
-
-def pytype_to_polars_type(data_type: Type[Any]) -> Type[DataType]:
-    polars_type: Type[DataType]
-    if data_type == int:
-        polars_type = Int64
-    elif data_type == str:
-        polars_type = Utf8
-    elif data_type == float:
-        polars_type = Float64
-    else:
-        polars_type = data_type
-    return polars_type
-
-
-if not _DOCUMENTING:
-    _POLARS_TYPE_TO_CONSTRUCTOR = {
-        Float32: PySeries.new_opt_f32,
-        Float64: PySeries.new_opt_f64,
-        Int8: PySeries.new_opt_i8,
-        Int16: PySeries.new_opt_i16,
-        Int32: PySeries.new_opt_i32,
-        Int64: PySeries.new_opt_i64,
-        UInt8: PySeries.new_opt_u8,
-        UInt16: PySeries.new_opt_u16,
-        UInt32: PySeries.new_opt_u32,
-        UInt64: PySeries.new_opt_u64,
-        Date: PySeries.new_opt_i32,
-        Datetime: PySeries.new_opt_i32,
-        Boolean: PySeries.new_opt_bool,
-        Utf8: PySeries.new_str,
-        Object: PySeries.new_object,
-    }
-
-
-def polars_type_to_constructor(
-    dtype: Type[DataType],
-) -> Callable[[str, Sequence[Any], bool], "PySeries"]:
-    """
-    Get the right PySeries constructor for the given Polars dtype.
-    """
-    try:
-        return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
-    except KeyError:
-        raise ValueError(f"Cannot construct PySeries for type {dtype}.")
-
-
-if not _DOCUMENTING:
-    _NUMPY_TYPE_TO_CONSTRUCTOR = {
-        np.float32: PySeries.new_f32,
-        np.float64: PySeries.new_f64,
-        np.int8: PySeries.new_i8,
-        np.int16: PySeries.new_i16,
-        np.int32: PySeries.new_i32,
-        np.int64: PySeries.new_i64,
-        np.uint8: PySeries.new_u8,
-        np.uint16: PySeries.new_u16,
-        np.uint32: PySeries.new_u32,
-        np.uint64: PySeries.new_u64,
-        np.str_: PySeries.new_str,
-        np.bool_: PySeries.new_bool,
-    }
-
-
-def numpy_type_to_constructor(dtype: Type[np.dtype]) -> Callable[..., "PySeries"]:
-    """
-    Get the right PySeries constructor for the given Polars dtype.
-    """
-    try:
-        return _NUMPY_TYPE_TO_CONSTRUCTOR[dtype]
-    except KeyError:
-        return PySeries.new_object
-
-
-# watch out putting stuff in this branch, it may break the docs build
-if not _DOCUMENTING:
-    _PY_TYPE_TO_CONSTRUCTOR = {
-        float: PySeries.new_opt_f64,
-        int: PySeries.new_opt_i64,
-        str: PySeries.new_str,
-        bool: PySeries.new_opt_bool,
-    }
 
 _PY_TYPE_TO_DTYPE = {
     float: Float64,
@@ -294,6 +180,7 @@ _PY_TYPE_TO_DTYPE = {
     str: Utf8,
     bool: Boolean,
 }
+
 
 _DTYPE_TO_PY_TYPE = {
     Float64: float,
@@ -310,24 +197,42 @@ _DTYPE_TO_PY_TYPE = {
     Boolean: bool,
 }
 
-
-def py_type_to_constructor(dtype: Type[Any]) -> Callable[..., "PySeries"]:
-    """
-    Get the right PySeries constructor for the given Python dtype.
-    """
-    try:
-        return _PY_TYPE_TO_CONSTRUCTOR[dtype]
-    except KeyError:
-        return PySeries.new_object
-
-
-if _PYARROW_AVAILABLE and not _DOCUMENTING:
+if _PYARROW_AVAILABLE:
     _PY_TYPE_TO_ARROW_TYPE = {
         float: pa.float64(),
         int: pa.int64(),
         str: pa.large_utf8(),
         bool: pa.bool_(),
     }
+
+
+def date_like_to_physical(dtype: Type[DataType]) -> Type[DataType]:
+    #  TODO: add more
+    if dtype == Date:
+        return Int32
+    if dtype == Datetime:
+        return Int64
+    if dtype == Time:
+        return Int64
+    return dtype
+
+
+def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:
+    try:
+        return DTYPE_TO_CTYPE[dtype]
+    except KeyError:
+        raise NotImplementedError
+
+
+def py_type_to_dtype(data_type: Type[Any]) -> Type[DataType]:
+    # when the passed in is already a Polars datatype, return that
+    if issubclass(data_type, DataType):
+        return data_type
+
+    try:
+        return _PY_TYPE_TO_DTYPE[data_type]
+    except KeyError:
+        raise NotImplementedError
 
 
 def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
@@ -340,11 +245,8 @@ def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
 
 
-def py_type_to_polars_type(dtype: Type[Any]) -> "Type[DataType]":
-    """
-    Convert a Python dtype to a Polars dtype.
-    """
-    try:
-        return _PY_TYPE_TO_DTYPE[dtype]
-    except KeyError:
-        raise ValueError(f"Cannot parse dtype {dtype} into Polars dtype.")
+def _maybe_cast(el: Type[DataType], dtype: Type) -> Type[DataType]:
+    # cast el if it doesn't match
+    if not isinstance(el, _DTYPE_TO_PY_TYPE[dtype]):
+        el = _DTYPE_TO_PY_TYPE[dtype](el)
+    return el

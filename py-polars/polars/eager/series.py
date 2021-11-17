@@ -5,6 +5,8 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
+from polars.datatypes import _maybe_cast, py_type_to_dtype
+
 try:
     import pyarrow as pa
 
@@ -29,7 +31,6 @@ except ImportError:
     _DOCUMENTING = True
 
 from ..datatypes import (
-    _DTYPE_TO_PY_TYPE,
     DTYPE_TO_FFINAME,
     DTYPES,
     Boolean,
@@ -112,13 +113,6 @@ def get_ffi_func(
 
 def wrap_s(s: "PySeries") -> "Series":
     return Series._from_pyseries(s)
-
-
-def _maybe_cast(el: "Type[DataType]", dtype: Type) -> "Type[DataType]":
-    # cast el if it doesn't match
-    if not isinstance(el, _DTYPE_TO_PY_TYPE[dtype]):
-        el = _DTYPE_TO_PY_TYPE[dtype](el)
-    return el
 
 
 ArrayLike = Union[
@@ -1717,13 +1711,8 @@ class Series:
         ]
 
         """
-        if dtype == int:
-            dtype = Int64
-        elif dtype == str:
-            dtype = Utf8
-        elif dtype == float:
-            dtype = Float64
-        return wrap_s(self._s.cast(str(dtype), strict))
+        pl_dtype = py_type_to_dtype(dtype)
+        return wrap_s(self._s.cast(str(pl_dtype), strict))
 
     def to_list(self, use_pyarrow: bool = False) -> tp.List[Optional[Any]]:
         """
@@ -2292,16 +2281,11 @@ class Series:
         -------
         Series
         """
-        if return_dtype == str:
-            return_dtype = Utf8
-        elif return_dtype == int:
-            return_dtype = Int64
-        elif return_dtype == float:
-            return_dtype = Float64
-        elif return_dtype == bool:
-            return_dtype = Boolean
-
-        return wrap_s(self._s.apply_lambda(func, return_dtype))
+        if return_dtype is None:
+            pl_return_dtype = None
+        else:
+            pl_return_dtype = py_type_to_dtype(return_dtype)
+        return wrap_s(self._s.apply_lambda(func, pl_return_dtype))
 
     def shift(self, periods: int = 1) -> "Series":
         """

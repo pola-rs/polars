@@ -17,7 +17,7 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-from ..datatypes import DataType, pytype_to_polars_type
+from ..datatypes import DataType, py_type_to_dtype
 from ..utils import _process_null_values
 from .expr import Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
 
@@ -67,7 +67,7 @@ class LazyFrame:
         if dtype is not None:
             dtype_list = []
             for k, v in dtype.items():
-                dtype_list.append((k, pytype_to_polars_type(v)))
+                dtype_list.append((k, py_type_to_dtype(v)))
         processed_null_values = _process_null_values(null_values)
 
         self = LazyFrame.__new__(LazyFrame)
