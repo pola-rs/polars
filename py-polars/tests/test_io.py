@@ -5,15 +5,17 @@ import io
 import pickle
 import zlib
 from pathlib import Path
+from typing import Callable, Dict, List, Tuple, Type
 
 import numpy as np
 import pandas as pd
 import pytest
 
 import polars as pl
+from polars import DataType
 
 
-def test_to_from_buffer(df):
+def test_to_from_buffer(df: pl.DataFrame) -> None:
     df = df.drop("strings_nulls")
 
     for to_fn, from_fn in zip(
@@ -21,38 +23,38 @@ def test_to_from_buffer(df):
         [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_json],
     ):
         f = io.BytesIO()
-        to_fn(f)
+        to_fn(f)  # type: ignore
         f.seek(0)
 
-        df_1 = from_fn(f)
+        df_1 = from_fn(f)  # type: ignore
         assert df.frame_equal(df_1, null_equal=True)
 
 
-def test_select_columns_and_projection_from_buffer():
+def test_select_columns_and_projection_from_buffer() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
     for to_fn, from_fn in zip(
         [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
     ):
         f = io.BytesIO()
-        to_fn(f)
+        to_fn(f)  # type: ignore
         f.seek(0)
 
-        df_1 = from_fn(f, columns=["b", "c"], use_pyarrow=False)
+        df_1 = from_fn(f, columns=["b", "c"], use_pyarrow=False)  # type: ignore
         assert df_1.frame_equal(expected)
 
     for to_fn, from_fn in zip(
         [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
     ):
         f = io.BytesIO()
-        to_fn(f)
+        to_fn(f)  # type: ignore
         f.seek(0)
 
-        df_2 = from_fn(f, projection=[1, 2], use_pyarrow=False)
+        df_2 = from_fn(f, projection=[1, 2], use_pyarrow=False)  # type: ignore
         assert df_2.frame_equal(expected)
 
 
-def test_compressed_to_ipc():
+def test_compressed_to_ipc() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     compressions = ["uncompressed", "lz4", "zstd"]
 
@@ -65,13 +67,13 @@ def test_compressed_to_ipc():
         assert df_read.frame_equal(df)
 
 
-def test_read_web_file():
+def test_read_web_file() -> None:
     url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
     df = pl.read_csv(url)
     assert df.shape == (27, 4)
 
 
-def test_parquet_chunks():
+def test_parquet_chunks() -> None:
     """
     This failed in https://github.com/pola-rs/polars/issues/545
     """
@@ -100,7 +102,7 @@ def test_parquet_chunks():
         assert pl.DataFrame(df).frame_equal(polars_df)
 
 
-def test_parquet_datetime():
+def test_parquet_datetime() -> None:
     """
     This failed because parquet writers cast datetimeto Date
     """
@@ -125,7 +127,7 @@ def test_parquet_datetime():
     assert read.frame_equal(df)
 
 
-def test_csv_null_values():
+def test_csv_null_values() -> None:
     csv = """
 a,b,c
 na,b,c
@@ -155,7 +157,7 @@ a,n/a,c"""
     assert df[1, "b"] is None
 
 
-def test_datetime_parsing():
+def test_datetime_parsing() -> None:
     csv = """
 timestamp,open,high
 2021-01-01 00:00:00,0.00305500,0.00306000
@@ -169,7 +171,7 @@ timestamp,open,high
     assert df.dtypes == [pl.Datetime, pl.Float64, pl.Float64]
 
 
-def test_partial_dtype_overwrite():
+def test_partial_dtype_overwrite() -> None:
     csv = """
 a,b,c
 1,2,3
@@ -180,7 +182,7 @@ a,b,c
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64]
 
 
-def test_partial_column_rename():
+def test_partial_column_rename() -> None:
     csv = """
 a,b,c
 1,2,3
@@ -193,7 +195,7 @@ a,b,c
         assert df.columns == ["foo", "b", "c"]
 
 
-def test_column_rename_and_dtype_overwrite():
+def test_column_rename_and_dtype_overwrite() -> None:
     csv = """
 a,b,c
 1,2,3
@@ -230,7 +232,7 @@ a,b,c
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
 
 
-def test_compressed_csv():
+def test_compressed_csv() -> None:
     # gzip compression
     csv = """
 a,b,c
@@ -267,19 +269,19 @@ a,b,c
     assert out.frame_equal(expected)
 
     # no compression
-    f = io.BytesIO(b"a, b\n1,2\n")
-    out = pl.read_csv(f)
+    f2 = io.BytesIO(b"a, b\n1,2\n")
+    out2 = pl.read_csv(f2)
     expected = pl.DataFrame({"a": [1], "b": [2]})
-    assert out.frame_equal(expected)
+    assert out2.frame_equal(expected)
 
 
-def test_empty_bytes():
+def test_empty_bytes() -> None:
     b = b""
     with pytest.raises(ValueError):
         pl.read_csv(b)
 
 
-def test_pickle():
+def test_pickle() -> None:
     a = pl.Series("a", [1, 2])
     b = pickle.dumps(a)
     out = pickle.loads(b)
@@ -290,7 +292,7 @@ def test_pickle():
     assert df.frame_equal(out, null_equal=True)
 
 
-def test_copy():
+def test_copy() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
     assert copy.copy(df).frame_equal(df, True)
     assert copy.deepcopy(df).frame_equal(df, True)
@@ -300,7 +302,7 @@ def test_copy():
     assert copy.deepcopy(a).series_equal(a, True)
 
 
-def test_to_json():
+def test_to_json() -> None:
     # tests if it runs if no arg given
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert (
@@ -308,7 +310,7 @@ def test_to_json():
     )
 
 
-def test_ipc_schema():
+def test_ipc_schema() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
     f = io.BytesIO()
     df.to_ipc(f)
@@ -317,18 +319,18 @@ def test_ipc_schema():
     assert pl.read_ipc_schema(f) == {"a": pl.Int64, "b": pl.Utf8, "c": pl.Boolean}
 
 
-def test_categorical_round_trip():
+def test_categorical_round_trip() -> None:
     df = pl.DataFrame({"ints": [1, 2, 3], "cat": ["a", "b", "c"]})
     df = df.with_column(pl.col("cat").cast(pl.Categorical))
 
     tbl = df.to_arrow()
     assert "dictionary" in str(tbl["cat"].type)
 
-    df = pl.from_arrow(tbl)
-    assert df.dtypes == [pl.Int64, pl.Categorical]
+    df2: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore
+    assert df2.dtypes == [pl.Int64, pl.Categorical]
 
 
-def test_csq_quote_char():
+def test_csq_quote_char() -> None:
     rolling_stones = """
     linenum,last_name,first_name
     1,Jagger,Mick
@@ -345,7 +347,7 @@ def test_csq_quote_char():
     assert pl.read_csv(rolling_stones.encode(), quote_char=None).shape == (9, 3)
 
 
-def test_date_list_fmt():
+def test_date_list_fmt() -> None:
     df = pl.DataFrame(
         {
             "mydate": ["2020-01-01", "2020-01-02", "2020-01-05", "2020-01-05"],
@@ -366,12 +368,12 @@ Series: 'mydate' [list]
     )
 
 
-def test_csv_empty_quotes_char():
+def test_csv_empty_quotes_char() -> None:
     # panicked in: https://github.com/pola-rs/polars/issues/1622
     pl.read_csv(b"a,b,c,d\nA1,B1,C1,1\nA2,B2,C2,2\n", quote_char="")
 
 
-def test_ignore_parse_dates():
+def test_ignore_parse_dates() -> None:
     csv = """a,b,c
 1,i,16200126
 2,j,16250130
@@ -379,16 +381,18 @@ def test_ignore_parse_dates():
 4,l,17290009""".encode()
 
     headers = ["a", "b", "c"]
-    dtypes = {k: pl.Utf8 for k in headers}  # Forces Utf8 type for every column
+    dtypes: Dict[str, Type[DataType]] = {
+        k: pl.Utf8 for k in headers
+    }  # Forces Utf8 type for every column
     df = pl.read_csv(csv, columns=headers, dtype=dtypes)
     assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Utf8]
 
 
-def test_scan_csv():
+def test_scan_csv() -> None:
     df = pl.scan_csv(Path(__file__).parent / "files" / "small.csv")
     assert df.collect().shape == (4, 3)
 
 
-def test_scan_parquet():
+def test_scan_parquet() -> None:
     df = pl.scan_parquet(Path(__file__).parent / "files" / "small.parquet")
     assert df.collect().shape == (4, 3)

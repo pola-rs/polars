@@ -223,7 +223,7 @@ class LazyFrame:
 
     def sort(
         self,
-        by: Union[str, "Expr", tp.List["Expr"]],
+        by: Union[str, "Expr", tp.List[str], tp.List["Expr"]],
         reverse: Union[bool, tp.List[bool]] = False,
     ) -> "LazyFrame":
         """

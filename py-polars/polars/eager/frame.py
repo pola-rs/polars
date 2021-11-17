@@ -701,7 +701,7 @@ class DataFrame:
 
     def to_csv(
         self,
-        file: Optional[Union[TextIO, str, Path]] = None,
+        file: Optional[Union[TextIO, BytesIO, str, Path]] = None,
         has_headers: bool = True,
         sep: str = ",",
     ) -> Optional[str]:
@@ -740,7 +740,9 @@ class DataFrame:
         return None
 
     def to_ipc(
-        self, file: Union[BinaryIO, str, Path], compression: str = "uncompressed"
+        self,
+        file: Union[BinaryIO, BytesIO, str, Path],
+        compression: str = "uncompressed",
     ) -> None:
         """
         Write to Arrow IPC binary stream, or a feather file.
@@ -795,7 +797,7 @@ class DataFrame:
 
     def to_parquet(
         self,
-        file: Union[str, Path],
+        file: Union[str, Path, BytesIO],
         compression: Optional[str] = "snappy",
         use_pyarrow: bool = False,
         **kwargs: Any,
@@ -1473,7 +1475,7 @@ class DataFrame:
 
     def sort(
         self,
-        by: Union[str, "pl.Expr", tp.List["pl.Expr"]],
+        by: Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]],
         reverse: Union[bool, tp.List[bool]] = False,
         in_place: bool = False,
     ) -> Optional["DataFrame"]:

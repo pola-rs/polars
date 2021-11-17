@@ -1516,7 +1516,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_not_nan())
 
-    def is_in(self, other: "Series") -> "Series":
+    def is_in(self, other: Union["Series", tp.List]) -> "Series":
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -1539,7 +1539,7 @@ class Series:
         """
         if type(other) is list:
             other = Series("", other)
-        return wrap_s(self._s.is_in(other._s))
+        return wrap_s(self._s.is_in(other._s))  # type: ignore
 
     def arg_true(self) -> "Series":
         """
@@ -2023,7 +2023,7 @@ class Series:
     def __deepcopy__(self, memodict={}) -> "Series":  # type: ignore
         return self.clone()
 
-    def fill_null(self, strategy: Union[str, "pl.Expr"]) -> "Series":
+    def fill_null(self, strategy: Union[str, int, "pl.Expr"]) -> "Series":
         """
         Fill null values with a filling strategy.
 
@@ -2319,7 +2319,9 @@ class Series:
         """
         return wrap_s(self._s.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: "pl.Expr") -> "Series":
+    def shift_and_fill(
+        self, periods: int, fill_value: Union[int, "pl.Expr"]
+    ) -> "Series":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
@@ -2332,7 +2334,7 @@ class Series:
             Fill None values with the result of this expression.
         """
         return self.to_frame().select(
-            pl.col(self.name).shift_and_fill(periods, fill_value)
+            pl.col(self.name).shift_and_fill(periods, fill_value)  # type: ignore
         )[self.name]
 
     def zip_with(self, mask: "Series", other: "Series") -> "Series":
@@ -2999,7 +3001,7 @@ class StringNameSpace:
     def __init__(self, series: "Series"):
         self._s = series._s
 
-    def strptime(self, datatype: DataType, fmt: Optional[str] = None) -> Series:
+    def strptime(self, datatype: Type[DataType], fmt: Optional[str] = None) -> Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
 

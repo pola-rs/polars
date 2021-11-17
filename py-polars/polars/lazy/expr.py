@@ -1972,7 +1972,7 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[Date, Datetime],
+        datatype: Union[Type[Date], Type[Datetime]],
         fmt: Optional[str] = None,
     ) -> Expr:
         """
@@ -2329,7 +2329,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, int, float, str, tp.List[Expr], "pl.Series"],
+    expr: Union[Expr, int, float, str, tp.List[Expr], tp.List[str], "pl.Series"],
     str_to_lit: bool = True,
 ) -> Expr:
     """

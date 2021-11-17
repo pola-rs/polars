@@ -3,12 +3,12 @@ from datetime import date, datetime
 import polars as pl
 
 
-def test_fill_null():
+def test_fill_null() -> None:
     dt = datetime.strptime("2021-01-01", "%Y-%m-%d")
     s = pl.Series("A", [dt, None])
 
     for fill_val in (dt, pl.lit(dt)):
-        out = s.fill_null(fill_val)
+        out = s.fill_null(fill_val)  # type: ignore
 
         assert out.null_count() == 0
         assert out.dt[0] == dt
@@ -18,17 +18,17 @@ def test_fill_null():
     dt2 = date(2001, 1, 2)
     dt3 = date(2001, 1, 3)
     s = pl.Series("a", [dt1, dt2, dt3, None])
-    dt = date(2001, 1, 4)
-    for fill_val in (dt, pl.lit(dt)):
-        out = s.fill_null(fill_val)
+    dt_2 = date(2001, 1, 4)
+    for fill_val in (dt_2, pl.lit(dt_2)):  # type: ignore
+        out = s.fill_null(fill_val)  # type: ignore
 
         assert out.null_count() == 0
         assert out.dt[0] == dt1
         assert out.dt[1] == dt2
-        assert out.dt[-1] == dt
+        assert out.dt[-1] == dt_2
 
 
-def test_downsample():
+def test_downsample() -> None:
     s = pl.Series(
         "datetime",
         [
@@ -70,7 +70,7 @@ def test_downsample():
     assert out["a"].dtype == "datetime64[ns]"
 
 
-def test_filter_date():
+def test_filter_date() -> None:
     dataset = pl.DataFrame(
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
     )
@@ -83,7 +83,7 @@ def test_filter_date():
     assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
 
 
-def test_diff_datetime():
+def test_diff_datetime() -> None:
 
     df = pl.DataFrame(
         {
@@ -104,7 +104,7 @@ def test_diff_datetime():
     assert out[0] == out[1]
 
 
-def test_timestamp():
+def test_timestamp() -> None:
     a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Datetime)
     assert a.dt.timestamp() == [10000, 20000, 30000]
     out = a.dt.to_python_datetime()
@@ -117,7 +117,7 @@ def test_timestamp():
     assert isinstance(df.row(0)[0], datetime)
 
 
-def test_from_pydatetime():
+def test_from_pydatetime() -> None:
     dates = [
         datetime(2021, 1, 1),
         datetime(2021, 1, 2),
@@ -133,7 +133,7 @@ def test_from_pydatetime():
     # fmt dates and nulls
     print(s)
 
-    dates = [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3), None]
+    dates = [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3), None]  # type: ignore
     s = pl.Series("name", dates)
     assert s.dtype == pl.Date
     assert s.name == "name"
@@ -144,7 +144,7 @@ def test_from_pydatetime():
     print(s)
 
 
-def test_to_python_datetime():
+def test_to_python_datetime() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert (
         df.select(pl.col("a").cast(pl.Datetime).dt.to_python_datetime())["a"].dtype
@@ -155,7 +155,7 @@ def test_to_python_datetime():
     )
 
 
-def test_datetime_consistency():
+def test_datetime_consistency() -> None:
     dt = datetime(2021, 1, 1)
     df = pl.DataFrame({"date": [dt]})
     assert df["date"].dt[0] == dt
