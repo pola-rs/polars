@@ -1998,7 +1998,7 @@ class DataFrame:
         asof_by: Optional[Union[str, tp.List[str]]] = None,
         asof_by_left: Optional[Union[str, tp.List[str]]] = None,
         asof_by_right: Optional[Union[str, tp.List[str]]] = None,
-    ) -> Union["DataFrame", "pl.LazyFrame"]:
+    ) -> "DataFrame":
         """
         SQL like joins.
 
