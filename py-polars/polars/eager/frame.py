@@ -3150,7 +3150,7 @@ class DataFrame:
         """
         return self._df.row_tuple(index)
 
-    def rows(self) -> tp.List[Tuple[Any]]:
+    def rows(self) -> tp.List[Tuple]:
         """
         Convert columnar data to rows as python tuples.
         """
