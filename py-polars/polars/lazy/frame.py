@@ -388,6 +388,39 @@ class LazyFrame:
         ----------
         predicate
             Expression that evaluates to a boolean Series.
+
+        Examples
+        --------
+
+        >>> lf = pl.DataFrame({
+        >>>     "foo": [1, 2, 3],
+        >>>     "bar": [6, 7, 8],
+        >>>     "ham": ['a', 'b', 'c']
+        >>> }).lazy()
+        >>> # Filter on one condition
+        >>> lf.filter(pl.col("foo") < 3).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 7   ┆ b   │
+        └─────┴─────┴─────┘
+
+        >>>  # Filter on multiple conditions
+        >>> lf.filter((pl.col("foo") < 3) & (pl.col("ham") == "a")).collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        └─────┴─────┴─────┘
+
         """
         if isinstance(predicate, str):
             predicate = col(predicate)
