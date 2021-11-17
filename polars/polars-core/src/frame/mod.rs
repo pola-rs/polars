@@ -394,6 +394,22 @@ impl DataFrame {
     }
 
     /// Get the data types of the columns in the DataFrame.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
+    ///                                    "Fraction" => &[0.965, 0.035])?;
+    ///     
+    ///     assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn dtypes(&self) -> Vec<DataType> {
         self.columns.iter().map(|s| s.dtype().clone()).collect()
     }
@@ -416,6 +432,25 @@ impl DataFrame {
     }
 
     /// Get a reference to the schema fields of the DataFrame.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let earth: DataFrame = df!("Surface type" => &["Water", "Land"],
+    ///                                "Fraction" => &[0.708, 0.292])?;
+    ///     
+    ///     let f1: Field = Field::new("Surface type", DataType::Utf8);
+    ///     let f2: Field = Field::new("Fraction", DataType::Float64);
+    ///
+    ///     assert_eq!(earth.fields(), &[f1, f2]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn fields(&self) -> Vec<Field> {
         self.columns
             .iter()
