@@ -27,7 +27,8 @@ Polars is a blazingly fast DataFrames library implemented in Rust using Apache A
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
 ```python
->>> df = pl.DataFrame(
+>>> from polars import DataFrame, lit, col
+>>> df = DataFrame(
     {
         "A": [1, 2, 3, 4, 5],
         "fruits": ["banana", "banana", "apple", "apple", "banana"],
