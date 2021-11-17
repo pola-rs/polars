@@ -369,7 +369,7 @@ class DataFrame:
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
-        parse_dates: bool = True,
+        parse_dates: bool = False,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -796,7 +796,7 @@ class DataFrame:
     def to_parquet(
         self,
         file: Union[str, Path, BytesIO],
-        compression: str = "snappy",
+        compression: Optional[str] = "snappy",
         use_pyarrow: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -822,6 +822,8 @@ class DataFrame:
 
         **kwargs are passed to pyarrow.parquet.write_table
         """
+        if compression is None:
+            compression = "uncompressed"
         if isinstance(file, Path):
             file = str(file)
 

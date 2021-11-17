@@ -1,4 +1,4 @@
-use arrow::array::{Array, BooleanArray};
+use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitChunks;
 use std::iter::Enumerate;
 pub mod float;
