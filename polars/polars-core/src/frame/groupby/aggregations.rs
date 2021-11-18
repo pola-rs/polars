@@ -553,7 +553,52 @@ impl AggList for Utf8Chunked {
     }
 }
 
-impl AggList for ListChunked {}
+impl AggList for ListChunked {
+    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        let mut can_fast_explode = true;
+        let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+
+        let mut list_values = Vec::with_capacity(groups.len());
+        groups.iter().for_each(|(_, idx)| {
+            let idx_len = idx.len();
+            if idx_len == 0 {
+                can_fast_explode = false;
+            }
+
+            length_so_far += idx_len as i64;
+            // Safety:
+            // group tuples are in bounds
+            unsafe {
+                let mut s = self.take_unchecked((idx.iter().map(|idx| *idx as usize)).into());
+                let arr = s.chunks.pop().unwrap();
+                list_values.push(arr);
+
+                // Safety:
+                // we know that offsets has allocated enough slots
+                offsets.push_unchecked(length_so_far);
+            }
+        });
+        if groups.is_empty() {
+            list_values.push(self.chunks[0].slice(0, 0).into())
+        }
+        let arrays = list_values.iter().map(|arr| &**arr).collect::<Vec<_>>();
+        let list_values: ArrayRef = arrow::compute::concat::concatenate(&arrays).unwrap().into();
+        let data_type = ListArray::<i64>::default_datatype(list_values.data_type().clone());
+        let arr = Arc::new(ListArray::<i64>::from_data(
+            data_type,
+            offsets.into(),
+            list_values,
+            None,
+        )) as ArrayRef;
+        let mut listarr = ListChunked::new_from_chunks(self.name(), vec![arr]);
+        if can_fast_explode {
+            listarr.set_fast_explode()
+        }
+        Some(listarr.into_series())
+    }
+}
 impl AggList for CategoricalChunked {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         match self.deref().agg_list(groups) {
