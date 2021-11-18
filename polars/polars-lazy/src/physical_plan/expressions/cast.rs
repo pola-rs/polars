@@ -67,7 +67,7 @@ impl PhysicalExpr for CastExpr {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         let s = ac.flat();
         let s = self.finish(s.as_ref())?;
-        ac.with_series(s);
+        ac.with_series(s, false);
         Ok(ac)
     }
 

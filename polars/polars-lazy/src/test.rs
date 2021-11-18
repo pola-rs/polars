@@ -2163,3 +2163,29 @@ fn test_take_consistency() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_groupby_on_lists() -> Result<()> {
+    let s0 = Series::new("", [1i32, 2, 3]);
+    let s1 = Series::new("groups", [4i32, 5]);
+
+    let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("arrays", 10, 10, DataType::Int32);
+    builder.append_series(&s0);
+    builder.append_series(&s1);
+    let s2 = builder.finish().into_series();
+
+    let df = DataFrame::new(vec![s1, s2])?;
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("groups")])
+        .agg([col("arrays").first()])
+        .collect()?;
+
+    assert_eq!(
+        out.column("arrays_first")?.dtype(),
+        &DataType::List(Box::new(DataType::Int32))
+    );
+
+    Ok(())
+}

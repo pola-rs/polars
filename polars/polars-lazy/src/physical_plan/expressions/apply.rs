@@ -74,20 +74,20 @@ impl PhysicalExpr for ApplyExpr {
                         })
                         .collect();
                     ca.rename(&name);
-                    ac.with_series(ca.into_series());
+                    ac.with_series(ca.into_series(), true);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
                     let s = self.function.call_udf(&mut [ac.flat().into_owned()])?;
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s);
+                    ac.with_series(s, false);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {
                     let s = self
                         .function
                         .call_udf(&mut [ac.aggregated().into_owned()])?;
-                    ac.with_series(s);
+                    ac.with_series(s, true);
                     Ok(ac)
                 }
             }
@@ -127,7 +127,7 @@ impl PhysicalExpr for ApplyExpr {
                         .collect();
                     ca.rename(&name);
                     let mut ac = acs.pop().unwrap();
-                    ac.with_series(ca.into_series());
+                    ac.with_series(ca.into_series(), true);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
@@ -139,7 +139,7 @@ impl PhysicalExpr for ApplyExpr {
                     let s = self.function.call_udf(&mut s)?;
                     let mut ac = acs.pop().unwrap();
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s);
+                    ac.with_series(s, true);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {
@@ -150,7 +150,7 @@ impl PhysicalExpr for ApplyExpr {
                     let s = self.function.call_udf(&mut s)?;
                     let mut ac = acs.pop().unwrap();
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s);
+                    ac.with_series(s, true);
                     Ok(ac)
                 }
             }

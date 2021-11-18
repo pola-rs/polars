@@ -94,7 +94,7 @@ impl PhysicalExpr for BinaryExpr {
             ));
         }
         let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
-        ac_l.combine_groups(ac_r).with_series(out);
+        ac_l.combine_groups(ac_r).with_series(out, false);
         Ok(ac_l)
     }
 
