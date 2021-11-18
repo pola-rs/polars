@@ -6,7 +6,8 @@ pub mod namespace;
 use crate::prelude::*;
 
 impl ListChunked {
-    pub(crate) fn set_fast_explode(&mut self) {
+    #[cfg(feature = "private")]
+    pub fn set_fast_explode(&mut self) {
         self.bit_settings |= 1 << 2;
     }
 
