@@ -183,7 +183,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         if matches!(self.0.dtype(), DataType::Utf8) {
             unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Utf8Chunked)) }
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 format!(
                     "cannot unpack Series: {:?} of type {:?} into utf8",
                     self.name(),
@@ -208,7 +208,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
             self.0.append(other.as_ref().as_ref());
             Ok(())
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
             ))
         }

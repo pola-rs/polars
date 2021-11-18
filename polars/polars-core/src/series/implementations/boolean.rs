@@ -216,7 +216,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
             self.0.append(other.as_ref().as_ref());
             Ok(())
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
             ))
         }

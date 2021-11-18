@@ -61,7 +61,7 @@ impl ListChunked {
         let length = self.len();
         for s in other {
             if s.dtype() != dtype {
-                return Err(PolarsError::DataTypeMisMatch(
+                return Err(PolarsError::SchemaMisMatch(
                     format!("cannot concat {:?} into a list of {:?}", s.dtype(), dtype).into(),
                 ));
             }

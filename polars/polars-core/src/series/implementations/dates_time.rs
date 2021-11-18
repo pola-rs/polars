@@ -294,7 +294,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Time) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const TimeChunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into Time",
                             self.name(),
@@ -309,7 +309,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Date) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DateChunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into Date",
                             self.name(),
@@ -324,7 +324,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Datetime) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DatetimeChunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into datetime",
                             self.name(),
@@ -357,7 +357,7 @@ macro_rules! impl_dyn_series {
                     self.0.append(other.as_ref().as_ref());
                     Ok(())
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         "cannot append Series; data types don't match".into(),
                     ))
                 }

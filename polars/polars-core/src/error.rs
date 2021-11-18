@@ -12,7 +12,7 @@ pub enum PolarsError {
     #[error("Invalid operation {0}")]
     InvalidOperation(ErrString),
     #[error("Data types don't match: {0}")]
-    DataTypeMisMatch(ErrString),
+    SchemaMisMatch(ErrString),
     #[error("Not found: {0}")]
     NotFound(String),
     #[error("Lengths don't match: {0}")]

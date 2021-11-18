@@ -445,7 +445,7 @@ impl Series {
                 .into_series();
             return Ok(s);
         }
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("{:?} is not a floating point datatype", self.dtype()).into(),
         ))
     }
@@ -462,7 +462,7 @@ impl Series {
             let s = ca.apply(|val| val.floor()).into_series();
             return Ok(s);
         }
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("{:?} is not a floating point datatype", self.dtype()).into(),
         ))
     }

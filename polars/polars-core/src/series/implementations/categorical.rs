@@ -175,7 +175,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         if matches!(self.0.dtype(), DataType::Categorical) {
             unsafe { Ok(&*(self as *const dyn SeriesTrait as *const CategoricalChunked)) }
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 format!(
                     "cannot unpack Series: {:?} of type {:?} into categorical",
                     self.name(),
@@ -200,7 +200,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             self.0.append(other.as_ref().as_ref());
             Ok(())
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
             ))
         }
