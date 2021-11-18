@@ -13,7 +13,7 @@ use std::iter::FromIterator;
 
 fn scan_foods_csv() -> LazyFrame {
     let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-    LazyCsvReader::new(path.to_string()).finish()
+    LazyCsvReader::new(path.to_string()).finish().unwrap()
 }
 
 pub(crate) fn fruits_cars() -> DataFrame {

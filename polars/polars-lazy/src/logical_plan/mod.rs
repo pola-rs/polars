@@ -26,7 +26,7 @@ use crate::utils::{
 };
 use crate::{prelude::*, utils};
 use polars_io::csv::NullValues;
-use polars_io::csv_core::utils::get_reader_bytes;
+use polars_io::csv_core::utils::{get_reader_bytes, is_compressed};
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;
@@ -37,6 +37,7 @@ mod projection;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 use projection::*;
+use std::io::{Read, Seek, SeekFrom};
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -871,9 +872,17 @@ impl LogicalPlanBuilder {
         quote_char: Option<u8>,
         null_values: Option<NullValues>,
         infer_schema_length: Option<usize>,
-    ) -> Self {
+    ) -> Result<Self> {
         let path = path.into();
-        let mut file = std::fs::File::open(&path).expect("could not open file");
+        let mut file = std::fs::File::open(&path)?;
+        let mut magic_nr = [0u8; 2];
+        file.read_exact(&mut magic_nr)?;
+        if is_compressed(&magic_nr) {
+            return Err(PolarsError::ComputeError(
+                "cannot scan compressed csv; use read_csv for compressed data".into(),
+            ));
+        }
+        file.seek(SeekFrom::Start(0))?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
         let schema = schema.unwrap_or_else(|| {
@@ -890,7 +899,7 @@ impl LogicalPlanBuilder {
             .expect("could not read schema");
             Arc::new(schema)
         });
-        LogicalPlan::CsvScan {
+        Ok(LogicalPlan::CsvScan {
             path,
             schema,
             options: CsvParserOptions {
@@ -909,7 +918,7 @@ impl LogicalPlanBuilder {
             predicate: None,
             aggregate: vec![],
         }
-        .into()
+        .into())
     }
 
     pub fn cache(self) -> Self {

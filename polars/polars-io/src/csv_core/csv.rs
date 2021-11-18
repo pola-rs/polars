@@ -127,6 +127,11 @@ impl<'a> CoreReader<'a> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
+        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
+        if is_compressed(&reader_bytes) {
+            return Err(PolarsError::ComputeError("cannot read compressed csv file; compile with feature 'decompress' or 'decompress-fast'".into()));
+        }
+
         // check if schema should be inferred
         let delimiter = delimiter.unwrap_or(b',');
 

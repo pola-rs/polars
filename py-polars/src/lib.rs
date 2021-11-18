@@ -30,7 +30,7 @@ pub mod prelude;
 pub mod series;
 pub mod utils;
 
-use crate::conversion::{get_df, get_pyseq, get_series, Wrap, get_lf};
+use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::error::PyPolarsEr;
 use crate::file::get_either_file;
 use crate::prelude::{DataType, PyDataType};
@@ -196,7 +196,6 @@ fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 fn concat_lf(lfs: &PyAny, rechunk: bool) -> PyResult<PyLazyFrame> {
     let (seq, len) = get_pyseq(lfs)?;
     let mut lfs = Vec::with_capacity(len);
-
 
     for res in seq.iter()? {
         let item = res?;

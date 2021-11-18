@@ -280,20 +280,28 @@ pub fn infer_file_schema(
     Ok((Schema::new(fields), records_count))
 }
 
+// magic numbers
+const GZIP: [u8; 2] = [31, 139];
+const ZLIB0: [u8; 2] = [0x78, 0x01];
+const ZLIB1: [u8; 2] = [0x78, 0x9C];
+const ZLIB2: [u8; 2] = [0x78, 0xDA];
+
+/// check if csv file is compressed
+pub fn is_compressed(bytes: &[u8]) -> bool {
+    bytes.starts_with(&ZLIB0)
+        || bytes.starts_with(&ZLIB1)
+        || bytes.starts_with(&ZLIB2)
+        || bytes.starts_with(&GZIP)
+}
+
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
-    // magic numbers
-    let gzip: [u8; 2] = [31, 139];
-    let zlib0: [u8; 2] = [0x78, 0x01];
-    let zlib1: [u8; 2] = [0x78, 0x9C];
-    let zlib2: [u8; 2] = [0x78, 0xDA];
-
-    if bytes.starts_with(&gzip) {
+    if bytes.starts_with(&GZIP) {
         let mut out = Vec::with_capacity(bytes.len());
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
         decoder.read_to_end(&mut out).ok()?;
         Some(out)
-    } else if bytes.starts_with(&zlib0) || bytes.starts_with(&zlib1) || bytes.starts_with(&zlib2) {
+    } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut out = Vec::with_capacity(bytes.len());
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
         decoder.read_to_end(&mut out).ok()?;
