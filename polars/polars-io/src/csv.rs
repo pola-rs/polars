@@ -429,7 +429,7 @@ where
             schema_overwrite: None,
             dtype_overwrite: None,
             sample_size: 1024,
-            chunk_size: 8192,
+            chunk_size: 1 << 16,
             low_memory: false,
             comment_char: None,
             null_values: None,
@@ -1263,6 +1263,7 @@ linenum,last_name,first_name
         Ok(())
     }
 
+    #[test]
     fn test_projection_and_quoting() -> Result<()> {
         let csv = "a,b,c,d
 A1,'B1',C1,1
