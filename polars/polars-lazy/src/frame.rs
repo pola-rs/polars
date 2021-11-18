@@ -149,7 +149,7 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    pub fn finish(self) -> LazyFrame {
+    pub fn finish(self) -> Result<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             self.path,
             self.delimiter,
@@ -165,11 +165,11 @@ impl<'a> LazyCsvReader<'a> {
             self.quote_char,
             self.null_values,
             self.infer_schema_length,
-        )
+        )?
         .build()
         .into();
         lf.opt_state.agg_scan_projection = true;
-        lf
+        Ok(lf)
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
+use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::*;
 use crate::series::PySeries;
 use polars::chunked_array::object::PolarsObjectSafe;
@@ -16,7 +17,6 @@ use pyo3::types::{PyDict, PySequence};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use crate::lazy::dataframe::PyLazyFrame;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
