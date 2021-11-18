@@ -718,10 +718,10 @@ impl DataFrame {
             .iter_mut()
             .zip(df.columns.iter())
             .try_for_each(|(left, right)| {
-                if left.dtype() != right.dtype() {
-                    return Err(PolarsError::DataTypeMisMatch(
+                if left.dtype() != right.dtype() || left.name() != right.name() {
+                    return Err(PolarsError::SchemaMisMatch(
                         format!(
-                            "cannot vstack: data types don't match of {:?} {:?}",
+                            "cannot vstack: schemas don't match of {:?} {:?}",
                             left, right
                         )
                         .into(),
@@ -2410,7 +2410,7 @@ impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
         let schema = first_batch.schema();
         for batch in batch_iter {
             if batch.schema() != schema {
-                return Err(PolarsError::DataTypeMisMatch(
+                return Err(PolarsError::SchemaMisMatch(
                     "All record batches must have the same schema".into(),
                 ));
             }

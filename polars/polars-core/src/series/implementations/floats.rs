@@ -313,7 +313,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Float32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Float32Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into f32",
                             self.name(),
@@ -328,7 +328,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Float64) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Float64Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into f64",
                             self.name(),
@@ -353,7 +353,7 @@ macro_rules! impl_dyn_series {
                     self.0.append(other.as_ref().as_ref());
                     Ok(())
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         "cannot append Series; data types don't match".into(),
                     ))
                 }

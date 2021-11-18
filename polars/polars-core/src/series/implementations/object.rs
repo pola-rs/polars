@@ -108,7 +108,7 @@ where
             ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
             Ok(())
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
             ))
         }
