@@ -77,7 +77,6 @@ trait ParsedBuffer<T> {
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
-        start_pos: usize,
         _needs_escaping: bool,
     ) -> Result<()>;
 }
@@ -91,7 +90,6 @@ where
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
-        _start_pos: usize,
         _needs_escaping: bool,
     ) -> Result<()> {
         if bytes.is_empty() {
@@ -159,7 +157,6 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
-        _start_pos: usize,
         needs_escaping: bool,
     ) -> Result<()> {
         // Only for lossy utf8 we check utf8 now. Otherwise we check all utf8 at the end.
@@ -224,7 +221,6 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
-        start_pos: usize,
         _needs_escaping: bool,
     ) -> Result<()> {
         if bytes.eq_ignore_ascii_case(b"false") {
@@ -236,8 +232,7 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
         } else {
             return Err(PolarsError::ComputeError(
                 format!(
-                    "Error while parsing value {} at byte position {} as boolean",
-                    start_pos,
+                    "Error while parsing value {} as boolean",
                     String::from_utf8_lossy(bytes)
                 )
                 .into(),
@@ -400,7 +395,6 @@ impl Buffer {
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
-        start_pos: usize,
         needs_escaping: bool,
     ) -> Result<()> {
         use Buffer::*;
@@ -409,7 +403,6 @@ impl Buffer {
                 buf,
                 bytes,
                 ignore_errors,
-                start_pos,
                 needs_escaping,
             ),
             Int32(buf) => {
@@ -417,7 +410,6 @@ impl Buffer {
                     buf,
                     bytes,
                     ignore_errors,
-                    start_pos,
                     needs_escaping,
                 )
             }
@@ -426,7 +418,6 @@ impl Buffer {
                     buf,
                     bytes,
                     ignore_errors,
-                    start_pos,
                     needs_escaping,
                 )
             }
@@ -435,7 +426,6 @@ impl Buffer {
                     buf,
                     bytes,
                     ignore_errors,
-                    start_pos,
                     needs_escaping,
                 )
             }
@@ -444,7 +434,6 @@ impl Buffer {
                     buf,
                     bytes,
                     ignore_errors,
-                    start_pos,
                     needs_escaping,
                 )
             }
@@ -453,7 +442,6 @@ impl Buffer {
                     buf,
                     bytes,
                     ignore_errors,
-                    start_pos,
                     needs_escaping,
                 )
             }
@@ -462,7 +450,6 @@ impl Buffer {
                     buf,
                     bytes,
                     ignore_errors,
-                    start_pos,
                     needs_escaping,
                 )
             }
@@ -470,7 +457,6 @@ impl Buffer {
                 buf,
                 bytes,
                 ignore_errors,
-                start_pos,
                 needs_escaping,
             ),
         }
