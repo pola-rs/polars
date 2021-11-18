@@ -48,6 +48,7 @@ use crate::utils::resolve_homedir;
 use crate::{PhysicalIoExpr, ScanAggregation, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
+#[cfg(feature = "temporal")]
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;

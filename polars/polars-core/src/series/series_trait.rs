@@ -8,6 +8,7 @@ use crate::chunked_array::ChunkIdIter;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
+#[cfg(feature = "temporal")]
 use std::ops::Deref;
 use std::sync::Arc;
 
