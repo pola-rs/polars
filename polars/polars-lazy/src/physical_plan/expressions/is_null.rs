@@ -37,7 +37,7 @@ impl PhysicalExpr for IsNullExpr {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
         let s = ac.flat();
         let s = s.is_null().into_series();
-        ac.with_series(s);
+        ac.with_series(s, false);
 
         Ok(ac)
     }
