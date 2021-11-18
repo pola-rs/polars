@@ -1,12 +1,21 @@
+use crate::conversion::prelude::*;
 use crate::datatypes::*;
 use crate::error::JsPolarsEr;
-use crate::conversion::prelude::*;
+use polars::series::ops::NullBehavior;
+
+// use neon::object::PropertyKey;
 use neon::prelude::*;
+// use neon::types::JsDate;
+// use polars::datatypes::*;
+// use polars::frame::row::Row;
+// use polars::prelude::Utf8Chunked;
 use polars::prelude::*;
 use std::hash::{Hash, Hasher};
+// use std::path::PathBuf;
 
 use std::fmt::{Display, Formatter};
 
+use polars::chunked_array::object::*;
 
 #[derive(Debug)]
 pub struct Wrap<T>(pub T);
@@ -25,9 +34,6 @@ impl<T> From<T> for Wrap<T> {
   }
 }
 impl<T> Finalize for Wrap<T> {}
-
-
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectValue(pub JsAnyValue);
@@ -76,7 +82,6 @@ impl<'a> FromJsValue<'a> for ObjectValue {
   }
 }
 
-
 impl<'a> BoxedFromJsObject<'a> for Handle<'a, JsObject> {
   fn extract_boxed<V: FromJsBox<'a>>(
     &self,
@@ -85,6 +90,14 @@ impl<'a> BoxedFromJsObject<'a> for Handle<'a, JsObject> {
   ) -> JsResult<'a, JsBox<V>> {
     let jsv = self.get(cx, key).unwrap();
     V::extract_boxed(cx, jsv)
+  }
+}
+/// # Safety
+///
+/// The caller is responsible for checking that val is Object otherwise UB
+impl From<&dyn PolarsObjectSafe> for &ObjectValue {
+  fn from(val: &dyn PolarsObjectSafe) -> Self {
+    unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
   }
 }
 
@@ -98,45 +111,75 @@ pub(crate) fn get_params<'a>(cx: &mut FunctionContext<'a>) -> NeonResult<Wrapped
   Ok(obj.into())
 }
 
+pub(crate) fn str_to_null_behavior(null_behavior: String) -> NeonResult<NullBehavior> {
+  let null_behavior = match null_behavior.as_str() {
+    "drop" => NullBehavior::Drop,
+    "ignore" => NullBehavior::Ignore,
+    _ => return Err(JsPolarsEr::Other("use one of 'drop', 'ignore'".to_string()).into()),
+  };
+  Ok(null_behavior)
+}
+
+pub(crate) fn str_to_rankmethod(method: String) -> NeonResult<RankMethod> {
+  let method = match method.as_str() {
+    "min" => RankMethod::Min,
+    "max" => RankMethod::Max,
+    "average" => RankMethod::Average,
+    "dense" => RankMethod::Dense,
+    "ordinal" => RankMethod::Ordinal,
+    "random" => RankMethod::Random,
+    _ => {
+      return Err(
+        JsPolarsEr::Other("use one of 'avg, min, max, dense, ordinal'".to_string()).into(),
+      )
+    }
+  };
+  Ok(method)
+}
+
+pub(crate) fn parse_strategy(strat: String) -> FillNullStrategy {
+  match strat.as_str() {
+    "backward" => FillNullStrategy::Backward,
+    "forward" => FillNullStrategy::Forward,
+    "min" => FillNullStrategy::Min,
+    "max" => FillNullStrategy::Max,
+    "mean" => FillNullStrategy::Mean,
+    "zero" => FillNullStrategy::Zero,
+    "one" => FillNullStrategy::One,
+    s => panic!("Strategy {} not supported", s),
+  }
+}
 
 macro_rules! impl_conversions {
   ($jstype:ty, $jsmethod:ident, $type:ty) => {
-    impl<'a> ToJsValue<'a, $jstype> for $type {
+    impl<'a> ToJsValue<'a> for $type {
+      type V = $jstype;
       fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, $jstype> {
         cx.$jsmethod(self)
       }
     }
     impl<'a> FromJsValue<'a> for $type {
       fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-        let js_num: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
-        Ok(js_num.value(cx) as $type)
+        let jsv: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
+        Ok(jsv.value(cx) as $type)
       }
     }
-    impl<'a> FromJsValue<'a> for Option<$type> {
-      fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-        let js_num: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
-        Ok(Some(js_num.value(cx) as $type))
-      }
-    }
+
   };
 }
 macro_rules! impl_casted_conversions {
   ($jstype:ty, $jsmethod:ident, $type:ty, $cast:ty) => {
-    impl<'a> ToJsValue<'a, $jstype> for $type {
+    impl<'a> ToJsValue<'a> for $type {
+      type V = $jstype;
       fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, $jstype> {
         cx.$jsmethod(self as $cast)
       }
     }
+
     impl<'a> FromJsValue<'a> for $type {
       fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
         let js_num: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
         Ok(js_num.value(cx) as $type)
-      }
-    }
-    impl<'a> FromJsValue<'a> for Option<$type> {
-      fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-        let js_num: Handle<$jstype> = jsv.downcast_or_throw::<$jstype, _>(cx)?;
-        Ok(Some(js_num.value(cx) as $type))
       }
     }
   };
@@ -147,10 +190,10 @@ impl_conversions!(JsNumber, number, f64);
 impl_conversions!(JsNumber, number, i8);
 impl_conversions!(JsNumber, number, i16);
 impl_conversions!(JsNumber, number, i32);
-impl_casted_conversions!(JsNumber, number, i64, f64);
 impl_conversions!(JsNumber, number, u8);
 impl_conversions!(JsNumber, number, u16);
 impl_conversions!(JsNumber, number, u32);
+impl_conversions!(JsBoolean, boolean, bool);
+impl_casted_conversions!(JsNumber, number, i64, f64);
 impl_casted_conversions!(JsNumber, number, u64, f64);
 impl_casted_conversions!(JsNumber, number, usize, f64);
-impl_conversions!(JsBoolean, boolean, bool);

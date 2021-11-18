@@ -25,7 +25,7 @@ use std::path::PathBuf;
 ///   let s = String::from_js(cx, jsv);
 /// }
 /// ```
-pub trait FromJsValue<'a>: Sized + Send + 'a {
+pub trait FromJsValue<'a>: Sized + Send {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self>;
 }
 
@@ -34,21 +34,21 @@ pub trait FromJsValue<'a>: Sized + Send + 'a {
 ///
 /// ```rust
 /// fn do_something(cx: &mut FunctionContext<'a>,obj: Handle<'a, JsObject>) -> NeonResult<String> {
-/// 
+///
 ///   let obj = cx.empty_object();
 ///   let expected = String::from("value");
 ///   let js_str = cx.string(expected);
-/// 
+///
 ///   obj.set(cx, "name", js_str)?;
-/// 
+///
 ///   let obj: WrappedObject = obj.into();
 ///   let actual: String = obj.get_as::<String>(cx, "value")
-/// 
+///
 ///   assert_eq!(actual, expected);
 /// }
 /// ```
 pub trait FromJsObject<'a, K: PropertyKey>: Sized {
-  fn get_as<V: FromJsValue<'a>>(self, cx: &mut FunctionContext<'a>, key: K) -> NeonResult<V>; 
+  fn get_as<V: FromJsValue<'a>>(self, cx: &mut FunctionContext<'a>, key: K) -> NeonResult<V>;
 }
 
 /// Utility to easily wrap and unwrap a js box
@@ -68,9 +68,7 @@ pub trait BoxedFromJsObject<'a>: Sized {
   ) -> JsResult<'a, JsBox<V>>;
 }
 
-
 // impl<'a, K> FromJsObject<'a, K> for Handle<'a, JsObject> where K: PropertyKey {}
-
 
 impl<'a, T> FromJsBox<'a> for T
 where
@@ -85,7 +83,6 @@ where
   }
 }
 
-
 impl<'a> FromJsValue<'a> for &'a str {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
     let js_string: Handle<JsString> = jsv.downcast_or_throw::<JsString, _>(cx)?;
@@ -93,7 +90,24 @@ impl<'a> FromJsValue<'a> for &'a str {
     Ok(Box::leak::<'a>(s.into_boxed_str()))
   }
 }
-
+impl<'a, V> FromJsValue<'a> for Option<V> where V: FromJsValue<'a> {
+  fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
+    let v = V::from_js(cx, jsv);
+    match v {
+      Ok(v) => Ok(Some(v)),
+      Err(_) => Ok(None),
+    }
+  }
+}
+// impl<'a> FromJsValue<'a> for Option<bool> {
+//   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
+//     let v = bool::from_js(cx, jsv);
+//     match v {
+//       Ok(v) => Ok(Some(v)),
+//       Err(_) => Ok(None),
+//     }
+//   }
+// }
 impl<'a> FromJsValue<'a> for PathBuf {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
     let js_string: Handle<JsString> = jsv.downcast_or_throw::<JsString, _>(cx)?;
@@ -113,7 +127,7 @@ where
 
     let mut builder = PrimitiveChunkedBuilder::new("", arr.len());
 
-    for item in arr.iter() {  
+    for item in arr.iter() {
       match item.extract::<T::Native>(cx) {
         Ok(val) => builder.append_value(val),
         Err(_) => builder.append_null(),
@@ -131,7 +145,7 @@ impl<'a> FromJsValue<'a> for Wrap<Utf8Chunked> {
     let mut builder = Utf8ChunkedBuilder::new("", len, len * 25);
 
     for value in arr.iter() {
-      match  value.extract::<&'a str>(cx) {
+      match value.extract::<&'a str>(cx) {
         Ok(val) => builder.append_value(val),
         Err(_) => builder.append_null(),
       }
@@ -139,7 +153,6 @@ impl<'a> FromJsValue<'a> for Wrap<Utf8Chunked> {
     Ok(Wrap(builder.finish()))
   }
 }
-
 
 impl<'a, V> FromJsValue<'a> for Vec<V>
 where
@@ -160,18 +173,41 @@ where
     )
   }
 }
+// impl<'a, V> FromJsValue<'a> for Option<Vec<V>>
+// where
+//   V: FromJsValue<'a>,
+// {
+//   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
+//     let arr = jsv.downcast::<JsArray, _>(cx);
+//     match arr {
+//       Ok(arr) => Ok(Some(
+//         arr
+//           .to_vec(cx)?
+//           .iter()
+//           .map(|v| {
+//             let wv: WrappedValue = (*v).into();
+//             wv.extract::<V>(cx)
+//               .expect("all items in series must be of same type")
+//           })
+//           .collect(),
+//       )),
+//       Err(_) => Ok(None),
+//     }
+//   }
+// }
 
 /// # Safety
 /// i cant seem to find a workaround for getting the string values.
 /// I can do it with a box.leak, i think there has to be a better way around this
-impl<'a> FromJsValue<'a> for Wrap<AnyValue<'a>> {
+impl<'a> FromJsValue<'a> for Wrap<AnyValue<'_>> {
   fn from_js(cx: &mut FunctionContext<'a>, jsv: Handle<'a, JsValue>) -> NeonResult<Self> {
-    let jsv: WrappedValue = jsv.into();
+    let jsv: WrappedValue<'a> = jsv.into();
     if jsv.is_a::<JsBoolean>(cx) {
       let v = jsv.extract::<bool>(cx)?;
       Ok(AnyValue::Boolean(v).into())
     } else if jsv.is_a::<JsString>(cx) {
-      let v = jsv.extract::<&'a str>(cx)?;
+      let v = jsv.extract::<String>(cx)?;
+      let v = Box::leak::<'_>(v.into_boxed_str());
       Ok(AnyValue::Utf8(v).into())
     } else if jsv.is_a::<JsNumber>(cx) {
       let v = jsv.extract::<f64>(cx)?;
@@ -184,20 +220,20 @@ impl<'a> FromJsValue<'a> for Wrap<AnyValue<'a>> {
       let js_date: Handle<JsDate> = jsv.0.downcast_or_throw(cx)?;
       let v = js_date.value(cx);
       Ok(AnyValue::Datetime(v as i64).into())
-    } else if jsv.is_a::<JsArray>(cx) {
-      todo!()
-    } else if jsv.is_a::<JsObject>(cx) {
-      todo!()
     } else if jsv.is_a::<JsBuffer>(cx) {
       let js_buff: Handle<JsBuffer> = jsv.0.downcast_or_throw::<JsBuffer, _>(cx)?;
       let buff: Vec<u8> = cx.borrow(&js_buff, |data| data.as_slice::<u8>().to_vec());
       match String::from_utf8(buff) {
         Ok(s) => {
-          let str_from_buff = Box::leak::<'a>(s.into_boxed_str());
+          let str_from_buff = Box::leak::<'_>(s.into_boxed_str());
           Ok(AnyValue::Utf8(str_from_buff).into())
         }
         Err(_) => Err(JsPolarsEr::Other("unknown buffer type".to_string()).into()),
       }
+    } else if jsv.is_a::<JsArray>(cx) {
+      todo!()
+    } else if jsv.is_a::<JsObject>(cx) {
+      todo!()
     } else {
       let unknown = jsv.0.to_string(cx)?.value(cx);
       let err = JsPolarsEr::Other(format!("row type not supported {:?}", unknown));

@@ -15,6 +15,7 @@ crate-type = ["cdylib"]
 
 
 [dependencies]
+ahash = "0.7"
 thiserror = "1.0.20"
 polars-core = { path = "../polars/polars-core", default-features = false }
 

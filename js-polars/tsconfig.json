@@ -9,6 +9,17 @@
     "skipLibCheck": true,
     "rootDir": "./polars",
     "allowSyntheticDefaultImports": true,
-    "allowJs": true
-  }
+    "allowJs": true,
+    "paths": {
+      "@polars": [
+        "./polars",
+      ],
+      "@polars/*": [
+        "./polars/*"
+      ]
+    }
+  },
+  "exclude": [
+    "./examples/*"
+  ]
 }

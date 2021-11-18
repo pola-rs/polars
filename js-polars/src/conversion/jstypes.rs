@@ -1,11 +1,13 @@
 use crate::datatypes::*;
-use crate::error::JsPolarsEr;
+// use crate::error::JsPolarsEr;
 
+use crate::conversion::prelude::*;
 use neon::object::PropertyKey;
 use neon::prelude::*;
 use neon::types::JsDate;
-use crate::conversion::prelude::*;
 use std::collections::HashMap;
+
+
 /// Wrap `Handle<JsObject>` to provide some much needed utility methods to it
 #[derive(Clone)]
 pub struct WrappedObject<'a>(pub Handle<'a, JsObject>);
@@ -24,6 +26,13 @@ impl<'a> WrappedObject<'a> {
     let jsv = self.0.get(cx, key)?;
     V::from_js(cx, jsv)
   }
+  pub fn get<K: PropertyKey>(
+    &self,
+    cx: &mut FunctionContext<'a>,
+    key: K,
+  ) -> NeonResult<WrappedValue> {
+    Ok(self.0.get(cx, key)?.into())
+  }
   pub fn get_arr<K: PropertyKey>(
     &self,
     cx: &mut FunctionContext<'a>,
@@ -35,7 +44,10 @@ impl<'a> WrappedObject<'a> {
     Ok((js_arr, size))
   }
 
-  pub fn into_hash_map(&self, cx: &mut FunctionContext<'a>) -> NeonResult<HashMap<String, WrappedValue<'a>>> {
+  pub fn into_hash_map(
+    &self,
+    cx: &mut FunctionContext<'a>,
+  ) -> NeonResult<HashMap<String, WrappedValue<'a>>> {
     let mut hmap: HashMap<String, WrappedValue<'a>> = HashMap::new();
     let keys: Handle<JsValue> = self.0.get_own_property_names(cx)?.upcast();
     let keys: WrappedValue = keys.into();
@@ -98,7 +110,6 @@ impl<'a> WrappedObject<'a> {
   }
 }
 
-
 impl<'a> BoxedFromJsObject<'a> for WrappedObject<'a> {
   fn extract_boxed<V: FromJsBox<'a>>(
     &self,
@@ -109,7 +120,6 @@ impl<'a> BoxedFromJsObject<'a> for WrappedObject<'a> {
     V::extract_boxed(cx, jsv)
   }
 }
-
 
 #[derive(Clone)]
 pub struct WrappedValue<'a>(pub Handle<'a, JsValue>);
@@ -125,6 +135,9 @@ impl<'a> WrappedValue<'a> {
   }
   pub fn is_a<'b, U: Value>(&self, cx: &mut FunctionContext<'a>) -> bool {
     self.0.is_a::<U, _>(cx)
+  }
+  pub fn is_null_or_undefined(&self, cx: &mut FunctionContext<'a>) -> bool {
+    self.0.is_a::<JsUndefined, _>(cx) || self.0.is_a::<JsNull, _>(cx)
   }
   pub fn dtype(&self, cx: &mut FunctionContext<'a>) -> JsDataType {
     if self.is_a::<JsBoolean>(cx) {
@@ -149,5 +162,8 @@ impl<'a> WrappedValue<'a> {
     let js_arr: Vec<Handle<JsValue>> = self.0.downcast_or_throw::<JsArray, _>(cx)?.to_vec(cx)?;
     let values: Vec<WrappedValue> = js_arr.iter().map(|v| WrappedValue(*v)).collect();
     Ok(values)
+  }
+  pub fn to_obj(&self, cx: &mut FunctionContext<'a>) -> NeonResult<WrappedObject<'a>> {
+    Ok(self.0.downcast_or_throw::<JsObject, _>(cx)?.into())
   }
 }

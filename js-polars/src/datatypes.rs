@@ -184,16 +184,16 @@ impl Into<DataType> for JsDataType {
   }
 }
 
-impl<'a> ToJsValue<'a, JsNumber> for JsDataType {
+impl<'a> ToJsValue<'a> for JsDataType {
+  type V = JsNumber;
   fn into_js(self, cx: &mut FunctionContext<'a>) -> Handle<'a, JsNumber> {
     cx.number(self as u8)
   }
 }
 impl FromJsValue<'_> for JsDataType {
   fn from_js(cx: &mut FunctionContext<'_>, jsv: Handle<'_, JsValue>) -> NeonResult<Self> {
-    let js_str = jsv.downcast_or_throw::<JsString, _>(cx)?.value(cx);
-    let s = js_str.as_str();
-    Ok(str_to_polarstype(s).into())
+    let n = jsv.downcast_or_throw::<JsNumber, _>(cx)?.value(cx) as u8;
+    Ok(num_to_polarstype(n).into())
   }
 }
 
@@ -209,26 +209,28 @@ impl JsPolarsNumericType for Int64Type {}
 impl JsPolarsNumericType for Float32Type {}
 impl JsPolarsNumericType for Float64Type {}
 
-pub fn str_to_polarstype(s: &str) -> DataType {
-  match s {
-    "UInt8" => DataType::UInt8,
-    "UInt16" => DataType::UInt16,
-    "UInt32" => DataType::UInt32,
-    "UInt64" => DataType::UInt64,
-    "Int8" => DataType::Int8,
-    "Int16" => DataType::Int16,
-    "Int32" => DataType::Int32,
-    "Int64" => DataType::Int64,
-    "Float32" => DataType::Float32,
-    "Float64" => DataType::Float64,
-    "Boolean" => DataType::Boolean,
-    "Utf8" => DataType::Utf8,
-    "Date" => DataType::Date,
-    "Datetime" => DataType::Datetime,
-    "Time" => DataType::Time,
-    "List" => DataType::List(DataType::Null.into()),
-    "Categorical" => DataType::Categorical,
-    "Object" => DataType::Object("object"),
-    tp => panic!("Type {} not implemented in str_to_polarstype", tp),
+
+// Don't change the order of these!
+pub fn num_to_polarstype(n: u8) -> DataType {
+  match n {
+    0 => DataType::Int8,
+    1 => DataType::Int16,
+    2 => DataType::Int32,
+    3 => DataType::Int64,
+    4 => DataType::UInt8,
+    5 => DataType::UInt16,
+    6 => DataType::UInt32,
+    7 => DataType::UInt64,
+    8 => DataType::Float32, 
+    9 => DataType::Float64, 
+    10 => DataType::Boolean, 
+    11 => DataType::Utf8, 
+    12 => DataType::List(DataType::Null.into()), 
+    13 => DataType::Date, 
+    14 => DataType::Datetime, 
+    15 => DataType::Time, 
+    16 => DataType::Object("object"),
+    17 => DataType::Categorical,
+    tp => panic!("Type {} not implemented in num_to_polarstype", tp),
   }
 }

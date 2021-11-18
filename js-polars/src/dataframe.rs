@@ -15,14 +15,39 @@ impl From<DataFrame> for JsDataFrame {
         Self { df }
     }
 }
+impl JsDataFrame {
+    pub fn to_object<'a>(cx: &mut ModuleContext<'a>) -> JsResult<'a, JsObject> {
+        let df = cx.empty_object();
+        let new_obj: Handle<JsFunction> = JsFunction::new(cx, Self::new_obj)?;
+        df.set(cx, "new_obj", new_obj)?;
 
+        let read_csv = JsFunction::new(cx, Self::read_csv)?;
+        let from_rows = JsFunction::new(cx, Self::from_rows)?;
+        let head = JsFunction::new(cx, Self::head)?;
+        let get_fmt = JsFunction::new(cx, Self::get_fmt)?;
+        let shape = JsFunction::new(cx, Self::shape)?;
+        let height = JsFunction::new(cx, Self::height)?;
+        let width = JsFunction::new(cx, Self::width)?;
+        let is_empty = JsFunction::new(cx, Self::is_empty)?;
+        df.set(cx, "read_csv", read_csv)?;
+        df.set(cx, "from_rows", from_rows)?;
+        df.set(cx, "head", head)?;
+        df.set(cx, "get_fmt", get_fmt)?;
+        df.set(cx, "shape", shape)?;
+        df.set(cx, "height", height)?;
+        df.set(cx, "width", width)?;
+        df.set(cx, "is_empty", is_empty)?;
+        Ok(df)
+    }
+}
 impl Finalize for JsDataFrame {}
-type DataFrameResult<'a> = JsResult<'a, JsBox<JsDataFrame>>;
+pub type DataFrameResult<'a> = JsResult<'a, JsBox<JsDataFrame>>;
 
 impl JsDataFrame {
     pub fn new(df: DataFrame) -> Self {
         JsDataFrame { df }
     }
+
     pub fn new_obj(mut cx: FunctionContext) -> DataFrameResult {
         let params = get_params(&mut cx)?;
         let (js_arr, capacity) = params.get_arr(&mut cx, "columns")?;
@@ -35,7 +60,6 @@ impl JsDataFrame {
         let jsdf = JsDataFrame::from(df);
         Ok(jsdf.into_js_box(&mut cx))
     }
-    
     fn finish_from_rows(rows: Vec<Row>) -> NeonResult<Self> {
         // replace inferred nulls with boolean
         let schema = rows_to_schema(&rows);
@@ -124,23 +148,32 @@ impl JsDataFrame {
     }
 
     pub fn from_rows(mut cx: FunctionContext) -> DataFrameResult {
-        todo!()
-        // let params = get_params(&mut cx)?;
-        // let (js_arr, _) = params.get_arr(&mut cx, "js_objects")?;
-        // let (rows, names) = objs_to_rows(&mut cx, &js_arr)?;
-        // let mut jsdf = Self::finish_from_rows(rows)?;
-        // jsdf.df.set_column_names(&names).map_err(JsPolarsEr::from)?;
-        // Ok(jsdf.into_js_box(&mut cx))
+        let params = get_params(&mut cx)?;
+        let arr = params.get_arr_values(&mut cx, "js_objects")?;
+        let names: Vec<String> = arr[0].to_obj(&mut cx)?.keys(&mut cx)?;
+        let rows: Vec<Row> = arr
+            .iter()
+            .map(|v| {
+                let value = v.to_obj(&mut cx).unwrap().values(&mut cx).unwrap();
+                Row(value
+                    .iter()
+                    .map(|v| v.extract::<Wrap<AnyValue<'_>>>(&mut cx).unwrap().0)
+                    .collect())
+            })
+            .collect();
+        let mut jsdf = Self::finish_from_rows(rows)?;
+        jsdf.df.set_column_names(&names).map_err(JsPolarsEr::from)?;
+        Ok(jsdf.into_js_box(&mut cx))
     }
 
     pub fn from_js_array(mut _cx: FunctionContext) -> DataFrameResult {
         unimplemented!()
     }
+
     pub fn into_js(mut cx: FunctionContext) -> JsResult<JsObject> {
         let obj: Handle<JsObject> = cx
             .argument::<JsObject>(0)
             .map_err(|e| JsPolarsEr::Other(format!("Internal Error {}", e)))?;
-
         Ok(obj)
     }
 }
