@@ -8,11 +8,18 @@ except ImportError as e:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
-# mypy needs these imported explicitly
-from polars.eager import DataFrame, Series, wrap_df, wrap_s
-from polars.lazy.expr import Expr, wrap_expr
-from polars.lazy.frame import LazyFrame, wrap_ldf
-from polars.lazy.functions import (
+from polars.internals.frame import DataFrame
+from polars.internals.functions import (
+    arg_where,
+    concat,
+    date_range,
+    get_dummies,
+    repeat,
+)
+from polars.internals.lazy_frame import LazyFrame
+from polars.internals.lazy_functions import _date as date
+from polars.internals.lazy_functions import _datetime as datetime
+from polars.internals.lazy_functions import (
     all,
     any,
     apply,
@@ -50,32 +57,16 @@ from polars.lazy.functions import (
     to_list,
     var,
 )
+from polars.internals.series import (  # TODO: this top-level import fixes a number of tests, but we should not want this import here
+    Series,
+    wrap_s,
+)
+from polars.internals.whenthen import when
 
-from . import cfg, convert, datatypes, eager, functions, io, lazy, string_cache
-from .cfg import *
+# TODO: remove wildcard imports
 from .convert import *
 from .datatypes import *
-from .eager import *
-from .functions import *
 from .io import *
-
-# explicit imports make mypy happy
-from .lazy import *
-from .lazy import _date as date
-from .lazy import _datetime as datetime
-from .lazy import col, lit
-from .lazy import to_list as list
-from .string_cache import *
-
-__all__ = (
-    convert.__all__
-    + datatypes.__all__
-    + eager.__all__
-    + functions.__all__
-    + io.__all__
-    + lazy.__all__
-    + string_cache.__all__
-    + cfg.__all__
-)
+from .string_cache import StringCache
 
 __version__ = version()

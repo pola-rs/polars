@@ -1,11 +1,11 @@
 import os
 from typing import Type
 
-import polars as pl
-
 __all__ = [
     "Config",
 ]
+
+from polars.string_cache import toggle_string_cache
 
 
 class Config:
@@ -73,7 +73,7 @@ class Config:
         """
         Turn on the global string cache
         """
-        pl.toggle_string_cache(True)
+        toggle_string_cache(True)
         return cls
 
     @classmethod
@@ -81,5 +81,5 @@ class Config:
         """
         Turn off the global string cache
         """
-        pl.toggle_string_cache(False)
+        toggle_string_cache(False)
         return cls

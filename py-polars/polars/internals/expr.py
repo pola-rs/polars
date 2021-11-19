@@ -12,6 +12,7 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
+import polars.internals as pli
 from polars.datatypes import (
     Boolean,
     DataType,
@@ -23,8 +24,6 @@ from polars.datatypes import (
     UInt32,
     Utf8,
 )
-from polars.eager import Series
-from polars.lazy.functions import argsort_by, col, concat_list, lit
 
 __all__ = [
     "Expr",
@@ -71,12 +70,12 @@ class Expr:
         elif isinstance(other, Expr):
             return other._pyexpr
         else:
-            return lit(other)._pyexpr
+            return pli.lit(other)._pyexpr
 
     def __to_expr(self, other: Any) -> "Expr":
         if isinstance(other, Expr):
             return other
-        return lit(other)
+        return pli.lit(other)
 
     def __bool__(self) -> "Expr":
         raise ValueError(
@@ -181,7 +180,7 @@ class Expr:
         return wrap_expr(self._pyexpr.lt(other._pyexpr))
 
     def __neg__(self) -> "Expr":
-        return lit(0) - self  # type: ignore
+        return pli.lit(0) - self  # type: ignore
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -772,12 +771,12 @@ class Expr:
         Values taken by index
         """
         if isinstance(index, (list, np.ndarray)):
-            index = lit(Series("", index, dtype=UInt32))  # type: ignore
-        elif isinstance(index, Series):
-            index = lit(index)  # type: ignore
+            index = pli.lit(pli.Series("", index, dtype=UInt32))  # type: ignore
+        elif isinstance(index, pli.Series):
+            index = pli.lit(index)  # type: ignore
         else:
-            index = expr_to_lit_or_expr(index, str_to_lit=False)  # type: ignore
-        return wrap_expr(self._pyexpr.take(index._pyexpr))  # type: ignore
+            index = pli.expr_to_lit_or_expr(index, str_to_lit=False)  # type: ignore
+        return pli.wrap_expr(self._pyexpr.take(index._pyexpr))  # type: ignore
 
     def shift(self, periods: int = 1) -> "Expr":
         """
@@ -1180,7 +1179,7 @@ class Expr:
         Expr that evaluates to a Boolean Series.
         """
         if isinstance(other, list):
-            other = lit(Series(other))
+            other = pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
@@ -1211,10 +1210,10 @@ class Expr:
         """
         cast_to_datetime = False
         if isinstance(start, datetime):
-            start = lit(start)
+            start = pli.lit(start)
             cast_to_datetime = True
         if isinstance(end, datetime):
-            end = lit(end)
+            end = pli.lit(end)
             cast_to_datetime = True
         if cast_to_datetime:
             expr = self.cast(Datetime)
@@ -1620,7 +1619,7 @@ class Expr:
         reverse
             Reverse the ordering. Default is from low to high.
         """
-        return argsort_by([self], [reverse])
+        return pli.argsort_by([self], [reverse])
 
     def rank(self, method: str = "average") -> "Expr":  # type: ignore
         """
@@ -1727,12 +1726,11 @@ class Expr:
         min_val, max_val
             Minimum and maximum value.
         """
-        min_val = lit(min_val)  # type: ignore
-        max_val = lit(max_val)  # type: ignore
-        from polars.lazy.whenthen import when  # TODO: move out runtime import
+        min_val = pli.lit(min_val)  # type: ignore
+        max_val = pli.lit(max_val)  # type: ignore
 
         return (
-            when(self < min_val)  # type: ignore
+            pli.when(self < min_val)  # type: ignore
             .then(min_val)
             .when(self > max_val)
             .then(max_val)
@@ -1977,7 +1975,7 @@ class ExprListNameSpace:
             other = copy.copy(other)
         # mypy does not understand we have a list by now
         other.insert(0, wrap_expr(self._pyexpr))  # type: ignore
-        return concat_list(other)  # type: ignore
+        return pli.concat_list(other)  # type: ignore
 
 
 class ExprStringNameSpace:
@@ -2366,9 +2364,11 @@ def expr_to_lit_or_expr(
 
     """
     if isinstance(expr, str) and not str_to_lit:
-        return col(expr)
-    elif isinstance(expr, (int, float, str, Series, datetime, date)) or expr is None:
-        return lit(expr)
+        return pli.col(expr)
+    elif (
+        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
+    ):
+        return pli.lit(expr)
     elif isinstance(expr, list):
         return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]
     else:

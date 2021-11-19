@@ -3,11 +3,10 @@ from typing import Optional, Sequence, Union, overload
 
 import numpy as np
 
-import polars as pl
-from polars.eager import DataFrame, wrap_df, wrap_s
+import polars.internals as pli
 
 try:
-    from polars.datatypes import py_type_to_dtype
+    from polars.datatypes import Datetime, py_type_to_dtype
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_lf as _concat_lf
     from polars.polars import concat_series as _concat_series
@@ -77,19 +76,19 @@ def concat(
         raise ValueError("cannot concat empty list")
 
     out: Union["pl.Series", "pl.DataFrame", "pl.LazyFrame"]
-    if isinstance(items[0], DataFrame):
+    if isinstance(items[0], pli.DataFrame):
         if how == "vertical":
-            out = wrap_df(_concat_df(items))
+            out = pli.wrap_df(_concat_df(items))
         elif how == "diagonal":
-            out = wrap_df(_diag_concat_df(items))
+            out = pli.wrap_df(_diag_concat_df(items))
         else:
             raise ValueError(
                 f"how should be one of {'vertical', 'diagonal'}, got {how}"
             )
-    elif isinstance(items[0], pl.LazyFrame):
-        return pl.wrap_ldf(_concat_lf(items, rechunk))
+    elif isinstance(items[0], pli.LazyFrame):
+        return pli.wrap_ldf(_concat_lf(items, rechunk))
     else:
-        out = wrap_s(_concat_series(items))
+        out = pli.wrap_s(_concat_series(items))
 
     if rechunk:
         return out.rechunk()  # type: ignore
@@ -115,7 +114,7 @@ def repeat(
         name = ""
 
     dtype = py_type_to_dtype(type(val))
-    s = pl.Series._repeat(name, val, n, dtype)
+    s = pli.Series._repeat(name, val, n, dtype)
     return s
 
 
@@ -141,7 +140,7 @@ def date_range(
     interval: timedelta,
     closed: Optional[str] = None,
     name: Optional[str] = None,
-) -> pl.Series:
+) -> "pli.Series":
     """
     Create a date range of type `Datetime`.
 
@@ -201,4 +200,4 @@ def date_range(
         values = np.append(values, np.array(high, dtype="datetime64[ms]"))
     if closed == "right":
         values = values[1:]
-    return pl.Series(name=name, values=values.astype(np.int64)).cast(pl.Datetime)
+    return pli.Series(name=name, values=values.astype(np.int64)).cast(Datetime)

@@ -5,8 +5,6 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
-from polars.datatypes import _maybe_cast, py_type_to_dtype
-
 try:
     import pyarrow as pa
 
@@ -14,7 +12,7 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-import polars as pl
+import polars.internals as pli
 from polars.internals.construction import (
     arrow_to_pyseries,
     numpy_to_pyseries,
@@ -24,13 +22,13 @@ from polars.internals.construction import (
 )
 
 try:
-    from polars.polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame, PySeries, col
 
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
 
-from ..datatypes import (
+from polars.datatypes import (
     DTYPE_TO_FFINAME,
     DTYPES,
     Boolean,
@@ -50,10 +48,12 @@ from ..datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    _maybe_cast,
     date_like_to_physical,
     dtype_to_ctype,
+    py_type_to_dtype,
 )
-from ..utils import _ptr_to_numpy
+from polars.utils import _ptr_to_numpy
 
 try:
     import pandas as pd
@@ -399,7 +399,7 @@ class Series:
 
         if self.dtype != physical_type:
             return self.__floordiv__(other)
-        return self.cast(pl.Float64) / other
+        return self.cast(Float64) / other
 
     def __floordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
@@ -479,7 +479,7 @@ class Series:
         if isinstance(other, int):
             other = float(other)
 
-        return self.cast(pl.Float64).__rfloordiv__(other)  # type: ignore
+        return self.cast(Float64).__rfloordiv__(other)  # type: ignore
 
     def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
@@ -560,7 +560,7 @@ class Series:
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
             elif key.dtype == UInt64:
-                self._s = self.set_at_idx(key.cast(pl.UInt32), value)._s
+                self._s = self.set_at_idx(key.cast(UInt32), value)._s
             elif key.dtype == UInt32:
                 self._s = self.set_at_idx(key, value)._s
         # TODO: implement for these types without casting to series
@@ -614,7 +614,7 @@ class Series:
         <class 'polars.eager.frame.DataFrame'>
 
         """
-        return pl.eager.frame.wrap_df(PyDataFrame([self._s]))
+        return pli.wrap_df(PyDataFrame([self._s]))
 
     @property
     def dtype(self) -> Type[DataType]:
@@ -682,7 +682,7 @@ class Series:
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
         elif self.is_numeric():
-            self = self.cast(pl.Float64)
+            self = self.cast(Float64)
             stats = {
                 "min": self.min(),
                 "max": self.max(),
@@ -715,7 +715,7 @@ class Series:
         else:
             raise TypeError("This type is not supported")
 
-        return pl.DataFrame(
+        return pli.DataFrame(
             {"statistic": list(stats.keys()), "value": list(stats.values())}
         )
 
@@ -863,7 +863,7 @@ class Series:
         ╰─────┴─────┴─────╯
 
         """
-        return pl.eager.frame.wrap_df(self._s.to_dummies())
+        return pli.wrap_df(self._s.to_dummies())
 
     def value_counts(self) -> "pl.DataFrame":
         """
@@ -887,7 +887,7 @@ class Series:
         ╰─────┴────────╯
 
         """
-        return pl.eager.frame.wrap_df(self._s.value_counts())
+        return pli.wrap_df(self._s.value_counts())
 
     @property
     def name(self) -> str:
@@ -1887,9 +1887,9 @@ class Series:
                 return wrap_s(series)
             except TypeError:
                 # some integer to float ufuncs do not work, try on f64
-                s = self.cast(pl.Float64)
+                s = self.cast(Float64)
                 args[0] = s.view(ignore_nulls=True)
-                f = get_ffi_func("apply_ufunc_<>", pl.Float64, self._s)
+                f = get_ffi_func("apply_ufunc_<>", Float64, self._s)
                 series = f(lambda out: ufunc(*args, out=out, **kwargs))
                 return wrap_s(series)
 
@@ -1996,7 +1996,7 @@ class Series:
             )
         if isinstance(idx, Series):
             # make sure the dtype matches
-            idx = idx.cast(pl.UInt32)
+            idx = idx.cast(UInt32)
             idx_array = idx.view()
         elif isinstance(idx, np.ndarray):
             if not idx.data.c_contiguous:
@@ -2063,7 +2063,7 @@ class Series:
                * "zero"
         """
         if not isinstance(strategy, str):
-            return self.to_frame().select(pl.col(self.name).fill_null(strategy))[
+            return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
                 self.name
             ]
         return wrap_s(self._s.fill_null(strategy))
@@ -2334,7 +2334,7 @@ class Series:
             Fill None values with the result of this expression.
         """
         return self.to_frame().select(
-            pl.col(self.name).shift_and_fill(periods, fill_value)  # type: ignore
+            pli.col(self.name).shift_and_fill(periods, fill_value)  # type: ignore
         )[self.name]
 
     def zip_with(self, mask: "Series", other: "Series") -> "Series":
@@ -2630,7 +2630,7 @@ class Series:
         ]
         """
         return self.to_frame().select(
-            pl.col(self.name).rolling_apply(window_size, function)  # type: ignore
+            pli.col(self.name).rolling_apply(window_size, function)  # type: ignore
         )[self.name]
 
     def rolling_median(self, window_size: int) -> "Series":
@@ -2643,7 +2643,7 @@ class Series:
             Size of the rolling window
         """
         return self.to_frame().select(
-            pl.col(self.name).rolling_median(window_size)  # type: ignore
+            pli.col(self.name).rolling_median(window_size)  # type: ignore
         )[self.name]
 
     def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
@@ -2658,7 +2658,7 @@ class Series:
             quantile to compute
         """
         return self.to_frame().select(
-            pl.col(self.name).rolling_quantile(window_size, quantile)  # type: ignore
+            pli.col(self.name).rolling_quantile(window_size, quantile)  # type: ignore
         )[self.name]
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
@@ -2670,7 +2670,7 @@ class Series:
             If False, then the calculations are corrected for statistical bias.
         """
         return self.to_frame().select(
-            pl.col(self.name).rolling_skew(window_size, bias)  # type: ignore
+            pli.col(self.name).rolling_skew(window_size, bias)  # type: ignore
         )[self.name]
 
     def sample(
@@ -2972,7 +2972,7 @@ class Series:
             Minimum and maximum value.
         """
         return self.to_frame().select(
-            pl.col(self.name).clip(min_val, max_val)  # type: ignore
+            pli.col(self.name).clip(min_val, max_val)  # type: ignore
         )[self.name]
 
     def str_concat(self, delimiter: str = "-") -> "Series":  # type: ignore
@@ -2989,7 +2989,7 @@ class Series:
 
         """
         return self.to_frame().select(
-            pl.col(self.name).str_concat(delimiter)  # type: ignore
+            pli.col(self.name).str_concat(delimiter)  # type: ignore
         )[self.name]
 
 
@@ -3271,9 +3271,9 @@ class ListNameSpace:
         s = wrap_s(self._s)
         names = [s.name for s in other]
         names.insert(0, s.name)
-        df = pl.DataFrame(other)
+        df = pli.DataFrame(other)
         df.insert_at_idx(0, s)
-        return df.select(pl.concat_list(names))[s.name]  # type: ignore
+        return df.select(pli.concat_list(names))[s.name]  # type: ignore
 
 
 class DateTimeNameSpace:

@@ -32,7 +32,7 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-import polars as pl
+import polars.internals as pli
 from polars.internals.construction import (
     arrow_to_pydf,
     dict_to_pydf,
@@ -49,9 +49,16 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-from .._html import NotebookFormatter
-from ..datatypes import DTYPES, Boolean, DataType, UInt32, py_type_to_dtype
-from ..utils import _process_null_values
+from polars._html import NotebookFormatter
+from polars.datatypes import (
+    DTYPES,
+    Boolean,
+    DataType,
+    Datetime,
+    UInt32,
+    py_type_to_dtype,
+)
+from polars.utils import _process_null_values
 
 try:
     import pandas as pd
@@ -69,15 +76,15 @@ def wrap_df(df: "PyDataFrame") -> "DataFrame":
     return DataFrame._from_pydf(df)
 
 
-def _prepare_other_arg(other: Any) -> "pl.Series":
+def _prepare_other_arg(other: Any) -> "pli.Series":
     # if not a series create singleton series such that it will broadcast
-    if not isinstance(other, pl.Series):
+    if not isinstance(other, pli.Series):
         if isinstance(other, str):
             pass
         elif isinstance(other, Sequence):
             raise ValueError("Operation not supported.")
 
-        other = pl.Series("", [other])
+        other = pli.Series("", [other])
     return other
 
 
@@ -203,7 +210,7 @@ class DataFrame:
         elif isinstance(data, Sequence) and not isinstance(data, str):
             self._df = sequence_to_pydf(data, columns=columns, orient=orient)
 
-        elif isinstance(data, pl.Series):
+        elif isinstance(data, pli.Series):
             self._df = series_to_pydf(data, columns=columns)
 
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
@@ -908,7 +915,7 @@ class DataFrame:
         Access columns as attribute.
         """
         try:
-            return pl.eager.series.wrap_s(self._df.column(item))
+            return pli.wrap_s(self._df.column(item))
         except RuntimeError:
             raise AttributeError(f"{item} not found")
 
@@ -950,7 +957,7 @@ class DataFrame:
         if hasattr(item, "_pyexpr"):
             return self.select(item)
         if isinstance(item, np.ndarray):
-            item = pl.Series("", item)
+            item = pli.Series("", item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple):
@@ -982,11 +989,11 @@ class DataFrame:
 
                 # slice and boolean mask
                 # df[:2, [True, False, True]]
-                if isinstance(col_selection, (Sequence, pl.Series)):
+                if isinstance(col_selection, (Sequence, pli.Series)):
                     if (
                         isinstance(col_selection[0], bool)
-                        or isinstance(col_selection, pl.Series)
-                        and col_selection.dtype() == pl.Boolean
+                        or isinstance(col_selection, pli.Series)
+                        and col_selection.dtype() == Boolean
                     ):
                         df = self.__getitem__(row_selection)
                         select = []
@@ -999,7 +1006,7 @@ class DataFrame:
                 # df[:, unknown]
                 series = self.__getitem__(col_selection)
                 # s[:]
-                pl.eager.series.wrap_s(series[row_selection])
+                pli.wrap_s(series[row_selection])
 
             # df[2, :] (select row as df)
             if isinstance(row_selection, int):
@@ -1032,7 +1039,7 @@ class DataFrame:
         # select single column
         # df["foo"]
         if isinstance(item, str):
-            return pl.eager.series.wrap_s(self._df.column(item))
+            return pli.wrap_s(self._df.column(item))
 
         # df[idx]
         if isinstance(item, int):
@@ -1053,7 +1060,7 @@ class DataFrame:
         if isinstance(item, slice):
             # special case df[::-1]
             if item.start is None and item.stop is None and item.step == -1:
-                return self.select(pl.col("*").reverse())  # type: ignore
+                return self.select(pli.col("*").reverse())  # type: ignore
 
             if getattr(item, "end", False):
                 raise ValueError("A slice with steps larger than 1 is not supported.")
@@ -1073,7 +1080,7 @@ class DataFrame:
             else:
                 # df[start:stop:step]
                 return self.select(
-                    pl.col("*").slice(start, length).take_every(item.step)  # type: ignore
+                    pli.col("*").slice(start, length).take_every(item.step)  # type: ignore
                 )
 
         # select multiple columns
@@ -1081,7 +1088,7 @@ class DataFrame:
         if isinstance(item, Sequence):
             if isinstance(item[0], str):
                 return wrap_df(self._df.select(item))
-            elif isinstance(item[0], pl.Expr):
+            elif isinstance(item[0], pli.Expr):
                 return self.select(item)
 
         # select rows by mask or index
@@ -1092,11 +1099,11 @@ class DataFrame:
                 return wrap_df(self._df.take(item))
             if isinstance(item[0], str):
                 return wrap_df(self._df.select(item))
-        if isinstance(item, (pl.Series, Sequence)):
+        if isinstance(item, (pli.Series, Sequence)):
             if isinstance(item, Sequence):
                 # only bool or integers allowed
                 if type(item[0]) == bool:
-                    item = pl.Series("", item)
+                    item = pli.Series("", item)
                 else:
                     return wrap_df(
                         self._df.take([self._pos_idx(i, dim=0) for i in item])
@@ -1111,12 +1118,12 @@ class DataFrame:
         # df["foo"] = series
         if isinstance(key, str):
             try:
-                self.replace(key, pl.Series(key, value))
+                self.replace(key, pli.Series(key, value))
             except Exception:
-                self.hstack([pl.Series(key, value)], in_place=True)
+                self.hstack([pli.Series(key, value)], in_place=True)
         # df[idx] = series
         elif isinstance(key, int):
-            assert isinstance(value, pl.Series)
+            assert isinstance(value, pli.Series)
             self.replace_at_idx(key, value)
         # df[["C", "D"]]
         elif isinstance(key, list):
@@ -1197,7 +1204,7 @@ class DataFrame:
         ]
 
         """
-        return pl.eager.series.wrap_s(self._df.select_at_idx(index))
+        return pli.wrap_s(self._df.select_at_idx(index))
 
     def rename(self, mapping: Dict[str, str]) -> "DataFrame":
         """
@@ -1454,9 +1461,9 @@ class DataFrame:
                     columns.append(s.cast(float))
                 else:
                     columns.append(s)
-            return pl.DataFrame(columns)
+            return DataFrame(columns)
 
-        summary = pl.functions.concat(
+        summary = pli.concat(
             [
                 describe_cast(self.mean()),  # type: ignore
                 describe_cast(self.std()),
@@ -1466,7 +1473,7 @@ class DataFrame:
             ]
         )
         summary.insert_at_idx(  # type: ignore
-            0, pl.Series("describe", ["mean", "std", "min", "max", "median"])
+            0, pli.Series("describe", ["mean", "std", "min", "max", "median"])
         )
         return summary  # type: ignore
 
@@ -1552,7 +1559,7 @@ class DataFrame:
         >>> df.sort([col("foo"), col("bar") ** 2], reverse=[True, False])
 
         """
-        if type(by) is list or isinstance(by, pl.Expr):
+        if type(by) is list or isinstance(by, pli.Expr):
             df = (
                 self.lazy()
                 .sort(by, reverse)
@@ -2008,16 +2015,16 @@ class DataFrame:
         interval
             Interval periods.
         """
-        if self[by].dtype != pl.Datetime:
+        if self[by].dtype != Datetime:
             raise ValueError(
                 f"Column {by} should be of type datetime. Got {self[by].dtype}"
             )
         bounds = self.select(
-            [pl.col(by).min().alias("low"), pl.col(by).max().alias("high")]
+            [pli.col(by).min().alias("low"), pli.col(by).max().alias("high")]
         )
         low = bounds["low"].dt[0]
         high = bounds["high"].dt[0]
-        upsampled = pl.date_range(low, high, interval, name=by)
+        upsampled = pli.date_range(low, high, interval, name=by)
         return pl.DataFrame(upsampled).join(self, on=by, how="left")  # type: ignore
 
     def join(
@@ -2116,14 +2123,14 @@ class DataFrame:
         if how == "cross":
             return wrap_df(self._df.join(df._df, [], [], how, suffix))
 
-        left_on_: Union[tp.List[str], tp.List[pl.Expr], None]
-        if isinstance(left_on, (str, pl.Expr)):
+        left_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        if isinstance(left_on, (str, pli.Expr)):
             left_on_ = [left_on]  # type: ignore[assignment]
         else:
             left_on_ = left_on
 
-        right_on_: Union[tp.List[str], tp.List[pl.Expr], None]
-        if isinstance(right_on, (str, pl.Expr)):
+        right_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        if isinstance(right_on, (str, pli.Expr)):
             right_on_ = [right_on]  # type: ignore[assignment]
         else:
             right_on_ = right_on
@@ -2139,8 +2146,8 @@ class DataFrame:
             raise ValueError("You should pass the column to join on as an argument.")
 
         if (
-            isinstance(left_on_[0], pl.Expr)
-            or isinstance(right_on_[0], pl.Expr)
+            isinstance(left_on_[0], pli.Expr)
+            or isinstance(right_on_[0], pli.Expr)
             or asof_by_left is not None
             or asof_by_right is not None
             or asof_by is not None
@@ -2180,7 +2187,7 @@ class DataFrame:
         return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
         """
-        return pl.eager.series.wrap_s(self._df.apply(f, return_dtype))
+        return pli.wrap_s(self._df.apply(f, return_dtype))
 
     def with_column(self, column: Union["pl.Series", "pl.Expr"]) -> "DataFrame":
         """
@@ -2191,7 +2198,7 @@ class DataFrame:
         column
             Series, where the name of the Series refers to the column in the DataFrame.
         """
-        if isinstance(column, pl.Expr):
+        if isinstance(column, pli.Expr):
             return self.with_columns([column])
         else:
             return wrap_df(self._df.with_column(column._s))
@@ -2374,7 +2381,7 @@ class DataFrame:
         ╰─────┴─────╯
 
         """
-        return pl.eager.series.wrap_s(self._df.drop_in_place(name))
+        return pli.wrap_s(self._df.drop_in_place(name))
 
     def select_at_idx(self, idx: int) -> "pl.Series":
         """
@@ -2404,7 +2411,7 @@ class DataFrame:
         ]
 
         """
-        return pl.eager.series.wrap_s(self._df.select_at_idx(idx))
+        return pli.wrap_s(self._df.select_at_idx(idx))
 
     def clone(self) -> "DataFrame":
         """
@@ -2418,11 +2425,11 @@ class DataFrame:
     def __deepcopy__(self, memodict={}) -> "DataFrame":  # type: ignore
         return self.clone()
 
-    def get_columns(self) -> tp.List["pl.Series"]:
+    def get_columns(self) -> tp.List["pli.Series"]:
         """
         Get the DataFrame as a List of Series.
         """
-        return list(map(lambda s: pl.eager.series.wrap_s(s), self._df.get_columns()))
+        return list(map(lambda s: pli.wrap_s(s), self._df.get_columns()))
 
     def get_column(self, name: str) -> "pl.Series":
         """
@@ -2451,10 +2458,10 @@ class DataFrame:
         -------
             DataFrame with None replaced with the filling strategy.
         """
-        if isinstance(strategy, pl.Expr):
+        if isinstance(strategy, pli.Expr):
             return self.lazy().fill_null(strategy).collect(no_optimization=True)
         if not isinstance(strategy, str):
-            return self.fill_null(pl.lit(strategy))
+            return self.fill_null(pli.lit(strategy))
         return wrap_df(self._df.fill_null(strategy))
 
     def fill_nan(self, fill_value: Union["pl.Expr", int, float]) -> "DataFrame":
@@ -2665,13 +2672,13 @@ class DataFrame:
         """
         Get a mask of all duplicated rows in this DataFrame.
         """
-        return pl.eager.series.wrap_s(self._df.is_duplicated())
+        return pli.wrap_s(self._df.is_duplicated())
 
     def is_unique(self) -> "pl.Series":
         """
         Get a mask of all unique rows in this DataFrame.
         """
-        return pl.eager.series.wrap_s(self._df.is_unique())
+        return pli.wrap_s(self._df.is_unique())
 
     def lazy(self) -> "pl.LazyFrame":
         """
@@ -2687,7 +2694,7 @@ class DataFrame:
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
-        return pl.lazy.frame.wrap_ldf(self._df.lazy())
+        return pli.wrap_ldf(self._df.lazy())
 
     def select(
         self,
@@ -2782,7 +2789,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.max())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hmax())
+            return pli.wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")
 
     def min(self, axis: int = 0) -> Union["DataFrame", "pl.Series"]:
@@ -2810,7 +2817,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.min())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hmin())
+            return pli.wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")
 
     def sum(
@@ -2848,7 +2855,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.sum())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hsum(null_strategy))
+            return pli.wrap_s(self._df.hsum(null_strategy))
         raise ValueError("Axis should be 0 or 1.")
 
     def mean(
@@ -2886,7 +2893,7 @@ class DataFrame:
         if axis == 0:
             return wrap_df(self._df.mean())
         if axis == 1:
-            return pl.eager.series.wrap_s(self._df.hmean(null_strategy))
+            return pli.wrap_s(self._df.hmean(null_strategy))
         raise ValueError("Axis should be 0 or 1.")
 
     def std(self) -> "DataFrame":
@@ -3248,13 +3255,13 @@ class DataFrame:
                 18282897888575762835
         ]
         """
-        return pl.eager.series.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
+        return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
     def interpolate(self) -> "DataFrame":
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
-        return self.select(pl.col("*").interpolate())  # type: ignore
+        return self.select(pli.col("*").interpolate())  # type: ignore
 
     def is_empty(self) -> bool:
         """
@@ -3416,7 +3423,7 @@ class GroupBy:
         --------
 
         >>> # use lazy API
-        >>> (df.groupby(["foo", "bar])
+        >>> (df.groupby(["foo", "bar"])
         >>> .agg([pl.sum("ham"), col("spam").tail(4).sum()])
 
         >>> # use a dict
@@ -3424,7 +3431,7 @@ class GroupBy:
         >>> .agg({"spam": ["sum", "min"})
 
         """
-        if isinstance(column_to_agg, pl.Expr):
+        if isinstance(column_to_agg, pli.Expr):
             column_to_agg = [column_to_agg]
         if isinstance(column_to_agg, dict):
             column_to_agg = [
@@ -3439,7 +3446,7 @@ class GroupBy:
                     for (column, agg) in column_to_agg
                 ]
 
-            elif isinstance(column_to_agg[0], pl.Expr):
+            elif isinstance(column_to_agg[0], pli.Expr):
                 return (
                     wrap_df(self._df)
                     .lazy()

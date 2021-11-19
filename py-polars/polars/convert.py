@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 
-from polars.eager import DataFrame, Series
+from polars.internals import DataFrame, Series
 
 if TYPE_CHECKING:
     import pandas as pd
