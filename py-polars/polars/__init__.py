@@ -9,8 +9,7 @@ except ImportError as e:
     warnings.warn("polars binary missing!")
 
 # mypy needs these imported explicitly
-from polars.eager.frame import DataFrame, wrap_df
-from polars.eager.series import Series, wrap_s
+from polars.eager import DataFrame, Series, wrap_df, wrap_s
 from polars.lazy.expr import Expr, wrap_expr
 from polars.lazy.frame import LazyFrame, wrap_ldf
 from polars.lazy.functions import (

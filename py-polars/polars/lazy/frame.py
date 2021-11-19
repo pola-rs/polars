@@ -8,8 +8,6 @@ import tempfile
 import typing as tp
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
-import polars as pl
-
 try:
     from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
 
@@ -17,9 +15,16 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-from ..datatypes import DataType, py_type_to_dtype
-from ..utils import _process_null_values
-from .expr import Expr, _selection_to_pyexpr_list, col, expr_to_lit_or_expr, lit
+from polars.datatypes import DataType, py_type_to_dtype
+from polars.eager import DataFrame, Series, wrap_df
+from polars.lazy.expr import (
+    Expr,
+    _selection_to_pyexpr_list,
+    col,
+    expr_to_lit_or_expr,
+    lit,
+)
+from polars.utils import _process_null_values
 
 __all__ = [
     "LazyFrame",
@@ -206,7 +211,7 @@ class LazyFrame:
                 plt.show()
         return None
 
-    def inspect(self, fmt: str = "{}") -> "pl.LazyFrame":  # type: ignore
+    def inspect(self, fmt: str = "{}") -> "LazyFrame":  # type: ignore
         """
         Prints the value that this node in the computation graph evaluates to and passes on the value.
 
@@ -215,7 +220,7 @@ class LazyFrame:
         >>>    .filter(col("bar") == col("foo")))
         """
 
-        def inspect(s: "pl.DataFrame") -> "pl.DataFrame":
+        def inspect(s: DataFrame) -> DataFrame:
             print(fmt.format(s))  # type: ignore
             return s
 
@@ -257,7 +262,7 @@ class LazyFrame:
         simplify_expression: bool = True,
         string_cache: bool = False,
         no_optimization: bool = False,
-    ) -> "pl.DataFrame":
+    ) -> DataFrame:
         """
         Collect into a DataFrame.
 
@@ -296,7 +301,7 @@ class LazyFrame:
             simplify_expression,
             string_cache,
         )
-        return pl.eager.frame.wrap_df(ldf.collect())
+        return wrap_df(ldf.collect())
 
     def fetch(
         self,
@@ -307,7 +312,7 @@ class LazyFrame:
         simplify_expression: bool = True,
         string_cache: bool = True,
         no_optimization: bool = False,
-    ) -> "pl.DataFrame":
+    ) -> DataFrame:
         """
         Fetch is like a collect operation, but it overwrites the number of rows read by every scan
         operation. This is a utility that helps debug a query on a smaller number of rows.
@@ -349,7 +354,7 @@ class LazyFrame:
             simplify_expression,
             string_cache,
         )
-        return pl.eager.frame.wrap_df(ldf.fetch(n_rows))
+        return wrap_df(ldf.fetch(n_rows))
 
     @property
     def columns(self) -> tp.List[str]:
@@ -626,7 +631,7 @@ class LazyFrame:
         for e in exprs:
             if isinstance(e, Expr):
                 pyexprs.append(e._pyexpr)
-            elif isinstance(e, pl.Series):
+            elif isinstance(e, Series):
                 pyexprs.append(lit(e)._pyexpr)
 
         return wrap_ldf(self._ldf.with_columns(pyexprs))
@@ -1035,7 +1040,7 @@ class LazyFrame:
 
     def map(
         self,
-        f: Callable[["pl.DataFrame"], "pl.DataFrame"],
+        f: Callable[[DataFrame], DataFrame],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         no_optimizations: bool = False,
@@ -1063,7 +1068,7 @@ class LazyFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
-        return self.select(pl.col("*").interpolate())  # type: ignore
+        return self.select(col("*").interpolate())  # type: ignore
 
 
 class LazyGroupBy:
@@ -1215,7 +1220,7 @@ class LazyGroupBy:
         """
         return wrap_ldf(self.lgb.tail(n))
 
-    def apply(self, f: Callable[["pl.DataFrame"], "pl.DataFrame"]) -> "LazyFrame":
+    def apply(self, f: Callable[[DataFrame], DataFrame]) -> "LazyFrame":
         """
         Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
         this as materializing the `DataFrame` is quite expensive.

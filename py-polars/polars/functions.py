@@ -4,6 +4,7 @@ from typing import Optional, Sequence, Union, overload
 import numpy as np
 
 import polars as pl
+from polars.eager import DataFrame, wrap_df, wrap_s
 
 try:
     from polars.datatypes import py_type_to_dtype
@@ -76,11 +77,11 @@ def concat(
         raise ValueError("cannot concat empty list")
 
     out: Union["pl.Series", "pl.DataFrame", "pl.LazyFrame"]
-    if isinstance(items[0], pl.DataFrame):
+    if isinstance(items[0], DataFrame):
         if how == "vertical":
-            out = pl.wrap_df(_concat_df(items))
+            out = wrap_df(_concat_df(items))
         elif how == "diagonal":
-            out = pl.wrap_df(_diag_concat_df(items))
+            out = wrap_df(_diag_concat_df(items))
         else:
             raise ValueError(
                 f"how should be one of {'vertical', 'diagonal'}, got {how}"
@@ -88,7 +89,7 @@ def concat(
     elif isinstance(items[0], pl.LazyFrame):
         return pl.wrap_ldf(_concat_lf(items, rechunk))
     else:
-        out = pl.wrap_s(_concat_series(items))
+        out = wrap_s(_concat_series(items))
 
     if rechunk:
         return out.rechunk()  # type: ignore

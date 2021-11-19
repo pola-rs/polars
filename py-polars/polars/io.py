@@ -28,6 +28,7 @@ except ImportError:
     _PYARROW_AVAILABLE = False
 
 import polars as pl
+from polars.eager import DataFrame
 
 from .convert import from_arrow
 
@@ -368,7 +369,7 @@ def read_csv(
             }
 
     with _prepare_file_arg(file, **storage_options) as data:
-        df = pl.DataFrame.read_csv(
+        df = DataFrame.read_csv(
             file=data,
             infer_schema_length=infer_schema_length,
             batch_size=batch_size,
@@ -594,13 +595,13 @@ def read_ipc(
             tbl = pa.feather.read_table(
                 data, memory_map=memory_map, columns=columns if columns else projection
             )
-            return pl.DataFrame._from_arrow(tbl)
+            return DataFrame._from_arrow(tbl)
 
         if columns:
             # Unset projection if column names where specified.
             projection = None
 
-        return pl.DataFrame.read_ipc(
+        return DataFrame.read_ipc(
             data,
             columns=columns,
             projection=projection,
@@ -676,7 +677,7 @@ def read_parquet(
             # Unset projection if column names where specified.
             projection = None
 
-        return pl.DataFrame.read_parquet(
+        return DataFrame.read_parquet(
             source_prep,
             columns=columns,
             projection=projection,
@@ -693,7 +694,7 @@ def read_json(source: Union[str, BytesIO]) -> "pl.DataFrame":
     source
         Path to a file or a file like object.
     """
-    return pl.DataFrame.read_json(source)
+    return DataFrame.read_json(source)
 
 
 def read_sql(
