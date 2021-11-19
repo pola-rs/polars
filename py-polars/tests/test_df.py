@@ -1,5 +1,4 @@
 # flake8: noqa: W191,E101
-# type: ignore
 from builtins import range
 from datetime import datetime
 from io import BytesIO
@@ -257,8 +256,8 @@ def test_selection() -> None:
     assert df.select_at_idx(0).name == "a"
     assert (df.a == df["a"]).sum() == 3
     assert (df.c == df["a"]).sum() == 0
-    assert df[:, "a":"b"].shape == (3, 2)
-    assert df[:, "a":"c"].columns == ["a", "b", "c"]
+    assert df[:, "a":"b"].shape == (3, 2)  # type: ignore
+    assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore
     expect = pl.DataFrame({"c": ["b"]})
     assert df[1, [2]].frame_equal(expect)
     expect = pl.DataFrame({"b": [1.0, 3.0]})
@@ -366,7 +365,8 @@ def test_groupby() -> None:
         df.groupby("a").groups().sort("a")["a"].series_equal(pl.Series(["a", "b", "c"]))
     )
 
-    for subdf in df.groupby("a"):
+    for subdf in df.groupby("a"):  # type: ignore
+        # TODO: add __next__() to GroupBy
         if subdf["a"][0] == "b":
             assert subdf.shape == (3, 3)
 
@@ -497,7 +497,7 @@ def test_set() -> None:
     df[df["new"] > 0.5, "new"] = 1
 
     df = pl.DataFrame({"b": [0, 0]})
-    df[["A", "B"]] = [[1, 2], [1, 2]]
+    df[["A", "B"]] = [[1, 2], [1, 2]]  # type: ignore
     assert df["A"] == [1, 1]
     assert df["B"] == [2, 2]
 
@@ -579,7 +579,7 @@ def test_custom_groupby() -> None:
     out = (
         df.lazy()
         .groupby("b")
-        .agg([pl.col("a").apply(lambda x: x.sum(), return_dtype=int)])
+        .agg([pl.col("a").apply(lambda x: x.sum(), return_dtype=pl.Int64)])
         .collect()
     )
     assert out.shape == (3, 2)
@@ -618,7 +618,7 @@ def test_get_dummies() -> None:
     assert res.frame_equal(expected)
 
 
-def test_to_pandas(df) -> None:
+def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
     # pyarrow cannot convert a time64 w/ non-zero nanoseconds
     df = df.drop(["cat", "time"])
@@ -634,11 +634,11 @@ def test_from_arrow_table() -> None:
     data = {"a": [1, 2], "b": [1, 2]}
     tbl = pa.table(data)
 
-    df = pl.from_arrow(tbl)
+    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore
     df.frame_equal(pl.DataFrame(data))
 
 
-def test_df_stats(df) -> None:
+def test_df_stats(df: pl.DataFrame) -> None:
     df.var()
     df.std()
     df.min()
@@ -697,7 +697,7 @@ def test_column_names() -> None:
             "b": pa.array([1, 2, 3, 4, 5], pa.int64()),
         }
     )
-    df = pl.from_arrow(tbl)
+    df: pl.DataFrame = pl.from_arrow(tbl)  # type: ignore
     assert df.columns == ["a", "b"]
 
 
@@ -825,7 +825,7 @@ def test_to_numpy() -> None:
     assert df.to_numpy().shape == (3, 2)
 
 
-def test_argsort_by(df) -> None:
+def test_argsort_by(df: pl.DataFrame) -> None:
     a = df[pl.argsort_by(["int_nulls", "floats"], reverse=[False, True])]["int_nulls"]
     assert a == [1, 0, 3]
 
@@ -840,14 +840,14 @@ def test_literal_series() -> None:
     )
     out = (
         df.lazy()
-        .with_column(pl.Series("e", [2, 1, 3]))
+        .with_column(pl.Series("e", [2, 1, 3]))  # type: ignore  # TODO: is this allowed?
         .with_column(pl.col("e").cast(pl.Float32))
         .collect()
     )
     assert out["e"] == [2, 1, 3]
 
 
-def test_to_html(df) -> None:
+def test_to_html(df: pl.DataFrame) -> None:
     # check if it does not panic/ error
     df._repr_html_()
 
@@ -857,14 +857,15 @@ def test_rows() -> None:
     assert df.rows() == [(1, 1), (2, 2)]
 
 
-def test_rename(df) -> None:
+def test_rename(df: pl.DataFrame) -> None:
     out = df.rename({"strings": "bars", "int": "foos"})
     # check if wel can select these new columns
     _ = out[["foos", "bars"]]
 
 
-def test_to_json(df) -> None:
-    s = df.to_json(to_string=True)
+def test_to_json(df: pl.DataFrame) -> None:
+    s: str = df.to_json(to_string=True)  # type: ignore
+    # TODO add overload on to_json()
     out = pl.read_json(s)
     assert df.frame_equal(out, null_equal=True)
 
@@ -897,7 +898,7 @@ def test_join_dates() -> None:
     )
     dts = (
         pl.from_pandas(date_times)
-        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
+        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))  # type: ignore
         .cast(pl.Datetime)
     )
 
@@ -1019,7 +1020,7 @@ def test_slicing() -> None:
 
 def test_apply_list_return() -> None:
     df = pl.DataFrame({"start": [1, 2], "end": [3, 5]})
-    out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1)))
+    out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1)))  # type: ignore
     assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
 
 
@@ -1146,7 +1147,7 @@ def test_groupby_agg_n_unique_floats() -> None:
         assert out["b_n_unique"].to_list() == [2, 1]
 
 
-def test_select_by_dtype(df) -> None:
+def test_select_by_dtype(df: pl.DataFrame) -> None:
     out = df.select(pl.col(pl.Utf8))
     assert out.columns == ["strings", "strings_nulls"]
     out = df.select(pl.col([pl.Utf8, pl.Boolean]))
@@ -1171,7 +1172,7 @@ def test_filter_with_all_expansion() -> None:
             "a": [None, None, None],
         }
     )
-    out = df.filter(~pl.fold(True, lambda acc, s: acc & s.is_null(), pl.all()))
+    out = df.filter(~pl.fold(True, lambda acc, s: acc & s.is_null(), pl.all()))  # type: ignore
     assert out.shape == (2, 3)
 
 

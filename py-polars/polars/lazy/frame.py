@@ -797,7 +797,7 @@ class LazyFrame:
             fill_value = lit(fill_value)
         return wrap_ldf(self._ldf.fill_null(fill_value._pyexpr))
 
-    def fill_nan(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
+    def fill_nan(self, fill_value: Union[int, str, float, "Expr"]) -> "LazyFrame":
         """
         Fill floating point NaN values.
 
