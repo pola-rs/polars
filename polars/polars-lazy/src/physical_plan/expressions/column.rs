@@ -34,7 +34,7 @@ impl PhysicalExpr for ColumnExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(s, Cow::Borrowed(groups)))
+        Ok(AggregationContext::new(s, Cow::Borrowed(groups), false))
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         let field = input_schema.field_with_name(&self.0).map(|f| f.clone())?;

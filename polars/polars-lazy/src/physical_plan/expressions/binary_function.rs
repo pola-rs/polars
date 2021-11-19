@@ -98,10 +98,10 @@ impl PhysicalExpr for BinaryFunctionExpr {
 
         ac_l.combine_groups(ac_r);
         if all_unit_length {
-            ac_l.with_series(ca.explode()?);
+            ac_l.with_series(ca.explode()?, false);
             return Ok(ac_l);
         }
-        ac_l.with_series(ca.into_series());
+        ac_l.with_series(ca.into_series(), true);
         Ok(ac_l)
     }
 

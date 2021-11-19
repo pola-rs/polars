@@ -317,6 +317,7 @@ where
 }
 
 impl<'a> AnyValue<'a> {
+    #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
     pub(crate) fn into_date(self) -> Self {
         match self {
             #[cfg(feature = "dtype-date")]

@@ -100,7 +100,7 @@ impl PyLazyFrame {
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         infer_schema_length: Option<usize>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
@@ -118,7 +118,7 @@ impl PyLazyFrame {
             Schema::new(fields)
         });
 
-        LazyCsvReader::new(path)
+        Ok(LazyCsvReader::new(path)
             .with_infer_schema_length(infer_schema_length)
             .with_delimiter(delimiter)
             .has_header(has_header)
@@ -132,18 +132,28 @@ impl PyLazyFrame {
             .with_quote_char(quote_char)
             .with_null_values(null_values)
             .finish()
-            .into()
+            .map_err(PyPolarsEr::from)?
+            .into())
     }
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
-        let lf = LazyFrame::scan_parquet(path, stop_after_n_rows, cache).map_err(PyPolarsEr::from)?;
+    pub fn new_from_parquet(
+        path: String,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+    ) -> PyResult<Self> {
+        let lf =
+            LazyFrame::scan_parquet(path, stop_after_n_rows, cache).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 
     #[staticmethod]
-    pub fn new_from_ipc(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
+    pub fn new_from_ipc(
+        path: String,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+    ) -> PyResult<Self> {
         let lf = LazyFrame::scan_ipc(path, stop_after_n_rows, cache).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }

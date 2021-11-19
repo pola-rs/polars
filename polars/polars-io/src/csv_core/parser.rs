@@ -395,30 +395,29 @@ pub(crate) fn parse_lines(
     ignore_parser_errors: bool,
     n_lines: usize,
 ) -> Result<usize> {
+    // we use the pointers to track the no of bytes read.
+    let start = bytes.as_ptr() as usize;
+    let original_bytes_len = bytes.len();
     let n_lines = n_lines as u32;
-    // This variable will store the number of bytes we read. It is important to do this bookkeeping
-    // to be able to correctly parse the strings later.
-    let mut read = offset;
 
     let mut line_count = 0u32;
     loop {
         if line_count > n_lines {
-            return Ok(read);
+            let end = bytes.as_ptr() as usize;
+            return Ok(end - start);
         }
-        let (b, r) = skip_whitespace(bytes);
+        let (b, _) = skip_whitespace(bytes);
         bytes = b;
         if bytes.is_empty() {
-            return Ok(read);
+            return Ok(original_bytes_len);
         }
-        read += r;
 
         // deal with comments
         if let Some(c) = comment_char {
             // line is a comment -> skip
             if bytes[0] == c {
-                let (bytes_rem, len) = skip_this_line(bytes, quote_char, 0);
+                let (bytes_rem, _) = skip_this_line(bytes, quote_char, 0);
                 bytes = bytes_rem;
-                read += len;
                 continue;
             }
         }
@@ -437,8 +436,7 @@ pub(crate) fn parse_lines(
         loop {
             let mut read_sol = 0;
 
-            let track_bytes = |read: &mut usize, bytes: &mut &[u8], read_sol: usize| {
-                *read += read_sol;
+            let track_bytes = |bytes: &mut &[u8], read_sol: usize| {
                 // benchmarking showed it is 6% faster to take the min of these two
                 // not needed for correctness.
                 *bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
@@ -478,7 +476,7 @@ pub(crate) fn parse_lines(
                         if add_null {
                             buf.add_null()
                         } else {
-                            buf.add(field, ignore_parser_errors, read, needs_escaping)
+                            buf.add(field, ignore_parser_errors, needs_escaping)
                                 .map_err(|e| {
                                     PolarsError::ComputeError(
                                         format!(
@@ -499,18 +497,15 @@ pub(crate) fn parse_lines(
                         // if we have all projected columns we are done with this line
                         match a {
                             Some(p) => {
-                                track_bytes(&mut read, &mut bytes, read_sol);
+                                track_bytes(&mut bytes, read_sol);
                                 next_projected = p
                             }
                             None => {
                                 if let Some(b'\n') = bytes.get(0) {
                                     bytes = &bytes[read_sol..];
-                                    read += read_sol
                                 } else {
-                                    let (bytes_rem, len) =
-                                        skip_this_line(bytes, quote_char, offset);
+                                    let (bytes_rem, _) = skip_this_line(bytes, quote_char, offset);
                                     bytes = bytes_rem;
-                                    read += len;
                                 }
                                 break;
                             }

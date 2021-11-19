@@ -3268,12 +3268,12 @@ class ListNameSpace:
         """
         if not isinstance(other, list):
             other = [other]
-        sthis = wrap_s(self._s)
+        s = wrap_s(self._s)
         names = [s.name for s in other]
-        names.insert(0, sthis.name)
+        names.insert(0, s.name)
         df = pl.DataFrame(other)
-        df.insert_at_idx(0, sthis)
-        return df.select(pl.concat_list(names))[sthis.name]  # type: ignore
+        df.insert_at_idx(0, s)
+        return df.select(pl.concat_list(names))[s.name]  # type: ignore
 
 
 class DateTimeNameSpace:

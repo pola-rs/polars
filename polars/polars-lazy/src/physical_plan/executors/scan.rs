@@ -5,6 +5,7 @@ use crate::logical_plan::IpcOptions;
 use crate::utils::try_path_to_str;
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 use std::fs::File;
 use std::mem;
 use std::path::Path;
@@ -23,11 +24,16 @@ fn cache_hit(
     (cache_key, cached)
 }
 
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 type Projection = Option<Vec<usize>>;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 type StopNRows = Option<usize>;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 type Aggregation<'a> = Option<&'a [ScanAggregation]>;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 fn prepare_scan_args<'a>(
     path: &Path,
     predicate: &Option<Arc<dyn PhysicalExpr>>,

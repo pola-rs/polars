@@ -1,8 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_arrow::array::ValueSize;
-use polars_core::chunked_array::builder::get_list_builder;
+use polars_arrow::arrow::{array::*, buffer::MutableBuffer, compute::concat::concatenate};
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::utils::NoNull;
 use polars_core::{prelude::*, POOL};
@@ -38,7 +37,7 @@ impl PhysicalExpr for AggregationExpr {
         let out = self.aggregate(df, groups, state)?.ok_or_else(|| {
             PolarsError::ComputeError("Aggregation did not return a Series".into())
         })?;
-        Ok(AggregationContext::new(out, Cow::Borrowed(groups)))
+        Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
@@ -206,26 +205,49 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::List => {
+                // the groups are scattered over multiple groups/sub dataframes.
+                // we now must collect them into a single group
                 let series = self.expr.evaluate(final_df, state)?;
                 let ca = series.list().unwrap();
                 let new_name = fmt_groupby_column(ca.name(), self.agg_type);
 
-                let values_type = match ca.dtype() {
-                    DataType::List(dt) => *dt.clone(),
-                    _ => unreachable!(),
-                };
+                let mut values = Vec::with_capacity(groups.len());
+                let mut can_fast_explode = true;
 
-                let mut builder =
-                    get_list_builder(&values_type, ca.get_values_size(), ca.len(), &new_name);
+                let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
+                let mut length_so_far = 0i64;
+                offsets.push(length_so_far);
+
                 for (_, idx) in groups {
-                    // Safety
-                    // The indexes of the groupby operation are never out of bounds
-                    let ca = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                    let ca = unsafe {
+                        // Safety
+                        // The indexes of the groupby operation are never out of bounds
+                        ca.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                    };
                     let s = ca.explode()?;
-                    builder.append_series(&s);
+                    length_so_far += s.len() as i64;
+                    offsets.push(length_so_far);
+                    values.push(s.chunks()[0].clone());
+
+                    if s.len() == 0 {
+                        can_fast_explode = false;
+                    }
                 }
-                let out = builder.finish();
-                Ok(Some(out.into_series()))
+                let vals = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
+                let values: ArrayRef = concatenate(&vals).unwrap().into();
+
+                let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
+                let arr = Arc::new(ListArray::<i64>::from_data(
+                    data_type,
+                    offsets.into(),
+                    values,
+                    None,
+                )) as ArrayRef;
+                let mut ca = ListChunked::new_from_chunks(&new_name, vec![arr]);
+                if can_fast_explode {
+                    ca.set_fast_explode()
+                }
+                Ok(Some(ca.into_series()))
             }
             _ => PhysicalAggregation::aggregate(self, final_df, groups, state),
         }

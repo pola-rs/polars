@@ -127,6 +127,11 @@ impl<'a> CoreReader<'a> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
 
+        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
+        if is_compressed(&reader_bytes) {
+            return Err(PolarsError::ComputeError("cannot read compressed csv file; compile with feature 'decompress' or 'decompress-fast'".into()));
+        }
+
         // check if schema should be inferred
         let delimiter = delimiter.unwrap_or(b',');
 
@@ -413,7 +418,7 @@ impl<'a> CoreReader<'a> {
                             let local_bytes = &bytes[read..stop_at_nbytes];
 
                             last_read = read;
-                            read = parse_lines(
+                            read += parse_lines(
                                 local_bytes,
                                 read,
                                 delimiter,
@@ -525,7 +530,7 @@ impl<'a> CoreReader<'a> {
                             let local_bytes = &bytes[read..stop_at_nbytes];
 
                             last_read = read;
-                            read = parse_lines(
+                            read += parse_lines(
                                 local_bytes,
                                 read,
                                 delimiter,
@@ -537,7 +542,7 @@ impl<'a> CoreReader<'a> {
                                 ignore_parser_errors,
                                 // chunk size doesn't really matter anymore,
                                 // less calls if we increase the size
-                                chunk_size * 320000,
+                                usize::MAX,
                             )?;
                         }
                         Ok(DataFrame::new_no_checks(
