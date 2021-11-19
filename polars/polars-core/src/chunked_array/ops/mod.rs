@@ -427,7 +427,7 @@ pub trait ChunkCompare<Rhs> {
     fn equal(&self, rhs: Rhs) -> BooleanChunked;
 
     /// Check for inequality.
-    fn neq(&self, rhs: Rhs) -> BooleanChunked;
+    fn not_equal(&self, rhs: Rhs) -> BooleanChunked;
 
     /// Greater than comparison.
     fn gt(&self, rhs: Rhs) -> BooleanChunked;
