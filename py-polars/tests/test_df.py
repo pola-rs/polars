@@ -840,7 +840,7 @@ def test_literal_series() -> None:
     )
     out = (
         df.lazy()
-        .with_column(pl.Series("e", [2, 1, 3]))  # type: ignore  # TODO: is this allowed?
+        .with_column(pl.Series("e", [2, 1, 3]))  # type: ignore
         .with_column(pl.col("e").cast(pl.Float32))
         .collect()
     )
