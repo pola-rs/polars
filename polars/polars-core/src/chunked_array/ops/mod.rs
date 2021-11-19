@@ -496,8 +496,19 @@ pub trait ToDummies<T>: ChunkUnique<T> {
     }
 }
 
+#[derive(Default)]
+pub struct SortOptions {
+    descending: bool,
+    nulls_last: bool,
+}
+
 /// Sort operations on `ChunkedArray`.
 pub trait ChunkSort<T> {
+    #[allow(unused_variables)]
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
+        unimplemented!()
+    }
+
     /// Returned a sorted `ChunkedArray`.
     fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 
