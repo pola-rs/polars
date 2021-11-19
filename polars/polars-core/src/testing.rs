@@ -18,7 +18,7 @@ impl Series {
         {
             return false;
         }
-        match self.eq(other).sum() {
+        match self.equal(other).sum() {
             None => false,
             Some(sum) => sum as usize == self.len(),
         }

@@ -116,7 +116,7 @@ impl ChunkCompare<&Series> for Series {
     }
 
     /// Create a boolean mask by checking for equality.
-    fn eq(&self, rhs: &Series) -> BooleanChunked {
+    fn equal(&self, rhs: &Series) -> BooleanChunked {
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
         match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
@@ -126,7 +126,7 @@ impl ChunkCompare<&Series> for Series {
                     self,
                     rhs,
                     self.name(),
-                    |s, idx| s.eq(idx),
+                    |s, idx| s.equal(idx),
                     false,
                 );
             }
@@ -136,18 +136,18 @@ impl ChunkCompare<&Series> for Series {
                     rhs,
                     self,
                     self.name(),
-                    |s, idx| s.eq(idx),
+                    |s, idx| s.equal(idx),
                     false,
                 );
             }
             _ => {
-                impl_compare!(self, rhs, eq)
+                impl_compare!(self, rhs, equal)
             }
         }
     }
 
     /// Create a boolean mask by checking for inequality.
-    fn neq(&self, rhs: &Series) -> BooleanChunked {
+    fn not_equal(&self, rhs: &Series) -> BooleanChunked {
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
         match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
@@ -157,7 +157,7 @@ impl ChunkCompare<&Series> for Series {
                     self,
                     rhs,
                     self.name(),
-                    |s, idx| s.neq(idx),
+                    |s, idx| s.not_equal(idx),
                     true,
                 );
             }
@@ -167,12 +167,12 @@ impl ChunkCompare<&Series> for Series {
                     rhs,
                     self,
                     self.name(),
-                    |s, idx| s.neq(idx),
+                    |s, idx| s.not_equal(idx),
                     true,
                 );
             }
             _ => {
-                impl_compare!(self, rhs, neq)
+                impl_compare!(self, rhs, not_equal)
             }
         }
     }
@@ -203,15 +203,15 @@ where
     Rhs: NumericNative,
 {
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
-        self.eq(rhs)
+        self.equal(rhs)
     }
 
-    fn eq(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_numeric_series!(self, eq, rhs)
+    fn equal(&self, rhs: Rhs) -> BooleanChunked {
+        apply_method_numeric_series!(self, equal, rhs)
     }
 
-    fn neq(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_numeric_series!(self, neq, rhs)
+    fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
+        apply_method_numeric_series!(self, not_equal, rhs)
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
@@ -233,29 +233,33 @@ where
 
 impl ChunkCompare<&str> for Series {
     fn eq_missing(&self, rhs: &str) -> BooleanChunked {
-        self.eq(rhs)
+        self.equal(rhs)
     }
 
-    fn eq(&self, rhs: &str) -> BooleanChunked {
+    fn equal(&self, rhs: &str) -> BooleanChunked {
         use DataType::*;
         match self.dtype() {
-            Utf8 => self.utf8().unwrap().eq(rhs),
+            Utf8 => self.utf8().unwrap().equal(rhs),
             #[cfg(feature = "dtype-categorical")]
             Categorical => {
-                compare_cat_to_str_value(self, rhs, self.name(), |lhs, idx| lhs.eq(idx), false)
+                compare_cat_to_str_value(self, rhs, self.name(), |lhs, idx| lhs.equal(idx), false)
             }
             _ => BooleanChunked::full(self.name(), false, self.len()),
         }
     }
 
-    fn neq(&self, rhs: &str) -> BooleanChunked {
+    fn not_equal(&self, rhs: &str) -> BooleanChunked {
         use DataType::*;
         match self.dtype() {
-            Utf8 => self.utf8().unwrap().neq(rhs),
+            Utf8 => self.utf8().unwrap().not_equal(rhs),
             #[cfg(feature = "dtype-categorical")]
-            Categorical => {
-                compare_cat_to_str_value(self, rhs, self.name(), |lhs, idx| lhs.neq(idx), true)
-            }
+            Categorical => compare_cat_to_str_value(
+                self,
+                rhs,
+                self.name(),
+                |lhs, idx| lhs.not_equal(idx),
+                true,
+            ),
             _ => BooleanChunked::full(self.name(), false, self.len()),
         }
     }

@@ -80,7 +80,7 @@ use std::sync::Arc;
 /// # use polars_core::prelude::*;
 /// use itertools::Itertools;
 /// let s = Series::new("dollars", &[1, 2, 3]);
-/// let mask = s.eq(1);
+/// let mask = s.equal(1);
 /// let valid = [true, false, false].iter();
 /// assert!(mask
 ///     .into_iter()

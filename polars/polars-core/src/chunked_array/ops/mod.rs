@@ -414,7 +414,7 @@ pub trait ChunkVar<T> {
 /// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
 ///     let mask = df
 ///     .column("column_a")?
-///     .eq(1);
+///     .equal(1);
 ///
 ///     df.filter(&mask)
 /// }
@@ -424,10 +424,10 @@ pub trait ChunkCompare<Rhs> {
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked;
 
     /// Check for equality.
-    fn eq(&self, rhs: Rhs) -> BooleanChunked;
+    fn equal(&self, rhs: Rhs) -> BooleanChunked;
 
     /// Check for inequality.
-    fn neq(&self, rhs: Rhs) -> BooleanChunked;
+    fn not_equal(&self, rhs: Rhs) -> BooleanChunked;
 
     /// Greater than comparison.
     fn gt(&self, rhs: Rhs) -> BooleanChunked;
