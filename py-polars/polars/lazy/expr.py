@@ -642,7 +642,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.round(decimals))
 
-    def dot(self, other: "Expr") -> "Expr":
+    def dot(self, other: Union["Expr", str]) -> "Expr":
         """
         Compute the dot/inner product between two Expressions
 
@@ -924,7 +924,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: Union[str, "Expr", tp.List["Expr"]]) -> "Expr":
+    def over(self, expr: Union[str, "Expr", tp.List[Union["Expr", str]]]) -> "Expr":
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -1176,7 +1176,7 @@ class Expr:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
-    def repeat_by(self, by: "Expr") -> "Expr":
+    def repeat_by(self, by: Union["Expr", str]) -> "Expr":
         """
         Repeat the elements in this Series `n` times by dictated by the number given by `by`.
         The elements are expanded into a `List`
@@ -2336,7 +2336,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, int, float, str, tp.List[Expr], tp.List[str], "pl.Series"],
+    expr: Union[Expr, bool, int, float, str, tp.List[Expr], tp.List[str], "pl.Series"],
     str_to_lit: bool = True,
 ) -> Expr:
     """

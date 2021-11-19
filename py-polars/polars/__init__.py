@@ -13,6 +13,44 @@ from polars.eager.frame import DataFrame, wrap_df
 from polars.eager.series import Series, wrap_s
 from polars.lazy.expr import Expr, wrap_expr
 from polars.lazy.frame import LazyFrame, wrap_ldf
+from polars.lazy.functions import (
+    all,
+    any,
+    apply,
+    arange,
+    argsort_by,
+    avg,
+    col,
+    collect_all,
+    concat_list,
+    concat_str,
+    count,
+    cov,
+    exclude,
+    first,
+    fold,
+    format,
+    groups,
+    head,
+    last,
+    lit,
+    map,
+    map_binary,
+    max,
+    mean,
+    median,
+    min,
+    n_unique,
+    pearson_corr,
+    quantile,
+    select,
+    spearman_rank_corr,
+    std,
+    sum,
+    tail,
+    to_list,
+    var,
+)
 
 from . import cfg, convert, datatypes, eager, functions, io, lazy, string_cache
 from .cfg import *

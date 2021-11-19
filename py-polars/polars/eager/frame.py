@@ -1511,7 +1511,7 @@ class DataFrame:
         by: Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]],
         reverse: Union[bool, tp.List[bool]] = False,
         in_place: bool = False,
-    ) -> Optional["DataFrame"]:
+    ) -> "DataFrame":
         """
         Sort the DataFrame by column.
 
@@ -1560,11 +1560,11 @@ class DataFrame:
             )
             if in_place:
                 self._df = df._df
-                return None
+                return self
             return df
         if in_place:
             self._df.sort_in_place(by, reverse)
-            return None
+            return self
         else:
             return wrap_df(self._df.sort(by, reverse))
 
@@ -2457,7 +2457,7 @@ class DataFrame:
             return self.fill_null(pl.lit(strategy))
         return wrap_df(self._df.fill_null(strategy))
 
-    def fill_nan(self, fill_value: "pl.Expr") -> "DataFrame":
+    def fill_nan(self, fill_value: Union["pl.Expr", int, float]) -> "DataFrame":
         """
         Fill None/missing values by a an Expression evaluation.
 
@@ -2690,7 +2690,15 @@ class DataFrame:
         return pl.lazy.frame.wrap_ldf(self._df.lazy())
 
     def select(
-        self, exprs: Union[str, "pl.Expr", Sequence[str], Sequence["pl.Expr"]]
+        self,
+        exprs: Union[
+            str,
+            "pl.Expr",
+            Sequence[Union[str, "pl.Expr"]],
+            Sequence[bool],
+            Sequence[int],
+            Sequence[float],
+        ],
     ) -> "DataFrame":
         """
         Select columns from this DataFrame.
@@ -2723,7 +2731,7 @@ class DataFrame:
 
         """
         return (
-            self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)
+            self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)  # type: ignore
         )
 
     def with_columns(self, exprs: Union["pl.Expr", tp.List["pl.Expr"]]) -> "DataFrame":
@@ -3412,7 +3420,7 @@ class GroupBy:
         >>> .agg([pl.sum("ham"), col("spam").tail(4).sum()])
 
         >>> # use a dict
-        >>> (df.groupby(["foo", "bar])
+        >>> (df.groupby(["foo", "bar"])
         >>> .agg({"spam": ["sum", "min"})
 
         """

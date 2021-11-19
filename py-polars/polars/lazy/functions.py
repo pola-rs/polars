@@ -74,7 +74,7 @@ __all__ = [
 
 
 def col(
-    name: Union[str, tp.List[str], tp.List[Type[DataType]], Type[DataType]]
+    name: Union[str, tp.List[str], tp.List[Type[DataType]], "pl.Series", Type[DataType]]
 ) -> "pl.Expr":
     """
     A column in a DataFrame.
@@ -163,7 +163,7 @@ def col(
 
     """
     if isinstance(name, pl.Series):
-        name = name.to_list()
+        name = name.to_list()  # type: ignore
 
     if isclass(name) and issubclass(name, DataType):  # type: ignore
         name = [name]  # type: ignore
@@ -176,6 +176,16 @@ def col(
         else:
             raise ValueError("did expect argument of List[str] or List[DataType]")
     return pl.lazy.expr.wrap_expr(pycol(name))
+
+
+@tp.overload
+def count(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def count(column: "pl.Series") -> int:
+    ...
 
 
 def count(column: Union[str, "pl.Series"] = "") -> Union["pl.Expr", int]:
@@ -196,6 +206,16 @@ def to_list(name: str) -> "pl.Expr":
     return col(name).list()
 
 
+@tp.overload
+def std(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def std(column: "pl.Series") -> Optional[float]:
+    ...
+
+
 def std(column: Union[str, "pl.Series"]) -> Union["pl.Expr", Optional[float]]:
     """
     Get the standard deviation.
@@ -203,6 +223,16 @@ def std(column: Union[str, "pl.Series"]) -> Union["pl.Expr", Optional[float]]:
     if isinstance(column, pl.Series):
         return column.std()
     return col(column).std()
+
+
+@tp.overload
+def var(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def var(column: "pl.Series") -> Optional[float]:
+    ...
 
 
 def var(column: Union[str, "pl.Series"]) -> Union["pl.Expr", Optional[float]]:
@@ -214,7 +244,19 @@ def var(column: Union[str, "pl.Series"]) -> Union["pl.Expr", Optional[float]]:
     return col(column).var()
 
 
-def max(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr", Any]:
+@tp.overload
+def max(column: Union[str, tp.List[Union["pl.Expr", str]]]) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def max(column: "pl.Series") -> Union[int, float]:
+    ...
+
+
+def max(
+    column: Union[str, tp.List[Union["pl.Expr", str]], "pl.Series"]
+) -> Union["pl.Expr", Any]:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -242,7 +284,19 @@ def max(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr",
         return col(column).max()
 
 
-def min(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr", Any]:
+@tp.overload
+def min(column: Union[str, tp.List[Union["pl.Expr", str]]]) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def min(column: "pl.Series") -> Union[int, float]:
+    ...
+
+
+def min(
+    column: Union[str, tp.List[Union["pl.Expr", str]], "pl.Series"]
+) -> Union["pl.Expr", Any]:
     """
     Get the minimum value.
 
@@ -268,7 +322,19 @@ def min(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr",
         return col(column).min()
 
 
-def sum(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr", Any]:
+@tp.overload
+def sum(column: Union[str, tp.List[Union["pl.Expr", str]]]) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def sum(column: "pl.Series") -> Union[int, float]:
+    ...
+
+
+def sum(
+    column: Union[str, tp.List[Union["pl.Expr", str]], "pl.Series"]
+) -> Union["pl.Expr", Any]:
     """
     Get the sum value.
 
@@ -289,6 +355,16 @@ def sum(column: Union[str, tp.List["pl.Expr"], "pl.Series"]) -> Union["pl.Expr",
         return col(column).sum()
 
 
+@tp.overload
+def mean(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def mean(column: "pl.Series") -> float:
+    ...
+
+
 def mean(column: Union[str, "pl.Series"]) -> Union["pl.Expr", float]:
     """
     Get the mean value.
@@ -298,11 +374,31 @@ def mean(column: Union[str, "pl.Series"]) -> Union["pl.Expr", float]:
     return col(column).mean()
 
 
+@tp.overload
+def avg(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def avg(column: "pl.Series") -> float:
+    ...
+
+
 def avg(column: Union[str, "pl.Series"]) -> Union["pl.Expr", float]:
     """
     Alias for mean.
     """
     return mean(column)
+
+
+@tp.overload
+def median(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def median(column: "pl.Series") -> Union[float, int]:
+    ...
 
 
 def median(column: Union[str, "pl.Series"]) -> Union["pl.Expr", float, int]:
@@ -314,11 +410,31 @@ def median(column: Union[str, "pl.Series"]) -> Union["pl.Expr", float, int]:
     return col(column).median()
 
 
+@tp.overload
+def n_unique(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def n_unique(column: "pl.Series") -> int:
+    ...
+
+
 def n_unique(column: Union[str, "pl.Series"]) -> Union["pl.Expr", int]:
     """Count unique values."""
     if isinstance(column, pl.Series):
         return column.n_unique()
     return col(column).n_unique()
+
+
+@tp.overload
+def first(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def first(column: "pl.Series") -> Any:
+    ...
 
 
 def first(column: Union[str, "pl.Series"]) -> Union["pl.Expr", Any]:
@@ -331,6 +447,16 @@ def first(column: Union[str, "pl.Series"]) -> Union["pl.Expr", Any]:
         else:
             raise IndexError("The series is empty, so no first value can be returned.")
     return col(column).first()
+
+
+@tp.overload
+def last(column: str) -> "pl.Expr":
+    ...
+
+
+@tp.overload
+def last(column: "pl.Series") -> Any:
+    ...
 
 
 def last(column: Union[str, "pl.Series"]) -> "pl.Expr":
@@ -590,7 +716,7 @@ def map_binary(
 def fold(
     acc: "pl.Expr",
     f: Callable[["pl.Series", "pl.Series"], "pl.Series"],
-    exprs: Union[tp.List["pl.Expr"], "pl.Expr"],
+    exprs: Union[tp.Sequence[Union["pl.Expr", str]], "pl.Expr"],
 ) -> "pl.Expr":
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -760,7 +886,7 @@ def arange(
 
 
 def argsort_by(
-    exprs: tp.List["pl.Expr"], reverse: Union[tp.List[bool], bool] = False
+    exprs: tp.List[Union["pl.Expr", str]], reverse: Union[tp.List[bool], bool] = False
 ) -> "pl.Expr":
     """
     Find the indexes that would sort the columns.
@@ -855,7 +981,7 @@ def _date(year: "pl.Expr", month: "pl.Expr", day: "pl.Expr") -> "pl.Expr":
     return _datetime(year, month, day).cast(pl.Date).alias("date")
 
 
-def concat_str(exprs: tp.List["pl.Expr"], sep: str = "") -> "pl.Expr":
+def concat_str(exprs: tp.Sequence[Union["pl.Expr", str]], sep: str = "") -> "pl.Expr":
     """
     Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 

@@ -15,7 +15,7 @@ def test_apply_none() -> None:
     out = (
         df.groupby("g", maintain_order=True).agg(
             pl.apply(  # type: ignore
-                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
+                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],  # type: ignore
                 f=lambda x: x[0] * x[1] + x[2].sum(),
             ).alias("multiple")
         )

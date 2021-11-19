@@ -1,4 +1,3 @@
-# type: ignore
 import numpy as np
 import pytest
 
@@ -416,33 +415,33 @@ def test_fill_null() -> None:
     assert df.select([pl.col("a").fill_null("min")])["a"][1] == 1.0
 
 
-def test_take(fruits_cars) -> None:
+def test_take(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
     # out of bounds error
     with pytest.raises(RuntimeError):
         (
             df.sort("fruits").select(
-                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
+                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]  # type: ignore
             )
         )
 
     out = df.sort("fruits").select(
-        [col("B").reverse().take([0, 1]).list().over("fruits"), "fruits"]
+        [col("B").reverse().take([0, 1]).list().over("fruits"), "fruits"]  # type: ignore
     )
 
     assert out[0, "B"] == [2, 3]
     assert out[4, "B"] == [1, 4]
 
 
-def test_select_by_col_list(fruits_cars) -> None:
+def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(col(["A", "B"]).sum())
     assert out.columns == ["A", "B"]
     assert out.shape == (1, 2)
 
 
-def test_rolling(fruits_cars) -> None:
+def test_rolling(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     assert df.select(
         [
@@ -471,10 +470,10 @@ def test_rolling_apply() -> None:
     assert out[2] == 4.358898943540674
 
 
-def test_arr_namespace(fruits_cars) -> None:
+def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(
-        [
+        [  # type: ignore
             "fruits",
             col("B").over("fruits").arr.min().alias("B_by_fruits_min1"),
             col("B").min().over("fruits").alias("B_by_fruits_min2"),
@@ -552,7 +551,7 @@ def test_arithmetic() -> None:
 
 def test_ufunc() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    out = df.select(np.log(col("a")))
+    out = df.select(np.log(col("a")))  # type: ignore
     assert out["a"][1] == 0.6931471805599453
 
 
@@ -635,7 +634,7 @@ def test_str_concat() -> None:
     assert df[0, 0] == "1-null-2"
 
 
-def test_collect_all(df) -> None:
+def test_collect_all(df: pl.DataFrame) -> None:
     lf1 = df.lazy().select(pl.col("int").sum())
     lf2 = df.lazy().select((pl.col("floats") * 2).sum())
     out = pl.collect_all([lf1, lf2])
@@ -661,10 +660,10 @@ def test_spearman_corr() -> None:
     assert np.isclose(out[1], -1.0)
 
 
-def test_lazy_concat(df) -> None:
+def test_lazy_concat(df: pl.DataFrame) -> None:
     shape = df.shape
     shape = (shape[0] * 2, shape[1])
 
-    out = pl.concat([df.lazy(), df.lazy()]).collect()
+    out = pl.concat([df.lazy(), df.lazy()]).collect()  # type: ignore
     assert out.shape == shape
     assert out.frame_equal(df.vstack(df.clone()), null_equal=True)
