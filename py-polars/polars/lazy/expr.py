@@ -24,7 +24,7 @@ from polars.datatypes import (
     Utf8,
 )
 from polars.eager import Series
-from polars.lazy.functions import col, concat_list, lit, argsort_by
+from polars.lazy.functions import argsort_by, col, concat_list, lit
 
 __all__ = [
     "Expr",
