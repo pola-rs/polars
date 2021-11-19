@@ -61,19 +61,19 @@ where
         impl_eq_missing!(self, rhs)
     }
 
-    fn eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
+    fn equal(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         // broadcast
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
-                    self.eq(value)
+                    self.equal(value)
                 } else {
                     BooleanChunked::full("", false, self.len())
                 }
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
-                    rhs.eq(value)
+                    rhs.equal(value)
                 } else {
                     BooleanChunked::full("", false, rhs.len())
                 }
@@ -231,7 +231,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
         impl_eq_missing!(self, rhs)
     }
 
-    fn eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
+    fn equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
         // broadcast
         match (self.len(), rhs.len()) {
             (_, 1) => {
@@ -451,17 +451,17 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         impl_eq_missing!(self, rhs)
     }
 
-    fn eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
+    fn equal(&self, rhs: &Utf8Chunked) -> BooleanChunked {
         // broadcast
         if rhs.len() == 1 {
             if let Some(value) = rhs.get(0) {
-                self.eq(value)
+                self.equal(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
-                rhs.eq(value)
+                rhs.equal(value)
             } else {
                 BooleanChunked::full("", false, self.len())
             }
@@ -612,10 +612,10 @@ where
     Rhs: ToPrimitive,
 {
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
-        self.eq(rhs)
+        self.equal(rhs)
     }
 
-    fn eq(&self, rhs: Rhs) -> BooleanChunked {
+    fn equal(&self, rhs: Rhs) -> BooleanChunked {
         self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
     }
 
@@ -653,10 +653,10 @@ impl Utf8Chunked {
 
 impl ChunkCompare<&str> for Utf8Chunked {
     fn eq_missing(&self, rhs: &str) -> BooleanChunked {
-        self.eq(rhs)
+        self.equal(rhs)
     }
 
-    fn eq(&self, rhs: &str) -> BooleanChunked {
+    fn equal(&self, rhs: &str) -> BooleanChunked {
         self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
     }
     fn neq(&self, rhs: &str) -> BooleanChunked {
@@ -717,12 +717,12 @@ impl ChunkCompare<&ListChunked> for ListChunked {
         impl_cmp_list!(self, rhs, series_equal_missing)
     }
 
-    fn eq(&self, rhs: &ListChunked) -> BooleanChunked {
+    fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
         impl_cmp_list!(self, rhs, series_equal)
     }
 
     fn neq(&self, rhs: &ListChunked) -> BooleanChunked {
-        self.eq(rhs).not()
+        self.equal(rhs).not()
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense
@@ -861,11 +861,11 @@ mod test {
         let (a1, a2) = create_two_chunked();
 
         assert_eq!(
-            a1.eq(&a2).into_iter().collect_vec(),
+            a1.equal(&a2).into_iter().collect_vec(),
             repeat(Some(true)).take(6).collect_vec()
         );
         assert_eq!(
-            a2.eq(&a1).into_iter().collect_vec(),
+            a2.equal(&a1).into_iter().collect_vec(),
             repeat(Some(true)).take(6).collect_vec()
         );
         assert_eq!(
@@ -916,11 +916,11 @@ mod test {
         let a2 = get_chunked_array();
 
         assert_eq!(
-            a1.eq(&a2).into_iter().collect_vec(),
+            a1.equal(&a2).into_iter().collect_vec(),
             repeat(Some(true)).take(3).collect_vec()
         );
         assert_eq!(
-            a2.eq(&a1).into_iter().collect_vec(),
+            a2.equal(&a1).into_iter().collect_vec(),
             repeat(Some(true)).take(3).collect_vec()
         );
         assert_eq!(
@@ -979,8 +979,8 @@ mod test {
         a2_2chunks.append(&(&[Some(3)]).iter().copied().collect());
 
         assert_eq!(
-            a1.eq(&a2).into_iter().collect_vec(),
-            a1.eq(&a2_2chunks).into_iter().collect_vec()
+            a1.equal(&a2).into_iter().collect_vec(),
+            a1.equal(&a2_2chunks).into_iter().collect_vec()
         );
 
         assert_eq!(
@@ -1036,7 +1036,7 @@ mod test {
         let a1: Int32Chunked = (&[Some(1), Some(2)]).iter().copied().collect();
         let a1 = a1.slice(1, 1);
         let a2: Int32Chunked = (&[Some(2)]).iter().copied().collect();
-        assert_eq!(a1.eq(&a2).sum(), a2.eq(&a1).sum());
+        assert_eq!(a1.equal(&a2).sum(), a2.equal(&a1).sum());
         assert_eq!(a1.neq(&a2).sum(), a2.neq(&a1).sum());
         assert_eq!(a1.gt(&a2).sum(), a2.gt(&a1).sum());
         assert_eq!(a1.lt(&a2).sum(), a2.lt(&a1).sum());
@@ -1046,7 +1046,7 @@ mod test {
         let a1: Utf8Chunked = (&["a", "b"]).iter().copied().collect();
         let a1 = a1.slice(1, 1);
         let a2: Utf8Chunked = (&["b"]).iter().copied().collect();
-        assert_eq!(a1.eq(&a2).sum(), a2.eq(&a1).sum());
+        assert_eq!(a1.equal(&a2).sum(), a2.equal(&a1).sum());
         assert_eq!(a1.neq(&a2).sum(), a2.neq(&a1).sum());
         assert_eq!(a1.gt(&a2).sum(), a2.gt(&a1).sum());
         assert_eq!(a1.lt(&a2).sum(), a2.lt(&a1).sum());
@@ -1073,13 +1073,13 @@ mod test {
         let true_ = BooleanChunked::new_from_slice("", &[true]);
         let false_ = BooleanChunked::new_from_slice("", &[false]);
 
-        let out = a.eq(&true_);
+        let out = a.equal(&true_);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
-        let out = true_.eq(&a);
+        let out = true_.equal(&a);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
-        let out = a.eq(&false_);
+        let out = a.equal(&false_);
         assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
-        let out = false_.eq(&a);
+        let out = false_.equal(&a);
         assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
 
         let out = a.neq(&true_);
@@ -1134,13 +1134,13 @@ mod test {
         let one = Int32Chunked::new_from_slice("", &[1]);
         let three = Int32Chunked::new_from_slice("", &[3]);
 
-        let out = a.eq(&one);
+        let out = a.equal(&one);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
-        let out = one.eq(&a);
+        let out = one.equal(&a);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
-        let out = a.eq(&three);
+        let out = a.equal(&three);
         assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
-        let out = three.eq(&a);
+        let out = three.equal(&a);
         assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(true)]);
 
         let out = a.neq(&one);

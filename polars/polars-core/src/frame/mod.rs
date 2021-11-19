@@ -2156,7 +2156,7 @@ impl DataFrame {
                 // make sure that we do not divide by zero
                 // by replacing with None
                 let value_length = value_length
-                    .set(&value_length.eq(0), None)?
+                    .set(&value_length.equal(0), None)?
                     .into_series()
                     .cast(&DataType::Float64)?;
 
@@ -2508,7 +2508,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(df.column("days").unwrap().eq(1).sum(), Some(1));
+        assert_eq!(df.column("days").unwrap().equal(1).sum(), Some(1));
     }
 
     #[test]
@@ -2517,7 +2517,7 @@ mod test {
         let df = create_frame();
         println!("{}", df.column("days").unwrap());
         println!("{:?}", df);
-        println!("{:?}", df.filter(&df.column("days").unwrap().eq(0)))
+        println!("{:?}", df.filter(&df.column("days").unwrap().equal(0)))
     }
 
     #[test]
@@ -2530,7 +2530,7 @@ mod test {
         println!("{}", df.column(col_name).unwrap());
         println!("{:?}", df);
 
-        df = df.filter(&df.column(col_name).unwrap().eq("")).unwrap();
+        df = df.filter(&df.column(col_name).unwrap().equal("")).unwrap();
         assert_eq!(df.column(col_name).unwrap().n_chunks(), 1);
         println!("{:?}", df);
     }
