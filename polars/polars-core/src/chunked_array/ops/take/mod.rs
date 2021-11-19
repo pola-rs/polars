@@ -343,7 +343,11 @@ impl ChunkTake for ListChunked {
         match indices {
             TakeIdx::Array(array) => {
                 if array.null_count() == array.len() {
-                    return Self::full_null(self.name(), array.len());
+                    return Self::full_null_with_dtype(
+                        self.name(),
+                        array.len(),
+                        &self.inner_dtype(),
+                    );
                 }
                 let array = match ca_self.chunks.len() {
                     1 => Arc::new(take_list_unchecked(chunks.next().unwrap(), array)) as ArrayRef,
