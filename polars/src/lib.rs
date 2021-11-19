@@ -203,6 +203,13 @@
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 //! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).
 //! * `POLARS_VERBOSE` -> print logging info to stderr
+//! * `POLARS_NO_PARTITION` -> Polars may choose to partition the groupby operaiton, based on data
+//!                            cardinality. Setting this env var will turn partitioned groupby's off
+//! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
+//!                                     defaults to `0.001`
+//! * `POLARS_PARTITION_CARDINALITY_FRAC` -> at which (estimated) cardinality a partitioned groupby should run.
+//!                                          defaults to `0.005`, any higher cardinality will run default groupby.
+//!
 //!
 //! ## Compile for WASM
 //! To be able to pretty print a `DataFrame` in `wasm32-wasi` you need to patch the `prettytable-rs`

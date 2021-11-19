@@ -2165,8 +2165,6 @@ fn test_take_consistency() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "ignore")]
-// todo! activate (strange abort in CI)
 fn test_groupby_on_lists() -> Result<()> {
     let s0 = Series::new("", [1i32, 2, 3]);
     let s1 = Series::new("groups", [4i32, 5]);
