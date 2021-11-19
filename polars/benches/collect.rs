@@ -22,7 +22,7 @@ fn bench_collect_optional_str(v: &[Option<String>]) {
     criterion::black_box(f());
 }
 
-fn create_array(size: i32, null_percentage: f32) -> Vec<Option<i32>> {
+pub fn create_array(size: i32, null_percentage: f32) -> Vec<Option<i32>> {
     let mut rng = StdRng::seed_from_u64(0);
     (0..size)
         .map(|i| {
