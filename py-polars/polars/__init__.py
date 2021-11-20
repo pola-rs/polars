@@ -9,7 +9,7 @@ except ImportError as e:
     warnings.warn("polars binary missing!")
 
 from polars.internals.expr import Expr
-from polars.internals.frame import DataFrame
+from polars.internals.frame import DataFrame, wrap_df  # TODO: remove need for wrap_df
 from polars.internals.functions import (
     arg_where,
     concat,
