@@ -4,7 +4,6 @@ use std::ops::Deref;
 
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`
-    #[deprecated]
     pub fn series_equal(&self, other: &Series) -> bool {
         if self.get_data_ptr() == other.get_data_ptr() {
             return true;
@@ -26,7 +25,6 @@ impl Series {
     }
 
     /// Check if all values in series are equal where `None == None` evaluates to `true`.
-    #[deprecated(note = "Use the binary operator '=='")]
     pub fn series_equal_missing(&self, other: &Series) -> bool {
         if self.get_data_ptr() == other.get_data_ptr() {
             return true;
