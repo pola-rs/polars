@@ -19,7 +19,7 @@ except ImportError:
 __all__ = ["get_dummies", "concat", "repeat", "arg_where", "date_range"]
 
 
-def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
+def get_dummies(df: "pli.DataFrame") -> "pli.DataFrame":
     """
     Convert categorical variables into dummy/indicator variables.
 
@@ -33,29 +33,29 @@ def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
 
 @overload
 def concat(
-    items: Sequence["pl.DataFrame"],
+    items: Sequence["pli.DataFrame"],
     rechunk: bool = True,
     how: str = "vertical",
-) -> "pl.DataFrame":
+) -> "pli.DataFrame":
     ...
 
 
 @overload
 def concat(
-    items: Sequence["pl.Series"],
+    items: Sequence["pli.Series"],
     rechunk: bool = True,
     how: str = "vertical",
-) -> "pl.Series":
+) -> "pli.Series":
     ...
 
 
 def concat(
     items: Union[
-        Sequence["pl.DataFrame"], Sequence["pl.Series"], Sequence["pl.LazyFrame"]
+        Sequence["pli.DataFrame"], Sequence["pli.Series"], Sequence["pli.LazyFrame"]
     ],
     rechunk: bool = True,
     how: str = "vertical",
-) -> Union["pl.DataFrame", "pl.Series", "pl.LazyFrame"]:
+) -> Union["pli.DataFrame", "pli.Series", "pli.LazyFrame"]:
     """
     Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single DataFrame/Series.
 
@@ -75,7 +75,7 @@ def concat(
     if not len(items) > 0:
         raise ValueError("cannot concat empty list")
 
-    out: Union["pl.Series", "pl.DataFrame", "pl.LazyFrame"]
+    out: Union["pli.Series", "pli.DataFrame", "pli.LazyFrame"]
     if isinstance(items[0], pli.DataFrame):
         if how == "vertical":
             out = pli.wrap_df(_concat_df(items))
@@ -97,7 +97,7 @@ def concat(
 
 def repeat(
     val: Union[int, float, str, bool], n: int, name: Optional[str] = None
-) -> "pl.Series":
+) -> "pli.Series":
     """
     Repeat a single value n times and collect into a Series.
 
@@ -118,7 +118,7 @@ def repeat(
     return s
 
 
-def arg_where(mask: "pl.Series") -> "pl.Series":
+def arg_where(mask: "pli.Series") -> "pli.Series":
     """
     Get index values where Boolean mask evaluate True.
 

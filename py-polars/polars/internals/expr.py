@@ -199,7 +199,7 @@ class Expr:
             if not isinstance(inp, Expr):
                 args.append(inp)
 
-        def function(s: "Series") -> "Series":
+        def function(s: "pli.Series") -> "pli.Series":
             return ufunc(s, *args, **kwargs)
 
         if "dtype" in kwargs:
@@ -757,7 +757,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: Union[tp.List[int], "Expr", "Series"]) -> "Expr":
+    def take(self, index: Union[tp.List[int], "Expr", "pli.Series"]) -> "Expr":
         """
         Take values by index.
 
@@ -1033,7 +1033,7 @@ class Expr:
 
     def map(
         self,
-        f: Callable[["Series"], "Series"],
+        f: Callable[["pli.Series"], "pli.Series"],
         return_dtype: Optional[Type[DataType]] = None,
         agg_list: bool = False,
     ) -> "Expr":
@@ -1062,7 +1062,7 @@ class Expr:
 
     def apply(
         self,
-        f: Union[Callable[["Series"], "Series"], Callable[[Any], Any]],
+        f: Union[Callable[["pli.Series"], "pli.Series"], Callable[[Any], Any]],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
@@ -1113,7 +1113,7 @@ class Expr:
         """
 
         # input x: Series of type list containing the group values
-        def wrap_f(x: "Series") -> "Series":
+        def wrap_f(x: "pli.Series") -> "pli.Series":
             return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f, agg_list=True)
@@ -1282,7 +1282,7 @@ class Expr:
         >>> df.select(col("foo").cumsum().inspect("value is: {}").alias("bar"))
         """
 
-        def inspect(s: "Series") -> "Series":
+        def inspect(s: "pli.Series") -> "pli.Series":
             print(fmt.format(s))  # type: ignore
             return s
 
@@ -1520,7 +1520,7 @@ class Expr:
         )
 
     def rolling_apply(
-        self, window_size: int, function: Callable[["Series"], Any]
+        self, window_size: int, function: Callable[["pli.Series"], Any]
     ) -> "Expr":
         """
         Allows a custom rolling window function.
@@ -2345,7 +2345,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, bool, int, float, str, tp.List[Expr], tp.List[str], "Series"],
+    expr: Union[Expr, bool, int, float, str, tp.List[Expr], tp.List[str], "pli.Series"],
     str_to_lit: bool = True,
 ) -> Expr:
     """

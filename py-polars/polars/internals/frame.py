@@ -189,7 +189,7 @@ class DataFrame:
                 np.ndarray,
                 "pa.Table",
                 "pd.DataFrame",
-                "pl.Series",
+                "pli.Series",
             ]
         ] = None,
         columns: Optional[Sequence[str]] = None,
@@ -579,7 +579,7 @@ class DataFrame:
 
     def to_dict(
         self, as_series: bool = True
-    ) -> Union[Dict[str, "pl.Series"], Dict[str, tp.List[Any]]]:
+    ) -> Union[Dict[str, "pli.Series"], Dict[str, tp.List[Any]]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
 
@@ -780,7 +780,7 @@ class DataFrame:
 
     def transpose(
         self, include_header: bool = False, header_name: str = "column"
-    ) -> "pl.DataFrame":
+    ) -> "pli.DataFrame":
         """
         Transpose a DataFrame over the diagonal.
 
@@ -1178,7 +1178,7 @@ class DataFrame:
         max_rows = int(os.environ.get("POLARS_FMT_MAX_ROWS", default=25))
         return "\n".join(NotebookFormatter(self, max_cols, max_rows).render())
 
-    def to_series(self, index: int = 0) -> "pl.Series":
+    def to_series(self, index: int = 0) -> "pli.Series":
         """
         Select column as Series at index location.
 
@@ -1242,7 +1242,7 @@ class DataFrame:
             df._df.rename(k, v)
         return df
 
-    def insert_at_idx(self, index: int, series: "pl.Series") -> None:
+    def insert_at_idx(self, index: int, series: "pli.Series") -> None:
         """
         Insert a Series at a certain column index. This operation is in place.
 
@@ -1255,7 +1255,7 @@ class DataFrame:
         """
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self, predicate: "pl.Expr") -> "DataFrame":
+    def filter(self, predicate: "pli.Expr") -> "DataFrame":
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -1477,7 +1477,7 @@ class DataFrame:
         )
         return summary  # type: ignore
 
-    def replace_at_idx(self, index: int, series: "pl.Series") -> None:
+    def replace_at_idx(self, index: int, series: "pli.Series") -> None:
         """
         Replace a column at an index location.
 
@@ -1515,7 +1515,7 @@ class DataFrame:
 
     def sort(
         self,
-        by: Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]],
+        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
         reverse: Union[bool, tp.List[bool]] = False,
         in_place: bool = False,
     ) -> "DataFrame":
@@ -1606,7 +1606,7 @@ class DataFrame:
         """
         return self._df.frame_equal(other._df, null_equal)
 
-    def replace(self, column: str, new_col: "pl.Series") -> None:
+    def replace(self, column: str, new_col: "pli.Series") -> None:
         """
         Replace a column by a new Series.
 
@@ -2025,16 +2025,16 @@ class DataFrame:
         low = bounds["low"].dt[0]
         high = bounds["high"].dt[0]
         upsampled = pli.date_range(low, high, interval, name=by)
-        return pl.DataFrame(upsampled).join(self, on=by, how="left")  # type: ignore
+        return DataFrame(upsampled).join(self, on=by, how="left")  # type: ignore
 
     def join(
         self,
         df: "DataFrame",
         left_on: Optional[
-            Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]]
+            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
         ] = None,
         right_on: Optional[
-            Union[str, "pl.Expr", tp.List[str], tp.List["pl.Expr"]]
+            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
         ] = None,
         on: Optional[Union[str, tp.List[str]]] = None,
         how: str = "inner",
@@ -2174,7 +2174,7 @@ class DataFrame:
         self,
         f: Callable[[Tuple[Any]], Any],
         return_dtype: Optional[Type[DataType]] = None,
-    ) -> "pl.Series":
+    ) -> "pli.Series":
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
 
@@ -2189,7 +2189,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.apply(f, return_dtype))
 
-    def with_column(self, column: Union["pl.Series", "pl.Expr"]) -> "DataFrame":
+    def with_column(self, column: Union["pli.Series", "pli.Expr"]) -> "DataFrame":
         """
         Return a new DataFrame with the column added or replaced.
 
@@ -2219,7 +2219,7 @@ class DataFrame:
         )
 
     def hstack(
-        self, columns: Union[tp.List["pl.Series"], "DataFrame"], in_place: bool = False
+        self, columns: Union[tp.List["pli.Series"], "DataFrame"], in_place: bool = False
     ) -> Optional["DataFrame"]:
         """
         Return a new DataFrame grown horizontally by stacking multiple Series to it.
@@ -2350,7 +2350,7 @@ class DataFrame:
 
         return wrap_df(self._df.drop(name))
 
-    def drop_in_place(self, name: str) -> "pl.Series":
+    def drop_in_place(self, name: str) -> "pli.Series":
         """
         Drop in place.
 
@@ -2383,7 +2383,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.drop_in_place(name))
 
-    def select_at_idx(self, idx: int) -> "pl.Series":
+    def select_at_idx(self, idx: int) -> "pli.Series":
         """
         Select column at index location.
 
@@ -2431,13 +2431,13 @@ class DataFrame:
         """
         return list(map(lambda s: pli.wrap_s(s), self._df.get_columns()))
 
-    def get_column(self, name: str) -> "pl.Series":
+    def get_column(self, name: str) -> "pli.Series":
         """
         Get a single column as Series by name.
         """
         return self[name]
 
-    def fill_null(self, strategy: Union[str, "pl.Expr"]) -> "DataFrame":
+    def fill_null(self, strategy: Union[str, "pli.Expr"]) -> "DataFrame":
         """
         Fill None/missing values by a filling strategy or an Expression evaluation.
 
@@ -2464,7 +2464,7 @@ class DataFrame:
             return self.fill_null(pli.lit(strategy))
         return wrap_df(self._df.fill_null(strategy))
 
-    def fill_nan(self, fill_value: Union["pl.Expr", int, float]) -> "DataFrame":
+    def fill_nan(self, fill_value: Union["pli.Expr", int, float]) -> "DataFrame":
         """
         Fill None/missing values by a an Expression evaluation.
 
@@ -2485,7 +2485,7 @@ class DataFrame:
         return self.lazy().fill_nan(fill_value).collect(no_optimization=True)
 
     def explode(
-        self, columns: Union[str, tp.List[str], "pl.Expr", tp.List["pl.Expr"]]
+        self, columns: Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]
     ) -> "DataFrame":
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
@@ -2668,19 +2668,19 @@ class DataFrame:
             .collect(no_optimization=True, string_cache=False)
         )
 
-    def is_duplicated(self) -> "pl.Series":
+    def is_duplicated(self) -> "pli.Series":
         """
         Get a mask of all duplicated rows in this DataFrame.
         """
         return pli.wrap_s(self._df.is_duplicated())
 
-    def is_unique(self) -> "pl.Series":
+    def is_unique(self) -> "pli.Series":
         """
         Get a mask of all unique rows in this DataFrame.
         """
         return pli.wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "pl.LazyFrame":
+    def lazy(self) -> "pli.LazyFrame":
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -2700,8 +2700,8 @@ class DataFrame:
         self,
         exprs: Union[
             str,
-            "pl.Expr",
-            Sequence[Union[str, "pl.Expr"]],
+            "pli.Expr",
+            Sequence[Union[str, "pli.Expr"]],
             Sequence[bool],
             Sequence[int],
             Sequence[float],
@@ -2741,7 +2741,9 @@ class DataFrame:
             self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)  # type: ignore
         )
 
-    def with_columns(self, exprs: Union["pl.Expr", tp.List["pl.Expr"]]) -> "DataFrame":
+    def with_columns(
+        self, exprs: Union["pli.Expr", tp.List["pli.Expr"]]
+    ) -> "DataFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -2764,7 +2766,7 @@ class DataFrame:
         """
         return self._df.n_chunks()
 
-    def max(self, axis: int = 0) -> Union["DataFrame", "pl.Series"]:
+    def max(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their maximum value.
 
@@ -2792,7 +2794,7 @@ class DataFrame:
             return pli.wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")
 
-    def min(self, axis: int = 0) -> Union["DataFrame", "pl.Series"]:
+    def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their minimum value.
 
@@ -2822,7 +2824,7 @@ class DataFrame:
 
     def sum(
         self, axis: int = 0, null_strategy: str = "ignore"
-    ) -> Union["DataFrame", "pl.Series"]:
+    ) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their sum value.
 
@@ -2860,7 +2862,7 @@ class DataFrame:
 
     def mean(
         self, axis: int = 0, null_strategy: str = "ignore"
-    ) -> Union["DataFrame", "pl.Series"]:
+    ) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their mean value.
 
@@ -3108,8 +3110,8 @@ class DataFrame:
         return wrap_df(self._df.sample_frac(frac, with_replacement))
 
     def fold(
-        self, operation: Callable[["pl.Series", "pl.Series"], "pl.Series"]
-    ) -> "pl.Series":
+        self, operation: Callable[["pli.Series", "pli.Series"], "pli.Series"]
+    ) -> "pli.Series":
         """
         Apply a horizontal reduction on a DataFrame. This can be used to effectively
         determine aggregations on a row level, and can be applied to any DataType that
@@ -3222,7 +3224,7 @@ class DataFrame:
 
     def hash_rows(
         self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3
-    ) -> "pl.Series":
+    ) -> "pli.Series":
         """
         Hash and combine the rows in this DataFrame.
 
@@ -3389,8 +3391,8 @@ class GroupBy:
         column_to_agg: Union[
             tp.List[Tuple[str, tp.List[str]]],
             Dict[str, Union[str, tp.List[str]]],
-            tp.List["pl.Expr"],
-            "pl.Expr",
+            tp.List["pli.Expr"],
+            "pli.Expr",
         ],
     ) -> DataFrame:
         """

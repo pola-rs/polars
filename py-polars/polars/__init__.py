@@ -8,6 +8,7 @@ except ImportError as e:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
+from polars.internals.expr import Expr
 from polars.internals.frame import DataFrame
 from polars.internals.functions import (
     arg_where,
@@ -54,13 +55,11 @@ from polars.internals.lazy_functions import (
     std,
     sum,
     tail,
-    to_list,
-    var,
 )
-from polars.internals.series import (  # TODO: this top-level import fixes a number of tests, but we should not want this import here
-    Series,
-    wrap_s,
-)
+from polars.internals.lazy_functions import to_list
+from polars.internals.lazy_functions import to_list as list
+from polars.internals.lazy_functions import var
+from polars.internals.series import Series
 from polars.internals.whenthen import when
 
 # TODO: remove wildcard imports

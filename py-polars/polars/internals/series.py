@@ -22,7 +22,7 @@ from polars.internals.construction import (
 )
 
 try:
-    from polars.polars import PyDataFrame, PySeries, col
+    from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
 except ImportError:
@@ -588,7 +588,7 @@ class Series:
         """
         return wrap_s(self._s.drop_nulls())
 
-    def to_frame(self) -> "pl.DataFrame":
+    def to_frame(self) -> "pli.DataFrame":
         """
         Cast this Series to a DataFrame.
 
@@ -630,7 +630,7 @@ class Series:
         """
         return DTYPES[self._s.dtype()]
 
-    def describe(self) -> "pl.DataFrame":
+    def describe(self) -> "pli.DataFrame":
         """
         Quick summary statistics of a series. Series with mixed datatypes will return summary statistics for the datatype of the first value.
 
@@ -841,7 +841,7 @@ class Series:
         """
         return self._s.quantile(quantile)
 
-    def to_dummies(self) -> "pl.DataFrame":
+    def to_dummies(self) -> "pli.DataFrame":
         """
         Get dummy variables.
 
@@ -865,7 +865,7 @@ class Series:
         """
         return pli.wrap_df(self._s.to_dummies())
 
-    def value_counts(self) -> "pl.DataFrame":
+    def value_counts(self) -> "pli.DataFrame":
         """
         Count the unique values in a Series.
 
@@ -2023,7 +2023,7 @@ class Series:
     def __deepcopy__(self, memodict={}) -> "Series":  # type: ignore
         return self.clone()
 
-    def fill_null(self, strategy: Union[str, int, "pl.Expr"]) -> "Series":
+    def fill_null(self, strategy: Union[str, int, "pli.Expr"]) -> "Series":
         """
         Fill null values with a filling strategy.
 
@@ -2320,7 +2320,7 @@ class Series:
         return wrap_s(self._s.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: Union[int, "pl.Expr"]
+        self, periods: int, fill_value: Union[int, "pli.Expr"]
     ) -> "Series":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -2599,8 +2599,8 @@ class Series:
         return wrap_s(self._s.rolling_var(window_size, weights, min_periods, center))
 
     def rolling_apply(
-        self, window_size: int, function: Callable[["pl.Series"], Any]
-    ) -> "pl.Series":
+        self, window_size: int, function: Callable[["pli.Series"], Any]
+    ) -> "pli.Series":
         """
         Allows a custom rolling window function.
         Prefer the specific rolling window functions over this one, as they are faster.
@@ -2794,7 +2794,7 @@ class Series:
         """
         return StringNameSpace(self)
 
-    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pl.Series":
+    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pli.Series":
         """
         Hash the Series.
 
@@ -3213,49 +3213,49 @@ class ListNameSpace:
         Sum all the arrays in the list
         """
         s = wrap_s(self._s)
-        return s.to_frame().select(pl.col(s.name).arr.sum())  # type: ignore
+        return s.to_frame().select(pli.col(s.name).arr.sum())  # type: ignore
 
     def max(self) -> Series:
         """
         Compute the max value of the arrays in the list
         """
         s = wrap_s(self._s)
-        return s.to_frame().select(pl.col(s.name).arr.max())  # type: ignore
+        return s.to_frame().select(pli.col(s.name).arr.max())  # type: ignore
 
     def min(self) -> Series:
         """
         Compute the min value of the arrays in the list
         """
         s = wrap_s(self._s)
-        return s.to_frame().select(pl.col(s.name).arr.min())  # type: ignore
+        return s.to_frame().select(pli.col(s.name).arr.min())  # type: ignore
 
     def mean(self) -> Series:
         """
         Compute the mean value of the arrays in the list
         """
         s = wrap_s(self._s)
-        return s.to_frame().select(pl.col(s.name).arr.min())  # type: ignore
+        return s.to_frame().select(pli.col(s.name).arr.min())  # type: ignore
 
     def sort(self, reverse: bool) -> Series:
         """
         Sort the arrays in the list
         """
         s = wrap_s(self._s)
-        return s.to_frame().select(pl.col(s.name).arr.sort(reverse))  # type: ignore
+        return s.to_frame().select(pli.col(s.name).arr.sort(reverse))  # type: ignore
 
     def reverse(self) -> Series:
         """
         Reverse the arrays in the list
         """
         s = wrap_s(self._s)
-        return s.to_frame().select(pl.col(s.name).arr.reverse())  # type: ignore
+        return s.to_frame().select(pli.col(s.name).arr.reverse())  # type: ignore
 
     def unique(self) -> Series:
         """
         Get the unique/distinct values in the list
         """
         s = wrap_s(self._s)
-        return s.to_frame().select(pl.col(s.name).arr.unique())  # type: ignore
+        return s.to_frame().select(pli.col(s.name).arr.unique())  # type: ignore
 
     def concat(self, other: Union[tp.List[Series], Series]) -> "Series":
         """

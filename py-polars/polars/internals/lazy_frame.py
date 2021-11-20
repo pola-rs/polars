@@ -221,7 +221,7 @@ class LazyFrame:
 
     def sort(
         self,
-        by: Union[str, "Expr", tp.List[str], tp.List["Expr"]],
+        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
         reverse: Union[bool, tp.List[bool]] = False,
     ) -> "LazyFrame":
         """
@@ -378,7 +378,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.cache())
 
-    def filter(self, predicate: "Expr") -> "LazyFrame":
+    def filter(self, predicate: "pli.Expr") -> "LazyFrame":
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -425,7 +425,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(
-        self, exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
+        self, exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"]]
     ) -> "LazyFrame":
         """
         Select columns from this DataFrame.
@@ -440,7 +440,7 @@ class LazyFrame:
 
     def groupby(
         self,
-        by: Union[str, tp.List[str], "Expr", tp.List["Expr"]],
+        by: Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]],
         maintain_order: bool = False,
     ) -> "LazyGroupBy":
         """
@@ -470,9 +470,13 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
-        right_on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
-        on: Optional[Union[str, "Expr", tp.List[str], tp.List["Expr"]]] = None,
+        left_on: Optional[
+            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+        ] = None,
+        right_on: Optional[
+            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+        ] = None,
+        on: Optional[Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]] = None,
         how: str = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
@@ -607,7 +611,9 @@ class LazyFrame:
             )
         )
 
-    def with_columns(self, exprs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
+    def with_columns(
+        self, exprs: Union[tp.List["pli.Expr"], "pli.Expr"]
+    ) -> "LazyFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -629,7 +635,7 @@ class LazyFrame:
 
         return wrap_ldf(self._ldf.with_columns(pyexprs))
 
-    def with_column(self, expr: "Expr") -> "LazyFrame":
+    def with_column(self, expr: "pli.Expr") -> "LazyFrame":
         """
         Add or overwrite column in a DataFrame.
 
@@ -693,7 +699,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: Union["Expr", int, str, float]
+        self, periods: int, fill_value: Union["pli.Expr", int, str, float]
     ) -> "LazyFrame":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -782,7 +788,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.with_row_count(name))
 
-    def fill_null(self, fill_value: Union[int, str, "Expr"]) -> "LazyFrame":
+    def fill_null(self, fill_value: Union[int, str, "pli.Expr"]) -> "LazyFrame":
         """
         Fill missing values
 
@@ -795,7 +801,7 @@ class LazyFrame:
             fill_value = pli.lit(fill_value)
         return wrap_ldf(self._ldf.fill_null(fill_value._pyexpr))
 
-    def fill_nan(self, fill_value: Union[int, str, float, "Expr"]) -> "LazyFrame":
+    def fill_nan(self, fill_value: Union[int, str, float, "pli.Expr"]) -> "LazyFrame":
         """
         Fill floating point NaN values.
 
@@ -863,7 +869,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.quantile(quantile))
 
     def explode(
-        self, columns: Union[str, tp.List[str], "Expr", tp.List["Expr"]]
+        self, columns: Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]
     ) -> "LazyFrame":
         """
         Explode lists to long format.
@@ -1072,7 +1078,7 @@ class LazyGroupBy:
     def __init__(self, lgb: "PyLazyGroupBy"):
         self.lgb = lgb
 
-    def agg(self, aggs: Union[tp.List["Expr"], "Expr"]) -> "LazyFrame":
+    def agg(self, aggs: Union[tp.List["pli.Expr"], "pli.Expr"]) -> "LazyFrame":
         """
         Describe the aggregation that need to be done on a group.
 
