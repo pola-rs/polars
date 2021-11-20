@@ -1,4 +1,6 @@
 pub mod default_arrays;
+#[cfg(feature = "extension")]
+mod extension;
 
 use crate::utils::CustomIterTools;
 use arrow::array::{Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};

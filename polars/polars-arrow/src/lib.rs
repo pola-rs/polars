@@ -1,5 +1,6 @@
 pub mod array;
 pub mod bit_util;
+#[cfg(feature = "compute")]
 pub mod compute;
 pub mod error;
 pub mod is_valid;
