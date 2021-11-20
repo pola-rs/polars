@@ -1641,27 +1641,54 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn empty_df_join() {
+    fn empty_df_join() -> Result<()> {
         let empty: Vec<String> = vec![];
-        let left = DataFrame::new(vec![
+        let empty_df = DataFrame::new(vec![
             Series::new("key", &empty),
-            Series::new("lval", &empty),
+            Series::new("eval", &empty),
         ])
         .unwrap();
 
-        let right = DataFrame::new(vec![
+        let df = DataFrame::new(vec![
             Series::new("key", &["foo"]),
-            Series::new("rval", &[4]),
+            Series::new("aval", &[4]),
         ])
         .unwrap();
 
-        let res = left.inner_join(&right, "key", "key");
+        let out = empty_df.inner_join(&df, "key", "key").unwrap();
+        assert_eq!(out.height(), 0);
+        let out = empty_df.left_join(&df, "key", "key").unwrap();
+        assert_eq!(out.height(), 0);
+        let out = empty_df.outer_join(&df, "key", "key").unwrap();
+        assert_eq!(out.height(), 1);
+        df.left_join(&empty_df, "key", "key")?;
+        df.inner_join(&empty_df, "key", "key")?;
+        df.outer_join(&empty_df, "key", "key")?;
 
-        assert!(res.is_ok());
-        assert_eq!(res.unwrap().height(), 0);
-        right.left_join(&left, "key", "key").unwrap();
-        right.inner_join(&left, "key", "key").unwrap();
-        right.outer_join(&left, "key", "key").unwrap();
+        let empty: Vec<String> = vec![];
+        let empty_df = DataFrame::new(vec![
+            Series::new("key", &empty),
+            Series::new("eval", &empty),
+        ])
+        .unwrap();
+
+        let df = df![
+            "key" => [1i32, 2],
+            "vals" => [1, 2],
+        ]?;
+
+        // https://github.com/pola-rs/polars/issues/1824
+        let empty: Vec<i32> = vec![];
+        let empty_df = DataFrame::new(vec![
+            Series::new("key", &empty),
+            Series::new("1val", &empty),
+            Series::new("2val", &empty),
+        ])?;
+
+        let out = df.left_join(&empty_df, "key", "key")?;
+        assert_eq!(out.shape(), (2, 4));
+
+        Ok(())
     }
 
     #[test]

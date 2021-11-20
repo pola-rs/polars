@@ -205,6 +205,10 @@ harness = false
 name = "take"
 harness = false
 
+[[bench]]
+name = "sort"
+harness = false
+
 [package.metadata.docs.rs]
 # not all because arrow 4.3 does not compile with simd
 # all-features = true

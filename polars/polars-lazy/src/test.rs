@@ -2201,3 +2201,22 @@ fn test_groupby_on_lists() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_single_group_result() -> Result<()> {
+    // the argsort should not auto explode
+    let df = df![
+        "a" => [1, 2],
+        "b" => [1, 1]
+    ]?;
+
+    let out = df
+        .lazy()
+        .select([col("a").arg_sort(false).over([col("a")]).flatten()])
+        .collect()?;
+
+    let a = out.column("a")?.u32()?;
+    assert_eq!(Vec::from(a), &[Some(0), Some(0)]);
+
+    Ok(())
+}

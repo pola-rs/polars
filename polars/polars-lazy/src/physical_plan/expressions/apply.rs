@@ -180,8 +180,6 @@ impl PhysicalAggregation for ApplyExpr {
                     let mut container = [Default::default()];
                     let name = ac.series().name().to_string();
 
-                    let mut all_unit_length = true;
-
                     let mut ca: ListChunked = ac
                         .aggregated()
                         .list()
@@ -190,21 +188,11 @@ impl PhysicalAggregation for ApplyExpr {
                         .map(|opt_s| {
                             opt_s.and_then(|s| {
                                 container[0] = s;
-                                let out = self.function.call_udf(&mut container).ok();
-
-                                if let Some(s) = &out {
-                                    if s.len() != 1 {
-                                        all_unit_length = false;
-                                    }
-                                }
-                                out
+                                self.function.call_udf(&mut container).ok()
                             })
                         })
                         .collect();
                     ca.rename(&name);
-                    if all_unit_length {
-                        return Ok(Some(ca.explode()?));
-                    }
                     Ok(Some(ca.into_series()))
                 }
                 ApplyOptions::ApplyFlat => {
@@ -232,7 +220,6 @@ impl PhysicalAggregation for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyGroups => {
-                    let mut all_unit_length = true;
                     let mut container = vec![Default::default(); acs.len()];
                     let name = acs[0].series().name().to_string();
 
@@ -259,20 +246,10 @@ impl PhysicalAggregation for ApplyExpr {
                                     Some(s) => container.push(s),
                                 }
                             }
-                            let out = self.function.call_udf(&mut container).ok();
-
-                            if let Some(s) = &out {
-                                if s.len() != 1 {
-                                    all_unit_length = false;
-                                }
-                            }
-                            out
+                            self.function.call_udf(&mut container).ok()
                         })
                         .collect();
                     ca.rename(&name);
-                    if all_unit_length {
-                        return Ok(Some(ca.explode()?));
-                    }
                     Ok(Some(ca.into_series()))
                 }
                 ApplyOptions::ApplyFlat => {
