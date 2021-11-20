@@ -52,7 +52,7 @@ from polars.lazy.functions import (
     var,
 )
 
-from . import cfg, convert, datatypes, eager, functions, io, lazy, string_cache
+from . import cfg, convert, datatypes, eager, functions, io, lazy, string_cache, testing
 from .cfg import *
 from .convert import *
 from .datatypes import *
