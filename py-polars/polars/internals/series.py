@@ -12,7 +12,7 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.internals.construction import (
     arrow_to_pyseries,
     numpy_to_pyseries,

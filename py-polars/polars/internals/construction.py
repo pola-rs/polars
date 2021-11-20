@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type, Uni
 
 import numpy as np
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     DataType,
     Date,

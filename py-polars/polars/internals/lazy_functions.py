@@ -5,7 +5,7 @@ from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import DataType, Date, Datetime
 
 try:

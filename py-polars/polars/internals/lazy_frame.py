@@ -15,7 +15,7 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
 from polars.utils import _process_null_values
 

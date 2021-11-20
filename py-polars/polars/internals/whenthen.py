@@ -7,7 +7,7 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-import polars.internals as pli
+from polars import internals as pli
 
 __all__ = ["when"]
 

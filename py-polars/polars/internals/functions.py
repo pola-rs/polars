@@ -3,7 +3,7 @@ from typing import Optional, Sequence, Union, overload
 
 import numpy as np
 
-import polars.internals as pli
+from polars import internals as pli
 
 try:
     from polars.datatypes import Datetime, py_type_to_dtype
