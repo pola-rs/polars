@@ -252,7 +252,8 @@ a,b,c
     assert out.frame_equal(expected)
 
     # now from disk
-    out = pl.read_csv("tests/files/gzipped.csv")
+    csv_file = Path(__file__).parent / "files" / "gzipped.csv"
+    out = pl.read_csv(str(csv_file))
     assert out.frame_equal(expected)
 
     # now with column projection
