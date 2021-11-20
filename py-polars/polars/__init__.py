@@ -59,7 +59,7 @@ from polars.internals.lazy_functions import (
 from polars.internals.lazy_functions import to_list
 from polars.internals.lazy_functions import to_list as list
 from polars.internals.lazy_functions import var
-from polars.internals.series import Series
+from polars.internals.series import Series, wrap_s  # TODO: remove need for wrap_s
 from polars.internals.whenthen import when
 
 # TODO: remove wildcard imports
