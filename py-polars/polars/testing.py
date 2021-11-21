@@ -1,7 +1,6 @@
 from typing import Any
 
 from polars.datatypes import (
-    _DTYPE_TO_PY_TYPE,
     Boolean,
     Float32,
     Float64,
@@ -13,6 +12,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    dtype_to_py_type,
 )
 from polars.internals import Series
 
@@ -56,7 +56,7 @@ def assert_series_equal(
         if left.name != right.name:
             raise_assert_detail(obj, "Name mismatch", left.name, right.name)
 
-    _can_be_subtracted = hasattr(_DTYPE_TO_PY_TYPE[left.dtype], "__sub__")
+    _can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
     if check_exact or not _can_be_subtracted:
         if any((left != right).to_list()):
             raise_assert_detail(
