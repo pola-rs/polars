@@ -5,7 +5,9 @@ from polars.string_cache import toggle_string_cache
 
 
 class Config:
-    "Configure polars"
+    """
+    Configure polars
+    """
 
     @classmethod
     def set_utf8_tables(cls) -> "Type[Config]":
