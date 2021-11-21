@@ -1662,7 +1662,7 @@ class Expr:
         return wrap_expr(self._pyexpr.diff(n, null_behavior))
 
     def skew(self, bias: bool = True) -> "Expr":
-        """Compute the sample skewness of a data set.
+        r"""Compute the sample skewness of a data set.
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
         that there is more weight in the right tail of the distribution. The
@@ -2073,7 +2073,7 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
-        """
+        r"""
         Extract the target capture group from provided patterns.
 
         Parameters
@@ -2099,7 +2099,7 @@ class ExprStringNameSpace:
         ...             'http://vote.com/ballon_dor?candidate=ronaldo&ref=polars'
         ...         ]})
         >>> df.select([
-        ...             pl.col('a').str.extract('candidate=(\w+)', 1)
+        ...             pl.col('a').str.extract(r'candidate=(\w+)', 1)
         ...         ])
         shape: (3, 1)
         ┌─────────┐
