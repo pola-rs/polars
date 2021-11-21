@@ -130,12 +130,12 @@ def col(
 
     if isinstance(name, list):
         if len(name) == 0 or isinstance(name[0], str):
-            return pli.wrap_expr(pycols(name))
+            return pli.Expr(pycols(name))
         elif isclass(name[0]) and issubclass(name[0], DataType):
-            return pli.wrap_expr(_dtype_cols(name))
+            return pli.Expr(_dtype_cols(name))
         else:
             raise ValueError("did expect argument of List[str] or List[DataType]")
-    return pli.wrap_expr(pycol(name))
+    return pli.Expr(pycol(name))
 
 
 @tp.overload
@@ -509,14 +509,14 @@ def lit(
     if isinstance(value, pli.Series):
         name = value.name
         value = value._s
-        return pli.wrap_expr(pylit(value)).alias(name)
+        return pli.Expr(pylit(value)).alias(name)
 
     if isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
 
     if dtype:
-        return pli.wrap_expr(pylit(value)).cast(dtype)
-    return pli.wrap_expr(pylit(value))
+        return pli.Expr(pylit(value)).cast(dtype)
+    return pli.Expr(pylit(value))
 
 
 def spearman_rank_corr(
@@ -537,7 +537,7 @@ def spearman_rank_corr(
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr))
+    return pli.Expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr))
 
 
 def pearson_corr(
@@ -558,7 +558,7 @@ def pearson_corr(
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr))
+    return pli.Expr(pypearson_corr(a._pyexpr, b._pyexpr))
 
 
 def cov(
@@ -579,7 +579,7 @@ def cov(
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pycov(a._pyexpr, b._pyexpr))
+    return pli.Expr(pycov(a._pyexpr, b._pyexpr))
 
 
 def map(
@@ -604,7 +604,7 @@ def map(
     Expr
     """
     exprs = pli._selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=False))
+    return pli.Expr(_map_mul(exprs, f, return_dtype, apply_groups=False))
 
 
 def apply(
@@ -639,7 +639,7 @@ def apply(
     Expr
     """
     exprs = pli._selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=True))
+    return pli.Expr(_map_mul(exprs, f, return_dtype, apply_groups=True))
 
 
 def map_binary(
@@ -668,7 +668,7 @@ def map_binary(
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pybinary_function(a._pyexpr, b._pyexpr, f, return_dtype))
+    return pli.Expr(pybinary_function(a._pyexpr, b._pyexpr, f, return_dtype))
 
 
 def fold(
@@ -697,7 +697,7 @@ def fold(
         exprs = [exprs]
 
     exprs = pli._selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
+    return pli.Expr(pyfold(acc._pyexpr, f, exprs))
 
 
 def any(name: Union[str, tp.List["pli.Expr"]]) -> "pli.Expr":
@@ -840,7 +840,7 @@ def arange(
         df = pli.DataFrame({"a": [1]})
         return df.select(pli.arange(low, high, step).alias("arange"))["arange"]  # type: ignore
 
-    return pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
+    return pli.Expr(pyarange(low._pyexpr, high._pyexpr, step))
 
 
 def argsort_by(
@@ -863,7 +863,7 @@ def argsort_by(
     if not isinstance(reverse, list):
         reverse = [reverse]
     exprs = pli._selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyargsort_by(exprs, reverse))
+    return pli.Expr(pyargsort_by(exprs, reverse))
 
 
 def _datetime(
@@ -912,7 +912,7 @@ def _datetime(
         second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr  # type: ignore
     if millisecond is not None:
         millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr  # type: ignore
-    return pli.wrap_expr(
+    return pli.Expr(
         py_datetime(
             year._pyexpr, month._pyexpr, day._pyexpr, hour, minute, second, millisecond
         )
@@ -951,7 +951,7 @@ def concat_str(exprs: tp.Sequence[Union["pli.Expr", str]], sep: str = "") -> "pl
         String value that will be used to separate the values.
     """
     exprs = pli._selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_concat_str(exprs, sep))
+    return pli.Expr(_concat_str(exprs, sep))
 
 
 def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
@@ -1014,7 +1014,7 @@ def concat_list(exprs: tp.List["pli.Expr"]) -> "pli.Expr":
         Columns to concat into a List Series
     """
     exprs = pli._selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_concat_lst(exprs))
+    return pli.Expr(_concat_lst(exprs))
 
 
 def collect_all(

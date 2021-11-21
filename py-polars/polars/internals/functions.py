@@ -84,7 +84,7 @@ def concat(
                 f"how should be one of {'vertical', 'diagonal'}, got {how}"
             )
     elif isinstance(items[0], pli.LazyFrame):
-        return pli.wrap_ldf(_concat_lf(items, rechunk))
+        return pli.LazyFrame(_concat_lf(items, rechunk))
     else:
         out = pli.wrap_s(_concat_series(items))
 

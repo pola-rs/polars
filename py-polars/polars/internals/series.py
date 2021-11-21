@@ -182,6 +182,8 @@ class Series:
 
     """
 
+    _s: "PySeries"
+
     def __init__(
         self,
         name: Optional[Union[str, ArrayLike]] = None,

@@ -176,6 +176,8 @@ class DataFrame:
     ╰─────┴─────┴─────╯
     """
 
+    _df: "PyDataFrame"
+
     def __init__(
         self,
         data: Optional[
@@ -2690,7 +2692,7 @@ class DataFrame:
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
-        return pli.wrap_ldf(self._df.lazy())
+        return pli.LazyFrame(self._df.lazy())
 
     def select(
         self,

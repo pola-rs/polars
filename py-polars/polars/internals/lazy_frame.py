@@ -20,23 +20,15 @@ from polars.datatypes import DataType, py_type_to_dtype
 from polars.utils import _process_null_values
 
 
-def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
-    return LazyFrame._from_pyldf(ldf)
-
-
 class LazyFrame:
     """
     Representation of a Lazy computation graph/ query.
     """
 
-    def __init__(self) -> None:
-        self._ldf: PyLazyFrame
+    _ldf: "PyLazyFrame"
 
-    @staticmethod
-    def _from_pyldf(ldf: "PyLazyFrame") -> "LazyFrame":
-        self = LazyFrame.__new__(LazyFrame)
+    def __init__(self, ldf: "PyLazyFrame") -> None:
         self._ldf = ldf
-        return self
 
     @staticmethod
     def scan_csv(
@@ -235,13 +227,13 @@ class LazyFrame:
             Whether or not to sort in reverse order.
         """
         if type(by) is str:
-            return wrap_ldf(self._ldf.sort(by, reverse))
+            return LazyFrame(self._ldf.sort(by, reverse))
         if type(reverse) is bool:
             reverse = [reverse]
 
         by = pli.expr_to_lit_or_expr(by, str_to_lit=False)
         by = pli._selection_to_pyexpr_list(by)
-        return wrap_ldf(self._ldf.sort_by_exprs(by, reverse))
+        return LazyFrame(self._ldf.sort_by_exprs(by, reverse))
 
     def collect(
         self,
@@ -372,7 +364,7 @@ class LazyFrame:
         """
         Cache the result once the execution of the physical plan hits this node.
         """
-        return wrap_ldf(self._ldf.cache())
+        return LazyFrame(self._ldf.cache())
 
     def filter(self, predicate: "pli.Expr") -> "LazyFrame":
         """
@@ -418,7 +410,7 @@ class LazyFrame:
         """
         if isinstance(predicate, str):
             predicate = pli.col(predicate)
-        return wrap_ldf(self._ldf.filter(predicate._pyexpr))
+        return LazyFrame(self._ldf.filter(predicate._pyexpr))
 
     def select(
         self, exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"]]
@@ -432,7 +424,7 @@ class LazyFrame:
             Column or columns to select.
         """
         exprs = pli._selection_to_pyexpr_list(exprs)
-        return wrap_ldf(self._ldf.select(exprs))
+        return LazyFrame(self._ldf.select(exprs))
 
     def groupby(
         self,
@@ -520,7 +512,7 @@ class LazyFrame:
 
         """
         if how == "cross":
-            return wrap_ldf(
+            return LazyFrame(
                 self._ldf.join(
                     ldf._ldf,
                     [],
@@ -593,7 +585,7 @@ class LazyFrame:
         if right_asof_by_ is None:
             right_asof_by_ = []
 
-        return wrap_ldf(
+        return LazyFrame(
             self._ldf.join(
                 ldf._ldf,
                 new_left_on,
@@ -629,7 +621,7 @@ class LazyFrame:
             elif isinstance(e, pli.Series):
                 pyexprs.append(pli.lit(e)._pyexpr)
 
-        return wrap_ldf(self._ldf.with_columns(pyexprs))
+        return LazyFrame(self._ldf.with_columns(pyexprs))
 
     def with_column(self, expr: "pli.Expr") -> "LazyFrame":
         """
@@ -655,13 +647,13 @@ class LazyFrame:
         """
         if isinstance(columns, str):
             columns = [columns]
-        return wrap_ldf(self._ldf.drop_columns(columns))
+        return LazyFrame(self._ldf.drop_columns(columns))
 
     def with_column_renamed(self, existing_name: str, new_name: str) -> "LazyFrame":
         """
         Rename a column in the DataFrame
         """
-        return wrap_ldf(self._ldf.with_column_renamed(existing_name, new_name))
+        return LazyFrame(self._ldf.with_column_renamed(existing_name, new_name))
 
     def rename(self, mapping: Dict[str, str]) -> "LazyFrame":
         """
@@ -674,13 +666,13 @@ class LazyFrame:
         """
         existing = list(mapping.keys())
         new = list(mapping.values())
-        return wrap_ldf(self._ldf.rename(existing, new))
+        return LazyFrame(self._ldf.rename(existing, new))
 
     def reverse(self) -> "LazyFrame":
         """
         Reverse the DataFrame.
         """
-        return wrap_ldf(self._ldf.reverse())
+        return LazyFrame(self._ldf.reverse())
 
     def shift(self, periods: int) -> "LazyFrame":
         """
@@ -692,7 +684,7 @@ class LazyFrame:
         periods
             Number of places to shift (may be negative).
         """
-        return wrap_ldf(self._ldf.shift(periods))
+        return LazyFrame(self._ldf.shift(periods))
 
     def shift_and_fill(
         self, periods: int, fill_value: Union["pli.Expr", int, str, float]
@@ -710,7 +702,7 @@ class LazyFrame:
         """
         if not isinstance(fill_value, pli.Expr):
             fill_value = pli.lit(fill_value)
-        return wrap_ldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
+        return LazyFrame(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
 
     def slice(self, offset: int, length: int) -> "LazyFrame":
         """
@@ -723,7 +715,7 @@ class LazyFrame:
         length
             Length of the slice.
         """
-        return wrap_ldf(self._ldf.slice(offset, length))
+        return LazyFrame(self._ldf.slice(offset, length))
 
     def limit(self, n: int) -> "LazyFrame":
         """
@@ -759,7 +751,7 @@ class LazyFrame:
         n
             Number of rows.
         """
-        return wrap_ldf(self._ldf.tail(n))
+        return LazyFrame(self._ldf.tail(n))
 
     def last(self) -> "LazyFrame":
         """
@@ -782,7 +774,7 @@ class LazyFrame:
         name
             Name of the column to add.
         """
-        return wrap_ldf(self._ldf.with_row_count(name))
+        return LazyFrame(self._ldf.with_row_count(name))
 
     def fill_null(self, fill_value: Union[int, str, "pli.Expr"]) -> "LazyFrame":
         """
@@ -795,7 +787,7 @@ class LazyFrame:
         """
         if not isinstance(fill_value, pli.Expr):
             fill_value = pli.lit(fill_value)
-        return wrap_ldf(self._ldf.fill_null(fill_value._pyexpr))
+        return LazyFrame(self._ldf.fill_null(fill_value._pyexpr))
 
     def fill_nan(self, fill_value: Union[int, str, float, "pli.Expr"]) -> "LazyFrame":
         """
@@ -814,55 +806,55 @@ class LazyFrame:
         """
         if not isinstance(fill_value, pli.Expr):
             fill_value = pli.lit(fill_value)
-        return wrap_ldf(self._ldf.fill_nan(fill_value._pyexpr))
+        return LazyFrame(self._ldf.fill_nan(fill_value._pyexpr))
 
     def std(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their standard deviation value.
         """
-        return wrap_ldf(self._ldf.std())
+        return LazyFrame(self._ldf.std())
 
     def var(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their variance value.
         """
-        return wrap_ldf(self._ldf.var())
+        return LazyFrame(self._ldf.var())
 
     def max(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their maximum value.
         """
-        return wrap_ldf(self._ldf.max())
+        return LazyFrame(self._ldf.max())
 
     def min(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their minimum value.
         """
-        return wrap_ldf(self._ldf.min())
+        return LazyFrame(self._ldf.min())
 
     def sum(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their sum value.
         """
-        return wrap_ldf(self._ldf.sum())
+        return LazyFrame(self._ldf.sum())
 
     def mean(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their mean value.
         """
-        return wrap_ldf(self._ldf.mean())
+        return LazyFrame(self._ldf.mean())
 
     def median(self) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their median value.
         """
-        return wrap_ldf(self._ldf.median())
+        return LazyFrame(self._ldf.median())
 
     def quantile(self, quantile: float) -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their quantile value.
         """
-        return wrap_ldf(self._ldf.quantile(quantile))
+        return LazyFrame(self._ldf.quantile(quantile))
 
     def explode(
         self, columns: Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]
@@ -926,7 +918,7 @@ class LazyFrame:
 
         """
         columns = pli._selection_to_pyexpr_list(columns)
-        return wrap_ldf(self._ldf.explode(columns))
+        return LazyFrame(self._ldf.explode(columns))
 
     def drop_duplicates(
         self,
@@ -939,7 +931,7 @@ class LazyFrame:
         """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
-        return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
+        return LazyFrame(self._ldf.drop_duplicates(maintain_order, subset))
 
     def drop_nulls(
         self, subset: Optional[Union[tp.List[str], str]] = None
@@ -1012,7 +1004,7 @@ class LazyFrame:
         """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
-        return wrap_ldf(self._ldf.drop_nulls(subset))
+        return LazyFrame(self._ldf.drop_nulls(subset))
 
     def melt(
         self, id_vars: Union[str, tp.List[str]], value_vars: Union[str, tp.List[str]]
@@ -1031,7 +1023,7 @@ class LazyFrame:
             value_vars = [value_vars]
         if isinstance(id_vars, str):
             id_vars = [id_vars]
-        return wrap_ldf(self._ldf.melt(id_vars, value_vars))
+        return LazyFrame(self._ldf.melt(id_vars, value_vars))
 
     def map(
         self,
@@ -1057,7 +1049,7 @@ class LazyFrame:
         if not no_optimizations:
             predicate_pushdown = False
             projection_pushdown = False
-        return wrap_ldf(self._ldf.map(f, predicate_pushdown, projection_pushdown))
+        return LazyFrame(self._ldf.map(f, predicate_pushdown, projection_pushdown))
 
     def interpolate(self) -> "LazyFrame":
         """
@@ -1070,6 +1062,8 @@ class LazyGroupBy:
     """
     Created by `df.lazy().groupby("foo)"`
     """
+
+    lgb: "PyLazyGroupBy"
 
     def __init__(self, lgb: "PyLazyGroupBy"):
         self.lgb = lgb
@@ -1095,7 +1089,7 @@ class LazyGroupBy:
         )
         """
         aggs = pli._selection_to_pyexpr_list(aggs)
-        return wrap_ldf(self.lgb.agg(aggs))
+        return LazyFrame(self.lgb.agg(aggs))
 
     def head(self, n: int = 5) -> "LazyFrame":
         """
@@ -1154,7 +1148,7 @@ class LazyGroupBy:
         ╰─────────┴─────╯
 
         """
-        return wrap_ldf(self.lgb.head(n))
+        return LazyFrame(self.lgb.head(n))
 
     def tail(self, n: int = 5) -> "LazyFrame":
         """
@@ -1213,7 +1207,7 @@ class LazyGroupBy:
         ╰─────────┴─────╯
 
         """
-        return wrap_ldf(self.lgb.tail(n))
+        return LazyFrame(self.lgb.tail(n))
 
     def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> "LazyFrame":
         """
@@ -1225,4 +1219,4 @@ class LazyGroupBy:
         f
             Function to apply over the `DataFrame`.
         """
-        return wrap_ldf(self.lgb.apply(f))
+        return LazyFrame(self.lgb.apply(f))

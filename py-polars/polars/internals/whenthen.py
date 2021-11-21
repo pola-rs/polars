@@ -40,7 +40,7 @@ class WhenThenThen:
         See Also: the `when` function.
         """
         expr = pli.expr_to_lit_or_expr(expr)
-        return pli.wrap_expr(self.pywenthenthen.otherwise(expr._pyexpr))
+        return pli.Expr(self.pywenthenthen.otherwise(expr._pyexpr))
 
 
 class WhenThen:
@@ -64,7 +64,7 @@ class WhenThen:
         See Also: the `when` function.
         """
         expr = pli.expr_to_lit_or_expr(expr)
-        return pli.wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
+        return pli.Expr(self._pywhenthen.otherwise(expr._pyexpr))
 
 
 class When:
