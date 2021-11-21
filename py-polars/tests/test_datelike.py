@@ -19,7 +19,7 @@ def test_fill_null() -> None:
     dt3 = date(2001, 1, 3)
     s = pl.Series("a", [dt1, dt2, dt3, None])
     dt_2 = date(2001, 1, 4)
-    for fill_val in (dt_2, pl.lit(dt_2)):  # type: ignore
+    for fill_val in (dt_2, pl.lit(dt_2)):
         out = s.fill_null(fill_val)  # type: ignore
 
         assert out.null_count() == 0
