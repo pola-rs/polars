@@ -5,7 +5,7 @@ try:
     from polars.polars import version
 except ImportError as e:
 
-    def version():
+    def version() -> str:
         return ""
 
     # this is only useful for documentation
