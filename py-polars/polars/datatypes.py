@@ -109,7 +109,7 @@ DTYPES: tp.List[Type[DataType]] = [
     Object,
     Categorical,
 ]
-DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
+_DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Int8: "i8",
     Int16: "i16",
     Int32: "i32",
@@ -130,7 +130,7 @@ DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Categorical: "categorical",
 }
 
-DTYPE_TO_CTYPE = {
+_DTYPE_TO_CTYPE = {
     UInt8: ctypes.c_uint8,
     UInt16: ctypes.c_uint16,
     UInt32: ctypes.c_uint32,
@@ -192,7 +192,21 @@ def date_like_to_physical(dtype: Type[DataType]) -> Type[DataType]:
 
 def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:
     try:
-        return DTYPE_TO_CTYPE[dtype]
+        return _DTYPE_TO_CTYPE[dtype]
+    except KeyError:
+        raise NotImplementedError
+
+
+def dtype_to_ffiname(dtype: Type[DataType]) -> str:
+    try:
+        return _DTYPE_TO_FFINAME[dtype]
+    except KeyError:
+        raise NotImplementedError
+
+
+def dtype_to_py_type(dtype: Type[DataType]) -> Type:
+    try:
+        return _DTYPE_TO_PY_TYPE[dtype]
     except KeyError:
         raise NotImplementedError
 
@@ -218,8 +232,9 @@ def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
 
 
-def _maybe_cast(el: Type[DataType], dtype: Type) -> Type[DataType]:
+def maybe_cast(el: Type[DataType], dtype: Type) -> Type[DataType]:
     # cast el if it doesn't match
-    if not isinstance(el, _DTYPE_TO_PY_TYPE[dtype]):
-        el = _DTYPE_TO_PY_TYPE[dtype](el)
+    py_type = dtype_to_py_type(dtype)
+    if not isinstance(el, py_type):
+        el = py_type(el)
     return el
