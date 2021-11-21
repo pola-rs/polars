@@ -31,48 +31,6 @@ except ImportError:
     _DOCUMENTING = True
 
 
-__all__ = [
-    "col",
-    "count",
-    "to_list",
-    "std",
-    "var",
-    "max",
-    "min",
-    "sum",
-    "mean",
-    "avg",
-    "median",
-    "n_unique",
-    "first",
-    "last",
-    "head",
-    "tail",
-    "lit",
-    "pearson_corr",
-    "spearman_rank_corr",
-    "cov",
-    "map",
-    "apply",
-    "map_binary",
-    "fold",
-    "any",
-    "all",
-    "groups",
-    "quantile",
-    "arange",
-    "argsort_by",
-    "concat_str",
-    "concat_list",
-    "collect_all",
-    "exclude",
-    "format",
-    "_datetime",
-    "_date",
-    "select",
-]
-
-
 def col(
     name: Union[
         str, tp.List[str], tp.List[Type[DataType]], "pli.Series", Type[DataType]

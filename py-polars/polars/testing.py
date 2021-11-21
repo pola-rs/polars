@@ -1,26 +1,20 @@
-try:
-    from typing import Any
+from typing import Any
 
-    from polars import Series
-    from polars.datatypes import (
-        _DTYPE_TO_PY_TYPE,
-        Boolean,
-        Float32,
-        Float64,
-        Int16,
-        Int32,
-        Int64,
-        UInt8,
-        UInt16,
-        UInt32,
-        UInt64,
-        Utf8,
-    )
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
-
+from polars.datatypes import (
+    _DTYPE_TO_PY_TYPE,
+    Boolean,
+    Float32,
+    Float64,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Utf8,
+)
+from polars.internals import Series
 
 _NUMERIC_COL_TYPES = (
     Int16,

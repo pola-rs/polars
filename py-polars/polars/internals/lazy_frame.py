@@ -19,10 +19,6 @@ from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
 from polars.utils import _process_null_values
 
-__all__ = [
-    "LazyFrame",
-]
-
 
 def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
     return LazyFrame._from_pyldf(ldf)

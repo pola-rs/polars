@@ -51,18 +51,6 @@ try:
 except ImportError:
     _WITH_FSSPEC = False
 
-__all__ = [
-    "read_csv",
-    "read_parquet",
-    "read_json",
-    "read_sql",
-    "read_ipc",
-    "scan_csv",
-    "scan_ipc",
-    "scan_parquet",
-    "read_ipc_schema",
-]
-
 
 def _process_http_file(path: str) -> BytesIO:
     with urlopen(path) as f:

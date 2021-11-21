@@ -25,13 +25,6 @@ from polars.datatypes import (
     Utf8,
 )
 
-__all__ = [
-    "Expr",
-    "ExprStringNameSpace",
-    "ExprDateTimeNameSpace",
-    "expr_to_lit_or_expr",
-]
-
 
 def _selection_to_pyexpr_list(
     exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]]]
