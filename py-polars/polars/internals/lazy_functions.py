@@ -592,7 +592,7 @@ def map(
 
     Parameters
     ----------
-    columns
+    exprs
         Input Series to f
     f
         Function to apply over the input
@@ -627,7 +627,7 @@ def apply(
 
     Parameters
     ----------
-    columns
+    exprs
         Input Series to f
     f
         Function to apply over the input

@@ -406,6 +406,8 @@ def scan_csv(
     ----------
     file
         Path to a file.
+    infer_schema_length
+        The number of rows Polars will read to try to determine the schema.
     has_headers
         If the CSV file has headers or not.
     ignore_errors

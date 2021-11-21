@@ -488,7 +488,7 @@ class Expr:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ false ┆ null │
         ╰───────┴──────╯
-        >>> df.select(col("a").is_not())
+        >>> df.select(pl.col("a").is_not())
         shape: (3, 1)
         ╭───────╮
         │ a     │
@@ -576,7 +576,7 @@ class Expr:
         """
         Syntactic sugar for:
 
-        >>> col("foo").filter(col("foo").is_not_null())
+        >>> pl.col("foo").filter(pl.col("foo").is_not_null())
         """
         return self.filter(self.is_not_null())
 
@@ -667,7 +667,7 @@ class Expr:
 
         Parameters
         ----------
-        data_type
+        dtype
             DataType to cast to
         strict
             Throw an error if a cast could not be done for instance due to an overflow
@@ -945,8 +945,8 @@ class Expr:
         >>>})
         >>> (df.lazy()
         >>>    .select([
-        >>>       col("groups")
-        >>>       sum("values").over("groups"))
+        >>>       pl.col("groups")
+        >>>       sum("values").over("groups")
         >>>   ]).collect())
             ╭────────┬────────╮
             │ groups ┆ values │
@@ -1021,7 +1021,14 @@ class Expr:
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
 
     def where(self, predicate: "Expr") -> "Expr":
-        "alias for filter"
+        """
+        Alias for filter
+
+        Parameters
+        ----------
+        predicate
+            Boolean expression.
+        """
         return self.filter(predicate)
 
     def map(
@@ -1042,6 +1049,8 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
+        agg_list
+
         """
         if return_dtype == str:
             return_dtype = Utf8
@@ -1084,7 +1093,7 @@ class Expr:
 
         >>> df = pl.DataFrame({"a": [1,  2,  1,  1],
                    "b": ["a", "b", "c", "c"]})
-        >>> (df
+        >>> df
          .lazy()
          .groupby("b")
          .agg([col("a").apply(lambda x: x.sum())])
@@ -1272,7 +1281,7 @@ class Expr:
         """
         Prints the value that this expression evaluates to and passes on the value.
 
-        >>> df.select(col("foo").cumsum().inspect("value is: {}").alias("bar"))
+        >>> df.select(pl.col("foo").cumsum().inspect("value is: {}").alias("bar"))
         """
 
         def inspect(s: "pli.Series") -> "pli.Series":
@@ -1386,7 +1395,7 @@ class Expr:
         >>>     }
         >>> )
         >>> df.select([
-        >>>     col("A").rolling_mean(window_size=2)
+        >>>     pl.col("A").rolling_mean(window_size=2)
         >>> ])
         shape: (6, 1)
         ┌──────┐
@@ -1542,7 +1551,7 @@ class Expr:
         >>>     }
         >>> )
         >>> df.select([
-        >>>     col("A").rolling_apply(3, lambda s: s.std())
+        >>>     pl.col("A").rolling_apply(3, lambda s: s.std())
         >>> ])
         shape: (5, 1)
         ┌────────────────────┐
@@ -1752,7 +1761,7 @@ class Expr:
 
         Examples
         >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df = df.select(col("foo").str_concat("-"))
+        >>> df = df.select(pl.col("foo").str_concat("-"))
         shape: (1, 1)
         ┌──────────┐
         │ foo      │

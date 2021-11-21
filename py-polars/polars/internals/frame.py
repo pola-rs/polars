@@ -424,6 +424,8 @@ class DataFrame:
             - str -> all values encountered equal to this string will be null
             - tp.List[str] -> A null value per column.
             - Dict[str, str] -> A dictionary that maps column name to a null value string.
+        parse_dates
+            Whether to attempt to parse dates or not
 
         Returns
         -------
@@ -1156,7 +1158,7 @@ class DataFrame:
             elif isinstance(col_selection, str):
                 self.replace(col_selection, s)
         else:
-            return NotImplemented
+            raise NotImplementedError
 
     def __len__(self) -> int:
         return self.height
@@ -1552,7 +1554,7 @@ class DataFrame:
         **Sort by multiple columns.**
         For multiple columns we can also use expression syntax.
 
-        >>> df.sort([col("foo"), col("bar") ** 2], reverse=[True, False])
+        >>> df.sort([pl.col("foo"), pl.col("bar") ** 2], reverse=[True, False])
 
         """
         if type(by) is list or isinstance(by, pli.Expr):
@@ -2201,12 +2203,12 @@ class DataFrame:
 
     def with_column_renamed(self, existing_name: str, new_name: str) -> "DataFrame":
         """
-        Return a new DataFrame with the column added or replaced.
+        Return a new DataFrame with the column renamed.
 
         Parameters
         ----------
-        column
-            Series, where the name of the Series refers to the column in the DataFrame.
+        existing_name
+        new_name
         """
         return (
             self.lazy()

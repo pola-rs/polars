@@ -678,14 +678,14 @@ class Series:
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
         elif self.is_numeric():
-            self = self.cast(Float64)
+            s = self.cast(Float64)
             stats = {
-                "min": self.min(),
-                "max": self.max(),
-                "null_count": self.null_count(),
-                "mean": self.mean(),
-                "std": self.std(),
-                "count": self.len(),
+                "min": s.min(),
+                "max": s.max(),
+                "null_count": s.null_count(),
+                "mean": s.mean(),
+                "std": s.std(),
+                "count": s.len(),
             }
         elif self.is_boolean():
             stats = {
