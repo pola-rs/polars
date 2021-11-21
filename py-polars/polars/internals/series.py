@@ -29,7 +29,6 @@ except ImportError:
     _DOCUMENTING = True
 
 from polars.datatypes import (
-    DTYPE_TO_FFINAME,
     DTYPES,
     Boolean,
     DataType,
@@ -48,9 +47,10 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
-    _maybe_cast,
     date_like_to_physical,
     dtype_to_ctype,
+    dtype_to_ffiname,
+    maybe_cast,
     py_type_to_dtype,
 )
 from polars.utils import _ptr_to_numpy
@@ -99,7 +99,7 @@ def get_ffi_func(
     -------
     ffi function
     """
-    ffi_name = DTYPE_TO_FFINAME[dtype]
+    ffi_name = dtype_to_ffiname(dtype)
     fname = name.replace("<>", ffi_name)
     if obj:
         return getattr(obj, fname, default)
@@ -298,7 +298,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.eq(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         f = get_ffi_func("eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -309,7 +309,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.neq(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         f = get_ffi_func("neq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -320,7 +320,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.gt(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         f = get_ffi_func("gt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -332,7 +332,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.lt(other._s))
         # cast other if it doesn't match
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         f = get_ffi_func("lt_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -343,7 +343,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.gt_eq(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -354,7 +354,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.lt_eq(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -365,7 +365,7 @@ class Series:
             other = Series("", [other])
         if isinstance(other, Series):
             return wrap_s(self._s.add(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("add_<>", dtype, self._s)
         if f is None:
@@ -375,7 +375,7 @@ class Series:
     def __sub__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.sub(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("sub_<>", dtype, self._s)
         if f is None:
@@ -390,7 +390,7 @@ class Series:
             if isinstance(other, Series):
                 return Series._from_pyseries(self._s.div(other._s))
 
-            other = _maybe_cast(other, self.dtype)
+            other = maybe_cast(other, self.dtype)
             dtype = date_like_to_physical(self.dtype)
             f = get_ffi_func("div_<>", dtype, self._s)
             return wrap_s(f(other))
@@ -405,7 +405,7 @@ class Series:
                 return Series._from_pyseries(self._s.div(other._s)).floor()
             return Series._from_pyseries(self._s.div(other._s))
 
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("div_<>", dtype, self._s)
         if self.is_float():
@@ -415,7 +415,7 @@ class Series:
     def __mul__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("mul_<>", dtype, self._s)
         if f is None:
@@ -425,7 +425,7 @@ class Series:
     def __mod__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.rem(other._s))
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("rem_<>", dtype, self._s)
         if f is None:
@@ -436,7 +436,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.rem(self._s))
         dtype = date_like_to_physical(self.dtype)
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("rem_<>_rhs", dtype, self._s)
         if f is None:
@@ -447,7 +447,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
         dtype = date_like_to_physical(self.dtype)
-        other = _maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype)
         other = match_dtype(other, dtype)
         f = get_ffi_func("add_<>_rhs", dtype, self._s)
         if f is None:
@@ -1215,7 +1215,7 @@ class Series:
         """
         return wrap_s(self._s.take_every(n))
 
-    def sort(self, in_place: bool = False, reverse: bool = False) -> Optional["Series"]:
+    def sort(self, in_place: bool = False, reverse: bool = False) -> "Series":
         """
         Sort this Series.
 
@@ -1251,7 +1251,7 @@ class Series:
         """
         if in_place:
             self._s.sort_in_place(reverse)
-            return None
+            return self
         else:
             return wrap_s(self._s.sort(reverse))
 
@@ -1737,7 +1737,7 @@ class Series:
     def __iter__(self) -> "SeriesIter":
         return SeriesIter(self.len(), self)
 
-    def rechunk(self, in_place: bool = False) -> Optional["Series"]:
+    def rechunk(self, in_place: bool = False) -> "Series":
         """
         Create a single chunk of memory for this Series.
 
@@ -1748,7 +1748,7 @@ class Series:
         """
         opt_s = self._s.rechunk(in_place)
         if in_place:
-            return None
+            return self
         else:
             return wrap_s(opt_s)
 

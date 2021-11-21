@@ -6,7 +6,7 @@ from textwrap import dedent
 from types import TracebackType
 from typing import Dict, Iterable, Optional, Type
 
-from polars.datatypes import DTYPE_TO_FFINAME, Object
+from polars.datatypes import Object, dtype_to_ffiname
 
 
 class Tag:
@@ -75,7 +75,7 @@ class HTMLFormatter:
                         self.elements.append(col)
             with Tag(self.elements, "tr"):
                 for dtype in self.df.dtypes:
-                    ffi_name = DTYPE_TO_FFINAME[dtype]
+                    ffi_name = dtype_to_ffiname(dtype)
                     with Tag(self.elements, "td"):
                         self.elements.append(ffi_name)
 

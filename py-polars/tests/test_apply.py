@@ -14,8 +14,8 @@ def test_apply_none() -> None:
 
     out = (
         df.groupby("g", maintain_order=True).agg(
-            pl.apply(  # type: ignore
-                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],  # type: ignore
+            pl.apply(
+                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
                 f=lambda x: x[0] * x[1] + x[2].sum(),
             ).alias("multiple")
         )
@@ -23,7 +23,7 @@ def test_apply_none() -> None:
     assert out[0].to_list() == [4.75, 326.75, 82.75]
     assert out[1].to_list() == [238.75, 3418849.75, 372.75]
 
-    out = df.select(pl.map(exprs=["a", "b"], f=lambda s: s[0] * s[1]))  # type: ignore
+    out = df.select(pl.map(exprs=["a", "b"], f=lambda s: s[0] * s[1]))
     assert out["a"].to_list() == (df["a"] * df["b"]).to_list()
 
     # check if we can return None

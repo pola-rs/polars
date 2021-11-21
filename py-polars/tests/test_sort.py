@@ -23,11 +23,11 @@ def test_sort_dates_multiples() -> None:
     expected = [4, 5, 2, 3, 1]
 
     # datetime
-    out: pl.DataFrame = df.sort(["date", "values"])  # type: ignore
+    out: pl.DataFrame = df.sort(["date", "values"])
     assert out["values"].to_list() == expected
 
     # Date
-    out = df.with_column(pl.col("date").cast(pl.Date)).sort(["date", "values"])  # type: ignore
+    out = df.with_column(pl.col("date").cast(pl.Date)).sort(["date", "values"])
     assert out["values"].to_list() == expected
 
 
