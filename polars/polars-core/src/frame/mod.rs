@@ -345,7 +345,7 @@ impl DataFrame {
     ///
     /// fn example() -> Result<()> {
     ///     let s1: Series = Series::new("Name", &["Pythagoras theorem", "Shannon entropy"]);
-    ///     let s2: Series = Series::new("Formula", &["a²+b²=c²", "H=-Σ[P(x)log|P[x]|"]);
+    ///     let s2: Series = Series::new("Formula", &["a²+b²=c²", "H=-Σ[P(x)log|P(x)|]"]);
     ///     let df: DataFrame = DataFrame::new(vec![s1.clone(), s2.clone()])?;
     ///
     ///     let mut iterator = df.iter();
