@@ -25,7 +25,6 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
-from polars.utils import coerce_arrow
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -417,3 +416,36 @@ def pandas_to_pydf(
     }
     arrow_table = pa.table(arrow_dict)
     return arrow_to_pydf(arrow_table, columns=columns, rechunk=rechunk)
+
+
+def coerce_arrow(array: "pa.Array") -> "pa.Array":
+    # also coerces timezone to naive representation
+    # units are accounted for by pyarrow
+    if "timestamp" in str(array.type):
+        warnings.warn(
+            "Conversion of (potentially) timezone aware to naive datetimes. TZ information may be lost",
+        )
+        ts_ms = pa.compute.cast(array, pa.timestamp("ms"), safe=False)
+        ms = pa.compute.cast(ts_ms, pa.int64())
+        del ts_ms
+        array = pa.compute.cast(ms, pa.timestamp("ms"))
+        del ms
+    # note: Decimal256 could not be cast to float
+    elif isinstance(array.type, pa.Decimal128Type):
+        array = pa.compute.cast(array, pa.float64())
+
+    if hasattr(array, "num_chunks") and array.num_chunks > 1:
+        # we have to coerce before combining chunks, because pyarrow panics if
+        # offsets overflow
+        if pa.types.is_string(array.type):
+            array = pa.compute.cast(array, pa.large_utf8())
+        elif pa.types.is_list(array.type):
+            # pyarrow does not seem to support casting from list to largelist
+            # so we use convert to large list ourselves and do the re-alloc on polars/arrow side
+            chunks = []
+            for arr in array.iterchunks():
+                chunks.append(pli.Series._from_arrow("", arr).to_arrow())
+            array = pa.chunked_array(chunks)
+
+        array = array.combine_chunks()
+    return array
