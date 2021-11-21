@@ -110,6 +110,17 @@ impl DataFrame {
     }
 }
 
+impl PartialEq for DataFrame {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape() == other.shape()
+            && self
+                .columns
+                .iter()
+                .zip(other.columns.iter())
+                .all(|(s1, s2)| s1 == s2)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -149,5 +160,24 @@ mod test {
         assert_eq!(s2, s2);
         assert_ne!(s2, s3);
         assert_ne!(s4, s4);
+    }
+
+    #[test]
+    fn test_df_partialeq() {
+        let df1 = df!("a" => &[1, 2, 3],
+                      "b" => &[4, 5, 6])
+        .unwrap();
+        let df2 = df!("b" => &[4, 5, 6],
+                      "a" => &[1, 2, 3])
+        .unwrap();
+        let df3 = df!("" => &[Some(1), None]).unwrap();
+        let df4 = df!("" => &[f32::NAN]).unwrap();
+
+        assert_eq!(df1, df1);
+        assert_ne!(df1, df2);
+        assert_eq!(df2, df2);
+        assert_ne!(df2, df3);
+        assert_eq!(df3, df3);
+        assert_ne!(df4, df4);
     }
 }
