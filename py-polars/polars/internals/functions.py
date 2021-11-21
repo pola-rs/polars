@@ -3,10 +3,10 @@ from typing import Optional, Sequence, Union, overload
 
 import numpy as np
 
-import polars as pl
+from polars import internals as pli
 
 try:
-    from polars.datatypes import py_type_to_dtype
+    from polars.datatypes import Datetime, py_type_to_dtype
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_lf as _concat_lf
     from polars.polars import concat_series as _concat_series
@@ -19,7 +19,7 @@ except ImportError:
 __all__ = ["get_dummies", "concat", "repeat", "arg_where", "date_range"]
 
 
-def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
+def get_dummies(df: "pli.DataFrame") -> "pli.DataFrame":
     """
     Convert categorical variables into dummy/indicator variables.
 
@@ -33,29 +33,29 @@ def get_dummies(df: "pl.DataFrame") -> "pl.DataFrame":
 
 @overload
 def concat(
-    items: Sequence["pl.DataFrame"],
+    items: Sequence["pli.DataFrame"],
     rechunk: bool = True,
     how: str = "vertical",
-) -> "pl.DataFrame":
+) -> "pli.DataFrame":
     ...
 
 
 @overload
 def concat(
-    items: Sequence["pl.Series"],
+    items: Sequence["pli.Series"],
     rechunk: bool = True,
     how: str = "vertical",
-) -> "pl.Series":
+) -> "pli.Series":
     ...
 
 
 def concat(
     items: Union[
-        Sequence["pl.DataFrame"], Sequence["pl.Series"], Sequence["pl.LazyFrame"]
+        Sequence["pli.DataFrame"], Sequence["pli.Series"], Sequence["pli.LazyFrame"]
     ],
     rechunk: bool = True,
     how: str = "vertical",
-) -> Union["pl.DataFrame", "pl.Series", "pl.LazyFrame"]:
+) -> Union["pli.DataFrame", "pli.Series", "pli.LazyFrame"]:
     """
     Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single DataFrame/Series.
 
@@ -75,20 +75,20 @@ def concat(
     if not len(items) > 0:
         raise ValueError("cannot concat empty list")
 
-    out: Union["pl.Series", "pl.DataFrame", "pl.LazyFrame"]
-    if isinstance(items[0], pl.DataFrame):
+    out: Union["pli.Series", "pli.DataFrame", "pli.LazyFrame"]
+    if isinstance(items[0], pli.DataFrame):
         if how == "vertical":
-            out = pl.wrap_df(_concat_df(items))
+            out = pli.wrap_df(_concat_df(items))
         elif how == "diagonal":
-            out = pl.wrap_df(_diag_concat_df(items))
+            out = pli.wrap_df(_diag_concat_df(items))
         else:
             raise ValueError(
                 f"how should be one of {'vertical', 'diagonal'}, got {how}"
             )
-    elif isinstance(items[0], pl.LazyFrame):
-        return pl.wrap_ldf(_concat_lf(items, rechunk))
+    elif isinstance(items[0], pli.LazyFrame):
+        return pli.wrap_ldf(_concat_lf(items, rechunk))
     else:
-        out = pl.wrap_s(_concat_series(items))
+        out = pli.wrap_s(_concat_series(items))
 
     if rechunk:
         return out.rechunk()  # type: ignore
@@ -97,7 +97,7 @@ def concat(
 
 def repeat(
     val: Union[int, float, str, bool], n: int, name: Optional[str] = None
-) -> "pl.Series":
+) -> "pli.Series":
     """
     Repeat a single value n times and collect into a Series.
 
@@ -114,11 +114,11 @@ def repeat(
         name = ""
 
     dtype = py_type_to_dtype(type(val))
-    s = pl.Series._repeat(name, val, n, dtype)
+    s = pli.Series._repeat(name, val, n, dtype)
     return s
 
 
-def arg_where(mask: "pl.Series") -> "pl.Series":
+def arg_where(mask: "pli.Series") -> "pli.Series":
     """
     Get index values where Boolean mask evaluate True.
 
@@ -140,7 +140,7 @@ def date_range(
     interval: timedelta,
     closed: Optional[str] = None,
     name: Optional[str] = None,
-) -> pl.Series:
+) -> "pli.Series":
     """
     Create a date range of type `Datetime`.
 
@@ -200,4 +200,4 @@ def date_range(
         values = np.append(values, np.array(high, dtype="datetime64[ms]"))
     if closed == "right":
         values = values[1:]
-    return pl.Series(name=name, values=values.astype(np.int64)).cast(pl.Datetime)
+    return pli.Series(name=name, values=values.astype(np.int64)).cast(Datetime)

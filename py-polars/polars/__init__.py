@@ -8,12 +8,19 @@ except ImportError as e:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
-# mypy needs these imported explicitly
-from polars.eager.frame import DataFrame, wrap_df
-from polars.eager.series import Series, wrap_s
-from polars.lazy.expr import Expr, wrap_expr
-from polars.lazy.frame import LazyFrame, wrap_ldf
-from polars.lazy.functions import (
+from polars.internals.expr import Expr
+from polars.internals.frame import DataFrame, wrap_df  # TODO: remove need for wrap_df
+from polars.internals.functions import (
+    arg_where,
+    concat,
+    date_range,
+    get_dummies,
+    repeat,
+)
+from polars.internals.lazy_frame import LazyFrame
+from polars.internals.lazy_functions import _date as date
+from polars.internals.lazy_functions import _datetime as datetime
+from polars.internals.lazy_functions import (
     all,
     any,
     apply,
@@ -48,35 +55,17 @@ from polars.lazy.functions import (
     std,
     sum,
     tail,
-    to_list,
-    var,
 )
+from polars.internals.lazy_functions import to_list
+from polars.internals.lazy_functions import to_list as list
+from polars.internals.lazy_functions import var
+from polars.internals.series import Series, wrap_s  # TODO: remove need for wrap_s
+from polars.internals.whenthen import when
 
-from . import cfg, convert, datatypes, eager, functions, io, lazy, string_cache, testing
-from .cfg import *
+# TODO: remove wildcard imports
 from .convert import *
 from .datatypes import *
-from .eager import *
-from .functions import *
 from .io import *
-
-# explicit imports make mypy happy
-from .lazy import *
-from .lazy import _date as date
-from .lazy import _datetime as datetime
-from .lazy import col, lit
-from .lazy import to_list as list
-from .string_cache import *
-
-__all__ = (
-    convert.__all__
-    + datatypes.__all__
-    + eager.__all__
-    + functions.__all__
-    + io.__all__
-    + lazy.__all__
-    + string_cache.__all__
-    + cfg.__all__
-)
+from .string_cache import StringCache
 
 __version__ = version()

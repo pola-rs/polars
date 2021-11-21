@@ -169,13 +169,13 @@ def test_init_pandas() -> None:
     pandas_df = pd.DataFrame([[1, 2], [3, 4]], columns=[1, 2])
 
     # pandas is available; integer column names
-    with patch("polars.eager.frame._PANDAS_AVAILABLE", True):
+    with patch("polars.internals.frame._PANDAS_AVAILABLE", True):
         df = pl.DataFrame(pandas_df)
         truth = pl.DataFrame({"1": [1, 3], "2": [2, 4]})
         assert df.frame_equal(truth)
 
     # pandas is not available
-    with patch("polars.eager.frame._PANDAS_AVAILABLE", False):
+    with patch("polars.internals.frame._PANDAS_AVAILABLE", False):
         with pytest.raises(ValueError):
             pl.DataFrame(pandas_df)
 

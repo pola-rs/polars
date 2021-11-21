@@ -5,8 +5,6 @@ from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
 
-import polars as pl
-
 try:
     from polars.polars import PyExpr
 
@@ -14,8 +12,18 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-from ..datatypes import Boolean, DataType, Date, Datetime, Float64, Int64, Utf8
-from .functions import col, lit
+from polars import internals as pli
+from polars.datatypes import (
+    Boolean,
+    DataType,
+    Date,
+    Datetime,
+    Float64,
+    Int64,
+    Object,
+    UInt32,
+    Utf8,
+)
 
 __all__ = [
     "Expr",
@@ -62,12 +70,12 @@ class Expr:
         elif isinstance(other, Expr):
             return other._pyexpr
         else:
-            return lit(other)._pyexpr
+            return pli.lit(other)._pyexpr
 
     def __to_expr(self, other: Any) -> "Expr":
         if isinstance(other, Expr):
             return other
-        return lit(other)
+        return pli.lit(other)
 
     def __bool__(self) -> "Expr":
         raise ValueError(
@@ -172,7 +180,7 @@ class Expr:
         return wrap_expr(self._pyexpr.lt(other._pyexpr))
 
     def __neg__(self) -> "Expr":
-        return pl.lit(0) - self  # type: ignore
+        return pli.lit(0) - self  # type: ignore
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -182,7 +190,7 @@ class Expr:
         """
         out_type = ufunc(np.array([1])).dtype
         if "float" in str(out_type):
-            dtype = pl.Float64  # type: ignore
+            dtype = Float64  # type: ignore
         else:
             dtype = None  # type: ignore
 
@@ -191,7 +199,7 @@ class Expr:
             if not isinstance(inp, Expr):
                 args.append(inp)
 
-        def function(s: "pl.Series") -> "pl.Series":
+        def function(s: "pli.Series") -> "pli.Series":
             return ufunc(s, *args, **kwargs)
 
         if "dtype" in kwargs:
@@ -749,7 +757,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: Union[tp.List[int], "Expr", "pl.Series"]) -> "Expr":
+    def take(self, index: Union[tp.List[int], "Expr", "pli.Series"]) -> "Expr":
         """
         Take values by index.
 
@@ -763,12 +771,12 @@ class Expr:
         Values taken by index
         """
         if isinstance(index, (list, np.ndarray)):
-            index = pl.lit(pl.Series("", index, dtype=pl.UInt32))  # type: ignore
-        elif isinstance(index, pl.Series):
-            index = pl.lit(index)  # type: ignore
+            index = pli.lit(pli.Series("", index, dtype=UInt32))  # type: ignore
+        elif isinstance(index, pli.Series):
+            index = pli.lit(index)  # type: ignore
         else:
-            index = expr_to_lit_or_expr(index, str_to_lit=False)  # type: ignore
-        return wrap_expr(self._pyexpr.take(index._pyexpr))  # type: ignore
+            index = pli.expr_to_lit_or_expr(index, str_to_lit=False)  # type: ignore
+        return pli.wrap_expr(self._pyexpr.take(index._pyexpr))  # type: ignore
 
     def shift(self, periods: int = 1) -> "Expr":
         """
@@ -813,7 +821,7 @@ class Expr:
         """
         # we first must check if it is not an expr, as expr does not implement __bool__
         # and thus leads to a value error in the second comparisson.
-        if not isinstance(fill_value, pl.Expr) and fill_value in [
+        if not isinstance(fill_value, Expr) and fill_value in [
             "backward",
             "forward",
             "min",
@@ -1025,7 +1033,7 @@ class Expr:
 
     def map(
         self,
-        f: Callable[["pl.Series"], "pl.Series"],
+        f: Callable[["pli.Series"], "pli.Series"],
         return_dtype: Optional[Type[DataType]] = None,
         agg_list: bool = False,
     ) -> "Expr":
@@ -1054,7 +1062,7 @@ class Expr:
 
     def apply(
         self,
-        f: Union[Callable[["pl.Series"], "pl.Series"], Callable[[Any], Any]],
+        f: Union[Callable[["pli.Series"], "pli.Series"], Callable[[Any], Any]],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
@@ -1105,7 +1113,7 @@ class Expr:
         """
 
         # input x: Series of type list containing the group values
-        def wrap_f(x: "pl.Series") -> "pl.Series":
+        def wrap_f(x: "pli.Series") -> "pli.Series":
             return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f, agg_list=True)
@@ -1171,7 +1179,7 @@ class Expr:
         Expr that evaluates to a Boolean Series.
         """
         if isinstance(other, list):
-            other = pl.lit(pl.Series(other))
+            other = pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
@@ -1202,10 +1210,10 @@ class Expr:
         """
         cast_to_datetime = False
         if isinstance(start, datetime):
-            start = lit(start)
+            start = pli.lit(start)
             cast_to_datetime = True
         if isinstance(end, datetime):
-            end = lit(end)
+            end = pli.lit(end)
             cast_to_datetime = True
         if cast_to_datetime:
             expr = self.cast(Datetime)
@@ -1234,7 +1242,7 @@ class Expr:
         """
         return ExprListNameSpace(self)
 
-    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pl.Expr":
+    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "Expr":
         """
         Hash the Series.
 
@@ -1253,7 +1261,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, signed: bool) -> "pl.Expr":
+    def reinterpret(self, signed: bool) -> "Expr":
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
         This operation is only allowed for 64bit integers. For lower bits integers,
@@ -1267,20 +1275,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
-    def inspect(self, fmt: str = "{}") -> "pl.Expr":  # type: ignore
+    def inspect(self, fmt: str = "{}") -> "Expr":  # type: ignore
         """
         Prints the value that this expression evaluates to and passes on the value.
 
         >>> df.select(col("foo").cumsum().inspect("value is: {}").alias("bar"))
         """
 
-        def inspect(s: "pl.Series") -> "pl.Series":
+        def inspect(s: "pli.Series") -> "pli.Series":
             print(fmt.format(s))  # type: ignore
             return s
 
         return self.map(inspect, return_dtype=None, agg_list=True)
 
-    def interpolate(self) -> "pl.Expr":
+    def interpolate(self) -> "Expr":
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
@@ -1512,7 +1520,7 @@ class Expr:
         )
 
     def rolling_apply(
-        self, window_size: int, function: Callable[["pl.Series"], Any]
+        self, window_size: int, function: Callable[["pli.Series"], Any]
     ) -> "Expr":
         """
         Allows a custom rolling window function.
@@ -1611,7 +1619,7 @@ class Expr:
         reverse
             Reverse the ordering. Default is from low to high.
         """
-        return pl.argsort_by([self], [reverse])  # type: ignore
+        return pli.argsort_by([self], [reverse])
 
     def rank(self, method: str = "average") -> "Expr":  # type: ignore
         """
@@ -1718,10 +1726,11 @@ class Expr:
         min_val, max_val
             Minimum and maximum value.
         """
-        min_val = pl.lit(min_val)  # type: ignore
-        max_val = pl.lit(max_val)  # type: ignore
+        min_val = pli.lit(min_val)  # type: ignore
+        max_val = pli.lit(max_val)  # type: ignore
+
         return (
-            pl.when(self < min_val)  # type: ignore
+            pli.when(self < min_val)  # type: ignore
             .then(min_val)
             .when(self > max_val)
             .then(max_val)
@@ -1966,7 +1975,7 @@ class ExprListNameSpace:
             other = copy.copy(other)
         # mypy does not understand we have a list by now
         other.insert(0, wrap_expr(self._pyexpr))  # type: ignore
-        return pl.concat_list(other)  # type: ignore
+        return pli.concat_list(other)  # type: ignore
 
 
 class ExprStringNameSpace:
@@ -2327,7 +2336,7 @@ class ExprDateTimeNameSpace:
         Go from Date/Datetime to python DateTime objects
         """
         return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.to_python_datetime(), return_dtype=pl.Object
+            lambda s: s.dt.to_python_datetime(), return_dtype=Object
         )
 
     def timestamp(self) -> Expr:
@@ -2336,7 +2345,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, bool, int, float, str, tp.List[Expr], tp.List[str], "pl.Series"],
+    expr: Union[Expr, bool, int, float, str, tp.List[Expr], tp.List[str], "pli.Series"],
     str_to_lit: bool = True,
 ) -> Expr:
     """
@@ -2355,9 +2364,11 @@ def expr_to_lit_or_expr(
 
     """
     if isinstance(expr, str) and not str_to_lit:
-        return col(expr)
-    elif isinstance(expr, (int, float, str, pl.Series, datetime, date)) or expr is None:
-        return lit(expr)
+        return pli.col(expr)
+    elif (
+        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
+    ):
+        return pli.lit(expr)
     elif isinstance(expr, list):
         return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]
     else:

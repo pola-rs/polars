@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.lazy import col, lit, map_binary, when
+from polars import col, lit, map_binary, when
 
 
 def test_lazy() -> None:
@@ -171,7 +171,7 @@ def test_shift_and_fill() -> None:
 
 def test_arange() -> None:
     df = pl.DataFrame({"a": [1, 1, 1]}).lazy()
-    result = df.filter(pl.lazy.col("a") >= pl.lazy.arange(0, 3)).collect()
+    result = df.filter(pl.col("a") >= pl.arange(0, 3)).collect()
     expected = pl.DataFrame({"a": [1, 1]})
     assert result.frame_equal(expected)
 

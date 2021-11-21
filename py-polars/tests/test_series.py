@@ -633,7 +633,7 @@ def test_bitwise() -> None:
 
 
 def test_to_numpy() -> None:
-    pl.eager.series._PYARROW_AVAILABLE = False
+    pl.internals.series._PYARROW_AVAILABLE = False
     a = pl.Series("a", [1, 2, 3])
     a.to_numpy() == np.array([1, 2, 3])
     a = pl.Series("a", [1, 2, None])
@@ -650,9 +650,9 @@ def test_from_sequences() -> None:
     ]
 
     for vals in values:
-        pl.internals.construction._PYARROW_AVAILABLE = False
+        pl.internals.series._PYARROW_AVAILABLE = False
         a = pl.Series("a", vals)
-        pl.internals.construction._PYARROW_AVAILABLE = True
+        pl.internals.series._PYARROW_AVAILABLE = True
         b = pl.Series("a", vals)
         assert a.series_equal(b, null_equal=True)
         assert a.to_list() == vals

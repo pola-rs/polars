@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type, Uni
 
 import numpy as np
 
-import polars as pl
+from polars import internals as pli
 from polars.datatypes import (
     DataType,
     Date,
@@ -47,7 +47,7 @@ else:
 
 def series_to_pyseries(
     name: str,
-    values: "pl.Series",
+    values: "pli.Series",
 ) -> "PySeries":
     """
     Construct a PySeries from a Polars Series.
@@ -110,9 +110,9 @@ def sequence_to_pyseries(
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values, strict)
         if dtype == Date:
-            pyseries = pyseries.cast(str(pl.Date), True)
+            pyseries = pyseries.cast(str(Date), True)
         elif dtype == Datetime:
-            pyseries = pyseries.cast(str(pl.Datetime), True)
+            pyseries = pyseries.cast(str(Datetime), True)
         return pyseries
 
     else:
@@ -126,7 +126,7 @@ def sequence_to_pyseries(
                 )
             return arrow_to_pyseries(name, pa.array(values))
 
-        elif dtype_ == list or dtype_ == tuple or dtype_ == pl.Series:
+        elif dtype_ == list or dtype_ == tuple or dtype_ == pli.Series:
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
 
@@ -230,7 +230,7 @@ def _handle_columns_arg(
         return data
     else:
         if not data:
-            return [pl.Series(c, None).inner() for c in columns]
+            return [pli.Series(c, None).inner() for c in columns]
         elif len(data) == len(columns):
             for i, c in enumerate(columns):
                 data[i].rename(c)
@@ -246,7 +246,7 @@ def dict_to_pydf(
     """
     Construct a PyDataFrame from a dictionary of sequences.
     """
-    data_series = [pl.Series(name, values).inner() for name, values in data.items()]
+    data_series = [pli.Series(name, values).inner() for name, values in data.items()]
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
@@ -265,7 +265,7 @@ def numpy_to_pydf(
         data_series = []
 
     elif len(shape) == 1:
-        s = pl.Series("column_0", data).inner()
+        s = pli.Series("column_0", data).inner()
         data_series = [s]
 
     elif len(shape) == 2:
@@ -285,11 +285,11 @@ def numpy_to_pydf(
 
         if orient == "row":
             data_series = [
-                pl.Series(f"column_{i}", data[:, i]).inner() for i in range(shape[1])
+                pli.Series(f"column_{i}", data[:, i]).inner() for i in range(shape[1])
             ]
         else:
             data_series = [
-                pl.Series(f"column_{i}", data[i]).inner() for i in range(shape[0])
+                pli.Series(f"column_{i}", data[i]).inner() for i in range(shape[0])
             ]
     else:
         raise ValueError("A numpy array should not have more than two dimensions.")
@@ -311,7 +311,7 @@ def sequence_to_pydf(
     if len(data) == 0:
         data_series = []
 
-    elif isinstance(data[0], pl.Series):
+    elif isinstance(data[0], pli.Series):
         data_series = []
         for i, s in enumerate(data):
             if not s.name:  # TODO: Replace by `if s.name is None` once allowed
@@ -336,11 +336,11 @@ def sequence_to_pydf(
             return pydf
         else:
             data_series = [
-                pl.Series(f"column_{i}", data[i]).inner() for i in range(len(data))
+                pli.Series(f"column_{i}", data[i]).inner() for i in range(len(data))
             ]
 
     else:
-        s = pl.Series("column_0", data).inner()
+        s = pli.Series("column_0", data).inner()
         data_series = [s]
 
     data_series = _handle_columns_arg(data_series, columns=columns)
@@ -384,7 +384,7 @@ def arrow_to_pydf(
 
 
 def series_to_pydf(
-    data: "pl.Series",
+    data: "pli.Series",
     columns: Optional[Sequence[str]] = None,
 ) -> "PyDataFrame":
     """

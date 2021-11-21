@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 
-import polars as pl
+from polars.internals import DataFrame, Series
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -30,7 +30,7 @@ __all__ = [
 def from_dict(
     data: Dict[str, Sequence[Any]],
     columns: Optional[Sequence[str]] = None,
-) -> "pl.DataFrame":
+) -> DataFrame:
     """
     Construct a DataFrame from a dictionary of sequences.
 
@@ -64,14 +64,14 @@ def from_dict(
     │ 2   ┆ 4   │
     ╰─────┴─────╯
     """
-    return pl.DataFrame._from_dict(data=data, columns=columns)
+    return DataFrame._from_dict(data=data, columns=columns)
 
 
 def from_records(
     data: Union[np.ndarray, Sequence[Sequence[Any]]],
     columns: Optional[Sequence[str]] = None,
     orient: Optional[str] = None,
-) -> "pl.DataFrame":
+) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray or sequence of sequences.
 
@@ -110,10 +110,10 @@ def from_records(
     │ 3   ┆ 6   │
     ╰─────┴─────╯
     """
-    return pl.DataFrame._from_records(data, columns=columns, orient=orient)
+    return DataFrame._from_records(data, columns=columns, orient=orient)
 
 
-def from_dicts(dicts: Sequence[Dict[str, Any]]) -> "pl.DataFrame":
+def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     """
     Construct a DataFrame from a sequence of dictionaries.
 
@@ -144,12 +144,12 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> "pl.DataFrame":
     │ 3   ┆ 6   │
     ╰─────┴─────╯
     """
-    return pl.DataFrame._from_dicts(dicts)
+    return DataFrame._from_dicts(dicts)
 
 
 def from_arrow(
     a: Union["pa.Table", "pa.Array"], rechunk: bool = True
-) -> Union["pl.DataFrame", "pl.Series"]:
+) -> Union[DataFrame, Series]:
     """
     Create a DataFrame or Series from an Arrow Table or Array.
 
@@ -203,9 +203,9 @@ def from_arrow(
     if not _PYARROW_AVAILABLE:
         raise ImportError("'pyarrow' is required when using from_arrow().")
     if isinstance(a, pa.Table):
-        return pl.DataFrame._from_arrow(a, rechunk=rechunk)
+        return DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, (pa.Array, pa.ChunkedArray)):
-        return pl.Series._from_arrow("", a)
+        return Series._from_arrow("", a)
     else:
         raise ValueError(f"Expected Arrow Table or Array, got {type(a)}.")
 
@@ -214,7 +214,7 @@ def from_pandas(
     df: Union["pd.DataFrame", "pd.Series", "pd.DatetimeIndex"],
     rechunk: bool = True,
     nan_to_none: bool = True,
-) -> Union["pl.Series", "pl.DataFrame"]:
+) -> Union[DataFrame, Series]:
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
 
@@ -270,8 +270,8 @@ def from_pandas(
         raise ImportError("'pandas' is required when using from_pandas().") from e
 
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):
-        return pl.Series._from_pandas("", df, nan_to_none=nan_to_none)
+        return Series._from_pandas("", df, nan_to_none=nan_to_none)
     elif isinstance(df, pd.DataFrame):
-        return pl.DataFrame._from_pandas(df, rechunk=rechunk, nan_to_none=nan_to_none)
+        return DataFrame._from_pandas(df, rechunk=rechunk, nan_to_none=nan_to_none)
     else:
         raise ValueError(f"Expected pandas DataFrame or Series, got {type(df)}.")
