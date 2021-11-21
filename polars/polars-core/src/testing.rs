@@ -1,6 +1,5 @@
 //! Testing utilities.
 use crate::prelude::*;
-use rayon::iter::*;
 use std::ops::Deref;
 
 impl Series {
@@ -116,9 +115,9 @@ impl PartialEq for DataFrame {
         self.shape() == other.shape()
             && self
                 .columns
-                .par_iter()
-                .zip_eq(other.columns.par_iter())
-                .all(|(x, y)| x == y)
+                .iter()
+                .zip(other.columns.iter())
+                .all(|(s1, s2)| s1 == s2)
     }
 }
 
