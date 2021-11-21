@@ -838,7 +838,7 @@ def arange(
 
     if eager:
         df = pli.DataFrame({"a": [1]})
-        return df.select(pli.arange(low, high, step).alias("arange"))["arange"]  # type: ignore
+        return df.select(arange(low, high, step).alias("arange"))["arange"]  # type: ignore
 
     return pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
 

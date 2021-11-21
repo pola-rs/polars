@@ -5,8 +5,8 @@ via this __init__ file using `import polars.internals as pli`. The imports below
 """
 from .expr import Expr, _selection_to_pyexpr_list, expr_to_lit_or_expr, wrap_expr
 from .frame import DataFrame, wrap_df
-from .functions import arg_where, concat, date_range, get_dummies, repeat
+from .functions import concat, date_range  # DataFrame.describe() & DataFrame.upsample()
 from .lazy_frame import LazyFrame, wrap_ldf
-from .lazy_functions import arange, argsort_by, col, concat_list, lit
+from .lazy_functions import argsort_by, col, concat_list, lit
 from .series import Series, wrap_s
 from .whenthen import when  # used in expr.clip()
