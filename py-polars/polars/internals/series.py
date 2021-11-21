@@ -47,10 +47,10 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
-    maybe_cast,
     date_like_to_physical,
     dtype_to_ctype,
     dtype_to_ffiname,
+    maybe_cast,
     py_type_to_dtype,
 )
 from polars.utils import _ptr_to_numpy
