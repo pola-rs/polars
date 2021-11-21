@@ -77,7 +77,6 @@ def test_from_pandas_nested_list() -> None:
         {"a": [1, 2, 3, 4], "b": [["x", "y"], ["x", "y", "z"], ["x"], ["x", "y"]]}
     )
     pldf = pl.from_pandas(pddf)
-    print(pldf)
     assert pldf.shape == (4, 2)
 
 
