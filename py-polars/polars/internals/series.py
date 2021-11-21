@@ -62,10 +62,6 @@ try:
 except ImportError:
     _PANDAS_AVAILABLE = False
 
-__all__ = [
-    "Series",
-]
-
 
 def match_dtype(value: Any, dtype: "Type[DataType]") -> Any:
     """

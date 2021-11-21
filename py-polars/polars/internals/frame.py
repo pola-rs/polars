@@ -67,10 +67,6 @@ try:
 except ImportError:
     _PANDAS_AVAILABLE = False
 
-__all__ = [
-    "DataFrame",
-]
-
 
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
     return DataFrame._from_pydf(df)

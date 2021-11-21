@@ -4,9 +4,9 @@ from typing import Optional, Sequence, Union, overload
 import numpy as np
 
 from polars import internals as pli
+from polars.datatypes import Datetime, py_type_to_dtype
 
 try:
-    from polars.datatypes import Datetime, py_type_to_dtype
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_lf as _concat_lf
     from polars.polars import concat_series as _concat_series
@@ -15,8 +15,6 @@ try:
     _DOCUMENTING = False
 except ImportError:
     _DOCUMENTING = True
-
-__all__ = ["get_dummies", "concat", "repeat", "arg_where", "date_range"]
 
 
 def get_dummies(df: "pli.DataFrame") -> "pli.DataFrame":
