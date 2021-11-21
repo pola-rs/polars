@@ -1,13 +1,20 @@
+# We're pinning our tooling, because it's an environment we can strictly control.
+# We're not pinning package dependencies, because our tests need to pass with the
+# latest version of the packages.
+
+# Dependencies
+numpy
+pyarrow
+pandas
+
+# Tooling
 maturin==0.11.0
 pytest==5.3.1
 black==21.6b0
 isort~=5.9.2
-mypy~=0.910
-numpy
-pyarrow
+mypy==0.910
 ghp-import==2.0.1
-pandas
-flake8
+flake8==4.0.1
 sphinx==4.2.0
 pydata-sphinx-theme==0.6.3
 sphinx-panels==0.6.0
@@ -19,5 +26,5 @@ sphinxcontrib-qthelp==1.0.3
 sphinxcontrib-serializinghtml==1.1.5
 sphinxcontrib-napoleon
 commonmark==0.9.1
-numpydoc
+numpydoc==1.1.0
 
