@@ -29,8 +29,7 @@ class LazyFrame:
     Representation of a Lazy computation graph/ query.
     """
 
-    def __init__(self) -> None:
-        self._ldf: PyLazyFrame
+    _ldf: "PyLazyFrame"
 
     @staticmethod
     def _from_pyldf(ldf: "PyLazyFrame") -> "LazyFrame":
@@ -1071,8 +1070,10 @@ class LazyGroupBy:
     Created by `df.lazy().groupby("foo)"`
     """
 
+    _lgb: "PyLazyGroupBy"
+
     def __init__(self, lgb: "PyLazyGroupBy"):
-        self.lgb = lgb
+        self._lgb = lgb
 
     def agg(self, aggs: Union[tp.List["pli.Expr"], "pli.Expr"]) -> "LazyFrame":
         """
@@ -1095,7 +1096,7 @@ class LazyGroupBy:
         )
         """
         aggs = pli._selection_to_pyexpr_list(aggs)
-        return wrap_ldf(self.lgb.agg(aggs))
+        return wrap_ldf(self._lgb.agg(aggs))
 
     def head(self, n: int = 5) -> "LazyFrame":
         """
@@ -1154,7 +1155,7 @@ class LazyGroupBy:
         ╰─────────┴─────╯
 
         """
-        return wrap_ldf(self.lgb.head(n))
+        return wrap_ldf(self._lgb.head(n))
 
     def tail(self, n: int = 5) -> "LazyFrame":
         """
@@ -1213,7 +1214,7 @@ class LazyGroupBy:
         ╰─────────┴─────╯
 
         """
-        return wrap_ldf(self.lgb.tail(n))
+        return wrap_ldf(self._lgb.tail(n))
 
     def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> "LazyFrame":
         """
@@ -1225,4 +1226,4 @@ class LazyGroupBy:
         f
             Function to apply over the `DataFrame`.
         """
-        return wrap_ldf(self.lgb.apply(f))
+        return wrap_ldf(self._lgb.apply(f))

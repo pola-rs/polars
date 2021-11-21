@@ -176,6 +176,8 @@ class DataFrame:
     ╰─────┴─────┴─────╯
     """
 
+    _df: "PyDataFrame"
+
     def __init__(
         self,
         data: Optional[
