@@ -52,28 +52,12 @@ impl Drop for PolarsExtension {
 /// Invariants
 /// `ptr` must point to start a `T` allocation
 /// `n_t_vals` must reprecent the correct number of `T` values in that allocation
-unsafe fn create_drop<T: Sized>(
-    mut ptr: *const u8,
-    n_t_vals: usize,
-    validity: Option<Bitmap>,
-) -> Box<dyn FnMut()> {
+unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn FnMut()> {
     Box::new(move || {
         let t_size = std::mem::size_of::<T>() as isize;
-        match &validity {
-            Some(validity) => {
-                for valid in validity.iter() {
-                    if valid {
-                        let _ = std::ptr::read_unaligned(ptr as *const T);
-                    }
-                    ptr = ptr.offset(t_size as isize)
-                }
-            }
-            None => {
-                for _ in 0..n_t_vals {
-                    let _ = std::ptr::read_unaligned(ptr as *const T);
-                    ptr = ptr.offset(t_size as isize)
-                }
-            }
+        for _ in 0..n_t_vals {
+            let _ = std::ptr::read_unaligned(ptr as *const T);
+            ptr = ptr.offset(t_size as isize)
         }
     })
 }
@@ -95,7 +79,7 @@ unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())
 }
 
-fn create_extension<T: Sized + Debug>(vals: Vec<Option<T>>) -> PolarsExtension {
+fn create_extension<T: Sized + Default>(vals: Vec<Option<T>>) -> PolarsExtension {
     let t_size = std::mem::size_of::<T>();
     let t_alignment = std::mem::align_of::<T>();
     let n_t_vals = vals.len();
@@ -121,10 +105,17 @@ fn create_extension<T: Sized + Debug>(vals: Vec<Option<T>>) -> PolarsExtension {
                 }
             }
             None => {
-                buf.extend_constant(t_size, 0);
-                // Safety:
-                // validity size is pre allocated
-                unsafe { validity.push_unchecked(false) };
+                // use default, because we need to call drop on every value
+                // we could not skip this if null, because the validity bitmaps
+                // may be changed.
+                // so if we extended with 0u8..0u8 we could be transmuting that into T
+                // if bitmap was changed
+                unsafe {
+                    buf.extend_from_slice(any_as_u8_slice(&T::default()));
+                    // Safety:
+                    // validity size is pre allocated
+                    validity.push_unchecked(false)
+                };
             }
         }
     }
@@ -147,7 +138,7 @@ fn create_extension<T: Sized + Debug>(vals: Vec<Option<T>>) -> PolarsExtension {
 
     // Safety:
     // ptr and t are correct
-    let drop_fn = unsafe { create_drop::<T>(ptr, n_t_vals, validity.clone()) };
+    let drop_fn = unsafe { create_drop::<T>(ptr, n_t_vals) };
     let et = Box::new(ExtensionSentinel {
         drop_fn: Some(drop_fn),
     });
@@ -172,7 +163,7 @@ fn create_extension<T: Sized + Debug>(vals: Vec<Option<T>>) -> PolarsExtension {
 mod test {
     use super::*;
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Default)]
     struct Foo {
         pub a: i32,
         pub b: u8,
