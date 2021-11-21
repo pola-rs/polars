@@ -13,9 +13,9 @@ def test_date_datetime() -> None:
 
     out = df.select(
         [
-            pl.all(),  # type: ignore
-            pl.datetime("year", "month", "day", "hour").dt.hour().alias("h2"),  # type: ignore
-            pl.date("year", "month", "day").dt.day().alias("date"),  # type: ignore
+            pl.all(),
+            pl.datetime("year", "month", "day", "hour").dt.hour().alias("h2"),
+            pl.date("year", "month", "day").dt.day().alias("date"),
         ]
     )
 

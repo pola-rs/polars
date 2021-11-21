@@ -1213,7 +1213,7 @@ class Series:
         """
         return wrap_s(self._s.take_every(n))
 
-    def sort(self, in_place: bool = False, reverse: bool = False) -> Optional["Series"]:
+    def sort(self, in_place: bool = False, reverse: bool = False) -> "Series":
         """
         Sort this Series.
 
@@ -1249,7 +1249,7 @@ class Series:
         """
         if in_place:
             self._s.sort_in_place(reverse)
-            return None
+            return self
         else:
             return wrap_s(self._s.sort(reverse))
 
@@ -1735,7 +1735,7 @@ class Series:
     def __iter__(self) -> "SeriesIter":
         return SeriesIter(self.len(), self)
 
-    def rechunk(self, in_place: bool = False) -> Optional["Series"]:
+    def rechunk(self, in_place: bool = False) -> "Series":
         """
         Create a single chunk of memory for this Series.
 
@@ -1746,7 +1746,7 @@ class Series:
         """
         opt_s = self._s.rechunk(in_place)
         if in_place:
-            return None
+            return self
         else:
             return wrap_s(opt_s)
 

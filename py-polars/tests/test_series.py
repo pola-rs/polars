@@ -49,7 +49,7 @@ def test_init_inputs() -> None:
 def test_concat() -> None:
     s = pl.Series("a", [2, 1, 3])
 
-    assert pl.concat([s, s]).len() == 6  # type: ignore
+    assert pl.concat([s, s]).len() == 6
     # check if s remains unchanged
     assert s.len() == 3
 
@@ -193,8 +193,7 @@ def test_to_python() -> None:
 
 def test_sort() -> None:
     a = pl.Series("a", [2, 1, 3])
-    a_sorted: pl.Series = a.sort()  # type: ignore
-    assert a_sorted.to_list() == [1, 2, 3]
+    assert a.sort().to_list() == [1, 2, 3]
     assert a.sort(reverse=True) == [3, 2, 1]
 
 
@@ -203,7 +202,7 @@ def test_rechunk() -> None:
     b = pl.Series("b", [4, 5, 6])
     a.append(b)
     assert a.n_chunks() == 2
-    assert a.rechunk(in_place=False).n_chunks() == 1  # type: ignore
+    assert a.rechunk(in_place=False).n_chunks() == 1
     a.rechunk(in_place=True)
     assert a.n_chunks() == 1
 
@@ -306,13 +305,13 @@ def test_shift() -> None:
 
 
 def test_rolling() -> None:
-    a = pl.Series("a", [1, 2, 3, 2, 1])  # type: ignore
+    a = pl.Series("a", [1, 2, 3, 2, 1])
     assert a.rolling_min(2).to_list() == [None, 1, 2, 2, 1]
     assert a.rolling_max(2).to_list() == [None, 2, 3, 3, 2]
     assert a.rolling_sum(2).to_list() == [None, 3, 5, 5, 3]
     assert a.rolling_mean(2).to_list() == [None, 1.5, 2.5, 2.5, 1.5]
-    assert np.isclose(a.rolling_std(2).to_list()[1], 0.7071067811865476)  # type: ignore
-    assert np.isclose(a.rolling_var(2).to_list()[1], 0.5)  # type: ignore
+    assert a.rolling_std(2).to_list()[1] == pytest.approx(0.7071067811865476)
+    assert a.rolling_var(2).to_list()[1] == pytest.approx(0.5)
     assert a.rolling_median(4).to_list() == [None, None, None, 2, 2]
     assert a.rolling_quantile(3, 0.5).to_list() == [None, None, 2, 2, 2]
     assert a.rolling_skew(4).null_count() == 3
@@ -423,15 +422,15 @@ def test_str_slice() -> None:
 
 def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
-    out = df[[pl.arange(0, pl.col("a").count() * 10)]]  # type: ignore
+    out = df[[pl.arange(0, pl.col("a").count() * 10)]]
     assert out.shape == (20, 1)
     assert out.select_at_idx(0)[-1] == 19
 
     # eager arange
-    out = pl.arange(0, 10, 2, eager=True)  # type: ignore
+    out = pl.arange(0, 10, 2, eager=True)
     assert out == [0, 2, 4, 8, 8]
 
-    out = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)  # type: ignore
+    out = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
     assert out.dtype == pl.List
     assert out[0].to_list() == [0, 2]
 
@@ -517,8 +516,8 @@ def test_diff_dispatch() -> None:
 def test_skew_dispatch() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
-    assert np.isclose(s.skew(True), -0.5953924651018018)  # type: ignore
-    assert np.isclose(s.skew(False), -0.7717168360221258)  # type: ignore
+    assert s.skew(True) == pytest.approx(-0.5953924651018018)
+    assert s.skew(False) == pytest.approx(-0.7717168360221258)
 
     df = pl.DataFrame([s])
     assert np.isclose(df.select(pl.col("a").skew(False))["a"][0], -0.7717168360221258)
@@ -528,7 +527,7 @@ def test_kurtosis_dispatch() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = -0.6406250000000004
 
-    assert np.isclose(s.kurtosis(), expected)  # type: ignore
+    assert s.kurtosis() == pytest.approx(expected)
     df = pl.DataFrame([s])
     assert np.isclose(df.select(pl.col("a").kurtosis())["a"][0], expected)
 
@@ -573,7 +572,7 @@ def test_list_concat_dispatch() -> None:
     assert out.series_equal(expected)
 
     df = pl.DataFrame([s0, s1])
-    assert df.select(pl.concat_list(["a", "b"]).alias("concat"))["concat"].series_equal(  # type: ignore
+    assert df.select(pl.concat_list(["a", "b"]).alias("concat"))["concat"].series_equal(
         expected
     )
     assert df.select(pl.col("a").arr.concat("b").alias("concat"))[
@@ -763,7 +762,7 @@ def test_value_counts() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     result = s.value_counts()
     expected = pl.DataFrame({"a": [1, 2, 3], "counts": [1, 2, 1]})
-    result_sorted: pl.DataFrame = result.sort("a")  # type: ignore
+    result_sorted: pl.DataFrame = result.sort("a")
     assert result_sorted.frame_equal(expected)
 
 

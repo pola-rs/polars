@@ -608,7 +608,7 @@ def map(
 
 
 def apply(
-    exprs: Union[tp.List[str], tp.List["pli.Expr"]],
+    exprs: tp.List[Union[str, "pli.Expr"]],
     f: Callable[[tp.List["pli.Series"]], "pli.Series"],
     return_dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
@@ -867,13 +867,13 @@ def argsort_by(
 
 
 def _datetime(
-    year: "pli.Expr",
-    month: "pli.Expr",
-    day: "pli.Expr",
-    hour: Optional["pli.Expr"] = None,
-    minute: Optional["pli.Expr"] = None,
-    second: Optional["pli.Expr"] = None,
-    millisecond: Optional["pli.Expr"] = None,
+    year: Union["pli.Expr", str],
+    month: Union["pli.Expr", str],
+    day: Union["pli.Expr", str],
+    hour: Optional[Union["pli.Expr", str]] = None,
+    minute: Optional[Union["pli.Expr", str]] = None,
+    second: Optional[Union["pli.Expr", str]] = None,
+    millisecond: Optional[Union["pli.Expr", str]] = None,
 ) -> "pli.Expr":
     """
     Create polars Datetime from distinct time components.
@@ -919,7 +919,11 @@ def _datetime(
     )
 
 
-def _date(year: "pli.Expr", month: "pli.Expr", day: "pli.Expr") -> "pli.Expr":
+def _date(
+    year: Union["pli.Expr", str],
+    month: Union["pli.Expr", str],
+    day: Union["pli.Expr", str],
+) -> "pli.Expr":
     """
     Create polars Date from distinct time components.
 
@@ -1004,7 +1008,7 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     return concat_str(exprs, sep="")
 
 
-def concat_list(exprs: tp.List["pli.Expr"]) -> "pli.Expr":
+def concat_list(exprs: tp.List[Union[str, "pli.Expr"]]) -> "pli.Expr":
     """
     Concat the arrays in a Series dtype List in linear time.
 
