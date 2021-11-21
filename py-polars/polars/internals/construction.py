@@ -80,7 +80,7 @@ def numpy_to_pyseries(
         else:
             return constructor(name, values, strict)
     else:
-        return PySeries.new_object(name, values)
+        return PySeries.new_object(name, values, strict)
 
 
 def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:

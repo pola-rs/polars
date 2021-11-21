@@ -37,6 +37,11 @@ def test_init_inputs() -> None:
     assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
     assert pl.Series("a", [pl.Series([1, 2, 4]), pl.Series([3, 2, 1])]).dtype == pl.List
 
+    # 2d numpy array
+    res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
+    assert all(res[0] == np.array([1, 2]))
+    assert all(res[1] == np.array([3, 4]))
+
     # Bad inputs
     with pytest.raises(ValueError):
         pl.Series([1, 2, 3], [1, 2, 3])
