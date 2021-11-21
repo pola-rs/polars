@@ -13,13 +13,7 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-import polars as pl
-
-__all__ = [
-    "coerce_arrow",
-    "_process_null_values",
-    "_ptr_to_numpy",
-]
+import polars as pl  # TODO: this is public API
 
 
 def coerce_arrow(array: "pa.Array") -> "pa.Array":

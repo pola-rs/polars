@@ -9,8 +9,6 @@ except ImportError:
 
 from polars import internals as pli
 
-__all__ = ["when"]
-
 
 class WhenThenThen:
     """

@@ -1,10 +1,6 @@
 import os
 from typing import Type
 
-__all__ = [
-    "Config",
-]
-
 from polars.string_cache import toggle_string_cache
 
 
