@@ -471,7 +471,6 @@ def test_mode() -> None:
 
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
-    print(s.str.json_path_match("$.a"))
     assert s.str.json_path_match("$.a").to_list() == [
         "1",
         None,

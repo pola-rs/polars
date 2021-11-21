@@ -130,8 +130,6 @@ def test_from_pydatetime() -> None:
     assert s.name == "name"
     assert s.null_count() == 1
     assert s.dt[0] == dates[0]
-    # fmt dates and nulls
-    print(s)
 
     dates = [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3), None]  # type: ignore
     s = pl.Series("name", dates)
@@ -139,9 +137,6 @@ def test_from_pydatetime() -> None:
     assert s.name == "name"
     assert s.null_count() == 1
     assert s.dt[0] == dates[0]
-
-    # fmt dates and nulls
-    print(s)
 
 
 def test_to_python_datetime() -> None:

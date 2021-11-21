@@ -89,12 +89,9 @@ def test_parquet_chunks() -> None:
             np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),
             columns=["floats", "dates"],
         )
-        print(df)
 
         # write as parquet
         df.to_parquet(f)
-
-        print(f"reading {case} dates with polars...", end="")
         f.seek(0)
 
         # read it with polars
