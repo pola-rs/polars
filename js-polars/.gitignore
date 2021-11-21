@@ -1,5 +1,0 @@
-/target
-**/*.rs.bk
-Cargo.lock
-bin/libpolars.node
-node_modules/

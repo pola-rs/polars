@@ -27,7 +27,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
 
 pub struct Utf8Type {}
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "PolarsObjectSafe", derive(Serialize, Deserialize))]
 pub struct ListType {}
 
 pub struct CategoricalType {}

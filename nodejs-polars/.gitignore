@@ -1,0 +1,13 @@
+/target
+**/*.rs.bk
+Cargo.lock
+bin/libpolars.node
+node_modules/
+.yarn/
+.pnp.*
+
+coverage/
+bin/
+.vscode
+.cargo
+*.node

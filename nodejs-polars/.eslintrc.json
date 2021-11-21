@@ -1,0 +1,65 @@
+{
+    "env": {
+        "browser": true,
+        "es2021": true,
+        "jest/globals": true
+    },
+    "extends": [
+        "eslint:recommended"
+        // "plugin:prettier/recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+        "ecmaVersion": 2020,
+        "sourceType": "module"
+    },
+    "plugins": [
+        "@typescript-eslint",
+        "jest"
+    ],
+    "rules": {
+        // "prettier/prettier": [
+        //     "error",
+        //     {
+        //         "semi": true,
+        //         "printWidth": 80,
+        //         "eslintIntegration": true
+        //     }
+        // ],
+        "semi": ["error", "always"],
+        "indent": ["error", 2, { "MemberExpression": 1 }],
+        "no-dupe-class-members": "off",
+        "no-unused-vars": "off",
+        "newline-per-chained-call": [
+            "error",
+            {
+                "ignoreChainWithDepth": 2
+            }
+        ],
+        "no-multiple-empty-lines": [
+            "error",
+            {
+                "max": 2,
+                "maxEOF": 0
+            }
+        ],
+        "padding-line-between-statements": [
+            "error",
+            {
+                "blankLine": "always",
+                "prev": "*",
+                "next": "return"
+            },
+            {
+                "blankLine": "always",
+                "prev": "*",
+                "next": "block-like"
+            },
+            {
+                "blankLine": "always",
+                "prev": "*",
+                "next": "multiline-expression"
+            }
+        ]
+    }
+}
