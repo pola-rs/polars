@@ -14,6 +14,7 @@ use arrow::buffer::MutableBuffer;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::trusted_len::PushUnchecked;
 use std::ops::Deref;
+use crate::chunked_array::object::extension::create_extension;
 
 fn agg_helper<T, F>(groups: &[(u32, Vec<u32>)], f: F) -> Option<Series>
 where
@@ -618,7 +619,58 @@ impl AggList for CategoricalChunked {
     }
 }
 #[cfg(feature = "object")]
-impl<T> AggList for ObjectChunked<T> {}
+impl<T: PolarsObject> AggList for ObjectChunked<T> {
+    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        let mut can_fast_explode = true;
+        let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+
+        let iter = groups
+            .iter()
+            .map(|(_, idx)| {
+                // Safety:
+                // group tuples always in bounds
+                let group_vals =
+                    unsafe { self.take_unchecked((idx.iter().map(|idx| *idx as usize)).into()) };
+
+                let idx_len = idx.len();
+                if idx_len == 0 {
+                    can_fast_explode = false;
+                }
+                length_so_far += idx_len as i64;
+                // Safety:
+                // we know that offsets has allocated enough slots
+                unsafe {
+                    offsets.push_unchecked(length_so_far);
+                }
+
+                let arr = group_vals.downcast_iter().next().unwrap().clone();
+                arr.into_iter_cloned()
+            })
+            .flatten()
+            .trust_my_length(self.len());
+
+
+        let pe = create_extension(iter);
+        let extension_array = Arc::new(pe.take_and_forget()) as ArrayRef;
+        let extension_dtype = extension_array.data_type();
+
+        let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
+        let arr = Arc::new(ListArray::<i64>::from_data(
+            data_type,
+            offsets.into(),
+            extension_array,
+            None,
+        )) as ArrayRef;
+
+        let mut listarr = ListChunked::new_from_chunks(self.name(), vec![arr]);
+        if can_fast_explode {
+            listarr.set_fast_explode()
+        }
+        Some(listarr.into_series())
+    }
+}
 
 pub(crate) trait AggQuantile {
     fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {

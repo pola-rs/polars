@@ -42,6 +42,8 @@ pub mod strings;
 pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
+#[cfg(feature = "object")]
+mod drop;
 
 use polars_arrow::prelude::*;
 
