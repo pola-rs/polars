@@ -4,7 +4,10 @@ import warnings
 try:
     from polars.polars import version
 except ImportError as e:
-    version = lambda: ""
+
+    def version() -> str:
+        return ""
+
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
