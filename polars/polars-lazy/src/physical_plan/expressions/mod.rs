@@ -224,6 +224,20 @@ impl<'a> AggregationContext<'a> {
         }
         match &self.series {
             AggState::NotAggregated(s) => {
+                // literal series
+                // the literal series needs to be expanded to the number of indices in the groups
+                let s = if s.len() == 1
+                    // or more then one group
+                    && (self.groups.len() > 1
+                    // or single groups with more than on index
+                    || !self.groups.as_ref().is_empty()
+                    && self.groups[0].1.len() > 1)
+                {
+                    Cow::Owned(s.expand_at_index(0, self.groups.iter().map(|g| g.1.len()).sum()))
+                } else {
+                    Cow::Borrowed(s)
+                };
+
                 let out = Cow::Owned(
                     s.agg_list(&self.groups)
                         .expect("should be able to aggregate this to list"),

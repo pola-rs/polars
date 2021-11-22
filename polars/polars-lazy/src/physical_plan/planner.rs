@@ -472,9 +472,7 @@ impl DefaultPlanner {
 
                 if apply_columns.is_empty() {
                     if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                        return Err(PolarsError::ValueError(
-                            "Cannot apply a window function over literals".into(),
-                        ));
+                        apply_columns.push(Arc::from("literal"))
                     } else {
                         let e = node_to_exp(function, expr_arena);
                         return Err(PolarsError::ValueError(
