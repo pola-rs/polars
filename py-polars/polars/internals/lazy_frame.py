@@ -374,7 +374,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.cache())
 
-    def filter(self, predicate: "pli.Expr") -> "LazyFrame":
+    def filter(self, predicate: Union["pli.Expr", str]) -> "LazyFrame":
         """
         Filter the rows in the DataFrame based on a predicate expression.
 

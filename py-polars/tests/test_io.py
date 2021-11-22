@@ -5,7 +5,7 @@ import io
 import pickle
 import zlib
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple, Type
+from typing import Dict, Type
 
 import numpy as np
 import pandas as pd

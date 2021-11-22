@@ -36,7 +36,8 @@ def test_from_pandas_datetime() -> None:
 
 def test_arrow_list_roundtrip() -> None:
     # https://github.com/pola-rs/polars/issues/1064
-    pl.from_arrow(pa.table({"a": [1], "b": [[1, 2]]})).to_arrow()
+    tbl = pa.table({"a": [1], "b": [[1, 2]]})
+    assert pl.from_arrow(tbl).to_arrow().shape == tbl.shape
 
 
 def test_arrow_dict_to_polars() -> None:
