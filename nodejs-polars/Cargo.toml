@@ -40,7 +40,6 @@ features = [
   "dtype-u16",
   "zip_with",
   "simd",
-  "lazy",
   "strings",
   "temporal",
   "random",
@@ -53,8 +52,6 @@ features = [
   "private",
   "round_series",
   "is_first",
-  "asof_join",
-  "cross_join",
   "dot_product",
   "concat_str",
   "row_hash",
@@ -79,7 +76,7 @@ features = [
 
 
 [profile.release]
-lto = true
+lto = "fat"
 codegen-units = 1
 
 

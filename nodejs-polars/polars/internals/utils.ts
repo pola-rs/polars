@@ -1,5 +1,5 @@
-import { Dtype, DTYPE_TO_FFINAME } from '../datatypes';
-import polars_internal from '../polars_internal';
+import { DataType, DTYPE_TO_FFINAME } from '../datatypes';
+import polars_internal from './polars_internal';
 
 /**
  *
@@ -12,7 +12,7 @@ import polars_internal from '../polars_internal';
  */
 export function getInternalFunc(
   name: string,
-  dtype: Dtype,
+  dtype: DataType,
   obj?: any,
   defaultFunc?: CallableFunction,
 ): CallableFunction {

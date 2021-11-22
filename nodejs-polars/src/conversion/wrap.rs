@@ -53,6 +53,7 @@ impl WrappedObject {
     let s: &JsSeries = cx.env.get_value_external(&v)?;
     Ok(s)
   }
+  
   pub fn get_series_mut<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&mut JsSeries> {
     let v: JsExternal = self.0.get_named_property(key)?;
     let s: &mut JsSeries = cx.env.get_value_external(&v)?;

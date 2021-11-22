@@ -6,7 +6,6 @@
     },
     "extends": [
         "eslint:recommended"
-        // "plugin:prettier/recommended"
     ],
     "parser": "@typescript-eslint/parser",
     "parserOptions": {
@@ -18,14 +17,7 @@
         "jest"
     ],
     "rules": {
-        // "prettier/prettier": [
-        //     "error",
-        //     {
-        //         "semi": true,
-        //         "printWidth": 80,
-        //         "eslintIntegration": true
-        //     }
-        // ],
+
         "semi": ["error", "always"],
         "indent": ["error", 2, { "MemberExpression": 1 }],
         "no-dupe-class-members": "off",
@@ -36,6 +28,7 @@
                 "ignoreChainWithDepth": 2
             }
         ],
+        "@typescript-eslint/member-ordering": "error",
         "no-multiple-empty-lines": [
             "error",
             {

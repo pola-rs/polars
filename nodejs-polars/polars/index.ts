@@ -1,56 +1,26 @@
-import Series from './series';
-export default {
-  Int8: 'Int8',
-  Int16: 'Int16',
-  Int32: 'Int32',
-  Int64: 'Int64',
-  UInt8: 'UInt8',
-  UInt16: 'UInt16',
-  UInt32: 'UInt32',
-  UInt64: 'UInt64',
-  Float32: 'Float32',
-  Float64: 'Float64',
-  Boolean: 'Boolean',
-  Utf8: 'Utf8',
-  List: 'List',
-  Date: 'Date',
-  Datetime: 'Datetime',
-  Time: 'Time',
-  Object: 'Object',
-  Categorical: 'Categorical',
+import {default as Series} from './series';
+import { DataType } from './datatypes';
+import * as func from './functions';
 
-  /**
-   * A Series represents a single column in a polars DataFrame.
-   * @param name - Name of the series. Will be used as a column name when used in a DataFrame.
-   * @param {PolarsArrayLike} values - One-dimensional data in various forms. Supported are: Array, Series,
-   * Set
-   * @param {Dtype} [dtype] - Polars dtype of the Series data. If not specified, the dtype is inferred.
-   * @param [strict] - Throw error on numeric overflow
-   *
-   * @example
-   * > const s = pl.Series('a', [1,2,3]);
-   * > s
-   * shape: (3,)
-   * Series: 'a' [i64]
-   * [
-   *         1
-   *         2
-   *         3
-   * ]
-   * // Notice that the dtype is automatically inferred as a polars Int64:
-   * > s.dtype()
-   * "Int64"
-   *
-   * // Constructing a Series with a specific dtype:
-   * > const s2 = pl.Series('a', [1, 2, 3], dtype=pl.Float32);
-   * > s2
-   * shape: (3,)
-   * Series: 'a' [f32]
-   * [
-   *         1
-   *         2
-   *         3
-   * ]
-   */
-  Series,
+export default {
+  Int8:  DataType.Int8,
+  Int16:  DataType.Int16,
+  Int32:  DataType.Int32,
+  Int64:  DataType.Int64,
+  UInt8:  DataType.UInt8,
+  UInt16:  DataType.UInt16,
+  UInt32:  DataType.UInt32,
+  UInt64:  DataType.UInt64,
+  Float32:  DataType.Float32,
+  Float64:  DataType.Float64,
+  Bool:  DataType.Bool,
+  Utf8:  DataType.Utf8,
+  List:  DataType.List,
+  Date:  DataType.Date,
+  Datetime:  DataType.Datetime,
+  Time:  DataType.Time,
+  Object:  DataType.Object,
+  Categorical:  DataType.Categorical,
+  repeat: func.repeat,
+  Series
 };

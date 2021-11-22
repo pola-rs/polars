@@ -198,6 +198,7 @@ impl JsSeries {
       napi::Property::new(env, "set_at_idx_i16")?.with_method(set_at_idx_i16),
       napi::Property::new(env, "set_at_idx_i32")?.with_method(set_at_idx_i32),
       napi::Property::new(env, "set_at_idx_i64")?.with_method(set_at_idx_i64),
+      napi::Property::new(env, "get_bool")?.with_method(get_bool),
       napi::Property::new(env, "get_f32")?.with_method(get_f32),
       napi::Property::new(env, "get_f64")?.with_method(get_f64),
       napi::Property::new(env, "get_u8")?.with_method(get_u8),

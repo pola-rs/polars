@@ -1,9 +1,9 @@
 {
   "name": "nodejs-polars",
   "version": "0.0.1",
-  "main": "index.js",
   "repository": "git@github.com/pola-rs/polars.git",
   "license": "MIT",
+  
   "files": [
     "index.d.ts",
     "index.js"
@@ -38,9 +38,6 @@
     "bench": "node -r @swc-node/register benchmark/bench.ts",
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
-    "format": "run-p format:md format:json format:yaml format:source format:rs",
-    "format:md": "prettier --parser markdown --write './**/*.md'",
-    "format:json": "prettier --parser json --write './**/*.json'",
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
     "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
@@ -73,6 +70,7 @@
     "lint-staged": "^11.2.6",
     "prettier": "^2.4.1",
     "ts-node": "^10.4.0",
+    "typedoc": "^0.22.9",
     "typescript": "4.4.3"
   },
   "dependencies": {

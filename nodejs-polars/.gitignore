@@ -11,3 +11,4 @@ bin/
 .vscode
 .cargo
 *.node
+docs/

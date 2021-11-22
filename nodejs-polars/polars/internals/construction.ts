@@ -1,29 +1,29 @@
 import pl from '../';
-import polars_internal from '../polars_internal';
+import polars_internal from './polars_internal';
 
-import { Dtype, polarsTypeToConstructor } from '../datatypes';
+import { DataType, polarsTypeToConstructor } from '../datatypes';
 import { isTypedArray } from 'util/types';
 
-const getDtype = (value: unknown): Dtype => {
+export const jsTypeToPolarsType = (value: unknown): DataType => {
   if (Array.isArray(value)) {
     throw new Error("List type not yet supported");
   }
 
   if (value instanceof Date) {
-    return Dtype.Date;
+    return DataType.Date;
   }
 
   switch (typeof value) {
   case 'bigint':
-    return Dtype.UInt64;
+    return DataType.UInt64;
   case 'number':
-    return Dtype.Float64;
+    return DataType.Float64;
   case 'string':
-    return Dtype.Utf8;
+    return DataType.Utf8;
   case 'boolean':
-    return Dtype.Boolean;
+    return DataType.Bool;
   default:
-    return Dtype.Object;
+    return DataType.Object;
   }
 };
 
@@ -33,7 +33,7 @@ const getDtype = (value: unknown): Dtype => {
 export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict = true): any {
   const first5TypesMatch = values
     .slice(0, 5)
-    .map(getDtype)
+    .map(jsTypeToPolarsType)
     .every((val, _, arr) => val === arr[0]);
 
   if (!first5TypesMatch) {
@@ -49,7 +49,7 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
     dtype = pl.Float32;
   }
 
-  dtype = dtype ?? getDtype(values[0]);
+  dtype = dtype ?? jsTypeToPolarsType(values[0]);
 
   if (dtype) {
     const constructor = polarsTypeToConstructor(dtype);

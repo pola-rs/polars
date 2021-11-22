@@ -260,7 +260,6 @@ pub fn bitxor(cx: CallContext) -> JsResult<JsExternal> {
 #[js_function(1)]
 pub fn mean(cx: CallContext) -> JsResult<JsNumber> {
   let params = get_params(&cx)?;
-  
   let series = params.get_series(&cx, "_series")?;
   let mean = match series.series.dtype() {
     DataType::Boolean => {
@@ -534,11 +533,6 @@ pub fn fill_null(cx: CallContext) -> JsResult<JsExternal> {
   let strat = parse_strategy(strategy);
   let series = series.series.fill_null(strat).map_err(JsPolarsEr::from)?;
   JsSeries::new(series).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn to_arrow(_: CallContext) -> JsResult<JsExternal> {
-  todo!()
 }
 
 #[js_function(1)]
@@ -828,7 +822,6 @@ pub fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
 
 macro_rules! init_method {
   ($name:ident, $js_type:ty, $type:ty) => {
-
     #[js_function(1)]
     pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
       let params = get_params(&cx)?;
@@ -1288,6 +1281,27 @@ pub fn get_u64(cx: CallContext) -> JsResult<JsUnknown> {
       };
       match ca.get(index) {
         Some(v) => v.try_into_js(&cx).map(|v| v.into_unknown().unwrap()),
+        None => cx.env.get_undefined().map(|v| v.into_unknown()),
+      }
+    }
+    Err(_) => cx.env.get_undefined().map(|v| v.into_unknown()),
+  }
+}
+
+#[js_function(1)]
+pub fn get_bool(cx: CallContext) -> JsResult<JsUnknown> {
+  let params = get_params(&cx)?;
+  let series = params.get_series(&cx, "_series")?;
+  let index = params.get_as::<i64>("index")?;
+  match series.series.bool() {
+    Ok(ca) => {
+      let index = if index < 0 {
+        (ca.len() as i64 + index) as usize
+      } else {
+        index as usize
+      };
+      match ca.get(index) {
+        Some(v) => cx.env.get_boolean(v).map(|v| v.into_unknown()),
         None => cx.env.get_undefined().map(|v| v.into_unknown()),
       }
     }

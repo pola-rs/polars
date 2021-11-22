@@ -1,93 +1,58 @@
-import polars_internal from './polars_internal';
+import polars_internal from './internals/polars_internal';
 
-export enum Dtype {
-  Int8 = 'Int8',
-  Int16 = 'Int16',
-  Int32 = 'Int32',
-  Int64 = 'Int64',
-  UInt8 = 'UInt8',
-  UInt16 = 'UInt16',
-  UInt32 = 'UInt32',
-  UInt64 = 'UInt64',
-  Float32 = 'Float32',
-  Float64 = 'Float64',
-  Boolean = 'Boolean',
-  Utf8 = 'Utf8',
-  List = 'List',
-  Date = 'Date',
-  Datetime = 'Datetime',
-  Time = 'Time',
-  Object = 'Object',
-  Categorical = 'Categorical',
+export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean : 
+ T extends DataType.Utf8 ? string : T extends DataType.Date ? Date : T extends DataType.UInt64 ? bigint : number
+
+export type PrimitiveToDtype<T> = T extends boolean ? DataType.Bool :
+ T extends string ? DataType.Utf8 : T extends Date ? DataType.Date : 
+ T extends number ? DataType.Float64 : T extends bigint ? DataType.UInt64 :
+ T extends ArrayLike<any> ? DataType.List : DataType.Object 
+ 
+
+export type Optional<T> = T | undefined;
+
+
+export enum DataType {
+  Int8,
+  Int16,
+  Int32,
+  Int64,
+  UInt8,
+  UInt16,
+  UInt32,
+  UInt64,
+  Float32,
+  Float64,
+  Bool,
+  Utf8,
+  List,
+  Date,
+  Datetime,
+  Time,
+  Object,
+  Categorical,
 }
 
-export abstract class _DataType {}
-export class Int8Type extends _DataType {}
-export class Int16Type extends _DataType {}
-export class Int32Type extends _DataType {}
-export class Int64Type extends _DataType {}
-export class UInt8Type extends _DataType {}
-export class UInt16Type extends _DataType {}
-export class UInt32Type extends _DataType {}
-export class UInt64Type extends _DataType {}
-export class Float32Type extends _DataType {}
-export class Float64Type extends _DataType {}
-export class BooleanType extends _DataType {}
-export class Utf8Type extends _DataType {}
-export class ListType extends _DataType {}
-export class DateType extends _DataType {}
-export class DatetimeType extends _DataType {}
-export class TimeType extends _DataType {}
-export class ObjectType extends _DataType {}
-export class CategoricalType extends _DataType {}
 
-export type DataType = {
-  Int8: Int8Type;
-  Int16: Int16Type;
-  Int32: Int32Type;
-  Int64: Int64Type;
-  UInt8: UInt8Type;
-  UInt16: UInt16Type;
-  UInt32: UInt32Type;
-  UInt64: UInt64Type;
-  Float32: Float32Type;
-  Float64: Float64Type;
-  Boolean: BooleanType;
-  Utf8: Utf8Type;
-  List: ListType;
-  Date: DateType;
-  Datetime: DatetimeType;
-  Time: TimeType;
-  Object: ObjectType;
-  Categorical: CategoricalType;
-};
-
-export const dtypeToU8Value = (dtype: Dtype): number => {
-  return Object.keys(Dtype).indexOf(dtype);
-};
-
-export const dtypeFromU8Value = (n: number): string => {
-  return Object.keys(Dtype)[n];
-};
-export const DTYPE_TO_FFINAME: Record<Dtype, string> = {
-  [Dtype.Int8]: 'i8',
-  [Dtype.Int16]: 'i16',
-  [Dtype.Int32]: 'i32',
-  [Dtype.Int64]: 'i64',
-  [Dtype.UInt8]: 'u8',
-  [Dtype.UInt16]: 'u16',
-  [Dtype.UInt32]: 'u32',
-  [Dtype.UInt64]: 'u64',
-  [Dtype.Float32]: 'f32',
-  [Dtype.Float64]: 'f64',
-  [Dtype.Boolean]: 'bool',
-  [Dtype.Utf8]: 'str',
-  [Dtype.List]: 'list',
-  [Dtype.Date]: 'date',
-  [Dtype.Datetime]: 'datetime',
-  [Dtype.Time]: 'time',
-  [Dtype.Object]: 'object',
-  [Dtype.Categorical]: 'categorical',
+export const DTYPE_TO_FFINAME: Record<DataType, string> = {
+  [DataType.Int8]: 'i8',
+  [DataType.Int16]: 'i16',
+  [DataType.Int32]: 'i32',
+  [DataType.Int64]: 'i64',
+  [DataType.UInt8]: 'u8',
+  [DataType.UInt16]: 'u16',
+  [DataType.UInt32]: 'u32',
+  [DataType.UInt64]: 'u64',
+  [DataType.Float32]: 'f32',
+  [DataType.Float64]: 'f64',
+  [DataType.Bool]: 'bool',
+  [DataType.Utf8]: 'str',
+  [DataType.List]: 'list',
+  [DataType.Date]: 'date',
+  [DataType.Datetime]: 'datetime',
+  [DataType.Time]: 'time',
+  [DataType.Object]: 'object',
+  [DataType.Categorical]: 'categorical',
 };
 
 const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, string> = {
@@ -103,17 +68,17 @@ const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, string> = {
   UInt64: 'new_opt_u64',
   Date: 'new_opt_date',
   Datetime: 'new_opt_date',
-  Boolean: 'new_opt_bool',
+  Bool: 'new_opt_bool',
   Utf8: 'new_str',
   Object: 'new_object',
   List: 'new_list',
 };
 
-export const polarsTypeToConstructor = (dtype: Dtype): CallableFunction => {
-  const constructor = POLARS_TYPE_TO_CONSTRUCTOR[Dtype[dtype]];
+export const polarsTypeToConstructor = (dtype: DataType): CallableFunction => {
+  const constructor = POLARS_TYPE_TO_CONSTRUCTOR[DataType[dtype]];
 
   if (!constructor) {
-    throw new Error(`Cannot construct Series for type ${Dtype[dtype]}.`);
+    throw new Error(`Cannot construct Series for type ${DataType[dtype]}.`);
   }
 
   return polars_internal.series[constructor];
