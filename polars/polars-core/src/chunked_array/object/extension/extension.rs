@@ -40,7 +40,7 @@ impl PolarsExtension {
 
     pub(crate) fn get_series(&self) -> Series {
         let sent = self.get_sentinel();
-        let s = (sent.to_series_fn.as_ref().unwrap())();
+        let s = (sent.to_series_fn.as_ref().unwrap())(&self.array.as_ref().unwrap());
         std::mem::forget(sent);
         s
     }
@@ -48,9 +48,8 @@ impl PolarsExtension {
     // heap allocates a function that converts the binary array to a Series of `[ObjectChunked<T>]`
     pub(crate) fn set_to_series_fn<T: PolarsObject>(&mut self, name: &str) {
         let name = name.to_string();
-        let array = self.array.clone().unwrap();
-        let f = Box::new(move || {
-            let iter = array.iter().map(|opt| {
+        let f = Box::new(move |arr: &FixedSizeBinaryArray| {
+            let iter = arr.iter().map(|opt| {
                 opt.map(|bytes| {
                     let t = unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const T) };
 

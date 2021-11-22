@@ -37,7 +37,7 @@ unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn 
 
 struct ExtensionSentinel {
     drop_fn: Option<Box<dyn FnMut()>>,
-    pub(crate) to_series_fn: Option<Box<dyn Fn() -> Series>>,
+    pub(crate) to_series_fn: Option<Box<dyn Fn(&FixedSizeBinaryArray) -> Series>>,
 }
 
 impl Drop for ExtensionSentinel {

@@ -657,6 +657,11 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let extension_array = Arc::new(pe.take_and_forget()) as ArrayRef;
         let extension_dtype = extension_array.data_type();
 
+        let arr = extension_array
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
+
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
         let arr = Arc::new(ListArray::<i64>::from_data(
             data_type,
@@ -665,8 +670,9 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             None,
         )) as ArrayRef;
 
-        let lst = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
-        dbg!(Series::try_from(("", Arc::from(lst.value(0)))));
+        // let lst = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
+        //
+        // dbg!(Series::try_from(("", Arc::from(lst.value(0)))));
 
         let mut listarr = ListChunked::new_from_chunks(self.name(), vec![arr]);
         if can_fast_explode {
