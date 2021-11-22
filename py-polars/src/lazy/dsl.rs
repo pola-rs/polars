@@ -11,6 +11,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
+use polars::chunked_array::temporal::timedelta::{TimeDeltaBuilder};
 
 #[pyclass]
 #[repr(transparent)]
@@ -929,6 +930,22 @@ impl PyExpr {
     }
     fn str_concat(&self, delimiter: &str) -> Self {
         self.inner.clone().str_concat(delimiter).into()
+    }
+
+    fn date_buckets(&self, days: i64, seconds: u32, microseconds: u32) -> Self {
+        let td = TimeDeltaBuilder::new()
+            .days(days)
+            .seconds(seconds)
+            .microseconds(microseconds)
+            .finish();
+
+        self.inner.clone().apply(move |s| {
+            match s.dtype() {
+                DataType::Datetime => Ok(s.datetime().unwrap().buckets(td).into_series()),
+                DataType::Date => Ok(s.date().unwrap().buckets(td).into_series()),
+                dt => Err(PolarsError::ComputeError(format!("expected date/datetime got {:?}", dt).into()))
+            }
+        }, GetOutput::same_type()).into()
     }
 }
 

@@ -144,6 +144,9 @@ where
     T::Native: Default,
 {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
+        if options.descending && self.is_sorted_reverse() || self.is_sorted() {
+            return self.clone();
+        }
         if !self.has_validity() {
             let mut vals = memcpy_values(self);
             sort_branch(

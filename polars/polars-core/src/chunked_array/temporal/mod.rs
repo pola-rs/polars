@@ -6,6 +6,7 @@ mod date;
 mod datetime;
 #[cfg(feature = "dtype-time")]
 mod time;
+pub mod timedelta;
 mod utf8;
 
 pub use self::conversion::*;

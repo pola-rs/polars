@@ -241,6 +241,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.round
     ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.timestamp
+    ExprDateTimeNameSpace.buckets
 
 Strings
 -------

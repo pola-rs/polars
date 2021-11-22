@@ -157,12 +157,10 @@ pub struct ChunkedArray<T> {
 }
 
 impl<T> ChunkedArray<T> {
-    #[cfg(feature = "asof_join")]
     pub(crate) fn is_sorted(&self) -> bool {
         self.bit_settings & 1 != 0
     }
 
-    #[cfg(feature = "asof_join")]
     pub(crate) fn is_sorted_reverse(&self) -> bool {
         self.bit_settings & 1 << 1 != 0
     }
