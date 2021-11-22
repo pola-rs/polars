@@ -1286,7 +1286,12 @@ impl DataFrame {
     ///     left.left_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn left_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(&self, other: &DataFrame, left_on: S1, right_on: S2) -> Result<DataFrame> {
+    pub fn left_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
+        &self,
+        other: &DataFrame,
+        left_on: S1,
+        right_on: S2,
+    ) -> Result<DataFrame> {
         self.join(other, left_on, right_on, JoinType::Left, None)
     }
 
