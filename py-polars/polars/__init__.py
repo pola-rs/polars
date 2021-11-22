@@ -11,7 +11,10 @@ except ImportError as e:
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
-from polars.cfg import Config  # flake8: noqa. We do not export in __all__
+from polars.cfg import (  # flake8: noqa. We do not export in __all__
+    Config,
+    toggle_string_cache,
+)
 from polars.convert import from_arrow, from_dict, from_dicts, from_pandas, from_records
 from polars.datatypes import (
     Boolean,

@@ -81,7 +81,7 @@ GroupBy
 -------
 This namespace comes available by calling `LazyFrame.groupby(..)`.
 
-.. currentmodule:: polars.lazy.frame
+.. currentmodule:: polars.internals.lazy_frame
 
 .. autosummary::
    :toctree: api/

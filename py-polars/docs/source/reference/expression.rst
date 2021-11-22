@@ -222,7 +222,7 @@ TimeSeries
 ----------
 The following methods are available under the `expr.dt` attribute.
 
-.. currentmodule:: polars.lazy.expr
+.. currentmodule:: polars.internals.expr
 
 .. autosummary::
    :toctree: api/
@@ -248,7 +248,7 @@ Strings
 
 The following methods are available under the `Expr.str` attribute.
 
-.. currentmodule:: polars.lazy.expr
+.. currentmodule:: polars.internals.expr
 
 .. autosummary::
    :toctree: api/
@@ -268,7 +268,7 @@ Lists
 -----
 The following methods are available under the `expr.arr` attribute.
 
-.. currentmodule:: polars.lazy.expr
+.. currentmodule:: polars.internals.expr
 
 .. autosummary::
    :toctree: api/
