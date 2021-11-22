@@ -3440,8 +3440,7 @@ class DateTimeNameSpace:
         """
         Go from Date/Datetime to python DateTime objects
         """
-
-        return (self.timestamp() // 1000).apply(
+        return (self.timestamp() / 1000).apply(
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
@@ -3510,7 +3509,7 @@ def _to_python_datetime(
         return datetime.utcfromtimestamp(value * 3600 * 24).date()
     elif dtype == Datetime:
         # ms to seconds
-        return datetime.utcfromtimestamp(value // 1000)
+        return datetime.utcfromtimestamp(value / 1000)
     else:
         raise NotImplementedError
 

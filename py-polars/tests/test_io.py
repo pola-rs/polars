@@ -101,7 +101,7 @@ def test_parquet_chunks() -> None:
 
 def test_parquet_datetime() -> None:
     """
-    This failed because parquet writers cast datetimeto Date
+    This failed because parquet writers cast datetime to Date
     """
     f = io.BytesIO()
     data = {

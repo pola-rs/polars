@@ -425,11 +425,11 @@ def coerce_arrow(array: "pa.Array") -> "pa.Array":
         warnings.warn(
             "Conversion of (potentially) timezone aware to naive datetimes. TZ information may be lost",
         )
-        ts_ms = pa.compute.cast(array, pa.timestamp("ms"), safe=False)
-        ms = pa.compute.cast(ts_ms, pa.int64())
-        del ts_ms
-        array = pa.compute.cast(ms, pa.timestamp("ms"))
-        del ms
+        ts_us = pa.compute.cast(array, pa.timestamp("us"), safe=False)
+        us = pa.compute.cast(ts_us, pa.int64())
+        del ts_us
+        array = pa.compute.cast(us, pa.timestamp("us"))
+        del us
     # note: Decimal256 could not be cast to float
     elif isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())
