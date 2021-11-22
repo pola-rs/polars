@@ -195,4 +195,28 @@ mod test {
 
         dbg!(out);
     }
+
+    #[test]
+    fn test_extension_to_list_explode() {
+        let foo1 = Foo {
+            a: 1,
+            b: 1,
+            other_heap: "foo".into(),
+        };
+        let foo2 = Foo {
+            a: 1,
+            b: 1,
+            other_heap: "bar".into(),
+        };
+
+        let values = &[Some(foo1), None, Some(foo2), None];
+        let ca = ObjectChunked::new_from_opt_slice("", values);
+
+        let groups = vec![(0u32, vec![0u32, 1]), (2, vec![2]), (3, vec![3])];
+        let out = ca.agg_list(&groups).unwrap();
+        let a = out.explode();
+        dbg!(a);
+
+        dbg!(out);
+    }
 }
