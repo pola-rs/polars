@@ -824,10 +824,17 @@ def test_drop_duplicates() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert df.lazy().drop_duplicates().collect().frame_equal(expected)
+    assert (
+        df.lazy().drop_duplicates(maintain_order=True).collect().frame_equal(expected)
+    )
 
     expected = pl.DataFrame({"a": [1], "b": [3]})
-    assert df.lazy().drop_duplicates(subset="b").collect().frame_equal(expected)
+    assert (
+        df.lazy()
+        .drop_duplicates(subset="b", maintain_order=True)
+        .collect()
+        .frame_equal(expected)
+    )
 
 
 def test_lazy_concat(df: pl.DataFrame) -> None:
