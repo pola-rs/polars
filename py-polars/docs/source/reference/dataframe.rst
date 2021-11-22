@@ -138,7 +138,7 @@ GroupBy
 -------
 This namespace comes available by calling `DataFrame.groupby(..)`.
 
-.. currentmodule:: polars.eager.frame
+.. currentmodule:: polars.internals.frame
 
 .. autosummary::
    :toctree: api/
@@ -166,7 +166,7 @@ Pivot
 -----
 This namespace comes available by calling `DataFrame.groupby(..).pivot`
 
-.. currentmodule:: polars.eager.frame
+.. currentmodule:: polars.internals.frame
 
 .. autosummary::
    :toctree: api/
