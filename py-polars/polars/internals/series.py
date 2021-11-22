@@ -385,6 +385,8 @@ class Series:
             other = maybe_cast(other, self.dtype)
             dtype = date_like_to_physical(self.dtype)
             f = get_ffi_func("div_<>", dtype, self._s)
+            if f is None:
+                return NotImplemented
             return wrap_s(f(other))
 
         if self.dtype != physical_type:
@@ -400,6 +402,8 @@ class Series:
         other = maybe_cast(other, self.dtype)
         dtype = date_like_to_physical(self.dtype)
         f = get_ffi_func("div_<>", dtype, self._s)
+        if f is None:
+            return NotImplemented
         if self.is_float():
             return wrap_s(f(other)).floor()
         return wrap_s(f(other))
@@ -1873,6 +1877,8 @@ class Series:
 
             try:
                 f = get_ffi_func("apply_ufunc_<>", dtype, self._s)
+                if f is None:
+                    return NotImplemented
                 series = f(lambda out: ufunc(*args, out=out, **kwargs))
                 return wrap_s(series)
             except TypeError:
@@ -1880,6 +1886,8 @@ class Series:
                 s = self.cast(Float64)
                 args[0] = s.view(ignore_nulls=True)
                 f = get_ffi_func("apply_ufunc_<>", Float64, self._s)
+                if f is None:
+                    return NotImplemented
                 series = f(lambda out: ufunc(*args, out=out, **kwargs))
                 return wrap_s(series)
 
