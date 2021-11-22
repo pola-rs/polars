@@ -195,6 +195,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.median
     DateTimeNameSpace.mean
     DateTimeNameSpace.round
+    DateTimeNameSpace.buckets
 
 
 Strings

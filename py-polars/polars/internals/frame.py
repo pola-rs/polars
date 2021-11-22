@@ -1867,7 +1867,9 @@ class DataFrame:
         return wrap_df(self._df.with_row_count(name))
 
     def groupby(
-        self, by: Union[str, tp.List[str]], maintain_order: bool = False
+        self,
+        by: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"]],
+        maintain_order: bool = False,
     ) -> "GroupBy":
         """
         Start a groupby operation.
@@ -1933,7 +1935,9 @@ class DataFrame:
         """
         if isinstance(by, str):
             by = [by]
-        return GroupBy(self._df, by, maintain_order=maintain_order, downsample=False)
+        return GroupBy(
+            self._df, by, maintain_order=maintain_order, downsample=False  # type: ignore
+        )
 
     def downsample(self, by: Union[str, tp.List[str]], rule: str, n: int) -> "GroupBy":
         """
