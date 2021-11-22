@@ -22,6 +22,8 @@ mod ndarray;
 mod bitwise;
 #[cfg(feature = "dtype-categorical")]
 pub(crate) mod categorical;
+#[cfg(feature = "object")]
+mod drop;
 pub(crate) mod list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
@@ -42,8 +44,6 @@ pub mod strings;
 pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
-#[cfg(feature = "object")]
-mod drop;
 
 use polars_arrow::prelude::*;
 

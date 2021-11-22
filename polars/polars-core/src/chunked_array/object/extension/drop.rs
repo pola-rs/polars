@@ -1,5 +1,5 @@
-use crate::prelude::*;
 use crate::chunked_array::object::extension::PolarsExtension;
+use crate::prelude::*;
 
 pub(crate) fn drop_list(ca: &ListChunked) {
     let mut inner = ca.inner_dtype();
@@ -22,12 +22,21 @@ pub(crate) fn drop_list(ca: &ListChunked) {
             panic!("multiple nested objects not yet supported")
         }
         for arr in &ca.chunks {
-            let dtype = arr.data_type();
-            assert!(matches!(dtype, ArrowDataType::Extension(_, _, _)));
+            if let ArrowDataType::LargeList(fld) = arr.data_type() {
+                let dtype = fld.data_type();
 
-            // recreate the polars extension so that the content is dropped
-            let arr = arr.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap().clone();
-            PolarsExtension::new(arr);
+                assert!(matches!(dtype, ArrowDataType::Extension(_, _, _)));
+
+                // recreate the polars extension so that the content is dropped
+                let arr = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
+                let arr = arr.values();
+                let arr = arr
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
+                    .clone();
+                PolarsExtension::new(arr);
+            }
         }
     }
 }

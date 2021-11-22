@@ -497,7 +497,6 @@ impl DataType {
         } else {
             None
         }
-
     }
 
     /// Convert to the physical data type
@@ -742,7 +741,9 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Utf8 => DataType::Utf8,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             ArrowDataType::Dictionary(_, _) => DataType::Categorical,
-            ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => DataType::Object("extension"),
+            ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
+                DataType::Object("extension")
+            }
             dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }
     }

@@ -7,14 +7,15 @@ use std::hash::Hash;
 
 use arrow::types::{simd::Simd, NativeType};
 
+use crate::chunked_array::object::extension::create_extension;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
 use arrow::buffer::MutableBuffer;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::trusted_len::PushUnchecked;
+use std::convert::TryFrom;
 use std::ops::Deref;
-use crate::chunked_array::object::extension::create_extension;
 
 fn agg_helper<T, F>(groups: &[(u32, Vec<u32>)], f: F) -> Option<Series>
 where
@@ -651,8 +652,8 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             .flatten()
             .trust_my_length(self.len());
 
-
-        let pe = create_extension(iter);
+        let mut pe = create_extension(iter);
+        pe.set_to_series_fn::<T>(self.name());
         let extension_array = Arc::new(pe.take_and_forget()) as ArrayRef;
         let extension_dtype = extension_array.data_type();
 
@@ -663,6 +664,9 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             extension_array,
             None,
         )) as ArrayRef;
+
+        let lst = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
+        dbg!(Series::try_from(("", Arc::from(lst.value(0)))));
 
         let mut listarr = ListChunked::new_from_chunks(self.name(), vec![arr]);
         if can_fast_explode {

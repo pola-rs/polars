@@ -1,9 +1,11 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::cast::cast_chunks;
+use crate::chunked_array::object::extension::extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;
 use polars_arrow::compute::cast::cast;
 use std::convert::TryFrom;
+use std::mem::ManuallyDrop;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
     /// Initialize by name and values.
@@ -387,6 +389,18 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     })
                     .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into())
+            }
+            #[cfg(feature = "object")]
+            ArrowDataType::Extension(s, _, Some(metadata)) if s == "POLARS_EXTENSION_TYPE" => {
+                assert_eq!(chunks.len(), 1);
+                let arr = chunks[0]
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap();
+                let pe = PolarsExtension::new(arr.clone());
+                let s = pe.get_series();
+                pe.take_and_forget();
+                Ok(s)
             }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?} type", dt).into(),

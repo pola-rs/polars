@@ -102,7 +102,7 @@ impl<T: PolarsObject> OwnedObjectIter<T> {
     }
 }
 
-impl<T: PolarsObject>  ObjectArray<T> {
+impl<T: PolarsObject> ObjectArray<T> {
     pub(crate) fn into_iter_cloned(self) -> OwnedObjectIter<T> {
         OwnedObjectIter::<T>::new(self)
     }

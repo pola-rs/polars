@@ -5,12 +5,12 @@ use crate::{prelude::*, PROCESS_ID};
 use arrow::array::{Array, FixedSizeBinaryArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::{Buffer, MutableBuffer};
+use extension::PolarsExtension;
+use std::mem::ManuallyDrop;
 use std::{
     alloc::{dealloc, Layout},
     mem,
 };
-use std::mem::ManuallyDrop;
-use extension::PolarsExtension;
 
 /// deallocate a vec, without calling T::drop
 fn dealoc_vec_no_drop<T: Sized>(v: Vec<T>) {
@@ -37,6 +37,7 @@ unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn 
 
 struct ExtensionSentinel {
     drop_fn: Option<Box<dyn FnMut()>>,
+    pub(crate) to_series_fn: Option<Box<dyn Fn() -> Series>>,
 }
 
 impl Drop for ExtensionSentinel {
@@ -107,6 +108,7 @@ pub(crate) fn create_extension<
     let drop_fn = unsafe { create_drop::<T>(ptr, n_t_vals) };
     let et = Box::new(ExtensionSentinel {
         drop_fn: Some(drop_fn),
+        to_series_fn: None,
     });
     let et_ptr = &*et as *const ExtensionSentinel;
     std::mem::forget(et);
@@ -144,7 +146,7 @@ mod test {
 
     impl Display for Foo {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            todo!()
+            write!(f, "{:?}", self)
         }
     }
 
@@ -185,17 +187,12 @@ mod test {
             other_heap: "bar".into(),
         };
 
-        let values = &[Some(foo1), None, Some(foo2)];
+        let values = &[Some(foo1), None, Some(foo2), None];
         let ca = ObjectChunked::new_from_opt_slice("", values);
 
-        let groups = vec![
-            (0u32, vec![0u32, 1]),
-            (2, vec![2])
-        ];
+        let groups = vec![(0u32, vec![0u32, 1]), (2, vec![2]), (3, vec![3])];
         let out = ca.agg_list(&groups);
 
         dbg!(out);
-
-
     }
 }
