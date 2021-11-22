@@ -19,6 +19,11 @@ pub mod kernels;
 #[cfg(feature = "ndarray")]
 mod ndarray;
 
+mod bitwise;
+#[cfg(feature = "dtype-categorical")]
+pub(crate) mod categorical;
+pub(crate) mod list;
+pub(crate) mod logical;
 #[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 pub mod object;
@@ -37,12 +42,6 @@ pub mod strings;
 pub mod temporal;
 mod trusted_len;
 pub mod upstream_traits;
-use arrow::array::Array;
-mod bitwise;
-#[cfg(feature = "dtype-categorical")]
-pub(crate) mod categorical;
-pub(crate) mod list;
-pub(crate) mod logical;
 
 use polars_arrow::prelude::*;
 
@@ -252,7 +251,7 @@ impl<T> ChunkedArray<T> {
             // dtype will be correct.
             Ok(unsafe { self.unpack_series_matching_physical_type(series) })
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 format!(
                     "cannot unpack series {:?} into matching type {:?}",
                     series,
@@ -319,7 +318,7 @@ impl<T> ChunkedArray<T> {
             self.chunks.push(other);
             Ok(())
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 format!(
                     "cannot append array of type {:?} in array of type {:?}",
                     other.data_type(),

@@ -1,6 +1,7 @@
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
+use arrow::bitmap::MutableBitmap;
 use itertools::Itertools;
 use polars_arrow::prelude::ValueSize;
 use polars_arrow::trusted_len::PushUnchecked;
@@ -140,31 +141,84 @@ where
 impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: Default,
 {
-    fn sort(&self, reverse: bool) -> ChunkedArray<T> {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
         if !self.has_validity() {
             let mut vals = memcpy_values(self);
-
-            sort_branch(vals.as_mut_slice(), reverse, order_default, order_reverse);
-
-            return ChunkedArray::new_from_aligned_vec(self.name(), vals);
-        } else {
-            let mut vals = Vec::with_capacity(self.len());
-            self.downcast_iter().for_each(|arr| {
-                let iter = arr.iter().map(|opt_v| opt_v.copied());
-                vals.extend_trusted_len(iter);
-            });
             sort_branch(
                 vals.as_mut_slice(),
-                reverse,
-                order_default_null,
-                order_reverse_null,
+                options.descending,
+                order_default,
+                order_reverse,
             );
-            let mut ca: Self = vals.into_iter().collect_trusted();
-            ca.rename(self.name());
-            ca.set_sorted(reverse);
+
+            ChunkedArray::new_from_aligned_vec(self.name(), vals)
+        } else {
+            let null_count = self.null_count();
+            let len = self.len();
+            let mut vals = Vec::with_capacity(self.len());
+
+            if !options.nulls_last {
+                let iter = std::iter::repeat(T::Native::default()).take(null_count);
+                vals.extend(iter);
+            }
+
+            self.downcast_iter().for_each(|arr| {
+                let iter = arr
+                    .iter()
+                    .filter_map(|v| v.copied())
+                    .trust_my_length(len - null_count);
+                vals.extend_trusted_len(iter);
+            });
+            let mut_slice = if options.nulls_last {
+                &mut vals[..len - null_count]
+            } else {
+                &mut vals[null_count..]
+            };
+            sort_branch(mut_slice, options.descending, order_default, order_reverse);
+
+            let mut ca: Self = if options.nulls_last {
+                vals.extend(std::iter::repeat(T::Native::default()).take(self.null_count()));
+                let mut validity = MutableBitmap::with_capacity(len);
+                validity.extend_constant(len - null_count, true);
+                validity.extend_constant(null_count, false);
+
+                (
+                    self.name(),
+                    PrimitiveArray::from_data(
+                        T::get_dtype().to_arrow(),
+                        vals.into(),
+                        Some(validity.into()),
+                    ),
+                )
+                    .into()
+            } else {
+                let mut validity = MutableBitmap::with_capacity(len);
+                validity.extend_constant(null_count, false);
+                validity.extend_constant(len - null_count, true);
+
+                (
+                    self.name(),
+                    PrimitiveArray::from_data(
+                        T::get_dtype().to_arrow(),
+                        vals.into(),
+                        Some(validity.into()),
+                    ),
+                )
+                    .into()
+            };
+
+            ca.set_sorted(options.descending);
             ca
         }
+    }
+
+    fn sort(&self, reverse: bool) -> ChunkedArray<T> {
+        self.sort_with(SortOptions {
+            descending: reverse,
+            ..Default::default()
+        })
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
@@ -463,6 +517,57 @@ pub(crate) fn prepare_argsort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+
+    #[test]
+    fn test_sort() {
+        let a = Int32Chunked::new_from_opt_slice(
+            "a",
+            &[
+                Some(1),
+                Some(5),
+                None,
+                Some(1),
+                None,
+                Some(4),
+                Some(3),
+                Some(1),
+            ],
+        );
+        let out = a.sort_with(SortOptions {
+            descending: false,
+            nulls_last: false,
+        });
+        assert_eq!(
+            Vec::from(&out),
+            &[
+                None,
+                None,
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(3),
+                Some(4),
+                Some(5)
+            ]
+        );
+        let out = a.sort_with(SortOptions {
+            descending: false,
+            nulls_last: true,
+        });
+        assert_eq!(
+            Vec::from(&out),
+            &[
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(3),
+                Some(4),
+                Some(5),
+                None,
+                None
+            ]
+        );
+    }
 
     #[test]
     #[cfg(feature = "sort_multiple")]

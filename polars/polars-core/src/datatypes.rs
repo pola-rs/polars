@@ -317,6 +317,7 @@ where
 }
 
 impl<'a> AnyValue<'a> {
+    #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
     pub(crate) fn into_date(self) -> Self {
         match self {
             #[cfg(feature = "dtype-date")]
@@ -491,7 +492,7 @@ pub enum DataType {
 
 impl DataType {
     /// Convert to the physical data type
-    pub(crate) fn to_physical(&self) -> DataType {
+    pub fn to_physical(&self) -> DataType {
         use DataType::*;
         match self {
             Date => Int32,

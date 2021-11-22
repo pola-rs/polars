@@ -11,6 +11,8 @@ use arrow::buffer::Buffer;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
+#[cfg(feature = "abs")]
+mod abs;
 pub(crate) mod aggregate;
 mod any_value;
 mod append;
@@ -412,7 +414,7 @@ pub trait ChunkVar<T> {
 /// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
 ///     let mask = df
 ///     .column("column_a")?
-///     .eq(1);
+///     .equal(1);
 ///
 ///     df.filter(&mask)
 /// }
@@ -422,10 +424,10 @@ pub trait ChunkCompare<Rhs> {
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked;
 
     /// Check for equality.
-    fn eq(&self, rhs: Rhs) -> BooleanChunked;
+    fn equal(&self, rhs: Rhs) -> BooleanChunked;
 
     /// Check for inequality.
-    fn neq(&self, rhs: Rhs) -> BooleanChunked;
+    fn not_equal(&self, rhs: Rhs) -> BooleanChunked;
 
     /// Greater than comparison.
     fn gt(&self, rhs: Rhs) -> BooleanChunked;
@@ -494,8 +496,19 @@ pub trait ToDummies<T>: ChunkUnique<T> {
     }
 }
 
+#[derive(Default)]
+pub struct SortOptions {
+    descending: bool,
+    nulls_last: bool,
+}
+
 /// Sort operations on `ChunkedArray`.
 pub trait ChunkSort<T> {
+    #[allow(unused_variables)]
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
+        unimplemented!()
+    }
+
     /// Returned a sorted `ChunkedArray`.
     fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 

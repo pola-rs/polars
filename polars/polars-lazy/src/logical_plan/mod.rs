@@ -26,7 +26,7 @@ use crate::utils::{
 };
 use crate::{prelude::*, utils};
 use polars_io::csv::NullValues;
-use polars_io::csv_core::utils::get_reader_bytes;
+use polars_io::csv_core::utils::{get_reader_bytes, is_compressed};
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;
@@ -34,7 +34,10 @@ pub(crate) mod conversion;
 pub(crate) mod iterator;
 pub(crate) mod optimizer;
 mod projection;
+#[cfg(feature = "ipc")]
+use polars_io::ipc::IpcReader;
 use projection::*;
+use std::io::{Read, Seek, SeekFrom};
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -135,6 +138,13 @@ impl LiteralValue {
         }
     }
 }
+#[derive(Clone, Debug)]
+#[cfg(feature = "ipc")]
+pub struct IpcOptions {
+    pub(crate) stop_after_n_rows: Option<usize>,
+    pub(crate) with_columns: Option<Vec<String>>,
+    pub(crate) cache: bool,
+}
 
 #[derive(Clone, Debug)]
 pub struct CsvParserOptions {
@@ -160,7 +170,9 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache { input: Box<LogicalPlan> },
+    Cache {
+        input: Box<LogicalPlan>,
+    },
     /// Scan a CSV file
     #[cfg(feature = "csv-file")]
     CsvScan {
@@ -183,6 +195,15 @@ pub enum LogicalPlan {
         aggregate: Vec<Expr>,
         stop_after_n_rows: Option<usize>,
         cache: bool,
+    },
+    #[cfg(feature = "ipc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
+    IpcScan {
+        path: PathBuf,
+        schema: SchemaRef,
+        options: IpcOptions,
+        predicate: Option<Expr>,
+        aggregate: Vec<Expr>,
     },
     // we keep track of the projection and selection as it is cheaper to first project and then filter
     /// In memory DataFrame
@@ -269,6 +290,9 @@ pub enum LogicalPlan {
         projection_pd: bool,
         schema: Option<SchemaRef>,
     },
+    Union {
+        inputs: Vec<LogicalPlan>,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -288,6 +312,7 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
+            Union { inputs, .. } => write!(f, "UNION {:?}", inputs),
             Cache { input } => write!(f, "CACHE {:?}", input),
             #[cfg(feature = "parquet")]
             ParquetScan {
@@ -305,6 +330,28 @@ impl fmt::Debug for LogicalPlan {
                 write!(
                     f,
                     "PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    predicate
+                )
+            }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                options,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                write!(
+                    f,
+                    "IPC SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
@@ -464,6 +511,14 @@ impl LogicalPlan {
         use LogicalPlan::*;
         let (branch, id) = id;
         match self {
+            Union { inputs, .. } => {
+                for input in inputs {
+                    let current_node = format!("UNION [{:?}]", (branch, id));
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    input.dot(acc_str, (branch, id + 1), &current_node)?
+                }
+                Ok(())
+            }
             Cache { input } => {
                 let current_node = format!("CACHE [{:?}]", (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -650,6 +705,36 @@ impl LogicalPlan {
                     self.write_dot(acc_str, prev_node, &current_node, id)
                 }
             }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                options,
+                predicate,
+                ..
+            } => {
+                let total_columns = schema.fields().len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+
+                let pred = fmt_predicate(predicate.as_ref());
+                let current_node = format!(
+                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    path.to_string_lossy(),
+                    n_columns,
+                    total_columns,
+                    pred,
+                    (branch, id)
+                );
+                if id == 0 {
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    write!(acc_str, "\"{}\"", current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, &current_node, id)
+                }
+            }
             Join {
                 input_left,
                 input_right,
@@ -686,11 +771,14 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &SchemaRef {
         use LogicalPlan::*;
         match self {
+            Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
             Explode { input, .. } => input.schema(),
             #[cfg(feature = "parquet")]
             ParquetScan { schema, .. } => schema,
+            #[cfg(feature = "ipc")]
+            IpcScan { schema, .. } => schema,
             DataFrameScan { schema, .. } => schema,
             Selection { input, .. } => input.schema(),
             #[cfg(feature = "csv-file")]
@@ -733,16 +821,12 @@ impl LogicalPlanBuilder {
         path: P,
         stop_after_n_rows: Option<usize>,
         cache: bool,
-    ) -> Self {
+    ) -> Result<Self> {
         let path = path.into();
-        let file = std::fs::File::open(&path).expect("could not open file");
-        let schema = Arc::new(
-            ParquetReader::new(file)
-                .schema()
-                .expect("could not get parquet schema"),
-        );
+        let file = std::fs::File::open(&path)?;
+        let schema = Arc::new(ParquetReader::new(file).schema()?);
 
-        LogicalPlan::ParquetScan {
+        Ok(LogicalPlan::ParquetScan {
             path,
             schema,
             stop_after_n_rows,
@@ -751,7 +835,24 @@ impl LogicalPlanBuilder {
             aggregate: vec![],
             cache,
         }
-        .into()
+        .into())
+    }
+
+    #[cfg(feature = "ipc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
+    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcOptions) -> Result<Self> {
+        let path = path.into();
+        let file = std::fs::File::open(&path)?;
+        let schema = Arc::new(IpcReader::new(file).schema()?);
+
+        Ok(LogicalPlan::IpcScan {
+            path,
+            schema,
+            predicate: None,
+            aggregate: vec![],
+            options,
+        }
+        .into())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -771,9 +872,17 @@ impl LogicalPlanBuilder {
         quote_char: Option<u8>,
         null_values: Option<NullValues>,
         infer_schema_length: Option<usize>,
-    ) -> Self {
+    ) -> Result<Self> {
         let path = path.into();
-        let mut file = std::fs::File::open(&path).expect("could not open file");
+        let mut file = std::fs::File::open(&path)?;
+        let mut magic_nr = [0u8; 2];
+        file.read_exact(&mut magic_nr)?;
+        if is_compressed(&magic_nr) {
+            return Err(PolarsError::ComputeError(
+                "cannot scan compressed csv; use read_csv for compressed data".into(),
+            ));
+        }
+        file.seek(SeekFrom::Start(0))?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
 
         let schema = schema.unwrap_or_else(|| {
@@ -790,7 +899,7 @@ impl LogicalPlanBuilder {
             .expect("could not read schema");
             Arc::new(schema)
         });
-        LogicalPlan::CsvScan {
+        Ok(LogicalPlan::CsvScan {
             path,
             schema,
             options: CsvParserOptions {
@@ -809,7 +918,7 @@ impl LogicalPlanBuilder {
             predicate: None,
             aggregate: vec![],
         }
-        .into()
+        .into())
     }
 
     pub fn cache(self) -> Self {

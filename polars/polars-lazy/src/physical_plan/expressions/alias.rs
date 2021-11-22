@@ -43,8 +43,10 @@ impl PhysicalExpr for AliasExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let s = ac.take();
-        ac.with_series(self.finish(s)?);
+        let mut s = ac.take();
+        s.rename(&self.name);
+
+        ac.with_series(self.finish(s)?, ac.is_aggregated());
         Ok(ac)
     }
 

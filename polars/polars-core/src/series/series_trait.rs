@@ -8,6 +8,7 @@ use crate::chunked_array::ChunkIdIter;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
+#[cfg(feature = "temporal")]
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -334,14 +335,14 @@ pub trait SeriesTrait:
 
     /// Unpack to ChunkedArray of dtype i8
     fn i8(&self) -> Result<&Int8Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != i8", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray i16
     fn i16(&self) -> Result<&Int16Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != i16", self.dtype()).into(),
         ))
     }
@@ -361,105 +362,105 @@ pub trait SeriesTrait:
     /// }).collect();
     /// ```
     fn i32(&self) -> Result<&Int32Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != i32", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype i64
     fn i64(&self) -> Result<&Int64Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != i64", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype f32
     fn f32(&self) -> Result<&Float32Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != f32", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype f64
     fn f64(&self) -> Result<&Float64Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != f64", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype u8
     fn u8(&self) -> Result<&UInt8Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != u8", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype u16
     fn u16(&self) -> Result<&UInt16Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != u16", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype u32
     fn u32(&self) -> Result<&UInt32Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != u32", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype u64
     fn u64(&self) -> Result<&UInt64Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != u64", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype bool
     fn bool(&self) -> Result<&BooleanChunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != bool", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype utf8
     fn utf8(&self) -> Result<&Utf8Chunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != utf8", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype Time
     fn time(&self) -> Result<&TimeChunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != Time", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype Date
     fn date(&self) -> Result<&DateChunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!(" Series dtype {:?} != Date", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype datetime
     fn datetime(&self) -> Result<&DatetimeChunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != datetime", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype list
     fn list(&self) -> Result<&ListChunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != list", self.dtype()).into(),
         ))
     }
 
     /// Unpack to ChunkedArray of dtype categorical
     fn categorical(&self) -> Result<&CategoricalChunked> {
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != categorical", self.dtype()).into(),
         ))
     }
@@ -1154,7 +1155,7 @@ impl<'a> (dyn SeriesTrait + 'a) {
         if &N::get_dtype() == self.dtype() {
             Ok(self.as_ref())
         } else {
-            Err(PolarsError::DataTypeMisMatch(
+            Err(PolarsError::SchemaMisMatch(
                 "cannot unpack Series; data types don't match".into(),
             ))
         }

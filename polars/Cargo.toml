@@ -42,7 +42,7 @@ object = ["polars-core/object"]
 json = ["polars-io", "polars-io/json"]
 
 # support for arrows ipc file parsing
-ipc = ["polars-io", "polars-io/ipc"]
+ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
 
 # support for arrows csv file parsing
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
@@ -96,6 +96,7 @@ moment = ["polars-core/moment", "polars-lazy/moment"]
 arange = ["polars-lazy/arange"]
 true_div = ["polars-lazy/true_div"]
 diagonal_concat = ["polars-core/diagonal_concat"]
+abs = ["polars-core/abs", "polars-lazy/abs"]
 
 # don't use this
 private = ["polars-lazy/private"]
@@ -166,6 +167,7 @@ docs-selection = [
   "rank",
   "list",
   "arange",
+  "abs",
 ]
 
 bench = [
@@ -201,6 +203,10 @@ harness = false
 
 [[bench]]
 name = "take"
+harness = false
+
+[[bench]]
+name = "sort"
 harness = false
 
 [package.metadata.docs.rs]

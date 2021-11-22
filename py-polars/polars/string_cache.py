@@ -8,11 +8,6 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-__all__ = [
-    "StringCache",
-    "toggle_string_cache",
-]
-
 
 class StringCache:
     """

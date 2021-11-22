@@ -1,3 +1,5 @@
+#[cfg(feature = "ipc")]
+use crate::logical_plan::IpcOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
@@ -35,6 +37,16 @@ pub enum ALogicalPlan {
         // schema of the projected file
         output_schema: Option<SchemaRef>,
         options: CsvParserOptions,
+        predicate: Option<Node>,
+        aggregate: Vec<Node>,
+    },
+    #[cfg(feature = "ipc")]
+    IpcScan {
+        path: PathBuf,
+        schema: SchemaRef,
+        // schema of the projected file
+        output_schema: Option<SchemaRef>,
+        options: IpcOptions,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
     },
@@ -114,6 +126,9 @@ pub enum ALogicalPlan {
         projection_pd: bool,
         schema: Option<SchemaRef>,
     },
+    Union {
+        inputs: Vec<Node>,
+    },
 }
 
 impl Default for ALogicalPlan {
@@ -131,11 +146,18 @@ impl ALogicalPlan {
     pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> &'a Schema {
         use ALogicalPlan::*;
         match self {
+            Union { inputs, .. } => arena.get(inputs[0]).schema(arena),
             Cache { input } => arena.get(*input).schema(arena),
             Sort { input, .. } => arena.get(*input).schema(arena),
             Explode { input, .. } => arena.get(*input).schema(arena),
             #[cfg(feature = "parquet")]
             ParquetScan {
+                schema,
+                output_schema,
+                ..
+            } => output_schema.as_ref().unwrap_or(schema),
+            #[cfg(feature = "ipc")]
+            IpcScan {
                 schema,
                 output_schema,
                 ..
@@ -186,6 +208,10 @@ impl ALogicalPlan {
                 }
                 #[cfg(feature = "parquet")]
                 (ParquetScan { path: path_a, .. }, ParquetScan { path: path_b, .. }) => {
+                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
+                }
+                #[cfg(feature = "ipc")]
+                (IpcScan { path: path_a, .. }, IpcScan { path: path_b, .. }) => {
                     canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
                 }
                 (DataFrameScan { df: df_a, .. }, DataFrameScan { df: df_b, .. }) => {
@@ -241,6 +267,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
 
         match self {
+            Union { .. } => Union { inputs },
             Melt {
                 id_vars,
                 value_vars,
@@ -324,6 +351,30 @@ impl ALogicalPlan {
                 exprs,
                 schema: schema.clone(),
             },
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                output_schema,
+                options,
+                predicate,
+                ..
+            } => {
+                let mut new_predicate = None;
+                if predicate.is_some() {
+                    new_predicate = exprs.pop()
+                }
+
+                IpcScan {
+                    path: path.clone(),
+                    schema: schema.clone(),
+                    output_schema: output_schema.clone(),
+                    predicate: new_predicate,
+                    aggregate: exprs,
+                    options: options.clone(),
+                }
+            }
+
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
@@ -421,6 +472,7 @@ impl ALogicalPlan {
             | Explode { .. }
             | Cache { .. }
             | Distinct { .. }
+            | Union { .. }
             | Udf { .. } => {}
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
@@ -438,6 +490,17 @@ impl ALogicalPlan {
             HStack { exprs, .. } => container.extend_from_slice(exprs),
             #[cfg(feature = "parquet")]
             ParquetScan {
+                predicate,
+                aggregate,
+                ..
+            } => {
+                container.extend_from_slice(aggregate);
+                if let Some(node) = predicate {
+                    container.push(*node)
+                }
+            }
+            #[cfg(feature = "ipc")]
+            IpcScan {
                 predicate,
                 aggregate,
                 ..
@@ -482,13 +545,19 @@ impl ALogicalPlan {
 
     /// Push inputs of the LP in of this node to an existing container.
     /// Most plans have typically one input. A join has two and a scan (CsvScan)
-    /// or an in-memory DataFrame has none.
+    /// or an in-memory DataFrame has none. A Union has multiple.
     pub(crate) fn copy_inputs<T>(&self, container: &mut T)
     where
         T: PushNode,
     {
         use ALogicalPlan::*;
         let input = match self {
+            Union { inputs, .. } => {
+                for node in inputs {
+                    container.push_node(*node);
+                }
+                return;
+            }
             Melt { input, .. } => *input,
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,
@@ -512,6 +581,8 @@ impl ALogicalPlan {
             Udf { input, .. } => *input,
             #[cfg(feature = "parquet")]
             ParquetScan { .. } => return,
+            #[cfg(feature = "ipc")]
+            IpcScan { .. } => return,
             #[cfg(feature = "csv-file")]
             CsvScan { .. } => return,
             DataFrameScan { .. } => return,

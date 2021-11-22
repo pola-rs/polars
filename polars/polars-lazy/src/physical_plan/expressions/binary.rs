@@ -34,8 +34,8 @@ pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Res
         Operator::GtEq => Ok(ChunkCompare::<&Series>::gt_eq(left, right).into_series()),
         Operator::Lt => Ok(ChunkCompare::<&Series>::lt(left, right).into_series()),
         Operator::LtEq => Ok(ChunkCompare::<&Series>::lt_eq(left, right).into_series()),
-        Operator::Eq => Ok(ChunkCompare::<&Series>::eq(left, right).into_series()),
-        Operator::NotEq => Ok(ChunkCompare::<&Series>::neq(left, right).into_series()),
+        Operator::Eq => Ok(ChunkCompare::<&Series>::equal(left, right).into_series()),
+        Operator::NotEq => Ok(ChunkCompare::<&Series>::not_equal(left, right).into_series()),
         Operator::Plus => Ok(left + right),
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
@@ -94,7 +94,7 @@ impl PhysicalExpr for BinaryExpr {
             ));
         }
         let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
-        ac_l.combine_groups(ac_r).with_series(out);
+        ac_l.combine_groups(ac_r).with_series(out, false);
         Ok(ac_l)
     }
 

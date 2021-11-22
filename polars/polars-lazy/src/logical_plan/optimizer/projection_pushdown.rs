@@ -310,6 +310,38 @@ impl ProjectionPushDown {
                 };
                 Ok(lp)
             }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                predicate,
+                aggregate,
+                mut options,
+                ..
+            } => {
+                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let output_schema = if with_columns.is_none() {
+                    None
+                } else {
+                    Some(Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*schema,
+                    )?))
+                };
+                options.with_columns = with_columns;
+
+                let lp = IpcScan {
+                    path,
+                    schema,
+                    output_schema,
+                    predicate,
+                    aggregate,
+                    options,
+                };
+                Ok(lp)
+            }
+
             #[cfg(feature = "parquet")]
             ParquetScan {
                 path,
@@ -786,7 +818,8 @@ impl ProjectionPushDown {
                     schema,
                 })
             }
-            lp @ Slice { .. } | lp @ Cache { .. } => {
+            // Slice and Cache have only inputs and exprs, so we can use same logic.
+            lp @ Slice { .. } | lp @ Cache { .. } | lp @ Union { .. } => {
                 let inputs = lp.get_inputs();
                 let exprs = lp.get_exprs();
 

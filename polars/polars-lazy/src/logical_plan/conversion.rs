@@ -47,7 +47,7 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         },
         Expr::SortBy { expr, by, reverse } => AExpr::SortBy {
             expr: to_aexpr(*expr, arena),
-            by: to_aexpr(*by, arena),
+            by: by.into_iter().map(|e| to_aexpr(e, arena)).collect(),
             reverse,
         },
         Expr::Filter { input, by } => AExpr::Filter {
@@ -152,6 +152,13 @@ pub(crate) fn to_alp(
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Node {
     let v = match lp {
+        LogicalPlan::Union { inputs } => {
+            let inputs = inputs
+                .into_iter()
+                .map(|lp| to_alp(lp, expr_arena, lp_arena))
+                .collect();
+            ALogicalPlan::Union { inputs }
+        }
         LogicalPlan::Selection { input, predicate } => {
             let i = to_alp(*input, expr_arena, lp_arena);
             let p = to_aexpr(predicate, expr_arena);
@@ -195,6 +202,24 @@ pub(crate) fn to_alp(
                 .into_iter()
                 .map(|expr| to_aexpr(expr, expr_arena))
                 .collect(),
+        },
+        #[cfg(feature = "ipc")]
+        LogicalPlan::IpcScan {
+            path,
+            schema,
+            predicate,
+            aggregate,
+            options,
+        } => ALogicalPlan::IpcScan {
+            path,
+            schema,
+            output_schema: None,
+            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            aggregate: aggregate
+                .into_iter()
+                .map(|expr| to_aexpr(expr, expr_arena))
+                .collect(),
+            options,
         },
         #[cfg(feature = "parquet")]
         LogicalPlan::ParquetScan {
@@ -442,10 +467,13 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         }
         AExpr::SortBy { expr, by, reverse } => {
             let expr = node_to_exp(expr, expr_arena);
-            let by = node_to_exp(by, expr_arena);
+            let by = by
+                .iter()
+                .map(|node| node_to_exp(*node, expr_arena))
+                .collect();
             Expr::SortBy {
                 expr: Box::new(expr),
-                by: Box::new(by),
+                by,
                 reverse,
             }
         }
@@ -606,6 +634,13 @@ pub(crate) fn node_to_lp(
     let lp = std::mem::take(lp);
 
     match lp {
+        ALogicalPlan::Union { inputs } => {
+            let inputs = inputs
+                .into_iter()
+                .map(|node| node_to_lp(node, expr_arena, lp_arena))
+                .collect();
+            LogicalPlan::Union { inputs }
+        }
         ALogicalPlan::Slice { input, offset, len } => {
             let lp = node_to_lp(input, expr_arena, lp_arena);
             LogicalPlan::Slice {
@@ -636,6 +671,21 @@ pub(crate) fn node_to_lp(
             options,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
             aggregate: nodes_to_exprs(&aggregate, expr_arena),
+        },
+        #[cfg(feature = "ipc")]
+        ALogicalPlan::IpcScan {
+            path,
+            schema,
+            output_schema: _,
+            predicate,
+            aggregate,
+            options,
+        } => LogicalPlan::IpcScan {
+            path,
+            schema,
+            predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            aggregate: nodes_to_exprs(&aggregate, expr_arena),
+            options,
         },
         #[cfg(feature = "parquet")]
         ALogicalPlan::ParquetScan {

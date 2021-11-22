@@ -293,3 +293,38 @@ pub fn datetime(
     }
     .alias("datetime")
 }
+
+/// Concat multiple
+pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFrame> {
+    let mut inputs = inputs.as_ref().to_vec();
+    let lf = std::mem::take(
+        inputs
+            .get_mut(0)
+            .ok_or_else(|| PolarsError::ValueError("empty container given".into()))?,
+    );
+    let opt_state = lf.opt_state;
+    let mut lps = Vec::with_capacity(inputs.len());
+    lps.push(lf.logical_plan);
+
+    for lf in &mut inputs[1..] {
+        let lp = std::mem::take(&mut lf.logical_plan);
+        lps.push(lp)
+    }
+
+    let lp = LogicalPlan::Union { inputs: lps };
+    let mut lf = LazyFrame::from(lp);
+    lf.opt_state = opt_state;
+
+    if rechunk {
+        Ok(lf.map(
+            |mut df: DataFrame| {
+                df.rechunk();
+                Ok(df)
+            },
+            Some(AllowedOptimizations::default()),
+            None,
+        ))
+    } else {
+        Ok(lf)
+    }
+}

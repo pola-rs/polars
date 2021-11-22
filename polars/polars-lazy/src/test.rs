@@ -13,7 +13,7 @@ use std::iter::FromIterator;
 
 fn scan_foods_csv() -> LazyFrame {
     let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-    LazyCsvReader::new(path.to_string()).finish()
+    LazyCsvReader::new(path.to_string()).finish().unwrap()
 }
 
 pub(crate) fn fruits_cars() -> DataFrame {
@@ -971,7 +971,7 @@ fn test_lazy_groupby_sort_by() {
     let out = df
         .lazy()
         .groupby([col("a")])
-        .agg([col("b").sort_by(col("c"), true).first()])
+        .agg([col("b").sort_by([col("c")], [true]).first()])
         .collect()
         .unwrap()
         .sort("a", false)
@@ -1623,7 +1623,7 @@ fn test_sort_by_in_groups() -> Result<()> {
             col("fruits"),
             col("cars"),
             col("A")
-                .sort_by(col("B"), false)
+                .sort_by([col("B")], [false])
                 .over([col("cars")])
                 .explode()
                 .alias("sorted_A_by_B"),
@@ -1634,6 +1634,56 @@ fn test_sort_by_in_groups() -> Result<()> {
         Vec::from(out.column("sorted_A_by_B")?.i32()?),
         &[Some(2), Some(5), Some(4), Some(3), Some(1)]
     );
+    Ok(())
+}
+
+#[test]
+fn test_sort_by() -> Result<()> {
+    let df = df![
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [1, 1, 1, 2, 2],
+        "c" => [2, 3, 1, 2, 1]
+    ]?;
+
+    // evaluate
+    let out = df
+        .clone()
+        .lazy()
+        .select([col("a").sort_by([col("b"), col("c")], [false])])
+        .collect()?;
+
+    let a = out.column("a")?;
+    assert_eq!(
+        Vec::from(a.i32().unwrap()),
+        &[Some(3), Some(1), Some(2), Some(5), Some(4)]
+    );
+
+    // aggregate
+    let out = df
+        .clone()
+        .lazy()
+        .stable_groupby([col("b")])
+        .agg([col("a").sort_by([col("b"), col("c")], [false])])
+        .collect()?;
+    let a = out.column("a")?.explode()?;
+    assert_eq!(
+        Vec::from(a.i32().unwrap()),
+        &[Some(3), Some(1), Some(2), Some(5), Some(4)]
+    );
+
+    // evaluate_on_groups
+    let out = df
+        .lazy()
+        .stable_groupby([col("b")])
+        .agg([col("a").sort_by([col("b"), col("c")], [false]).list()])
+        .collect()?;
+
+    let a = out.column("a_agg_list")?.explode()?;
+    assert_eq!(
+        Vec::from(a.i32().unwrap()),
+        &[Some(3), Some(1), Some(2), Some(5), Some(4)]
+    );
+
     Ok(())
 }
 
@@ -1791,7 +1841,7 @@ fn test_sort_by_suffix() -> Result<()> {
     let out = df
         .lazy()
         .select([col("*")
-            .sort_by(col("A"), false)
+            .sort_by([col("A")], [false])
             .over([col("fruits")])
             .flatten()
             .suffix("_sorted")])
@@ -2110,6 +2160,63 @@ fn test_take_consistency() -> Result<()> {
     let out = out_df.column("1")?;
     let out = out.u32()?;
     assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
+
+    Ok(())
+}
+
+#[test]
+fn test_groupby_on_lists() -> Result<()> {
+    let s0 = Series::new("", [1i32, 2, 3]);
+    let s1 = Series::new("groups", [4i32, 5]);
+
+    let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("arrays", 10, 10, DataType::Int32);
+    builder.append_series(&s0);
+    builder.append_series(&s1);
+    let s2 = builder.finish().into_series();
+
+    let df = DataFrame::new(vec![s1, s2])?;
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("groups")])
+        .agg([col("arrays").first()])
+        .collect()?;
+
+    assert_eq!(
+        out.column("arrays_first")?.dtype(),
+        &DataType::List(Box::new(DataType::Int32))
+    );
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("groups")])
+        .agg([col("arrays").list()])
+        .collect()?;
+
+    assert_eq!(
+        out.column("arrays_agg_list")?.dtype(),
+        &DataType::List(Box::new(DataType::List(Box::new(DataType::Int32))))
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_single_group_result() -> Result<()> {
+    // the argsort should not auto explode
+    let df = df![
+        "a" => [1, 2],
+        "b" => [1, 1]
+    ]?;
+
+    let out = df
+        .lazy()
+        .select([col("a").arg_sort(false).over([col("a")]).flatten()])
+        .collect()?;
+
+    let a = out.column("a")?.u32()?;
+    assert_eq!(Vec::from(a), &[Some(0), Some(0)]);
 
     Ok(())
 }

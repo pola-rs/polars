@@ -334,11 +334,17 @@ impl Display for DataFrame {
             .parse()
             .unwrap_or(8);
         #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
-        let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
-            .unwrap_or_else(|_| "8".to_string())
-            .parse()
-            .unwrap_or(8);
-
+        let max_n_rows = {
+            let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+                .unwrap_or_else(|_| "8".to_string())
+                .parse()
+                .unwrap_or(8);
+            if max_n_rows < 2 {
+                2
+            } else {
+                max_n_rows
+            }
+        };
         let (n_first, n_last) = if self.width() > max_n_cols {
             ((max_n_cols + 1) / 2, max_n_cols / 2)
         } else {
@@ -495,7 +501,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
-            AnyValue::Utf8(v) => write!(f, "{}", format!("\"{}\"", v)),
+            AnyValue::Utf8(v) => write!(f, "{}", format_args!("\"{}\"", v)),
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]

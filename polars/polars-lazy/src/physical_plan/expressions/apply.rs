@@ -74,20 +74,20 @@ impl PhysicalExpr for ApplyExpr {
                         })
                         .collect();
                     ca.rename(&name);
-                    ac.with_series(ca.into_series());
+                    ac.with_series(ca.into_series(), true);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
                     let s = self.function.call_udf(&mut [ac.flat().into_owned()])?;
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s);
+                    ac.with_series(s, false);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {
                     let s = self
                         .function
                         .call_udf(&mut [ac.aggregated().into_owned()])?;
-                    ac.with_series(s);
+                    ac.with_series(s, true);
                     Ok(ac)
                 }
             }
@@ -127,7 +127,7 @@ impl PhysicalExpr for ApplyExpr {
                         .collect();
                     ca.rename(&name);
                     let mut ac = acs.pop().unwrap();
-                    ac.with_series(ca.into_series());
+                    ac.with_series(ca.into_series(), true);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
@@ -139,7 +139,7 @@ impl PhysicalExpr for ApplyExpr {
                     let s = self.function.call_udf(&mut s)?;
                     let mut ac = acs.pop().unwrap();
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s);
+                    ac.with_series(s, true);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {
@@ -150,7 +150,7 @@ impl PhysicalExpr for ApplyExpr {
                     let s = self.function.call_udf(&mut s)?;
                     let mut ac = acs.pop().unwrap();
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s);
+                    ac.with_series(s, true);
                     Ok(ac)
                 }
             }
@@ -180,8 +180,6 @@ impl PhysicalAggregation for ApplyExpr {
                     let mut container = [Default::default()];
                     let name = ac.series().name().to_string();
 
-                    let mut all_unit_length = true;
-
                     let mut ca: ListChunked = ac
                         .aggregated()
                         .list()
@@ -190,21 +188,11 @@ impl PhysicalAggregation for ApplyExpr {
                         .map(|opt_s| {
                             opt_s.and_then(|s| {
                                 container[0] = s;
-                                let out = self.function.call_udf(&mut container).ok();
-
-                                if let Some(s) = &out {
-                                    if s.len() != 1 {
-                                        all_unit_length = false;
-                                    }
-                                }
-                                out
+                                self.function.call_udf(&mut container).ok()
                             })
                         })
                         .collect();
                     ca.rename(&name);
-                    if all_unit_length {
-                        return Ok(Some(ca.explode()?));
-                    }
                     Ok(Some(ca.into_series()))
                 }
                 ApplyOptions::ApplyFlat => {
@@ -232,7 +220,6 @@ impl PhysicalAggregation for ApplyExpr {
 
             match self.collect_groups {
                 ApplyOptions::ApplyGroups => {
-                    let mut all_unit_length = true;
                     let mut container = vec![Default::default(); acs.len()];
                     let name = acs[0].series().name().to_string();
 
@@ -259,20 +246,10 @@ impl PhysicalAggregation for ApplyExpr {
                                     Some(s) => container.push(s),
                                 }
                             }
-                            let out = self.function.call_udf(&mut container).ok();
-
-                            if let Some(s) = &out {
-                                if s.len() != 1 {
-                                    all_unit_length = false;
-                                }
-                            }
-                            out
+                            self.function.call_udf(&mut container).ok()
                         })
                         .collect();
                     ca.rename(&name);
-                    if all_unit_length {
-                        return Ok(Some(ca.explode()?));
-                    }
                     Ok(Some(ca.into_series()))
                 }
                 ApplyOptions::ApplyFlat => {

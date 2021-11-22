@@ -185,8 +185,9 @@ impl PyExpr {
         self.clone().inner.take(idx.inner).into()
     }
 
-    pub fn sort_by(&self, by: PyExpr, reverse: bool) -> PyExpr {
-        self.clone().inner.sort_by(by.inner, reverse).into()
+    pub fn sort_by(&self, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyExpr {
+        let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+        self.clone().inner.sort_by(by, reverse).into()
     }
 
     pub fn backward_fill(&self) -> PyExpr {
@@ -271,6 +272,10 @@ impl PyExpr {
 
     pub fn floor(&self) -> PyExpr {
         self.clone().inner.floor().into()
+    }
+
+    pub fn abs(&self) -> PyExpr {
+        self.clone().inner.abs().into()
     }
 
     pub fn is_duplicated(&self) -> PyExpr {
@@ -805,6 +810,14 @@ impl PyExpr {
                 ca.clone().into_series().skew(bias).unwrap()
             })
             .into()
+    }
+
+    pub fn lower_bound(&self) -> Self {
+        self.inner.clone().lower_bound().into()
+    }
+
+    pub fn upper_bound(&self) -> Self {
+        self.inner.clone().upper_bound().into()
     }
 
     fn lst_max(&self) -> Self {

@@ -588,11 +588,11 @@ impl PySeries {
         }
     }
     pub fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.eq(&rhs.series).into_series()))
+        Ok(Self::new(self.series.equal(&rhs.series).into_series()))
     }
 
     pub fn neq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.neq(&rhs.series).into_series()))
+        Ok(Self::new(self.series.not_equal(&rhs.series).into_series()))
     }
 
     pub fn gt(&self, rhs: &PySeries) -> PyResult<Self> {
@@ -1343,6 +1343,11 @@ impl PySeries {
         let out = out.map_err(PyPolarsEr::from)?;
         Ok(out.into())
     }
+
+    pub fn abs(&self) -> PyResult<Self> {
+        let out = self.series.abs().map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
 }
 
 macro_rules! impl_ufuncs {
@@ -1629,7 +1634,7 @@ macro_rules! impl_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.eq(rhs).into_series()))
+                Ok(PySeries::new(self.series.equal(rhs).into_series()))
             }
         }
     };
@@ -1653,7 +1658,7 @@ macro_rules! impl_neq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.neq(rhs).into_series()))
+                Ok(PySeries::new(self.series.not_equal(rhs).into_series()))
             }
         }
     };

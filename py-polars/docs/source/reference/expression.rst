@@ -11,6 +11,7 @@ These functions can be used as expression and sometimes also in eager contexts.
 .. autosummary::
    :toctree: api/
 
+   select
    col
    count
    list
@@ -178,6 +179,8 @@ Manipulation/ selection
     Expr.interpolate
     Expr.argsort
     Expr.clip
+    Expr.lower_bound
+    Expr.upper_bound
     Expr.str_concat
 
 Column names

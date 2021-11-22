@@ -134,7 +134,7 @@ impl IsIn for Utf8Chunked {
                 ca.rename(self.name());
                 Ok(ca)
             }
-            _ => Err(PolarsError::DataTypeMisMatch(
+            _ => Err(PolarsError::SchemaMisMatch(
                 format!(
                     "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
                     self.dtype(),
@@ -163,7 +163,7 @@ impl IsIn for BooleanChunked {
                     .collect_trusted();
                 Ok(ca)
             }
-            _ => Err(PolarsError::DataTypeMisMatch(
+            _ => Err(PolarsError::SchemaMisMatch(
                 format!(
                     "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
                     self.dtype(),

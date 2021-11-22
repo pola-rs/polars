@@ -38,7 +38,7 @@ impl PhysicalExpr for ShiftExpr {
             .unwrap()
             .apply_amortized(|s| s.as_ref().shift(self.periods).into_series())
             .into_series();
-        ac.with_series(s);
+        ac.with_series(s, true);
         Ok(ac)
     }
 

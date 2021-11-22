@@ -1,7 +1,9 @@
+from typing import List, Optional
+
 import polars as pl
 
 
-def test_apply_none():
+def test_apply_none() -> None:
     df = pl.DataFrame(
         {
             "g": [1, 1, 1, 2, 2, 2, 5],
@@ -25,7 +27,7 @@ def test_apply_none():
     assert out["a"].to_list() == (df["a"] * df["b"]).to_list()
 
     # check if we can return None
-    def func(s):
+    def func(s: List) -> Optional[int]:
         if s[0][0] == 190:
             return None
         else:
@@ -33,7 +35,7 @@ def test_apply_none():
 
     out = (
         df.groupby("g", maintain_order=True).agg(
-            pl.apply(exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], f=func).alias(
+            pl.apply(exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], f=func).alias(  # type: ignore
                 "multiple"
             )
         )

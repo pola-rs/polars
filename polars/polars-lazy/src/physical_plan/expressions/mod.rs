@@ -151,6 +151,10 @@ impl<'a> AggregationContext<'a> {
         matches!(&self.series, AggState::Flat(_))
     }
 
+    pub fn is_aggregated(&self) -> bool {
+        !self.is_flat()
+    }
+
     pub(crate) fn combine_groups(&mut self, other: AggregationContext) -> &mut Self {
         if let (Cow::Borrowed(_), Cow::Owned(a)) = (&self.groups, other.groups) {
             self.groups = Cow::Owned(a);
@@ -158,10 +162,17 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
-    pub(crate) fn new(series: Series, groups: Cow<'a, GroupTuples>) -> AggregationContext<'a> {
-        let series = match series.list() {
-            Ok(_) => AggState::List(series),
-            Err(_) => AggState::Flat(series),
+    /// # Arguments
+    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
+    /// the columns dtype)
+    pub(crate) fn new(
+        series: Series,
+        groups: Cow<'a, GroupTuples>,
+        aggregated: bool,
+    ) -> AggregationContext<'a> {
+        let series = match (aggregated, series.dtype()) {
+            (true, &DataType::List(_)) => AggState::List(series),
+            _ => AggState::Flat(series),
         };
 
         Self {
@@ -183,17 +194,20 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
-    pub(crate) fn with_series(&mut self, series: Series) -> &mut Self {
-        self.series = match series.list() {
-            Ok(_) => AggState::List(series),
-            Err(_) => AggState::Flat(series),
+    /// # Arguments
+    /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
+    /// the columns dtype)
+    pub(crate) fn with_series(&mut self, series: Series, aggregated: bool) -> &mut Self {
+        self.series = match (aggregated, series.dtype()) {
+            (true, &DataType::List(_)) => AggState::List(series),
+            _ => AggState::Flat(series),
         };
         self
     }
 
     pub(crate) fn with_groups(&mut self, groups: GroupTuples) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
-        self.with_series(self.flat().into_owned());
+        self.with_series(self.flat().into_owned(), false);
         self.groups = Cow::Owned(groups);
         self
     }

@@ -1,19 +1,16 @@
-from datetime import datetime
-
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.datatypes import *
-from polars.lazy import *
+from polars import col, lit, map_binary, when
 
 
-def test_lazy():
+def test_lazy() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    ldf = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
+    _ = df.lazy().with_column(lit(1).alias("foo")).select([col("a"), col("foo")])
 
     # test if it executes
-    new = (
+    _ = (
         df.lazy()
         .with_column(
             when(col("a").gt(lit(2))).then(lit(10)).otherwise(lit(1)).alias("new")
@@ -25,7 +22,7 @@ def test_lazy():
     df.groupby("a").agg(pl.list("b"))
 
 
-def test_apply():
+def test_apply() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
@@ -35,13 +32,13 @@ def test_apply():
     assert new.frame_equal(expected)
 
 
-def test_add_eager_column():
+def test_add_eager_column() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.lazy().with_column(pl.lit(pl.Series("c", [1, 2, 3]))).collect()
     assert out["c"].sum() == 6
 
 
-def test_set_null():
+def test_set_null() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = (
         df.lazy()
@@ -54,16 +51,24 @@ def test_set_null():
     assert s[2] is None
 
 
-def test_agg():
+def test_agg() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()
     assert ldf.collect().shape == (1, 2)
 
 
-def test_fold():
+def test_fold() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    out = df.lazy().select(pl.sum(["a", "b"])).collect()
+    out = df.select(
+        [
+            pl.sum(["a", "b"]),
+            pl.max(["a", pl.col("b") ** 2]),
+            pl.min(["a", pl.col("b") ** 2]),
+        ]
+    )
     assert out["sum"].series_equal(pl.Series("sum", [2.0, 4.0, 6.0]))
+    assert out["max"].series_equal(pl.Series("max", [1.0, 4.0, 9.0]))
+    assert out["min"].series_equal(pl.Series("max", [1.0, 2.0, 3.0]))
 
     out = df.select(
         pl.fold(acc=lit(0), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("foo")
@@ -71,19 +76,19 @@ def test_fold():
     assert out["foo"] == [2, 4, 6]
 
 
-def test_or():
+def test_or() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.lazy().filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()
     assert out.shape[0] == 2
 
 
-def test_groupby_apply():
+def test_groupby_apply() -> None:
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().groupby("a").apply(lambda df: df)
     assert ldf.collect().sort("b").frame_equal(df)
 
 
-def test_binary_function():
+def test_binary_function() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = (
         df.lazy()
@@ -93,7 +98,7 @@ def test_binary_function():
     assert out["binary_function"] == (out.a + out.b)
 
 
-def test_filter_str():
+def test_filter_str() -> None:
     # use a str instead of a column expr
     df = pl.DataFrame(
         {
@@ -109,7 +114,7 @@ def test_filter_str():
     assert result.frame_equal(expected)
 
 
-def test_apply_custom_function():
+def test_apply_custom_function() -> None:
     df = pl.DataFrame(
         {
             "A": [1, 2, 3, 4, 5],
@@ -144,7 +149,7 @@ def test_apply_custom_function():
     assert a.frame_equal(expected)
 
 
-def test_groupby():
+def test_groupby() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
     out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
 
@@ -152,7 +157,7 @@ def test_groupby():
     assert out.sort(by="groups").frame_equal(expected)
 
 
-def test_shift_and_fill():
+def test_shift_and_fill() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
     # use exprs
@@ -164,19 +169,19 @@ def test_shift_and_fill():
     assert out["a"].null_count() == 0
 
 
-def test_arange():
+def test_arange() -> None:
     df = pl.DataFrame({"a": [1, 1, 1]}).lazy()
-    result = df.filter(pl.lazy.col("a") >= pl.lazy.arange(0, 3)).collect()
+    result = df.filter(pl.col("a") >= pl.arange(0, 3)).collect()
     expected = pl.DataFrame({"a": [1, 1]})
     assert result.frame_equal(expected)
 
 
-def test_arg_sort():
+def test_arg_sort() -> None:
     df = pl.DataFrame({"a": [4, 1, 3]})
     assert df[col("a").arg_sort()]["a"] == [1, 2, 0]
 
 
-def test_window_function():
+def test_window_function() -> None:
     df = pl.DataFrame(
         {
             "A": [1, 2, 3, 4, 5],
@@ -200,7 +205,7 @@ def test_window_function():
     assert out["B_first"] == [5, 4, 3, 3, 5]
 
 
-def test_when_then_flatten():
+def test_when_then_flatten() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [3, 4, 5]})
 
     assert df[
@@ -212,11 +217,11 @@ def test_when_then_flatten():
     ]["bar"] == [30, 4, 5]
 
 
-def test_describe_plan():
+def test_describe_plan() -> None:
     pl.DataFrame({"a": [1]}).lazy().describe_optimized_plan()
 
 
-def test_window_deadlock():
+def test_window_deadlock() -> None:
     np.random.seed(12)
 
     df = pl.DataFrame(
@@ -237,7 +242,7 @@ def test_window_deadlock():
     ]
 
 
-def test_concat_str():
+def test_concat_str() -> None:
     df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
     out = df[[pl.concat_str(["a", "b"], sep="-")]]
@@ -248,7 +253,7 @@ def test_concat_str():
     assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
 
 
-def test_fold_filter():
+def test_fold_filter() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
     out = df.filter(
@@ -272,7 +277,7 @@ def test_fold_filter():
     assert out.shape == (3, 2)
 
 
-def test_head_groupby():
+def test_head_groupby() -> None:
     commodity_prices = {
         "commodity": [
             "Wheat",
@@ -336,17 +341,17 @@ def test_head_groupby():
     )
 
 
-def test_drop_nulls():
+def test_drop_nulls() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert df.select(col("nrs").drop_nulls()).shape == (5, 1)
 
 
-def test_all_expr():
+def test_all_expr() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert df[[pl.all()]].frame_equal(df)
 
 
-def test_lazy_columns():
+def test_lazy_columns() -> None:
     df = pl.DataFrame(
         {
             "a": [1],
@@ -358,7 +363,7 @@ def test_lazy_columns():
     assert df.select(["a", "c"]).columns == ["a", "c"]
 
 
-def test_regex_selection():
+def test_regex_selection() -> None:
     df = pl.DataFrame(
         {
             "foo": [1],
@@ -371,36 +376,27 @@ def test_regex_selection():
     assert df.select([col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
 
 
-def test_exclude_selection():
+def test_exclude_selection() -> None:
     df = pl.DataFrame({"a": [1], "b": [1], "c": [1]}).lazy()
 
     assert df.select([pl.exclude("a")]).columns == ["b", "c"]
 
 
-def test_col_series_selection():
+def test_col_series_selection() -> None:
     df = pl.DataFrame({"a": [1], "b": [1], "c": [1]}).lazy()
     srs = pl.Series(["b", "c"])
 
     assert df.select(pl.col(srs)).columns == ["b", "c"]
 
 
-def test_literal_projection():
+def test_literal_projection() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     assert df.select([True]).dtypes == [pl.Boolean]
     assert df.select([1]).dtypes == [pl.Int32]
     assert df.select([2.0]).dtypes == [pl.Float64]
 
 
-def test_to_python_datetime():
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    assert (
-        df.select(col("a").cast(pl.Datetime).dt.to_python_datetime())["a"].dtype
-        == pl.Object
-    )
-    assert df.select(col("a").cast(pl.Datetime).dt.timestamp())["a"].dtype == pl.Int64
-
-
-def test_interpolate():
+def test_interpolate() -> None:
     df = pl.DataFrame({"a": [1, None, 3]})
     assert df.select(col("a").interpolate())["a"] == [1, 2, 3]
     assert df["a"].interpolate() == [1, 2, 3]
@@ -408,44 +404,44 @@ def test_interpolate():
     assert df.lazy().interpolate().collect()["a"] == [1, 2, 3]
 
 
-def test_fill_nan():
+def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1.0, np.nan, 3.0]})
     assert df.fill_nan(2.0)["a"] == [1.0, 2.0, 3.0]
     assert df.lazy().fill_nan(2.0).collect()["a"] == [1.0, 2.0, 3.0]
 
 
-def test_fill_null():
+def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
     assert df.select([pl.col("a").fill_null("min")])["a"][1] == 1.0
 
 
-def test_take(fruits_cars):
+def test_take(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
     # out of bounds error
     with pytest.raises(RuntimeError):
         (
             df.sort("fruits").select(
-                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
+                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]  # type: ignore
             )
         )
 
     out = df.sort("fruits").select(
-        [col("B").reverse().take([0, 1]).list().over("fruits"), "fruits"]
+        [col("B").reverse().take([0, 1]).list().over("fruits"), "fruits"]  # type: ignore
     )
 
     assert out[0, "B"] == [2, 3]
     assert out[4, "B"] == [1, 4]
 
 
-def test_select_by_col_list(fruits_cars):
+def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(col(["A", "B"]).sum())
     assert out.columns == ["A", "B"]
     assert out.shape == (1, 2)
 
 
-def test_rolling(fruits_cars):
+def test_rolling(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     assert df.select(
         [
@@ -466,7 +462,7 @@ def test_rolling(fruits_cars):
     )
 
 
-def test_rolling_apply():
+def test_rolling_apply() -> None:
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
     out = s.rolling_apply(window_size=3, function=lambda s: s.std())
     assert out[0] is None
@@ -474,10 +470,10 @@ def test_rolling_apply():
     assert out[2] == 4.358898943540674
 
 
-def test_arr_namespace(fruits_cars):
+def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(
-        [
+        [  # type: ignore
             "fruits",
             col("B").over("fruits").arr.min().alias("B_by_fruits_min1"),
             col("B").min().over("fruits").alias("B_by_fruits_min2"),
@@ -517,7 +513,7 @@ def test_arr_namespace(fruits_cars):
     assert out.frame_equal(expected, null_equal=True)
 
 
-def test_arithmetic():
+def test_arithmetic() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
     out = df.select(
@@ -553,26 +549,19 @@ def test_arithmetic():
     assert out.frame_equal(expected)
 
 
-def test_ufunc():
+def test_ufunc() -> None:
     df = pl.DataFrame({"a": [1, 2]})
-    out = df.select(np.log(col("a")))
+    out = df.select(np.log(col("a")))  # type: ignore
     assert out["a"][1] == 0.6931471805599453
 
 
-def test_datetime_consistency():
-    dt = datetime(2021, 1, 1)
-    df = pl.DataFrame({"date": [dt]})
-    assert df["date"].dt[0] == dt
-    assert df.select(lit(dt))["literal"].dt[0] == dt
-
-
-def test_clip():
+def test_clip() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     assert df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
     assert pl.Series([1, 2, 3, 4, 5]).clip(2, 4).to_list() == [2, 2, 3, 4, 4]
 
 
-def test_argminmax():
+def test_argminmax() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     out = df.select(
         [
@@ -584,7 +573,7 @@ def test_argminmax():
     assert out["min"][0] == 0
 
 
-def test_expr_bool_cmp():
+def test_expr_bool_cmp() -> None:
     # Since expressions are lazy they should not be evaluated as
     # bool(x), this has the nice side effect of throwing an error
     # if someone tries to chain them via the and|or operators
@@ -597,7 +586,7 @@ def test_expr_bool_cmp():
         df[[pl.col("a").gt(pl.col("b")) or pl.col("b").gt(pl.col("b"))]]
 
 
-def test_is_in():
+def test_is_in() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
         True,
@@ -606,19 +595,19 @@ def test_is_in():
     ]
 
 
-def test_rename():
+def test_rename() -> None:
     lf = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     out = lf.rename({"a": "foo", "b": "bar"}).collect()
     # todo: preserve column order
     assert out.columns == ["c", "foo", "bar"]
 
 
-def test_drop_columns():
+def test_drop_columns() -> None:
     out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop(["a", "b"])
     assert out.columns == ["c"]
 
 
-def test_join_suffix():
+def test_join_suffix() -> None:
     df_left = pl.DataFrame(
         {
             "a": ["a", "b", "a", "z"],
@@ -639,13 +628,13 @@ def test_join_suffix():
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]
 
 
-def test_str_concat():
+def test_str_concat() -> None:
     df = pl.DataFrame({"foo": [1, None, 2]})
     df = df.select(pl.col("foo").str_concat("-"))
     assert df[0, 0] == "1-null-2"
 
 
-def test_collect_all(df):
+def test_collect_all(df: pl.DataFrame) -> None:
     lf1 = df.lazy().select(pl.col("int").sum())
     lf2 = df.lazy().select((pl.col("floats") * 2).sum())
     out = pl.collect_all([lf1, lf2])
@@ -653,7 +642,7 @@ def test_collect_all(df):
     assert out[1][0, 0] == 12.0
 
 
-def test_spearman_corr():
+def test_spearman_corr() -> None:
     df = pl.DataFrame(
         {
             "era": [1, 1, 1, 2, 2, 2],
@@ -669,3 +658,12 @@ def test_spearman_corr():
     )["c"]
     assert np.isclose(out[0], 0.5)
     assert np.isclose(out[1], -1.0)
+
+
+def test_lazy_concat(df: pl.DataFrame) -> None:
+    shape = df.shape
+    shape = (shape[0] * 2, shape[1])
+
+    out = pl.concat([df.lazy(), df.lazy()]).collect()  # type: ignore
+    assert out.shape == shape
+    assert out.frame_equal(df.vstack(df.clone()), null_equal=True)

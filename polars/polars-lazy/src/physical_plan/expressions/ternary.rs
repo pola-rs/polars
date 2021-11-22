@@ -48,7 +48,7 @@ impl PhysicalExpr for TernaryExpr {
         }
 
         let out = ac_truthy.flat().zip_with(mask, ac_falsy.flat().as_ref())?;
-        ac_truthy.with_series(out);
+        ac_truthy.with_series(out, false);
 
         Ok(ac_truthy)
     }

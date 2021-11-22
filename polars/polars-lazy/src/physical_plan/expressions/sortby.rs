@@ -2,20 +2,21 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
+use rayon::prelude::*;
 use std::sync::Arc;
 
 pub struct SortByExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
-    pub(crate) by: Arc<dyn PhysicalExpr>,
-    pub(crate) reverse: bool,
+    pub(crate) by: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) reverse: Vec<bool>,
     pub(crate) expr: Expr,
 }
 
 impl SortByExpr {
     pub fn new(
         input: Arc<dyn PhysicalExpr>,
-        by: Arc<dyn PhysicalExpr>,
-        reverse: bool,
+        by: Vec<Arc<dyn PhysicalExpr>>,
+        reverse: Vec<bool>,
         expr: Expr,
     ) -> Self {
         Self {
@@ -27,6 +28,17 @@ impl SortByExpr {
     }
 }
 
+fn prepare_reverse(reverse: &[bool], by_len: usize) -> Vec<bool> {
+    match (reverse.len(), by_len) {
+        // equal length
+        (n_reverse, n) if n_reverse == n => reverse.to_vec(),
+        // none given all false
+        (0, n) => vec![false; n],
+        // broadcast first
+        (_, n) => vec![reverse[0]; n],
+    }
+}
+
 impl PhysicalExpr for SortByExpr {
     fn as_expression(&self) -> &Expr {
         &self.expr
@@ -34,8 +46,20 @@ impl PhysicalExpr for SortByExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.input.evaluate(df, state)?;
-        let series_sort_by = self.by.evaluate(df, state)?;
-        let sorted_idx = series_sort_by.argsort(self.reverse);
+        let reverse = prepare_reverse(&self.reverse, self.by.len());
+
+        let sorted_idx = if self.by.len() == 1 {
+            let s_sort_by = self.by[0].evaluate(df, state)?;
+            s_sort_by.argsort(reverse[0])
+        } else {
+            let s_sort_by = self
+                .by
+                .iter()
+                .map(|e| e.evaluate(df, state))
+                .collect::<Result<Vec<_>>>()?;
+
+            s_sort_by[0].argsort_multiple(&s_sort_by[1..], &reverse)?
+        };
 
         // Safety:
         // sorted index are within bounds
@@ -50,32 +74,75 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
-        let mut ac_sort_by = self.by.evaluate_on_groups(df, groups, state)?;
-        let sort_by_s = ac_sort_by.flat().into_owned();
-        let groups = ac_sort_by.groups();
+        let reverse = prepare_reverse(&self.reverse, self.by.len());
 
-        let groups = groups
-            .iter()
-            .map(|(_first, idx)| {
-                // Safety:
-                // Group tuples are always in bounds
-                let group =
-                    unsafe { sort_by_s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
+        let groups = if self.by.len() == 1 {
+            let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
+            let sort_by_s = ac_sort_by.flat().into_owned();
+            let groups = ac_sort_by.groups();
 
-                let sorted_idx = group.argsort(self.reverse);
+            groups
+                .par_iter()
+                .map(|(_first, idx)| {
+                    // Safety:
+                    // Group tuples are always in bounds
+                    let group = unsafe {
+                        sort_by_s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
+                    };
 
-                let new_idx: Vec<_> = sorted_idx
-                    .cont_slice()
-                    .unwrap()
-                    .iter()
-                    .map(|&i| {
-                        debug_assert!(idx.get(i as usize).is_some());
-                        unsafe { *idx.get_unchecked(i as usize) }
-                    })
-                    .collect();
-                (new_idx[0], new_idx)
-            })
-            .collect();
+                    let sorted_idx = group.argsort(reverse[0]);
+
+                    let new_idx: Vec<_> = sorted_idx
+                        .cont_slice()
+                        .unwrap()
+                        .iter()
+                        .map(|&i| {
+                            debug_assert!(idx.get(i as usize).is_some());
+                            unsafe { *idx.get_unchecked(i as usize) }
+                        })
+                        .collect();
+                    (new_idx[0], new_idx)
+                })
+                .collect()
+        } else {
+            let mut ac_sort_by = self
+                .by
+                .iter()
+                .map(|e| e.evaluate_on_groups(df, groups, state))
+                .collect::<Result<Vec<_>>>()?;
+            let sort_by_s = ac_sort_by
+                .iter()
+                .map(|s| s.flat().into_owned())
+                .collect::<Vec<_>>();
+            let groups = ac_sort_by[0].groups();
+
+            groups
+                .par_iter()
+                .map(|(_first, idx)| {
+                    // Safety:
+                    // Group tuples are always in bounds
+                    let groups = sort_by_s
+                        .iter()
+                        .map(|s| unsafe {
+                            s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
+                        })
+                        .collect::<Vec<_>>();
+
+                    let sorted_idx = groups[0].argsort_multiple(&groups[1..], &reverse).unwrap();
+
+                    let new_idx: Vec<_> = sorted_idx
+                        .cont_slice()
+                        .unwrap()
+                        .iter()
+                        .map(|&i| {
+                            debug_assert!(idx.get(i as usize).is_some());
+                            unsafe { *idx.get_unchecked(i as usize) }
+                        })
+                        .collect();
+                    (new_idx[0], new_idx)
+                })
+                .collect()
+        };
 
         ac_in.with_groups(groups);
         Ok(ac_in)
@@ -98,33 +165,88 @@ impl PhysicalAggregation for SortByExpr {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
-        let s_sort_by = self.by.evaluate(df, state)?;
-
-        let s_sort_by = s_sort_by.agg_list(groups).ok_or_else(|| {
+        let err = || {
             PolarsError::ComputeError(
                 format!("cannot aggregate {:?} as list array", self.expr).into(),
             )
-        })?;
+        };
+        let reverse = prepare_reverse(&self.reverse, self.by.len());
 
-        let agg_s = ac_in.aggregated();
-        let agg_s = agg_s
-            .list()
-            .unwrap()
-            .amortized_iter()
-            .zip(s_sort_by.list().unwrap().amortized_iter())
-            .map(|(opt_s, opt_sort_by)| {
-                match (opt_s, opt_sort_by) {
-                    (Some(s), Some(sort_by)) => {
-                        let sorted_idx = sort_by.as_ref().argsort(self.reverse);
-                        // Safety:
-                        // sorted index are within bounds
-                        unsafe { s.as_ref().take_unchecked(&sorted_idx) }.ok()
+        let mut agg_s = if self.by.len() == 1 {
+            let reverse = reverse[0];
+            let s_sort_by = self.by[0].evaluate(df, state)?;
+
+            let s_sort_by = s_sort_by.agg_list(groups).ok_or_else(err)?;
+
+            let agg_s = ac_in.aggregated();
+            agg_s
+                .list()
+                .unwrap()
+                .amortized_iter()
+                .zip(s_sort_by.list().unwrap().amortized_iter())
+                .map(|(opt_s, opt_sort_by)| {
+                    match (opt_s, opt_sort_by) {
+                        (Some(s), Some(sort_by)) => {
+                            let sorted_idx = sort_by.as_ref().argsort(reverse);
+                            // Safety:
+                            // sorted index are within bounds
+                            unsafe { s.as_ref().take_unchecked(&sorted_idx) }.ok()
+                        }
+                        _ => None,
                     }
-                    _ => None,
-                }
-            })
-            .collect::<ListChunked>()
-            .into_series();
+                })
+                .collect::<ListChunked>()
+                .into_series()
+        } else {
+            let s_sort_by = self
+                .by
+                .iter()
+                .map(|e| e.evaluate(df, state)?.agg_list(groups).ok_or_else(err))
+                .collect::<Result<Vec<_>>>()?;
+
+            let mut sort_by_iters = s_sort_by
+                .iter()
+                .map(|s| s.list().unwrap().amortized_iter())
+                .collect::<Vec<_>>();
+            let mut items = vec![Default::default(); sort_by_iters.len()];
+
+            let agg_s = ac_in.aggregated();
+            agg_s
+                .list()
+                .unwrap()
+                .amortized_iter()
+                .map(|opt_s| {
+                    match opt_s {
+                        None => Ok(None),
+                        Some(s) => {
+                            let mut all_some = true;
+                            sort_by_iters.iter_mut().zip(items.iter_mut()).for_each(
+                                |(iter, item)| {
+                                    // we unwrap the iterator, because it should be same length as agg_s
+                                    match iter.next().unwrap() {
+                                        Some(s_sort) => {
+                                            *item = s_sort.as_ref().clone();
+                                        }
+                                        None => {
+                                            all_some = false;
+                                        }
+                                    }
+                                },
+                            );
+                            if all_some {
+                                let sorted_idx =
+                                    items[0].argsort_multiple(&items[1..], &reverse)?;
+                                unsafe { s.as_ref().take_unchecked(&sorted_idx) }.map(Some)
+                            } else {
+                                Ok(None)
+                            }
+                        }
+                    }
+                })
+                .collect::<Result<ListChunked>>()?
+                .into_series()
+        };
+        agg_s.rename(ac_in.series().name());
         Ok(Some(agg_s))
     }
 }

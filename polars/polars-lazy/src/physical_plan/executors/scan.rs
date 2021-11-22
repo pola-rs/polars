@@ -1,9 +1,114 @@
 use super::*;
 use crate::logical_plan::CsvParserOptions;
+#[cfg(feature = "ipc")]
+use crate::logical_plan::IpcOptions;
 use crate::utils::try_path_to_str;
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+use std::fs::File;
 use std::mem;
+use std::path::Path;
+
+fn cache_hit(
+    path: &Path,
+    predicate: &Option<Arc<dyn PhysicalExpr>>,
+    state: &ExecutionState,
+) -> (String, Option<DataFrame>) {
+    let path_str = try_path_to_str(path).unwrap();
+    let cache_key = match predicate {
+        Some(predicate) => format!("{}{:?}", path_str, predicate.as_expression()),
+        None => path_str.to_string(),
+    };
+    let cached = state.cache_hit(&cache_key);
+    (cache_key, cached)
+}
+
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+type Projection = Option<Vec<usize>>;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+type StopNRows = Option<usize>;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+type Aggregation<'a> = Option<&'a [ScanAggregation]>;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
+
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+fn prepare_scan_args<'a>(
+    path: &Path,
+    predicate: &Option<Arc<dyn PhysicalExpr>>,
+    with_columns: &mut Option<Vec<String>>,
+    schema: &mut SchemaRef,
+    stop_after_n_rows: Option<usize>,
+    aggregate: &'a [ScanAggregation],
+) -> (File, Projection, StopNRows, Aggregation<'a>, Predicate) {
+    let file = std::fs::File::open(&path).unwrap();
+
+    let with_columns = mem::take(with_columns);
+    let schema = mem::take(schema);
+
+    let projection: Option<Vec<_>> = with_columns.map(|with_columns| {
+        with_columns
+            .iter()
+            .map(|name| schema.column_with_name(name).unwrap().0)
+            .collect()
+    });
+
+    let stop_after_n_rows = set_n_rows(stop_after_n_rows);
+    let aggregate = if aggregate.is_empty() {
+        None
+    } else {
+        Some(aggregate)
+    };
+    let predicate = predicate
+        .clone()
+        .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
+
+    (file, projection, stop_after_n_rows, aggregate, predicate)
+}
+
+#[cfg(feature = "ipc")]
+pub struct IpcExec {
+    pub(crate) path: PathBuf,
+    pub(crate) schema: SchemaRef,
+    pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) aggregate: Vec<ScanAggregation>,
+    pub(crate) options: IpcOptions,
+}
+
+#[cfg(feature = "ipc")]
+impl Executor for IpcExec {
+    fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
+        let (cache_key, cached) = cache_hit(&self.path, &self.predicate, state);
+        if let Some(df) = cached {
+            return Ok(df);
+        }
+        let (file, projection, stop_after_n_rows, aggregate, predicate) = prepare_scan_args(
+            &self.path,
+            &self.predicate,
+            &mut self.options.with_columns,
+            &mut self.schema,
+            self.options.stop_after_n_rows,
+            &self.aggregate,
+        );
+        let df = IpcReader::new(file)
+            .with_stop_after_n_rows(stop_after_n_rows)
+            .finish_with_scan_ops(
+                predicate,
+                aggregate,
+                projection.as_ref().map(|v| v.as_ref()),
+            )?;
+
+        if self.options.cache {
+            state.store_cache(cache_key, df.clone())
+        }
+        if state.verbose {
+            println!("ipc {:?} read", self.path);
+        }
+
+        Ok(df)
+    }
+}
 
 #[cfg(feature = "parquet")]
 pub struct ParquetExec {
@@ -42,37 +147,18 @@ impl ParquetExec {
 #[cfg(feature = "parquet")]
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let path_str = try_path_to_str(&self.path)?;
-        let cache_key = match &self.predicate {
-            Some(predicate) => format!("{}{:?}", path_str, predicate.as_expression()),
-            None => path_str.to_string(),
-        };
-        if let Some(df) = state.cache_hit(&cache_key) {
+        let (cache_key, cached) = cache_hit(&self.path, &self.predicate, state);
+        if let Some(df) = cached {
             return Ok(df);
         }
-        // cache miss
-        let file = std::fs::File::open(&self.path).unwrap();
-
-        let with_columns = mem::take(&mut self.with_columns);
-        let schema = mem::take(&mut self.schema);
-
-        let projection: Option<Vec<_>> = with_columns.map(|with_columns| {
-            with_columns
-                .iter()
-                .map(|name| schema.column_with_name(name).unwrap().0)
-                .collect()
-        });
-
-        let stop_after_n_rows = set_n_rows(self.stop_after_n_rows);
-        let aggregate = if self.aggregate.is_empty() {
-            None
-        } else {
-            Some(self.aggregate.as_slice())
-        };
-        let predicate = self
-            .predicate
-            .clone()
-            .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
+        let (file, projection, stop_after_n_rows, aggregate, predicate) = prepare_scan_args(
+            &self.path,
+            &self.predicate,
+            &mut self.with_columns,
+            &mut self.schema,
+            self.stop_after_n_rows,
+            &self.aggregate,
+        );
 
         let df = ParquetReader::new(file)
             .with_stop_after_n_rows(stop_after_n_rows)
@@ -85,7 +171,7 @@ impl Executor for ParquetExec {
         if self.cache {
             state.store_cache(cache_key, df.clone())
         }
-        if std::env::var(POLARS_VERBOSE).is_ok() {
+        if state.verbose {
             println!("parquet {:?} read", self.path);
         }
 
@@ -105,15 +191,9 @@ pub struct CsvExec {
 #[cfg(feature = "csv-file")]
 impl Executor for CsvExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let path_str = try_path_to_str(&self.path)?;
-        let state_key = match &self.predicate {
-            Some(predicate) => format!("{}{:?}", path_str, predicate.as_expression()),
-            None => path_str.to_string(),
-        };
-        if self.options.cache {
-            if let Some(df) = state.cache_hit(&state_key) {
-                return Ok(df);
-            }
+        let (cache_key, cached) = cache_hit(&self.path, &self.predicate, state);
+        if let Some(df) = cached {
+            return Ok(df);
         }
 
         // cache miss
@@ -159,9 +239,9 @@ impl Executor for CsvExec {
             .finish()?;
 
         if self.options.cache {
-            state.store_cache(state_key, df.clone());
+            state.store_cache(cache_key, df.clone());
         }
-        if std::env::var(POLARS_VERBOSE).is_ok() {
+        if state.verbose {
             println!("csv {:?} read", self.path);
         }
 

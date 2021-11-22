@@ -1,5 +1,6 @@
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
+use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::*;
 use crate::series::PySeries;
 use polars::chunked_array::object::PolarsObjectSafe;
@@ -44,6 +45,11 @@ pub(crate) fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
 pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
     let pydf = obj.getattr("_df")?;
     Ok(pydf.extract::<PyDataFrame>()?.df)
+}
+
+pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
+    let pydf = obj.getattr("_ldf")?;
+    Ok(pydf.extract::<PyLazyFrame>()?.ldf)
 }
 
 pub(crate) fn get_series(obj: &PyAny) -> PyResult<Series> {

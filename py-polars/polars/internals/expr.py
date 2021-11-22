@@ -1,11 +1,9 @@
 import copy
 import typing as tp
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
-
-import polars as pl
 
 try:
     from polars.polars import PyExpr
@@ -14,35 +12,30 @@ try:
 except ImportError:
     _DOCUMENTING = True
 
-from ..datatypes import Boolean, DataType, Date, Datetime, Float64, Int64, Utf8
-from .functions import col, lit
-
-__all__ = [
-    "Expr",
-    "ExprStringNameSpace",
-    "ExprDateTimeNameSpace",
-    "expr_to_lit_or_expr",
-]
+from polars import internals as pli
+from polars.datatypes import (
+    Boolean,
+    DataType,
+    Date,
+    Datetime,
+    Float64,
+    Int64,
+    Object,
+    UInt32,
+    Utf8,
+)
 
 
 def _selection_to_pyexpr_list(
-    exprs: Union[str, "Expr", Sequence[str], Sequence["Expr"]]
+    exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]]]
 ) -> tp.List["PyExpr"]:
     pyexpr_list: tp.List[PyExpr]
-    if isinstance(exprs, str):
-        pyexpr_list = [col(exprs)._pyexpr]
-    elif isinstance(exprs, (bool, int, float)):
-        pyexpr_list = [lit(exprs)._pyexpr]
-    elif isinstance(exprs, Expr):
-        pyexpr_list = [exprs._pyexpr]
-    else:
+    if isinstance(exprs, Sequence) and not isinstance(exprs, str):
         pyexpr_list = []
         for expr in exprs:
-            if isinstance(expr, str):
-                expr = col(expr)
-            elif isinstance(expr, (bool, int, float)):
-                expr = lit(expr)
-            pyexpr_list.append(expr._pyexpr)
+            pyexpr_list.append(expr_to_lit_or_expr(expr, str_to_lit=False)._pyexpr)
+    else:
+        pyexpr_list = [expr_to_lit_or_expr(exprs, str_to_lit=False)._pyexpr]
     return pyexpr_list
 
 
@@ -70,12 +63,12 @@ class Expr:
         elif isinstance(other, Expr):
             return other._pyexpr
         else:
-            return lit(other)._pyexpr
+            return pli.lit(other)._pyexpr
 
     def __to_expr(self, other: Any) -> "Expr":
         if isinstance(other, Expr):
             return other
-        return lit(other)
+        return pli.lit(other)
 
     def __bool__(self) -> "Expr":
         raise ValueError(
@@ -180,7 +173,7 @@ class Expr:
         return wrap_expr(self._pyexpr.lt(other._pyexpr))
 
     def __neg__(self) -> "Expr":
-        return pl.lit(0) - self  # type: ignore
+        return pli.lit(0) - self  # type: ignore
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -190,7 +183,7 @@ class Expr:
         """
         out_type = ufunc(np.array([1])).dtype
         if "float" in str(out_type):
-            dtype = pl.Float64  # type: ignore
+            dtype = Float64  # type: ignore
         else:
             dtype = None  # type: ignore
 
@@ -199,7 +192,7 @@ class Expr:
             if not isinstance(inp, Expr):
                 args.append(inp)
 
-        def function(s: "pl.Series") -> "pl.Series":
+        def function(s: "pli.Series") -> "pli.Series":
             return ufunc(s, *args, **kwargs)
 
         if "dtype" in kwargs:
@@ -495,7 +488,7 @@ class Expr:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ false ┆ null │
         ╰───────┴──────╯
-        >>> df.select(col("a").is_not())
+        >>> df.select(pl.col("a").is_not())
         shape: (3, 1)
         ╭───────╮
         │ a     │
@@ -583,7 +576,7 @@ class Expr:
         """
         Syntactic sugar for:
 
-        >>> col("foo").filter(col("foo").is_not_null())
+        >>> pl.col("foo").filter(pl.col("foo").is_not_null())
         """
         return self.filter(self.is_not_null())
 
@@ -650,7 +643,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.round(decimals))
 
-    def dot(self, other: "Expr") -> "Expr":
+    def dot(self, other: Union["Expr", str]) -> "Expr":
         """
         Compute the dot/inner product between two Expressions
 
@@ -674,7 +667,7 @@ class Expr:
 
         Parameters
         ----------
-        data_type
+        dtype
             DataType to cast to
         strict
             Throw an error if a cast could not be done for instance due to an overflow
@@ -731,26 +724,33 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.arg_min())
 
-    def sort_by(self, by: Union["Expr", str], reverse: bool = False) -> "Expr":
+    def sort_by(
+        self,
+        by: Union["Expr", str, tp.List[Union["Expr", str]]],
+        reverse: Union[bool, tp.List[bool]] = False,
+    ) -> "Expr":
         """
-        Sort this column by the ordering of another column.
+        Sort this column by the ordering of another column, or multiple other columns.
         In projection/ selection context the whole column is sorted.
         If used in a groupby context, the groups are sorted.
 
         Parameters
         ----------
         by
-            The column used for sorting.
+            The column(s) used for sorting.
         reverse
             False -> order from small to large.
             True -> order from large to small.
         """
-        if isinstance(by, str):
-            by = col(by)
+        if not isinstance(by, list):
+            by = [by]
+        if not isinstance(reverse, list):
+            reverse = [reverse]
+        by = _selection_to_pyexpr_list(by)
 
-        return wrap_expr(self._pyexpr.sort_by(by._pyexpr, reverse))
+        return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: Union[tp.List[int], "Expr", "pl.Series"]) -> "Expr":
+    def take(self, index: Union[tp.List[int], "Expr", "pli.Series"]) -> "Expr":
         """
         Take values by index.
 
@@ -764,12 +764,12 @@ class Expr:
         Values taken by index
         """
         if isinstance(index, (list, np.ndarray)):
-            index = pl.lit(pl.Series("", index, dtype=pl.UInt32))  # type: ignore
-        elif isinstance(index, pl.Series):
-            index = pl.lit(index)  # type: ignore
+            index = pli.lit(pli.Series("", index, dtype=UInt32))  # type: ignore
+        elif isinstance(index, pli.Series):
+            index = pli.lit(index)  # type: ignore
         else:
-            index = expr_to_lit_or_expr(index, str_to_lit=False)  # type: ignore
-        return wrap_expr(self._pyexpr.take(index._pyexpr))  # type: ignore
+            index = pli.expr_to_lit_or_expr(index, str_to_lit=False)  # type: ignore
+        return pli.wrap_expr(self._pyexpr.take(index._pyexpr))  # type: ignore
 
     def shift(self, periods: int = 1) -> "Expr":
         """
@@ -812,7 +812,17 @@ class Expr:
                    * "one"
                    * "zero"
         """
-        if fill_value in ["backward", "forward", "min", "max", "mean", "zero", "one"]:
+        # we first must check if it is not an expr, as expr does not implement __bool__
+        # and thus leads to a value error in the second comparisson.
+        if not isinstance(fill_value, Expr) and fill_value in [
+            "backward",
+            "forward",
+            "min",
+            "max",
+            "mean",
+            "zero",
+            "one",
+        ]:
             return wrap_expr(self._pyexpr.fill_null_with_strategy(fill_value))
 
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
@@ -915,7 +925,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: Union[str, "Expr", tp.List["Expr"]]) -> "Expr":
+    def over(self, expr: Union[str, "Expr", tp.List[Union["Expr", str]]]) -> "Expr":
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -935,8 +945,8 @@ class Expr:
         >>>})
         >>> (df.lazy()
         >>>    .select([
-        >>>       col("groups")
-        >>>       sum("values").over("groups"))
+        >>>       pl.col("groups")
+        >>>       sum("values").over("groups")
         >>>   ]).collect())
             ╭────────┬────────╮
             │ groups ┆ values │
@@ -1011,12 +1021,19 @@ class Expr:
         return wrap_expr(self._pyexpr.filter(predicate._pyexpr))
 
     def where(self, predicate: "Expr") -> "Expr":
-        "alias for filter"
+        """
+        Alias for filter
+
+        Parameters
+        ----------
+        predicate
+            Boolean expression.
+        """
         return self.filter(predicate)
 
     def map(
         self,
-        f: Callable[["pl.Series"], "pl.Series"],
+        f: Callable[["pli.Series"], "pli.Series"],
         return_dtype: Optional[Type[DataType]] = None,
         agg_list: bool = False,
     ) -> "Expr":
@@ -1032,6 +1049,8 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
+        agg_list
+
         """
         if return_dtype == str:
             return_dtype = Utf8
@@ -1045,7 +1064,7 @@ class Expr:
 
     def apply(
         self,
-        f: Union[Callable[["pl.Series"], "pl.Series"], Callable[[Any], Any]],
+        f: Union[Callable[["pli.Series"], "pli.Series"], Callable[[Any], Any]],
         return_dtype: Optional[Type[DataType]] = None,
     ) -> "Expr":
         """
@@ -1074,7 +1093,7 @@ class Expr:
 
         >>> df = pl.DataFrame({"a": [1,  2,  1,  1],
                    "b": ["a", "b", "c", "c"]})
-        >>> (df
+        >>> df
          .lazy()
          .groupby("b")
          .agg([col("a").apply(lambda x: x.sum())])
@@ -1096,7 +1115,7 @@ class Expr:
         """
 
         # input x: Series of type list containing the group values
-        def wrap_f(x: "pl.Series") -> "pl.Series":
+        def wrap_f(x: "pli.Series") -> "pli.Series":
             return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f, agg_list=True)
@@ -1162,12 +1181,12 @@ class Expr:
         Expr that evaluates to a Boolean Series.
         """
         if isinstance(other, list):
-            other = pl.lit(pl.Series(other))
+            other = pli.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.is_in(other._pyexpr))
 
-    def repeat_by(self, by: "Expr") -> "Expr":
+    def repeat_by(self, by: Union["Expr", str]) -> "Expr":
         """
         Repeat the elements in this Series `n` times by dictated by the number given by `by`.
         The elements are expanded into a `List`
@@ -1193,10 +1212,10 @@ class Expr:
         """
         cast_to_datetime = False
         if isinstance(start, datetime):
-            start = lit(start)
+            start = pli.lit(start)
             cast_to_datetime = True
         if isinstance(end, datetime):
-            end = lit(end)
+            end = pli.lit(end)
             cast_to_datetime = True
         if cast_to_datetime:
             expr = self.cast(Datetime)
@@ -1225,7 +1244,7 @@ class Expr:
         """
         return ExprListNameSpace(self)
 
-    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pl.Expr":
+    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "Expr":
         """
         Hash the Series.
 
@@ -1244,7 +1263,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, signed: bool) -> "pl.Expr":
+    def reinterpret(self, signed: bool) -> "Expr":
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
         This operation is only allowed for 64bit integers. For lower bits integers,
@@ -1258,20 +1277,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
-    def inspect(self, fmt: str = "{}") -> "pl.Expr":  # type: ignore
+    def inspect(self, fmt: str = "{}") -> "Expr":  # type: ignore
         """
         Prints the value that this expression evaluates to and passes on the value.
 
-        >>> df.select(col("foo").cumsum().inspect("value is: {}").alias("bar"))
+        >>> df.select(pl.col("foo").cumsum().inspect("value is: {}").alias("bar"))
         """
 
-        def inspect(s: "pl.Series") -> "pl.Series":
+        def inspect(s: "pli.Series") -> "pli.Series":
             print(fmt.format(s))  # type: ignore
             return s
 
         return self.map(inspect, return_dtype=None, agg_list=True)
 
-    def interpolate(self) -> "pl.Expr":
+    def interpolate(self) -> "Expr":
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
@@ -1376,7 +1395,7 @@ class Expr:
         >>>     }
         >>> )
         >>> df.select([
-        >>>     col("A").rolling_mean(window_size=2)
+        >>>     pl.col("A").rolling_mean(window_size=2)
         >>> ])
         shape: (6, 1)
         ┌──────┐
@@ -1503,7 +1522,7 @@ class Expr:
         )
 
     def rolling_apply(
-        self, window_size: int, function: Callable[["pl.Series"], Any]
+        self, window_size: int, function: Callable[["pli.Series"], Any]
     ) -> "Expr":
         """
         Allows a custom rolling window function.
@@ -1532,7 +1551,7 @@ class Expr:
         >>>     }
         >>> )
         >>> df.select([
-        >>>     col("A").rolling_apply(3, lambda s: s.std())
+        >>>     pl.col("A").rolling_apply(3, lambda s: s.std())
         >>> ])
         shape: (5, 1)
         ┌────────────────────┐
@@ -1592,7 +1611,7 @@ class Expr:
         """
         Take absolute values
         """
-        return self.map(lambda s: s.abs())
+        return wrap_expr(self._pyexpr.abs())
 
     def argsort(self, reverse: bool = False) -> "Expr":
         """
@@ -1602,7 +1621,7 @@ class Expr:
         reverse
             Reverse the ordering. Default is from low to high.
         """
-        return pl.argsort_by([self], [reverse])  # type: ignore
+        return pli.argsort_by([self], [reverse])
 
     def rank(self, method: str = "average") -> "Expr":  # type: ignore
         """
@@ -1645,7 +1664,7 @@ class Expr:
         return wrap_expr(self._pyexpr.diff(n, null_behavior))
 
     def skew(self, bias: bool = True) -> "Expr":
-        """Compute the sample skewness of a data set.
+        r"""Compute the sample skewness of a data set.
         For normally distributed data, the skewness should be about zero. For
         unimodal continuous distributions, a skewness value greater than zero means
         that there is more weight in the right tail of the distribution. The
@@ -1709,15 +1728,28 @@ class Expr:
         min_val, max_val
             Minimum and maximum value.
         """
-        min_val = pl.lit(min_val)  # type: ignore
-        max_val = pl.lit(max_val)  # type: ignore
+        min_val = pli.lit(min_val)  # type: ignore
+        max_val = pli.lit(max_val)  # type: ignore
+
         return (
-            pl.when(self < min_val)  # type: ignore
+            pli.when(self < min_val)  # type: ignore
             .then(min_val)
             .when(self > max_val)
             .then(max_val)
             .otherwise(self)
         ).keep_name()
+
+    def lower_bound(self) -> "Expr":
+        """
+        Returns a unit Series with the lowest value possible for the dtype of this expression.
+        """
+        return wrap_expr(self._pyexpr.lower_bound())
+
+    def upper_bound(self) -> "Expr":
+        """
+        Returns a unit Series with the highest value possible for the dtype of this expression.
+        """
+        return wrap_expr(self._pyexpr.upper_bound())
 
     def str_concat(self, delimiter: str = "-") -> "Expr":  # type: ignore
         """
@@ -1729,7 +1761,7 @@ class Expr:
 
         Examples
         >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df = df.select(col("foo").str_concat("-"))
+        >>> df = df.select(pl.col("foo").str_concat("-"))
         shape: (1, 1)
         ┌──────────┐
         │ foo      │
@@ -1945,7 +1977,7 @@ class ExprListNameSpace:
             other = copy.copy(other)
         # mypy does not understand we have a list by now
         other.insert(0, wrap_expr(self._pyexpr))  # type: ignore
-        return pl.concat_list(other)  # type: ignore
+        return pli.concat_list(other)  # type: ignore
 
 
 class ExprStringNameSpace:
@@ -1958,7 +1990,7 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[Date, Datetime],
+        datatype: Union[Type[Date], Type[Datetime]],
         fmt: Optional[str] = None,
     ) -> Expr:
         """
@@ -2043,7 +2075,7 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
-        """
+        r"""
         Extract the target capture group from provided patterns.
 
         Parameters
@@ -2069,7 +2101,7 @@ class ExprStringNameSpace:
         ...             'http://vote.com/ballon_dor?candidate=ronaldo&ref=polars'
         ...         ]})
         >>> df.select([
-        ...             pl.col('a').str.extract('candidate=(\w+)', 1)
+        ...             pl.col('a').str.extract(r'candidate=(\w+)', 1)
         ...         ])
         shape: (3, 1)
         ┌─────────┐
@@ -2306,7 +2338,7 @@ class ExprDateTimeNameSpace:
         Go from Date/Datetime to python DateTime objects
         """
         return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.to_python_datetime(), return_dtype=pl.Object
+            lambda s: s.dt.to_python_datetime(), return_dtype=Object
         )
 
     def timestamp(self) -> Expr:
@@ -2315,7 +2347,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, int, float, str, tp.List[Expr], "pl.Series"],
+    expr: Union[Expr, bool, int, float, str, tp.List[Expr], tp.List[str], "pli.Series"],
     str_to_lit: bool = True,
 ) -> Expr:
     """
@@ -2334,9 +2366,11 @@ def expr_to_lit_or_expr(
 
     """
     if isinstance(expr, str) and not str_to_lit:
-        return col(expr)
-    elif isinstance(expr, (int, float, str, pl.Series)) or expr is None:
-        return lit(expr)
+        return pli.col(expr)
+    elif (
+        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
+    ):
+        return pli.lit(expr)
     elif isinstance(expr, list):
         return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]
     else:

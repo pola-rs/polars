@@ -1043,6 +1043,43 @@ impl DataFrame {
     }
 
     /// Generic join method. Can be used to join on multiple columns.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
+    ///                              "Phosphorus (mg/100g)" => &[11, 22, 12])?;
+    ///     let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
+    ///                              "Potassium (mg/100g)" => &[107, 358, 115])?;
+    ///
+    ///     let df3: DataFrame = df1.join(&df2, "Fruit", "Name", JoinType::Inner, None)?;
+    ///     assert_eq!(df3.shape(), (3, 3));
+    ///     println!("{}", df3);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (3, 3)
+    /// +--------+----------------------+---------------------+
+    /// | Fruit  | Phosphorus (mg/100g) | Potassium (mg/100g) |
+    /// | ---    | ---                  | ---                 |
+    /// | str    | i32                  | i32                 |
+    /// +========+======================+=====================+
+    /// | Apple  | 11                   | 107                 |
+    /// +--------+----------------------+---------------------+
+    /// | Banana | 22                   | 358                 |
+    /// +--------+----------------------+---------------------+
+    /// | Pear   | 12                   | 115                 |
+    /// +--------+----------------------+---------------------+
+    /// ```
     pub fn join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
         &self,
         other: &DataFrame,
@@ -1604,27 +1641,54 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn empty_df_join() {
+    fn empty_df_join() -> Result<()> {
         let empty: Vec<String> = vec![];
-        let left = DataFrame::new(vec![
+        let empty_df = DataFrame::new(vec![
             Series::new("key", &empty),
-            Series::new("lval", &empty),
+            Series::new("eval", &empty),
         ])
         .unwrap();
 
-        let right = DataFrame::new(vec![
+        let df = DataFrame::new(vec![
             Series::new("key", &["foo"]),
-            Series::new("rval", &[4]),
+            Series::new("aval", &[4]),
         ])
         .unwrap();
 
-        let res = left.inner_join(&right, "key", "key");
+        let out = empty_df.inner_join(&df, "key", "key").unwrap();
+        assert_eq!(out.height(), 0);
+        let out = empty_df.left_join(&df, "key", "key").unwrap();
+        assert_eq!(out.height(), 0);
+        let out = empty_df.outer_join(&df, "key", "key").unwrap();
+        assert_eq!(out.height(), 1);
+        df.left_join(&empty_df, "key", "key")?;
+        df.inner_join(&empty_df, "key", "key")?;
+        df.outer_join(&empty_df, "key", "key")?;
 
-        assert!(res.is_ok());
-        assert_eq!(res.unwrap().height(), 0);
-        right.left_join(&left, "key", "key").unwrap();
-        right.inner_join(&left, "key", "key").unwrap();
-        right.outer_join(&left, "key", "key").unwrap();
+        let empty: Vec<String> = vec![];
+        let empty_df = DataFrame::new(vec![
+            Series::new("key", &empty),
+            Series::new("eval", &empty),
+        ])
+        .unwrap();
+
+        let df = df![
+            "key" => [1i32, 2],
+            "vals" => [1, 2],
+        ]?;
+
+        // https://github.com/pola-rs/polars/issues/1824
+        let empty: Vec<i32> = vec![];
+        let empty_df = DataFrame::new(vec![
+            Series::new("key", &empty),
+            Series::new("1val", &empty),
+            Series::new("2val", &empty),
+        ])?;
+
+        let out = df.left_join(&empty_df, "key", "key")?;
+        assert_eq!(out.shape(), (2, 4));
+
+        Ok(())
     }
 
     #[test]
@@ -1788,7 +1852,6 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    #[cfg(feature = "dtype-u64")]
     fn test_join_floats() -> Result<()> {
         let df_a = df! {
             "a" => &[1.0, 2.0, 1.0, 1.0],
@@ -1830,6 +1893,22 @@ mod test {
                 DataType::Utf8
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_join_nulls() -> Result<()> {
+        let a = df![
+            "a" => [Some(1), None, None]
+        ]?;
+        let b = df![
+            "a" => [Some(1), None, None, None, None]
+        ]?;
+
+        let out = a.inner_join(&b, "a", "a")?;
+
+        assert_eq!(out.shape(), (9, 1));
         Ok(())
     }
 }

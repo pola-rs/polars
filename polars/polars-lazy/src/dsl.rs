@@ -1,7 +1,9 @@
 //! Domain specific language for the Lazy api.
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{expr_to_root_column_name, has_expr, has_wildcard};
+#[cfg(feature = "is_in")]
+use crate::utils::expr_to_root_column_name;
+use crate::utils::{has_expr, has_wildcard};
 use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
@@ -275,8 +277,8 @@ pub enum Expr {
     },
     SortBy {
         expr: Box<Expr>,
-        by: Box<Expr>,
-        reverse: bool,
+        by: Vec<Expr>,
+        reverse: Vec<bool>,
     },
     Agg(AggExpr),
     /// A ternary operation
@@ -389,10 +391,13 @@ impl fmt::Debug for Expr {
                 true => write!(f, "{:?} DESC", expr),
                 false => write!(f, "{:?} ASC", expr),
             },
-            SortBy { expr, by, reverse } => match reverse {
-                true => write!(f, "{:?} DESC BY {:?}", expr, by),
-                false => write!(f, "{:?} ASC BY {:?}", expr, by),
-            },
+            SortBy { expr, by, reverse } => {
+                write!(
+                    f,
+                    "SORT {:?} BY {:?} REVERSE ORDERING {:?}",
+                    expr, by, reverse
+                )
+            }
             Filter { input, by } => {
                 write!(f, "FILTER {:?} BY {:?}", input, by)
             }
@@ -1074,6 +1079,13 @@ impl Expr {
         self.map(move |s: Series| s.floor(), GetOutput::same_type())
     }
 
+    /// Convert all values to their absolute/positive value.
+    #[cfg(feature = "abs")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
+    pub fn abs(self) -> Self {
+        self.map(move |s: Series| s.abs(), GetOutput::same_type())
+    }
+
     /// Apply window function over a subgroup.
     /// This is similar to a groupby + aggregation + self join.
     /// Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).
@@ -1329,10 +1341,12 @@ impl Expr {
 
     /// Sort this column by the ordering of another column.
     /// Can also be used in a groupby context to sort the groups.
-    pub fn sort_by(self, by: Expr, reverse: bool) -> Expr {
+    pub fn sort_by<E: AsRef<[Expr]>, R: AsRef<[bool]>>(self, by: E, reverse: R) -> Expr {
+        let by = by.as_ref().to_vec();
+        let reverse = reverse.as_ref().to_vec();
         Expr::SortBy {
             expr: Box::new(self),
-            by: Box::new(by),
+            by,
             reverse,
         }
     }
@@ -1649,6 +1663,72 @@ impl Expr {
         self.apply(
             move |s| Ok(s.str_concat(&delimiter).into_series()),
             GetOutput::from_type(DataType::Utf8),
+        )
+    }
+
+    /// Get maximal value that could be hold by this dtype.
+    pub fn upper_bound(self) -> Expr {
+        self.map(
+            |s| {
+                let name = s.name();
+                use DataType::*;
+                let s = match s.dtype().to_physical() {
+                    #[cfg(feature = "dtype-i8")]
+                    Int8 => Series::new(name, &[i8::MAX]),
+                    #[cfg(feature = "dtype-i16")]
+                    Int16 => Series::new(name, &[i16::MAX]),
+                    Int32 => Series::new(name, &[i32::MAX]),
+                    Int64 => Series::new(name, &[i64::MAX]),
+                    #[cfg(feature = "dtype-u8")]
+                    UInt8 => Series::new(name, &[u8::MAX]),
+                    #[cfg(feature = "dtype-u16")]
+                    UInt16 => Series::new(name, &[u16::MAX]),
+                    UInt32 => Series::new(name, &[u32::MAX]),
+                    UInt64 => Series::new(name, &[u64::MAX]),
+                    Float32 => Series::new(name, &[f32::INFINITY]),
+                    Float64 => Series::new(name, &[f64::INFINITY]),
+                    dt => {
+                        return Err(PolarsError::ComputeError(
+                            format!("cannot determine upper bound of dtype {}", dt).into(),
+                        ))
+                    }
+                };
+                Ok(s)
+            },
+            GetOutput::same_type(),
+        )
+    }
+
+    /// Get minimal value that could be hold by this dtype.
+    pub fn lower_bound(self) -> Expr {
+        self.map(
+            |s| {
+                let name = s.name();
+                use DataType::*;
+                let s = match s.dtype().to_physical() {
+                    #[cfg(feature = "dtype-i8")]
+                    Int8 => Series::new(name, &[i8::MIN]),
+                    #[cfg(feature = "dtype-i16")]
+                    Int16 => Series::new(name, &[i16::MIN]),
+                    Int32 => Series::new(name, &[i32::MIN]),
+                    Int64 => Series::new(name, &[i64::MIN]),
+                    #[cfg(feature = "dtype-u8")]
+                    UInt8 => Series::new(name, &[u8::MIN]),
+                    #[cfg(feature = "dtype-u16")]
+                    UInt16 => Series::new(name, &[u16::MIN]),
+                    UInt32 => Series::new(name, &[u32::MIN]),
+                    UInt64 => Series::new(name, &[u64::MIN]),
+                    Float32 => Series::new(name, &[f32::NEG_INFINITY]),
+                    Float64 => Series::new(name, &[f64::NEG_INFINITY]),
+                    dt => {
+                        return Err(PolarsError::ComputeError(
+                            format!("cannot determine lower bound of dtype {}", dt).into(),
+                        ))
+                    }
+                };
+                Ok(s)
+            },
+            GetOutput::same_type(),
         )
     }
 }

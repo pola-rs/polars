@@ -12,7 +12,11 @@ pub struct JoinExec {
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
     suffix: Option<String>,
+    // not used if asof not activated
+    #[allow(dead_code)]
     asof_by_left: Vec<String>,
+    // not used if asof not activated
+    #[allow(dead_code)]
     asof_by_right: Vec<String>,
 }
 

@@ -178,6 +178,43 @@ impl DataFrame {
     }
 
     /// Add a new column at index 0 that counts the rows.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///   let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
+    ///   assert_eq!(df1.shape(), (4, 1));
+    ///
+    ///   let df2: DataFrame = df1.with_row_count("Id")?;
+    ///   assert_eq!(df2.shape(), (4, 2));
+    ///   println!("{}", df2);
+    ///
+    ///   Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    ///  shape: (4, 2)
+    ///  +-----+----------+
+    ///  | Id  | Name     |
+    ///  | --- | ---      |
+    ///  | u32 | str      |
+    ///  +=====+==========+
+    ///  | 0   | James    |
+    ///  +-----+----------+
+    ///  | 1   | Mary     |
+    ///  +-----+----------+
+    ///  | 2   | John     |
+    ///  +-----+----------+
+    ///  | 3   | Patricia |
+    ///  +-----+----------+
+    /// ```
     pub fn with_row_count(&self, name: &str) -> Result<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         columns.push(
@@ -276,21 +313,88 @@ impl DataFrame {
     }
 
     /// Get a reference to the DataFrame columns.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;          // or "use polars::df"
+    /// use polars_core::prelude::*;  // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Name" => &["Adenine", "Cytosine", "Guanine", "Thymine"],
+    ///                             "Symbol" => &["A", "C", "G", "T"])?;
+    ///     let columns: &Vec<Series> = df.get_columns();
+    ///
+    ///     assert_eq!(columns[0].name(), "Name");
+    ///     assert_eq!(columns[1].name(), "Symbol");
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     #[inline]
     pub fn get_columns(&self) -> &Vec<Series> {
         &self.columns
     }
 
     /// Iterator over the columns as Series.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;  // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let s1: Series = Series::new("Name", &["Pythagoras' theorem", "Shannon entropy"]);
+    ///     let s2: Series = Series::new("Formula", &["a²+b²=c²", "H=-Σ[P(x)log|P(x)|]"]);
+    ///     let df: DataFrame = DataFrame::new(vec![s1.clone(), s2.clone()])?;
+    ///
+    ///     let mut iterator = df.iter();
+    ///     assert_eq!(iterator.next(), Some(&s1));
+    ///     assert_eq!(iterator.next(), Some(&s2));
+    ///     assert_eq!(iterator.next(), None);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn iter(&self) -> std::slice::Iter<'_, Series> {
         self.columns.iter()
     }
 
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Language" => &["Rust", "Python"],
+    ///                             "Designer" => &["Graydon Hoare", "Guido van Rossum"])?;
+    ///
+    ///     assert_eq!(df.get_column_names(), &["Language", "Designer"]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn get_column_names(&self) -> Vec<&str> {
         self.columns.iter().map(|s| s.name()).collect()
     }
 
     /// Set the column names.
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let mut df: DataFrame = df!("Mathematical set" => &["ℕ", "ℤ", "𝔻", "ℚ", "ℝ", "ℂ"])?;
+    ///     df.set_column_names(&["Set"])?;
+    ///
+    ///     assert_eq!(df.get_column_names(), &["Set"]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> Result<()> {
         if names.len() != self.columns.len() {
             return Err(PolarsError::ShapeMisMatch("the provided slice with column names has not the same size as the DataFrame's width".into()));
@@ -309,6 +413,22 @@ impl DataFrame {
     }
 
     /// Get the data types of the columns in the DataFrame.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
+    ///                                    "Fraction" => &[0.965, 0.035])?;
+    ///     
+    ///     assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn dtypes(&self) -> Vec<DataType> {
         self.columns.iter().map(|s| s.dtype().clone()).collect()
     }
@@ -331,6 +451,25 @@ impl DataFrame {
     }
 
     /// Get a reference to the schema fields of the DataFrame.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let earth: DataFrame = df!("Surface type" => &["Water", "Land"],
+    ///                                "Fraction" => &[0.708, 0.292])?;
+    ///     
+    ///     let f1: Field = Field::new("Surface type", DataType::Utf8);
+    ///     let f2: Field = Field::new("Fraction", DataType::Float64);
+    ///
+    ///     assert_eq!(earth.fields(), &[f1, f2]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn fields(&self) -> Vec<Field> {
         self.columns
             .iter()
@@ -386,6 +525,24 @@ impl DataFrame {
     }
 
     /// Check if DataFrame is empty
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = DataFrame::default();
+    ///     assert!(df1.is_empty());
+    ///
+    ///     let df2: DataFrame = df!("First name" => &["Forever"],
+    ///                              "Last name" => &["Alone"])?;
+    ///     assert!(!df2.is_empty());
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.columns.is_empty()
     }
@@ -437,6 +594,42 @@ impl DataFrame {
 
     /// Add multiple Series to a DataFrame
     /// The added Series are required to have the same length.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"])?;
+    ///     let s1: Series = Series::new("Proton", &[29, 47, 79]);
+    ///     let s2: Series = Series::new("Electron", &[29, 47, 79]);
+    ///
+    ///     let df2: DataFrame = df1.hstack(&[s1, s2])?;
+    ///     assert_eq!(df2.shape(), (3, 3));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (3, 3)
+    /// +---------+--------+----------+
+    /// | Element | Proton | Electron |
+    /// | ---     | ---    | ---      |
+    /// | str     | i32    | i32      |
+    /// +=========+========+==========+
+    /// | Copper  | 29     | 29       |
+    /// +---------+--------+----------+
+    /// | Silver  | 47     | 47       |
+    /// +---------+--------+----------+
+    /// | Gold    | 79     | 79       |
+    /// +---------+--------+----------+
+    /// ```
     pub fn hstack(&self, columns: &[Series]) -> Result<Self> {
         let mut new_cols = self.columns.clone();
         new_cols.extend_from_slice(columns);
@@ -444,6 +637,47 @@ impl DataFrame {
     }
 
     /// Concatenate a DataFrame to this DataFrame and return as newly allocated DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"],
+    ///                              "Melting Point (K)" => &[1357.77, 1234.93, 1337.33])?;
+    ///     let df2: DataFrame = df!("Element" => &["Platinum", "Palladium"],
+    ///                              "Melting Point(K)" => &[2041.4, 1828.05])?;
+    ///     
+    ///     let df3: DataFrame = df1.vstack(&df2)?;
+    ///     assert_eq!(df3.shape(), (5, 2));
+    ///     println!("{}", df3);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (5, 2)
+    /// +-----------+-------------------+
+    /// | Element   | Melting Point (K) |
+    /// | ---       | ---               |
+    /// | str       | f64               |
+    /// +===========+===================+
+    /// | Copper    | 1357.77           |
+    /// +-----------+-------------------+
+    /// | Silver    | 1234.93           |
+    /// +-----------+-------------------+
+    /// | Gold      | 1337.33           |
+    /// +-----------+-------------------+
+    /// | Platinum  | 2041.4            |
+    /// +-----------+-------------------+
+    /// | Palladium | 1828.05           |
+    /// +-----------+-------------------+
+    /// ```
     pub fn vstack(&self, columns: &DataFrame) -> Result<Self> {
         let mut df = self.clone();
         df.vstack_mut(columns)?;
@@ -451,6 +685,47 @@ impl DataFrame {
     }
 
     /// Concatenate a DataFrame to this DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let mut df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"],
+    ///                              "Melting Point (K)" => &[1357.77, 1234.93, 1337.33])?;
+    ///     let df2: DataFrame = df!("Element" => &["Platinum", "Palladium"],
+    ///                              "Melting Point(K)" => &[2041.4, 1828.05])?;
+    ///     
+    ///     df1.vstack_mut(&df2)?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///     println!("{}", df1);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (5, 2)
+    /// +-----------+-------------------+
+    /// | Element   | Melting Point (K) |
+    /// | ---       | ---               |
+    /// | str       | f64               |
+    /// +===========+===================+
+    /// | Copper    | 1357.77           |
+    /// +-----------+-------------------+
+    /// | Silver    | 1234.93           |
+    /// +-----------+-------------------+
+    /// | Gold      | 1337.33           |
+    /// +-----------+-------------------+
+    /// | Platinum  | 2041.4            |
+    /// +-----------+-------------------+
+    /// | Palladium | 1828.05           |
+    /// +-----------+-------------------+
+    /// ```
     pub fn vstack_mut(&mut self, df: &DataFrame) -> Result<&mut Self> {
         if self.width() != df.width() {
             return Err(PolarsError::ShapeMisMatch(
@@ -462,10 +737,10 @@ impl DataFrame {
             .iter_mut()
             .zip(df.columns.iter())
             .try_for_each(|(left, right)| {
-                if left.dtype() != right.dtype() {
-                    return Err(PolarsError::DataTypeMisMatch(
+                if left.dtype() != right.dtype() || left.name() != right.name() {
+                    return Err(PolarsError::SchemaMisMatch(
                         format!(
-                            "cannot vstack: data types don't match of {:?} {:?}",
+                            "cannot vstack: schemas don't match of {:?} {:?}",
                             left, right
                         )
                         .into(),
@@ -1379,6 +1654,43 @@ impl DataFrame {
     }
 
     /// Get the head of the DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let countries: DataFrame =
+    ///         df!("Rank by GDP (2021)" => &[1, 2, 3, 4, 5],
+    ///          "Continent" => &["North America", "Asia", "Asia", "Europe", "Europe"],
+    ///          "Country" => &["United States", "China", "Japan", "Germany", "United Kingdom"],
+    ///          "Capital" => &["Washington", "Beijing", "Tokyo", "Berlin", "London"])?;
+    ///     assert_eq!(countries.shape(), (5, 4));
+    ///
+    ///     println!("{}", countries.head(Some(3)));
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (3, 4)
+    /// +--------------------+---------------+---------------+------------+
+    /// | Rank by GDP (2021) | Continent     | Country       | Capital    |
+    /// | ---                | ---           | ---           | ---        |
+    /// | i32                | str           | str           | str        |
+    /// +====================+===============+===============+============+
+    /// | 1                  | North America | United States | Washington |
+    /// +--------------------+---------------+---------------+------------+
+    /// | 2                  | Asia          | China         | Beijing    |
+    /// +--------------------+---------------+---------------+------------+
+    /// | 3                  | Asia          | Japan         | Tokyo      |
+    /// +--------------------+---------------+---------------+------------+
+    /// ```
     pub fn head(&self, length: Option<usize>) -> Self {
         let col = self
             .columns
@@ -1389,6 +1701,40 @@ impl DataFrame {
     }
 
     /// Get the tail of the DataFrame
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let countries: DataFrame =
+    ///         df!("Rank (2021)" => &[105, 106, 107, 108, 109],
+    ///             "Apple Price (€/kg)" => &[0.76, 0.72, 0.70, 0.63],
+    ///             "Country" => &["Kosovo", "Moldova", "North Macedonia", "Syria", "Turkey"])?;
+    ///     assert_eq!(countries.shape(), (5, 3));
+    ///
+    ///     println!("{}", countries.tail(Some(2)));
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (2, 3)
+    /// +-------------+--------------------+---------+
+    /// | Rank (2021) | Apple Price (€/kg) | Country |
+    /// | ---         | ---                | ---     |
+    /// | i32         | f64                | str     |
+    /// +=============+====================+=========+
+    /// | 108         | 0.63               | Syria   |
+    /// +-------------+--------------------+---------+
+    /// | 109         | 0.63               | Turkey  |
+    /// +-------------+--------------------+---------+
+    /// ```
     pub fn tail(&self, length: Option<usize>) -> Self {
         let col = self
             .columns
@@ -1447,35 +1793,227 @@ impl DataFrame {
     }
 
     /// Aggregate the columns to their maximum values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.max();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | i32     | i32     |
+    /// +=========+=========+
+    /// | 6       | 5       |
+    /// +---------+---------+
+    /// ```
     pub fn max(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.max_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their standard deviation values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.std();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +-------------------+--------------------+
+    /// | Die n°1           | Die n°2            |
+    /// | ---               | ---                |
+    /// | f64               | f64                |
+    /// +===================+====================+
+    /// | 2.280350850198276 | 1.0954451150103321 |
+    /// +-------------------+--------------------+
+    /// ```
     pub fn std(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.std_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
     /// Aggregate the columns to their variation values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.var();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | f64     | f64     |
+    /// +=========+=========+
+    /// | 5.2     | 1.2     |
+    /// +---------+---------+
+    /// ```
     pub fn var(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.var_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their minimum values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.min();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | i32     | i32     |
+    /// +=========+=========+
+    /// | 1       | 2       |
+    /// +---------+---------+
+    /// ```
     pub fn min(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.min_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their sum values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.sum();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | i32     | i32     |
+    /// +=========+=========+
+    /// | 16      | 16      |
+    /// +---------+---------+
+    /// ```
     pub fn sum(&self) -> Self {
         let columns = self.columns.par_iter().map(|s| s.sum_as_series()).collect();
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their mean values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.mean();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | f64     | f64     |
+    /// +=========+=========+
+    /// | 3.2     | 3.2     |
+    /// +---------+---------+
+    /// ```
     pub fn mean(&self) -> Self {
         let columns = self
             .columns
@@ -1486,6 +2024,38 @@ impl DataFrame {
     }
 
     /// Aggregate the columns to their median values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;
+    /// use polars_core::prelude::*;
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
+    ///     assert_eq!(df1.shape(), (5, 2));
+    ///
+    ///     let df2: DataFrame = df1.median();
+    ///     assert_eq!(df2.shape(), (1, 2));
+    ///     println!("{}", df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (1, 2)
+    /// +---------+---------+
+    /// | Die n°1 | Die n°2 |
+    /// | ---     | ---     |
+    /// | i32     | i32     |
+    /// +=========+=========+
+    /// | 3       | 3       |
+    /// +---------+---------+
+    /// ```
     pub fn median(&self) -> Self {
         let columns = self
             .columns
@@ -1605,7 +2175,7 @@ impl DataFrame {
                 // make sure that we do not divide by zero
                 // by replacing with None
                 let value_length = value_length
-                    .set(&value_length.eq(0), None)?
+                    .set(&value_length.equal(0), None)?
                     .into_series()
                     .cast(&DataType::Float64)?;
 
@@ -1859,7 +2429,7 @@ impl std::convert::TryFrom<Vec<RecordBatch>> for DataFrame {
         let schema = first_batch.schema();
         for batch in batch_iter {
             if batch.schema() != schema {
-                return Err(PolarsError::DataTypeMisMatch(
+                return Err(PolarsError::SchemaMisMatch(
                     "All record batches must have the same schema".into(),
                 ));
             }
@@ -1957,7 +2527,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(df.column("days").unwrap().eq(1).sum(), Some(1));
+        assert_eq!(df.column("days").unwrap().equal(1).sum(), Some(1));
     }
 
     #[test]
@@ -1966,7 +2536,7 @@ mod test {
         let df = create_frame();
         println!("{}", df.column("days").unwrap());
         println!("{:?}", df);
-        println!("{:?}", df.filter(&df.column("days").unwrap().eq(0)))
+        println!("{:?}", df.filter(&df.column("days").unwrap().equal(0)))
     }
 
     #[test]
@@ -1979,7 +2549,7 @@ mod test {
         println!("{}", df.column(col_name).unwrap());
         println!("{:?}", df);
 
-        df = df.filter(&df.column(col_name).unwrap().eq("")).unwrap();
+        df = df.filter(&df.column(col_name).unwrap().equal("")).unwrap();
         assert_eq!(df.column(col_name).unwrap().n_chunks(), 1);
         println!("{:?}", df);
     }

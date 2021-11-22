@@ -80,7 +80,7 @@ use std::sync::Arc;
 /// # use polars_core::prelude::*;
 /// use itertools::Itertools;
 /// let s = Series::new("dollars", &[1, 2, 3]);
-/// let mask = s.eq(1);
+/// let mask = s.equal(1);
 /// let valid = [true, false, false].iter();
 /// assert!(mask
 ///     .into_iter()
@@ -323,12 +323,13 @@ impl Series {
     ///
     /// * Date -> Int32
     /// * Datetime-> Int64
+    /// * Time -> Int64
     ///
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
         match self.dtype() {
             Date => Cow::Owned(self.cast(&DataType::Int32).unwrap()),
-            Datetime => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
+            Datetime | Time => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
             _ => Cow::Borrowed(self),
         }
     }
@@ -444,7 +445,7 @@ impl Series {
                 .into_series();
             return Ok(s);
         }
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("{:?} is not a floating point datatype", self.dtype()).into(),
         ))
     }
@@ -461,7 +462,7 @@ impl Series {
             let s = ca.apply(|val| val.floor()).into_series();
             return Ok(s);
         }
-        Err(PolarsError::DataTypeMisMatch(
+        Err(PolarsError::SchemaMisMatch(
             format!("{:?} is not a floating point datatype", self.dtype()).into(),
         ))
     }
@@ -656,6 +657,31 @@ impl Series {
             DataType::Int64 => self.i64().unwrap().clone().into_date().into_series(),
             _ => unreachable!(),
         }
+    }
+
+    #[cfg(feature = "abs")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
+    /// convert numerical values to their absolute value
+    pub fn abs(&self) -> Result<Series> {
+        let a = self.to_physical_repr();
+        use DataType::*;
+        let out = match a.dtype() {
+            #[cfg(feature = "dtype-i8")]
+            Int8 => a.i8().unwrap().abs().into_series(),
+            #[cfg(feature = "dtype-i16")]
+            Int16 => a.i16().unwrap().abs().into_series(),
+            Int32 => a.i32().unwrap().abs().into_series(),
+            Int64 => a.i64().unwrap().abs().into_series(),
+            UInt8 | UInt16 | UInt32 | UInt64 => self.clone(),
+            Float32 => a.f32().unwrap().abs().into_series(),
+            Float64 => a.f64().unwrap().abs().into_series(),
+            dt => {
+                return Err(PolarsError::InvalidOperation(
+                    format!("abs not supportedd for series of type {:?}", dt).into(),
+                ))
+            }
+        };
+        Ok(out)
     }
 }
 

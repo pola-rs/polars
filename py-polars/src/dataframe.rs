@@ -174,17 +174,26 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    pub fn read_parquet(py_f: PyObject, stop_after_n_rows: Option<usize>) -> PyResult<Self> {
+    pub fn read_parquet(
+        py_f: PyObject,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        stop_after_n_rows: Option<usize>,
+    ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = f.as_buffer();
                 ParquetReader::new(buf)
+                    .with_projection(projection)
+                    .with_columns(columns)
                     .with_stop_after_n_rows(stop_after_n_rows)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f)
+                .with_projection(projection)
+                .with_columns(columns)
                 .with_stop_after_n_rows(stop_after_n_rows)
                 .finish(),
         };
@@ -194,9 +203,19 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "ipc")]
-    pub fn read_ipc(py_f: PyObject) -> PyResult<Self> {
+    pub fn read_ipc(
+        py_f: PyObject,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        stop_after_n_rows: Option<usize>,
+    ) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
-        let df = IpcReader::new(file).finish().map_err(PyPolarsEr::from)?;
+        let df = IpcReader::new(file)
+            .with_projection(projection)
+            .with_columns(columns)
+            .with_stop_after_n_rows(stop_after_n_rows)
+            .finish()
+            .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -256,9 +275,17 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn to_ipc(&self, py_f: PyObject) -> PyResult<()> {
+    pub fn to_ipc(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
+        let compression = match compression {
+            "uncompressed" => None,
+            "lz4" => Some(IpcCompression::LZ4),
+            "zstd" => Some(IpcCompression::ZSTD),
+            s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
+        };
+
         IpcWriter::new(&mut buf)
+            .with_compression(compression)
             .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
@@ -313,14 +340,14 @@ impl PyDataFrame {
         let buf = get_file_like(py_f, true)?;
 
         let compression = match compression {
-            "uncompressed" => Compression::Uncompressed,
-            "snappy" => Compression::Snappy,
-            "gzip" => Compression::Gzip,
-            "lzo" => Compression::Lzo,
-            "brotli" => Compression::Brotli,
-            "lz4" => Compression::Lz4,
-            "zstd" => Compression::Zstd,
-            s => panic!("compression {} not supported", s),
+            "uncompressed" => ParquetCompression::Uncompressed,
+            "snappy" => ParquetCompression::Snappy,
+            "gzip" => ParquetCompression::Gzip,
+            "lzo" => ParquetCompression::Lzo,
+            "brotli" => ParquetCompression::Brotli,
+            "lz4" => ParquetCompression::Lz4,
+            "zstd" => ParquetCompression::Zstd,
+            s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
         };
 
         ParquetWriter::new(buf)

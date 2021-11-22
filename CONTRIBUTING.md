@@ -66,7 +66,8 @@ You have to follow these steps:
 - install rust nightly via [rustup](https://www.rust-lang.org/tools/install)
 - run `$ rustup override set nightly` from the root of the repo.
 - from [./py-polars](./py-polars) run `$ pip3 install -r build.requirements.txt`
-- from [./py-polars](./py-polars) run `$ make build-and-test pre-commit`
+- **tests:** from [./py-polars](./py-polars) run `$ make test`
+- **formatting + linting:** from [./py-polars](./py-polars) run `$ make pre-commit`
 
 The last step installs a (slow) development build in your current environment and runs pytest.
 

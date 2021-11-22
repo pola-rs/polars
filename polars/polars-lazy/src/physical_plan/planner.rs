@@ -1,5 +1,8 @@
 use super::expressions as phys_expr;
 use crate::logical_plan::Context;
+#[cfg(feature = "ipc")]
+use crate::physical_plan::executors::scan::IpcExec;
+use crate::physical_plan::executors::union::UnionExec;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
 use crate::{
@@ -10,7 +13,7 @@ use ahash::RandomState;
 use itertools::Itertools;
 use polars_core::prelude::*;
 use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_io::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -94,6 +97,13 @@ impl DefaultPlanner {
         use ALogicalPlan::*;
         let logical_plan = lp_arena.take(root);
         match logical_plan {
+            Union { inputs } => {
+                let inputs = inputs
+                    .into_iter()
+                    .map(|node| self.create_initial_physical_plan(node, lp_arena, expr_arena))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Box::new(UnionExec { inputs }))
+            }
             Melt {
                 input,
                 id_vars,
@@ -136,6 +146,28 @@ impl DefaultPlanner {
                     options,
                     predicate,
                     aggregate,
+                }))
+            }
+            #[cfg(feature = "ipc")]
+            IpcScan {
+                path,
+                schema,
+                output_schema: _,
+                predicate,
+                aggregate,
+                options,
+            } => {
+                let predicate = predicate
+                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+
+                let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
+                Ok(Box::new(IpcExec {
+                    path,
+                    schema,
+                    predicate,
+                    aggregate,
+                    options,
                 }))
             }
             #[cfg(feature = "parquet")]
@@ -508,7 +540,7 @@ impl DefaultPlanner {
             }
             SortBy { expr, by, reverse } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
-                let phys_by = self.create_physical_expr(by, ctxt, expr_arena)?;
+                let phys_by = self.create_physical_expressions(&by, ctxt, expr_arena)?;
                 Ok(Arc::new(SortByExpr::new(
                     phys_expr,
                     phys_by,

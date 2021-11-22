@@ -1,5 +1,5 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_core::datatypes::PlHashMap;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
@@ -8,13 +8,15 @@ use polars_core::toggle_string_cache;
 use std::sync::Arc;
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use crate::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
+#[cfg(feature = "ipc")]
+use crate::logical_plan::IpcOptions;
 use crate::physical_plan::state::ExecutionState;
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
@@ -147,7 +149,7 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    pub fn finish(self) -> LazyFrame {
+    pub fn finish(self) -> Result<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             self.path,
             self.delimiter,
@@ -163,11 +165,11 @@ impl<'a> LazyCsvReader<'a> {
             self.quote_char,
             self.null_values,
             self.infer_schema_length,
-        )
+        )?
         .build()
         .into();
         lf.opt_state.agg_scan_projection = true;
-        lf
+        Ok(lf)
     }
 }
 
@@ -265,12 +267,29 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg(feature = "parquet")]
-    pub fn new_from_parquet(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Self {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, stop_after_n_rows, cache)
+    pub fn scan_parquet(
+        path: String,
+        stop_after_n_rows: Option<usize>,
+        cache: bool,
+    ) -> Result<Self> {
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, stop_after_n_rows, cache)?
             .build()
             .into();
         lf.opt_state.agg_scan_projection = true;
-        lf
+        Ok(lf)
+    }
+
+    /// Create a LazyFrame directly from a ipc scan.
+    #[cfg(feature = "ipc")]
+    pub fn scan_ipc(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Result<Self> {
+        let options = IpcOptions {
+            stop_after_n_rows,
+            cache,
+            with_columns: None,
+        };
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path, options)?.build().into();
+        lf.opt_state.agg_scan_projection = true;
+        Ok(lf)
     }
 
     /// Get a dot language representation of the LogicalPlan.

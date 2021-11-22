@@ -6,7 +6,7 @@ from textwrap import dedent
 from types import TracebackType
 from typing import Dict, Iterable, Optional, Type
 
-import polars as pl
+from polars.datatypes import Object, dtype_to_ffiname
 
 
 class Tag:
@@ -39,36 +39,8 @@ class Tag:
         self.elements.append(f"</{self.tag}>")
 
 
-def tag(inner: str, tag: str) -> str:
-    return f"<{tag}>{inner}</{tag}>"
-
-
-def th(inner: str) -> str:
-    return tag(inner, "th")
-
-
-def tr(inner: str) -> str:
-    return tag(inner, "tr")
-
-
-def thead(inner: str) -> str:
-    return tag(inner, "thead")
-
-
-def tbody(inner: str) -> str:
-    return tag(inner, "tbody")
-
-
-def table(inner: str) -> str:
-    return tag(inner, "table")
-
-
-def div(inner: str) -> str:
-    return tag(inner, "div")
-
-
 class HTMLFormatter:
-    def __init__(self, df: "pl.DataFrame", max_cols: int = 75, max_rows: int = 40):
+    def __init__(self, df: "DataFrame", max_cols: int = 75, max_rows: int = 40):  # type: ignore  # noqa
         self.df = df
         self.elements: tp.List[str] = []
         self.max_cols = max_cols
@@ -103,7 +75,7 @@ class HTMLFormatter:
                         self.elements.append(col)
             with Tag(self.elements, "tr"):
                 for dtype in self.df.dtypes:
-                    ffi_name = pl.DTYPE_TO_FFINAME[dtype]
+                    ffi_name = dtype_to_ffiname(dtype)
                     with Tag(self.elements, "td"):
                         self.elements.append(ffi_name)
 
@@ -122,7 +94,7 @@ class HTMLFormatter:
                                 self.elements.append("...")
                             else:
                                 series = self.df[:, c]
-                                if series.dtype == pl.Object:
+                                if series.dtype == Object:
                                     self.elements.append(f"{series[r]}")
                                 else:
                                     self.elements.append(f"{series._s.get_fmt(r)}")

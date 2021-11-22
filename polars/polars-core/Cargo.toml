@@ -76,6 +76,7 @@ rank = []
 diff = []
 moment = []
 diagonal_concat = []
+abs = []
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
@@ -124,13 +125,14 @@ docs-selection = [
   "rank",
   "list",
   "diagonal_concat",
+  "abs",
 ]
 
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "6e9ea352b470556e08600274ba2add6106cf6e26", default-features = false, features = ["compute"] }
-# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, features = ["compute"], branch = "dev" }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "70562fac652a0dab08b4b7bf3d86d2d808ea98e6", default-features = false, features = ["compute"] }
+# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, features = ["compute"], branch = "null" }
 # arrow = { package = "arrow2", version = "0.7", default-features = false, features = ["compute"] }
 chrono = { version = "0.4", optional = true }
 comfy-table = { version = "4.0", optional = true }
@@ -143,8 +145,8 @@ num = "^0.4"
 num_cpus = "1.1"
 polars-arrow = { version = "0.17.0", path = "../polars-arrow" }
 prettytable-rs = { version = "0.8.0", optional = true }
-rand = { version = "0.7", optional = true }
-rand_distr = { version = "0.3", optional = true }
+rand = { version = "0.8", optional = true }
+rand_distr = { version = "0.4", optional = true }
 rayon = "1.5"
 regex = { version = "1.4", optional = true }
 # activate if you want serde support for Series and DataFrames

@@ -1,7 +1,7 @@
 import polars as pl
 
 
-def test_date_datetime():
+def test_date_datetime() -> None:
     df = pl.DataFrame(
         {
             "year": [2001, 2002, 2003],

@@ -27,9 +27,9 @@ try:
 except ImportError:
     _PYARROW_AVAILABLE = False
 
-import polars as pl
-
-from .convert import from_arrow
+from polars.convert import from_arrow
+from polars.datatypes import DataType
+from polars.internals import DataFrame, LazyFrame
 
 try:
     from polars.polars import ipc_schema as _ipc_schema
@@ -50,17 +50,6 @@ try:
     _WITH_FSSPEC = True
 except ImportError:
     _WITH_FSSPEC = False
-
-__all__ = [
-    "read_csv",
-    "read_parquet",
-    "read_json",
-    "read_sql",
-    "read_ipc",
-    "scan_csv",
-    "scan_parquet",
-    "read_ipc_schema",
-]
 
 
 def _process_http_file(path: str) -> BytesIO:
@@ -133,7 +122,7 @@ def _prepare_file_arg(
     return managed_file(file)
 
 
-def update_columns(df: "pl.DataFrame", new_columns: List[str]) -> "pl.DataFrame":
+def update_columns(df: DataFrame, new_columns: List[str]) -> DataFrame:
     if df.width > len(new_columns):
         cols = df.columns
         for i, name in enumerate(new_columns):
@@ -144,7 +133,7 @@ def update_columns(df: "pl.DataFrame", new_columns: List[str]) -> "pl.DataFrame"
 
 
 def read_csv(
-    file: Union[str, TextIO, Path, BinaryIO, bytes],
+    file: Union[str, TextIO, BytesIO, Path, BinaryIO, bytes],
     infer_schema_length: Optional[int] = 100,
     batch_size: int = 8192,
     has_headers: bool = True,
@@ -157,9 +146,7 @@ def read_csv(
     rechunk: bool = True,
     encoding: str = "utf8",
     n_threads: Optional[int] = None,
-    dtype: Optional[
-        Union[Dict[str, Type["pl.DataType"]], List[Type["pl.DataType"]]]
-    ] = None,
+    dtype: Optional[Union[Dict[str, Type[DataType]], List[Type[DataType]]]] = None,
     new_columns: Optional[List[str]] = None,
     use_pyarrow: bool = False,
     low_memory: bool = False,
@@ -168,7 +155,7 @@ def read_csv(
     storage_options: Optional[Dict] = None,
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
     parse_dates: bool = True,
-) -> "pl.DataFrame":
+) -> DataFrame:
     """
     Read into a DataFrame from a csv file.
 
@@ -197,11 +184,11 @@ def read_csv(
     skip_rows
         Start reading after `skip_rows`.
     projection
-        Indexes of columns to select. Note that column indexes count from zero.
+        Indices of columns to select. Note that column indices start at zero.
     sep
         Delimiter/ value separator.
     columns
-        Columns to project/ select.
+        Columns to select.
     rechunk
         Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
     encoding
@@ -367,7 +354,7 @@ def read_csv(
             }
 
     with _prepare_file_arg(file, **storage_options) as data:
-        df = pl.DataFrame.read_csv(
+        df = DataFrame.read_csv(
             file=data,
             infer_schema_length=infer_schema_length,
             batch_size=batch_size,
@@ -403,12 +390,12 @@ def scan_csv(
     skip_rows: int = 0,
     stop_after_n_rows: Optional[int] = None,
     cache: bool = True,
-    dtype: Optional[Dict[str, Type["pl.DataType"]]] = None,
+    dtype: Optional[Dict[str, Type[DataType]]] = None,
     low_memory: bool = False,
     comment_char: Optional[str] = None,
     quote_char: Optional[str] = r'"',
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
-) -> "pl.LazyFrame":
+) -> LazyFrame:
     """
     Lazily read from a csv file.
 
@@ -419,6 +406,8 @@ def scan_csv(
     ----------
     file
         Path to a file.
+    infer_schema_length
+        The number of rows Polars will read to try to determine the schema.
     has_headers
         If the CSV file has headers or not.
     ignore_errors
@@ -450,7 +439,7 @@ def scan_csv(
     """
     if isinstance(file, Path):
         file = str(file)
-    return pl.LazyFrame.scan_csv(
+    return LazyFrame.scan_csv(
         file=file,
         has_headers=has_headers,
         sep=sep,
@@ -467,11 +456,38 @@ def scan_csv(
     )
 
 
+def scan_ipc(
+    file: Union[str, Path],
+    stop_after_n_rows: Optional[int] = None,
+    cache: bool = True,
+) -> LazyFrame:
+    """
+    Lazily read from an IPC file.
+
+    This allows the query optimizer to push down predicates and projections to the scan level,
+    thereby potentially reducing memory overhead.
+
+    Parameters
+    ----------
+    file
+        Path to a file.
+    stop_after_n_rows
+        After n rows are read from the parquet, it stops reading.
+    cache
+        Cache the result after reading.
+    """
+    if isinstance(file, Path):
+        file = str(file)
+    return LazyFrame.scan_ipc(
+        file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
+    )
+
+
 def scan_parquet(
     file: Union[str, Path],
     stop_after_n_rows: Optional[int] = None,
     cache: bool = True,
-) -> "pl.LazyFrame":
+) -> LazyFrame:
     """
     Lazily read from a parquet file.
 
@@ -489,14 +505,14 @@ def scan_parquet(
     """
     if isinstance(file, Path):
         file = str(file)
-    return pl.LazyFrame.scan_parquet(
+    return LazyFrame.scan_parquet(
         file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
     )
 
 
 def read_ipc_schema(
     file: Union[str, BinaryIO, Path, bytes]
-) -> Dict[str, Type["pl.DataType"]]:
+) -> Dict[str, Type[DataType]]:
     """
     Get a schema of the IPC file without reading data.
 
@@ -514,12 +530,14 @@ def read_ipc_schema(
 
 
 def read_ipc(
-    file: Union[str, BinaryIO, Path, bytes],
+    file: Union[str, BinaryIO, BytesIO, Path, bytes],
+    columns: Optional[List[str]] = None,
+    projection: Optional[List[int]] = None,
+    stop_after_n_rows: Optional[int] = None,
     use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
-    columns: Optional[List[str]] = None,
     storage_options: Optional[Dict] = None,
-) -> "pl.DataFrame":
+) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
 
@@ -528,14 +546,17 @@ def read_ipc(
     file
         Path to a file or a file like object.
         If ``fsspec`` is installed, it will be used to open remote files
+    columns
+        Columns to select.
+    projection
+        Indices of columns to select. Note that column indices start at zero.
+    stop_after_n_rows
+        Only read specified number of rows of the dataset. After `n` stops reading.
     use_pyarrow
         Use pyarrow or the native rust reader.
     memory_map
         Memory map underlying file. This will likely increase performance.
         Only used when 'use_pyarrow=True'
-    columns
-        Columns to project/ select.
-        Only valid when 'use_pyarrow=True'
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
 
@@ -543,6 +564,12 @@ def read_ipc(
     -------
     DataFrame
     """
+    if use_pyarrow:
+        if stop_after_n_rows:
+            raise ValueError(
+                "'stop_after_n_rows' cannot be used with 'use_pyarrow=True'."
+            )
+
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
         if use_pyarrow:
@@ -550,20 +577,35 @@ def read_ipc(
                 raise ImportError(
                     "'pyarrow' is required when using 'read_ipc(..., use_pyarrow=True)'."
                 )
-            tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
-            return pl.DataFrame._from_arrow(tbl)
-        return pl.DataFrame.read_ipc(data)
+
+            # pyarrow accepts column names or column indices.
+            tbl = pa.feather.read_table(
+                data, memory_map=memory_map, columns=columns if columns else projection
+            )
+            return DataFrame._from_arrow(tbl)
+
+        if columns:
+            # Unset projection if column names where specified.
+            projection = None
+
+        return DataFrame.read_ipc(
+            data,
+            columns=columns,
+            projection=projection,
+            stop_after_n_rows=stop_after_n_rows,
+        )
 
 
 def read_parquet(
-    source: Union[str, List[str], Path, BinaryIO, bytes],
-    use_pyarrow: bool = _PYARROW_AVAILABLE,
-    stop_after_n_rows: Optional[int] = None,
-    memory_map: bool = True,
+    source: Union[str, List[str], Path, BinaryIO, BytesIO, bytes],
     columns: Optional[List[str]] = None,
+    projection: Optional[List[int]] = None,
+    stop_after_n_rows: Optional[int] = None,
+    use_pyarrow: bool = _PYARROW_AVAILABLE,
+    memory_map: bool = True,
     storage_options: Optional[Dict] = None,
     **kwargs: Any,
-) -> "pl.DataFrame":
+) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
 
@@ -573,17 +615,18 @@ def read_parquet(
         Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
         as partition aware scan.
         If ``fsspec`` is installed, it will be used to open remote files
-    use_pyarrow
-        Use pyarrow instead of the rust native parquet reader. The pyarrow reader is more stable.
+    columns
+        Columns to select.
+    projection
+        Indices of columns to select. Note that column indices start at zero.
     stop_after_n_rows
         After n rows are read from the parquet, it stops reading.
         Only valid when 'use_pyarrow=False'
+    use_pyarrow
+        Use pyarrow instead of the rust native parquet reader. The pyarrow reader is more stable.
     memory_map
         Memory map underlying file. This will likely increase performance.
         Only used when 'use_pyarrow=True'
-    columns
-        Columns to project/ select.
-        Only valid when 'use_pyarrow=True'
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
     **kwargs
@@ -598,9 +641,7 @@ def read_parquet(
             raise ValueError(
                 "'stop_after_n_rows' cannot be used with 'use_pyarrow=True'."
             )
-    else:
-        if columns:
-            raise ValueError("'columns' cannot be used with 'use_pyarrow=False'.")
+
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
         if use_pyarrow:
@@ -608,17 +649,30 @@ def read_parquet(
                 raise ImportError(
                     "'pyarrow' is required when using 'read_parquet(..., use_pyarrow=True)'."
                 )
+
+            # pyarrow accepts column names or column indices.
             return from_arrow(  # type: ignore[return-value]
                 pa.parquet.read_table(
-                    source_prep, memory_map=memory_map, columns=columns, **kwargs
+                    source_prep,
+                    memory_map=memory_map,
+                    columns=columns if columns else projection,
+                    **kwargs,
                 )
             )
-        return pl.DataFrame.read_parquet(
-            source_prep, stop_after_n_rows=stop_after_n_rows
+
+        if columns:
+            # Unset projection if column names where specified.
+            projection = None
+
+        return DataFrame.read_parquet(
+            source_prep,
+            columns=columns,
+            projection=projection,
+            stop_after_n_rows=stop_after_n_rows,
         )
 
 
-def read_json(source: Union[str, BytesIO]) -> "pl.DataFrame":
+def read_json(source: Union[str, BytesIO]) -> DataFrame:
     """
     Read into a DataFrame from JSON format.
 
@@ -627,7 +681,7 @@ def read_json(source: Union[str, BytesIO]) -> "pl.DataFrame":
     source
         Path to a file or a file like object.
     """
-    return pl.DataFrame.read_json(source)
+    return DataFrame.read_json(source)
 
 
 def read_sql(
@@ -636,7 +690,7 @@ def read_sql(
     partition_on: Optional[str] = None,
     partition_range: Optional[Tuple[int, int]] = None,
     partition_num: Optional[int] = None,
-) -> "pl.DataFrame":
+) -> DataFrame:
     """
     Read a SQL query into a DataFrame
     Make sure to install connextorx>=0.2
@@ -704,7 +758,7 @@ def read_sql(
             partition_range=partition_range,
             partition_num=partition_num,
         )
-        return pl.from_arrow(tbl)  # type: ignore[return-value]
+        return from_arrow(tbl)  # type: ignore[return-value]
     else:
         raise ImportError(
             "connectorx is not installed." "Please run pip install connectorx>=0.2.0a3"

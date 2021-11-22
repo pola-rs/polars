@@ -33,7 +33,7 @@
 //!                     .finish();
 //!
 //! // scan a parquet file lazily
-//! let lf: LazyFrame = LazyFrame::new_from_parquet("some_path".into(), None, true);
+//! let lf: LazyFrame = LazyFrame::scan_parquet("some_path".into(), None, true);
 //!
 //! # Ok(())
 //! # }

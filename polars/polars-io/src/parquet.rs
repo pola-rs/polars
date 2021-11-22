@@ -35,6 +35,8 @@ pub struct ParquetReader<R: Read + Seek> {
     reader: R,
     rechunk: bool,
     stop_after_n_rows: Option<usize>,
+    columns: Option<Vec<String>>,
+    projection: Option<Vec<usize>>,
 }
 
 impl<R> ParquetReader<R>
@@ -75,6 +77,19 @@ where
         self
     }
 
+    /// Columns to select/ project
+    pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
+        self.columns = columns;
+        self
+    }
+
+    /// Set the reader's column projection. This counts from 0, meaning that
+    /// `vec![0, 4]` would select the 1st and 5th column.
+    pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
+        self.projection = projection;
+        self
+    }
+
     pub fn schema(mut self) -> Result<Schema> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
@@ -102,6 +117,8 @@ where
             reader,
             rechunk: false,
             stop_after_n_rows: None,
+            columns: None,
+            projection: None,
         }
     }
 
@@ -112,10 +129,22 @@ where
 
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
+        let metadata = read::read_metadata(&mut self.reader)?;
+        let schema = read::schema::get_schema(&metadata)?;
+
+        if let Some(cols) = self.columns {
+            let mut prj = Vec::with_capacity(cols.len());
+            for col in cols.iter() {
+                let i = schema.index_of(col)?;
+                prj.push(i);
+            }
+
+            self.projection = Some(prj);
+        }
 
         let reader = read::RecordReader::try_new(
             &mut self.reader,
-            None,
+            self.projection,
             self.stop_after_n_rows,
             None,
             None,
@@ -162,7 +191,7 @@ pub struct ParquetWriter<W> {
     compression: write::Compression,
 }
 
-pub use write::Compression;
+pub use write::Compression as ParquetCompression;
 
 impl<W> ParquetWriter<W>
 where
@@ -256,6 +285,7 @@ mod test {
     use crate::prelude::*;
     use polars_core::{df, prelude::*};
     use std::fs::File;
+    use std::io::Cursor;
 
     #[test]
     fn test_parquet() {
@@ -288,5 +318,43 @@ mod test {
         let read = ParquetReader::new(f).finish()?;
         assert!(read.frame_equal_missing(&df));
         Ok(())
+    }
+
+    #[test]
+    fn test_read_parquet_with_projection() {
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+
+        ParquetWriter::new(&mut buf)
+            .finish(&df)
+            .expect("parquet writer");
+        buf.set_position(0);
+
+        let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let df_read = ParquetReader::new(buf)
+            .with_projection(Some(vec![1, 2]))
+            .finish()
+            .unwrap();
+        assert_eq!(df_read.shape(), (3, 2));
+        df_read.frame_equal(&expected);
+    }
+
+    #[test]
+    fn test_read_parquet_with_columns() {
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+
+        ParquetWriter::new(&mut buf)
+            .finish(&df)
+            .expect("parquet writer");
+        buf.set_position(0);
+
+        let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let df_read = ParquetReader::new(buf)
+            .with_columns(Some(vec!["c".to_string(), "b".to_string()]))
+            .finish()
+            .unwrap();
+        assert_eq!(df_read.shape(), (3, 2));
+        df_read.frame_equal(&expected);
     }
 }

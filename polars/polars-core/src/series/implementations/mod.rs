@@ -353,7 +353,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Int8) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int8Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into i8",
                             self.name(),
@@ -369,7 +369,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Int16) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int16Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into i16",
                             self.name(),
@@ -384,7 +384,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Int32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int32Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into i32",
                             self.name(),
@@ -399,7 +399,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Int64) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Int64Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into i64",
                             self.name(),
@@ -414,7 +414,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Float32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Float32Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into f32",
                             self.name(),
@@ -429,7 +429,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::Float64) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const Float64Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into f64",
                             self.name(),
@@ -444,7 +444,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::UInt8) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const UInt8Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into u8",
                             self.name(),
@@ -459,7 +459,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::UInt16) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const UInt16Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into u16",
                             self.name(),
@@ -474,7 +474,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::UInt32) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const UInt32Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into u32",
                             self.name(),
@@ -489,7 +489,7 @@ macro_rules! impl_dyn_series {
                 if matches!(self.0.dtype(), DataType::UInt64) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const UInt64Chunked)) }
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into u64",
                             self.name(),
@@ -514,7 +514,7 @@ macro_rules! impl_dyn_series {
                     self.0.append(other.as_ref().as_ref());
                     Ok(())
                 } else {
-                    Err(PolarsError::DataTypeMisMatch(
+                    Err(PolarsError::SchemaMisMatch(
                         "cannot append Series; data types don't match".into(),
                     ))
                 }

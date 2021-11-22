@@ -358,6 +358,36 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 builder.from_iter(iter);
                 Ok(builder.finish().into())
             }
+            #[cfg(not(feature = "dtype-u8"))]
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
+                panic!("activate dtype-u8 to read binary data into polars List<u8>")
+            }
+            #[cfg(feature = "dtype-u8")]
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
+                let chunks = chunks
+                    .iter()
+                    .map(|arr| {
+                        let arr = cast(&**arr, &ArrowDataType::LargeBinary).unwrap();
+
+                        let arr = arr.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+                        let values = arr.values().clone();
+                        let offsets = arr.offsets().clone();
+                        let validity = arr.validity().cloned();
+
+                        let values = Arc::new(PrimitiveArray::from_data(
+                            ArrowDataType::UInt8,
+                            values,
+                            None,
+                        ));
+
+                        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt8);
+                        Arc::new(ListArray::<i64>::from_data(
+                            dtype, offsets, values, validity,
+                        )) as ArrayRef
+                    })
+                    .collect();
+                Ok(ListChunked::new_from_chunks(name, chunks).into())
+            }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?} type", dt).into(),
             )),
@@ -437,5 +467,20 @@ impl IntoSeries for Series {
 
     fn into_series(self) -> Series {
         self
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    #[cfg(feature = "dtype-u8")]
+    fn test_binary_to_list() {
+        let iter = std::iter::repeat(b"hello").take(2).map(Some);
+        let a = Arc::new(iter.collect::<BinaryArray<i32>>()) as ArrayRef;
+
+        let s = Series::try_from(("", a)).unwrap();
+        assert_eq!(s.dtype(), &DataType::List(Box::new(DataType::UInt8)));
     }
 }
