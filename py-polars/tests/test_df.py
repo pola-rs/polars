@@ -80,7 +80,7 @@ def test_init_ndarray() -> None:
 
     # 3D array
     with pytest.raises(ValueError):
-        df = pl.DataFrame(np.random.randn(2, 2, 2))
+        _ = pl.DataFrame(np.random.randn(2, 2, 2))
 
 
 # TODO: Remove this test case when removing deprecated behaviour
@@ -204,6 +204,10 @@ def test_init_records() -> None:
     expected = pl.DataFrame({"a": [1, 2, 1], "b": [2, 1, 2]})
     assert df.frame_equal(expected)
     assert df.to_dicts() == dicts
+
+    df_cd = pl.DataFrame(dicts, columns=["c", "d"])
+    expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
+    assert df_cd.frame_equal(expected)
 
 
 def test_selection() -> None:
@@ -786,7 +790,7 @@ def test_describe() -> None:
         }
     )
     assert df.describe().shape != df.shape
-    assert set(df.describe().select_at_idx(2)) == set([1.0, 4.0, 5.0, 6.0])
+    assert set(df.describe().select_at_idx(2)) == {1.0, 4.0, 5.0, 6.0}
 
 
 def test_string_cache_eager_lazy() -> None:
@@ -828,6 +832,9 @@ def test_to_numpy() -> None:
 def test_argsort_by(df: pl.DataFrame) -> None:
     a = df[pl.argsort_by(["int_nulls", "floats"], reverse=[False, True])]["int_nulls"]
     assert a == [1, 0, 3]
+
+    a = df[pl.argsort_by(["int_nulls", "floats"], reverse=False)]["int_nulls"]
+    assert a == [1, 0, 2]
 
 
 def test_literal_series() -> None:
@@ -1066,7 +1073,6 @@ def test_asof_join() -> None:
 2016-05-25 13:30:00.075""".split(
         "\n"
     )
-    dates
 
     ticker = """GOOG
 MSFT

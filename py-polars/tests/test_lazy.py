@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from _pytest.capture import CaptureFixture
 
 import polars as pl
 from polars import col, lit, map_binary, when
@@ -97,6 +98,10 @@ def test_binary_function() -> None:
     )
     assert out["binary_function"] == (out.a + out.b)
 
+    # we can also avoid pl.col and insert column names directly
+    out = df.lazy().with_column(map_binary("a", "b", lambda a, b: a + b)).collect()
+    assert out["binary_function"] == (out.a + out.b)
+
 
 def test_filter_str() -> None:
     # use a str instead of a column expr
@@ -107,10 +112,14 @@ def test_filter_str() -> None:
         }
     )
     q = df.lazy()
+
     # last row based on a filter
     result = q.filter(pl.col("bools")).select(pl.last("*")).collect()
-
     expected = pl.DataFrame({"time": ["11:13:00"], "bools": [True]})
+    assert result.frame_equal(expected)
+
+    # last row based on a filter
+    result = q.filter("bools").select(pl.last("*")).collect()
     assert result.frame_equal(expected)
 
 
@@ -151,9 +160,14 @@ def test_apply_custom_function() -> None:
 
 def test_groupby() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
-    out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
 
     expected = pl.DataFrame({"groups": ["a", "b"], "a_mean": [1.0, 3.5]})
+
+    out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
+    assert out.sort(by="groups").frame_equal(expected)
+
+    # refer to column via pl.Expr
+    out = df.lazy().groupby(pl.col("groups")).agg(pl.mean("a")).collect()
     assert out.sort(by="groups").frame_equal(expected)
 
 
@@ -218,7 +232,19 @@ def test_when_then_flatten() -> None:
 
 
 def test_describe_plan() -> None:
-    pl.DataFrame({"a": [1]}).lazy().describe_optimized_plan()
+    assert isinstance(pl.DataFrame({"a": [1]}).lazy().describe_optimized_plan(), str)
+    assert isinstance(pl.DataFrame({"a": [1]}).lazy().describe_plan(), str)
+
+
+def test_inspect(capsys: CaptureFixture) -> None:
+    pl.DataFrame({"a": [1]}).lazy().inspect().collect()
+    captured = capsys.readouterr()
+    assert len(captured.out) > 0
+
+
+def test_fetch(fruits_cars: pl.DataFrame) -> None:
+    res = fruits_cars.lazy().select("*").fetch(2)
+    assert res.frame_equal(res[:2])
 
 
 def test_window_deadlock() -> None:
@@ -345,10 +371,19 @@ def test_drop_nulls() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert df.select(col("nrs").drop_nulls()).shape == (5, 1)
 
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8], "ham": ["a", "b", "c"]})
+    expected = pl.DataFrame({"foo": [1, 3], "bar": [6, 8], "ham": ["a", "c"]})
+    df.lazy().drop_nulls().collect().frame_equal(expected)
+
 
 def test_all_expr() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert df[[pl.all()]].frame_equal(df)
+
+
+def test_any_expr(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.select(pl.any("A"))[0, 0]
+    assert fruits_cars.select(pl.any([pl.col("A"), pl.col("B")]))[0, 0]
 
 
 def test_lazy_columns() -> None:
@@ -413,6 +448,7 @@ def test_fill_nan() -> None:
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
     assert df.select([pl.col("a").fill_null("min")])["a"][1] == 1.0
+    assert df.lazy().fill_null(2).collect()["a"] == [1.0, 2.0, 3.0]
 
 
 def test_take(fruits_cars: pl.DataFrame) -> None:
@@ -606,6 +642,65 @@ def test_drop_columns() -> None:
     out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop(["a", "b"])
     assert out.columns == ["c"]
 
+    out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop("a")
+    assert out.columns == ["b", "c"]
+
+
+def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
+    res = fruits_cars.lazy().with_column_renamed("A", "C").collect()
+    assert res.columns[0] == "C"
+
+
+def test_reverse() -> None:
+    out = pl.DataFrame({"a": [1, 2], "b": [3, 4]}).lazy().reverse()
+    expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
+    assert out.collect().frame_equal(expected)
+
+
+def test_shift(fruits_cars: pl.DataFrame) -> None:
+    res = fruits_cars.lazy().shift(2).collect()
+
+    expected = pl.DataFrame(
+        {
+            "A": [None, None, 1, 2, 3],
+            "fruits": [None, None, "banana", "banana", "apple"],
+            "B": [None, None, 5, 4, 3],
+            "cars": [None, None, "beetle", "audi", "beetle"],
+        }
+    )
+    res.frame_equal(expected, null_equal=True)
+
+    # negative value
+    res = fruits_cars.lazy().shift(-2).collect()
+    for rows in [3, 4]:
+        for cols in range(4):
+            assert res[rows, cols] is None
+
+
+def test_limit(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().limit(1).collect().frame_equal(fruits_cars[0, :])
+
+
+def test_head(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().head(2).collect().frame_equal(fruits_cars[:2, :])
+
+
+def test_tail(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().tail(2).collect().frame_equal(fruits_cars[3:, :])
+
+
+def test_last(fruits_cars: pl.DataFrame) -> None:
+    assert (
+        fruits_cars.lazy()
+        .last()
+        .collect()
+        .frame_equal(fruits_cars[(len(fruits_cars) - 1) :, :])
+    )
+
+
+def test_first(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().first().collect().frame_equal(fruits_cars[0, :])
+
 
 def test_join_suffix() -> None:
     df_left = pl.DataFrame(
@@ -659,6 +754,88 @@ def test_spearman_corr() -> None:
     assert np.isclose(out[0], 0.5)
     assert np.isclose(out[1], -1.0)
 
+    # we can also pass in column names directly
+    out = (
+        df.groupby("era", maintain_order=True).agg(
+            pl.spearman_rank_corr("prediction", "target").alias("c"),
+        )
+    )["c"]
+    assert np.isclose(out[0], 0.5)
+    assert np.isclose(out[1], -1.0)
+
+
+def test_pearson_corr() -> None:
+    df = pl.DataFrame(
+        {
+            "era": [1, 1, 1, 2, 2, 2],
+            "prediction": [2, 4, 5, 190, 1, 4],
+            "target": [1, 3, 2, 1, 43, 3],
+        }
+    )
+
+    out = (
+        df.groupby("era", maintain_order=True).agg(
+            pl.pearson_corr(pl.col("prediction"), pl.col("target")).alias("c"),
+        )
+    )["c"]
+    assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])
+
+    # we can also pass in column names directly
+    out = (
+        df.groupby("era", maintain_order=True).agg(
+            pl.pearson_corr("prediction", "target").alias("c"),
+        )
+    )["c"]
+    assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])
+
+
+def test_cov(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.select(pl.cov("A", "B"))[0, 0] == -2.5
+    assert fruits_cars.select(pl.cov(pl.col("A"), pl.col("B")))[0, 0] == -2.5
+
+
+def test_std(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().std().collect()["A"][0] == pytest.approx(
+        1.5811388300841898
+    )
+
+
+def test_var(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().var().collect()["A"][0] == pytest.approx(2.5)
+
+
+def test_max(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().max().collect()["A"][0] == 5
+
+
+def test_min(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().min().collect()["A"][0] == 1
+
+
+def test_median(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().median().collect()["A"][0] == 3
+
+
+def test_quantile(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.lazy().quantile(0.25).collect()["A"][0] == 2
+
+
+def test_drop_duplicates() -> None:
+    df = pl.DataFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
+
+    expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
+    assert (
+        df.lazy().drop_duplicates(maintain_order=True).collect().frame_equal(expected)
+    )
+
+    expected = pl.DataFrame({"a": [1], "b": [3]})
+    assert (
+        df.lazy()
+        .drop_duplicates(subset="b", maintain_order=True)
+        .collect()
+        .frame_equal(expected)
+    )
+
 
 def test_lazy_concat(df: pl.DataFrame) -> None:
     shape = df.shape
@@ -667,3 +844,25 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
     out = pl.concat([df.lazy(), df.lazy()]).collect()  # type: ignore
     assert out.shape == shape
     assert out.frame_equal(df.vstack(df.clone()), null_equal=True)
+
+
+def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
+    res = fruits_cars.select(pl.max(["A", "B"]))
+    assert res.to_series(0).series_equal(pl.Series([5, 4, 3, 4, 5]))
+
+    res = fruits_cars.select(pl.min(["A", "B"]))
+    assert res.to_series(0).series_equal(pl.Series([1, 2, 3, 2, 1]))
+
+
+def test_head_tail(fruits_cars: pl.DataFrame) -> None:
+    res_expr = fruits_cars.select([pl.head("A", 2)])
+    res_series = pl.head(fruits_cars["A"], 2)
+    expected = pl.Series([1, 2])
+    assert res_expr.to_series(0).series_equal(expected)
+    assert res_series.series_equal(expected)
+
+    res_expr = fruits_cars.select([pl.tail("A", 2)])
+    res_series = pl.tail(fruits_cars["A"], 2)
+    expected = pl.Series([4, 5])
+    assert res_expr.to_series(0).series_equal(expected)
+    assert res_series.series_equal(expected)

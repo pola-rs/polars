@@ -139,7 +139,7 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
 
 
 def from_arrow(
-    a: Union["pa.Table", "pa.Array"], rechunk: bool = True
+    a: Union["pa.Table", "pa.Array", "pa.ChunkedArray"], rechunk: bool = True
 ) -> Union[DataFrame, Series]:
     """
     Create a DataFrame or Series from an Arrow Table or Array.

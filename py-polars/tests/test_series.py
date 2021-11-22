@@ -68,6 +68,7 @@ def test_bitwise_ops() -> None:
     b = pl.Series([False, True, True])
     assert a & b == [False, False, True]
     assert a | b == [True, True, True]
+    assert ~a == [False, True, False]
 
 
 def test_equality() -> None:
@@ -263,6 +264,8 @@ def test_get() -> None:
     a = pl.Series("a", [1, 2, 3])
     assert a[0] == 1
     assert a[:2] == [1, 2]
+    assert a[range(1)] == [1, 2]
+    assert a[range(0, 2, 2)] == [1, 3]
 
 
 def test_set() -> None:
@@ -372,10 +375,10 @@ def test_create_list_series() -> None:
 def test_iter() -> None:
     s = pl.Series("", [1, 2, 3])
 
-    iter = s.__iter__()
-    assert iter.__next__() == 1
-    assert iter.__next__() == 2
-    assert iter.__next__() == 3
+    itr = s.__iter__()
+    assert itr.__next__() == 1
+    assert itr.__next__() == 2
+    assert itr.__next__() == 3
     assert sum(s) == 6
 
 
@@ -505,7 +508,7 @@ def test_rank_dispatch() -> None:
     assert list(s.rank("dense")) == [2, 3, 4, 3, 3, 4, 1]
 
     df = pl.DataFrame([s])
-    df.select(pl.col("a").rank("dense"))["a"] == [2, 3, 4, 3, 3, 4, 1]
+    assert df.select(pl.col("a").rank("dense"))["a"] == [2, 3, 4, 3, 3, 4, 1]
 
 
 def test_diff_dispatch() -> None:
@@ -630,17 +633,17 @@ def test_bitwise() -> None:
             (pl.col("a") ^ pl.col("b")).alias("xor"),
         ]
     )
-    out["and"].to_list() == [1, 0, 1]
-    out["or"].to_list() == [3, 6, 7]
-    out["xor"].to_list() == [2, 6, 6]
+    assert out["and"].to_list() == [1, 0, 1]
+    assert out["or"].to_list() == [3, 6, 7]
+    assert out["xor"].to_list() == [2, 6, 6]
 
 
 def test_to_numpy() -> None:
     pl.internals.series._PYARROW_AVAILABLE = False
     a = pl.Series("a", [1, 2, 3])
-    a.to_numpy() == np.array([1, 2, 3])
+    assert np.all(a.to_numpy() == np.array([1, 2, 3]))
     a = pl.Series("a", [1, 2, None])
-    a.to_numpy() == np.array([1.0, 2.0, np.nan])
+    np.testing.assert_array_equal(a.to_numpy(), np.array([1.0, 2.0, np.nan]))
 
 
 def test_from_sequences() -> None:
@@ -788,6 +791,8 @@ def test_filter() -> None:
     mask = pl.Series("", [True, False, True])
     assert s.filter(mask).series_equal(pl.Series("a", [1, 3]))
 
+    assert s.filter([True, False, True]).series_equal(pl.Series("a", [1, 3]))
+
 
 def test_take_every() -> None:
     s = pl.Series("a", [1, 2, 3, 4])
@@ -929,8 +934,12 @@ def test_dt_year_month_week_day_ordinal_day() -> None:
     assert a.dt.year().to_list() == [1997, 2024, 2052]
     assert a.dt.month().to_list() == [5, 10, 2]
     assert a.dt.weekday().to_list() == [0, 4, 1]
+    assert a.dt.week().to_list() == [21, 40, 8]
     assert a.dt.day().to_list() == [19, 4, 20]
     assert a.dt.ordinal_day().to_list() == [139, 278, 51]
+
+    assert a.dt.median() == date(2024, 10, 4)
+    assert a.dt.mean() == date(2024, 10, 4)
 
 
 def test_compare_series_value_mismatch() -> None:

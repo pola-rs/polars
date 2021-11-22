@@ -431,6 +431,16 @@ def last(column: Union[str, "pli.Series"]) -> "pli.Expr":
     return col(column).last()
 
 
+@tp.overload
+def head(column: str, n: Optional[int]) -> "pli.Expr":
+    ...
+
+
+@tp.overload
+def head(column: "pli.Series", n: Optional[int]) -> "pli.Series":
+    ...
+
+
 def head(
     column: Union[str, "pli.Series"], n: Optional[int] = None
 ) -> Union["pli.Expr", "pli.Series"]:
@@ -447,6 +457,16 @@ def head(
     if isinstance(column, pli.Series):
         return column.head(n)
     return col(column).head(n)
+
+
+@tp.overload
+def tail(column: str, n: Optional[int]) -> "pli.Expr":
+    ...
+
+
+@tp.overload
+def tail(column: "pli.Series", n: Optional[int]) -> "pli.Series":
+    ...
 
 
 def tail(
@@ -861,7 +881,7 @@ def argsort_by(
         Default is ascending.
     """
     if not isinstance(reverse, list):
-        reverse = [reverse]
+        reverse = [reverse] * len(exprs)
     exprs = pli._selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyargsort_by(exprs, reverse))
 

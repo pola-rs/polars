@@ -1123,7 +1123,7 @@ class Series:
         """
         self._s.append(other._s)
 
-    def filter(self, predicate: "Series") -> "Series":
+    def filter(self, predicate: Union["Series", list]) -> "Series":
         """
         Filter elements by a boolean mask.
 
