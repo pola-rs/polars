@@ -76,9 +76,8 @@ def match_dtype(value: Any, dtype: "Type[DataType]") -> Any:
 def get_ffi_func(
     name: str,
     dtype: Type["DataType"],
-    obj: Optional["Series"] = None,
-    default: Optional[Callable[[Any], Any]] = None,
-) -> Callable[..., Any]:
+    obj: "PySeries",
+) -> Optional[Callable[..., Any]]:
     """
     Dynamically obtain the proper ffi function/ method.
 
@@ -91,20 +90,15 @@ def get_ffi_func(
     dtype
         polars dtype.
     obj
-        Optional object to find the method for. If none provided globals are used.
-    default
-        default function to use if not found.
+        Object to find the method for.
 
     Returns
     -------
-    ffi function
+    ffi function, or None if not found
     """
     ffi_name = dtype_to_ffiname(dtype)
     fname = name.replace("<>", ffi_name)
-    if obj:
-        return getattr(obj, fname, default)
-    else:
-        return globals().get(fname, default)
+    return getattr(obj, fname, None)
 
 
 def wrap_s(s: "PySeries") -> "Series":
