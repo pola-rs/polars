@@ -899,13 +899,29 @@ impl DataFrame {
     }
 
     /// Get column index of a series by name.
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Name" => &["Player 1", "Player 2", "Player 3"],
+    ///                             "Health" => &[100, 200, 500],
+    ///                             "Mana" => &[250, 100, 0],
+    ///                             "Strength" => &[30, 150, 300])?;
+    ///
+    ///     assert_eq!(df.find_idx_by_name("Name"), Some(0));
+    ///     assert_eq!(df.find_idx_by_name("Health"), Some(1));
+    ///     assert_eq!(df.find_idx_by_name("Mana"), Some(2));
+    ///     assert_eq!(df.find_idx_by_name("Strength"), Some(3));
+    ///     assert_eq!(df.find_idx_by_name("Haste"), None);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
-        self.columns
-            .iter()
-            .enumerate()
-            .filter(|(_idx, series)| series.name() == name)
-            .map(|(idx, _)| idx)
-            .next()
+        self.columns.iter().position(|s| s.name() == name)
     }
 
     /// Select a single column by name.
