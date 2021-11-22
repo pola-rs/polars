@@ -151,7 +151,8 @@ def test_to_python_datetime() -> None:
 
 
 def test_datetime_consistency() -> None:
-    dt = datetime(2021, 1, 1)
+    # dt = datetime(2021, 1, 1, 10, 30, 45, 123456)
+    dt = datetime(2021, 1, 1, 10, 30, 45, 123000)
     df = pl.DataFrame({"date": [dt]})
     assert df["date"].dt[0] == dt
     assert df.select(pl.lit(dt))["literal"].dt[0] == dt
