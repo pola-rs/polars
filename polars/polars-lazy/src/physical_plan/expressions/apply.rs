@@ -202,7 +202,8 @@ impl PhysicalAggregation for ApplyExpr {
                     // if not flat, the flattening sorts by group, so we must create new group tuples
                     // and again aggregate.
                     let out = self.function.call_udf(&mut [ac.flat().into_owned()]);
-                    if ac.is_flat() {
+
+                    if ac.is_not_aggregated() || !matches!(ac.series().dtype(), DataType::List(_)) {
                         out.map(Some)
                     } else {
                         // TODO! maybe just apply over list?
