@@ -477,7 +477,7 @@ impl DataFrame {
             .collect()
     }
 
-    /// Get (height x width)
+    /// Get (height, width)
     ///
     /// # Example
     ///
