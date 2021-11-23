@@ -72,7 +72,6 @@ impl PolarsExtension {
 impl Drop for PolarsExtension {
     fn drop(&mut self) {
         // implicitly drop by taking ownership
-        dbg!("DROP CALLED");
         self.get_sentinel();
     }
 }

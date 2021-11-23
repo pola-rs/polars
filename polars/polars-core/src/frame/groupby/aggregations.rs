@@ -7,6 +7,7 @@ use std::hash::Hash;
 
 use arrow::types::{simd::Simd, NativeType};
 
+#[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;

@@ -191,9 +191,9 @@ mod test {
         let ca = ObjectChunked::new_from_opt_slice("", values);
 
         let groups = vec![(0u32, vec![0u32, 1]), (2, vec![2]), (3, vec![3])];
-        let out = ca.agg_list(&groups);
-
-        dbg!(out);
+        let out = ca.agg_list(&groups).unwrap();
+        assert!(matches!(out.dtype(), DataType::List(_)));
+        assert_eq!(out.len(), groups.len());
     }
 
     #[test]
@@ -209,14 +209,17 @@ mod test {
             other_heap: "bar".into(),
         };
 
-        let values = &[Some(foo1), None, Some(foo2), None];
+        let values = &[Some(foo1.clone()), None, Some(foo2.clone()), None];
         let ca = ObjectChunked::new_from_opt_slice("", values);
 
         let groups = vec![(0u32, vec![0u32, 1]), (2, vec![2]), (3, vec![3])];
         let out = ca.agg_list(&groups).unwrap();
-        let a = out.explode();
-        dbg!(a);
+        let a = out.explode().unwrap();
 
-        dbg!(out);
+        let ca_foo = a.as_any().downcast_ref::<ObjectChunked<Foo>>().unwrap();
+        assert_eq!(ca_foo.get(0).unwrap(), &foo1);
+        assert_eq!(ca_foo.get(1), None);
+        assert_eq!(ca_foo.get(2).unwrap(), &foo2);
+        assert_eq!(ca_foo.get(3), None);
     }
 }

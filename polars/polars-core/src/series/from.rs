@@ -1,5 +1,6 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::cast::cast_chunks;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::extension::extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;

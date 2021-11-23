@@ -742,7 +742,14 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             ArrowDataType::Dictionary(_, _) => DataType::Categorical,
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
-                DataType::Object("extension")
+                #[cfg(feature = "object")]
+                {
+                    DataType::Object("extension")
+                }
+                #[cfg(not(feature = "object"))]
+                {
+                    panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
+                }
             }
             dt => panic!("Arrow datatype {:?} not supported by Polars", dt),
         }

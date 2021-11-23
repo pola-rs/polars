@@ -21,21 +21,29 @@ pub(crate) fn drop_list(ca: &ListChunked) {
         if nested_count != 0 {
             panic!("multiple nested objects not yet supported")
         }
-        for arr in &ca.chunks {
-            if let ArrowDataType::LargeList(fld) = arr.data_type() {
+        for lst_arr in &ca.chunks {
+            // This list can be cloned, so we check the ref count before we drop
+            if let (ArrowDataType::LargeList(fld), 1) =
+                (lst_arr.data_type(), Arc::strong_count(lst_arr))
+            {
                 let dtype = fld.data_type();
 
                 assert!(matches!(dtype, ArrowDataType::Extension(_, _, _)));
 
                 // recreate the polars extension so that the content is dropped
-                let arr = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
-                let arr = arr.values();
-                let arr = arr
-                    .as_any()
-                    .downcast_ref::<FixedSizeBinaryArray>()
-                    .unwrap()
-                    .clone();
-                PolarsExtension::new(arr);
+                let arr = lst_arr.as_any().downcast_ref::<LargeListArray>().unwrap();
+
+                let values = arr.values();
+
+                // The inner value also may be cloned, check the ref count
+                if Arc::strong_count(values) == 1 {
+                    let arr = values
+                        .as_any()
+                        .downcast_ref::<FixedSizeBinaryArray>()
+                        .unwrap()
+                        .clone();
+                    PolarsExtension::new(arr);
+                }
             }
         }
     }
