@@ -49,7 +49,7 @@
 //! assert!(new.column("new_column")
 //!     .unwrap()
 //!     .series_equal(
-//!         &Series::new("valid", &[50, 40, 30, 20, 10])
+//!         &Series::new("new_column", &[50, 40, 30, 20, 10])
 //!     )
 //! );
 //! ```
@@ -82,7 +82,7 @@
 //! assert!(new.column("new_column")
 //!     .unwrap()
 //!     .series_equal(
-//!         &Series::new("valid", &[100, 100, 3, 4, 5])
+//!         &Series::new("new_column", &[100, 100, 3, 4, 5])
 //!     )
 //! );
 //! ```

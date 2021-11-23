@@ -859,7 +859,7 @@ hello,","," ",world,"!"
             assert!(df
                 .column(col)
                 .unwrap()
-                .series_equal(&Series::new("", &[&**val; 4])));
+                .series_equal(&Series::new(col, &[&**val; 4])));
         }
     }
 

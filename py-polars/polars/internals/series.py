@@ -1674,7 +1674,11 @@ class Series:
     def __len__(self) -> int:
         return self.len()
 
-    def cast(self, dtype: Type[DataType], strict: bool = True) -> "Series":
+    def cast(
+        self,
+        dtype: Union[Type[DataType], Type[int], Type[float], Type[str], Type[bool]],
+        strict: bool = True,
+    ) -> "Series":
         """
         Cast between data types.
 
