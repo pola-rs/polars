@@ -477,22 +477,31 @@ impl DataFrame {
             .collect()
     }
 
-    /// Get (height x width)
+    /// Get (height, width) of the `DataFrame`.
     ///
     /// # Example
     ///
-    /// ```
-    /// use polars_core::prelude::*;
-    /// fn assert_shape(df: &DataFrame, shape: (usize, usize)) {
-    ///     assert_eq!(df.shape(), shape)
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df0: DataFrame = DataFrame::default();
+    ///     let df1: DataFrame = df!("1" => &[1, 2, 3, 4, 5])?;
+    ///     let df2: DataFrame = df!("1" => &[1, 2, 3, 4, 5],
+    ///                              "2" => &[1, 2, 3, 4, 5])?;
+    ///
+    ///     assert_eq!(df0.shape(), (0 ,0));
+    ///     assert_eq!(df1.shape(), (5, 1));
+    ///     assert_eq!(df2.shape(), (5, 2));
+    ///
+    ///     Ok(())
     /// }
     /// ```
     pub fn shape(&self) -> (usize, usize) {
-        let columns = self.columns.len();
-        if columns > 0 {
-            (self.columns[0].len(), columns)
-        } else {
-            (0, 0)
+        match self.columns.as_slice() {
+            &[] => (0, 0),
+            v => (v[0].len(), v.len()),
         }
     }
 
