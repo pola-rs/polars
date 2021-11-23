@@ -1,26 +1,12 @@
 pub(crate) mod drop;
-pub(crate) mod extension;
+pub(crate) mod polars_extension;
 
 use crate::{prelude::*, PROCESS_ID};
 use arrow::array::{Array, FixedSizeBinaryArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use arrow::buffer::{Buffer, MutableBuffer};
-use extension::PolarsExtension;
-use std::mem::ManuallyDrop;
-use std::{
-    alloc::{dealloc, Layout},
-    mem,
-};
-
-/// deallocate a vec, without calling T::drop
-fn dealoc_vec_no_drop<T: Sized>(v: Vec<T>) {
-    let size = mem::size_of::<T>() * v.capacity();
-    let align = mem::align_of::<T>();
-    let layout = unsafe { Layout::from_size_align_unchecked(size, align) };
-    let ptr = v.as_ptr() as *const u8 as *mut u8;
-    unsafe { dealloc(ptr, layout) }
-    mem::forget(v);
-}
+use polars_extension::PolarsExtension;
+use std::mem;
 
 /// Invariants
 /// `ptr` must point to start a `T` allocation
@@ -129,7 +115,9 @@ pub(crate) fn create_extension<
 
     let array = FixedSizeBinaryArray::from_data(extension_type, buf, validity);
 
-    PolarsExtension::new(array)
+    // Safety:
+    // we just heap allocated the ExtensionSentinel, so its alive.
+    unsafe { PolarsExtension::new(array) }
 }
 
 #[cfg(test)]

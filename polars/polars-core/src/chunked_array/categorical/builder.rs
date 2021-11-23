@@ -204,19 +204,19 @@ mod test {
         ];
         let ca = Utf8Chunked::new_from_opt_slice("a", slice);
         let out = ca.cast(&DataType::Categorical)?;
-        let out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.unwrap().len(), 2);
+        let mut out = out.categorical().unwrap().clone();
+        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
 
         // test the global branch
         toggle_string_cache(true);
         // empty global cache
         let out = ca.cast(&DataType::Categorical)?;
-        let out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.unwrap().len(), 2);
+        let mut out = out.categorical().unwrap().clone();
+        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
         // full global cache
         let out = ca.cast(&DataType::Categorical)?;
-        let out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.unwrap().len(), 2);
+        let mut out = out.categorical().unwrap().clone();
+        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
 
         // Check that we don't panic if we append two categorical arrays
         // build under the same string cache

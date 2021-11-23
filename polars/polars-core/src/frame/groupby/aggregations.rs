@@ -15,7 +15,6 @@ use crate::utils::NoNull;
 use arrow::buffer::MutableBuffer;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::trusted_len::PushUnchecked;
-use std::convert::TryFrom;
 use std::ops::Deref;
 
 fn agg_helper<T, F>(groups: &[(u32, Vec<u32>)], f: F) -> Option<Series>
@@ -654,14 +653,14 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             .trust_my_length(self.len());
 
         let mut pe = create_extension(iter);
-        pe.set_to_series_fn::<T>(self.name());
+
+        // Safety:
+        // this is safe because we just created the PolarsExtension
+        // meaning that the sentinel is heap allocated and the dereference of the
+        // pointer does not fail
+        unsafe { pe.set_to_series_fn::<T>(self.name()) };
         let extension_array = Arc::new(pe.take_and_forget()) as ArrayRef;
         let extension_dtype = extension_array.data_type();
-
-        let arr = extension_array
-            .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
-            .unwrap();
 
         let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
         let arr = Arc::new(ListArray::<i64>::from_data(
@@ -670,10 +669,6 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             extension_array,
             None,
         )) as ArrayRef;
-
-        // let lst = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
-        //
-        // dbg!(Series::try_from(("", Arc::from(lst.value(0)))));
 
         let mut listarr = ListChunked::new_from_chunks(self.name(), vec![arr]);
         if can_fast_explode {
