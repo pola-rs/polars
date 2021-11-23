@@ -47,7 +47,7 @@ def test_arrow_dict_to_polars() -> None:
     ).cast(pa.large_utf8())
 
     s = pl.Series(
-        name="s",
+        name="pa_dict",
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
 

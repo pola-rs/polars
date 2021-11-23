@@ -14,10 +14,10 @@ def create_series() -> pl.Series:
 
 def test_cum_agg() -> None:
     s = pl.Series("a", [1, 2, 3, 2])
-    assert s.cumsum().series_equal(pl.Series([1, 3, 6, 8]))
-    assert s.cummin().series_equal(pl.Series([1, 1, 1, 1]))
-    assert s.cummax().series_equal(pl.Series([1, 2, 3, 3]))
-    assert s.cumprod().series_equal(pl.Series([1, 2, 6, 12]))
+    assert s.cumsum().series_equal(pl.Series("a", [1, 3, 6, 8]))
+    assert s.cummin().series_equal(pl.Series("a", [1, 1, 1, 1]))
+    assert s.cummax().series_equal(pl.Series("a", [1, 2, 3, 3]))
+    assert s.cumprod().series_equal(pl.Series("a", [1, 2, 6, 12]))
 
 
 def test_init_inputs() -> None:
@@ -140,9 +140,9 @@ def test_various() -> None:
     assert len(a) == 2
     b = a.slice(1, 1)
     assert b.len() == 1
-    assert b.series_equal(pl.Series("", [2]))
+    assert b.series_equal(pl.Series("b", [2]))
     a.append(b)
-    assert a.series_equal(pl.Series("", [1, 2, 2]))
+    assert a.series_equal(pl.Series("b", [1, 2, 2]))
 
     a = pl.Series("a", range(20))
     assert a.head(5).len() == 5
@@ -151,11 +151,11 @@ def test_various() -> None:
 
     a = pl.Series("a", [2, 1, 4])
     a.sort(in_place=True)
-    assert a.series_equal(pl.Series("", [1, 2, 4]))
+    assert a.series_equal(pl.Series("a", [1, 2, 4]))
     a = pl.Series("a", [2, 1, 1, 4, 4, 4])
     assert a.arg_unique().to_list() == [0, 1, 3]
 
-    assert a.take([2, 3]).series_equal(pl.Series("", [1, 4]))
+    assert a.take([2, 3]).series_equal(pl.Series("a", [1, 4]))
     assert a.is_numeric()
     a = pl.Series("bool", [True, False])
     assert not a.is_numeric()
@@ -580,15 +580,11 @@ def test_list_concat_dispatch() -> None:
     assert out.series_equal(expected)
 
     df = pl.DataFrame([s0, s1])
-    assert df.select(pl.concat_list(["a", "b"]).alias("concat"))["concat"].series_equal(
+    assert df.select(pl.concat_list(["a", "b"]).alias("a"))["a"].series_equal(expected)
+    assert df.select(pl.col("a").arr.concat("b").alias("a"))["a"].series_equal(expected)
+    assert df.select(pl.col("a").arr.concat(["b"]).alias("a"))["a"].series_equal(
         expected
     )
-    assert df.select(pl.col("a").arr.concat("b").alias("concat"))[
-        "concat"
-    ].series_equal(expected)
-    assert df.select(pl.col("a").arr.concat(["b"]).alias("concat"))[
-        "concat"
-    ].series_equal(expected)
 
 
 def test_floor_divide() -> None:
@@ -796,17 +792,17 @@ def test_filter() -> None:
 
 def test_take_every() -> None:
     s = pl.Series("a", [1, 2, 3, 4])
-    assert s.take_every(2).series_equal(pl.Series([1, 3]))
+    assert s.take_every(2).series_equal(pl.Series("a", [1, 3]))
 
 
 def test_argsort() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
     result = s.argsort()
-    expected = pl.Series([3, 4, 1, 2, 0])
+    expected = pl.Series("a", [3, 4, 1, 2, 0])
     assert result.series_equal(expected)
 
     result_reverse = s.argsort(True)
-    expected_reverse = pl.Series([0, 2, 1, 4, 3])
+    expected_reverse = pl.Series("a", [0, 2, 1, 4, 3])
     assert result_reverse.series_equal(expected_reverse)
 
 
@@ -818,31 +814,31 @@ def test_arg_min_and_arg_max() -> None:
 
 def test_is_null_is_not_null() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, None])
-    assert s.is_null().series_equal(pl.Series([False, False, False, True]))
-    assert s.is_not_null().series_equal(pl.Series([True, True, True, False]))
+    assert s.is_null().series_equal(pl.Series("a", [False, False, False, True]))
+    assert s.is_not_null().series_equal(pl.Series("a", [True, True, True, False]))
 
 
 def test_is_finite_is_infinite() -> None:
     s = pl.Series("a", [1.0, 2.0, np.inf])
 
-    s.is_finite().series_equal(pl.Series([True, True, False]))
-    s.is_infinite().series_equal(pl.Series([False, False, True]))
+    s.is_finite().series_equal(pl.Series("a", [True, True, False]))
+    s.is_infinite().series_equal(pl.Series("a", [False, False, True]))
 
 
 def test_is_nan_is_not_nan() -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
-    assert s.is_nan().series_equal(pl.Series([False, False, False, True]))
-    assert s.is_not_nan().series_equal(pl.Series([True, True, True, False]))
+    assert s.is_nan().series_equal(pl.Series("a", [False, False, False, True]))
+    assert s.is_not_nan().series_equal(pl.Series("a", [True, True, True, False]))
 
 
 def test_is_unique() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
-    assert s.is_unique().series_equal(pl.Series([True, False, False, True]))
+    assert s.is_unique().series_equal(pl.Series("a", [True, False, False, True]))
 
 
 def test_is_duplicated() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
-    assert s.is_duplicated().series_equal(pl.Series([False, True, True, False]))
+    assert s.is_duplicated().series_equal(pl.Series("a", [False, True, True, False]))
 
 
 def test_dot() -> None:

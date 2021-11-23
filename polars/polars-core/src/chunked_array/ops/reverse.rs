@@ -32,7 +32,9 @@ macro_rules! impl_reverse {
     ($arrow_type:ident, $ca_type:ident) => {
         impl ChunkReverse<$arrow_type> for $ca_type {
             fn reverse(&self) -> Self {
-                self.into_iter().rev().collect_trusted()
+                let mut ca: Self = self.into_iter().rev().collect_trusted();
+                ca.rename(self.name());
+                ca
             }
         }
     };
