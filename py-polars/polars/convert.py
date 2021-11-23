@@ -192,7 +192,9 @@ def from_arrow(
     ]
     """
     if not _PYARROW_AVAILABLE:
-        raise ImportError("'pyarrow' is required when using from_arrow().")  # pragma: no cover
+        raise ImportError(
+            "'pyarrow' is required when using from_arrow()."
+        )  # pragma: no cover
     if isinstance(a, pa.Table):
         return DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, (pa.Array, pa.ChunkedArray)):
