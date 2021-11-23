@@ -47,6 +47,13 @@ pub(crate) fn create_extension<
 >(
     iter: I,
 ) -> PolarsExtension {
+    let env = "POLARS_ALLOW_EXTENSION";
+    std::env::var(env).unwrap_or_else(|_| {
+        panic!(
+            "env var: {} must be set to allow extension types to be created",
+            env
+        )
+    });
     let t_size = std::mem::size_of::<T>();
     let t_alignment = std::mem::align_of::<T>();
     let n_t_vals = iter.size_hint().1.unwrap();

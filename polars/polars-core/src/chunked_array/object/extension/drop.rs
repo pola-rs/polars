@@ -15,6 +15,8 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
         if nested_count != 0 {
             panic!("multiple nested objects not yet supported")
         }
+        // if empty the memory is leaked somewhere
+        assert!(!ca.chunks.is_empty());
         for lst_arr in &ca.chunks {
             // This list can be cloned, so we check the ref count before we drop
             if let (ArrowDataType::LargeList(fld), 1) =
