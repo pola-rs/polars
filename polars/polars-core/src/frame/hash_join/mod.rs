@@ -1245,15 +1245,13 @@ impl DataFrame {
     ///     left.inner_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn inner_join(
+    pub fn inner_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
         &self,
         other: &DataFrame,
-        left_on: &str,
-        right_on: &str,
+        left_on: S1,
+        right_on: S2,
     ) -> Result<DataFrame> {
-        let s_left = self.column(left_on)?;
-        let s_right = other.column(right_on)?;
-        self.inner_join_from_series(other, s_left, s_right, None)
+        self.join(other, left_on, right_on, JoinType::Inner, None)
     }
 
     pub(crate) fn inner_join_from_series(
@@ -1288,10 +1286,13 @@ impl DataFrame {
     ///     left.left_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
-        let s_left = self.column(left_on)?;
-        let s_right = other.column(right_on)?;
-        self.left_join_from_series(other, s_left, s_right, None)
+    pub fn left_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
+        &self,
+        other: &DataFrame,
+        left_on: S1,
+        right_on: S2,
+    ) -> Result<DataFrame> {
+        self.join(other, left_on, right_on, JoinType::Left, None)
     }
 
     pub(crate) fn left_join_from_series(
@@ -1327,15 +1328,13 @@ impl DataFrame {
     ///     left.outer_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn outer_join(
+    pub fn outer_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
         &self,
         other: &DataFrame,
-        left_on: &str,
-        right_on: &str,
+        left_on: S1,
+        right_on: S2,
     ) -> Result<DataFrame> {
-        let s_left = self.column(left_on)?;
-        let s_right = other.column(right_on)?;
-        self.outer_join_from_series(other, s_left, s_right, None)
+        self.join(other, left_on, right_on, JoinType::Outer, None)
     }
     pub(crate) fn outer_join_from_series(
         &self,
