@@ -1628,7 +1628,9 @@ class Series:
         """
         return wrap_s(self._s.explode())
 
-    def series_equal(self, other: "Series", null_equal: bool = False) -> bool:
+    def series_equal(
+        self, other: "Series", null_equal: bool = False, strict: bool = False
+    ) -> bool:
         """
         Check if series is equal with another Series.
 
@@ -1638,6 +1640,8 @@ class Series:
             Series to compare with.
         null_equal
             Consider null values as equal.
+        strict
+            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a `pl.Int64` will return `False`.
 
         Examples
         --------
@@ -1649,7 +1653,7 @@ class Series:
         False
 
         """
-        return self._s.series_equal(other._s, null_equal)
+        return self._s.series_equal(other._s, null_equal, strict)
 
     def len(self) -> int:
         """

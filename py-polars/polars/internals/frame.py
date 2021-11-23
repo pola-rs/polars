@@ -843,9 +843,8 @@ class DataFrame:
         │ b   ┆ 1   ┆ 2   ┆ 3   │
         └─────┴─────┴─────┴─────┘
 
-        >>> import typing as tp
         >>> # replace the auto generated column with column names from a generator function
-        >>> def name_generator() -> tp.Iterator[str]:
+        >>> def name_generator():
         >>>     base_name = "my_column_"
         >>>     count = 0
         >>>     while True:
