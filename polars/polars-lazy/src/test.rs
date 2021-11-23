@@ -7,7 +7,6 @@ use polars_core::{df, prelude::*};
 
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::prelude::*;
-use itertools::assert_equal;
 use polars_core::chunked_array::builder::get_list_builder;
 use std::iter::FromIterator;
 
@@ -2071,7 +2070,7 @@ pub fn test_select_by_dtypes() -> Result<()> {
 fn test_binary_expr() -> Result<()> {
     // test panic in schema names
     let df = fruits_cars();
-    let out = df.lazy().select([col("A").neq(lit(1))]).collect()?;
+    let _ = df.lazy().select([col("A").neq(lit(1))]).collect()?;
 
     // test type coercion
     // https://github.com/pola-rs/polars/issues/1649

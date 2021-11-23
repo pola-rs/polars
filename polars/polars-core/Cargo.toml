@@ -131,8 +131,8 @@ docs-selection = [
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "70562fac652a0dab08b4b7bf3d86d2d808ea98e6", default-features = false, features = ["compute"] }
-# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, features = ["compute"], branch = "null" }
+# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "70562fac652a0dab08b4b7bf3d86d2d808ea98e6", default-features = false, features = ["compute"] }
+arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, features = ["compute"], branch = "fn_to" }
 # arrow = { package = "arrow2", version = "0.7", default-features = false, features = ["compute"] }
 chrono = { version = "0.4", optional = true }
 comfy-table = { version = "4.0", optional = true }
@@ -143,7 +143,7 @@ lazy_static = "1.4"
 ndarray = { version = "0.15", optional = true, default_features = false }
 num = "^0.4"
 num_cpus = "1.1"
-polars-arrow = { version = "0.17.0", path = "../polars-arrow" }
+polars-arrow = { version = "0.17.0", path = "../polars-arrow", features = ["compute"] }
 prettytable-rs = { version = "0.8.0", optional = true }
 rand = { version = "0.8", optional = true }
 rand_distr = { version = "0.4", optional = true }

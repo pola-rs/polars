@@ -20,6 +20,9 @@ pub mod testing;
 mod tests;
 pub(crate) mod vector_hasher;
 
+#[cfg(any(feature = "dtype-categorical", feature = "object"))]
+use std::time::{SystemTime, UNIX_EPOCH};
+
 #[cfg(feature = "dtype-categorical")]
 use ahash::AHashMap;
 use lazy_static::lazy_static;
@@ -28,6 +31,14 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "dtype-categorical")]
 use std::sync::{Mutex, MutexGuard};
+
+#[cfg(feature = "object")]
+lazy_static! {
+    pub(crate) static ref PROCESS_ID: u128 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+}
 
 // this is re-exported in utils for polars child crates
 lazy_static! {
@@ -99,9 +110,6 @@ lazy_static! {
     // utility for the tests to ensure a single thread can execute
     pub(crate) static ref SINGLE_LOCK: Mutex<()> = Mutex::new(());
 }
-
-#[cfg(feature = "dtype-categorical")]
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Use a global string cache for the Categorical Types.
 ///

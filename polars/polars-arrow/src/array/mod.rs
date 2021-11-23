@@ -1,12 +1,13 @@
-pub mod default_arrays;
-
-use crate::utils::CustomIterTools;
 use arrow::array::{Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::MutableBuffer;
 use arrow::datatypes::DataType;
 use arrow::types::{NativeType, NaturalDataType};
 use std::sync::Arc;
+
+use crate::utils::CustomIterTools;
+
+pub mod default_arrays;
 
 pub trait ValueSize {
     /// Useful for a Utf8 or a List to get underlying value size.

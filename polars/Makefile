@@ -34,8 +34,10 @@ miri:
 	# some tests are also filtered, because miri cannot deal with the rayon threadpool
 	# Miri also reports UB in prettytable.rs, so we must toggle that feature off.
 	MIRIFLAGS="-Zmiri-disable-isolation" \
+	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
 	    --no-default-features \
+	    --features object \
 	    -p polars-core \
 	    -p polars-arrow \
 	    --

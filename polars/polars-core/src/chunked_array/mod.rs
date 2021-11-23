@@ -22,6 +22,8 @@ mod ndarray;
 mod bitwise;
 #[cfg(feature = "dtype-categorical")]
 pub(crate) mod categorical;
+#[cfg(feature = "object")]
+mod drop;
 pub(crate) mod list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
