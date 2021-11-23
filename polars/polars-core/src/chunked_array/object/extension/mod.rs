@@ -153,6 +153,7 @@ mod test {
 
     #[test]
     fn test_create_extension() {
+        std::env::set_var("POLARS_ALLOW_EXTENSION", "1");
         // Run this under MIRI.
         let foo = Foo {
             a: 1,
@@ -171,6 +172,7 @@ mod test {
 
     #[test]
     fn test_extension_to_list() {
+        std::env::set_var("POLARS_ALLOW_EXTENSION", "1");
         let foo1 = Foo {
             a: 1,
             b: 1,
@@ -193,6 +195,7 @@ mod test {
 
     #[test]
     fn test_extension_to_list_explode() {
+        std::env::set_var("POLARS_ALLOW_EXTENSION", "1");
         let foo1 = Foo {
             a: 1,
             b: 1,
