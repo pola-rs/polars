@@ -9,7 +9,7 @@ try:
     from polars.polars import PyExpr
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars import internals as pli

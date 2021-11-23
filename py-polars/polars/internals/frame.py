@@ -29,7 +29,7 @@ try:
     import pyarrow.parquet
 
     _PYARROW_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
 from polars import internals as pli
@@ -46,7 +46,7 @@ try:
     from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars._html import NotebookFormatter
@@ -64,7 +64,7 @@ try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _PANDAS_AVAILABLE = False
 
 

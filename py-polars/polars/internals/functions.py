@@ -13,7 +13,7 @@ try:
     from polars.polars import py_diag_concat_df as _diag_concat_df
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 
