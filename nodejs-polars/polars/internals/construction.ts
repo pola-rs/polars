@@ -31,14 +31,6 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
  * Construct an internal `JsSeries` from an array
  */
 export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict = true): any {
-  const first5TypesMatch = values
-    .slice(0, 5)
-    .map(jsTypeToPolarsType)
-    .every((val, _, arr) => val === arr[0]);
-
-  if (!first5TypesMatch) {
-    throw new Error('Multi type Series is not supported');
-  }
 
   if (isTypedArray(values)) {
     return polars_internal.series.new_from_typed_array({ name, values, strict });

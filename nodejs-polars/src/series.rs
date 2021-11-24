@@ -1055,24 +1055,24 @@ impl_method_with_err!(sample_n, usize, "n", bool, "with_replacement");
 impl_method_with_err!(sample_frac, f64, "frac", bool, "with_replacement");
 
 macro_rules! impl_equality {
-  ($name:ident) => {
+  ($name:ident, $method:ident) => {
     #[js_function(1)]
     pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
       let params = get_params(&cx)?;
       let series = params.get_series(&cx, "_series")?;
       let rhs = params.get_series(&cx, "rhs")?;
-      let s: JsSeries = series.series.$name(&rhs.series).into_series().into();
+      let s: JsSeries = series.series.$method(&rhs.series).into_series().into();
       s.try_into_js(&cx)
     }
   };
 }
 
-impl_equality!(eq);
-impl_equality!(neq);
-impl_equality!(gt);
-impl_equality!(gt_eq);
-impl_equality!(lt);
-impl_equality!(lt_eq);
+impl_equality!(eq, equal);
+impl_equality!(neq, not_equal);
+impl_equality!(gt, gt);
+impl_equality!(gt_eq, gt_eq);
+impl_equality!(lt, lt);
+impl_equality!(lt_eq, lt_eq);
 
 macro_rules! impl_str_method {
   ($name:ident) => {
@@ -1443,7 +1443,7 @@ macro_rules! impl_eq_num {
       let params = get_params(&cx)?;
       let series = params.get_series(&cx, "_series")?;
       let rhs = params.get_as::<$type>("rhs")?;
-      let series = series.series.eq(rhs).into_series();
+      let series = series.series.equal(rhs).into_series();
       JsSeries::new(series).try_into_js(&cx)
     }
   };
@@ -1468,7 +1468,7 @@ macro_rules! impl_neq_num {
       let params = get_params(&cx)?;
       let series = params.get_series(&cx, "_series")?;
       let rhs = params.get_as::<$type>("rhs")?;
-      let series = series.series.neq(rhs).into_series();
+      let series = series.series.not_equal(rhs).into_series();
       JsSeries::new(series).try_into_js(&cx)
     }
   };

@@ -1,10 +1,10 @@
-use polars_core::series::ops::NullBehavior;
-use polars_core::prelude::FillNullStrategy;
-use napi::{CallContext, JsObject, Result};
 use crate::conversion::wrap::*;
-use crate::prelude::JsResult;
-use polars::prelude::*;
 use crate::error::JsPolarsEr;
+use crate::prelude::JsResult;
+use napi::{CallContext, JsObject, Result};
+use polars::prelude::*;
+use polars_core::prelude::FillNullStrategy;
+use polars_core::series::ops::NullBehavior;
 
 pub fn get_params(cx: &CallContext) -> Result<WrappedObject> {
   Ok(cx.get::<JsObject>(0)?.into())
@@ -47,3 +47,4 @@ pub(crate) fn str_to_null_behavior(null_behavior: String) -> JsResult<NullBehavi
   };
   Ok(null_behavior)
 }
+

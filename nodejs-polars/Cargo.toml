@@ -19,6 +19,7 @@ thiserror = "1.0.20"
 polars-core = { path = "../polars/polars-core", default-features = false }
 napi-derive = "1"
 ahash = "0.7"
+serde_json = { version = "1"}
 
 
 
@@ -37,7 +38,6 @@ napi-build = "1"
 [dependencies.polars]
 path = "../polars"
 features = [
-  "dtype-u16",
   "zip_with",
   "simd",
   "strings",
@@ -59,6 +59,7 @@ features = [
   "decompress-fast",
   "mode",
   "extract_jsonpath",
+  "json",
   "lazy_regex",
   "cum_agg",
   "rolling_window",
@@ -69,9 +70,10 @@ features = [
   "moment",
   "arange",
   "true_div",
-  "dtype-categorical",
   "diagonal_concat",
-  "serde"
+  "serde",
+  "asof_join",
+  "cross_join",
 ]
 
 

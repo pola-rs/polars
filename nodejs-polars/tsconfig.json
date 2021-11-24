@@ -9,6 +9,7 @@
     "skipLibCheck": true,
     "declaration": true,
     "allowJs": true,
+    "noImplicitAny": false,
     "baseUrl": "./polars",
     "paths": {
       "@polars": [

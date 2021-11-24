@@ -4,8 +4,9 @@ use crate::prelude::*;
 use napi::JsBoolean;
 use napi::JsNumber;
 use napi::ValueType;
-use napi::{JsObject, JsString, JsBigint, JsUnknown, Result};
+use napi::{JsBigint, JsObject, JsString, JsUnknown, Result};
 use polars::prelude::*;
+
 pub trait FromJsUnknown: Sized + Send {
   fn from_js(obj: JsUnknown) -> Result<Self>;
 }
@@ -58,6 +59,53 @@ impl FromJsUnknown for Wrap<Utf8Chunked> {
   }
 }
 
+impl FromJsUnknown for Wrap<NullValues> {
+  fn from_js(val: JsUnknown) -> Result<Self> {
+    let value_type = val.get_type()?;
+    if value_type == ValueType::String {
+      let jsv: JsString = unsafe { val.cast() };
+      let js_string = jsv.into_utf8()?;
+      let js_string = js_string.into_owned()?;
+      Ok(Wrap(NullValues::AllColumns(js_string)))
+    } else if value_type == ValueType::Object {
+      let obj_val = unsafe { val.cast::<JsObject>() };
+      if let Ok(len) = obj_val.get_array_length() {
+        let cols: Vec<String> = (0..len)
+          .map(|idx| {
+            let s: JsString = obj_val.get_element_unchecked(idx).expect("array");
+            let js_string = s.into_utf8().expect("item to be of string");
+            js_string.into_owned().expect("item to be of string")
+          })
+          .collect();
+
+        Ok(Wrap(NullValues::Columns(cols)))
+      } else {
+        let keys_obj = obj_val.get_property_names()?;
+        if let Ok(len) = keys_obj.get_array_length() {
+          let cols: Vec<(String, String)> = (0..len)
+            .map(|idx| {
+              let key: JsString = keys_obj.get_element_unchecked(idx).expect("key to exist");
+              let value: JsString = obj_val.get_property(key).expect("value to exist");
+              let key_string = key.into_utf8().expect("item to be of string");
+              let value_string = value.into_utf8().expect("item to be of string");
+
+              let key_string = key_string.into_owned().unwrap();
+              let value_string = value_string.into_owned().unwrap();
+
+              (key_string, value_string)
+            })
+            .collect();
+          Ok(Wrap(NullValues::Named(cols)))
+        } else {
+          Err(JsPolarsEr::Other("could not extract value from null_values argument".into()).into())
+        }
+      }
+    } else {
+      Err(JsPolarsEr::Other("could not extract value from null_values argument".into()).into())
+    }
+  }
+}
+
 impl<'a> FromJsUnknown for &'a str {
   fn from_js(val: JsUnknown) -> Result<Self> {
     let s: JsString = val.try_into()?;
@@ -84,14 +132,14 @@ impl FromJsUnknown for i64 {
   fn from_js(val: JsUnknown) -> Result<Self> {
     match val.get_type()? {
       ValueType::Bigint => {
-        let big: JsBigint = unsafe {val.cast()};
+        let big: JsBigint = unsafe { val.cast() };
         big.try_into()
       }
       ValueType::Number => {
         let s: JsNumber = val.try_into()?;
         s.try_into()
       }
-      dt => Err(JsPolarsEr::Other(format!("cannot cast {} to u64", dt)).into())
+      dt => Err(JsPolarsEr::Other(format!("cannot cast {} to u64", dt)).into()),
     }
   }
 }
@@ -100,14 +148,14 @@ impl FromJsUnknown for u64 {
   fn from_js(val: JsUnknown) -> Result<Self> {
     match val.get_type()? {
       ValueType::Bigint => {
-        let big: JsBigint = unsafe {val.cast()};
+        let big: JsBigint = unsafe { val.cast() };
         big.try_into()
       }
       ValueType::Number => {
         let s: JsNumber = val.try_into()?;
         Ok(s.get_int64()? as u64)
       }
-      dt => Err(JsPolarsEr::Other(format!("cannot cast {} to u64", dt)).into())
+      dt => Err(JsPolarsEr::Other(format!("cannot cast {} to u64", dt)).into()),
     }
   }
 }

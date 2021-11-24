@@ -22,7 +22,7 @@ export class Series<T> {
    */
   [Symbol.isConcatSpreadable] = true;
   
-  private _series: JsSeries;
+  _series: JsSeries;
   private internal = polarsInternal.series;
 
   /**
@@ -1564,7 +1564,7 @@ export class Series<T> {
     args?: object,
     _series = this._series,
   ): Series<U> {
-    // console.log({method,args, dtype: this.dtype});
+    console.log({method,args, dtype: this.dtype});
 
     return new Series(this.internal[method]({ _series, ...args }));
   }

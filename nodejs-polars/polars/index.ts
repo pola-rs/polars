@@ -1,6 +1,7 @@
 import {default as Series} from './series';
 import { DataType } from './datatypes';
 import * as func from './functions';
+import polarsInternal from './internals/polars_internal';
 
 export default {
   Int8:  DataType.Int8,
@@ -22,5 +23,6 @@ export default {
   Object:  DataType.Object,
   Categorical:  DataType.Categorical,
   repeat: func.repeat,
-  Series
+  Series,
+  _internal: polarsInternal
 };
