@@ -570,7 +570,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn height(&self) -> usize {
-        self.columns.get(0).map_or(0, |v| v.len())
+        self.shape().0
     }
 
     /// Check if DataFrame is empty
