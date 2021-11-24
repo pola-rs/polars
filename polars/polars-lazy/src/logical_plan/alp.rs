@@ -143,7 +143,7 @@ impl Default for ALogicalPlan {
 }
 
 impl ALogicalPlan {
-    pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> &'a Schema {
+    pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> &'a SchemaRef {
         use ALogicalPlan::*;
         match self {
             Union { inputs, .. } => arena.get(inputs[0]).schema(arena),

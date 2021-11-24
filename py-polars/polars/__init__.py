@@ -205,3 +205,6 @@ __all__ = [
 ]
 
 __version__ = version()
+import os
+
+os.environ["POLARS_ALLOW_EXTENSION"] = "true"

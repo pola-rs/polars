@@ -5,6 +5,7 @@ use crate::physical_plan::executors::scan::IpcExec;
 use crate::physical_plan::executors::union::UnionExec;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
+use crate::utils::expr_to_root_column_name;
 use crate::{
     logical_plan::iterator::ArenaExprIter,
     utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr},
@@ -72,7 +73,7 @@ impl PhysicalPlanner for DefaultPlanner {
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Result<Box<dyn Executor>> {
-        self.create_initial_physical_plan(root, lp_arena, expr_arena)
+        self.create_physical_plan(root, lp_arena, expr_arena)
     }
 }
 
@@ -88,7 +89,7 @@ impl DefaultPlanner {
             .map(|e| self.create_physical_expr(*e, context, expr_arena))
             .collect()
     }
-    pub fn create_initial_physical_plan(
+    pub fn create_physical_plan(
         &self,
         root: Node,
         lp_arena: &mut Arena<ALogicalPlan>,
@@ -100,7 +101,7 @@ impl DefaultPlanner {
             Union { inputs } => {
                 let inputs = inputs
                     .into_iter()
-                    .map(|node| self.create_initial_physical_plan(node, lp_arena, expr_arena))
+                    .map(|node| self.create_physical_plan(node, lp_arena, expr_arena))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Box::new(UnionExec { inputs }))
             }
@@ -110,7 +111,7 @@ impl DefaultPlanner {
                 value_vars,
                 ..
             } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(MeltExec {
                     input,
                     id_vars,
@@ -118,11 +119,11 @@ impl DefaultPlanner {
                 }))
             }
             Slice { input, offset, len } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(SliceExec { input, offset, len }))
             }
             Selection { input, predicate } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let predicate =
                     self.create_physical_expr(predicate, Context::Default, expr_arena)?;
                 Ok(Box::new(FilterExec::new(predicate, input)))
@@ -202,7 +203,7 @@ impl DefaultPlanner {
                 schema: _schema,
                 ..
             } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
                 Ok(Box::new(ProjectionExec {
@@ -218,7 +219,7 @@ impl DefaultPlanner {
                 schema: _schema,
                 ..
             } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
                 Ok(Box::new(ProjectionExec {
@@ -249,7 +250,7 @@ impl DefaultPlanner {
                 by_column,
                 reverse,
             } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let by_column =
                     self.create_physical_expressions(&by_column, Context::Default, expr_arena)?;
                 Ok(Box::new(SortExec {
@@ -259,7 +260,7 @@ impl DefaultPlanner {
                 }))
             }
             Explode { input, columns } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(ExplodeExec { input, columns }))
             }
             Cache { input } => {
@@ -274,7 +275,7 @@ impl DefaultPlanner {
                         key.push_str(field.name())
                     }
                 }
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(CacheExec { key, input }))
             }
             Distinct {
@@ -282,7 +283,7 @@ impl DefaultPlanner {
                 maintain_order,
                 subset,
             } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let subset = Arc::try_unwrap(subset).unwrap_or_else(|subset| (*subset).clone());
                 Ok(Box::new(DropDuplicatesExec {
                     input,
@@ -298,7 +299,9 @@ impl DefaultPlanner {
                 schema: _,
                 maintain_order,
             } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                #[cfg(feature = "object")]
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
                 // We first check if we can partition the groupby on the latest moment.
                 // TODO: fix this brittle/ buggy state and implement partitioned groupby's in eager
@@ -336,6 +339,17 @@ impl DefaultPlanner {
                         }
 
                         let agg = node_to_exp(*agg, expr_arena);
+
+                        #[cfg(feature = "object")]
+                        {
+                            let name = expr_to_root_column_name(&agg).unwrap();
+                            let fld = input_schema.field_with_name(&name).unwrap();
+
+                            if let DataType::Object(_) = fld.data_type() {
+                                partitionable = false;
+                                break;
+                            }
+                        }
 
                         // check if the aggregation type is partitionable
                         match agg {
@@ -409,10 +423,8 @@ impl DefaultPlanner {
                     false
                 };
 
-                let input_left =
-                    self.create_initial_physical_plan(input_left, lp_arena, expr_arena)?;
-                let input_right =
-                    self.create_initial_physical_plan(input_right, lp_arena, expr_arena)?;
+                let input_left = self.create_physical_plan(input_left, lp_arena, expr_arena)?;
+                let input_right = self.create_physical_plan(input_right, lp_arena, expr_arena)?;
                 let left_on =
                     self.create_physical_expressions(&left_on, Context::Default, expr_arena)?;
                 let right_on =
@@ -430,7 +442,7 @@ impl DefaultPlanner {
                 )))
             }
             HStack { input, exprs, .. } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&exprs, Context::Default, expr_arena)?;
                 Ok(Box::new(StackExec::new(input, phys_expr)))
@@ -438,7 +450,7 @@ impl DefaultPlanner {
             Udf {
                 input, function, ..
             } => {
-                let input = self.create_initial_physical_plan(input, lp_arena, expr_arena)?;
+                let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(UdfExec { input, function }))
             }
         }
