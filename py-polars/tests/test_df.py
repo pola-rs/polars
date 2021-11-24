@@ -1,4 +1,5 @@
 # flake8: noqa: W191,E101
+import sys
 import typing as tp
 from builtins import range
 from datetime import datetime
@@ -1262,3 +1263,39 @@ def test_transpose() -> None:
         }
     )
     assert expected.frame_equal(out)
+
+
+def test_extension() -> None:
+    class Foo:
+        def __init__(self, value):  # type: ignore
+            self.value = value
+
+        def __repr__(self):  # type: ignore
+            return f"foo({self.value})"
+
+    foos = [Foo(1), Foo(2), Foo(3)]
+    # I believe foos, stack, and sys.getrefcount have a ref
+    base_count = 3
+    assert sys.getrefcount(foos[0]) == base_count
+
+    df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
+    assert sys.getrefcount(foos[0]) == base_count + 1
+    del df
+    assert sys.getrefcount(foos[0]) == base_count
+
+    df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
+    assert sys.getrefcount(foos[0]) == base_count + 1
+
+    out = df.groupby("groups", maintain_order=True).agg(pl.col("a").list().alias("a"))
+    assert sys.getrefcount(foos[0]) == base_count + 2
+    s = out["a"].explode()
+    assert sys.getrefcount(foos[0]) == base_count + 3
+    del s
+    assert sys.getrefcount(foos[0]) == base_count + 2
+
+    assert out["a"].explode().to_list() == foos
+    assert sys.getrefcount(foos[0]) == base_count + 2
+    del out
+    assert sys.getrefcount(foos[0]) == base_count + 1
+    del df
+    assert sys.getrefcount(foos[0]) == base_count
