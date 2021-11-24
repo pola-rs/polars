@@ -813,12 +813,12 @@ impl DataFrame {
     ///
     /// fn example() -> Result<()> {
     ///     let mut df: DataFrame = df!("Animal" => &["Tiger", "Lion", "Great auk"],
-    ///                                 "UICN" => &["Endangered", "Vulnerable", "Extinct"])?;
+    ///                                 "IUCN" => &["Endangered", "Vulnerable", "Extinct"])?;
     ///     
     ///     let s1: Result<Series> = df.drop_in_place("Average weight");
     ///     assert!(s1.is_err());
     ///
-    ///     let s2: Series = df.drop_in_place("UICN")?;
+    ///     let s2: Series = df.drop_in_place("IUCN")?;
     ///     assert_eq!(s2, Series::new("Animal", &["Tiger", "Lion", "Great auk"]));
     ///
     ///     Ok(())
