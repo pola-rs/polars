@@ -264,9 +264,10 @@ pub unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
-    let iter = indices
-        .into_iter()
-        .map(|idx| Some(arr.value_unchecked(idx)));
+    let iter = indices.into_iter().map(|idx| {
+        debug_assert!(idx < arr.len());
+        Some(arr.value_unchecked(idx))
+    });
 
     Arc::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
 }

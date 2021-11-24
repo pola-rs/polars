@@ -33,8 +33,18 @@ impl PhysicalExpr for TernaryExpr {
         groups: &'a GroupTuples,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
+        let required_height = df.height();
         let ac_mask = self.predicate.evaluate_on_groups(df, groups, state)?;
         let mask_s = ac_mask.flat();
+
+        assert!(
+            !(mask_s.len() != required_height),
+            "The predicate is of a different length than the groups.\
+The predicate produced {} values. Where the original DataFrame has {} values",
+            mask_s.len(),
+            required_height
+        );
+
         let mask = mask_s.bool()?;
         let mut ac_truthy = self.truthy.evaluate_on_groups(df, groups, state)?;
         let ac_falsy = self.falsy.evaluate_on_groups(df, groups, state)?;
@@ -48,6 +58,12 @@ impl PhysicalExpr for TernaryExpr {
         }
 
         let out = ac_truthy.flat().zip_with(mask, ac_falsy.flat().as_ref())?;
+
+        assert!(!(out.len() != required_height), "The output of the `when -> then -> otherwise-expr` is of a different length than the groups.\
+The expr produced {} values. Where the original DataFrame has {} values",
+out.len(),
+required_height);
+
         ac_truthy.with_series(out, false);
 
         Ok(ac_truthy)

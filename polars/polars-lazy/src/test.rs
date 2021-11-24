@@ -2242,3 +2242,37 @@ fn test_literal_window_fn() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[should_panic]
+fn test_invalid_ternary_in_agg1() {
+    let df = df![
+        "groups" => [1, 1, 2, 2, 3, 3],
+        "vals" => [1, 2, 3, 4, 5, 6]
+    ]
+    .unwrap();
+
+    df.lazy()
+        .groupby([col("groups")])
+        .agg([when(col("vals").first().neq(lit(1)))
+            .then(lit("a"))
+            .otherwise(lit("b"))])
+        .collect();
+}
+
+#[test]
+#[should_panic]
+fn test_invalid_ternary_in_agg2() {
+    let df = df![
+        "groups" => [1, 1, 2, 2, 3, 3],
+        "vals" => [1, 2, 3, 4, 5, 6]
+    ]
+    .unwrap();
+
+    df.lazy()
+        .groupby([col("groups")])
+        .agg([when(col("vals").neq(lit(1)))
+            .then(col("vals").first())
+            .otherwise(lit("b"))])
+        .collect();
+}
