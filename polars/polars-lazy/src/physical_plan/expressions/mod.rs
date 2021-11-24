@@ -233,6 +233,7 @@ impl<'a> AggregationContext<'a> {
                     || !self.groups.as_ref().is_empty()
                     && self.groups[0].1.len() > 1)
                 {
+                    // todo! optimize this, we don't have to call agg_list, create the list directly.
                     Cow::Owned(s.expand_at_index(0, self.groups.iter().map(|g| g.1.len()).sum()))
                 } else {
                     Cow::Borrowed(s)
