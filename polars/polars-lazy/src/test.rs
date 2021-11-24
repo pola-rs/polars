@@ -1789,6 +1789,7 @@ fn test_filter_count() -> Result<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-i16")]
 fn test_groupby_small_ints() -> Result<()> {
     let df = df![
         "id_32" => [1i32, 2],
@@ -2275,4 +2276,23 @@ fn test_invalid_ternary_in_agg2() {
             .then(col("vals").first())
             .otherwise(lit("b"))])
         .collect();
+}
+
+#[test]
+fn stress_agg_context() -> Result<()> {
+    let df = df![
+        "groups" => [1, 1, 2, 2, 3, 3],
+        "vals" => [1, 2, 3, 4, 5, 6]
+    ]?;
+
+    // let out = df.lazy()
+    //     .groupby([col("groups")])
+    //     .agg([
+    //         (col("vals").first() * col("vals")).list()
+    //     ])
+    //     .collect()?;
+    //
+    // dbg!(out);
+
+    Ok(())
 }

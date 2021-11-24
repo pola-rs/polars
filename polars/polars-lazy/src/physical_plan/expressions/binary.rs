@@ -86,6 +86,7 @@ impl PhysicalExpr for BinaryExpr {
         let mut ac_l = result_a?;
         let ac_r = result_b?;
 
+        // dbg!(&ac_l, &ac_r);
         if !ac_l.can_combine(&ac_r) {
             return Err(PolarsError::InvalidOperation(
                 "\
