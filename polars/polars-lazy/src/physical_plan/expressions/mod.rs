@@ -235,7 +235,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
-        // we do this here instead of the patter match because of mutable borrow overlaps.
+        // we do this here instead of the pattern match because of mutable borrow overlaps.
         //
         // The groups are determined lazily and in case of a flat/non-aggregated
         // series we use the groups to aggregate the list

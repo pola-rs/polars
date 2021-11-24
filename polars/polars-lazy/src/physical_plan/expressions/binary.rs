@@ -191,8 +191,8 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(ca.into_series(), true);
                 Ok(ac_l)
             }
-            // Both are or a flat series or aggreagated into a list
-            // so we can flatten the Series an apply the operators
+            // Both are or a flat series or aggregated into a list
+            // so we can flatten the Series and apply the operators
             _ => {
                 let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
                 ac_l.combine_groups(ac_r).with_series(out, false);
