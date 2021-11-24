@@ -892,8 +892,24 @@ impl DataFrame {
     }
 
     /// Drop a column by name.
-    /// This is a pure method and will return a new DataFrame instead of modifying
+    /// This is a pure method and will return a new `DataFrame` instead of modifying
     /// the current one in place.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df1: DataFrame = df!("Ray type" => &["α", "β", "X", "γ"])?;
+    ///     let df2: DataFrame = df1.drop("Ray type")?;
+    ///
+    ///     assert_eq!(df1, df2);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn drop(&self, name: &str) -> Result<Self> {
         let idx = self.name_to_idx(name)?;
         let mut new_cols = Vec::with_capacity(self.columns.len() - 1);
