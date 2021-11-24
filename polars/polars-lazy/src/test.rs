@@ -2245,7 +2245,7 @@ fn test_literal_window_fn() -> Result<()> {
 }
 
 #[test]
-fn test_binary_agg_context_1() -> Result<()> {
+fn test_binary_agg_context_0() -> Result<()> {
     let df = df![
         "groups" => [1, 1, 2, 2, 3, 3],
         "vals" => [1, 2, 3, 4, 5, 6]
@@ -2279,23 +2279,58 @@ fn test_binary_agg_context_1() -> Result<()> {
     Ok(())
 }
 
-// just like binary expression, this must ben changed. This can work
+// just like binary expression, this must be changed. This can work
 #[test]
-#[should_panic]
-fn test_invalid_ternary_in_agg2() {
+fn test_binary_agg_context_1() -> Result<()> {
     let df = df![
         "groups" => [1, 1, 2, 2, 3, 3],
         "vals" => [1, 2, 3, 4, 5, 6]
-    ]
-    .unwrap();
+    ]?;
 
-    df.lazy()
-        .groupby([col("groups")])
+    let out = df
+        .clone()
+        .lazy()
+        .stable_groupby([col("groups")])
         .agg([when(col("vals").neq(lit(1)))
             .then(col("vals").first())
-            .otherwise(lit("b"))])
-        .collect()
-        .unwrap();
+            .otherwise(lit(90))
+            .alias("vals")])
+        .collect()?;
+
+    // [90, 1]
+    // [90, 3]
+    // [90, 5]
+    let out = out.column("vals")?;
+    let out = out.explode()?;
+    let out = out.i32()?;
+    assert_eq!(
+        Vec::from(out),
+        &[Some(90), Some(1), Some(90), Some(3), Some(90), Some(5)]
+    );
+
+    let out = df
+        .lazy()
+        .stable_groupby([col("groups")])
+        .agg([when(col("vals").neq(lit(1)))
+            .then(lit(90))
+            .otherwise(col("vals").first())
+            .alias("vals")])
+        .collect()?;
+
+    dbg!(&out);
+
+    // [1, 90]
+    // [3, 90]
+    // [5, 90]
+    let out = out.column("vals")?;
+    let out = out.explode()?;
+    let out = out.i32()?;
+    assert_eq!(
+        Vec::from(out),
+        &[Some(1), Some(90), Some(3), Some(90), Some(5), Some(90)]
+    );
+
+    Ok(())
 }
 
 #[test]
