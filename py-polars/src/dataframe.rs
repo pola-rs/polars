@@ -751,10 +751,12 @@ impl PyDataFrame {
             // Finally get the actual DataFrame
             Ok(pydf.df)
         };
+        // We don't use `py.allow_threads(|| gb.par_apply(..)` because that segfaulted
+        // due to code related to Pyo3 or rayon, cannot reproduce it in native polars
+        // so we lose parallelism, but it doesn't really matter because we are GIL bound anyways
+        // and this function should not be used in ideomatic polars anyway.
+        let df = gb.apply(function).map_err(PyPolarsEr::from)?;
 
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let df = py.allow_threads(|| gb.apply(function).map_err(PyPolarsEr::from))?;
         Ok(df.into())
     }
 
