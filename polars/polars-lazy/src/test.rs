@@ -1789,6 +1789,7 @@ fn test_filter_count() -> Result<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-i16")]
 fn test_groupby_small_ints() -> Result<()> {
     let df = df![
         "id_32" => [1i32, 2],
@@ -2244,22 +2245,41 @@ fn test_literal_window_fn() -> Result<()> {
 }
 
 #[test]
-#[should_panic]
-fn test_invalid_ternary_in_agg1() {
+fn test_binary_agg_context_1() -> Result<()> {
     let df = df![
         "groups" => [1, 1, 2, 2, 3, 3],
         "vals" => [1, 2, 3, 4, 5, 6]
     ]
     .unwrap();
 
-    df.lazy()
-        .groupby([col("groups")])
+    let out = df
+        .lazy()
+        .stable_groupby([col("groups")])
         .agg([when(col("vals").first().neq(lit(1)))
             .then(lit("a"))
-            .otherwise(lit("b"))])
-        .collect();
+            .otherwise(lit("b"))
+            .alias("foo")])
+        .collect()
+        .unwrap();
+
+    let out = out.column("foo")?;
+    let out = out.explode()?;
+    let out = out.utf8()?;
+    assert_eq!(
+        Vec::from(out),
+        &[
+            Some("b"),
+            Some("b"),
+            Some("a"),
+            Some("a"),
+            Some("a"),
+            Some("a")
+        ]
+    );
+    Ok(())
 }
 
+// just like binary expression, this must ben changed. This can work
 #[test]
 #[should_panic]
 fn test_invalid_ternary_in_agg2() {
@@ -2274,5 +2294,54 @@ fn test_invalid_ternary_in_agg2() {
         .agg([when(col("vals").neq(lit(1)))
             .then(col("vals").first())
             .otherwise(lit("b"))])
-        .collect();
+        .collect()
+        .unwrap();
+}
+
+#[test]
+fn test_binary_agg_context_2() -> Result<()> {
+    let df = df![
+        "groups" => [1, 1, 2, 2, 3, 3],
+        "vals" => [1, 2, 3, 4, 5, 6]
+    ]?;
+
+    // this is complex because we first aggregate one expression of the binary operation.
+
+    let out = df
+        .clone()
+        .lazy()
+        .stable_groupby([col("groups")])
+        .agg([((col("vals").first() - col("vals")).list()).alias("vals")])
+        .collect()?;
+
+    // 0 - [1, 2] = [0, -1]
+    // 3 - [3, 4] = [0, -1]
+    // 5 - [5, 6] = [0, -1]
+    let out = out.column("vals")?;
+    let out = out.explode()?;
+    let out = out.i32()?;
+    assert_eq!(
+        Vec::from(out),
+        &[Some(0), Some(-1), Some(0), Some(-1), Some(0), Some(-1)]
+    );
+
+    // Same, but now we reverse the lhs / rhs.
+    let out = df
+        .lazy()
+        .stable_groupby([col("groups")])
+        .agg([((col("vals")) - col("vals").first()).list().alias("vals")])
+        .collect()?;
+
+    // [1, 2] - 1 = [0, 1]
+    // [3, 4] - 3 = [0, 1]
+    // [5, 6] - 5 = [0, 1]
+    let out = out.column("vals")?;
+    let out = out.explode()?;
+    let out = out.i32()?;
+    assert_eq!(
+        Vec::from(out),
+        &[Some(0), Some(1), Some(0), Some(1), Some(0), Some(1)]
+    );
+
+    Ok(())
 }

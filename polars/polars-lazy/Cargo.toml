@@ -56,6 +56,18 @@ abs = ["polars-core/abs"]
 # no guarantees whatsoever
 private = []
 
+test = [
+  "rolling_window",
+  "rank",
+  "list",
+  "round_series",
+  "csv-file",
+  "dtype-categorical",
+  "cum_agg",
+  "regex",
+  "polars-core/plain_fmt",
+]
+
 [dependencies]
 ahash = "0.7"
 itertools = "0.10"
