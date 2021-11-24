@@ -26,6 +26,7 @@ use polars_core::prelude::*;
 use polars_io::PhysicalIoExpr;
 use std::borrow::Cow;
 
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub(crate) enum AggState {
     /// Already aggregated: `.agg_list(group_tuples` is called
     /// and produced a `Series` of dtype `List`
@@ -154,16 +155,16 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    pub(crate) fn agg_state(&self) -> &AggState {
+        &self.series
+    }
+
     pub(crate) fn is_not_aggregated(&self) -> bool {
         matches!(&self.series, AggState::NotAggregated(_))
     }
 
     pub(crate) fn is_aggregated(&self) -> bool {
         !self.is_not_aggregated()
-    }
-
-    pub(crate) fn is_aggregated_flat(&self) -> bool {
-        matches!(&self.series, AggState::AggregatedFlat(_))
     }
 
     pub(crate) fn combine_groups(&mut self, other: AggregationContext) -> &mut Self {
