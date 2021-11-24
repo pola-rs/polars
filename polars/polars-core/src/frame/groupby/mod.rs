@@ -1146,28 +1146,51 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         DataFrame::new(cols)
     }
 
-    /// Apply a closure over the groups as a new DataFrame.
-    pub fn apply<F>(&self, f: F) -> Result<DataFrame>
-    where
-        F: Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
-    {
-        let df = if let Some(agg) = &self.selected_agg {
+    fn prepare_apply(&self) -> Result<DataFrame> {
+        if let Some(agg) = &self.selected_agg {
             if agg.is_empty() {
-                self.df.clone()
+                Ok(self.df.clone())
             } else {
                 let mut new_cols = Vec::with_capacity(self.selected_keys.len() + agg.len());
                 new_cols.extend_from_slice(&self.selected_keys);
                 let cols = self.df.select_series(agg)?;
                 new_cols.extend(cols.into_iter());
-                DataFrame::new_no_checks(new_cols)
+                Ok(DataFrame::new_no_checks(new_cols))
             }
         } else {
-            self.df.clone()
-        };
+            Ok(self.df.clone())
+        }
+    }
 
+    /// Apply a closure over the groups as a new DataFrame in parallel.
+    pub fn par_apply<F>(&self, f: F) -> Result<DataFrame>
+    where
+        F: Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+    {
+        let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
             .par_iter()
+            .map(|t| {
+                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
+                f(sub_df)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut df = accumulate_dataframes_vertical(dfs)?;
+        df.as_single_chunk();
+        Ok(df)
+    }
+
+    /// Apply a closure over the groups as a new DataFrame.
+    pub fn apply<F>(&self, f: F) -> Result<DataFrame>
+    where
+        F: Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
+    {
+        let df = self.prepare_apply()?;
+        let dfs = self
+            .get_groups()
+            .iter()
             .map(|t| {
                 let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
                 f(sub_df)
