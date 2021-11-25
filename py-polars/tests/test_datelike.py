@@ -1,5 +1,8 @@
 from datetime import date, datetime, timedelta
 
+import pyarrow as pa
+import pytest
+
 import polars as pl
 
 
@@ -159,7 +162,7 @@ def test_datetime_consistency() -> None:
 
 
 def downsample_with_buckets() -> None:
-    (
+    assert (
         pl.date_range(
             low=datetime(2000, 10, 1, 23, 30),
             high=datetime(2000, 10, 2, 0, 30),
@@ -172,3 +175,18 @@ def downsample_with_buckets() -> None:
         )
         .agg(pl.col("date_range").count().alias("bucket_count"))
     ).to_series(1).to_list() == [3, 2, 3, 1]
+
+
+def test_timezone() -> None:
+    ts = pa.timestamp("s")
+    data = pa.array([1000, 2000], type=ts)
+    s: pl.Series = pl.from_arrow(data)  # type: ignore
+
+    # with timezone; we do expect a warning here
+    tz_ts = pa.timestamp("s", tz="America/New_York")
+    tz_data = pa.array([1000, 2000], type=tz_ts)
+    with pytest.warns(Warning):
+        tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore
+
+    # timezones have no effect, i.e. `s` equals `tz_s`
+    assert s.series_equal(tz_s)
