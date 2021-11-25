@@ -142,7 +142,6 @@ __all__ = [
     "scan_ipc",
     "scan_parquet",
     "read_ipc_schema",
-    "testing",
     # polars.stringcache
     "StringCache",
     # polars.config
