@@ -1,8 +1,8 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_arrow::arrow::array::ArrayRef;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
+use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -75,12 +75,7 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 // so we can swap the ArrayRef during the hot loop
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_truthy.clone()])).unwrap();
-                let chunks = unsafe {
-                    let chunks = dummy.chunks();
-                    let ptr = chunks.as_ptr() as *mut ArrayRef;
-                    let len = chunks.len();
-                    std::slice::from_raw_parts_mut(ptr, len)
-                };
+                let mut us = UnstableSeries::new(&dummy);
 
                 // this is now a list
                 let falsy = ac_falsy.aggregated();
@@ -109,10 +104,9 @@ The predicate produced {} values. Where the original DataFrame has {} values",
 
                                 // Safety:
                                 // we are in bounds
-                                let mut arr =
-                                    unsafe { Arc::from(arr_truthy.slice_unchecked(idx, 1)) };
-                                std::mem::swap(&mut chunks[0], &mut arr);
-                                let truthy = &dummy;
+                                let arr = unsafe { Arc::from(arr_truthy.slice_unchecked(idx, 1)) };
+                                us.swap(arr);
+                                let truthy = us.as_ref();
 
                                 Some(truthy.zip_with(mask, falsy))
                             }
@@ -142,12 +136,8 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 // so we can swap the ArrayRef during the hot loop
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_falsy.clone()])).unwrap();
-                let chunks = unsafe {
-                    let chunks = dummy.chunks();
-                    let ptr = chunks.as_ptr() as *mut ArrayRef;
-                    let len = chunks.len();
-                    std::slice::from_raw_parts_mut(ptr, len)
-                };
+                let mut us = UnstableSeries::new(&dummy);
+
                 let mask = ac_mask.aggregated();
                 let mask = mask.as_ref();
                 let mask = mask.list()?;
@@ -170,10 +160,9 @@ The predicate produced {} values. Where the original DataFrame has {} values",
 
                                 // Safety:
                                 // we are in bounds
-                                let mut arr =
-                                    unsafe { Arc::from(arr_falsy.slice_unchecked(idx, 1)) };
-                                std::mem::swap(&mut chunks[0], &mut arr);
-                                let falsy = &dummy;
+                                let arr = unsafe { Arc::from(arr_falsy.slice_unchecked(idx, 1)) };
+                                us.swap(arr);
+                                let falsy = us.as_ref();
 
                                 Some(truthy.zip_with(mask, falsy))
                             }
