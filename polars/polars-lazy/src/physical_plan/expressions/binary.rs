@@ -1,8 +1,10 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
+use polars_arrow::arrow::array::ArrayRef;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::{prelude::*, POOL};
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 pub struct BinaryExpr {
@@ -84,7 +86,7 @@ impl PhysicalExpr for BinaryExpr {
             )
         });
         let mut ac_l = result_a?;
-        let ac_r = result_b?;
+        let mut ac_r = result_b?;
 
         if !ac_l.can_combine(&ac_r) {
             return Err(PolarsError::InvalidOperation(
@@ -93,9 +95,110 @@ impl PhysicalExpr for BinaryExpr {
                     .into(),
             ));
         }
-        let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
-        ac_l.combine_groups(ac_r).with_series(out, false);
-        Ok(ac_l)
+
+        match (ac_l.agg_state(), ac_r.agg_state()) {
+            // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
+            (AggState::AggregatedFlat(_), AggState::NotAggregated(_)) => {
+                // this is a flat series of len eq to group tuples
+                let l = ac_l.aggregated();
+                let l = l.as_ref();
+                let arr_l = &l.chunks()[0];
+                assert_eq!(l.len(), groups.len());
+
+                // we create a dummy Series that is not cloned nor moved
+                // so we can swap the ArrayRef during the hot loop
+                // this prevents a series Arc alloc and a vec alloc per iteration
+                let dummy = Series::try_from(("dummy", vec![arr_l.clone()])).unwrap();
+                let chunks = unsafe {
+                    let chunks = dummy.chunks();
+                    let ptr = chunks.as_ptr() as *mut ArrayRef;
+                    let len = chunks.len();
+                    std::slice::from_raw_parts_mut(ptr, len)
+                };
+
+                // this is now a list
+                let r = ac_r.aggregated();
+                let r = r.list().unwrap();
+
+                let mut ca: ListChunked = r
+                    .amortized_iter()
+                    .enumerate()
+                    .map(|(idx, opt_s)| {
+                        opt_s
+                            .map(|s| {
+                                let r = s.as_ref();
+                                // TODO: optimize this? Its slow and unsafe.
+
+                                // Safety:
+                                // we are in bounds
+                                let mut arr = unsafe { Arc::from(arr_l.slice_unchecked(idx, 1)) };
+                                std::mem::swap(&mut chunks[0], &mut arr);
+                                let l = &dummy;
+
+                                apply_operator(l, r, self.op)
+                            })
+                            .transpose()
+                    })
+                    .collect::<Result<_>>()?;
+                ca.rename(l.name());
+
+                ac_l.with_series(ca.into_series(), true);
+                Ok(ac_l)
+            }
+            (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
+                // this is now a list
+                let l = ac_l.aggregated();
+                let l = l.list().unwrap();
+
+                // this is a flat series of len eq to group tuples
+                let r = ac_r.aggregated();
+                assert_eq!(l.len(), groups.len());
+                let r = r.as_ref();
+                let arr_r = &r.chunks()[0];
+
+                // we create a dummy Series that is not cloned nor moved
+                // so we can swap the ArrayRef during the hot loop
+                // this prevents a series Arc alloc and a vec alloc per iteration
+                let dummy = Series::try_from(("dummy", vec![arr_r.clone()])).unwrap();
+                let chunks = unsafe {
+                    let chunks = dummy.chunks();
+                    let ptr = chunks.as_ptr() as *mut ArrayRef;
+                    let len = chunks.len();
+                    std::slice::from_raw_parts_mut(ptr, len)
+                };
+
+                let mut ca: ListChunked = l
+                    .amortized_iter()
+                    .enumerate()
+                    .map(|(idx, opt_s)| {
+                        opt_s
+                            .map(|s| {
+                                let l = s.as_ref();
+                                // TODO: optimize this? Its slow.
+                                // Safety:
+                                // we are in bounds
+                                let mut arr = unsafe { Arc::from(arr_r.slice_unchecked(idx, 1)) };
+                                std::mem::swap(&mut chunks[0], &mut arr);
+                                let r = &dummy;
+
+                                apply_operator(l, r, self.op)
+                            })
+                            .transpose()
+                    })
+                    .collect::<Result<_>>()?;
+                ca.rename(l.name());
+
+                ac_l.with_series(ca.into_series(), true);
+                Ok(ac_l)
+            }
+            // Both are or a flat series or aggregated into a list
+            // so we can flatten the Series and apply the operators
+            _ => {
+                let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
+                ac_l.combine_groups(ac_r).with_series(out, false);
+                Ok(ac_l)
+            }
+        }
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {

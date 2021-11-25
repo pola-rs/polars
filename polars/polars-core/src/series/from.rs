@@ -1,5 +1,7 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::cast::cast_chunks;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;
 use polars_arrow::compute::cast::cast;
@@ -387,6 +389,25 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     })
                     .collect();
                 Ok(ListChunked::new_from_chunks(name, chunks).into())
+            }
+            #[cfg(feature = "object")]
+            ArrowDataType::Extension(s, _, Some(_)) if s == "POLARS_EXTENSION_TYPE" => {
+                assert_eq!(chunks.len(), 1);
+                let arr = chunks[0]
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap();
+                // Safety:
+                // this is highly unsafe. it will dereference a raw ptr on the heap
+                // make sure the ptr is allocated and from this pid
+                // (the pid is checked before dereference)
+                let s = unsafe {
+                    let pe = PolarsExtension::new(arr.clone());
+                    let s = pe.get_series();
+                    pe.take_and_forget();
+                    s
+                };
+                Ok(s)
             }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?} type", dt).into(),

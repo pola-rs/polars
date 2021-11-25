@@ -1665,7 +1665,7 @@ mod test {
         df.outer_join(&empty_df, "key", "key")?;
 
         let empty: Vec<String> = vec![];
-        let empty_df = DataFrame::new(vec![
+        let _empty_df = DataFrame::new(vec![
             Series::new("key", &empty),
             Series::new("eval", &empty),
         ])

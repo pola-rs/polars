@@ -69,7 +69,7 @@ def test_fold() -> None:
     )
     assert out["sum"].series_equal(pl.Series("sum", [2.0, 4.0, 6.0]))
     assert out["max"].series_equal(pl.Series("max", [1.0, 4.0, 9.0]))
-    assert out["min"].series_equal(pl.Series("max", [1.0, 2.0, 3.0]))
+    assert out["min"].series_equal(pl.Series("min", [1.0, 2.0, 3.0]))
 
     out = df.select(
         pl.fold(acc=lit(0), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("foo")
@@ -359,11 +359,11 @@ def test_head_groupby() -> None:
 
     out = df.groupby("letters").tail(2).sort("letters")
     assert out.frame_equal(
-        pl.DataFrame({"str": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]})
+        pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]})
     )
     out = df.groupby("letters").head(2).sort("letters")
     assert out.frame_equal(
-        pl.DataFrame({"str": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]})
+        pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]})
     )
 
 
@@ -479,20 +479,22 @@ def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
 
 def test_rolling(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
-    assert df.select(
+    out = df.select(
         [
             pl.col("A").rolling_min(3, min_periods=1).alias("1"),
             pl.col("A").rolling_mean(3, min_periods=1).alias("2"),
             pl.col("A").rolling_max(3, min_periods=1).alias("3"),
             pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
         ]
-    ).frame_equal(
+    )
+
+    assert out.frame_equal(
         pl.DataFrame(
             {
                 "1": [1, 1, 1, 2, 3],
                 "2": [1.0, 1.5, 2.0, 3.0, 4.0],
                 "3": [1, 2, 3, 4, 5],
-                "5": [1, 3, 6, 9, 12],
+                "4": [1, 3, 6, 9, 12],
             }
         )
     )
@@ -564,7 +566,7 @@ def test_arithmetic() -> None:
             (col("a") * 2).alias("8"),
             (col("a") + 2).alias("9"),
             (col("a") - 2).alias("10"),
-            -col("a").alias("11"),
+            (-col("a")).alias("11"),
         ]
     )
     expected = pl.DataFrame(
@@ -847,22 +849,22 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
 
 
 def test_max_min_multiple_columns(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.select(pl.max(["A", "B"]))
-    assert res.to_series(0).series_equal(pl.Series([5, 4, 3, 4, 5]))
+    res = fruits_cars.select(pl.max(["A", "B"]).alias("max"))
+    assert res.to_series(0).series_equal(pl.Series("max", [5, 4, 3, 4, 5]))
 
-    res = fruits_cars.select(pl.min(["A", "B"]))
-    assert res.to_series(0).series_equal(pl.Series([1, 2, 3, 2, 1]))
+    res = fruits_cars.select(pl.min(["A", "B"]).alias("min"))
+    assert res.to_series(0).series_equal(pl.Series("min", [1, 2, 3, 2, 1]))
 
 
 def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     res_expr = fruits_cars.select([pl.head("A", 2)])
     res_series = pl.head(fruits_cars["A"], 2)
-    expected = pl.Series([1, 2])
+    expected = pl.Series("A", [1, 2])
     assert res_expr.to_series(0).series_equal(expected)
     assert res_series.series_equal(expected)
 
     res_expr = fruits_cars.select([pl.tail("A", 2)])
     res_series = pl.tail(fruits_cars["A"], 2)
-    expected = pl.Series([4, 5])
+    expected = pl.Series("A", [4, 5])
     assert res_expr.to_series(0).series_equal(expected)
     assert res_series.series_equal(expected)

@@ -225,8 +225,8 @@ where
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
-        let sorted = self.sort(reverse);
-        self.chunks = sorted.chunks;
+        let mut sorted = self.sort(reverse);
+        self.chunks = std::mem::take(&mut sorted.chunks);
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
@@ -389,8 +389,8 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
-        let sorted = self.sort(reverse);
-        self.chunks = sorted.chunks;
+        let mut sorted = self.sort(reverse);
+        self.chunks = std::mem::take(&mut sorted.chunks);
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
@@ -471,8 +471,8 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
-        let sorted = self.sort(reverse);
-        self.chunks = sorted.chunks;
+        let mut sorted = self.sort(reverse);
+        self.chunks = std::mem::take(&mut sorted.chunks);
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {

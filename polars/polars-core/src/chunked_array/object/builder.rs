@@ -1,7 +1,6 @@
 use super::*;
-use crate::prelude::*;
 use crate::utils::get_iter_capacity;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 

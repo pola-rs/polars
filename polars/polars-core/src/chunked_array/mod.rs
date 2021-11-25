@@ -22,6 +22,8 @@ mod ndarray;
 mod bitwise;
 #[cfg(feature = "dtype-categorical")]
 pub(crate) mod categorical;
+#[cfg(feature = "object")]
+mod drop;
 pub(crate) mod list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
@@ -389,7 +391,7 @@ impl<T> ChunkedArray<T> {
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect_vec();
-        BooleanChunked::new_from_chunks("is_null", chunks)
+        BooleanChunked::new_from_chunks(self.name(), chunks)
     }
 
     /// Get a mask of the valid values.
@@ -408,7 +410,7 @@ impl<T> ChunkedArray<T> {
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect_vec();
-        BooleanChunked::new_from_chunks("is_not_null", chunks)
+        BooleanChunked::new_from_chunks(self.name(), chunks)
     }
 
     /// Get data type of ChunkedArray.

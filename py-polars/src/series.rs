@@ -580,8 +580,10 @@ impl PySeries {
         s.into()
     }
 
-    pub fn series_equal(&self, other: &PySeries, null_equal: bool) -> bool {
-        if null_equal {
+    pub fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
+        if strict {
+            self.series.eq(&other.series)
+        } else if null_equal {
             self.series.series_equal_missing(&other.series)
         } else {
             self.series.series_equal(&other.series)

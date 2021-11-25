@@ -28,6 +28,7 @@ dtype-i16 = ["polars-core/dtype-i16"]
 dtype-date = ["polars-core/dtype-date"]
 dtype-datetime = ["polars-core/dtype-datetime"]
 dtype-categorical = ["polars-core/dtype-categorical"]
+object = ["polars-core/object"]
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version
 # ooc = ["datafusion", "tokio"]
@@ -55,6 +56,18 @@ abs = ["polars-core/abs"]
 
 # no guarantees whatsoever
 private = []
+
+test = [
+  "rolling_window",
+  "rank",
+  "list",
+  "round_series",
+  "csv-file",
+  "dtype-categorical",
+  "cum_agg",
+  "regex",
+  "polars-core/plain_fmt",
+]
 
 [dependencies]
 ahash = "0.7"

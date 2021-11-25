@@ -1,13 +1,17 @@
-pub mod builder;
-mod is_valid;
-mod iterator;
-
-pub use crate::prelude::*;
-use arrow::bitmap::Bitmap;
 use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::sync::Arc;
+
+use arrow::bitmap::Bitmap;
+
+pub use crate::prelude::*;
+
+pub mod builder;
+#[cfg(feature = "object")]
+pub(crate) mod extension;
+mod is_valid;
+mod iterator;
 
 #[derive(Debug, Clone)]
 pub struct ObjectArray<T>

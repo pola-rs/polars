@@ -606,9 +606,9 @@ impl FmtList for TimeChunked {
 }
 
 #[cfg(feature = "object")]
-impl<T> FmtList for ObjectChunked<T> {
+impl<T: PolarsObject> FmtList for ObjectChunked<T> {
     fn fmt_list(&self) -> String {
-        todo!()
+        impl_fmt_list!(self)
     }
 }
 

@@ -26,8 +26,15 @@ use polars_core::prelude::*;
 use polars_io::PhysicalIoExpr;
 use std::borrow::Cow;
 
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub(crate) enum AggState {
-    Aggregated(Series),
+    /// Already aggregated: `.agg_list(group_tuples` is called
+    /// and produced a `Series` of dtype `List`
+    AggregatedList(Series),
+    /// Already aggregated: `.agg_list(group_tuples` is called
+    /// and produced a `Series` of any dtype that is not nested.
+    AggregatedFlat(Series),
+    /// Not yet aggregated: `agg_list` still has to be called.
     NotAggregated(Series),
     None,
 }
@@ -141,17 +148,22 @@ impl<'a> AggregationContext<'a> {
 
     pub(crate) fn series(&self) -> &Series {
         match &self.series {
-            AggState::Aggregated(s) => s,
-            AggState::NotAggregated(s) => s,
-            _ => unreachable!(),
+            AggState::NotAggregated(s)
+            | AggState::AggregatedFlat(s)
+            | AggState::AggregatedList(s) => s,
+            AggState::None => unreachable!(),
         }
+    }
+
+    pub(crate) fn agg_state(&self) -> &AggState {
+        &self.series
     }
 
     pub(crate) fn is_not_aggregated(&self) -> bool {
         matches!(&self.series, AggState::NotAggregated(_))
     }
 
-    pub fn is_aggregated(&self) -> bool {
+    pub(crate) fn is_aggregated(&self) -> bool {
         !self.is_not_aggregated()
     }
 
@@ -170,10 +182,16 @@ impl<'a> AggregationContext<'a> {
         groups: Cow<'a, GroupTuples>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
-        let series = if aggregated {
-            AggState::Aggregated(series)
-        } else {
-            AggState::NotAggregated(series)
+        let series = match (aggregated, series.dtype()) {
+            (true, &DataType::List(_)) => {
+                assert_eq!(series.len(), groups.len());
+                AggState::AggregatedList(series)
+            }
+            (true, _) => {
+                assert_eq!(series.len(), groups.len());
+                AggState::AggregatedFlat(series)
+            }
+            _ => AggState::NotAggregated(series),
         };
 
         Self {
@@ -200,7 +218,10 @@ impl<'a> AggregationContext<'a> {
     /// the columns dtype)
     pub(crate) fn with_series(&mut self, series: Series, aggregated: bool) -> &mut Self {
         self.series = match (aggregated, series.dtype()) {
-            (true, &DataType::List(_)) => AggState::Aggregated(series),
+            (true, &DataType::List(_)) => {
+                assert_eq!(series.len(), self.groups.len());
+                AggState::AggregatedList(series)
+            }
             _ => AggState::NotAggregated(series),
         };
         self
@@ -214,14 +235,13 @@ impl<'a> AggregationContext<'a> {
     }
 
     pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
-        // we do this here because of mutable borrow overlaps.
-        // The groups are determined lazily and in case of a flat
+        // we do this here instead of the pattern match because of mutable borrow overlaps.
+        //
+        // The groups are determined lazily and in case of a flat/non-aggregated
         // series we use the groups to aggregate the list
         // because this is lazy, we first must to update the groups
         // by calling .groups()
-        if let AggState::NotAggregated(_) = self.series {
-            self.groups();
-        }
+        self.groups();
         match &self.series {
             AggState::NotAggregated(s) => {
                 // literal series
@@ -233,6 +253,7 @@ impl<'a> AggregationContext<'a> {
                     || !self.groups.as_ref().is_empty()
                     && self.groups[0].1.len() > 1)
                 {
+                    // todo! optimize this, we don't have to call agg_list, create the list directly.
                     Cow::Owned(s.expand_at_index(0, self.groups.iter().map(|g| g.1.len()).sum()))
                 } else {
                     Cow::Borrowed(s)
@@ -249,7 +270,7 @@ impl<'a> AggregationContext<'a> {
                 };
                 out
             }
-            AggState::Aggregated(s) => Cow::Borrowed(s),
+            AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => Cow::Borrowed(s),
             AggState::None => unreachable!(),
         }
     }
@@ -257,23 +278,17 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn flat(&self) -> Cow<'_, Series> {
         match &self.series {
             AggState::NotAggregated(s) => Cow::Borrowed(s),
-            AggState::Aggregated(s) => {
-                // it is not always aggregated as list
-                // could for instance also be f64 by mean aggregation
-                if let DataType::List(_) = s.dtype() {
-                    Cow::Owned(s.explode().unwrap())
-                } else {
-                    Cow::Borrowed(s)
-                }
-            }
+            AggState::AggregatedList(s) => Cow::Owned(s.explode().unwrap()),
+            AggState::AggregatedFlat(s) => Cow::Borrowed(s),
             AggState::None => unreachable!(),
         }
     }
 
     pub(crate) fn take(&mut self) -> Series {
         match std::mem::take(&mut self.series) {
-            AggState::NotAggregated(s) => s,
-            AggState::Aggregated(s) => s,
+            AggState::NotAggregated(s)
+            | AggState::AggregatedFlat(s)
+            | AggState::AggregatedList(s) => s,
             AggState::None => panic!("implementation error"),
         }
     }
