@@ -17,7 +17,7 @@ release-install: release-build pip
 
 test:
 	maturin develop
-	pytest tests --cov=polars --import-mode=importlib
+	cd tests && pytest --cov=polars --import-mode=importlib
 
 test-build:
 	maturin build -o wheels
@@ -25,4 +25,4 @@ test-build:
 test-install: test-build pip
 
 build-and-test: test-install
-	pytest tests --cov=polars --import-mode=importlib
+	cd tests && pytest --cov=polars --import-mode=importlib
