@@ -421,10 +421,11 @@ def pandas_to_pydf(
 def coerce_arrow(array: "pa.Array") -> "pa.Array":
     # also coerces timezone to naive representation
     # units are accounted for by pyarrow
-    if "timestamp" in str(array.type):
-        warnings.warn(
-            "Conversion of (potentially) timezone aware to naive datetimes. TZ information may be lost",
-        )
+    if isinstance(array, pa.TimestampArray):
+        if array.type.tz is not None:
+            warnings.warn(
+                "Conversion of timezone aware to naive datetimes. TZ information may be lost",
+            )
         ts_ms = pa.compute.cast(array, pa.timestamp("ms"), safe=False)
         ms = pa.compute.cast(ts_ms, pa.int64())
         del ts_ms
