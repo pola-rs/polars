@@ -2284,50 +2284,55 @@ fn test_binary_agg_context_0() -> Result<()> {
 fn test_binary_agg_context_1() -> Result<()> {
     let df = df![
         "groups" => [1, 1, 2, 2, 3, 3],
-        "vals" => [1, 2, 3, 4, 5, 6]
+        "vals" => [1, 13, 3, 87, 1, 6]
     ]?;
+
+    // groups
+    // 1 => [1, 13]
+    // 2 => [3, 87]
+    // 3 => [1, 6]
 
     let out = df
         .clone()
         .lazy()
         .stable_groupby([col("groups")])
-        .agg([when(col("vals").neq(lit(1)))
-            .then(col("vals").first())
+        .agg([when(col("vals").eq(lit(1)))
+            .then(col("vals").sum())
             .otherwise(lit(90))
             .alias("vals")])
         .collect()?;
 
-    // [90, 1]
-    // [90, 3]
-    // [90, 5]
+    // if vals == 1 then sum(vals) else vals
+    // [14, 90]
+    // [90, 90]
+    // [7, 90]
     let out = out.column("vals")?;
     let out = out.explode()?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
-        &[Some(90), Some(1), Some(90), Some(3), Some(90), Some(5)]
+        &[Some(14), Some(90), Some(90), Some(90), Some(7), Some(90)]
     );
 
     let out = df
         .lazy()
         .stable_groupby([col("groups")])
-        .agg([when(col("vals").neq(lit(1)))
+        .agg([when(col("vals").eq(lit(1)))
             .then(lit(90))
-            .otherwise(col("vals").first())
+            .otherwise(col("vals").sum())
             .alias("vals")])
         .collect()?;
 
-    dbg!(&out);
-
-    // [1, 90]
-    // [3, 90]
-    // [5, 90]
+    // if vals == 1 then 90 else sum(vals)
+    // [90, 14]
+    // [90, 90]
+    // [90, 7]
     let out = out.column("vals")?;
     let out = out.explode()?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
-        &[Some(1), Some(90), Some(3), Some(90), Some(5), Some(90)]
+        &[Some(90), Some(14), Some(90), Some(90), Some(90), Some(7)]
     );
 
     Ok(())
