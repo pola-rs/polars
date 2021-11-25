@@ -2998,6 +2998,24 @@ class Series:
             pli.col(self.name).str_concat(delimiter)  # type: ignore
         )[self.name]
 
+    def reshape(self, dims: tp.Tuple[int, ...]) -> "Series":
+        """
+        Reshape this Series to a flat series, shape: (len,)
+        or a List series, shape: (rows, cols)
+
+        if a -1 is used in any of the dimensions, that dimension is inferred.
+
+        Parameters
+        ----------
+        dims
+            Tuple of the dimension sizes
+
+        Returns
+        -------
+        Series
+        """
+        return wrap_s(self._s.reshape(dims))
+
 
 class StringNameSpace:
     """

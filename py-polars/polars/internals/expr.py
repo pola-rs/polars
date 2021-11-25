@@ -1905,6 +1905,24 @@ class Expr:
         """
         return np.arctan(self)  # type: ignore
 
+    def reshape(self, dims: tp.Tuple[int, ...]) -> "Expr":
+        """
+        Reshape this Expr to a flat series, shape: (len,)
+        or a List series, shape: (rows, cols)
+
+        if a -1 is used in any of the dimensions, that dimension is inferred.
+
+        Parameters
+        ----------
+        dims
+            Tuple of the dimension sizes
+
+        Returns
+        -------
+        Expr
+        """
+        return wrap_expr(self._pyexpr.reshape(dims))
+
 
 class ExprListNameSpace:
     """
