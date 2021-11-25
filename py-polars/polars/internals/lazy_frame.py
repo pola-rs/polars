@@ -255,6 +255,9 @@ class LazyFrame:
         """
         Collect into a DataFrame.
 
+        Note: use `fetch` if you want to run this query on the first `n` rows only.
+        This can be a huge time saver in debugging queries.
+
         Parameters
         ----------
         type_coercion
@@ -739,9 +742,12 @@ class LazyFrame:
 
     def head(self, n: int) -> "LazyFrame":
         """
-        Get the first `n` rows of the DataFrame
-        Note if you don't want the rows to be scanned,
-        use the `fetch` operation.
+        Gets the first `n` rows of the DataFrame. You probably don't want to use this!
+
+        Consider using the `fetch` operation. The `fetch` operation will truly load the first `n`
+        rows lazily.
+
+        This operation instead loads all the rows and only applies the `head` at the end.
 
         Parameters
         ----------
