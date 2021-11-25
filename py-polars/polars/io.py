@@ -24,7 +24,7 @@ try:
     import pyarrow.parquet
 
     _PYARROW_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
 from polars.convert import from_arrow
@@ -33,7 +33,7 @@ from polars.internals import DataFrame, LazyFrame
 
 try:
     from polars.polars import ipc_schema as _ipc_schema
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
 
 try:

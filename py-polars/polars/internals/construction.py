@@ -23,10 +23,10 @@ try:
     from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
     import pyarrow as pa
 
@@ -36,7 +36,7 @@ else:
         import pyarrow as pa
 
         _PYARROW_AVAILABLE = True
-    except ImportError:
+    except ImportError:  # pragma: no cover
         _PYARROW_AVAILABLE = False
 
 ################################
@@ -119,7 +119,7 @@ def sequence_to_pyseries(
         dtype_ = type(value) if value is not None else float
 
         if dtype_ == date or dtype_ == datetime:
-            if not _PYARROW_AVAILABLE:
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a Sequence of date or datetime values to a PySeries."
                 )
@@ -129,7 +129,7 @@ def sequence_to_pyseries(
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
 
-            if not _PYARROW_AVAILABLE:
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
                 dtype = py_type_to_dtype(nested_dtype)
                 return PySeries.new_list(name, values, dtype)
 
@@ -201,7 +201,7 @@ def pandas_to_pyseries(
     """
     Construct a PySeries from a pandas Series or DatetimeIndex.
     """
-    if not _PYARROW_AVAILABLE:
+    if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
             "'pyarrow' is required when constructing a PySeries from a pandas Series."
         )
@@ -352,7 +352,7 @@ def arrow_to_pydf(
     """
     Construct a PyDataFrame from an Arrow Table.
     """
-    if not _PYARROW_AVAILABLE:
+    if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
         )
@@ -403,7 +403,7 @@ def pandas_to_pydf(
     """
     Construct a PyDataFrame from a pandas DataFrame.
     """
-    if not _PYARROW_AVAILABLE:
+    if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from a pandas DataFrame."
         )

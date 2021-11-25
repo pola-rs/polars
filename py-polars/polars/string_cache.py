@@ -5,7 +5,7 @@ try:
     from polars.polars import toggle_string_cache as pytoggle_string_cache
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 

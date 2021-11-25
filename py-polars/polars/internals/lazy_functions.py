@@ -27,7 +27,7 @@ try:
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 

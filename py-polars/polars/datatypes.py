@@ -6,7 +6,7 @@ try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
 from _ctypes import _SimpleCData

@@ -25,7 +25,7 @@ try:
     from polars.polars import PySeries
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 
