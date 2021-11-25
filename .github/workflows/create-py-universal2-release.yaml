@@ -41,6 +41,6 @@ jobs:
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          maturin-version: 0.11.3
+          maturin-version: 0.12.1
           command: publish
           args: -m py-polars/Cargo.toml --no-sdist --universal2 -o wheels -i python -u ritchie46
