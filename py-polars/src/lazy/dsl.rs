@@ -947,6 +947,10 @@ impl PyExpr {
             }
         }, GetOutput::same_type()).into()
     }
+
+    pub fn reshape(&self, dims: Vec<i64>) -> Self {
+        self.inner.clone().reshape(&dims).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

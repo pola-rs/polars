@@ -1350,6 +1350,11 @@ impl PySeries {
         let out = self.series.abs().map_err(PyPolarsEr::from)?;
         Ok(out.into())
     }
+
+    pub fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
+        let out = self.series.reshape(&dims).map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
 }
 
 macro_rules! impl_ufuncs {

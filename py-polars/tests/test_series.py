@@ -966,3 +966,22 @@ def test_compare_series_value_exact_mismatch() -> None:
         AssertionError, match="Series are different\n\nExact value mismatch"
     ):
         testing.assert_series_equal(srs1, srs2, check_exact=True)
+
+
+def test_reshape() -> None:
+    s = pl.Series("a", [1, 2, 3, 4])
+    out = s.reshape((-1, 2))
+    expected = pl.Series("a", [[1, 2], [3, 4]])
+    assert out.series_equal(expected)
+    out = s.reshape((2, 2))
+    assert out.series_equal(expected)
+    out = s.reshape((2, -1))
+    assert out.series_equal(expected)
+
+    out = s.reshape((-1, 1))
+    expected = pl.Series("a", [[1], [2], [3], [4]])
+    assert out.series_equal(expected)
+
+    # test lazy_dispatch
+    out = pl.select(pl.lit(s).reshape((-1, 1))).to_series()
+    assert out.series_equal(expected)

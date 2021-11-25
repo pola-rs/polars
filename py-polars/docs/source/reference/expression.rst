@@ -182,6 +182,7 @@ Manipulation/ selection
     Expr.lower_bound
     Expr.upper_bound
     Expr.str_concat
+    Expr.reshape
 
 Column names
 ------------

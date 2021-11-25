@@ -156,6 +156,7 @@ Manipulation/ selection
     Series.interpolate
     Series.clip
     Series.str_concat
+    Series.reshape
 
 Various
 --------
