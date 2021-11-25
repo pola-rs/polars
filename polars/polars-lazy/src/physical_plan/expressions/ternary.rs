@@ -64,7 +64,8 @@ The predicate produced {} values. Where the original DataFrame has {} values",
         );
 
         match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
-            (AggState::AggregatedFlat(_), AggState::NotAggregated(_)) => {
+            // if the groups_len == df.len we can just apply all flat.
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_)) if s.len() != df.height() => {
                 // this is a flat series of len eq to group tuples
                 let truthy = ac_truthy.aggregated();
                 let truthy = truthy.as_ref();
@@ -120,7 +121,8 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 ac_truthy.with_series(ca.into_series(), true);
                 Ok(ac_truthy)
             }
-            (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
+            // if the groups_len == df.len we can just apply all flat.
+            (AggState::NotAggregated(_), AggState::AggregatedFlat(s)) if s.len() != df.height() => {
                 // this is now a list
                 let truthy = ac_truthy.aggregated();
                 let truthy = truthy.as_ref();
