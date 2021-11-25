@@ -98,7 +98,9 @@ impl PhysicalExpr for BinaryExpr {
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
-            (AggState::AggregatedFlat(_), AggState::NotAggregated(_)) => {
+
+            // if the groups_len == df.len we can just apply all flat.
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_)) if s.len() != df.height() => {
                 // this is a flat series of len eq to group tuples
                 let l = ac_l.aggregated();
                 let l = l.as_ref();
@@ -141,7 +143,8 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(ca.into_series(), true);
                 Ok(ac_l)
             }
-            (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
+            // if the groups_len == df.len we can just apply all flat.
+            (AggState::NotAggregated(_), AggState::AggregatedFlat(s)) if s.len() != df.height() => {
                 // this is now a list
                 let l = ac_l.aggregated();
                 let l = l.list().unwrap();
