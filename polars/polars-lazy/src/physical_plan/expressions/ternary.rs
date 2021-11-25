@@ -3,6 +3,7 @@ use crate::prelude::*;
 use polars_arrow::arrow::array::ArrayRef;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
+use polars_core::POOL;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -36,7 +37,17 @@ impl PhysicalExpr for TernaryExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let required_height = df.height();
-        let ac_mask = self.predicate.evaluate_on_groups(df, groups, state)?;
+
+        let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
+        let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
+        let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);
+
+        let (ac_mask, (ac_truthy, ac_falsy)) =
+            POOL.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)));
+        let mut ac_mask = ac_mask?;
+        let mut ac_truthy = ac_truthy?;
+        let mut ac_falsy = ac_falsy?;
+
         let mask_s = ac_mask.flat();
 
         assert!(
@@ -47,17 +58,10 @@ The predicate produced {} values. Where the original DataFrame has {} values",
             required_height
         );
 
-        let mask = mask_s.bool()?;
-        let mut ac_truthy = self.truthy.evaluate_on_groups(df, groups, state)?;
-        let mut ac_falsy = self.falsy.evaluate_on_groups(df, groups, state)?;
-
-        if !ac_truthy.can_combine(&ac_falsy) {
-            return Err(PolarsError::InvalidOperation(
-                "\
-            cannot combine this ternary expression, the groups do not match"
-                    .into(),
-            ));
-        }
+        assert!(
+            ac_truthy.can_combine(&ac_falsy),
+            "cannot combine this ternary expression, the groups do not match"
+        );
 
         match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
             (AggState::AggregatedFlat(_), AggState::NotAggregated(_)) => {
@@ -80,15 +84,28 @@ The predicate produced {} values. Where the original DataFrame has {} values",
 
                 // this is now a list
                 let falsy = ac_falsy.aggregated();
+                let falsy = falsy.as_ref();
                 let falsy = falsy.list().unwrap();
+
+                let mask = ac_mask.aggregated();
+                let mask = mask.as_ref();
+                let mask = mask.list()?;
+                if !matches!(mask.inner_dtype(), DataType::Boolean) {
+                    return Err(PolarsError::ComputeError(
+                        format!("expected mask of type bool, got {:?}", mask.inner_dtype()).into(),
+                    ));
+                }
 
                 let mut ca: ListChunked = falsy
                     .amortized_iter()
+                    .zip(mask.amortized_iter())
                     .enumerate()
-                    .map(|(idx, opt_s)| {
-                        opt_s
-                            .map(|s| {
-                                let falsy = s.as_ref();
+                    .map(|(idx, (opt_falsy, opt_mask))| {
+                        match (opt_falsy, opt_mask) {
+                            (Some(falsy), Some(mask)) => {
+                                let falsy = falsy.as_ref();
+                                let mask = mask.as_ref();
+                                let mask = mask.bool()?;
 
                                 // Safety:
                                 // we are in bounds
@@ -97,9 +114,11 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                                 std::mem::swap(&mut chunks[0], &mut arr);
                                 let truthy = &dummy;
 
-                                truthy.zip_with(mask, falsy)
-                            })
-                            .transpose()
+                                Some(truthy.zip_with(mask, falsy))
+                            }
+                            _ => None,
+                        }
+                        .transpose()
                     })
                     .collect::<Result<_>>()?;
                 ca.rename(truthy.name());
@@ -110,6 +129,7 @@ The predicate produced {} values. Where the original DataFrame has {} values",
             (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
                 // this is now a list
                 let truthy = ac_truthy.aggregated();
+                let truthy = truthy.as_ref();
                 let truthy = truthy.list().unwrap();
 
                 // this is a flat series of len eq to group tuples
@@ -128,14 +148,26 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                     let len = chunks.len();
                     std::slice::from_raw_parts_mut(ptr, len)
                 };
+                let mask = ac_mask.aggregated();
+                let mask = mask.as_ref();
+                let mask = mask.list()?;
+                if !matches!(mask.inner_dtype(), DataType::Boolean) {
+                    return Err(PolarsError::ComputeError(
+                        format!("expected mask of type bool, got {:?}", mask.inner_dtype()).into(),
+                    ));
+                }
 
                 let mut ca: ListChunked = truthy
                     .amortized_iter()
+                    .zip(mask.amortized_iter())
                     .enumerate()
-                    .map(|(idx, opt_s)| {
-                        opt_s
-                            .map(|s| {
-                                let truthy = s.as_ref();
+                    .map(|(idx, (opt_truthy, opt_mask))| {
+                        match (opt_truthy, opt_mask) {
+                            (Some(truthy), Some(mask)) => {
+                                let truthy = truthy.as_ref();
+                                let mask = mask.as_ref();
+                                let mask = mask.bool()?;
+
                                 // Safety:
                                 // we are in bounds
                                 let mut arr =
@@ -143,9 +175,11 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                                 std::mem::swap(&mut chunks[0], &mut arr);
                                 let falsy = &dummy;
 
-                                truthy.zip_with(mask, falsy)
-                            })
-                            .transpose()
+                                Some(truthy.zip_with(mask, falsy))
+                            }
+                            _ => None,
+                        }
+                        .transpose()
                     })
                     .collect::<Result<_>>()?;
                 ca.rename(truthy.name());
@@ -156,6 +190,7 @@ The predicate produced {} values. Where the original DataFrame has {} values",
             // Both are or a flat series or aggreagated into a list
             // so we can flatten the Series an apply the operators
             _ => {
+                let mask = mask_s.bool()?;
                 let out = ac_truthy.flat().zip_with(mask, ac_falsy.flat().as_ref())?;
 
                 assert!(!(out.len() != required_height), "The output of the `when -> then -> otherwise-expr` is of a different length than the groups.\
