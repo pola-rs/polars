@@ -74,9 +74,9 @@ where
         // no need for 3 traling zeros
         let options = write::SerializeOptions {
             // 9f: all nanoseconds
-            time64_format: "%T%.9f".to_string(),
+            time64_format: Some("%T%.9f".to_string()),
             // 6f: all milliseconds
-            timestamp_format: "%FT%H:%M:%S.%6f".to_string(),
+            timestamp_format: Some("%FT%H:%M:%S.%6f".to_string()),
             ..Default::default()
         };
 
@@ -118,20 +118,20 @@ where
     }
 
     /// Set the CSV file's date format
-    pub fn with_date_format(mut self, format: String) -> Self {
+    pub fn with_date_format(mut self, format: Option<String>) -> Self {
         self.options.date32_format = format;
         self
     }
 
     /// Set the CSV file's time format
-    pub fn with_time_format(mut self, format: String) -> Self {
+    pub fn with_time_format(mut self, format: Option<String>) -> Self {
         self.options.time32_format = format.clone();
         self.options.time64_format = format;
         self
     }
 
     /// Set the CSV file's timestamp format array in
-    pub fn with_timestamp_format(mut self, format: String) -> Self {
+    pub fn with_timestamp_format(mut self, format: Option<String>) -> Self {
         self.options.timestamp_format = format;
         self
     }
