@@ -652,15 +652,23 @@ impl ChunkExpandAtIndex<CategoricalType> for CategoricalChunked {
 }
 
 impl ChunkExpandAtIndex<ListType> for ListChunked {
-    fn expand_at_index(&self, _index: usize, _length: usize) -> ListChunked {
-        unimplemented!()
+    fn expand_at_index(&self, index: usize, length: usize) -> ListChunked {
+        let opt_val = self.get(index);
+        match opt_val {
+            Some(val) => ListChunked::full(self.name(), &val, length),
+            None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
+        }
     }
 }
 
 #[cfg(feature = "object")]
-impl<T> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
-    fn expand_at_index(&self, _index: usize, _length: usize) -> ObjectChunked<T> {
-        todo!()
+impl<T: PolarsObject> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
+    fn expand_at_index(&self, index: usize, length: usize) -> ObjectChunked<T> {
+        let opt_val = self.get(index);
+        match opt_val {
+            Some(val) => ObjectChunked::<T>::full(self.name(), val.clone(), length),
+            None => ObjectChunked::<T>::full_null(self.name(), length),
+        }
     }
 }
 
