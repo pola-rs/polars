@@ -1,8 +1,8 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_arrow::arrow::array::ArrayRef;
 use polars_core::frame::groupby::GroupTuples;
+use polars_core::series::unstable::UnstableSeries;
 use polars_core::{prelude::*, POOL};
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -109,12 +109,7 @@ impl PhysicalExpr for BinaryExpr {
                 // so we can swap the ArrayRef during the hot loop
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_l.clone()])).unwrap();
-                let chunks = unsafe {
-                    let chunks = dummy.chunks();
-                    let ptr = chunks.as_ptr() as *mut ArrayRef;
-                    let len = chunks.len();
-                    std::slice::from_raw_parts_mut(ptr, len)
-                };
+                let mut us = UnstableSeries::new(&dummy);
 
                 // this is now a list
                 let r = ac_r.aggregated();
@@ -131,9 +126,10 @@ impl PhysicalExpr for BinaryExpr {
 
                                 // Safety:
                                 // we are in bounds
-                                let mut arr = unsafe { Arc::from(arr_l.slice_unchecked(idx, 1)) };
-                                std::mem::swap(&mut chunks[0], &mut arr);
-                                let l = &dummy;
+                                let arr = unsafe { Arc::from(arr_l.slice_unchecked(idx, 1)) };
+                                us.swap(arr);
+
+                                let l = us.as_ref();
 
                                 apply_operator(l, r, self.op)
                             })
@@ -160,12 +156,7 @@ impl PhysicalExpr for BinaryExpr {
                 // so we can swap the ArrayRef during the hot loop
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_r.clone()])).unwrap();
-                let chunks = unsafe {
-                    let chunks = dummy.chunks();
-                    let ptr = chunks.as_ptr() as *mut ArrayRef;
-                    let len = chunks.len();
-                    std::slice::from_raw_parts_mut(ptr, len)
-                };
+                let mut us = UnstableSeries::new(&dummy);
 
                 let mut ca: ListChunked = l
                     .amortized_iter()
@@ -177,9 +168,9 @@ impl PhysicalExpr for BinaryExpr {
                                 // TODO: optimize this? Its slow.
                                 // Safety:
                                 // we are in bounds
-                                let mut arr = unsafe { Arc::from(arr_r.slice_unchecked(idx, 1)) };
-                                std::mem::swap(&mut chunks[0], &mut arr);
-                                let r = &dummy;
+                                let arr = unsafe { Arc::from(arr_r.slice_unchecked(idx, 1)) };
+                                us.swap(arr);
+                                let r = us.as_ref();
 
                                 apply_operator(l, r, self.op)
                             })

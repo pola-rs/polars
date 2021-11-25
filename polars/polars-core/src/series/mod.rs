@@ -10,6 +10,8 @@ mod into;
 pub(crate) mod iterator;
 pub mod ops;
 mod series_trait;
+#[cfg(feature = "private")]
+pub mod unstable;
 
 use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]

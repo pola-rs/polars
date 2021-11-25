@@ -1,55 +1,34 @@
 use crate::prelude::*;
+use crate::series::unstable::{ArrayBox, UnstableSeries};
 use crate::utils::CustomIterTools;
 use arrow::array::ArrayRef;
-use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::pin::Pin;
-
-/// A wrapper type that should make it a bit more clear that we should not clone Series
-#[derive(Debug)]
-#[cfg(feature = "private")]
-pub struct UnsafeSeries<'a>(&'a Series);
-
-/// We don't implement Deref so that the caller is aware of converting to Series
-impl AsRef<Series> for UnsafeSeries<'_> {
-    fn as_ref(&self) -> &Series {
-        self.0
-    }
-}
-
-type ArrayBox = Box<dyn Array>;
-
-impl UnsafeSeries<'_> {
-    pub fn clone(&self) {
-        panic!("don't clone this type, use deep_clone")
-    }
-
-    pub fn deep_clone(&self) -> Series {
-        let array_ref = self.0.chunks()[0].clone();
-        Series::try_from((self.0.name(), array_ref)).unwrap()
-    }
-}
+use std::ptr::NonNull;
 
 #[cfg(feature = "private")]
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     series_container: Pin<Box<Series>>,
-    inner: *mut ArrayRef,
+    inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
     iter: I,
 }
 
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
-    type Item = Option<UnsafeSeries<'a>>;
+    type Item = Option<UnstableSeries<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|opt_val| {
             opt_val.map(|array_ref| {
-                unsafe { *self.inner = array_ref.into() };
+                unsafe { *self.inner.as_mut() = array_ref.into() };
                 // Safety
                 // we cannot control the lifetime of an iterators `next` method.
                 // but as long as self is alive the reference to the series container is valid
                 let refer = &*self.series_container;
-                UnsafeSeries(unsafe { std::mem::transmute::<&Series, &'a Series>(refer) })
+                unsafe {
+                    let s = std::mem::transmute::<&Series, &'a Series>(refer);
+                    UnstableSeries::new_with_chunk(s, self.inner.as_ref())
+                }
             })
         })
     }
@@ -88,7 +67,7 @@ impl ListChunked {
 
         AmortizedListIter {
             series_container,
-            inner: ptr,
+            inner: NonNull::new(ptr).unwrap(),
             lifetime: PhantomData,
             iter: self
                 .downcast_iter()
@@ -102,7 +81,7 @@ impl ListChunked {
     #[cfg(feature = "private")]
     pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self
     where
-        F: FnMut(UnsafeSeries<'a>) -> Series,
+        F: FnMut(UnstableSeries<'a>) -> Series,
     {
         if self.is_empty() {
             return self.clone();
@@ -130,7 +109,7 @@ impl ListChunked {
 
     pub fn try_apply_amortized<'a, F>(&'a self, mut f: F) -> Result<Self>
     where
-        F: FnMut(UnsafeSeries<'a>) -> Result<Series>,
+        F: FnMut(UnstableSeries<'a>) -> Result<Series>,
     {
         if self.is_empty() {
             return Ok(self.clone());
