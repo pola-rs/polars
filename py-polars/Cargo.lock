@@ -620,9 +620,9 @@ dependencies = [
 
 [[package]]
 name = "inventory"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f0f7efb804ec95e33db9ad49e4252f049e37e8b0a4652e3cd61f7999f2eff7f"
+checksum = "f0eb5160c60ba1e809707918ee329adb99d222888155835c6feedba19f6c3fd4"
 dependencies = [
  "ctor",
  "ghost",
@@ -631,9 +631,9 @@ dependencies = [
 
 [[package]]
 name = "inventory-impl"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75c094e94816723ab936484666968f5b58060492e880f3c8d00489a1e244fa51"
+checksum = "7e41b53715c6f0c4be49510bb82dee2c1e51c8586d885abe65396e82ed518548"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1293,8 +1293,7 @@ dependencies = [
 [[package]]
 name = "pyo3"
 version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cf01dbf1c05af0a14c7779ed6f3aa9deac9c3419606ac9de537a2d649005720"
+source = "git+https://github.com/ghuls/pyo3?branch=polars_pypy_hasattr#5357442504126fcd61618bf809c737a8c702156b"
 dependencies = [
  "cfg-if 1.0.0",
  "indoc",
@@ -1310,8 +1309,7 @@ dependencies = [
 [[package]]
 name = "pyo3-build-config"
 version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbf9e4d128bfbddc898ad3409900080d8d5095c379632fbbfbb9c8cfb1fb852b"
+source = "git+https://github.com/ghuls/pyo3?branch=polars_pypy_hasattr#5357442504126fcd61618bf809c737a8c702156b"
 dependencies = [
  "once_cell",
 ]
@@ -1319,8 +1317,7 @@ dependencies = [
 [[package]]
 name = "pyo3-macros"
 version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67701eb32b1f9a9722b4bc54b548ff9d7ebfded011c12daece7b9063be1fd755"
+source = "git+https://github.com/ghuls/pyo3?branch=polars_pypy_hasattr#5357442504126fcd61618bf809c737a8c702156b"
 dependencies = [
  "pyo3-macros-backend",
  "quote",
@@ -1330,8 +1327,7 @@ dependencies = [
 [[package]]
 name = "pyo3-macros-backend"
 version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f44f09e825ee49a105f2c7b23ebee50886a9aee0746f4dd5a704138a64b0218a"
+source = "git+https://github.com/ghuls/pyo3?branch=polars_pypy_hasattr#5357442504126fcd61618bf809c737a8c702156b"
 dependencies = [
  "proc-macro2",
  "pyo3-build-config",

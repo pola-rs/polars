@@ -8,7 +8,7 @@ pyarrow
 pandas
 
 # Tooling
-maturin==0.11.0
+maturin==0.12.1
 pytest==6.2.5
 pytest-cov[toml]==3.0.0
 black==21.6b0
