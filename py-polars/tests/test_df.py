@@ -60,6 +60,15 @@ def test_init_ndarray() -> None:
     truth = pl.DataFrame({"a": [1, 2, 3]})
     assert df.frame_equal(truth)
 
+    # 2D array - default to column orientation
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="column")
+    truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
+    assert df.frame_equal(truth)
+
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="row")
+    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
+    assert df.frame_equal(truth)
+
     # TODO: Uncomment tests below when removing deprecation warning
     # # 2D array - default to column orientation
     # df = pl.DataFrame(np.array([[1, 2], [3, 4]]))

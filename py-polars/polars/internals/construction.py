@@ -135,7 +135,7 @@ def sequence_to_pyseries(
 
             try:
                 nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
-            except ValueError as e:
+            except ValueError as e:  # pragma: no cover
                 raise ValueError(
                     f"Cannot construct Series from sequence of {nested_dtype}."
                 ) from e

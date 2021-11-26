@@ -86,7 +86,4 @@ def raise_assert_detail(
 [left]:  {left}
 [right]: {right}"""
 
-    if diff is not None:
-        msg += f"\n[diff left]: {diff}"
-
     raise AssertionError(msg)

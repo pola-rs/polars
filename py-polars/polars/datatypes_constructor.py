@@ -57,7 +57,7 @@ def polars_type_to_constructor(
     """
     try:
         return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
-    except KeyError:
+    except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot construct PySeries for type {dtype}.")
 
 
