@@ -1,29 +1,4 @@
-use crate::functions::{argsort_by, pearson_corr};
-use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
-use crate::tests::get_df;
-#[cfg(feature = "temporal")]
-use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use polars_core::{df, prelude::*};
-
-use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
-use crate::prelude::*;
-use polars_core::chunked_array::builder::get_list_builder;
-use std::iter::FromIterator;
-
-fn scan_foods_csv() -> LazyFrame {
-    let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-    LazyCsvReader::new(path.to_string()).finish().unwrap()
-}
-
-pub(crate) fn fruits_cars() -> DataFrame {
-    df!(
-            "A"=> [1, 2, 3, 4, 5],
-            "fruits"=> ["banana", "banana", "apple", "apple", "banana"],
-            "B"=> [5, 4, 3, 2, 1],
-            "cars"=> ["beetle", "audi", "beetle", "beetle", "beetle"]
-    )
-    .unwrap()
-}
+use super::*;
 
 #[test]
 fn test_lazy_ternary() {

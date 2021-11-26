@@ -201,40 +201,7 @@ pub mod logical_plan;
 pub mod physical_plan;
 #[cfg(feature = "compile")]
 pub mod prelude;
+#[cfg(test)]
+mod tests;
 #[cfg(feature = "compile")]
 pub(crate) mod utils;
-
-#[cfg(test)]
-mod test;
-
-#[cfg(test)]
-mod tests {
-    use polars_core::prelude::*;
-    use polars_io::prelude::*;
-    use std::io::Cursor;
-
-    // physical plan see: datafusion/physical_plan/planner.rs.html#61-63
-
-    pub(crate) fn get_df() -> DataFrame {
-        let s = r#"
-"sepal.length","sepal.width","petal.length","petal.width","variety"
-5.1,3.5,1.4,.2,"Setosa"
-4.9,3,1.4,.2,"Setosa"
-4.7,3.2,1.3,.2,"Setosa"
-4.6,3.1,1.5,.2,"Setosa"
-5,3.6,1.4,.2,"Setosa"
-5.4,3.9,1.7,.4,"Setosa"
-4.6,3.4,1.4,.3,"Setosa"
-"#;
-
-        let file = Cursor::new(s);
-
-        let df = CsvReader::new(file)
-            // we also check if infer schema ignores errors
-            .infer_schema(Some(3))
-            .has_header(true)
-            .finish()
-            .unwrap();
-        df
-    }
-}
