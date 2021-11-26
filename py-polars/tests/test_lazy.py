@@ -174,7 +174,7 @@ def test_groupby() -> None:
 def test_shift(fruits_cars: pl.DataFrame) -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
     out = df.select(col("a").shift(1))
-    assert out["a"].series_equal(pl.Series([None, 1, 2, 3, 4]))
+    assert out["a"].series_equal(pl.Series("a", [None, 1, 2, 3, 4]), null_equal=True)
 
     res = fruits_cars.lazy().shift(2).collect()
 
@@ -429,13 +429,13 @@ def test_is_null_is_not_null() -> None:
 
 
 def test_is_nan_is_not_nan() -> None:
-    df = pl.DataFrame({"nrs": [1, 2, np.nan]})
+    df = pl.DataFrame({"nrs": np.array([1, 2, np.nan])})
     assert df.select(col("nrs").is_nan())["nrs"].to_list() == [False, False, True]
     assert df.select(col("nrs").is_not_nan())["nrs"].to_list() == [True, True, False]
 
 
 def test_is_finite_is_infinite() -> None:
-    df = pl.DataFrame({"nrs": [1, 2, np.inf]})
+    df = pl.DataFrame({"nrs": np.array([1, 2, np.inf])})
     assert df.select(col("nrs").is_infinite())["nrs"].to_list() == [False, False, True]
     assert df.select(col("nrs").is_finite())["nrs"].to_list() == [True, True, False]
 

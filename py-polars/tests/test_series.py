@@ -628,19 +628,13 @@ def test_bitwise() -> None:
     out = df.select(
         [
             (pl.col("a") & pl.col("b")).alias("and"),
-            ("a" & pl.col("b")).alias("rand"),
             (pl.col("a") | pl.col("b")).alias("or"),
-            ("a" | pl.col("b")).alias("ror"),
             (pl.col("a") ^ pl.col("b")).alias("xor"),
-            ("a" ^ pl.col("b")).alias("rxor"),  # type: ignore
         ]
     )
     assert out["and"].to_list() == [1, 0, 1]
-    assert out["rand"].to_list() == [1, 0, 1]
     assert out["or"].to_list() == [3, 6, 7]
-    assert out["ror"].to_list() == [3, 6, 7]
     assert out["xor"].to_list() == [2, 6, 6]
-    assert out["rxor"].to_list() == [2, 6, 6]
 
 
 def test_to_numpy() -> None:
