@@ -47,7 +47,6 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
-    date_like_to_physical,
     dtype_to_ctype,
     dtype_to_ffiname,
     maybe_cast,
@@ -358,8 +357,7 @@ class Series:
         if isinstance(other, Series):
             return wrap_s(self._s.add(other._s))
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("add_<>", dtype, self._s)
+        f = get_ffi_func("add_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -368,29 +366,23 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.sub(other._s))
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("sub_<>", dtype, self._s)
+        f = get_ffi_func("sub_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __truediv__(self, other: Any) -> "Series":
-        physical_type = date_like_to_physical(self.dtype)
-
         # this branch is exactly the floordiv function without rounding the floats
         if self.is_float():
             if isinstance(other, Series):
                 return Series._from_pyseries(self._s.div(other._s))
 
             other = maybe_cast(other, self.dtype)
-            dtype = date_like_to_physical(self.dtype)
-            f = get_ffi_func("div_<>", dtype, self._s)
+            f = get_ffi_func("div_<>", self.dtype, self._s)
             if f is None:
                 return NotImplemented
             return wrap_s(f(other))
 
-        if self.dtype != physical_type:
-            return self.__floordiv__(other)
         return self.cast(Float64) / other
 
     def __floordiv__(self, other: Any) -> "Series":
@@ -400,8 +392,7 @@ class Series:
             return Series._from_pyseries(self._s.div(other._s))
 
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("div_<>", dtype, self._s)
+        f = get_ffi_func("div_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         if self.is_float():
@@ -412,8 +403,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("mul_<>", dtype, self._s)
+        f = get_ffi_func("mul_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -422,8 +412,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.rem(other._s))
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("rem_<>", dtype, self._s)
+        f = get_ffi_func("rem_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -431,10 +420,9 @@ class Series:
     def __rmod__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.rem(self._s))
-        dtype = date_like_to_physical(self.dtype)
         other = maybe_cast(other, self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("rem_<>_rhs", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("rem_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -442,10 +430,9 @@ class Series:
     def __radd__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
-        dtype = date_like_to_physical(self.dtype)
         other = maybe_cast(other, self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("add_<>_rhs", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("add_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -453,9 +440,8 @@ class Series:
     def __rsub__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.sub(self._s))
-        dtype = date_like_to_physical(self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("sub_<>_rhs", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("sub_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -466,8 +452,7 @@ class Series:
         return NotImplemented
 
     def __rtruediv__(self, other: Any) -> np.ndarray:
-        primitive = date_like_to_physical(self.dtype)
-        if self.dtype != primitive or self.is_float():
+        if self.is_float():
             self.__rfloordiv__(other)
 
         if isinstance(other, int):
@@ -478,9 +463,8 @@ class Series:
     def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.div(self._s))
-        dtype = date_like_to_physical(self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("div_<>_rhs", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("div_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -488,9 +472,8 @@ class Series:
     def __rmul__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
-        dtype = date_like_to_physical(self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("mul_<>", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("mul_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
