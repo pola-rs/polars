@@ -91,7 +91,7 @@ impl OptimizationRule for ReplaceDropNulls {
 mod test {
     use super::*;
     use crate::prelude::stack_opt::OptimizationRule;
-    use crate::test::fruits_cars;
+    use crate::tests::fruits_cars;
     use crate::utils::test::optimize_lp;
 
     #[test]
