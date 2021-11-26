@@ -133,7 +133,7 @@ impl PyLazyFrame {
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         infer_schema_length: Option<usize>,
-        with_schema_modify: Option<PyObject>
+        with_schema_modify: Option<PyObject>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -166,7 +166,7 @@ impl PyLazyFrame {
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {
-            let f = | mut schema: Schema| {
+            let f = |mut schema: Schema| {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
 
@@ -174,23 +174,23 @@ impl PyLazyFrame {
                 let names = PyList::new(py, iter);
 
                 let out = lambda.call1(py, (names,)).expect("python function failed");
-                let new_names = out.extract::<Vec<String>>(py).expect("python function should return List[str]");
+                let new_names = out
+                    .extract::<Vec<String>>(py)
+                    .expect("python function should return List[str]");
                 assert_eq!(new_names.len(), schema.fields().len(), "The length of the new names list should be equal to the original column length");
 
-                schema.fields_mut().iter_mut().zip(new_names).for_each(|(fld, new_name)| {
-                    fld.set_name(new_name)
-                });
+                schema
+                    .fields_mut()
+                    .iter_mut()
+                    .zip(new_names)
+                    .for_each(|(fld, new_name)| fld.set_name(new_name));
 
                 Ok(schema)
             };
             r = r.with_schema_modify(f).map_err(PyPolarsEr::from)?
         }
 
-        Ok(
-            r
-            .finish()
-            .map_err(PyPolarsEr::from)?
-            .into())
+        Ok(r.finish().map_err(PyPolarsEr::from)?.into())
     }
 
     #[staticmethod]
