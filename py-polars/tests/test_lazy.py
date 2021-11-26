@@ -171,6 +171,30 @@ def test_groupby() -> None:
     assert out.sort(by="groups").frame_equal(expected)
 
 
+def test_shift(fruits_cars: pl.DataFrame) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
+    out = df.select(col("a").shift(1))
+    assert out["a"].series_equal(pl.Series("a", [None, 1, 2, 3, 4]), null_equal=True)
+
+    res = fruits_cars.lazy().shift(2).collect()
+
+    expected = pl.DataFrame(
+        {
+            "A": [None, None, 1, 2, 3],
+            "fruits": [None, None, "banana", "banana", "apple"],
+            "B": [None, None, 5, 4, 3],
+            "cars": [None, None, "beetle", "audi", "beetle"],
+        }
+    )
+    res.frame_equal(expected, null_equal=True)
+
+    # negative value
+    res = fruits_cars.lazy().shift(-2).collect()
+    for rows in [3, 4]:
+        for cols in range(4):
+            assert res[rows, cols] is None
+
+
 def test_shift_and_fill() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
@@ -188,6 +212,32 @@ def test_arange() -> None:
     result = df.filter(pl.col("a") >= pl.arange(0, 3)).collect()
     expected = pl.DataFrame({"a": [1, 1]})
     assert result.frame_equal(expected)
+
+
+def test_arg_unique() -> None:
+    df = pl.DataFrame({"a": [4, 1, 4]})
+    assert df[col("a").arg_unique()]["a"].series_equal(pl.Series("a", [0, 1]))
+
+
+def test_is_unique() -> None:
+    df = pl.DataFrame({"a": [4, 1, 4]})
+    assert df[col("a").is_unique()]["a"].series_equal(
+        pl.Series("a", [False, True, False])
+    )
+
+
+def test_is_first() -> None:
+    df = pl.DataFrame({"a": [4, 1, 4]})
+    assert df[col("a").is_first()]["a"].series_equal(
+        pl.Series("a", [True, True, False])
+    )
+
+
+def test_is_duplicated() -> None:
+    df = pl.DataFrame({"a": [4, 1, 4]})
+    assert df[col("a").is_duplicated()]["a"].series_equal(
+        pl.Series("a", [True, False, True])
+    )
 
 
 def test_arg_sort() -> None:
@@ -237,9 +287,14 @@ def test_describe_plan() -> None:
 
 
 def test_inspect(capsys: CaptureFixture) -> None:
-    pl.DataFrame({"a": [1]}).lazy().inspect().collect()
+    df = pl.DataFrame({"a": [1]})
+    df.lazy().inspect().collect()
     captured = capsys.readouterr()
     assert len(captured.out) > 0
+
+    df.select(pl.col("a").cumsum().inspect().alias("bar"))
+    res = capsys.readouterr()
+    assert len(res.out) > 0
 
 
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
@@ -367,6 +422,67 @@ def test_head_groupby() -> None:
     )
 
 
+def test_is_null_is_not_null() -> None:
+    df = pl.DataFrame({"nrs": [1, 2, None]})
+    assert df.select(col("nrs").is_null())["nrs"].to_list() == [False, False, True]
+    assert df.select(col("nrs").is_not_null())["nrs"].to_list() == [True, True, False]
+
+
+def test_is_nan_is_not_nan() -> None:
+    df = pl.DataFrame({"nrs": np.array([1, 2, np.nan])})
+    assert df.select(col("nrs").is_nan())["nrs"].to_list() == [False, False, True]
+    assert df.select(col("nrs").is_not_nan())["nrs"].to_list() == [True, True, False]
+
+
+def test_is_finite_is_infinite() -> None:
+    df = pl.DataFrame({"nrs": np.array([1, 2, np.inf])})
+    assert df.select(col("nrs").is_infinite())["nrs"].to_list() == [False, False, True]
+    assert df.select(col("nrs").is_finite())["nrs"].to_list() == [True, True, False]
+
+
+def test_len() -> None:
+    df = pl.DataFrame({"nrs": [1, 2, 3]})
+    assert df.select(col("nrs").len())[0, 0] == 3
+
+
+def test_cum_agg() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 2]})
+    assert df.select(pl.col("a").cumsum())["a"].series_equal(
+        pl.Series("a", [1, 3, 6, 8])
+    )
+    assert df.select(pl.col("a").cummin())["a"].series_equal(
+        pl.Series("a", [1, 1, 1, 1])
+    )
+    assert df.select(pl.col("a").cummax())["a"].series_equal(
+        pl.Series("a", [1, 2, 3, 3])
+    )
+    assert df.select(pl.col("a").cumprod())["a"].series_equal(
+        pl.Series("a", [1, 2, 6, 12])
+    )
+
+
+def test_floor() -> None:
+    df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
+    assert df.select(pl.col("a").floor())["a"].series_equal(pl.Series("a", [1, 1, 3]))
+
+
+def test_round() -> None:
+    df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
+    assert df.select(pl.col("a").round(decimals=0))["a"].series_equal(
+        pl.Series("a", [2, 1, 3])
+    )
+
+
+def test_dot() -> None:
+    df = pl.DataFrame({"a": [1.8, 1.2, 3.0], "b": [3.2, 1, 2]})
+    assert df.select(pl.col("a").dot(pl.col("b")))[0, 0] == 12.96
+
+
+def test_sort() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 2]})
+    assert df.select(pl.col("a").sort())["a"].series_equal(pl.Series("a", [1, 2, 2, 3]))
+
+
 def test_drop_nulls() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
     assert df.select(col("nrs").drop_nulls()).shape == (5, 1)
@@ -441,14 +557,29 @@ def test_interpolate() -> None:
 
 def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1.0, np.nan, 3.0]})
-    assert df.fill_nan(2.0)["a"] == [1.0, 2.0, 3.0]
-    assert df.lazy().fill_nan(2.0).collect()["a"] == [1.0, 2.0, 3.0]
+    assert df.fill_nan(2.0)["a"].series_equal(pl.Series("a", [1.0, 2.0, 3.0]))
+    assert (
+        df.lazy()
+        .fill_nan(2.0)
+        .collect()["a"]
+        .series_equal(pl.Series("a", [1.0, 2.0, 3.0]))
+    )
+    assert df.select(pl.col("a").fill_nan(2))["literal"].series_equal(
+        pl.Series("literal", [1.0, 2.0, 3.0])
+    )
 
 
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
     assert df.select([pl.col("a").fill_null("min")])["a"][1] == 1.0
     assert df.lazy().fill_null(2).collect()["a"] == [1.0, 2.0, 3.0]
+
+
+def test_backward_fill() -> None:
+    df = pl.DataFrame({"a": [1.0, None, 3.0]})
+    assert df.select([pl.col("a").backward_fill()])["a"].series_equal(
+        pl.Series("a", [1, 3, 3])
+    )
 
 
 def test_take(fruits_cars: pl.DataFrame) -> None:
@@ -462,12 +593,13 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
             )
         )
 
-    out = df.sort("fruits").select(
-        [col("B").reverse().take([0, 1]).list().over("fruits"), "fruits"]  # type: ignore
-    )
+    for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
+        out = df.sort("fruits").select(
+            [col("B").reverse().take(index).list().over("fruits"), "fruits"]  # type: ignore
+        )
 
-    assert out[0, "B"] == [2, 3]
-    assert out[4, "B"] == [1, 4]
+        assert out[0, "B"] == [2, 3]
+        assert out[4, "B"] == [1, 4]
 
 
 def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
@@ -482,19 +614,40 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
     out = df.select(
         [
             pl.col("A").rolling_min(3, min_periods=1).alias("1"),
+            pl.col("A").rolling_min(3).alias("1b"),
             pl.col("A").rolling_mean(3, min_periods=1).alias("2"),
+            pl.col("A").rolling_mean(3).alias("2b"),
             pl.col("A").rolling_max(3, min_periods=1).alias("3"),
+            pl.col("A").rolling_max(3).alias("3b"),
             pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
+            pl.col("A").rolling_sum(3).alias("4b"),
+            # below we use .round purely for the ability to do .frame_equal()
+            pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
+            pl.col("A").rolling_std(3).alias("std2"),
+            pl.col("A").rolling_var(3, min_periods=1).round(decimals=4).alias("var"),
+            pl.col("A").rolling_var(3).alias("var2"),
         ]
     )
+
+    # TODO: rolling_std & rolling_var return nan instead of null if it cant compute
+    out[0, "std"] = None
+    out[0, "var"] = None
 
     assert out.frame_equal(
         pl.DataFrame(
             {
                 "1": [1, 1, 1, 2, 3],
+                "1b": [None, None, 1, 2, 3],
                 "2": [1.0, 1.5, 2.0, 3.0, 4.0],
+                "2b": [None, None, 2.0, 3.0, 4.0],
                 "3": [1, 2, 3, 4, 5],
+                "3b": [None, None, 3, 4, 5],
                 "4": [1, 3, 6, 9, 12],
+                "4b": [None, None, 6, 9, 12],
+                "std": [None, 0.7071, 1, 1, 1],
+                "std2": [None, None, 1, 1, 1],
+                "var": [None, 0.5, 1, 1, 1],
+                "var2": [None, None, 1, 1, 1],
             }
         )
     )
@@ -659,26 +812,6 @@ def test_reverse() -> None:
     assert out.collect().frame_equal(expected)
 
 
-def test_shift(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().shift(2).collect()
-
-    expected = pl.DataFrame(
-        {
-            "A": [None, None, 1, 2, 3],
-            "fruits": [None, None, "banana", "banana", "apple"],
-            "B": [None, None, 5, 4, 3],
-            "cars": [None, None, "beetle", "audi", "beetle"],
-        }
-    )
-    res.frame_equal(expected, null_equal=True)
-
-    # negative value
-    res = fruits_cars.lazy().shift(-2).collect()
-    for rows in [3, 4]:
-        for cols in range(4):
-            assert res[rows, cols] is None
-
-
 def test_limit(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.lazy().limit(1).collect().frame_equal(fruits_cars[0, :])
 
@@ -808,18 +941,28 @@ def test_var(fruits_cars: pl.DataFrame) -> None:
 
 def test_max(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.lazy().max().collect()["A"][0] == 5
+    assert fruits_cars.select(pl.col("A").max())["A"][0] == 5
 
 
 def test_min(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.lazy().min().collect()["A"][0] == 1
+    assert fruits_cars.select(pl.col("A").min())["A"][0] == 1
 
 
 def test_median(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.lazy().median().collect()["A"][0] == 3
+    assert fruits_cars.select(pl.col("A").median())["A"][0] == 3
 
 
 def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.lazy().quantile(0.25).collect()["A"][0] == 2
+    assert fruits_cars.select(pl.col("A").quantile(0.25))["A"][0] == 2
+
+
+def test_is_between(fruits_cars: pl.DataFrame) -> None:
+    assert fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, False, True, False, False])
+    )
 
 
 def test_drop_duplicates() -> None:
@@ -868,3 +1011,10 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     expected = pl.Series("A", [4, 5])
     assert res_expr.to_series(0).series_equal(expected)
     assert res_series.series_equal(expected)
+
+
+def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
+    res_expr = fruits_cars.select(pl.col("A").lower_bound())
+    assert res_expr["A"][0] < -10_000_000
+    res_expr = fruits_cars.select(pl.col("A").upper_bound())
+    assert res_expr["A"][0] > 10_000_000

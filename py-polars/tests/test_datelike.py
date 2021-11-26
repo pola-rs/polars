@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -151,6 +152,14 @@ def test_to_python_datetime() -> None:
     assert (
         df.select(pl.col("a").cast(pl.Datetime).dt.timestamp())["a"].dtype == pl.Int64
     )
+
+
+def test_from_numpy() -> None:
+    # numpy support is limited; will be stored as object
+    x = np.asarray(range(100_000, 200_000, 10_000), dtype="datetime64[s]")
+    s = pl.Series(x)
+    assert s[0] == x[0]
+    assert len(s) == 10
 
 
 def test_datetime_consistency() -> None:

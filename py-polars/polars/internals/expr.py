@@ -56,12 +56,7 @@ class Expr:
         return self
 
     def __to_pyexpr(self, other: Any) -> "PyExpr":
-        if isinstance(other, PyExpr):
-            return other
-        elif isinstance(other, Expr):
-            return other._pyexpr
-        else:
-            return pli.lit(other)._pyexpr
+        return self.__to_expr(other)._pyexpr
 
     def __to_expr(self, other: Any) -> "Expr":
         if isinstance(other, Expr):
@@ -185,16 +180,13 @@ class Expr:
         else:
             dtype = None  # type: ignore
 
-        args = []
-        for inp in inputs:
-            if not isinstance(inp, Expr):
-                args.append(inp)
+        args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
         def function(s: "pli.Series") -> "pli.Series":
-            return ufunc(s, *args, **kwargs)
+            return ufunc(s, *args, **kwargs)  # pragma: no cover
 
         if "dtype" in kwargs:
-            return self.map(function, return_dtype=kwargs["dtype"])
+            dtype = kwargs["dtype"]
 
         return self.map(function, return_dtype=dtype)
 
@@ -741,7 +733,9 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: Union[tp.List[int], "Expr", "pli.Series"]) -> "Expr":
+    def take(
+        self, index: Union[tp.List[int], "Expr", "pli.Series", np.ndarray]
+    ) -> "Expr":
         """
         Take values by index.
 

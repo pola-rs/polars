@@ -111,11 +111,19 @@ def test_from_arrow() -> None:
     df = pl.from_arrow(data)
     assert df.shape == (3, 2)
 
+    # if not a PyArrow type, raise a ValueError
+    with pytest.raises(ValueError):
+        _ = pl.from_arrow([1, 2])  # type: ignore
+
 
 def test_from_pandas_dataframe() -> None:
     pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
     df = pl.from_pandas(pd_df)
     assert df.shape == (2, 3)
+
+    # if not a Pandas dataframe, raise a ValueError
+    with pytest.raises(ValueError):
+        _ = pl.from_pandas([1, 2])  # type: ignore
 
 
 def test_from_pandas_series() -> None:

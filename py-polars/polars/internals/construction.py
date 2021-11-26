@@ -69,7 +69,7 @@ def numpy_to_pyseries(
     """
     Construct a PySeries from a numpy array.
     """
-    if not values.data.contiguous:
+    if not values.flags["C_CONTIGUOUS"]:
         values = np.array(values)
 
     if len(values.shape) == 1:

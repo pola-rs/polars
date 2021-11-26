@@ -598,6 +598,9 @@ def test_true_divide() -> None:
     assert (s / 2).to_list() == [0.5, 1.0]
     assert pl.DataFrame([s]).select(pl.col("a") / 2)["a"].to_list() == [0.5, 1.0]
 
+    # rtruediv
+    assert pl.DataFrame([s]).select(2 / pl.col("a"))["literal"].to_list() == [2.0, 1.0]
+
     # https://github.com/pola-rs/polars/issues/1369
     vals = [3000000000, 2, 3]
     foo = pl.Series(vals)
