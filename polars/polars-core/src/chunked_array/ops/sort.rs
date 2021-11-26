@@ -144,8 +144,26 @@ where
     T::Native: Default,
 {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
-        if options.descending && self.is_sorted_reverse() || self.is_sorted() {
+        if self.is_empty() {
             return self.clone();
+        }
+
+        if options.descending && self.is_sorted_reverse() || self.is_sorted() {
+            // there are nulls
+            if self.has_validity() {
+                // if the nulls are already last we can clone
+                if options.nulls_last && self.get(self.len() - 1).is_none()  ||
+                // if the nulls are already fist we can clone
+                self.get(0).is_none()
+                {
+                    return self.clone();
+                }
+                // nulls are not at the right place
+                // continue w/ sorting
+                // TODO: we can optimize here and just put the null as the correct place
+            } else {
+                return self.clone();
+            }
         }
         if !self.has_validity() {
             let mut vals = memcpy_values(self);
