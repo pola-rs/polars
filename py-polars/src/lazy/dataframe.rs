@@ -8,6 +8,7 @@ use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGr
 use polars::lazy::prelude::col;
 use polars::prelude::{DataFrame, Field, JoinType, Schema};
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 
 #[pyclass]
 #[repr(transparent)]
@@ -81,6 +82,38 @@ impl From<LazyFrame> for PyLazyFrame {
     }
 }
 
+// pub fn apply(&mut self, lambda: PyObject) -> PyLazyFrame {
+//     let lgb = self.lgb.take().unwrap();
+//
+//     let function = move |df: DataFrame| {
+//         let gil = Python::acquire_gil();
+//         let py = gil.python();
+//         // get the pypolars module
+//         let pypolars = PyModule::import(py, "polars").unwrap();
+//
+//         // create a PyDataFrame struct/object for Python
+//         let pydf = PyDataFrame::new(df);
+//
+//         // Wrap this PySeries object in the python side DataFrame wrapper
+//         let python_df_wrapper = pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
+//
+//         // call the lambda and get a python side DataFrame wrapper
+//         let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
+//             Ok(pyobj) => pyobj,
+//             Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
+//         };
+//         // unpack the wrapper in a PyDataFrame
+//         let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
+//             "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+//         );
+//         // Downcast to Rust
+//         let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
+//         // Finally get the actual DataFrame
+//         Ok(pydf.df)
+//     };
+//     lgb.apply(function).into()
+// }
+
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
@@ -100,6 +133,7 @@ impl PyLazyFrame {
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         infer_schema_length: Option<usize>,
+        with_schema_modify: Option<PyObject>
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -117,8 +151,7 @@ impl PyLazyFrame {
                 .collect();
             Schema::new(fields)
         });
-
-        Ok(LazyCsvReader::new(path)
+        let mut r = LazyCsvReader::new(path)
             .with_infer_schema_length(infer_schema_length)
             .with_delimiter(delimiter)
             .has_header(has_header)
@@ -130,7 +163,31 @@ impl PyLazyFrame {
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_quote_char(quote_char)
-            .with_null_values(null_values)
+            .with_null_values(null_values);
+
+        if let Some(lambda) = with_schema_modify {
+            let f = | mut schema: Schema| {
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+
+                let iter = schema.fields().iter().map(|fld| fld.name().as_str());
+                let names = PyList::new(py, iter);
+
+                let out = lambda.call1(py, (names,)).expect("python function failed");
+                let new_names = out.extract::<Vec<String>>(py).expect("python function should return List[str]");
+                assert_eq!(new_names.len(), schema.fields().len(), "The length of the new names list should be equal to the original column length");
+
+                schema.fields_mut().iter_mut().zip(new_names).for_each(|(fld, new_name)| {
+                    fld.set_name(new_name)
+                });
+
+                Ok(schema)
+            };
+            r = r.with_schema_modify(f).map_err(PyPolarsEr::from)?
+        }
+
+        Ok(
+            r
             .finish()
             .map_err(PyPolarsEr::from)?
             .into())
