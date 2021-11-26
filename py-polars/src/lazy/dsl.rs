@@ -5,13 +5,13 @@ use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::{parse_strategy, str_to_rankmethod};
 use crate::series::PySeries;
 use crate::utils::{reinterpret, str_to_polarstype};
+use polars::chunked_array::temporal::timedelta::TimeDeltaBuilder;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
-use polars::chunked_array::temporal::timedelta::{TimeDeltaBuilder};
 
 #[pyclass]
 #[repr(transparent)]
@@ -939,13 +939,19 @@ impl PyExpr {
             .microseconds(microseconds)
             .finish();
 
-        self.inner.clone().apply(move |s| {
-            match s.dtype() {
-                DataType::Datetime => Ok(s.datetime().unwrap().buckets(td).into_series()),
-                DataType::Date => Ok(s.date().unwrap().buckets(td).into_series()),
-                dt => Err(PolarsError::ComputeError(format!("expected date/datetime got {:?}", dt).into()))
-            }
-        }, GetOutput::same_type()).into()
+        self.inner
+            .clone()
+            .apply(
+                move |s| match s.dtype() {
+                    DataType::Datetime => Ok(s.datetime().unwrap().buckets(td).into_series()),
+                    DataType::Date => Ok(s.date().unwrap().buckets(td).into_series()),
+                    dt => Err(PolarsError::ComputeError(
+                        format!("expected date/datetime got {:?}", dt).into(),
+                    )),
+                },
+                GetOutput::same_type(),
+            )
+            .into()
     }
 
     pub fn reshape(&self, dims: Vec<i64>) -> Self {
