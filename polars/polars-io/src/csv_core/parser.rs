@@ -377,7 +377,7 @@ fn skip_this_line(bytes: &[u8], quote: Option<u8>, offset: usize) -> (&[u8], usi
 ///
 /// # Arguments
 /// * `bytes` - input to parse
-/// * `offset` - offset in bytes in total input. This is 0 if single threaded. If multithreaded every
+/// * `offset` - offset in bytes in total input. This is 0 if single threaded. If multi-threaded every
 ///              thread has a different offset.
 /// * `projection` - Indices of the columns to project.
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
@@ -477,13 +477,21 @@ pub(crate) fn parse_lines(
                             buf.add_null()
                         } else {
                             buf.add(field, ignore_parser_errors, needs_escaping)
-                                .map_err(|e| {
+                                .map_err(|_| {
+                                    let bytes_offset = offset + field.as_ptr() as usize - start;
+                                    let unparsable = String::from_utf8_lossy(field);
                                     PolarsError::ComputeError(
                                         format!(
-                                            "{:?} on thread line {}; on input: {}",
-                                            e,
+                                            r#"Could not parse {} as dtype {:?} at column {}.
+                                            The total offset in the file is {} bytes.
+
+                                            Consider running the parser `with_ignore_parser_errors=true`
+                                            or consider adding {} to the `null_values` list."#,
+                                            &unparsable,
+                                            buf.dtype(),
                                             idx,
-                                            String::from_utf8_lossy(field)
+                                            bytes_offset,
+                                            &unparsable,
                                         )
                                         .into(),
                                     )
@@ -504,7 +512,7 @@ pub(crate) fn parse_lines(
                                 if let Some(b'\n') = bytes.get(0) {
                                     bytes = &bytes[read_sol..];
                                 } else {
-                                    let (bytes_rem, _) = skip_this_line(bytes, quote_char, offset);
+                                    let (bytes_rem, _) = skip_this_line(bytes, quote_char, 0);
                                     bytes = bytes_rem;
                                 }
                                 break;
