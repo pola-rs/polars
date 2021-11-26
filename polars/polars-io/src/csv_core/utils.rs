@@ -119,7 +119,7 @@ pub(crate) fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> 
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
     delimiter: u8,
-    max_read_records: Option<usize>,
+    max_read_lines: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
     // we take &mut because we maybe need to skip more rows dependent
@@ -132,7 +132,7 @@ pub fn infer_file_schema(
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
-    let bytes = &skip_line_ending(skip_whitespace(skip_bom(reader_bytes)).0).0;
+    let bytes = skip_line_ending(skip_whitespace(skip_bom(reader_bytes)).0).0;
     let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
 
     // get or create header names
@@ -198,14 +198,14 @@ pub fn infer_file_schema(
     // keep track of columns with nulls
     let mut nulls: Vec<bool> = vec![false; header_length];
 
-    let mut records_count = 0;
+    let mut rows_count = 0;
     let mut fields = Vec::with_capacity(header_length);
 
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
 
-    for mut line in records_ref.take(max_read_records.unwrap_or(usize::MAX)) {
-        records_count += 1;
+    for mut line in records_ref.take(max_read_lines.unwrap_or(usize::MAX)) {
+        rows_count += 1;
 
         if let Some(c) = comment_char {
             // line is a comment -> skip
@@ -276,8 +276,26 @@ pub fn infer_file_schema(
             _ => fields.push(Field::new(field_name, DataType::Utf8)),
         }
     }
+    // if there is a single line after the header without an eol
+    // we copy the bytes add an eol and rerun this function
+    // so that the inference is consistent with and without eol char
+    if rows_count == 0 && reader_bytes[reader_bytes.len() - 1] != b'\n' {
+        let mut rb = Vec::with_capacity(reader_bytes.len() + 1);
+        rb.extend_from_slice(reader_bytes);
+        rb.push(b'\n');
+        return infer_file_schema(
+            &ReaderBytes::Owned(rb),
+            delimiter,
+            max_read_lines,
+            has_header,
+            schema_overwrite,
+            skip_rows,
+            comment_char,
+            quote_char,
+        );
+    }
 
-    Ok((Schema::new(fields), records_count))
+    Ok((Schema::new(fields), rows_count))
 }
 
 // magic numbers

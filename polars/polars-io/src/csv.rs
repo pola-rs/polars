@@ -994,6 +994,7 @@ id090,id048,id0000067778,24,2,51862,4,9,
     }
 
     #[test]
+    #[cfg(feature = "temporal")]
     fn test_with_dtype() -> Result<()> {
         // test if timestamps can be parsed as Datetime
         let csv = r#"a,b,c,d,e
@@ -1163,6 +1164,7 @@ bar,bar";
     }
 
     #[test]
+    #[cfg(feature = "temporal")]
     fn test_automatic_datetime_parsing() -> Result<()> {
         let csv = r"timestamp,open,high
 2021-01-01 00:00:00,0.00305500,0.00306000
@@ -1245,6 +1247,7 @@ linenum,last_name,first_name
     }
 
     #[test]
+    #[cfg(feature = "temporal")]
     fn test_ignore_parse_dates() -> Result<()> {
         // if parse dates is set, a given schema should still prevale above date parsing.
         let csv = r#"a,b,c
@@ -1310,6 +1313,16 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
                 DataType::Utf8
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_infer_schema_eol() -> Result<()> {
+        // no eol after header
+        let no_eol = "colx,coly\nabcdef,1234";
+        let file = Cursor::new(no_eol);
+        let df = CsvReader::new(file).finish()?;
+        assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64,]);
         Ok(())
     }
 }
