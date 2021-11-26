@@ -6,69 +6,46 @@ use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::prelude::FromDataUtf8;
 use polars_core::prelude::*;
-use std::fmt::Debug;
-
-trait ToPolarsError: Debug {
-    fn to_polars_err(&self) -> PolarsError {
-        PolarsError::ComputeError(
-            format!(
-                "Could not parse primitive type during csv parsing: {:?}.\
-                This can occur when a column was inferred as integer type but we stumbled upon a floating point value\
-                You could pass a predefined schema or set `with_ignore_parser_errors` to `true`",
-                self
-            )
-            .into(),
-        )
-    }
-}
-
-impl ToPolarsError for lexical::Error {}
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
-    fn parse(bytes: &[u8]) -> Result<Self::Native>;
+    fn parse(bytes: &[u8]) -> Option<Self::Native>;
 }
 
 impl PrimitiveParser for Float32Type {
     #[inline]
-    fn parse(bytes: &[u8]) -> Result<f32> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
+    fn parse(bytes: &[u8]) -> Option<f32> {
+        lexical::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for Float64Type {
     #[inline]
-    fn parse(bytes: &[u8]) -> Result<f64> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
+    fn parse(bytes: &[u8]) -> Option<f64> {
+        lexical::parse(bytes).ok()
     }
 }
 
 impl PrimitiveParser for UInt32Type {
     #[inline]
-    fn parse(bytes: &[u8]) -> Result<u32> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
+    fn parse(bytes: &[u8]) -> Option<u32> {
+        lexical::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for UInt64Type {
     #[inline]
-    fn parse(bytes: &[u8]) -> Result<u64> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
+    fn parse(bytes: &[u8]) -> Option<u64> {
+        lexical::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for Int32Type {
     #[inline]
-    fn parse(bytes: &[u8]) -> Result<i32> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
+    fn parse(bytes: &[u8]) -> Option<i32> {
+        lexical::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for Int64Type {
     #[inline]
-    fn parse(bytes: &[u8]) -> Result<i64> {
-        let a = lexical::parse(bytes).map_err(|e| e.to_polars_err())?;
-        Ok(a)
+    fn parse(bytes: &[u8]) -> Option<i64> {
+        lexical::parse(bytes).ok()
     }
 }
 
@@ -96,16 +73,14 @@ where
             self.append_null()
         } else {
             let bytes = drop_quotes(bytes);
+            // legacy comment (remember this if you decide to use Results again):
             // its faster to work on options.
             // if we need to throw an error, we parse again to be able to throw the error
-            let result = T::parse(bytes).ok();
 
-            match (result, ignore_errors) {
+            match (T::parse(bytes), ignore_errors) {
                 (Some(value), _) => self.append_value(value),
                 (None, true) => self.append_null(),
-                (None, _) => {
-                    T::parse(bytes)?;
-                }
+                (None, _) => return Err(PolarsError::ComputeError("".into())),
             };
         }
         Ok(())
@@ -388,6 +363,19 @@ impl Buffer {
                 v.validity.push(false);
             }
         };
+    }
+
+    pub(crate) fn dtype(&self) -> DataType {
+        match self {
+            Buffer::Boolean(_) => DataType::Boolean,
+            Buffer::Int32(_) => DataType::Int32,
+            Buffer::Int64(_) => DataType::Int64,
+            Buffer::UInt32(_) => DataType::UInt32,
+            Buffer::UInt64(_) => DataType::UInt64,
+            Buffer::Float32(_) => DataType::Float32,
+            Buffer::Float64(_) => DataType::Float64,
+            Buffer::Utf8(_) => DataType::Utf8,
+        }
     }
 
     #[inline]
