@@ -1052,6 +1052,22 @@ impl DataFrame {
     }
 
     /// Select a single column by name.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let s1: Series = Series::new("Password", &["123456", "[]B$u$g$s$B#u#n#n#y[]{}"]);
+    ///     let s2: Series = Series::new("Robustness", &["Weak", "Strong"]);
+    ///     let df: DataFrame = DataFrame::new(vec![s1.clone(), s2])?;
+    ///
+    ///     assert_eq!(df.column("Password")?, &s1);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn column(&self, name: &str) -> Result<&Series> {
         let idx = self
             .find_idx_by_name(name)
@@ -1060,6 +1076,24 @@ impl DataFrame {
     }
 
     /// Selected multiple columns by name.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Latin name" => &["Oncorhynchus kisutch", "Salmo salar"],
+    ///                             "Max weight (kg)" => &[16.0, 35.89])?;
+    ///     let sv: Vec<&Series> = df.columns(&["Latin name", "Max weight (kg)"])?;
+    ///
+    ///     assert_eq!(&df[0], sv[0]);
+    ///     assert_eq!(&df[1], sv[1]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn columns<I, S>(&self, names: I) -> Result<Vec<&Series>>
     where
         I: IntoIterator<Item = S>,
@@ -1105,6 +1139,25 @@ impl DataFrame {
     }
 
     /// Select column(s) from this DataFrame and return them into a Vector.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Name" => &["Methane", "Ethane", "Propane"],
+    ///                             "Carbon" => &[1, 2, 3],
+    ///                             "Hydrogen" => &[4, 6, 8])?;
+    ///     let sv: Vec<Series> = df.select_series(&["Carbon", "Hydrogen"])?;
+    ///
+    ///     assert_eq!(df["Carbon"], sv[0]);
+    ///     assert_eq!(df["Hydrogen"], sv[1]);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn select_series<'a, S, J>(&self, selection: S) -> Result<Vec<Series>>
     where
         S: Selection<'a, J>,
@@ -1492,6 +1545,24 @@ impl DataFrame {
     }
 
     /// Replace a column with a series.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let mut df: DataFrame = df!("Country" => &["United States", "China"],
+    ///                             "Area (km²)" => &[9_833_520, 9_596_961])?;
+    ///     let s: Series = Series::new("Country", &["USA", "PRC"]);
+    ///
+    ///     assert!(df.replace("Nation", s.clone()).is_err());
+    ///     assert!(df.replace("Country", s).is_ok());
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn replace<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
         self.apply(column, |_| new_col.into_series())
     }
@@ -1787,6 +1858,39 @@ impl DataFrame {
     }
 
     /// Slice the DataFrame along the rows.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Fruit" => &["Apple", "Grape", "Grape", "Fig", "Fig"],
+    ///                             "Color" => &["Green", "Red", "White", "White", "Red"])?;
+    ///     let sl: DataFrame = df.slice(2, 3);
+    ///
+    ///     assert_eq!(sl.shape(), (3, 2));
+    ///     println!("{}", sl);
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    /// Output:
+    /// ```text
+    /// shape: (3, 2)
+    /// +-------+-------+
+    /// | Fruit | Color |
+    /// | ---   | ---   |
+    /// | str   | str   |
+    /// +=======+=======+
+    /// | Grape | White |
+    /// +-------+-------+
+    /// | Fig   | White |
+    /// +-------+-------+
+    /// | Fig   | Red   |
+    /// +-------+-------+
+    /// ```
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         let col = self
             .columns
@@ -2462,6 +2566,23 @@ impl DataFrame {
     }
 
     /// Get a mask of all the unique rows in the DataFrame.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Company" => &["Apple", "Microsoft"],
+    ///                             "ISIN" => &["US0378331005", "US5949181045"])?;
+    ///     let ca: ChunkedArray<BooleanType> = df.is_unique()?;
+    ///
+    ///     assert!(ca.all_true());
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
@@ -2469,6 +2590,23 @@ impl DataFrame {
     }
 
     /// Get a mask of all the duplicated rows in the DataFrame.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::df;         // or "use polars::df"
+    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    ///
+    /// fn example() -> Result<()> {
+    ///     let df: DataFrame = df!("Company" => &["Alphabet", "Alphabet"],
+    ///                             "ISIN" => &["US02079K3059", "US02079K1079"])?;
+    ///     let ca: ChunkedArray<BooleanType> = df.is_duplicated()?;
+    ///
+    ///     assert!(ca.all_false());
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
