@@ -53,6 +53,7 @@ class LazyFrame:
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
+        with_column_names: Optional[Callable[[tp.List[str]], tp.List[str]]] = None,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -79,6 +80,7 @@ class LazyFrame:
             quote_char,
             processed_null_values,
             infer_schema_length,
+            with_column_names,
         )
         return self
 

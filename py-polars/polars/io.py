@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import (
     Any,
     BinaryIO,
+    Callable,
     ContextManager,
     Dict,
     Iterator,
@@ -395,6 +396,7 @@ def scan_csv(
     comment_char: Optional[str] = None,
     quote_char: Optional[str] = r'"',
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+    with_column_names: Optional[Callable[[List[str]], List[str]]] = None,
 ) -> LazyFrame:
     """
     Lazily read from a csv file.
@@ -436,6 +438,44 @@ def scan_csv(
         - str -> all values encountered equal to this string will be null
         - List[str] -> A null value per column.
         - Dict[str, str] -> A dictionary that maps column name to a null value string.
+    with_column_names
+        Apply a function over the column names. This can be used to update a schema just in time, thus before scanning.
+
+
+    Examples
+    --------
+    >>> (pl.scan_csv("my_long_file.csv")  # lazy, doesn't do a thing
+    >>>  .select(["a", "c"])              # select only 2 columns (other columns will not be read)
+    >>>  .filter(pl.col("a") > 10)        # the filter is pushed down the the scan, so less data read in memory
+    >>>  .fetch(100)                      # pushed a limit of 100 rows to the scan level
+    >>>  )
+
+    >>> # we can use `with_column_names` to modify the header before scanning
+    >>> df = pl.DataFrame({
+    >>>     "BrEeZaH": [1, 2, 3, 4],
+    >>>     "LaNgUaGe": ["is", "terrible", "to", "read"]
+    >>> })
+    >>> df.to_csv("mydf.csv")
+    >>> (pl.scan_csv("mydf.csv",
+    >>>     with_column_names=lambda cols: [col.lower() for col in cols])
+    >>> .fetch()
+    >>> )
+    shape: (4, 2)
+    ┌─────────┬──────────┐
+    │ breezah ┆ language │
+    │ ---     ┆ ---      │
+    │ i64     ┆ str      │
+    ╞═════════╪══════════╡
+    │ 1       ┆ is       │
+    ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+    │ 2       ┆ terrible │
+    ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+    │ 3       ┆ to       │
+    ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+    │ 4       ┆ read     │
+    └─────────┴──────────┘
+
+
     """
     if isinstance(file, Path):
         file = str(file)
@@ -453,6 +493,7 @@ def scan_csv(
         quote_char=quote_char,
         null_values=null_values,
         infer_schema_length=infer_schema_length,
+        with_column_names=with_column_names,
     )
 
 

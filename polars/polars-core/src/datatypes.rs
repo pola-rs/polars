@@ -575,6 +575,10 @@ impl Field {
         self.data_type = dtype;
     }
 
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
     pub fn to_arrow(&self) -> ArrowField {
         ArrowField::new(&self.name, self.data_type.to_arrow(), true)
     }
