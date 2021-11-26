@@ -259,7 +259,29 @@ impl PhysicalAggregation for ApplyExpr {
                     // if its flat, we just apply and return
                     // if not flat, the flattening sorts by group, so we must create new group tuples
                     // and again aggregate.
-                    panic!("flat apply function with multiple inputs no yet implemented, but likely apply is a better fit anyway ;)")
+                    let name = acs[0].series().name().to_string();
+
+                    // get the flat representation of the aggregation contexts
+                    let mut container = acs
+                        .iter_mut()
+                        .map(|ac| {
+                            // this is hard because the flattening sorts by group
+                            assert!(
+                                ac.is_not_aggregated(),
+                                "flat apply on any expression that is already \
+                            in aggregated state is not yet suported"
+                            );
+                            ac.flat().into_owned()
+                        })
+                        .collect::<Vec<_>>();
+
+                    let out = self.function.call_udf(&mut container)?;
+                    let out = out.agg_list(acs[0].groups().as_ref()).map(|mut out| {
+                        out.rename(&name);
+                        out
+                    });
+
+                    Ok(out)
                 }
                 ApplyOptions::ApplyList => {
                     let mut s = acs
