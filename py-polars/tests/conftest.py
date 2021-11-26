@@ -40,3 +40,8 @@ def fruits_cars() -> pl.DataFrame:
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
         }
     )
+
+
+@pytest.fixture
+def series() -> pl.Series:
+    return pl.Series("a", [1, 2])

@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pytest
 
@@ -8,7 +9,7 @@ import polars as pl
 from polars import testing
 
 
-def create_series() -> pl.Series:
+def series() -> pl.Series:
     return pl.Series("a", [1, 2])
 
 
@@ -36,7 +37,7 @@ def test_init_inputs() -> None:
     assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.Utf8
     assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
     assert pl.Series("a", [pl.Series([1, 2, 4]), pl.Series([3, 2, 1])]).dtype == pl.List
-
+    assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
     # 2d numpy array
     res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
     assert all(res[0] == np.array([1, 2]))
@@ -59,8 +60,8 @@ def test_concat() -> None:
     assert s.len() == 3
 
 
-def test_to_frame() -> None:
-    assert create_series().to_frame().shape == (2, 1)
+def test_to_frame(series: pl.Series) -> None:
+    assert series.to_frame().shape == (2, 1)
 
 
 def test_bitwise_ops() -> None:
@@ -71,8 +72,8 @@ def test_bitwise_ops() -> None:
     assert ~a == [False, True, False]
 
 
-def test_equality() -> None:
-    a = create_series()
+def test_equality(series: pl.Series) -> None:
+    a = series
     b = a
 
     cmp = a == b
@@ -90,15 +91,14 @@ def test_equality() -> None:
     assert (a == "ham").to_list() == [True, False, False]
 
 
-def test_agg() -> None:
-    a = create_series()
-    assert a.mean() == 1.5
-    assert a.min() == 1
-    assert a.max() == 2
+def test_agg(series: pl.Series) -> None:
+    assert series.mean() == 1.5
+    assert series.min() == 1
+    assert series.max() == 2
 
 
-def test_arithmetic() -> None:
-    a = create_series()
+def test_arithmetic(series: pl.Series) -> None:
+    a = series
     b = a
 
     assert ((a * b) == [1, 4]).sum() == 2
@@ -129,8 +129,8 @@ def test_arithmetic() -> None:
     assert ((1.0 % a) == [0, 1]).sum() == 2
 
 
-def test_various() -> None:
-    a = create_series()
+def test_various(series: pl.Series) -> None:
+    a = series
 
     assert a.is_null().sum() == 0
     assert a.name == "a"
@@ -946,6 +946,13 @@ def test_compare_series_value_mismatch() -> None:
     srs2 = pl.Series([2, 3, 4])
     with pytest.raises(AssertionError, match="Series are different\n\nValue mismatch"):
         testing.assert_series_equal(srs1, srs2)
+
+
+def test_compare_series_type_mismatch() -> None:
+    srs1 = pl.Series([1, 2, 3])
+    srs2 = pl.DataFrame({"col1": [2, 3, 4]})
+    with pytest.raises(AssertionError, match="Series are different\n\nType mismatch"):
+        testing.assert_series_equal(srs1, srs2)  # type: ignore
 
 
 def test_compare_series_name_mismatch() -> None:
