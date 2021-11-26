@@ -598,6 +598,9 @@ def test_true_divide() -> None:
     assert (s / 2).to_list() == [0.5, 1.0]
     assert pl.DataFrame([s]).select(pl.col("a") / 2)["a"].to_list() == [0.5, 1.0]
 
+    # rtruediv
+    assert pl.DataFrame([s]).select(2 / pl.col("a"))["literal"].to_list() == [2.0, 1.0]
+
     # https://github.com/pola-rs/polars/issues/1369
     vals = [3000000000, 2, 3]
     foo = pl.Series(vals)
@@ -625,13 +628,19 @@ def test_bitwise() -> None:
     out = df.select(
         [
             (pl.col("a") & pl.col("b")).alias("and"),
+            ("a" & pl.col("b")).alias("rand"),
             (pl.col("a") | pl.col("b")).alias("or"),
+            ("a" | pl.col("b")).alias("ror"),
             (pl.col("a") ^ pl.col("b")).alias("xor"),
+            ("a" ^ pl.col("b")).alias("rxor"),  # type: ignore
         ]
     )
     assert out["and"].to_list() == [1, 0, 1]
+    assert out["rand"].to_list() == [1, 0, 1]
     assert out["or"].to_list() == [3, 6, 7]
+    assert out["ror"].to_list() == [3, 6, 7]
     assert out["xor"].to_list() == [2, 6, 6]
+    assert out["rxor"].to_list() == [2, 6, 6]
 
 
 def test_to_numpy() -> None:
