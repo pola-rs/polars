@@ -14,15 +14,13 @@ except ImportError:  # pragma: no cover
 
 from polars import internals as pli
 from polars.datatypes import (
-    Boolean,
     DataType,
     Date,
     Datetime,
     Float64,
-    Int64,
     Object,
     UInt32,
-    Utf8,
+    py_type_to_dtype,
 )
 
 
@@ -672,14 +670,7 @@ class Expr:
         strict
             Throw an error if a cast could not be done for instance due to an overflow
         """
-        if dtype == str:
-            dtype = Utf8
-        elif dtype == bool:
-            dtype = Boolean
-        elif dtype == float:
-            dtype = Float64
-        elif dtype == int:
-            dtype = Int64
+        dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.cast(dtype, strict))
 
     def sort(self, reverse: bool = False) -> "Expr":
@@ -1052,14 +1043,8 @@ class Expr:
         agg_list
 
         """
-        if return_dtype == str:
-            return_dtype = Utf8
-        elif return_dtype == int:
-            return_dtype = Int64
-        elif return_dtype == float:
-            return_dtype = Float64
-        elif return_dtype == bool:
-            return_dtype = Boolean
+        if return_dtype is not None:
+            return_dtype = py_type_to_dtype(return_dtype)
         return wrap_expr(self._pyexpr.map(f, return_dtype, agg_list))
 
     def apply(
