@@ -365,9 +365,11 @@ def test_shape() -> None:
 
 
 def test_create_list_series() -> None:
-    a = [[1, 2], None, [None, 3]]
-    s = pl.Series("", a)
-    assert s.to_list() == a
+    for b in [True, False]:
+        pl.internals.series._PYARROW_AVAILABLE = b
+        a = [[1, 2], None, [None, 3]]
+        s = pl.Series("", a)
+        assert s.to_list() == a
 
 
 def test_iter() -> None:

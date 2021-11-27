@@ -129,12 +129,22 @@ def sequence_to_pyseries(
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
 
-            if not _PYARROW_AVAILABLE:  # pragma: no cover
-                dtype = py_type_to_dtype(nested_dtype)
-                try:
-                    return PySeries.new_list(name, values, dtype)
-                except BaseException:
-                    pass
+            # logs will show a panic if we infer wrong dtype
+            # and its hard to error from rust side
+            # to reduce the likelihood of this happening
+            # we infer the dtype of first 100 elements
+            # if all() fails, we will hit the PySeries.new_object
+            if not _PYARROW_AVAILABLE:
+                if all(
+                    isinstance(val, nested_dtype)
+                    for val in values[: min(100, len(values))]
+                ):  # pragma: no cover
+                    dtype = py_type_to_dtype(nested_dtype)
+                    try:
+                        return PySeries.new_list(name, values, dtype)
+                    except BaseException:
+                        pass
+                # pass we create an object if we get here
             else:
                 try:
                     nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
