@@ -1,3 +1,4 @@
+BASE ?= master
 
 fmt:
 	cargo fmt --all
@@ -54,3 +55,9 @@ pre-commit: fmt clippy clippy-default
 
 check-features:
 	cargo hack check --each-feature --no-dev-deps --features private
+
+bench-save:
+	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)
+
+bench-cmp:
+	cargo bench --features=random --bench $(BENCH) -- --load-baseline $(FEAT) --baseline $(BASE)
