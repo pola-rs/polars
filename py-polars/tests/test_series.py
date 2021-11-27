@@ -1064,3 +1064,10 @@ def test_init_categorical() -> None:
         expected = pl.Series("a", values, dtype=pl.Utf8).cast(pl.Categorical)
         a = pl.Series("a", values, dtype=pl.Categorical)
         testing.assert_series_equal(a, expected)
+
+
+def test_nested_list_types_preserved() -> None:
+    expected_dtype = pl.UInt32
+    srs1 = pl.Series([pl.Series([3, 4, 5, 6], dtype=expected_dtype) for _ in range(5)])
+    for srs2 in srs1:
+        assert srs2.dtype == expected_dtype

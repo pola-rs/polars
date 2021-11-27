@@ -196,6 +196,12 @@ impl PySeries {
     }
 
     #[staticmethod]
+    pub fn new_series_list(name: &str, val: Vec<Self>, _strict: bool) -> Self {
+        let series_vec = to_series_collection(val);
+        Series::new(name, &series_vec).into()
+    }
+
+    #[staticmethod]
     pub fn repeat(name: &str, val: &PyAny, n: usize, dtype: &PyAny) -> Self {
         let str_repr = dtype.str().unwrap().to_str().unwrap();
         let dtype = str_to_polarstype(str_repr);
