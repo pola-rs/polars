@@ -57,7 +57,7 @@ def assert_series_equal(
             raise_assert_detail(obj, "Name mismatch", left.name, right.name)
 
     _can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
-    if check_exact or not _can_be_subtracted:
+    if check_exact or not _can_be_subtracted or dtype_to_py_type(left.dtype) == bool:
         if any((left != right).to_list()):
             raise_assert_detail(
                 obj, "Exact value mismatch", left=list(left), right=list(right)
