@@ -276,7 +276,7 @@ where
                 let iter = arr.iter().map(|v| {
                     let i = count;
                     count += 1;
-                    (i, v)
+                    (i, v.copied())
                 });
                 vals.extend_trusted_len(iter);
             });
