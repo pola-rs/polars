@@ -1,7 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_arrow::arrow::{array::*, buffer::MutableBuffer, compute::concat::concatenate};
+use polars_arrow::arrow::{array::*, buffer::MutableBuffer, compute::concatenate::concatenate};
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::utils::NoNull;
 use polars_core::{prelude::*, POOL};

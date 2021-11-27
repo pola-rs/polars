@@ -25,7 +25,7 @@ lazy = ["sort_multiple"]
 performant = []
 
 # extra utilities for Utf8Chunked
-strings = ["regex", "polars-arrow/strings"]
+strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
@@ -131,9 +131,10 @@ docs-selection = [
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "e9a6c3ef7e1a328c298bd45e36ac2abf8ae44ebb", default-features = false, features = ["compute"] }
+# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "e9a6c3ef7e1a328c298bd45e36ac2abf8ae44ebb", default-features = false, features = ["compute"] }
 # arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", default-features = false, features = ["compute"], branch = "fn_to" }
-# arrow = { package = "arrow2", version = "0.7", default-features = false, features = ["compute"] }
+# arrow = { package = "arrow2", version = "0.8", default-features = false, features = ["compute"] }
+
 chrono = { version = "0.4", optional = true }
 comfy-table = { version = "4.0", optional = true }
 hashbrown = { version = "0.11", features = ["rayon"] }
@@ -154,6 +155,23 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 thiserror = "1.0"
 unsafe_unwrap = "^0.1.0"
+
+[dependencies.arrow]
+package = "arrow2"
+version = "0.8"
+default-features = false
+features = [
+  "compute_aggregate",
+  "compute_arithmetics",
+  "compute_boolean",
+  "compute_boolean_kleene",
+  "compute_cast",
+  "compute_comparison",
+  "compute_concatenate",
+  "compute_filter",
+  "compute_if_then_else",
+  "compute_take",
+]
 
 [package.metadata.docs.rs]
 # not all because arrow 4.3 does not compile with simd

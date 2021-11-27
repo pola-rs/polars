@@ -236,7 +236,7 @@ impl std::convert::TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
                 use arrow::datatypes::IntegerType;
                 let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                let arr = arrow::compute::concat::concatenate(&chunks)?;
+                let arr = arrow::compute::concatenate::concatenate(&chunks)?;
 
                 let (keys, values) = match (key_type, &**value_type) {
                     (IntegerType::Int8, ArrowDataType::LargeUtf8) => {
