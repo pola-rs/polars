@@ -16,6 +16,7 @@ pub use crate::{
     },
     datatypes,
     datatypes::*,
+    df,
     error::{PolarsError, Result},
     frame::{hash_join::JoinType, DataFrame},
     series::{
