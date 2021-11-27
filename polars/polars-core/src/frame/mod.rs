@@ -182,7 +182,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -311,7 +310,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -336,7 +334,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;          // or "use polars::df"
     /// use polars_core::prelude::*;  // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -382,7 +379,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -402,7 +398,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -436,7 +431,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -474,7 +468,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -501,7 +494,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -529,7 +521,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -554,7 +545,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -578,7 +568,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -647,7 +636,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -690,7 +678,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -738,7 +725,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -808,7 +794,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -836,7 +821,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -898,7 +882,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -998,7 +981,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -1029,7 +1011,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -1080,7 +1061,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -1143,7 +1123,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -1549,7 +1528,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -1862,7 +1840,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -1905,7 +1882,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -1952,7 +1928,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -2044,7 +2019,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -2082,7 +2056,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -2119,7 +2092,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -2157,7 +2129,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -2195,7 +2166,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -2233,7 +2203,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -2275,7 +2244,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;
     /// use polars_core::prelude::*;
     ///
     /// fn example() -> Result<()> {
@@ -2570,7 +2538,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
@@ -2594,7 +2561,6 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::df;         // or "use polars::df"
     /// use polars_core::prelude::*; // or "use polars::prelude::*"
     ///
     /// fn example() -> Result<()> {
