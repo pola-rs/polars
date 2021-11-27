@@ -47,6 +47,82 @@ pub enum NullStrategy {
     Propagate,
 }
 
+/// A contiguous growable collection of `Series` that have the same length.
+///
+/// ## Use declarations
+///
+/// All the common tools can be found in [`polars_core::prelude`] (or in `polars::prelude`).
+///
+/// ```rust
+/// use polars_core::prelude::*; // if the crate polars-core is used directly
+/// // use polars::prelude::*;      if the crate polars is used
+/// ```
+///
+/// # Initialization
+/// ## Default
+///
+/// A `DataFrame` can be initialized empty:
+///
+/// ```rust
+/// # use polars_core::prelude::*;
+/// let df = DataFrame::default();
+/// assert!(df.is_empty());
+/// ```
+///
+/// ## Wrapping a `Vec<Series>`
+///
+/// A `DataFrame` is built upon a `Vec<Series>` where the `Series` have the same length.
+///
+/// ```rust
+/// # use polars_core::prelude::*;
+/// let s1 = Series::new("Fruit", &["Apple", "Apple", "Pear"]);
+/// let s2 = Series::new("Color", &["Red", "Yellow", "Green"]);
+///
+/// let df: Result<DataFrame> = DataFrame::new(vec![s1, s2]);
+/// ```
+///
+/// ## Using a macro
+///
+/// The [`df!`] macro is a convenient method:
+///
+/// ```rust
+/// # use polars_core::prelude::*;
+/// let df: Result<DataFrame> = df!("Fruit" => &["Apple", "Apple", "Pear"],
+///                                 "Color" => &["Red", "Yellow", "Green"]);
+/// ```
+///
+/// ## Using a CSV file
+///
+/// See the [`polars_io::csv::CsvReader`].
+///
+/// # Indexing
+/// ## By a number
+///
+/// The `Index<usize>` is implemented for the `DataFrame`.
+///
+/// ```rust
+/// # use polars_core::prelude::*;
+/// # fn example() ->  Result<()> {
+/// let df = df!("Fruit" => &["Apple", "Apple", "Pear"],
+///              "Color" => &["Red", "Yellow", "Green"])?;
+///
+/// assert_eq!(df[0], Series::new("Fruit", &["Apple", "Apple", "Pear"]));
+/// assert_eq!(df[1], Series::new("Color", &["Red", "Yellow", "Green"]));
+/// # Ok(()) }
+/// ```
+///
+/// ## By a `Series` name
+///
+/// ```rust
+/// # use polars_core::prelude::*;
+/// # fn example() ->  Result<()> {
+/// let df = df!("Fruit" => &["Apple", "Apple", "Pear"],
+///              "Color" => &["Red", "Yellow", "Green"])?;
+///
+/// assert_eq!(df["Fruit"], Series::new("Fruit", &["Apple", "Apple", "Pear"]));
+/// assert_eq!(df["Color"], Series::new("Color", &["Red", "Yellow", "Green"]));
+/// # Ok(())}
+/// ```
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
