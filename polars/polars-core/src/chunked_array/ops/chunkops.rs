@@ -3,7 +3,7 @@ use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::compute::concat;
+use arrow::compute::concatenate;
 use itertools::Itertools;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
@@ -23,7 +23,7 @@ where
         if self.chunks().len() == 1 {
             self.clone()
         } else {
-            let chunks = vec![concat::concatenate(
+            let chunks = vec![concatenate::concatenate(
                 self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
             )
             .unwrap()
@@ -38,7 +38,7 @@ impl ChunkOps for BooleanChunked {
         if self.chunks().len() == 1 {
             self.clone()
         } else {
-            let chunks = vec![concat::concatenate(
+            let chunks = vec![concatenate::concatenate(
                 self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
             )
             .unwrap()
@@ -53,7 +53,7 @@ impl ChunkOps for Utf8Chunked {
         if self.chunks().len() == 1 {
             self.clone()
         } else {
-            let chunks = vec![concat::concatenate(
+            let chunks = vec![concatenate::concatenate(
                 self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
             )
             .unwrap()
@@ -81,7 +81,7 @@ impl ChunkOps for ListChunked {
         if self.chunks.len() == 1 {
             self.clone()
         } else {
-            let chunks = vec![concat::concatenate(
+            let chunks = vec![concatenate::concatenate(
                 self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
             )
             .unwrap()

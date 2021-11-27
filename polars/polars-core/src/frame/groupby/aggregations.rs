@@ -586,7 +586,9 @@ impl AggList for ListChunked {
             list_values.push(self.chunks[0].slice(0, 0).into())
         }
         let arrays = list_values.iter().map(|arr| &**arr).collect::<Vec<_>>();
-        let list_values: ArrayRef = arrow::compute::concat::concatenate(&arrays).unwrap().into();
+        let list_values: ArrayRef = arrow::compute::concatenate::concatenate(&arrays)
+            .unwrap()
+            .into();
         let data_type = ListArray::<i64>::default_datatype(list_values.data_type().clone());
         let arr = Arc::new(ListArray::<i64>::from_data(
             data_type,

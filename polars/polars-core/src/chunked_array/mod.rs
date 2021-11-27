@@ -209,7 +209,7 @@ impl<T> ChunkedArray<T> {
 
     /// Shrink the capacity of this array to fit it's length.
     pub fn shrink_to_fit(&mut self) {
-        self.chunks = vec![arrow::compute::concat::concatenate(
+        self.chunks = vec![arrow::compute::concatenate::concatenate(
             self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
         )
         .unwrap()
