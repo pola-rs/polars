@@ -131,22 +131,26 @@ def sequence_to_pyseries(
 
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 dtype = py_type_to_dtype(nested_dtype)
-                return PySeries.new_list(name, values, dtype)
+                try:
+                    return PySeries.new_list(name, values, dtype)
+                except BaseException:
+                    pass
+            else:
+                try:
+                    nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
+                except ValueError as e:
+                    raise ValueError(
+                        f"Cannot construct Series from sequence of {nested_dtype}."
+                    ) from e
 
-            try:
-                nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
-            except ValueError as e:  # pragma: no cover
-                raise ValueError(
-                    f"Cannot construct Series from sequence of {nested_dtype}."
-                ) from e
+                try:
+                    arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
+                    return arrow_to_pyseries(name, arrow_values)
+                except pa.lib.ArrowInvalid:
+                    pass
 
-            try:
-                arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
-                return arrow_to_pyseries(name, arrow_values)
-            # failure expected for mixed sequences like `[[12], "foo", 9]`
-            except pa.lib.ArrowInvalid:
-                return PySeries.new_object(name, values, strict)
-
+            # Convert mixed sequences like `[[12], "foo", 9]`
+            return PySeries.new_object(name, values, strict)
         else:
             constructor = py_type_to_constructor(dtype_)
             return constructor(name, values, strict)
