@@ -132,7 +132,7 @@ def sequence_to_pyseries(
                 )
             return arrow_to_pyseries(name, pa.array(values))
 
-        elif dtype_ == list or dtype_ == tuple or dtype_ == pli.Series:
+        elif dtype_ == list or dtype_ == tuple:
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
 
@@ -168,6 +168,10 @@ def sequence_to_pyseries(
 
             # Convert mixed sequences like `[[12], "foo", 9]`
             return PySeries.new_object(name, values, strict)
+
+        elif dtype_ == pli.Series:
+            return PySeries.new_series_list(name, [v.inner() for v in values], strict)
+
         else:
             constructor = py_type_to_constructor(dtype_)
             return constructor(name, values, strict)
