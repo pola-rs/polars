@@ -253,6 +253,52 @@ impl DataFrame {
         Ok(df)
     }
 
+    /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let s1 = Series::new("Ocean", &["Atlantic", "Indian"]);
+    /// let s2 = Series::new("Area (km²)", &[106_460_000, 70_560_000]);
+    /// let mut df = DataFrame::new(vec![s1.clone(), s2.clone()])?;
+    ///
+    /// assert_eq!(df.pop(), Some(s2));
+    /// assert_eq!(df.pop(), Some(s1));
+    /// assert_eq!(df.pop(), None);
+    /// assert!(df.is_empty());
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn pop(&mut self) -> Option<Series> {
+        self.columns.pop()
+    }
+
+    /// Appends the `Series` to the back of the `DataFrame` and return whether the operation is
+    /// successful or not.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let s1 = Series::new("Ocean", &["Atlantic", "Indian"]);
+    /// let s2 = Series::new("Area (km²)", &[106_460_000, 70_560_000]);
+    /// let s3 = Series::new("Average depth (m)", &[3_646]);
+    /// let mut df = DataFrame::default();
+    ///
+    /// assert!(df.push(s1));
+    /// assert!(df.push(s2));
+    /// assert!(!df.push(s3));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn push(&mut self, value: Series) -> bool {
+        if self.is_empty() || (self.columns[0].len() == value.len()) {
+            self.columns.push(value);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Add a new column at index 0 that counts the rows.
     ///
     /// # Example
