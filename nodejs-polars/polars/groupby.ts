@@ -26,8 +26,8 @@ export type GroupBy = {
    * __Use multiple aggregations on columns.__
    * This can be combined with complete lazy API and is considered idiomatic polars.
    * ___
-   * @param columns - map of 'col' -> 'agg' 
-   *  
+   * @param columns - map of 'col' -> 'agg'
+   *
    *  - using lazy API (recommended): `[col('foo').sum(), col('bar').min()]`
    *  - using multiple aggs per column: `{'foo': ['sum', 'numUnique'], 'bar': ['min'] }`
    *  - using single agg per column:  `{'foo': ['sum'], 'bar': 'min' }`
@@ -36,15 +36,15 @@ export type GroupBy = {
    * // use lazy api rest parameter style
    * >>> df.groupBy('foo', 'bar')
    * >>>   .agg(pl.sum('ham'), col('spam').tail(4).sum())
-   * 
+   *
    * // use lazy api array styple
    * >>> df.groupBy('foo', 'bar')
    * >>>   .agg({pl.sum('ham'), col('spam').tail(4).sum()])
-   * 
+   *
    * // use a mapping
    * >>> df.groupBy('foo', 'bar')
    * >>>   .agg({'spam': ['sum', 'min']})
-   * 
+   *
    * ```
    */
   agg(columns: Record<string, string | string[]>): DataFrame
@@ -103,7 +103,7 @@ export type GroupBy = {
    * >>> df.groupby("letters")
    * >>>   .head(2)
    * >>>   .sort("letters");
-   * >>> 
+   * >>>
    * shape: (5, 2)
    * ╭─────────┬─────╮
    * │ letters ┆ nrs │
@@ -151,10 +151,13 @@ export type GroupBy = {
    * Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
    * @param pivotCol - Column to pivot.
    * @param valuesCol - Column that will be aggregated.
-   * 
+   *
    */
   pivot({pivotCol, valuesCol}: {pivotCol: string, valuesCol: string}): PivotOps
   pivot(pivotCol: string, valuesCol: string): PivotOps
+  /**
+   * Compute the quantile per group.
+   */
   quantile(quantile: number): DataFrame
   /**
    * Reduce the groups to the sum.
@@ -165,7 +168,7 @@ export type GroupBy = {
 
 }
 
-export type GroupBySelection = Pick<GroupBy, 
+export type GroupBySelection = Pick<GroupBy,
    'aggList'
   | 'apply'
   | 'count'
@@ -180,7 +183,7 @@ export type GroupBySelection = Pick<GroupBy,
   | 'sum'
 >
 
-export type PivotOps = Pick<GroupBy, 
+export type PivotOps = Pick<GroupBy,
   'count'
   | 'first'
   | 'max'
@@ -209,30 +212,31 @@ export function GroupBy(
         throw new Error("must specify both pivotCol and valuesCol");
       }
     }
- 
+
     return PivotOps(df, by, opts.pivotCol, opts.valuesCol);
   };
-  
+
   const select = (...columns: ColumnSelection[]): GroupBySelection => {
     if(downsample) {
       throw new Error("select not supported in downsample operation");
     }
 
     return GroupBySelection(
-      df, 
-      by, 
+      df,
+      by,
       utils.columnOrColumnsStrict(columns)
     );
   };
 
   const selectAll = (): GroupBySelection  => GroupBySelection(
-    df, 
-    by, 
-    undefined, 
-    downsample, 
-    rule, 
+    df,
+    by,
+    undefined,
+    downsample,
+    rule,
     downsampleN
-  );  
+  );
+
   const inspectOpts = {colors:true, depth:null};
   const customInspect = () => util.formatWithOptions(inspectOpts, 'GroupBy {\n    by: %O\n}', by, );
 
@@ -261,8 +265,6 @@ export function GroupBy(
       }
     )
   ) as GroupBy;
-
-
 }
 
 function GroupBySelection(
@@ -312,7 +314,7 @@ function PivotOps(
   pivotCol: string,
   valueCol: string
 ): PivotOps {
-  
+
   const pivot =  (agg:string) => () =>  DataFrame[_wrap](df, 'pivot', {by, pivotCol, valueCol, agg});
 
   return {

@@ -1,8 +1,7 @@
-import {default as Series} from './series';
+import {Series} from './series';
 import {DataFrame} from './dataframe';
 import { DataType } from './datatypes';
 import * as func from './functions';
-import polarsInternal from './internals/polars_internal';
 
 export default {
   Int8:  DataType.Int8,
@@ -30,5 +29,4 @@ export default {
   Series,
   NewDataFrame: DataFrame,
   DataFrame: DataFrame.of,
-  _internal: polarsInternal
 };

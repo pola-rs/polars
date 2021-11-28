@@ -17,9 +17,19 @@
         "jest"
     ],
     "rules": {
-
-        "semi": ["error", "always"],
-        "indent": ["error", 2, { "MemberExpression": 1 }],
+        "no-redeclare": "off",
+        "no-trailing-spaces": "error",
+        "semi": [
+            "error",
+            "always"
+        ],
+        "indent": [
+            "error",
+            2,
+            {
+                "MemberExpression": 1
+            }
+        ],
         "no-dupe-class-members": "off",
         "no-unused-vars": "off",
         "newline-per-chained-call": [

@@ -463,8 +463,11 @@ pub fn arg_max(cx: CallContext) -> JsResult<JsUnknown> {
 #[js_function(1)]
 pub fn take(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
-  let _series = params.get_series(&cx, "_series")?;
-  todo!()
+  let indices = params.get_as::<Vec<u32>>("indices")?;
+  let chunked: UInt32Chunked = indices.into_iter().map(Some).collect();
+  let series = params.get_series(&cx, "_series")?;
+  let take = series.series.take(&chunked).map_err(JsPolarsEr::from)?;
+  JsSeries::new(take).try_into_js(&cx)
 }
 
 #[js_function(1)]

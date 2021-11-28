@@ -4,7 +4,7 @@ import polarsInternal from './internals/polars_internal';
 import { arrayToJsDataFrame, arrayToJsSeries } from './internals/construction';
 import util from 'util';
 import { DataType, JoinOptions, ReadCsvOptions, ReadJsonOptions, WriteCsvOptions} from './datatypes';
-import {Series} from './series';
+import {Series, _wrapSeries} from './series';
 import {Stream} from 'stream';
 import fs from 'fs';
 import {isPath, columnOrColumns, columnOrColumnsStrict, ColumnSelection, range} from './utils';
@@ -14,7 +14,7 @@ const todo = () => new Error('not yet implemented');
 
 
 const defaultJoinOptions: JoinOptions = {
-  how: "inner", 
+  how: "inner",
   suffix: "_right"
 };
 
@@ -33,14 +33,14 @@ const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
 
 
 const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
-  batchSize: 1000, 
+  batchSize: 1000,
   inline: false,
   inferSchemaLength: 10
 };
 
 
 /**
- *  
+ *
   A DataFrame is a two-dimensional data structure that represents data as a table
   with rows and columns.
 
@@ -124,7 +124,7 @@ export class DataFrame {
   }
   /**
  * __Get dtypes of columns in DataFrame.__
- * 
+ *
  * Dtypes can also be found in column headers when printing the DataFrame.
  * ___
  * @example
@@ -135,7 +135,7 @@ export class DataFrame {
  * >   "ham": ['a', 'b', 'c']
  * > })
  * > df.dtypes
- * 
+ *
  * ['Int64', 'Float64', 'Utf8']
  * df
  * shape: (3, 3)
@@ -176,7 +176,7 @@ export class DataFrame {
    * df = pl.DataFrame({"foo": [1,2,3,4,5]})
    * df.shape
    * {
-   *   height: 5, 
+   *   height: 5,
    *   width: 1
    * }
    * ```
@@ -205,21 +205,21 @@ export class DataFrame {
    * __Get or set column names.__
    * ___
    * @example
-   * ``` 
+   * ```
    * > df = pl.DataFrame({
    * >   "foo": [1, 2, 3],
    * >   "bar": [6, 7, 8],
    * >   "ham": ['a', 'b', 'c']
    * > })
-   * 
+   *
    * > df.columns
-   * 
+   *
    * ['foo', 'bar', 'ham']
-   * 
+   *
    * // Set column names
-   * 
+   *
    * > df.columns = ['apple', 'banana', 'orange']
-   * 
+   *
    * shape: (3, 3)
    * ╭───────┬────────┬────────╮
    * │ apple ┆ banana ┆ orange │
@@ -294,12 +294,12 @@ export class DataFrame {
 
     return new DataFrame(polarsInternal.df.read_csv(options));
   }
-  
+
   /**
    * __Read a JSON file or string into a DataFrame.__
-   * 
+   *
    * _Note: Currently only newline delimited JSON is supported_
-   * @param options 
+   * @param options
    * @param options.file - Path to a file, or a file like string
    * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
    *    If set to `null`, a full table scan will be done (slow).
@@ -329,9 +329,9 @@ export class DataFrame {
   static readJSON(path: string): DataFrame
   static readJSON(path: string, options: ReadJsonOptions): DataFrame
   static readJSON(arg: ReadJsonOptions | string, options?: any) {
-    
+
     if(typeof arg === 'string') {
-      
+
       return DataFrame.readJSON({...options, file: arg, inline: !isPath(arg)});
     }
     options = {...readJsonDefaultOptions, ...arg};
@@ -344,27 +344,27 @@ export class DataFrame {
   static of(data: any[][]): DataFrame
   static of(data: any[][], options: {columns?: any[], orient?: 'row' | 'col'}): DataFrame
   static of(
-    data: Record<string, any[]> | any[][] | Series<any>[], 
+    data: Record<string, any[]> | any[][] | Series<any>[],
     options?: {columns?: any[], orient?: 'row' | 'col'}
   ): DataFrame {
 
     if(!data) {
       return new DataFrame(obj_to_df({}));
     }
- 
+
     if (Array.isArray(data)) {
       return new DataFrame(arrayToJsDataFrame(data, options?.columns, options?.orient));
-    } 
+    }
 
     return new DataFrame(obj_to_df(data as any));
   }
-  
+
   [util.inspect.custom](): string {
     return this.unwrap<any>('as_str');
   }
   /**
    * TODO
-   * @param func 
+   * @param func
    */
   apply<U>(func: <T>(s: T) => U): DataFrame {
     throw todo();
@@ -378,8 +378,8 @@ export class DataFrame {
   }
 
   /**
-   * __Summary statistics for a DataFrame.__ 
-   * 
+   * __Summary statistics for a DataFrame.__
+   *
    * Only summarizes numeric datatypes at the moment and returns nulls for non numeric datatypes.
    * ___
    * Example
@@ -414,7 +414,7 @@ export class DataFrame {
   /**
    * __Remove column from DataFrame and return as new.__
    * ___
-   * @param name 
+   * @param name
    * @example
    * ```
    * > df = pl.DataFrame({
@@ -436,9 +436,9 @@ export class DataFrame {
    * ├╌╌╌╌╌┼╌╌╌╌╌┤
    * │ 3   ┆ 8   │
    * ╰─────┴─────╯
-   * 
+   *
    * ```
-   * 
+   *
    */
   drop(name: string | Array<string>): DataFrame {
     if(Array.isArray(name)) {
@@ -455,18 +455,18 @@ export class DataFrame {
   }
   /**
  * __Drop duplicate rows from this DataFrame.__
- * 
+ *
  * Note that this fails if there is a column of type `List` in the DataFrame.
- * @param maintainOrder 
+ * @param maintainOrder
  * @param subset - subset to drop duplicates for
  */
-  dropDuplicates(maintainOrder:boolean, subset?: string | Array<string>): DataFrame 
+  dropDuplicates(maintainOrder:boolean, subset?: string | Array<string>): DataFrame
   /**
    * __Drop duplicate rows from this DataFrame.__
-   * 
+   *
    * Note that this fails if there is a column of type `List` in the DataFrame.
    * @param options
-   * @param options.maintainOrder 
+   * @param options.maintainOrder
    * @param options.subset - subset to drop duplicates for
    */
   dropDuplicates(options: {maintainOrder?: boolean, subset?: string | Array<string>} | boolean, subset?: string | Array<string>): DataFrame {
@@ -475,7 +475,7 @@ export class DataFrame {
   /**
    * Drop in place.
    * ___
-   * 
+   *
    * @param name - Column to drop.
    * @example
    * ```
@@ -502,10 +502,10 @@ export class DataFrame {
   dropInPlace(name: string): void {
     this.unwrap('drop_in_place', {name});
   }
-  
+
   /**
    * __Return a new DataFrame where the null values are dropped.__
-   * 
+   *
    * This method only drops nulls row-wise if any single value of the row is null.
    * ___
    * @example
@@ -533,7 +533,7 @@ export class DataFrame {
 
     return this.wrap('drop_nulls', {subset});
   }
-  
+
   /**
    * __Explode `DataFrame` to long format by exploding a column with Lists.__
    * ___
@@ -598,7 +598,7 @@ export class DataFrame {
 
   /**
    * Fill null/missing values by a filling strategy
-   * 
+   *
    * @param strategy - One of:
    *   - "backward"
    *   - "forward"
@@ -608,7 +608,7 @@ export class DataFrame {
    *   - "zero"
    *   - "one"
    * @returns DataFrame with None replaced with the filling strategy.
-   */ 
+   */
   fillNull(strategy: "backward" | "forward" | "mean" | "min" | "max" | "zero" | "one"): DataFrame {
     return this.wrap('fill_null', {strategy});
   }
@@ -674,17 +674,17 @@ export class DataFrame {
   }
   /**
    * __Apply a horizontal reduction on a DataFrame.__
-   * 
-   * This can be used to effectively determine aggregations on a row level, 
+   *
+   * This can be used to effectively determine aggregations on a row level,
    * and can be applied to any DataType that can be supercasted (casted to a similar parent type).
-   * 
+   *
    * An example of the supercast rules when applying an arithmetic operation on two DataTypes are for instance:
    *  - Int8 + Utf8 = Utf8
    *  - Float32 + Int64 = Float32
    *  - Float32 + Float64 = Float64
    * ___
    * @param operation - function that takes two `Series` and returns a `Series`.
-   * @returns Series 
+   * @returns Series
    * @example
    * ```
    * >>> // A horizontal sum operation
@@ -780,13 +780,13 @@ export class DataFrame {
    * Get a single column as Series by name.
    */
   getColumn(name: string): Series<any> {
-    return new Series(this.unwrap<any[]>('column', {name}));
+    return _wrapSeries(this.unwrap<any[]>('column', {name}));
   }
   /**
    * Get the DataFrame as an Array of Series.
    */
   getColumns(): Array<Series<any>> {
-    return this.unwrap<any[]>('get_columns').map(s => new Series(s));
+    return this.unwrap<any[]>('get_columns').map(s => _wrapSeries(s));
   }
   /**
    * Start a groupby operation.
@@ -797,11 +797,11 @@ export class DataFrame {
     console.log({columns: columnOrColumnsStrict(by)});
 
     return GroupBy(
-      this._df, 
+      this._df,
       columnOrColumnsStrict(by)
     );
   }
-  
+
   // /**
   //  * Hash and combine the rows in this DataFrame. _(Hash value is UInt64)_
   //  * @param k0 - seed parameter
@@ -823,14 +823,14 @@ export class DataFrame {
     const defaults = {k0:0, k1:1, k2:2, k3:3};
 
     if(options && typeof options !== 'number') {
-      return new Series(this.unwrap('hash_rows', {...defaults, ...options}));
+      return _wrapSeries(this.unwrap<number>('hash_rows', {...defaults, ...options}));
     } else {
       return this.hashRows({
-        ...defaults, 
-        k0: options ?? 0, 
+        ...defaults,
+        k0: options ?? 0,
       });
     }
-  } 
+  }
   /**
    * Get first N rows as DataFrame.
    * ___
@@ -887,7 +887,7 @@ export class DataFrame {
    * ╰─────┴─────┴─────┴───────╯
    * ```
    */
-  hStack(columns: Array<Series<any>> | DataFrame): DataFrame 
+  hStack(columns: Array<Series<any>> | DataFrame): DataFrame
   hStack(columns: Array<Series<any>> | DataFrame, inPlace?: boolean): void //hstack
   hStack(columns: Array<Series<any>> | DataFrame, inPlace?: boolean): DataFrame | void {
     if(inPlace) {
@@ -919,7 +919,7 @@ export class DataFrame {
    * Get a mask of all duplicated rows in this DataFrame.
    */
   isDuplicated(): Series<boolean> {
-    return new Series(this.unwrap('is_duplicated'));
+    return _wrapSeries(this.unwrap('is_duplicated'));
   }
   /**
    * Check if the dataframe is empty
@@ -932,7 +932,7 @@ export class DataFrame {
    * Get a mask of all unique rows in this DataFrame.
    */
   isUnique(): Series<boolean> {
-    return new Series(this.unwrap('is_unique'));
+    return _wrapSeries(this.unwrap('is_unique'));
   }
 
   /**
@@ -988,7 +988,7 @@ export class DataFrame {
     }
 
     return this.wrap('join', {
-      other: df._df, 
+      other: df._df,
       on,
       how,
       left_on: leftOn,
@@ -1034,14 +1034,14 @@ export class DataFrame {
     }
 
     if(axis === 1) {
-      return new Series(this.wrap('hmax'));
-    }  
+      return _wrapSeries(this.wrap('hmax'));
+    }
     throw new RangeError("axis must be 0 or 1");
   }
   /**
    * Aggregate the columns of this DataFrame to their mean value.
    * ___
-   * 
+   *
    * @param axis - either 0 or 1
    * @param nullStrategy - this argument is only used if axis == 1
    */
@@ -1052,8 +1052,8 @@ export class DataFrame {
     }
 
     if(axis === 1) {
-      return new Series(this.unwrap('hmean', {nullStrategy}));
-    }  
+      return _wrapSeries(this.unwrap('hmean', {nullStrategy}));
+    }
     throw new RangeError("axis must be 0 or 1");
   }
   /**
@@ -1083,13 +1083,13 @@ export class DataFrame {
   /**
    * Unpivot DataFrame to long format.
    * ___
-   * 
+   *
    * @param idVars - Columns to use as identifier variables.
    * @param valueVars - Values to use as identifier variables.
    */
   melt(idVars: string | Array<string>, valueVars: string | Array<string>): DataFrame {
     return this.wrap('melt', {
-      idVars: columnOrColumns(idVars), 
+      idVars: columnOrColumns(idVars),
       valueVars: columnOrColumns(valueVars)
     });
   }
@@ -1124,8 +1124,8 @@ export class DataFrame {
     }
 
     if(axis === 1) {
-      return new Series(this.wrap('hmin'));
-    }  
+      return _wrapSeries(this.wrap('hmin'));
+    }
     throw new RangeError("axis must be 0 or 1");
   }
   /**
@@ -1193,7 +1193,7 @@ export class DataFrame {
   }
   /**
    * __Rechunk the data in this DataFrame to a contiguous allocation.__
-   * 
+   *
    * This will make sure all subsequent operations have optimal and predictable performance.
    */
   rechunk(): DataFrame {
@@ -1202,7 +1202,7 @@ export class DataFrame {
   /**
    * __Rename column names.__
    * ___
-   * 
+   *
    * @param mapping - Key value pairs that map from old name to new name.
    * @example
    * ```
@@ -1319,7 +1319,7 @@ export class DataFrame {
     if (typeof options === 'number') {
       return this.wrap('sample_n', {n: options, withReplacement});
     }
-     
+
     if(frac) {
       return this.wrap('sample_frac', {frac, withReplacement});
     }
@@ -1459,7 +1459,7 @@ export class DataFrame {
    * Shift the values by a given period and fill the parts that will be empty due to this operation
    * with the result of the `fill_value` expression.
    * ___
-   * @param opts 
+   * @param opts
    * @param opts.periods - Number of places to shift (may be negative).
    * @param opts.fillValue - fill null values with this value.
    * @example
@@ -1493,8 +1493,8 @@ export class DataFrame {
    * Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
    * @param inPlace - optionally shrink in place
    */
-  shrinkToFit(): DataFrame 
-  shrinkToFit(inPlace?: boolean): DataFrame | void 
+  shrinkToFit(): DataFrame
+  shrinkToFit(inPlace?: boolean): DataFrame | void
   shrinkToFit(inPlace=false): DataFrame | void {
     if(inPlace) {
       this.unwrap('shrink_to_fit');
@@ -1508,7 +1508,7 @@ export class DataFrame {
   /**
    * Slice this DataFrame over the rows direction.
    * ___
-   * @param opts 
+   * @param opts
    * @param opts.offset - Offset index.
    * @param opts.length - Length of the slice
    * @example
@@ -1547,21 +1547,21 @@ export class DataFrame {
    * @param reverse - Reverse/descending sort.
    * @param inPlace - Perform operation in-place.
    */
-  sort(by: string, reverse?: boolean, inPlace?: boolean): DataFrame 
+  sort(by: string, reverse?: boolean, inPlace?: boolean): DataFrame
   /**
    * Sort the DataFrame by column.
    * ___
-   * @param opts 
+   * @param opts
    * @param opts.by - By which column to sort. Only accepts string.
    * @param opts.reverse - Reverse/descending sort.
    * @param opts.inPlace - Perform operation in-place.
    */
-  sort(opts: {by: string, reverse?: boolean, inPlace?: boolean}): DataFrame 
+  sort(opts: {by: string, reverse?: boolean, inPlace?: boolean}): DataFrame
   sort(arg: {by: string, reverse?: boolean, inPlace?: boolean} | string,  reverse=false,  inPlace=false): DataFrame {
     if(typeof arg === "string") {
       return this.sort({
-        by: arg, 
-        reverse, 
+        by: arg,
+        reverse,
         inPlace
       });
     } else {
@@ -1603,7 +1603,7 @@ export class DataFrame {
   /**
    * Aggregate the columns of this DataFrame to their mean value.
    * ___
-   * 
+   *
    * @param axis - either 0 or 1
    * @param nullStrategy - this argument is only used if axis == 1
    */
@@ -1616,13 +1616,13 @@ export class DataFrame {
     }
 
     if(axis === 1) {
-      return new Series(this.wrap('hsum', {nullStrategy}));
-    }  
+      return _wrapSeries(this.wrap('hsum', {nullStrategy}));
+    }
     throw new RangeError("axis must be 0 or 1");
   }
 
   /**
-   * 
+   *
    * @example
    * ```
    * >>> df = pl.DataFrame({
@@ -1651,7 +1651,7 @@ export class DataFrame {
    * >>> df.groupby("letters")
    * >>>   .tail(2)
    * >>>   .sort("letters")
-   * >>> 
+   * >>>
    * shape: (5, 2)
    * ╭─────────┬─────╮
    * │ letters ┆ nrs │
@@ -1676,7 +1676,7 @@ export class DataFrame {
 
   /**
    * __Write DataFrame to comma-separated values file (csv).__
-   * 
+   *
    * If no options are specified, it will return a new string containing the contents
    * ___
    * @param options
@@ -1695,13 +1695,13 @@ export class DataFrame {
    * 1,6,a
    * 2,7,b
    * 3,8,c
-   * 
+   *
    * // using a file path
    * >>> df.head(1).toCSV({dest: "./foo.csv"})
    * // foo.csv
    * foo,bar,ham
    * 1,6,a
-   * 
+   *
    * // using a write stream
    * >>> const writeStream = new Stream.Writable({
    * >>>   write(chunk, encoding, callback) {
@@ -1713,7 +1713,7 @@ export class DataFrame {
    * writeStream: '1,6,a'
    * ```
    */
-  
+
   toCSV(): string;
   toCSV(options: WriteCsvOptions): string;
   toCSV(dest: string | Stream): void;
@@ -1739,7 +1739,7 @@ export class DataFrame {
       return body;
     }
     throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
-  
+
 
   }
 
@@ -1747,7 +1747,7 @@ export class DataFrame {
     return this.unwrap('to_js');
   }
 
-  toJSON(): string 
+  toJSON(): string
   toJSON(dest: string | Stream): void
   toJSON(dest?: string | Stream): void | string {
     if(dest instanceof Stream.Writable) {
@@ -1768,10 +1768,10 @@ export class DataFrame {
       return body;
     }
     throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
-  
+
   }
   toSeries(index:number): Series<any> {
-    return new Series(this.unwrap('select_at_idx', {index}));
+    return _wrapSeries(this.unwrap('select_at_idx', {index}));
   }
 
   add(other: Series<any>): DataFrame {
@@ -1808,7 +1808,7 @@ export class DataFrame {
     return this._df;
   }
 
-  
+
   /**
    * Wraps the internal `_df` into the `DataFrame` class
    */
@@ -1832,7 +1832,7 @@ export class DataFrame {
 
 function obj_to_df(obj: Record<string, Array<any>>, columns?: Array<string>): any {
   const data =  Object.entries(obj).map(([key, value], idx) => {
-    return Series.of(columns?.[idx] ?? key, value)._series;
+    return Series(columns?.[idx] ?? key, value)._series;
   });
 
   return polarsInternal.df.read_columns({columns: data});

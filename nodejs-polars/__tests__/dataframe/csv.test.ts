@@ -10,7 +10,7 @@ describe('csv', () => {
       const df = pl.readCSV(csvpath);
       expect(df.shape).toStrictEqual({height: 27, width: 4});
     });
-  
+
     it('can read from a csv string', () => {
       const csvString = 'foo,bar,baz\n1,2,3\n4,5,6\n';
       const df = pl.readCSV(csvString);

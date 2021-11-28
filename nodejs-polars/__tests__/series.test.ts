@@ -66,7 +66,7 @@ describe('series', () => {
       expect([...s]).toEqual([...values]);
     });
   });
-  
+
   describe('math', () => {
 
     it('can add', () => {
@@ -80,16 +80,16 @@ describe('series', () => {
     it('can subtract', () => {
       const item = chance.natural({max: 100});
       const other = chance.natural({max: 100});
-      
+
       let s = pl.Series("", [item]);
       s = s.sub(other);
       expect(s[0]).toStrictEqual(item - other);
     });
 
-    it('can multiply', () => {
+    it.only('can multiply', () => {
       const item = chance.natural({max: 100});
       const other = chance.natural({max: 100});
-      
+
       let s = pl.Series("", [item]);
       s = s.mul(other);
       expect(s[0]).toStrictEqual(item * other);
@@ -98,7 +98,7 @@ describe('series', () => {
     it('can divide', () => {
       const item = chance.natural({max: 100});
       const other = chance.natural({max: 100});
-      
+
       let s = pl.Series("", [item]);
       s = s.div(other);
       expect(s[0]).toStrictEqual(item / other);
@@ -115,7 +115,7 @@ describe('series', () => {
     it('can subtract two series', () => {
       const item = chance.natural({max: 100});
       const other = chance.natural({max: 100});
-      
+
       let s = pl.Series("", [item]);
       s = s.sub(pl.Series('', [other]));
       expect(s[0]).toStrictEqual(item - other);
@@ -124,7 +124,7 @@ describe('series', () => {
     it('can multiply two series', () => {
       const item = chance.natural({max: 100});
       const other = chance.natural({max: 100});
-      
+
       let s = pl.Series("", [item]);
       s = s.mul(pl.Series('', [other]));
       expect(s[0]).toStrictEqual(item * other);
@@ -133,7 +133,7 @@ describe('series', () => {
     it('can divide two series', () => {
       const item = chance.natural({max: 100});
       const other = chance.natural({max: 100});
-      
+
       let s = pl.Series("", [item]);
       s = s.div(pl.Series('', [other]));
       expect(s[0]).toStrictEqual(item / other);

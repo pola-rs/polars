@@ -1,6 +1,6 @@
 /* eslint-disable no-redeclare */
 import {jsTypeToPolarsType} from "./internals/construction";
-import {Series} from "./series";
+import {Series, _wrapSeries} from "./series";
 import {DataFrame} from "./dataframe";
 import polars_internal from "./internals/polars_internal";
 
@@ -15,20 +15,20 @@ type ConcatOptions = {rechunk: boolean, how?: 'vertical'}
  * @param n - Number of repeats
  * @param name - Optional name of the Series
  * @example
- * 
+ *
  * ```
- * 
+ *
  * > const s = pl.repeat("a", 5)
  * > s.dtype
  * 'Utf8Type'
- * 
+ *
  * ```
  */
 export function repeat<V>(value: V, n: number, name= ""): Series<V>{
   const dtype = jsTypeToPolarsType(value);
   const s = polars_internal.repeat({name, value, dtype, n});
 
-  return new Series(s);
+  return _wrapSeries(s);
 }
 
 export function concat(item: Array<DataFrame>): DataFrame;
@@ -50,14 +50,14 @@ export function concat(items: ConcatItems, options?: ConcatOptions): DataFrame |
 
       return rechunk ? df.rechunk() : df;
     } else {
-      throw new Error("unsupported operation. only 'vertical' is supported at this time"); 
+      throw new Error("unsupported operation. only 'vertical' is supported at this time");
     }
   }
 
-  if(items[0] instanceof Series) {
+  if(items[0]?._series) {
     const s =  (items as Series<any>[]).reduce((acc,curr) => acc.concat(curr));
 
     return rechunk ? s.rechunk() : s;
   }
-  throw new Error(); 
+  throw new Error();
 }
