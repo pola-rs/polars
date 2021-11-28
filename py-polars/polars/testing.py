@@ -41,7 +41,11 @@ def assert_series_equal(
     atol: float = 1.0e-8,
 ) -> None:
     obj = "Series"
-    can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
+    try:
+        can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
+    except NotImplementedError:
+        can_be_subtracted = False
+
     check_exact = check_exact or not can_be_subtracted or left.dtype == Boolean
     if not (isinstance(left, Series) and isinstance(right, Series)):
         raise_assert_detail(obj, "Type mismatch", type(left), type(right))
