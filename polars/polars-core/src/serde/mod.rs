@@ -106,31 +106,49 @@ mod test {
         assert!(ca.into_series().series_equal_missing(&out));
     }
 
-    #[test]
-    fn test_serde_df() {
-        let s = Series::new("foo", &[1, 2, 3]);
-        let s1 = Series::new("bar", &[Some(true), None, Some(false)]);
-        let s_list = Series::new("list", &[s.clone(), s.clone(), s.clone()]);
+    fn sample_dataframe() -> DataFrame {
+        let s1 = Series::new("foo", &[1, 2, 3]);
+        let s2 = Series::new("bar", &[Some(true), None, Some(false)]);
+        let s3 = Series::new("utf8", &["mouse", "elephant", "dog"]);
+        let s_list = Series::new("list", &[s1.clone(), s1.clone(), s1.clone()]);
 
-        let df = DataFrame::new(vec![s, s_list, s1]).unwrap();
+        DataFrame::new(vec![s1, s2, s3, s_list]).unwrap()
+    }
+
+    #[test]
+    fn test_serde_df_json() {
+        let df = sample_dataframe();
         let json = serde_json::to_string(&df).unwrap();
         dbg!(&json);
         let out = serde_json::from_str::<DataFrame>(&json).unwrap(); // uses `Deserialize<'de>`
         assert!(df.frame_equal_missing(&out));
     }
 
+    #[test]
+    fn test_serde_df_bincode() {
+        let df = sample_dataframe();
+        let bytes = bincode::serialize(&df).unwrap();
+        let out = bincode::deserialize::<DataFrame>(&bytes).unwrap(); // uses `Deserialize<'de>`
+        assert!(df.frame_equal_missing(&out));
+    }
+
     /// test using the `DeserializedOwned` trait
     #[test]
-    fn test_serde_df_owned() {
-        let s = Series::new("foo", &[1, 2, 3]);
-        let s1 = Series::new("bar", &[Some(true), None, Some(false)]);
-        let s_list = Series::new("list", &[s.clone(), s.clone(), s.clone()]);
-
-        let df = DataFrame::new(vec![s, s_list, s1]).unwrap();
+    fn test_serde_df_owned_json() {
+        let df = sample_dataframe();
         let json = serde_json::to_string(&df).unwrap();
         dbg!(&json);
 
         let out = serde_json::from_reader::<_, DataFrame>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
+        assert!(df.frame_equal_missing(&out));
+    }
+
+    /// test using the `DeserializedOwned` trait
+    #[test]
+    fn test_serde_df_owned_bincode() {
+        let df = sample_dataframe();
+        let bytes = bincode::serialize(&df).unwrap();
+        let out = bincode::deserialize_from::<_, DataFrame>(bytes.as_slice()).unwrap(); // uses `DeserializeOwned`
         assert!(df.frame_equal_missing(&out));
     }
 }
