@@ -1046,22 +1046,17 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::df;
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
+    ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
+    /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
+    ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
-    ///                              "Phosphorus (mg/100g)" => &[11, 22, 12])?;
-    ///     let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
-    ///                              "Potassium (mg/100g)" => &[107, 358, 115])?;
-    ///
-    ///     let df3: DataFrame = df1.join(&df2, "Fruit", "Name", JoinType::Inner, None)?;
-    ///     assert_eq!(df3.shape(), (3, 3));
-    ///     println!("{}", df3);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df3: DataFrame = df1.join(&df2, "Fruit", "Name", JoinType::Inner, None)?;
+    /// assert_eq!(df3.shape(), (3, 3));
+    /// println!("{}", df3);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -1240,7 +1235,7 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
     ///     left.inner_join(right, "join_column_left", "join_column_right")
     /// }
@@ -1281,7 +1276,7 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
     ///     left.left_join(right, "join_column_left", "join_column_right")
     /// }
@@ -1323,7 +1318,7 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
     ///     left.outer_join(right, "join_column_left", "join_column_right")
     /// }
