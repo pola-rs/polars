@@ -4,6 +4,7 @@ import numpy as np
 
 from polars.datatypes import (
     Boolean,
+    Categorical,
     DataType,
     Date,
     Datetime,
@@ -46,6 +47,7 @@ if not _DOCUMENTING:
         Boolean: PySeries.new_opt_bool,
         Utf8: PySeries.new_str,
         Object: PySeries.new_object,
+        Categorical: PySeries.new_str,
     }
 
 

@@ -1057,3 +1057,10 @@ def test_reshape() -> None:
     # test lazy_dispatch
     out = pl.select(pl.lit(s).reshape((-1, 1))).to_series()
     assert out.series_equal(expected)
+
+
+def test_init_categorical() -> None:
+    for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
+        expected = pl.Series("a", values, dtype=pl.Utf8).cast(pl.Categorical)
+        a = pl.Series("a", values, dtype=pl.Categorical)
+        testing.assert_series_equal(a, expected)

@@ -6,10 +6,12 @@ import numpy as np
 
 from polars import internals as pli
 from polars.datatypes import (
+    Categorical,
     DataType,
     Date,
     Datetime,
     Float32,
+    Time,
     py_type_to_arrow_type,
     py_type_to_dtype,
 )
@@ -112,6 +114,11 @@ def sequence_to_pyseries(
             pyseries = pyseries.cast(str(Date), True)
         elif dtype == Datetime:
             pyseries = pyseries.cast(str(Datetime), True)
+        elif dtype == Time:
+            pyseries = pyseries.cast(str(Time), True)
+        elif dtype == Categorical:
+            pyseries = pyseries.cast(str(Categorical), True)
+
         return pyseries
 
     else:
