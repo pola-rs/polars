@@ -5,4 +5,7 @@ import pl from '../polars';
 // console.log(pl.Series('num', [1, 2, 3]))
 let s = pl.Series('a', ['foo', 'bar'])
   .rename('new name');
-console.log(s.toJS());
+
+const n = s.apply(item => item.length);
+
+console.log(n);

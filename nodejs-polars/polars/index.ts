@@ -1,4 +1,5 @@
 import {default as Series} from './series';
+import {DataFrame} from './dataframe';
 import { DataType } from './datatypes';
 import * as func from './functions';
 import polarsInternal from './internals/polars_internal';
@@ -23,6 +24,11 @@ export default {
   Object:  DataType.Object,
   Categorical:  DataType.Categorical,
   repeat: func.repeat,
+  readCSV: DataFrame.readCSV,
+  readJSON: DataFrame.readJSON,
+  concat: func.concat,
   Series,
+  NewDataFrame: DataFrame,
+  DataFrame: DataFrame.of,
   _internal: polarsInternal
 };

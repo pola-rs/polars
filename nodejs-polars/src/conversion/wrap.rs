@@ -3,6 +3,7 @@ use crate::dataframe::JsDataFrame;
 use crate::error::JsPolarsEr;
 use crate::series::JsSeries;
 use napi::{CallContext, JsExternal, JsObject, JsUnknown, Result};
+use polars::chunked_array::object::PolarsObjectSafe;
 
 #[derive(Debug)]
 pub struct Wrap<T>(pub T);
@@ -97,5 +98,15 @@ impl WrappedValue {
     } else {
       Err(JsPolarsEr::Other("Must be array type".to_owned()).into())
     }
+  }
+}
+
+pub struct ObjectValue {
+  pub inner: JsUnknown
+}
+
+impl From<&dyn PolarsObjectSafe> for &ObjectValue {
+  fn from(val: &dyn PolarsObjectSafe) -> Self {
+      unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
   }
 }

@@ -1,10 +1,6 @@
 use crate::conversion::prelude::*;
 use crate::prelude::*;
-use napi::JsBoolean;
-use napi::JsNumber;
-use napi::JsObject;
-use napi::JsTypedArrayValue;
-use napi::JsUnknown;
+use napi::{JsBoolean, JsNumber, JsObject, JsTypedArrayValue, JsUnknown};
 
 pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<Series> {
   let len = obj.get_array_length()?;
@@ -345,4 +341,33 @@ pub fn from_typed_array(arr: &JsTypedArrayValue) -> JsResult<Series> {
   Ok(series)
 }
 
+macro_rules! arr_to_series {
+  ($len:expr, $arr:expr, $type:ty) => {{
+    let v: Vec<Option<$type>> = (0..$len)
+      .map(|idx| {
+        let val: WrappedValue = $arr
+          .get_element::<JsUnknown>(idx)
+          .expect("downcast err")
+          .into();
+        match val.extract::<$type>() {
+          Ok(val) => Some(val),
+          Err(_) => panic!("unable to downcast value, multi type lists are not supported"),
+        }
+      })
+      .collect();
+    Series::new("", v)
+  }};
+}
 
+pub fn arr_to_list(obj: &JsObject, dtype: DataType) -> JsResult<Series> {
+  let len = obj.get_array_length()?;
+  let s = match dtype {
+    DataType::Int64 => arr_to_series!(len, obj, i64),
+    DataType::Float64 => arr_to_series!(len, obj, f64),
+    DataType::Utf8 => arr_to_series!(len, obj, &str),
+    DataType::Boolean => arr_to_series!(len, obj, bool),
+    // cast other values to int32
+    _ => arr_to_series!(len, obj, i32),
+  };
+  Ok(s)
+}

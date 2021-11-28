@@ -14,7 +14,7 @@ describe('series', () => {
       try {
         pl.Series('', values);
       } catch (err) {
-        expect((err as Error).message).toStrictEqual('Multi type Series is not supported');
+        expect((err as Error).message).toBeDefined();
       }
     });
 
@@ -43,6 +43,27 @@ describe('series', () => {
       expect(s.name).toStrictEqual(name);
       expect(s.length).toStrictEqual(values.length);
       expect(s.dtype).toStrictEqual(dtype);
+    });
+
+    it.each`
+    values | type
+    ${[1,2,3]} | ${'number'}
+    ${['1','2','3']} | ${'string'}
+    ${[1n,2n,3n]} | ${'bigint'}
+    ${[true, false, null]} | ${'Option<bool>'}
+    ${[1,2,null]} | ${'Option<number>'}
+    ${[1n,2n,null]} |  ${'Option<bigint>'}
+    ${[1.11,2.22,3.33, null]} |  ${'Option<float>'}
+    ${new Int8Array([9,10,11])} | ${'Int8Array'}
+    ${new Int16Array([12321,2456,22])} | ${'Int16Array'}
+    ${new Int32Array([515121,32411322,32423])} | ${'Int32Array'}
+    ${new Uint8Array([1,2,3,4,5,6,11])} | ${'Uint8Array'}
+    ${new Uint16Array([1,2,3,55,11])} | ${'Uint16Array'}
+    ${new Uint32Array([1123,2,3000,12801,99,43242])} | ${'Uint32Array'}
+    `('can be created from $type', ({values}) => {
+      const name = chance.string();
+      const s = pl.Series(name, values);
+      expect([...s]).toEqual([...values]);
     });
   });
   

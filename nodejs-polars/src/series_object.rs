@@ -8,7 +8,6 @@ impl JsSeries {
     let mut str_obj = env.create_object()?;
     let mut date_obj = env.create_object()?;
 
-    
     date_obj.define_properties(&[
       napi::Property::new(env, "day")?.with_method(day),
       napi::Property::new(env, "hour")?.with_method(hour),
@@ -33,7 +32,7 @@ impl JsSeries {
       napi::Property::new(env, "to_uppercase")?.with_method(str_to_uppercase),
       napi::Property::new(env, "parse_date")?.with_method(str_parse_date),
       napi::Property::new(env, "parse_datetime")?.with_method(str_parse_datetime),
-      napi::Property::new(env, "slice")?.with_method(str_slice)
+      napi::Property::new(env, "slice")?.with_method(str_slice),
     ])?;
 
     series.define_properties(&[
@@ -128,7 +127,7 @@ impl JsSeries {
       napi::Property::new(env, "gt_eq")?.with_method(gt_eq),
       napi::Property::new(env, "lt")?.with_method(lt),
       napi::Property::new(env, "lt_eq")?.with_method(lt_eq),
-      napi::Property::new(env, "_not")?.with_method(_not),
+      napi::Property::new(env, "_not")?.with_method(not),
       napi::Property::new(env, "as_str")?.with_method(as_str),
       napi::Property::new(env, "len")?.with_method(len),
       napi::Property::new(env, "median")?.with_method(crate::series::median),
@@ -136,7 +135,7 @@ impl JsSeries {
       napi::Property::new(env, "drop_nulls")?.with_method(drop_nulls),
       napi::Property::new(env, "fill_null")?.with_method(fill_null),
       napi::Property::new(env, "clone")?.with_method(clone),
-      napi::Property::new(env, "apply_lambda")?.with_method(apply_lambda),
+      napi::Property::new(env, "map")?.with_method(map),
       napi::Property::new(env, "shift")?.with_method(shift),
       napi::Property::new(env, "zip_with")?.with_method(zip_with),
       napi::Property::new(env, "strftime")?.with_method(strftime),
@@ -174,6 +173,7 @@ impl JsSeries {
       napi::Property::new(env, "diff")?.with_method(diff),
       napi::Property::new(env, "skew")?.with_method(skew),
       napi::Property::new(env, "kurtosis")?.with_method(kurtosis),
+      napi::Property::new(env, "rechunk")?.with_method(rechunk),
       napi::Property::new(env, "cast")?.with_method(crate::series::cast),
       napi::Property::new(env, "set_with_mask_str")?.with_method(set_with_mask_str),
       napi::Property::new(env, "set_with_mask_f64")?.with_method(set_with_mask_f64),

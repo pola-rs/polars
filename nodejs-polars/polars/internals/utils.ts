@@ -1,6 +1,8 @@
 import { DataType, DTYPE_TO_FFINAME } from '../datatypes';
 import polars_internal from './polars_internal';
 
+export const todo = () => new Error("not yet implemented");
+
 /**
  *
  * @param name function or method name where dtype is replaced by <>

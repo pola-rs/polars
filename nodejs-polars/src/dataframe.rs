@@ -1,15 +1,17 @@
 use crate::conversion::prelude::*;
 use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
+use crate::file::JsFileLike;
 use crate::prelude::JsResult;
 use crate::series::JsSeries;
 use napi::{
   CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsString, JsUndefined, JsUnknown,
 };
-use polars::frame::row::Row;
+use polars::frame::groupby::GroupBy;
+use polars::frame::row::{rows_to_schema, Row};
 use polars::prelude::*;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Cursor};
+use std::io::{BufReader, Cursor};
 
 #[repr(transparent)]
 #[derive(Clone)]
@@ -32,7 +34,6 @@ impl From<DataFrame> for JsDataFrame {
 #[js_function(1)]
 pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
-
   let columns: JsObject = params.0.get_named_property("columns")?;
   let len = columns.get_array_length()?;
   let cols: Vec<Series> = (0..len)
@@ -54,25 +55,25 @@ pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
 pub(crate) fn read_csv(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
 
-  let infer_schema_length: Option<usize> = params.get_as("infer_schema_length")?;
-  let chunk_size: usize = params.get_as("chunk_size")?;
-  let has_header: bool = params.get_as("has_header")?;
-  let ignore_errors: bool = params.get_as("ignore_errors")?;
-  let stop_after_n_rows: Option<usize> = params.get_as("stop_after_n_rows")?;
-  let skip_rows: usize = params.get_as("skip_rows")?;
+  let infer_schema_length: Option<usize> = params.get_as("inferSchemaLength")?;
+  let chunk_size: usize = params.get_as("batchSize")?;
+  let has_header: bool = params.get_as("hasHeader")?;
+  let ignore_errors: bool = params.get_as("ignoreErrors")?;
+  let stop_after_n_rows: Option<usize> = params.get_as("endRows")?;
+  let skip_rows: usize = params.get_as("startRows")?;
   let projection: Option<Vec<usize>> = params.get_as("projection")?;
   let sep: &str = params.get_as("sep")?;
   let rechunk: bool = params.get_as("rechunk")?;
   let columns: Option<Vec<String>> = params.get_as("columns")?;
   let encoding: &str = params.get_as("encoding")?;
-  let n_threads: Option<usize> = params.get_as("n_threads")?;
-  let low_memory: bool = params.get_as("low_memory")?;
-  let comment_char: Option<&str> = params.get_as("comment_char")?;
-  let quote_char: Option<&str> = params.get_as("quote_char")?;
-  let null_values: Option<Wrap<NullValues>> = params.get_as("null_values")?;
-  let parse_dates: bool = params.get_as("parse_dates")?;
-  let path = params.get_as::<String>("path")?;
-
+  let n_threads: Option<usize> = params.get_as("numThreads")?;
+  let low_memory: bool = params.get_as("lowMemory")?;
+  let comment_char: Option<&str> = params.get_as("commentChar")?;
+  let quote_char: Option<&str> = params.get_as("quoteChar")?;
+  let null_values: Option<Wrap<NullValues>> = params.get_as("nullValues")?;
+  let parse_dates: bool = params.get_as("parseDates")?;
+  let inline: Option<bool> = params.get_as("inline")?;
+  let path = params.get_as::<String>("file")?;
   let null_values = null_values.map(|w| w.0);
   let comment_char = comment_char.map(|s| s.as_bytes()[0]);
 
@@ -90,40 +91,65 @@ pub(crate) fn read_csv(cx: CallContext) -> JsResult<JsExternal> {
     "utf8-lossy" => CsvEncoding::LossyUtf8,
     e => return Err(JsPolarsEr::Other(format!("encoding not {} not implemented.", e)).into()),
   };
-
-  let df = CsvReader::from_path(path)
-    .expect("unable to read file")
-    .infer_schema(infer_schema_length)
-    .has_header(has_header)
-    .with_stop_after_n_rows(stop_after_n_rows)
-    .with_delimiter(sep.as_bytes()[0])
-    .with_skip_rows(skip_rows)
-    .with_ignore_parser_errors(ignore_errors)
-    .with_projection(projection)
-    .with_rechunk(rechunk)
-    .with_chunk_size(chunk_size)
-    .with_encoding(encoding)
-    .with_columns(columns)
-    .with_n_threads(n_threads)
-    .low_memory(low_memory)
-    .with_comment_char(comment_char)
-    .with_null_values(null_values)
-    .with_parse_dates(parse_dates)
-    .with_quote_char(quote_char)
-    .finish()
-    .map_err(JsPolarsEr::from)?;
-
+  let df = if inline.unwrap_or(false) {
+    let data: JsString = params.0.get_named_property("file")?;
+    let utf = data.into_utf8()?;
+    let string_slice = utf.as_slice();
+    let c = Cursor::new(string_slice);
+    CsvReader::new(c)
+      .infer_schema(infer_schema_length)
+      .has_header(has_header)
+      .with_stop_after_n_rows(stop_after_n_rows)
+      .with_delimiter(sep.as_bytes()[0])
+      .with_skip_rows(skip_rows)
+      .with_ignore_parser_errors(ignore_errors)
+      .with_projection(projection)
+      .with_rechunk(rechunk)
+      .with_chunk_size(chunk_size)
+      .with_encoding(encoding)
+      .with_columns(columns)
+      .with_n_threads(n_threads)
+      .low_memory(low_memory)
+      .with_comment_char(comment_char)
+      .with_null_values(null_values)
+      .with_parse_dates(parse_dates)
+      .with_quote_char(quote_char)
+      .finish()
+      .map_err(JsPolarsEr::from)?
+  } else {
+    CsvReader::from_path(path)
+      .expect("unable to read file")
+      .infer_schema(infer_schema_length)
+      .has_header(has_header)
+      .with_stop_after_n_rows(stop_after_n_rows)
+      .with_delimiter(sep.as_bytes()[0])
+      .with_skip_rows(skip_rows)
+      .with_ignore_parser_errors(ignore_errors)
+      .with_projection(projection)
+      .with_rechunk(rechunk)
+      .with_chunk_size(chunk_size)
+      .with_encoding(encoding)
+      .with_columns(columns)
+      .with_n_threads(n_threads)
+      .low_memory(low_memory)
+      .with_comment_char(comment_char)
+      .with_null_values(null_values)
+      .with_parse_dates(parse_dates)
+      .with_quote_char(quote_char)
+      .finish()
+      .map_err(JsPolarsEr::from)?
+  };
   JsDataFrame::new(df).try_into_js(&cx)
 }
 
 #[js_function(1)]
-pub(crate) fn read_parquet(cx: CallContext) -> JsResult<JsExternal> {
+pub(crate) fn read_parquet(_cx: CallContext) -> JsResult<JsExternal> {
   todo!()
 }
 
 #[js_function(1)]
 #[cfg(feature = "ipc")]
-pub(crate) fn read_ipc(cx: CallContext) -> JsResult<JsExternal> {
+pub(crate) fn read_ipc(_cx: CallContext) -> JsResult<JsExternal> {
   todo!()
 }
 
@@ -131,21 +157,22 @@ pub(crate) fn read_ipc(cx: CallContext) -> JsResult<JsExternal> {
 pub(crate) fn read_json(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let inline = params.get_as::<Option<bool>>("inline")?;
-  let infer_schema_length = params.get_as::<Option<usize>>("infer_schema_length")?;
-  let batch_size = params.get_as::<usize>("batch_size")?;
+  let infer_schema_length = params.get_as::<Option<usize>>("inferSchemaLength")?;
+  let batch_size = params.get_as::<usize>("batchSize")?;
   let df = if inline.unwrap_or(false) {
-    let data: JsString = params.0.get_named_property("path")?;
+    let data: JsString = params.0.get_named_property("file")?;
     let utf = data.into_utf8()?;
     let string_slice = utf.as_slice();
     let c = Cursor::new(string_slice);
     let reader = BufReader::new(c);
+
     JsonReader::new(reader)
       .infer_schema(infer_schema_length)
       .with_batch_size(batch_size)
       .finish()
       .unwrap()
   } else {
-    let path = params.get_as::<&str>("path")?;
+    let path = params.get_as::<&str>("file")?;
     let f = File::open(path)?;
     let reader = BufReader::new(f);
     JsonReader::new(reader)
@@ -161,56 +188,176 @@ pub(crate) fn read_json(cx: CallContext) -> JsResult<JsExternal> {
 #[js_function(1)]
 pub(crate) fn to_json(cx: CallContext) -> JsResult<JsUndefined> {
   let params = get_params(&cx)?;
-  let path = params.get_as::<&str>("path")?;
-  let f = File::create(path)?;
   let df = params.get_df(&cx, "_df")?;
-
-  let writer = BufWriter::new(f);
-  let w = JsonWriter::new(writer);
-  w.finish(&df.df).unwrap();
+  let stream = params.get::<JsObject>("writeStream")?;
+  let writeable = JsFileLike {
+    inner: stream,
+    env: cx.env,
+  };
+  serde_json::to_writer(writeable, &df.df)?;
 
   cx.env.get_undefined()
 }
 
 #[js_function(1)]
-pub(crate) fn from_arrow_record_batches(cx: CallContext) -> JsResult<JsExternal> {
-  todo!()
+pub(crate) fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
+  let params = get_params(&cx)?;
+  let df = params.get_df(&cx, "_df")?;
+  cx.env.to_js_value(&df.df)
+}
+
+#[js_function(1)]
+pub(crate) fn write_json(cx: CallContext) -> JsResult<JsUndefined> {
+  let params = get_params(&cx)?;
+  let df = params.get_df(&cx, "_df")?;
+  let stream = params.get::<JsObject>("writeStream")?;
+  let writeable = JsFileLike {
+    inner: stream,
+    env: cx.env,
+  };
+  let w = JsonWriter::new(writeable);
+  w.finish(&df.df).unwrap();
+  cx.env.get_undefined()
+}
+
+#[js_function(1)]
+pub(crate) fn to_rows(cx: CallContext) -> JsResult<JsObject> {
+  let params = get_params(&cx)?;
+  let df = params.get_df(&cx, "_df")?;
+  let df = &df.df;
+  let mut arr = cx.env.create_array()?;
+  for idx in 0..df.height() {
+    let mut arr_row = cx.env.create_array()?;
+    for (i, col) in df.get_columns().iter().enumerate() {
+      let val: Wrap<AnyValue> = col.get(idx).into();
+      let jsv = val.into_js(&cx);
+      arr_row.set_element(i as u32, jsv)?;
+    }
+    arr.set_element(idx as u32, arr_row)?;
+  }
+  Ok(arr)
 }
 
 #[js_function(1)]
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
-
   let params = get_params(&cx)?;
   let rows = params.get::<JsObject>("rows")?;
+  let len = rows.get_array_length()?;
+  let keys = rows
+    .get_element_unchecked::<JsObject>(0)?
+    .get_property_names()?
+    .into_unknown();
 
-  todo!()
+  let keys = Vec::<String>::from_js(keys)?;
+
+  let rows: Vec<Row> = (0..len)
+    .map(|idx| {
+      let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
+      let keys = obj.get_property_names().unwrap();
+      let keys_len = keys.get_array_length_unchecked().unwrap();
+      Row(
+        (0..keys_len)
+          .map(|key_idx| {
+            let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
+            let value: JsUnknown = obj.get_property(key).unwrap();
+            AnyValue::from_js(value).unwrap()
+          })
+          .collect(),
+      )
+    })
+    .collect();
+  let mut df = finish_from_rows(rows)?;
+  df.set_column_names(&keys).map_err(JsPolarsEr::from)?;
+  JsDataFrame::from(df).try_into_js(&cx)
 }
 
 #[js_function(1)]
-pub(crate) fn read_objects(cx: CallContext) -> JsResult<JsUndefined> {
+pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {
+  let params = get_params(&cx)?;
+  let rows = params.get::<JsObject>("data")?;
+  let len = rows.get_array_length()?;
+  let err_message = "There was an error while processing rows, \ndata must be an array of arrays";
+  let rows: Vec<Row> = (0..len)
+    .map(|idx| {
+      let arr: JsObject = rows.get_element_unchecked(idx).expect(err_message);
+      let arr_len = arr.get_array_length().expect(err_message);
+      Row(
+        (0..arr_len)
+          .map(|arr_idx| {
+            let value: JsUnknown = arr.get_element(arr_idx).expect(err_message);
+            AnyValue::from_js(value).expect("unable to cast value")
+          })
+          .collect(),
+      )
+    })
+    .collect();
+  let df = finish_from_rows(rows)?;
+  JsDataFrame::from(df).try_into_js(&cx)
+}
+// #[js_function(1)]
+// pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {
+//   let params = get_params(&cx)?;
+//   let rows = params.get::<JsObject>("data")?;
+//   let len = rows.get_array_length()?;
+
+//   let d: serde_json::Value = serde_json::from_reader(reader)?;
+//   let handle_obj = |value: &serde_json::Value| {
+//     if value.is_boolean() {
+//       value
+//         .as_bool()
+//         .map(AnyValue::Boolean)
+//         .unwrap_or(AnyValue::Null)
+//     } else if value.is_null() {
+//       AnyValue::Null
+//     } else if value.is_string() {
+//       match value.as_str() {
+//         Some(s) => AnyValue::Utf8(Box::leak(s.to_owned().into_boxed_str())),
+//         None => AnyValue::Null,
+//       }
+//     } else if value.is_number() {
+//       match value.as_f64() {
+//         Some(n) => AnyValue::Float64(n),
+//         None => AnyValue::Null,
+//       }
+//     } else {
+//       AnyValue::Null
+//     }
+//   };
+//   let handle_row = |value: &serde_json::Value| {
+//     let row: Vec<AnyValue> = value
+//       .as_object()
+//       .unwrap()
+//       .values()
+//       .into_iter()
+//       .map(handle_obj)
+//       .collect();
+//     Row(row)
+//   };
+//   let rows: Vec<Row> = d.as_array().unwrap().into_iter().map(handle_row).collect();
+//   let df = finish_from_rows(rows)?;
+//   JsDataFrame::new(df).try_into_js(&cx)
+// }
+#[js_function(1)]
+pub(crate) fn to_csv(cx: CallContext) -> JsResult<JsUndefined> {
+  let params = get_params(&cx)?;
+  let df = params.get_df(&cx, "_df")?;
+  let has_headers: bool = params.get_as("hasHeader")?;
+
+  let sep: String = params.get_as("sep")?;
+  let sep = sep.chars().next().unwrap();
+
+  let stream = params.get::<JsObject>("writeStream")?;
+  let writeable = JsFileLike {
+    inner: stream,
+    env: cx.env,
+  };
+
+  CsvWriter::new(writeable)
+    .has_header(has_headers)
+    .with_delimiter(sep as u8)
+    .finish(&df.df)
+    .map_err(JsPolarsEr::from)?;
   cx.env.get_undefined()
-}
-
-#[js_function(1)]
-pub(crate) fn to_csv(cx: CallContext) -> JsResult<JsExternal> {
-  todo!()
-}
-
-#[js_function(1)]
-#[cfg(feature = "ipc")]
-pub(crate) fn to_ipc(cx: CallContext) -> JsResult<JsExternal> {
-  todo!()
-}
-
-#[js_function(1)]
-#[cfg(feature = "parquet")]
-pub(crate) fn to_parquet(cx: CallContext) -> JsResult<JsExternal> {
-  todo!()
-}
-
-#[js_function(1)]
-pub(crate) fn to_arrow(cx: CallContext) -> JsResult<JsExternal> {
-  todo!()
 }
 
 #[js_function(1)]
@@ -262,7 +409,7 @@ pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_df(&cx, "_df")?;
   let n = params.get_as::<usize>("n")?;
-  let with_replacement = params.get_as::<bool>("with_replacement")?;
+  let with_replacement = params.get_as::<bool>("withReplacement")?;
   let df = df
     .df
     .sample_n(n, with_replacement)
@@ -275,7 +422,7 @@ pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_df(&cx, "_df")?;
   let frac = params.get_as::<f64>("frac")?;
-  let with_replacement = params.get_as::<bool>("with_replacement")?;
+  let with_replacement = params.get_as::<bool>("withReplacement")?;
   let df = df
     .df
     .sample_frac(frac, with_replacement)
@@ -345,8 +492,17 @@ pub fn join(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn get_columns(cx: CallContext) -> JsResult<JsExternal> {
-  todo!()
+pub fn get_columns(cx: CallContext) -> JsResult<JsObject> {
+  let params = get_params(&cx)?;
+  let df = params.get_df(&cx, "_df")?;
+  let s = df.df.get_columns().clone();
+  let mut arr: JsObject = cx.env.create_array_with_length(s.len())?;
+
+  for (idx, series) in s.into_iter().enumerate() {
+    let wrapped = JsSeries::new(series).try_into_js(&cx)?;
+    arr.set_element(idx as u32, wrapped)?;
+  }
+  Ok(arr)
 }
 
 #[js_function(1)]
@@ -360,7 +516,7 @@ pub fn columns(cx: CallContext) -> JsResult<JsUnknown> {
 #[js_function(1)]
 pub fn set_column_names(cx: CallContext) -> JsResult<JsUndefined> {
   let params = get_params(&cx)?;
-  let mut df = params.get_df_mut(&cx, "_df")?;
+  let df = params.get_df_mut(&cx, "_df")?;
   let names = params.get_as::<Vec<&str>>("names")?;
   df.df.set_column_names(&names).map_err(JsPolarsEr::from)?;
 
@@ -507,7 +663,7 @@ pub fn drop(cx: CallContext) -> JsResult<JsExternal> {
 pub fn select_at_idx(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
   let params = get_params(&cx)?;
   let df = params.get_df(&cx, "_df")?;
-  let idx = params.get_as::<usize>("idx")?;
+  let idx = params.get_as::<usize>("index")?;
 
   let opt = df.df.select_at_idx(idx).map(|s| JsSeries::new(s.clone()));
 
@@ -603,7 +759,7 @@ pub fn take_with_series(cx: CallContext) -> JsResult<JsExternal> {
 pub fn sort(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_df(&cx, "_df")?;
-  let by_column = params.get_as::<&str>("by_column")?;
+  let by_column = params.get_as::<&str>("by")?;
   let reverse = params.get_as::<bool>("reverse")?;
   let df = df.df.sort(by_column, reverse).map_err(JsPolarsEr::from)?;
 
@@ -613,7 +769,7 @@ pub fn sort(cx: CallContext) -> JsResult<JsExternal> {
 pub fn sort_in_place(cx: CallContext) -> JsResult<JsUndefined> {
   let params = get_params(&cx)?;
   let df = params.get_df_mut(&cx, "_df")?;
-  let by_column = params.get_as::<&str>("by_column")?;
+  let by_column = params.get_as::<&str>("by")?;
   let reverse = params.get_as::<bool>("reverse")?;
   df.df
     .sort_in_place(by_column, reverse)
@@ -653,7 +809,7 @@ pub fn replace_at_idx(cx: CallContext) -> JsResult<JsUndefined> {
   let params = get_params(&cx)?;
   let df = params.get_df_mut(&cx, "_df")?;
   let idx = params.get_as::<usize>("index")?;
-  let new_col = params.get_series(&cx, "new_col")?;
+  let new_col = params.get_series(&cx, "newColumn")?;
 
   df.df
     .replace_at_idx(idx, new_col.series.clone())
@@ -716,12 +872,13 @@ pub fn is_duplicated(cx: CallContext) -> JsResult<JsExternal> {
   let mask = df.df.is_duplicated().map_err(JsPolarsEr::from)?;
   JsSeries::new(mask.into_series().into()).try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn frame_equal(cx: CallContext) -> JsResult<JsBoolean> {
   let params = get_params(&cx)?;
   let df = params.get_df(&cx, "_df")?;
   let other = params.get_df(&cx, "other")?;
-  let null_equal = params.get_as::<bool>("null_equal")?;
+  let null_equal = params.get_as::<bool>("nullEqual")?;
   let eq = if null_equal {
     df.df.frame_equal_missing(&other.df)
   } else {
@@ -750,12 +907,21 @@ pub fn with_row_count(cx: CallContext) -> JsResult<JsExternal> {
 //   let df = params.get_df(&cx, "_df")?;
 //   todo!()
 // }
-// #[js_function(1)]
-// pub fn groupby(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_df(&cx, "_df")?;
-//   todo!()
-// }
+#[js_function(1)]
+pub fn groupby(cx: CallContext) -> JsResult<JsExternal> {
+  let params = get_params(&cx)?;
+  let df = params.get_df(&cx, "_df")?;
+  let by = params.get_as::<Vec<&str>>("by")?;
+  let agg = params.get_as::<&str>("agg")?;
+  let select = params.get_as::<Option<Vec<String>>>("select")?;
+  let gb = df.df.groupby(&by).map_err(JsPolarsEr::from)?;
+
+  let selection = match select.as_ref() {
+    Some(s) => gb.select(s),
+    None => gb,
+  };
+  finish_groupby(selection, agg)?.try_into_js(&cx)
+}
 // #[js_function(1)]
 // pub fn groupby_agg(cx: CallContext) -> JsResult<JsExternal> {
 //   let params = get_params(&cx)?;
@@ -790,8 +956,8 @@ pub fn clone(cx: CallContext) -> JsResult<JsExternal> {
 pub fn melt(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_df(&cx, "_df")?;
-  let id_vars = params.get_as::<Vec<&str>>("id_vars")?;
-  let value_vars = params.get_as::<Vec<&str>>("value_vars")?;
+  let id_vars = params.get_as::<Vec<&str>>("idVars")?;
+  let value_vars = params.get_as::<Vec<&str>>("valueVars")?;
 
   let df = df.df.melt(id_vars, value_vars).map_err(JsPolarsEr::from)?;
   JsDataFrame::new(df).try_into_js(&cx)
@@ -885,12 +1051,14 @@ pub fn null_count(cx: CallContext) -> JsResult<JsExternal> {
 //   let df = params.get_df(&cx, "_df")?;
 //   todo!()
 // }
-// #[js_function(1)]
-// pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_df(&cx, "_df")?;
-//   todo!()
-// }
+#[js_function(1)]
+pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
+  let params = get_params(&cx)?;
+  let df = params.get_df(&cx, "_df")?;
+  let quantile = params.get_as::<f64>("quantile")?;
+  let df = df.df.quantile(quantile).map_err(JsPolarsEr::from)?;
+  JsDataFrame::new(df).try_into_js(&cx)
+}
 // #[js_function(1)]
 // pub fn to_dummies(cx: CallContext) -> JsResult<JsExternal> {
 //   let params = get_params(&cx)?;
@@ -915,12 +1083,19 @@ pub fn null_count(cx: CallContext) -> JsResult<JsExternal> {
 //   let df = params.get_df(&cx, "_df")?;
 //   todo!()
 // }
-// #[js_function(1)]
-// pub fn hash_rows(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_df(&cx, "_df")?;
-//   todo!()
-// }
+#[js_function(1)]
+pub fn hash_rows(cx: CallContext) -> JsResult<JsExternal> {
+  let params = get_params(&cx)?;
+  let df = params.get_df(&cx, "_df")?;
+  let k0 = params.get_as::<u64>("k0")?;
+  let k1 = params.get_as::<u64>("k1")?;
+  let k2 = params.get_as::<u64>("k2")?;
+  let k3 = params.get_as::<u64>("k3")?;
+
+  let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
+  let hash = df.df.hash_rows(Some(hb)).map_err(JsPolarsEr::from)?;
+  JsSeries::from(hash.into_series()).try_into_js(&cx)
+}
 
 // #[js_function(1)]
 // pub fn transpose(cx: CallContext) -> JsResult<JsExternal> {
@@ -928,3 +1103,43 @@ pub fn null_count(cx: CallContext) -> JsResult<JsExternal> {
 //   let df = params.get_df(&cx, "_df")?;
 //   todo!()
 // }
+
+fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
+  let schema = rows_to_schema(&rows);
+  let fields = schema
+    .fields()
+    .iter()
+    .map(|fld| match fld.data_type() {
+      DataType::Null => Field::new(fld.name(), DataType::Boolean),
+      _ => fld.clone(),
+    })
+    .collect();
+  let schema = Schema::new(fields);
+
+  DataFrame::from_rows_and_schema(&rows, &schema).map_err(|err| JsPolarsEr::from(err).into())
+}
+
+fn finish_groupby(gb: GroupBy, agg: &str) -> JsResult<JsDataFrame> {
+  let df = match agg {
+    "min" => gb.min(),
+    "max" => gb.max(),
+    "mean" => gb.mean(),
+    "first" => gb.first(),
+    "last" => gb.last(),
+    "sum" => gb.sum(),
+    "count" => gb.count(),
+    "n_unique" => gb.n_unique(),
+    "median" => gb.median(),
+    "agg_list" => gb.agg_list(),
+    "groups" => gb.groups(),
+    "std" => gb.std(),
+    "var" => gb.var(),
+    a => Err(PolarsError::ComputeError(
+      format!("agg fn {} does not exists", a).into(),
+    )),
+  };
+
+  let df = df.map_err(JsPolarsEr::from)?;
+
+  Ok(JsDataFrame::new(df))
+}

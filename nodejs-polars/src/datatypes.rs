@@ -2,7 +2,7 @@ use crate::prelude::FromJsUnknown;
 use napi::JsNumber;
 use napi::JsUnknown;
 use polars::prelude::*;
-
+use crate::conversion::wrap::Wrap;
 #[repr(u32)]
 pub enum JsDataType {
   Int8,
@@ -24,6 +24,7 @@ pub enum JsDataType {
   Object,
   Categorical,
 }
+
 
 impl JsDataType {
   pub fn to_string(self) -> String {
@@ -121,6 +122,21 @@ impl From<napi::TypedArrayType> for JsDataType {
     }
   }
 }
+impl From<napi::ValueType> for Wrap<DataType> {
+  fn from(dt: napi::ValueType) -> Self {
+    use napi::ValueType::*;
+    match dt {
+      Undefined | Null | Unknown => Wrap(DataType::Null),
+      Boolean => Wrap(DataType::Boolean),
+      Number => Wrap(DataType::Float64),
+      String => Wrap(DataType::Utf8),
+      Bigint => Wrap(DataType::UInt64),
+      _ => panic!("unknown data type")
+
+    }
+  }
+}
+
 impl From<DataType> for JsDataType {
   fn from(dt: DataType) -> Self {
     (&dt).into()

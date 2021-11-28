@@ -3,6 +3,7 @@ import polars_internal from './polars_internal';
 
 import { DataType, polarsTypeToConstructor } from '../datatypes';
 import { isTypedArray } from 'util/types';
+import {Series} from '../series';
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
   if (Array.isArray(value)) {
@@ -53,4 +54,69 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
 
     return series;
   }
+}
+
+export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: 'col'| 'row'): any {
+  let dataSeries;
+
+  if(!data.length) {
+    dataSeries = [];
+  }
+  else if (data[0] instanceof Series) {
+    dataSeries = [];
+
+    data.forEach((series: Series<any>, idx) => {
+      if(!series.name) {
+        series.rename(`column_${idx}`, true);
+      }
+      dataSeries.push(series.inner());
+    });
+  }
+  else if(data[0].constructor.name === 'Object') {
+    const df = polars_internal.df.read_rows({rows: data});
+
+    if(columns) {
+      polars_internal.df.set_column_names({_df: df, names: columns});
+    }
+
+    return df;
+  }
+  else if (Array.isArray(data[0])) {
+    if(!orient && columns) {
+      orient = columns.length === data.length ? 'col' : 'row';
+    }
+
+    if(orient === 'row') {
+      const df = polars_internal.df.read_array_rows({data});
+      columns && polars_internal.df.set_column_names({_df: df, names: columns});
+
+      return df; 
+    } else {
+      dataSeries = data.map((s,idx) => Series.of(`column_${idx}`, s).inner());
+    }
+    
+  }
+  else {
+    dataSeries = [Series.of("column_0", data).inner()];
+  }
+  dataSeries = handleColumnsArg(dataSeries, columns);
+
+  return polars_internal.df.read_columns({columns: dataSeries});
+}
+
+function handleColumnsArg(data: Series<any>[], columns?: string[]) {
+  if(!columns) {
+    return data;
+  } else {
+    if(!data) {
+      return columns.map(c => Series.of(c, []).inner());
+    } else if(data.length === columns.length) {
+      columns.forEach((name, i) => {
+        polars_internal.series.rename({_series: data[i], name});
+      });
+
+      return data;
+    }
+  }
+  throw new TypeError("Dimensions of columns arg must match data dimensions.");
 }

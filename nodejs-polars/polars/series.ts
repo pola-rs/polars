@@ -141,32 +141,47 @@ export class Series<T> {
     }
   }
 
-
-  // javascript overrides for iteration, and console.log
-
+  inner(): JsSeries {
+    return this._series;
+  }
 
   eq(field: Series<T> | number | bigint | string): Series<boolean> {
+    return this.wrapDtype('eq', { field, key: 'rhs' });
+  }
+  equals(field: Series<T> | number | bigint | string): Series<boolean> {
     return this.wrapDtype('eq', { field, key: 'rhs' });
   }
   gt_eq(field: Series<T> | number | bigint | string): Series<boolean> {
     return this.wrapDtype('gt_eq', { field, key: 'rhs' });
   }
+  greaterThanEquals(field: Series<T> | number | bigint | string): Series<boolean> {
+    return this.wrapDtype('gt_eq', { field, key: 'rhs' });
+  }
   gt(field: Series<T> | number | bigint | string): Series<boolean> {
+    return this.wrapDtype('gt', { field, key: 'rhs' });
+  }
+  greaterThan(field: Series<T> | number | bigint | string): Series<boolean> {
     return this.wrapDtype('gt', { field, key: 'rhs' });
   }
   lt_eq(field: Series<T> | number | bigint | string): Series<boolean> {
     return this.wrapDtype('lt_eq', { field, key: 'rhs' });
   }
+  lessThanEquals(field: Series<T> | number | bigint | string): Series<boolean> {
+    return this.wrapDtype('lt_eq', { field, key: 'rhs' });
+  }
   lt(field: Series<T> | number | bigint | string): Series<boolean> {
+    return this.wrapDtype('lt', { field, key: 'rhs' });
+  }
+  lessThan(field: Series<T> | number | bigint | string): Series<boolean> {
     return this.wrapDtype('lt', { field, key: 'rhs' });
   }
   neq(field: Series<T> | number | bigint | string): Series<boolean> {
     return this.wrapDtype('neq', { field, key: 'rhs' });
   }
-
-  rem(field: Series<T> | number | bigint | string): Series<boolean>  {
-    return this.wrapDtype('rem', { field, key: 'rhs' });
+  notEquals(field: Series<T> | number | bigint | string): Series<boolean> {
+    return this.wrapDtype('neq', { field, key: 'rhs' });
   }
+
 
   add(field: Series<T> | number | bigint): Series<T> {
     return this.wrapDtype('add', { field, key: 'other' });
@@ -183,7 +198,25 @@ export class Series<T> {
   mul(field: Series<T> | number | bigint): Series<T> {
     return this.wrapDtype('mul', { field, key: 'other' });
   }
+  rem(field: Series<T> | number | bigint | string): Series<T>  {
+    return this.wrapDtype('rem', { field, key: 'other' });
+  }
 
+  plus(field: Series<T> | number | bigint): Series<T> {
+    return this.wrapDtype('add', { field, key: 'other' });
+  }
+  minus(field: Series<T> | number | bigint): Series<T>  {
+    return this.wrapDtype('sub', { field, key: 'other' });
+  }
+  divide(field: Series<T> | number | bigint): Series<T> {
+    return this.wrapDtype('div', { field, key: 'other' });
+  }
+  times(field: Series<T> | number | bigint): Series<T> {
+    return this.wrapDtype('mul', { field, key: 'other' });
+  }
+  remainder(field: Series<T> | number | bigint | string): Series<T>  {
+    return this.wrapDtype('rem', { field, key: 'other' });
+  }
   /**
    * __Rename this Series.__
    *
@@ -222,14 +255,14 @@ export class Series<T> {
     this.wrap('append', { other: other._series });
   }
 
-  // extend(other: Series<T>): Series<T> {
-  //   const s = this.clone();
+  concat(other: Series<T>): Series<T> {
+    const s = this.clone();
 
-  //   this.unwrap('append', { other: other._series }, s._series);
+    this.unwrap('append', { other: other._series }, s._series);
 
-  //   return s;
+    return s;
 
-  // }
+  }
 
   /**
    * __Apply a function over elements in this Series and return a new Series.__
@@ -253,7 +286,9 @@ export class Series<T> {
    * ```
    */
   apply<U>(func: (s: T) => U): Series<U> {
-    throw new Error('Unimplemented');
+    const d = this.wrap("map", {func});
+
+    return d as any;
   }
   
   /**
@@ -794,8 +829,8 @@ export class Series<T> {
    * @see {@link head}, {@link take}
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3])
-   * >>> s.limit(2)
+   * s = pl.Series("a", [1, 2, 3])
+   * s.limit(2)
    * shape: (2,)
    * Series: 'a' [i64]
    * [
@@ -836,16 +871,16 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 2, 3])
-   * >>> s.mode()
+   * s = pl.Series("a", [1, 2, 2, 3])
+   * s.mode()
    * shape: (1,)
    * Series: 'a' [i64]
    * [
    *         2
    * ]
    *
-   * >>> s = pl.Series("a", ['a', 'b', 'c', 'c', 'b'])
-   * >>> s.mode()
+   * s = pl.Series("a", ['a', 'b', 'c', 'c', 'b'])
+   * s.mode()
    * shape: (1,)
    * Series: 'a' [str]
    * [
@@ -868,8 +903,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 2, 3])
-   * >>> s.nUnique()
+   * s = pl.Series("a", [1, 2, 2, 3])
+   * s.nUnique()
    * 3
    * ```
    */
@@ -889,8 +924,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-   * >>> s.peakMax()
+   * s = pl.Series("a", [1, 2, 3, 4, 5])
+   * s.peakMax()
    * shape: (5,)
    * Series: '' [bool]
    * [
@@ -910,8 +945,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [4, 1, 3, 2, 5])
-   * >>> s.peakMin()
+   * s = pl.Series("a", [4, 1, 3, 2, 5])
+   * s.peakMin()
    * shape: (5,)
    * Series: '' [bool]
    * [
@@ -932,8 +967,8 @@ export class Series<T> {
    * @param quantile
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3])
-   * >>> s.quantile(0.5)
+   * s = pl.Series("a", [1, 2, 3])
+   * s.quantile(0.5)
    * 2
    * ```
    */
@@ -965,6 +1000,16 @@ export class Series<T> {
     method?: 'average' | 'min' | 'max' | 'dense' | 'ordinal' | 'random',
   ): Series<number> {
     return this.wrap('rank', { method: method ?? 'average' });
+  }
+  rechunk(): Series<T>
+  rechunk(inPlace: boolean): void
+  rechunk({inPlace}: {inPlace: boolean}): void 
+  rechunk(opts?: {inPlace:boolean} | boolean): Series<T> | void {
+    if(opts === true || opts?.['inPlace'] === true) {
+      this.unwrap('rechunk', {inPlace: true});
+    } else {
+      return this.wrap('rechunk');
+    }
   }
   /**
    * __Reinterpret the underlying bits as a signed/unsigned integer.__
@@ -998,8 +1043,8 @@ export class Series<T> {
    * @see {@link alias}
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3])
-   * >>> s.rename('b')
+   * s = pl.Series("a", [1, 2, 3])
+   * s.rename('b')
    * shape: (3,)
    * Series: 'b' [i64]
    * [
@@ -1010,6 +1055,7 @@ export class Series<T> {
    * ```
    */
   rename(name: string): Series<T>;
+  rename(name: string, inPlace: boolean): void 
   rename(name: string, inPlace = false): void | Series<T> {
     if (inPlace) {
       this.unwrap('rename', { name });
@@ -1034,8 +1080,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [100, 200, 300, 400, 500])
-   * >>> s.rollingMax(2)
+   * s = pl.Series("a", [100, 200, 300, 400, 500])
+   * s.rollingMax(2)
    * shape: (5,)
    * Series: '' [i64]
    * [
@@ -1078,8 +1124,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [100, 200, 300, 400, 500])
-   * >>> s.rollingMean(2)
+   * s = pl.Series("a", [100, 200, 300, 400, 500])
+   * s.rollingMean(2)
    * shape: (5,)
    * Series: '' [i64]
    * [
@@ -1122,8 +1168,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [100, 200, 300, 400, 500])
-   * >>> s.rollingMin(2)
+   * s = pl.Series("a", [100, 200, 300, 400, 500])
+   * s.rollingMin(2)
    * shape: (5,)
    * Series: '' [i64]
    * [
@@ -1166,8 +1212,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-   * >>> s.rollingSum(2)
+   * s = pl.Series("a", [1, 2, 3, 4, 5])
+   * s.rollingSum(2)
    * shape: (5,)
    * Series: '' [i64]
    * [
@@ -1239,11 +1285,11 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3])
-   * >>> s2 = pl.Series("b", [4, 5, 6])
-   * >>> s.series_equal(s)
+   * s = pl.Series("a", [1, 2, 3])
+   * s2 = pl.Series("b", [4, 5, 6])
+   * s.series_equal(s)
    * true
-   * >>> s.series_equal(s2)
+   * s.series_equal(s2)
    * false
    * ```
    */
@@ -1261,8 +1307,8 @@ export class Series<T> {
    * @param periods - Number of places to shift (may be negative).
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3])
-   * >>> s.shift(1)
+   * s = pl.Series("a", [1, 2, 3])
+   * s.shift(1)
    * shape: (3,)
    * Series: 'a' [i64]
    * [
@@ -1270,7 +1316,7 @@ export class Series<T> {
    *         1
    *         2
    * ]
-   * >>> s.shift(-1)
+   * s.shift(-1)
    * shape: (3,)
    * Series: 'a' [i64]
    * [
@@ -1340,8 +1386,8 @@ export class Series<T> {
    * @param options.reverse - Reverse sort
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 3, 4, 2])
-   * >>> s.sort()
+   * s = pl.Series("a", [1, 3, 4, 2])
+   * s.sort()
    * shape: (4,)
    * Series: 'a' [i64]
    * [
@@ -1350,7 +1396,7 @@ export class Series<T> {
    *         3
    *         4
    * ]
-   * >>> s.sort(true)
+   * s.sort(true)
    * shape: (4,)
    * Series: 'a' [i64]
    * [
@@ -1372,8 +1418,8 @@ export class Series<T> {
    * @see {@link head}
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3])
-   * >>> s.tail(2)
+   * s = pl.Series("a", [1, 2, 3])
+   * s.tail(2)
    * shape: (2,)
    * Series: 'a' [i64]
    * [
@@ -1390,8 +1436,8 @@ export class Series<T> {
    * @param n - nth value to take
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3, 4])
-   * >>> s.takeEvery(2))
+   * s = pl.Series("a", [1, 2, 3, 4])
+   * s.takeEvery(2))
    * shape: (2,)
    * Series: '' [i64]
    * [
@@ -1409,8 +1455,8 @@ export class Series<T> {
    * @param indices - Index location used for the selection
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 3, 4])
-   * >>> s.take([1, 3])
+   * s = pl.Series("a", [1, 2, 3, 4])
+   * s.take([1, 3])
    * shape: (2,)
    * Series: 'a' [i64]
    * [
@@ -1429,10 +1475,10 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> const s = pl.Series("a", [1, 2, 3])
-   * >>> const arr = s.toArray()
+   * const s = pl.Series("a", [1, 2, 3])
+   * const arr = s.toArray()
    * [1, 2, 3]
-   * >>> Array.isArray(arr)
+   * Array.isArray(arr)
    * true
    * ```
    */
@@ -1444,8 +1490,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 2, 3])
-   * >>> s.unique()
+   * s = pl.Series("a", [1, 2, 2, 3])
+   * s.unique()
    * shape: (3,)
    * Series: 'a' [i64]
    * [
@@ -1463,8 +1509,8 @@ export class Series<T> {
    * ___
    * @example
    * ```
-   * >>> s = pl.Series("a", [1, 2, 2, 3])
-   * >>> s.valueCounts()
+   * s = pl.Series("a", [1, 2, 2, 3])
+   * s.valueCounts()
    * shape: (3, 2)
    * ╭─────┬────────╮
    * │ a   ┆ counts │
@@ -1501,8 +1547,8 @@ export class Series<T> {
    * 
    * @example
    * ```
-   * >>> const s = pl.Series("foo", [1,2,3])
-   * >>> s.toJS()
+   * const s = pl.Series("foo", [1,2,3])
+   * s.toJS()
    * {
    *   name: "foo",
    *   datatype: "Float64",
@@ -1564,7 +1610,6 @@ export class Series<T> {
     args?: object,
     _series = this._series,
   ): Series<U> {
-    console.log({method,args, dtype: this.dtype});
 
     return new Series(this.internal[method]({ _series, ...args }));
   }

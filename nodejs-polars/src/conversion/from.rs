@@ -1,10 +1,9 @@
 use crate::conversion::wrap::*;
 use crate::error::JsPolarsEr;
 use crate::prelude::*;
-use napi::JsBoolean;
-use napi::JsNumber;
-use napi::ValueType;
-use napi::{JsBigint, JsObject, JsString, JsUnknown, Result};
+use napi::{
+  JsBigint, JsBoolean, JsDate, JsNumber, JsObject, JsString, JsUnknown, Result, ValueType,
+};
 use polars::prelude::*;
 
 pub trait FromJsUnknown: Sized + Send {
@@ -25,7 +24,11 @@ where
   fn from_js(val: JsUnknown) -> Result<Self> {
     let obj: JsObject = match val.get_type()? {
       ValueType::Object => unsafe { val.cast() },
-      _ => return Err(JsPolarsEr::Other("Invalid cast".to_owned()).into()),
+      dt => {
+        return Err(
+          JsPolarsEr::Other(format!("Invalid cast, unable to cast {} to array", dt)).into(),
+        )
+      }
     };
     let len = obj.get_array_length()?;
     let mut arr: Self = Vec::with_capacity(len as usize);
@@ -38,6 +41,29 @@ where
   }
 }
 
+impl FromJsUnknown for AnyValue<'_> {
+  fn from_js(val: JsUnknown) -> Result<Self> {
+    match val.get_type()? {
+      ValueType::Undefined | ValueType::Null => Ok(AnyValue::Null),
+      ValueType::Boolean => bool::from_js(val).map(AnyValue::Boolean),
+      ValueType::Number => f64::from_js(val).map(AnyValue::Float64),
+      ValueType::String => {
+        String::from_js(val).map(|s| AnyValue::Utf8(Box::leak::<'_>(s.into_boxed_str())))
+      }
+      ValueType::Bigint => u64::from_js(val).map(AnyValue::UInt64),
+      ValueType::Object => {
+        if val.is_date()? {
+          let d: JsDate = unsafe { val.cast() };
+          let d = d.value_of()?;
+          Ok(AnyValue::Datetime(d as i64))
+        } else {
+          Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into())
+        }
+      }
+      _ => panic!("not supported"),
+    }
+  }
+}
 impl FromJsUnknown for Wrap<Utf8Chunked> {
   fn from_js(val: JsUnknown) -> Result<Self> {
     if val.is_array()? {

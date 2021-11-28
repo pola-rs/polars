@@ -1,4 +1,5 @@
 import polars_internal from './internals/polars_internal';
+import {Stream} from 'stream';
 
 export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean : 
  T extends DataType.Utf8 ? string : T extends DataType.Date ? Date : T extends DataType.UInt64 ? bigint : number
@@ -10,7 +11,6 @@ export type PrimitiveToDtype<T> = T extends boolean ? DataType.Bool :
  
 
 export type Optional<T> = T | undefined;
-
 
 export enum DataType {
   Int8,
@@ -32,6 +32,52 @@ export enum DataType {
   Object,
   Categorical,
 }
+
+
+export type JsDataFrame = any;
+export type NullValues = string | Array<string> | Record<string, string> | Map<string, string>;
+export type ReadCsvOptions = {
+  file: string;
+  hasHeader: boolean;
+  inferSchemaLength?: number;
+  batchSize?: number;
+  ignoreErrors?: boolean;
+  endRows?: string;
+  startRows?: number;
+  projection?: Array<number>;
+  sep?: string;
+  columns?: Array<string>;
+  rechunk?: boolean;
+  encoding?: 'utf8' | 'utf8-lossy';
+  numThreads?: number;
+  lowMemory?: boolean;
+  commentChar?: string;
+  quoteChar?: string;
+  nullValues?: NullValues;
+  parseDates?: boolean;
+};
+export type ReadJsonOptions = Partial<{
+  file: string;
+  inferSchemaLength?: number;
+  batchSize?: number;
+  inline?: boolean;
+}>;
+export type JoinOptions = {
+  leftOn?: string | Array<string>;
+  rightOn?: string | Array<string>;
+  on?: string | Array<string>;
+  how?: "left" | "inner" | "outer" | "cross";
+  suffix?: string;
+};
+export type WriteCsvOptions = {
+  dest?: string | Stream;
+  hasHeader?: boolean;
+  sep?: string;
+};
+export type WriteJsonOptions = {
+  file?: string;
+  multiline?: boolean;
+};
 
 
 export const DTYPE_TO_FFINAME: Record<DataType, string> = {

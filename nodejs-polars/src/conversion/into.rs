@@ -94,6 +94,7 @@ impl IntoJs<JsNumber> for f64 {
   }
 }
 
+
 impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
   fn try_into_js(self, cx: &CallContext) -> Result<JsUnknown> {
     match self.0 {
@@ -112,7 +113,7 @@ impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
       AnyValue::Date(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
       AnyValue::Datetime(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
       AnyValue::List(v) => cx.env.to_js_value(&v).map(|v| v.into_unknown()),
-      _ => cx.env.get_undefined().map(|v| v.into_unknown()),
+      _ => cx.env.get_null().map(|v| v.into_unknown()),
     }
   }
 }

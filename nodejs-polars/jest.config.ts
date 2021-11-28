@@ -14,6 +14,6 @@ export default {
     '@polars': '<rootDir>/polars/index.ts',
     '@polars/(.*)$': '<rootDir>/polars/*',
   },
-  testMatch: ['__tests__/**/*.[jt]s?(x)'],
+  // testMatch: ['__tests__/**/*.test.ts'],
 
 };

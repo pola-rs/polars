@@ -12,7 +12,7 @@ use napi::JsUndefined;
 use napi::JsUnknown;
 use polars_core::utils::CustomIterTools;
 
-use napi::{CallContext, JsObject, JsString, ValueType};
+use napi::{CallContext, JsNull, JsObject, JsString, ValueType};
 use polars::prelude::*;
 
 use crate::conversion::prelude::*;
@@ -215,6 +215,7 @@ pub fn get_idx(cx: CallContext) -> JsResult<JsUnknown> {
   let series = params.get_series(&cx, "_series")?;
   let idx = params.get_as::<usize>("idx")?;
   let val: Wrap<AnyValue> = series.series.get(idx).into();
+  println!("val={:#?}", val.0);
   val.try_into_js(&cx)
 }
 
@@ -458,6 +459,7 @@ pub fn arg_max(cx: CallContext) -> JsResult<JsUnknown> {
     None => cx.env.get_undefined().map(|v| v.into_unknown()),
   }
 }
+
 #[js_function(1)]
 pub fn take(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
@@ -474,6 +476,7 @@ pub fn take_with_series(cx: CallContext) -> JsResult<JsExternal> {
   let take = series.series.take(idx).map_err(JsPolarsEr::from)?;
   JsSeries::new(take).try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn series_equal(cx: CallContext) -> JsResult<JsBoolean> {
   let params = get_params(&cx)?;
@@ -489,7 +492,7 @@ pub fn series_equal(cx: CallContext) -> JsResult<JsBoolean> {
 }
 
 #[js_function(1)]
-pub fn _not(cx: CallContext) -> JsResult<JsExternal> {
+pub fn not(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let series = params.get_series(&cx, "_series")?;
   let b = series.series.bool().map_err(JsPolarsEr::from)?;
@@ -536,7 +539,28 @@ pub fn fill_null(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn apply_lambda(_: CallContext) -> JsResult<JsExternal> {
+pub fn map(_cx: CallContext) -> JsResult<JsExternal> {
+  // let params = get_params(&cx)?;
+  // let series = params.get_series(&cx, "_series")?;
+  // let func: JsFunction = params.get("func")?;
+  // let ca: &ChunkedArray<Utf8Type> = series.series.utf8().map_err(JsPolarsEr::from)?;
+
+  // let v: Series = ca
+  //   .into_iter()
+  //   .map(|opt_v| match opt_v {
+  //     Some(v) => {
+  //       let out: JsUnknown = func.call(None, &vec![v.into_js(&cx)]).expect("ok");
+  //       let av = AnyValue::from_js(out).expect("ok");
+  //       av
+  //     }
+  //     None => AnyValue::Null,
+  //   })
+  //   .collect();
+  // // func.call(None, args: &[V])
+  // // let it = series.series.clone().into_iter();
+
+  // // series.series.
+  // // series.series
   todo!()
 }
 
@@ -598,7 +622,7 @@ pub fn to_dummies(cx: CallContext) -> JsResult<JsUnknown> {
 }
 
 #[js_function(1)]
-pub fn get_list(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
+pub fn get_list(cx: CallContext) -> JsResult<Either<JsExternal, JsNull>> {
   let params = get_params(&cx)?;
   let series = params.get_series(&cx, "_series")?;
   let index = params.get_as::<usize>("index")?;
@@ -608,10 +632,10 @@ pub fn get_list(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
     if let Some(item) = s {
       JsSeries::new(item).try_into_js(&cx).map(Either::A)
     } else {
-      cx.env.get_undefined().map(Either::B)
+      cx.env.get_null().map(Either::B)
     }
   } else {
-    cx.env.get_undefined().map(Either::B)
+    cx.env.get_null().map(Either::B)
   }
 }
 
@@ -630,14 +654,14 @@ pub fn is_in(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn dot(cx: CallContext) -> JsResult<Either<JsNumber, JsUndefined>> {
+pub fn dot(cx: CallContext) -> JsResult<Either<JsNumber, JsNull>> {
   let params = get_params(&cx)?;
   let series = params.get_series(&cx, "_series")?;
   let other = params.get_series(&cx, "other")?;
   let dot = series.series.dot(&other.series);
   match dot {
     Some(d) => cx.env.create_double(d).map(Either::A),
-    None => cx.env.get_undefined().map(Either::B),
+    None => cx.env.get_null().map(Either::B),
   }
 }
 #[js_function(1)]
@@ -695,18 +719,18 @@ pub fn cast(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn skew(cx: CallContext) -> JsResult<Either<JsNumber, JsUndefined>> {
+pub fn skew(cx: CallContext) -> JsResult<Either<JsNumber, JsNull>> {
   let params = get_params(&cx)?;
   let series = params.get_series(&cx, "_series")?;
   let bias = params.get_as::<bool>("bias")?;
   let skew = series.series.skew(bias).map_err(JsPolarsEr::from)?;
   match skew {
     Some(skew) => cx.env.create_double(skew).map(Either::A),
-    None => cx.env.get_undefined().map(Either::B),
+    None => cx.env.get_null().map(Either::B),
   }
 }
 #[js_function(1)]
-pub fn kurtosis(cx: CallContext) -> JsResult<Either<JsNumber, JsUndefined>> {
+pub fn kurtosis(cx: CallContext) -> JsResult<Either<JsNumber, JsNull>> {
   let params = get_params(&cx)?;
   let series = params.get_series(&cx, "_series")?;
   let fisher = params.get_as::<bool>("fisher")?;
@@ -717,12 +741,12 @@ pub fn kurtosis(cx: CallContext) -> JsResult<Either<JsNumber, JsUndefined>> {
     .map_err(JsPolarsEr::from)?;
   match kurtosis {
     Some(k) => cx.env.create_double(k).map(Either::A),
-    None => cx.env.get_undefined().map(Either::B),
+    None => cx.env.get_null().map(Either::B),
   }
 }
 
 #[js_function(1)]
-pub fn get_str(cx: CallContext) -> JsResult<Either<JsString, JsUndefined>> {
+pub fn get_str(cx: CallContext) -> JsResult<Either<JsString, JsNull>> {
   let params = get_params(&cx)?;
   let series = params.get_series_mut(&cx, "_series")?;
   let index = params.get_as::<i64>("index")?;
@@ -732,9 +756,12 @@ pub fn get_str(cx: CallContext) -> JsResult<Either<JsString, JsUndefined>> {
     } else {
       index as usize
     };
-    Ok(Either::A(ca.get(index).unwrap().try_into_js(&cx)?))
+    match ca.get(index) {
+      Some(s) => s.try_into_js(&cx).map(Either::A),
+      None => cx.env.get_null().map(Either::B),
+    }
   } else {
-    Ok(Either::B(cx.env.get_undefined()?))
+    cx.env.get_null().map(Either::B)
   }
 }
 
@@ -784,10 +811,10 @@ pub fn get_date(cx: CallContext) -> JsResult<JsUnknown> {
       };
       match ca.get(index) {
         Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
-        None => cx.env.get_undefined().map(|v| v.into_unknown()),
+        None => cx.env.get_null().map(|v| v.into_unknown()),
       }
     }
-    Err(_) => cx.env.get_undefined().map(|v| v.into_unknown()),
+    Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
   }
 }
 
@@ -805,10 +832,10 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
       };
       match ca.get(index) {
         Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
-        None => cx.env.get_undefined().map(|v| v.into_unknown()),
+        None => cx.env.get_null().map(|v| v.into_unknown()),
       }
     }
-    Err(_) => cx.env.get_undefined().map(|v| v.into_unknown()),
+    Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
   }
 }
 
@@ -819,9 +846,23 @@ pub fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
   let obj: JsUnknown = cx.env.to_js_value(&series.series)?;
   Ok(obj)
 }
-
+#[js_function(1)]
+pub fn rechunk(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
+  let params = get_params(&cx)?;
+  let series = params.get_series_mut(&cx, "_series")?;
+  let in_place = params.get_as::<Option<bool>>("inPlace")?;
+  let rechunked_series = series.series.rechunk();
+  if in_place.unwrap_or(false) {
+    series.series = rechunked_series;
+    cx.env.get_undefined().map(Either::B)
+  } else {
+    JsSeries::new(rechunked_series)
+      .try_into_js(&cx)
+      .map(Either::A)
+  }
+}
 macro_rules! init_method {
-  ($name:ident, $js_type:ty, $type:ty) => {
+  ($name:ident, $js_type:ty, $type:ty, $getter:ident) => {
     #[js_function(1)]
     pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
       let params = get_params(&cx)?;
@@ -832,7 +873,7 @@ macro_rules! init_method {
 
       for i in 0..len {
         let item: $js_type = arr.get_element_unchecked(i)?;
-        let item = item.get_double()? as $type;
+        let item = item.$getter()? as $type;
         items.push(item)
       }
       let s: JsSeries = Series::new(name, items).into();
@@ -841,16 +882,16 @@ macro_rules! init_method {
   };
 }
 
-init_method!(new_i8, JsNumber, i8);
-init_method!(new_i16, JsNumber, i16);
-init_method!(new_i32, JsNumber, i32);
-init_method!(new_i64, JsNumber, i64);
-init_method!(new_u8, JsNumber, u8);
-init_method!(new_u16, JsNumber, u16);
-init_method!(new_u32, JsNumber, u32);
-init_method!(new_u64, JsNumber, u64);
-init_method!(new_f32, JsNumber, f32);
-init_method!(new_f64, JsNumber, f64);
+init_method!(new_i8, JsNumber, i8, get_int32);
+init_method!(new_i16, JsNumber, i16, get_int32);
+init_method!(new_i32, JsNumber, i32, get_int32);
+init_method!(new_i64, JsNumber, i64, get_int64);
+init_method!(new_u8, JsNumber, u8, get_uint32);
+init_method!(new_u16, JsNumber, u16, get_uint32);
+init_method!(new_u32, JsNumber, u32, get_uint32);
+init_method!(new_u64, JsNumber, u64, get_int64);
+init_method!(new_f32, JsNumber, f32, get_double);
+init_method!(new_f64, JsNumber, f64, get_double);
 
 macro_rules! init_method_opt {
   ($name:ident, $type:ty, $native:ty) => {
@@ -1248,10 +1289,10 @@ macro_rules! impl_get {
           };
           match ca.get(index) {
             Some(v) => v.try_into_js(&cx).map(|v| v.into_unknown()),
-            None => cx.env.get_undefined().map(|v| v.into_unknown()),
+            None => cx.env.get_null().map(|v| v.into_unknown()),
           }
         }
-        Err(_) => cx.env.get_undefined().map(|v| v.into_unknown()),
+        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
       }
     }
   };
@@ -1281,10 +1322,10 @@ pub fn get_u64(cx: CallContext) -> JsResult<JsUnknown> {
       };
       match ca.get(index) {
         Some(v) => v.try_into_js(&cx).map(|v| v.into_unknown().unwrap()),
-        None => cx.env.get_undefined().map(|v| v.into_unknown()),
+        None => cx.env.get_null().map(|v| v.into_unknown()),
       }
     }
-    Err(_) => cx.env.get_undefined().map(|v| v.into_unknown()),
+    Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
   }
 }
 
@@ -1302,10 +1343,10 @@ pub fn get_bool(cx: CallContext) -> JsResult<JsUnknown> {
       };
       match ca.get(index) {
         Some(v) => cx.env.get_boolean(v).map(|v| v.into_unknown()),
-        None => cx.env.get_undefined().map(|v| v.into_unknown()),
+        None => cx.env.get_null().map(|v| v.into_unknown()),
       }
     }
-    Err(_) => cx.env.get_undefined().map(|v| v.into_unknown()),
+    Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
   }
 }
 
