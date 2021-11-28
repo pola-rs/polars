@@ -72,6 +72,12 @@ impl<'de> Deserialize<'de> for Series {
             where
                 A: MapAccess<'de>,
             {
+                debug_assert!(
+                    map.size_hint() == Some(FIELDS.len()) || map.size_hint() == None,
+                    "unexpected map size. size_hint == {:?}",
+                    map.size_hint(),
+                );
+
                 let mut name: Option<Cow<'de, str>> = None;
                 let mut dtype = None;
                 let mut values_set = false;
