@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.17.0"
+version = "0.18.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -43,8 +43,8 @@ memchr = "2.4"
 memmap = { package = "memmap2", version = "0.5.0", optional = true }
 num = "^0.4.0"
 num_cpus = "1.13.0"
-polars-arrow = { version = "0.17.0", path = "../polars-arrow" }
-polars-core = { version = "0.17.0", path = "../polars-core", features = ["private"], default-features = false }
+polars-arrow = { version = "0.18.0", path = "../polars-arrow" }
+polars-core = { version = "0.18.0", path = "../polars-core", features = ["private"], default-features = false }
 rayon = "1.5"
 regex = "1.4"
 simdutf8 = "0.1"
