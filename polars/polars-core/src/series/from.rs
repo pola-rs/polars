@@ -5,6 +5,7 @@ use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;
 use polars_arrow::compute::cast::cast;
+use std::borrow::Cow;
 use std::convert::TryFrom;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
@@ -30,6 +31,24 @@ impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
 impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
     fn new(name: &str, v: T) -> Self {
         Utf8Chunked::new_from_opt_slice(name, v.as_ref()).into_series()
+    }
+}
+
+impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
+            .into_series()
+    }
+}
+impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_opt_iter(
+            name,
+            v.as_ref()
+                .iter()
+                .map(|opt| opt.as_ref().map(|value| value.as_ref())),
+        )
+        .into_series()
     }
 }
 
