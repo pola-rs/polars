@@ -18,19 +18,20 @@ impl DataFrame {
     /// # Example
     ///
     /// ```ignore
-    ///  use polars_core::prelude::*;
-    ///  let s0 = Series::new("a", &[1i64, 2, 3]);
-    ///  let s1 = Series::new("b", &[1i64, 1, 1]);
-    ///  let s2 = Series::new("c", &[2i64, 2, 2]);
-    ///  let list = Series::new("foo", &[s0, s1, s2]);
+    /// # use polars_core::prelude::*;
+    /// let s0 = Series::new("a", &[1i64, 2, 3]);
+    /// let s1 = Series::new("b", &[1i64, 1, 1]);
+    /// let s2 = Series::new("c", &[2i64, 2, 2]);
+    /// let list = Series::new("foo", &[s0, s1, s2]);
     ///
-    ///  let s0 = Series::new("B", [1, 2, 3]);
-    ///  let s1 = Series::new("C", [1, 1, 1]);
-    ///  let df = DataFrame::new(vec![list, s0, s1]).unwrap();
-    ///  let exploded = df.explode("foo").unwrap();
+    /// let s0 = Series::new("B", [1, 2, 3]);
+    /// let s1 = Series::new("C", [1, 1, 1]);
+    /// let df = DataFrame::new(vec![list, s0, s1])?;
+    /// let exploded = df.explode("foo")?;
     ///
-    ///  println!("{:?}", df);
-    ///  println!("{:?}", exploded);
+    /// println!("{:?}", df);
+    /// println!("{:?}", exploded);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     /// Outputs:
     ///
@@ -129,19 +130,17 @@ impl DataFrame {
     /// * `value_vars` - String slice that represent the columns to use as value variables.
     ///
     /// ```ignore
-    ///
-    ///  # #[macro_use] extern crate polars_core;
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// let df = df!("A" => &["a", "b", "a"],
     ///              "B" => &[1, 3, 5],
     ///              "C" => &[10, 11, 12],
     ///              "D" => &[2, 4, 6]
-    ///     )
-    /// .unwrap();
+    ///     )?;
     ///
-    /// let melted = df.melt(&["A", "B"], &["C", "D"]).unwrap();
+    /// let melted = df.melt(&["A", "B"], &["C", "D"])?;
     /// println!("{:?}", df);
     /// println!("{:?}", melted);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     /// Outputs:
     /// ```text
