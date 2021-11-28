@@ -273,32 +273,6 @@ impl DataFrame {
         self.columns.pop()
     }
 
-    /// Appends the `Series` to the back of the `DataFrame` and return whether the operation is
-    /// successful or not.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let s1 = Series::new("Ocean", &["Atlantic", "Indian"]);
-    /// let s2 = Series::new("Area (km²)", &[106_460_000, 70_560_000]);
-    /// let s3 = Series::new("Average depth (m)", &[3_646]);
-    /// let mut df = DataFrame::default();
-    ///
-    /// assert!(df.push(s1));
-    /// assert!(df.push(s2));
-    /// assert!(!df.push(s3));
-    /// # Ok::<(), PolarsError>(())
-    /// ```
-    pub fn push(&mut self, value: Series) -> bool {
-        if self.is_empty() || (self.columns[0].len() == value.len()) {
-            self.columns.push(value);
-            true
-        } else {
-            false
-        }
-    }
-
     /// Add a new column at index 0 that counts the rows.
     ///
     /// # Example
