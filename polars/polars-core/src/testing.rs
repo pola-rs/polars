@@ -57,6 +57,19 @@ impl PartialEq for Series {
 
 impl DataFrame {
     /// Check if `DataFrames` are equal. Note that `None == None` evaluates to `false`
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    /// let df2: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    ///
+    /// assert!(!df1.frame_equal(&df2));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
     pub fn frame_equal(&self, other: &DataFrame) -> bool {
         if self.shape() != other.shape() {
             return false;
@@ -70,6 +83,19 @@ impl DataFrame {
     }
 
     /// Check if all values in `DataFrames` are equal where `None == None` evaluates to `true`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    /// let df2: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    ///
+    /// assert!(df1.frame_equal_missing(&df2));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
     pub fn frame_equal_missing(&self, other: &DataFrame) -> bool {
         if self.shape() != other.shape() {
             return false;
@@ -83,6 +109,18 @@ impl DataFrame {
     }
 
     /// Checks if the Arc ptrs of the Series are equal
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    /// let df2: &DataFrame = &df1;
+    ///
+    /// assert!(df1.ptr_equal(df2));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
     pub fn ptr_equal(&self, other: &DataFrame) -> bool {
         self.columns
             .iter()
