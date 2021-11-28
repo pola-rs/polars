@@ -52,9 +52,9 @@ def col(
     --------
 
     >>> df = pl.DataFrame({
-    >>> "ham": [1, 2, 3],
-    >>> "hamburger": [11, 22, 33],
-    >>> "foo": [3, 2, 1]})
+    ... "ham": [1, 2, 3],
+    ... "hamburger": [11, 22, 33],
+    ... "foo": [3, 2, 1]})
     >>> df.select(col("foo"))
     shape: (3, 1)
     ╭─────╮
@@ -746,10 +746,10 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     --------
 
      >>> df = pl.DataFrame({
-     >>>     "a": [1, 2, 3],
-     >>>     "b": ["a", "b", None],
-     >>>     "c": [None, 2, 1]
-     >>> })
+     ...     "a": [1, 2, 3],
+     ...     "b": ["a", "b", None],
+     ...     "c": [None, 2, 1]
+     ... })
      >>> df
      shape: (3, 3)
      ╭─────┬──────┬──────╮
@@ -835,12 +835,12 @@ def arange(
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
 
-     Examples
-     --------
+    Examples
+    --------
 
     >>> (df.lazy()
-        .filter(pl.col("foo") < pl.arange(0, 100))
-        .collect())
+    ...    .filter(pl.col("foo") < pl.arange(0, 100))
+    ...    .collect())
 
     Parameters
     ----------
@@ -995,8 +995,8 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
 
     >>> df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
     >>> df.select([
-    >>>     pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")
-    >>> ])
+    ...     pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")
+    ... ])
     shape: (3, 1)
     ┌─────────────┐
     │ fmt         │
@@ -1127,8 +1127,8 @@ def select(
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
     >>> pl.select([
-    >>>     pl.min([foo, bar])
-    >>> ])
+    ...     pl.min([foo, bar])
+    ... ])
     shape: (3, 1)
     ┌─────┐
     │ min │

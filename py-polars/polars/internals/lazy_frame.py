@@ -207,8 +207,8 @@ class LazyFrame:
         Prints the value that this node in the computation graph evaluates to and passes on the value.
 
         >>> (df.select(pl.col("foo").cumsum().alias("bar"))
-        >>>    .inspect()  # print the node before the filter
-        >>>    .filter(pl.col("bar") == pl.col("foo")))
+        ...    .inspect()  # print the node before the filter
+        ...    .filter(pl.col("bar") == pl.col("foo")))
         """
 
         def inspect(s: pli.DataFrame) -> pli.DataFrame:
@@ -359,11 +359,11 @@ class LazyFrame:
         --------
 
         >>> df = (pl.DataFrame({
-        >>>    "foo": [1, 2, 3],
-        >>>    "bar": [6, 7, 8],
-        >>>    "ham": ['a', 'b', 'c']
-        >>>    }).lazy()
-        >>>     .select(["foo", "bar"]))
+        ...    "foo": [1, 2, 3],
+        ...    "bar": [6, 7, 8],
+        ...    "ham": ['a', 'b', 'c']
+        ...    }).lazy()
+        ...     .select(["foo", "bar"]))
 
         >>> df.columns
         ["foo", "bar"]
@@ -392,9 +392,9 @@ class LazyFrame:
         --------
 
         >>> lf = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
+        ...     "foo": [1, 2, 3],
+        ...     "bar": [6, 7, 8],
+        ...     "ham": ['a', 'b', 'c']
         >>> }).lazy()
         >>> # Filter on one condition
         >>> lf.filter(pl.col("foo") < 3).collect()
@@ -882,9 +882,9 @@ class LazyFrame:
         --------
 
         >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]]
-        >>> })
+        ...     "letters": ["c", "c", "a", "c", "a", "b"],
+        ...     "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]]
+        ... })
         >>> df
         shape: (6, 2)
         ╭─────────┬────────────╮
@@ -958,10 +958,10 @@ class LazyFrame:
         Examples
         --------
         >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, None, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        ...     "foo": [1, 2, 3],
+        ...     "bar": [6, None, 8],
+        ...     "ham": ['a', 'b', 'c']
+        ...     })
         >>> df.lazy().drop_nulls().collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -980,12 +980,12 @@ class LazyFrame:
         conditions
 
         >>> df = pl.DataFrame(
-        >>>    {
-        >>>        "a": [None, None, None, None],
-        >>>        "b": [1, 2, None, 1],
-        >>>        "c": [1, None, None, 1],
-        >>>    }
-        >>> )
+        ...    {
+        ...        "a": [None, None, None, None],
+        ...        "b": [1, 2, None, 1],
+        ...        "c": [1, None, None, 1],
+        ...    }
+        ... )
         >>> df
         shape: (4, 3)
         ┌──────┬──────┬──────┐
@@ -1095,12 +1095,12 @@ class LazyGroupBy:
         --------
 
         >>> (pl.scan_csv("data.csv")
-            .groupby("groups")
-            .agg([
-                    pl.col("name").n_unique().alias("unique_names"),
-                    pl.max("values")
-                ])
-        )
+        ...    .groupby("groups")
+        ...    .agg([
+        ...         pl.col("name").n_unique().alias("unique_names"),
+        ...         pl.max("values")
+        ...        ])
+        ... )
         """
         aggs = pli._selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
@@ -1118,9 +1118,9 @@ class LazyGroupBy:
         --------
 
         >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [1, 2, 3, 4, 5, 6]
-        >>> })
+        ...     "letters": ["c", "c", "a", "c", "a", "b"],
+        ...     "nrs": [1, 2, 3, 4, 5, 6]
+        ... })
         >>> df
         shape: (6, 2)
         ╭─────────┬─────╮
@@ -1141,9 +1141,9 @@ class LazyGroupBy:
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
         >>> (df.groupby("letters")
-        >>>  .head(2)
-        >>>  .sort("letters")
-        >>> )
+        ...  .head(2)
+        ...  .sort("letters")
+        ... )
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │
@@ -1177,9 +1177,9 @@ class LazyGroupBy:
         --------
 
         >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [1, 2, 3, 4, 5, 6]
-        >>> })
+        ...     "letters": ["c", "c", "a", "c", "a", "b"],
+        ...     "nrs": [1, 2, 3, 4, 5, 6]
+        ... })
         >>> df
         shape: (6, 2)
         ╭─────────┬─────╮
@@ -1200,9 +1200,9 @@ class LazyGroupBy:
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
         >>> (df.groupby("letters")
-        >>>  .tail(2)
-        >>>  .sort("letters")
-        >>> )
+        ...  .tail(2)
+        ...  .sort("letters")
+        ... )
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │

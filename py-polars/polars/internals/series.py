@@ -3074,9 +3074,9 @@ class StringNameSpace:
         --------
 
         >>> df = pl.DataFrame({
-        'json_val':['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}'
-        })
-        >>> df.select(pl.col('json_val').str.json_path_match('$.a')
+        ... 'json_val':['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
+        ... })
+        >>> df.select(pl.col('json_val').str.json_path_match('$.a'))
         shape: (5,)
         Series: 'json_val' [str]
         [
@@ -3310,11 +3310,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime, timedelta
         >>> import polars as pl
         >>> date_range = pl.date_range(
-        >>> low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
-        >>> high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
-        >>> interval=timedelta(minutes=8),
-        >>> name="date_range")
-        >>>
+        ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
+        ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
+        ...     interval=timedelta(minutes=8),
+        ...     name="date_range")
         >>> date_range.dt.buckets(timedelta(minutes=8))
         shape: (8,)
         Series: 'date_range' [datetime]
