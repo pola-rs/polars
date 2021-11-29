@@ -1261,7 +1261,7 @@ class Series:
 
     def arg_sort(self, reverse: bool = False) -> "Series":
         """
-        ..deprecate::
+        .. deprecated::
 
         Index location of the sorted variant of this Series.
 
@@ -2019,7 +2019,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.fill_null('forward'))
+        >>> s.fill_null('forward')
         shape: (4,)
         Series: '' [i64]
         [
@@ -2028,7 +2028,7 @@ class Series:
                 3
                 3
         ]
-        >>> s.fill_null('min'))
+        >>> s.fill_null('min')
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -2598,12 +2598,14 @@ class Series:
             * rolling_max
             * rolling_mean
             * rolling_sum
+
         Parameters
         ----------
         window_size
             Size of the rolling window
         function
             Aggregation function
+
         Examples
         --------
         >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
@@ -2653,6 +2655,9 @@ class Series:
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
         """
         Compute a rolling skew
+
+        Parameters
+        ----------
         window_size
             Size of the rolling window
         bias
@@ -2671,6 +2676,15 @@ class Series:
         """
         Sample from this Series by setting either `n` or `frac`.
 
+        Parameters
+        ----------
+        n
+            Number of samples < self.len().
+        frac
+            Fraction between 0.0 and 1.0 .
+        with_replacement
+            sample with replacement.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
@@ -2681,15 +2695,6 @@ class Series:
                 1
                 5
         ]
-
-        Parameters
-        ----------
-        n
-            Number of samples < self.len().
-        frac
-            Fraction between 0.0 and 1.0 .
-        with_replacement
-            sample with replacement.
         """
         if n is not None:
             return wrap_s(self._s.sample_n(n, with_replacement))
@@ -2915,19 +2920,21 @@ class Series:
         -----
         The sample skewness is computed as the Fisher-Pearson coefficient
         of skewness, i.e.
-        .. math::
-            g_1=\frac{m_3}{m_2^{3/2}}
+
+        .. math:: g_1=\frac{m_3}{m_2^{3/2}}
+
         where
-        .. math::
-            m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
+        .. math:: m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
         the sample mean.  If ``bias`` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
-        .. math::
-            G_1=\frac{k_3}{k_2^{3/2}}=
-                \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}.
+
+        .. math::  G_1=\frac{k_3}{k_2^{3/2}}=\frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+
         """
         return self._s.skew(bias)
 
@@ -2973,6 +2980,7 @@ class Series:
         Series of dtype Utf8
 
         Examples
+        --------
         >>> pl.Series([1, None, 2]).str_concat("-")[0]
         "1-null-2"
 

@@ -726,10 +726,10 @@ class DataFrame:
         --------
 
         >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3, 4, 5],
-        >>>     "bar": [6, 7, 8, 9, 10],
-        >>>     "ham": ['a', 'b', 'c', 'd','e']
-        >>>     })
+        ...     "foo": [1, 2, 3, 4, 5],
+        ...     "bar": [6, 7, 8, 9, 10],
+        ...     "ham": ['a', 'b', 'c', 'd','e']
+        ...     })
         >>> df.to_csv('new_file.csv', sep=',')
 
         """
@@ -2051,9 +2051,8 @@ class DataFrame:
         ...     }
         ... )
         >>> df['A'] = df['A'].str.strptime(pl.Date, "%Y-%m-%d")
-        >>>
         >>> df.downsample("A", rule="day", n=3).agg(
-        >>>     {
+        ...     {
         ...         "B": "max",
         ...         "C": "min",
         ...         "D": "last"
@@ -2150,6 +2149,7 @@ class DataFrame:
             join on these columns before doing asof join
         asof_by_right
             join on these columns before doing asof join
+
         Returns
         -------
             Joined DataFrame
@@ -2194,7 +2194,7 @@ class DataFrame:
         ╰──────┴──────┴─────┴───────╯
 
         Asof join
-        =========
+        ---------
         This is similar to a left-join except that we match on nearest key rather than equal keys.
         The keys must be sorted to perform an asof join
 

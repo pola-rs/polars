@@ -45,7 +45,8 @@ def col(
      * column by regular expression if the regex starts with `^` and ends with `$`
 
     Parameters
-    col
+    ----------
+    name
         A string that holds the name of the column
 
     Examples

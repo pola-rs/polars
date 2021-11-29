@@ -112,6 +112,7 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     ----------
     dicts
         Sequence with dictionaries mapping column name to value
+
     Returns
     -------
     DataFrame

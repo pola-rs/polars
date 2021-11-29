@@ -78,6 +78,7 @@ Descriptive stats
     Series.is_utf8
     Series.len
     Series.n_unique
+    Series.has_validity
 
 
 Computations
@@ -157,6 +158,7 @@ Manipulation/ selection
     Series.clip
     Series.str_concat
     Series.reshape
+    Series.to_dummies
 
 Various
 --------

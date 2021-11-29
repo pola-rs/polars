@@ -809,7 +809,7 @@ class LazyFrame:
         """
         Fill floating point NaN values.
 
-        ..warning::
+        .. warning::
 
             NOTE that floating point NaN (No a Number) are not missing values!
             to replace missing values, use `fill_null`.

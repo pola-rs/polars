@@ -249,7 +249,7 @@ class Expr:
         """
         Exclude certain columns from a wildcard/regex selection.
 
-        You may also use regexes int he exclude list. They must start with `^` and end with `$`.
+        You may also use regexes in the exclude list. They must start with `^` and end with `$`.
 
         Parameters
         ----------
@@ -1579,6 +1579,9 @@ class Expr:
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Expr":
         """
         Compute a rolling skew
+
+        Parameters
+        ----------
         window_size
             Size of the rolling window
         bias
@@ -1595,6 +1598,7 @@ class Expr:
     def argsort(self, reverse: bool = False) -> "Expr":
         """
         Index location of the sorted variant of this Series.
+
         Parameters
         ----------
         reverse
@@ -1662,19 +1666,21 @@ class Expr:
         -----
         The sample skewness is computed as the Fisher-Pearson coefficient
         of skewness, i.e.
-        .. math::
-            g_1=\frac{m_3}{m_2^{3/2}}
+
+        .. math:: g_1=\frac{m_3}{m_2^{3/2}}
+
         where
-        .. math::
-            m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
+        .. math:: m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
         the sample mean.  If ``bias`` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
-        .. math::
-            G_1=\frac{k_3}{k_2^{3/2}}=
-                \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}.
+
+        .. math:: G_1=\frac{k_3}{k_2^{3/2}}= \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+
         """
         return wrap_expr(self._pyexpr.skew(bias))
 
@@ -1704,8 +1710,10 @@ class Expr:
 
         Parameters
         ----------
-        min_val, max_val
-            Minimum and maximum value.
+        min_val
+            Minimum value.
+        max_val
+            Maximum value.
         """
         min_val = pli.lit(min_val)  # type: ignore
         max_val = pli.lit(max_val)  # type: ignore
@@ -1783,6 +1791,7 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").cos())
         shape: (1, 1)
@@ -1827,6 +1836,7 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arcsin())
         shape: (1, 1)
@@ -1849,6 +1859,7 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").arccos())
         shape: (1, 1)
@@ -1871,6 +1882,7 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arctan())
         shape: (1, 1)
