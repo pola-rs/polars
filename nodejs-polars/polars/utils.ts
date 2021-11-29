@@ -1,6 +1,6 @@
-import path from 'path/posix';
+import path from "path";
 
-export function columnOrColumns(columns: string | Array<string> | undefined): Array<string> | undefined {
+export function columnOrColumns(columns: ColumnSelection |  string | Array<string> | undefined): Array<string> | undefined {
   if (columns) {
     return columnOrColumnsStrict(columns);
   }
@@ -14,10 +14,10 @@ export function columnOrColumnsStrict(...columns: string[] | ValueOrArray<string
   return columns.flat(3) as any;
 }
 
-export function isPath(s: string): boolean {
+export function isPath(s: string, expectedExtensions?: string[]): boolean {
   const {base, ext, name} = path.parse(s);
 
-  return Boolean(base && ext && name);
+  return Boolean(base && ext && name) && !!(expectedExtensions?.includes(ext));
 }
 
 export const range = (start:number, end:number) => {

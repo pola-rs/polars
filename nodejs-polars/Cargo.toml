@@ -38,6 +38,7 @@ napi-build = "1"
 [dependencies.polars]
 path = "../polars"
 features = [
+  "abs",
   "zip_with",
   "simd",
   "strings",

@@ -1,12 +1,11 @@
 /* eslint-disable no-redeclare */
-import {DataFrame} from './dataframe';
-import * as utils from './utils';
-import type {ColumnSelection} from './utils';
-const inspect = Symbol.for('nodejs.util.inspect.custom');
-import util from 'util';
-import {todo} from './internals/utils';
+import {DataFrame, _wrapDataFrame} from "./dataframe";
+import * as utils from "./utils";
+import type {ColumnSelection} from "./utils";
+const inspect = Symbol.for("nodejs.util.inspect.custom");
+import util from "util";
+import {todo} from "./internals/utils";
 
-const _wrap = Symbol.for('wrap');
 class UnsupportedError extends Error {
   constructor(prop, target) {
     super(`${prop} is not supported for ${target}`);
@@ -15,7 +14,7 @@ class UnsupportedError extends Error {
 /**
  * Starts a new GroupBy operation.
  */
-export type GroupBy = {
+export interface GroupBy {
   (...columns: string[]): GroupBySelection,
   (columns: string | string[]): GroupBySelection,
   /**
@@ -169,28 +168,28 @@ export type GroupBy = {
 }
 
 export type GroupBySelection = Pick<GroupBy,
-   'aggList'
-  | 'apply'
-  | 'count'
-  | 'first'
-  | 'last'
-  | 'max'
-  | 'mean'
-  | 'median'
-  | 'min'
-  | 'numUnique'
-  | 'quantile'
-  | 'sum'
+   "aggList"
+  | "apply"
+  | "count"
+  | "first"
+  | "last"
+  | "max"
+  | "mean"
+  | "median"
+  | "min"
+  | "numUnique"
+  | "quantile"
+  | "sum"
 >
 
 export type PivotOps = Pick<GroupBy,
-  'count'
-  | 'first'
-  | 'max'
-  | 'mean'
-  | 'median'
-  | 'min'
-  | 'sum'
+  "count"
+  | "first"
+  | "max"
+  | "mean"
+  | "median"
+  | "min"
+  | "sum"
 >
 
 export function GroupBy(
@@ -202,10 +201,10 @@ export function GroupBy(
 ) {
   const pivot = (opts: {pivotCol: string, valuesCol: string} | string, valuesCol?: string): PivotOps => {
     if(downsample) {
-      throw new UnsupportedError('pivot', 'downsample');
+      throw new UnsupportedError("pivot", "downsample");
     }
 
-    if(typeof opts === 'string') {
+    if(typeof opts === "string") {
       if(valuesCol) {
         return pivot({pivotCol: opts, valuesCol});
       } else {
@@ -238,9 +237,9 @@ export function GroupBy(
   );
 
   const inspectOpts = {colors:true, depth:null};
-  const customInspect = () => util.formatWithOptions(inspectOpts, 'GroupBy {\n    by: %O\n}', by, );
+  const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBy {\n    by: %O\n}", by, );
 
-  return  Object.seal(
+  return Object.seal(
     Object.assign(
       select, {
         aggList: selectAll().aggList,
@@ -248,7 +247,7 @@ export function GroupBy(
         count: selectAll().count,
         first: selectAll().first,
         getGroup: () => {throw todo();},
-        groups: () => DataFrame[_wrap](df, 'groupby', {by, agg: 'groups'}),
+        groups: () => _wrapDataFrame(df, "groupby", {by, agg: "groups"}),
         head: (n=5) => {throw todo();},
         last: selectAll().last,
         max: selectAll().max,
@@ -278,33 +277,33 @@ function GroupBySelection(
 
   const wrapCall = (agg: string) => () => {
     if(downsample) {
-      return DataFrame[_wrap](df, 'downsample', {rule, n, agg});
+      return _wrapDataFrame(df, "downsample", {rule, n, agg});
     } else {
-      return DataFrame[_wrap](df, 'groupby', {by, selection, agg});
+      return _wrapDataFrame(df, "groupby", {by, selection, agg});
     }
   };
 
   const quantile = (quantile:number) => {
     if(downsample) {
-      throw new UnsupportedError('quantile', 'downsample');
+      throw new UnsupportedError("quantile", "downsample");
     } else {
-      return DataFrame[_wrap](df, 'groupby', {by, selection, agg: 'quantile', quantile});
+      return _wrapDataFrame(df, "groupby", {by, selection, agg: "quantile", quantile});
     }
   };
 
   return {
     apply: (fn: (df: DataFrame) => DataFrame) => {throw todo();},
-    aggList: wrapCall('agg_list'),
-    count: wrapCall('count'),
-    first: wrapCall('first'),
-    last: wrapCall('last'),
-    max: wrapCall('max'),
-    mean: wrapCall('mean'),
-    median: wrapCall('median'),
-    min: wrapCall('min'),
-    numUnique: wrapCall('n_unique'),
+    aggList: wrapCall("agg_list"),
+    count: wrapCall("count"),
+    first: wrapCall("first"),
+    last: wrapCall("last"),
+    max: wrapCall("max"),
+    mean: wrapCall("mean"),
+    median: wrapCall("median"),
+    min: wrapCall("min"),
+    numUnique: wrapCall("n_unique"),
     quantile,
-    sum: wrapCall('sum')
+    sum: wrapCall("sum")
   };
 }
 
@@ -315,15 +314,15 @@ function PivotOps(
   valueCol: string
 ): PivotOps {
 
-  const pivot =  (agg:string) => () =>  DataFrame[_wrap](df, 'pivot', {by, pivotCol, valueCol, agg});
+  const pivot =  (agg:string) => () =>  _wrapDataFrame(df, "pivot", {by, pivotCol, valueCol, agg});
 
   return {
-    first: pivot('first'),
-    sum: pivot('sum'),
-    min: pivot('min'),
-    max: pivot('max'),
-    mean: pivot('mean'),
-    count: pivot('count'),
-    median: pivot('median'),
+    first: pivot("first"),
+    sum: pivot("sum"),
+    min: pivot("min"),
+    max: pivot("max"),
+    mean: pivot("mean"),
+    count: pivot("count"),
+    median: pivot("median"),
   };
 }

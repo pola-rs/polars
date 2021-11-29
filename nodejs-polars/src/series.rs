@@ -6,6 +6,7 @@ use crate::prelude::JsResult;
 use napi::Either;
 use napi::JsBoolean;
 use napi::JsExternal;
+use napi::JsFunction;
 use napi::JsNumber;
 use napi::JsTypedArray;
 use napi::JsUndefined;
@@ -189,8 +190,23 @@ pub(crate) fn get_fmt(cx: CallContext) -> JsResult<JsString> {
 }
 
 #[js_function(1)]
-pub fn chunk_lengths(_cx: CallContext) -> JsResult<JsObject> {
-  todo!()
+pub fn abs(cx: CallContext) -> JsResult<JsExternal> {
+  let params = get_params(&cx)?;
+  let series = params.get_series(&cx, "_series")?;
+  let out = series.series.abs().map_err(JsPolarsEr::from)?;
+  JsSeries::new(out).try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn chunk_lengths(cx: CallContext) -> JsResult<JsObject> {
+  let params = get_params(&cx)?;
+  let series = params.get_series(&cx, "_series")?;
+  let mut arr = cx.env.create_array()?;
+  for (idx, chunk_len) in series.series.chunk_lengths().enumerate() {
+    let js_num = cx.env.create_int64(chunk_len as i64)?;
+    arr.set_element(idx as u32, js_num)?;
+  }
+  Ok(arr)
 }
 #[js_function(1)]
 pub fn name(cx: CallContext) -> JsResult<JsString> {
@@ -542,28 +558,7 @@ pub fn fill_null(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn map(_cx: CallContext) -> JsResult<JsExternal> {
-  // let params = get_params(&cx)?;
-  // let series = params.get_series(&cx, "_series")?;
-  // let func: JsFunction = params.get("func")?;
-  // let ca: &ChunkedArray<Utf8Type> = series.series.utf8().map_err(JsPolarsEr::from)?;
-
-  // let v: Series = ca
-  //   .into_iter()
-  //   .map(|opt_v| match opt_v {
-  //     Some(v) => {
-  //       let out: JsUnknown = func.call(None, &vec![v.into_js(&cx)]).expect("ok");
-  //       let av = AnyValue::from_js(out).expect("ok");
-  //       av
-  //     }
-  //     None => AnyValue::Null,
-  //   })
-  //   .collect();
-  // // func.call(None, args: &[V])
-  // // let it = series.series.clone().into_iter();
-
-  // // series.series.
-  // // series.series
+pub fn map(cx: CallContext) -> JsResult<JsExternal> {
   todo!()
 }
 

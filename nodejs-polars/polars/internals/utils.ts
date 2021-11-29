@@ -1,5 +1,5 @@
-import { DataType, DTYPE_TO_FFINAME } from '../datatypes';
-import polars_internal from './polars_internal';
+import { DataType, DTYPE_TO_FFINAME } from "../datatypes";
+import polars_internal from "./polars_internal";
 
 export const todo = () => new Error("not yet implemented");
 
@@ -19,7 +19,7 @@ export function getInternalFunc(
   defaultFunc?: CallableFunction,
 ): CallableFunction {
   const ffiName = DTYPE_TO_FFINAME[dtype];
-  const fName = name.replace('<>', ffiName);
+  const fName = name.replace("<>", ffiName);
 
   if (obj) {
     return (<any>obj)[fName] ?? defaultFunc;

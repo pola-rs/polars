@@ -1,25 +1,21 @@
 /* eslint-disable no-unused-vars */
-import internal from './internals/polars_internal';
-import { arrayToJsSeries } from './internals/construction';
-import { DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, Optional } from './datatypes';
-import {DataFrame} from './dataframe';
-import {todo} from './internals/utils';
+import internal from "./internals/polars_internal";
+import { arrayToJsSeries } from "./internals/construction";
+import { DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, Optional } from "./datatypes";
+import {DataFrame} from "./dataframe";
+import {todo} from "./internals/utils";
 
-const inspect = Symbol.for('nodejs.util.inspect.custom');
+const inspect = Symbol.for("nodejs.util.inspect.custom");
 type RollingOptions = {
   windowSize: number,
   weights?: Array<number>,
-  minPeriods?: Array<number>,
+  minPeriods?: number,
   center?:boolean
 };
 
-// /**
-//  * 'any' type representing the internal rust `JsSeries`
-//  */
-// Dtype.Float32 | Dtype.Float64 | Dtype.UInt8 | Dtype.UInt16 | Dtype.UInt32
-//  | Dtype.Int8 | Dtype.Int16 | Dtype.Int32 ? number
+
 type JsSeries = any;
-export type Series<T> = {
+export interface Series<T> {
   [n: number]: T
   name: string
   dtype: DataType
@@ -42,7 +38,6 @@ export type Series<T> = {
   notEquals(field: Series<T> | number | bigint | string): Series<boolean>
   add(field: Series<T> | number | bigint): Series<T>
   sub(field: Series<T> | number | bigint): Series<T>
-  sum(field: Series<T> | number | bigint): Series<T>
   div(field: Series<T> | number | bigint): Series<T>
   mul(field: Series<T> | number | bigint): Series<T>
   rem(field: Series<T> | number | bigint | string): Series<T>
@@ -55,6 +50,10 @@ export type Series<T> = {
   bitor(other: Series<any>): Series<T>
   bitxor(other: Series<any>): Series<T>
 
+  /**
+   * Take absolute values
+   */
+  abs(): Series<T>
   /**
    * __Rename this Series.__
    *
@@ -142,6 +141,12 @@ export type Series<T> = {
    */
   chunkLengths(): Array<number>
   /**
+   * Clip (limit) the values in an array.
+   *
+   */
+  clip(opts: {min:number, max:number}): Series<T>
+  clip(min:number, max:number): Series<T>
+  /**
    * Cheap deep clones.
    */
   clone(): Series<T>
@@ -185,7 +190,8 @@ export type Series<T> = {
    */
   cumMin(): Series<T>
   cumMin(reverse:boolean): Series<T>
-  cumMin({reverse}: {reverse: boolean}): Series<T>  /**
+  cumMin({reverse}: {reverse: boolean}): Series<T>
+  /**
   * __Get an array with the cumulative product computed at every element.__
   * ___
   * @param reverse - reverse the operation
@@ -277,8 +283,8 @@ export type Series<T> = {
    * @param n - number of slots to shift
    * @param nullBehavior - `'ignore' | 'drop'`
    */
-  diff(n: number, nullBehavior: 'ignore' | 'drop'): Series<T>
-  diff({n, nullBehavior}: {n: number, nullBehavior: 'ignore' | 'drop'}): Series<T>
+  diff(n: number, nullBehavior: "ignore" | "drop"): Series<T>
+  diff({n, nullBehavior}: {n: number, nullBehavior: "ignore" | "drop"}): Series<T>
    /**
    * Compute the dot/inner product between two Series
    * ___
@@ -344,8 +350,8 @@ export type Series<T> = {
    * ]
    * ```
    */
-  fillNull(strategy: 'backward' | 'forward' | 'min' | 'max' | 'mean' | 'one' | 'zero'): Series<T>
-  fillNull({strategy}: {strategy: 'backward' | 'forward' | 'min' | 'max' | 'mean' | 'one' | 'zero'}): Series<T>
+  fillNull(strategy: "backward" | "forward" | "min" | "max" | "mean" | "one" | "zero"): Series<T>
+  fillNull({strategy}: {strategy: "backward" | "forward" | "min" | "max" | "mean" | "one" | "zero"}): Series<T>
   /**
    * __Filter elements by a boolean mask.__
    * @param {SeriesType} predicate - Boolean mask
@@ -353,6 +359,7 @@ export type Series<T> = {
    */
   filter(predicate: Series<boolean>): Series<T>
   filter({predicate}: {predicate: Series<boolean>}): Series<T>
+  floor(): Series<T>
   get(index: number): T
   set(n: number): void
   getIndex(n: number): T
@@ -704,7 +711,7 @@ export type Series<T> = {
    *  * __'random'__: Like 'ordinal', but the rank for ties is not dependent
    *    on the order that the values occur in `a`.
    */
-  rank(method?: 'average' | 'min' | 'max' | 'dense' | 'ordinal' | 'random'): Series<number>
+  rank(method?: "average" | "min" | "max" | "dense" | "ordinal" | "random"): Series<number>
   rechunk(): Series<T>
   rechunk(inPlace: boolean): void
   rechunk({inPlace}: {inPlace: true}): void
@@ -952,12 +959,14 @@ export type Series<T> = {
    * @param periods - Number of places to shift (may be negative).
    * @param fillValue - Fill null & undefined values with the result of this expression.
    */
+  shiftAndFill(opt: {periods: number, fillValue: any}): Series<T>
   shiftAndFill(periods: number, fillValue: any): Series<T>
   /**
    * __Shrink memory usage of this Series to fit the exact capacity needed to hold the data.__
    * @param inPlace - Modify the Series in-place.
    */
-  shrinkToFit(inPlace:boolean): Series<T> | void
+  shrinkToFit(inPlace?:boolean): Series<T> | void
+  shrinkToFit(opt: {inPlace:boolean}): Series<T> | void
   /**
    * __Compute the sample skewness of a data set.__
    *
@@ -970,6 +979,7 @@ export type Series<T> = {
    * @param bias - If false, then the calculations are corrected for statistical bias.
    */
   skew(bias?:boolean): number | undefined
+  skew(opt: {bias?:boolean}): number | undefined
   /**
    * Create subslices of the Series.
    *
@@ -1006,6 +1016,21 @@ export type Series<T> = {
    * ```
    */
   sort(reverse?:boolean): Series<T>
+  /**
+   * Compute the square root of the elements
+   * ```
+   */
+  sqrt(): Series<T>
+  /**
+   * Reduce this Series to the sum value.
+   * @example
+   * ```
+   * >>> s = pl.Series("a", [1, 2, 3])
+   * >>> s.sum()
+   * 6
+   * ```
+   */
+  sum(): number
   /**
    * __Get last N elements as Series.__
    *
@@ -1140,10 +1165,7 @@ export type Series<T> = {
    */
   toJS(): object
 }
-type ValueOrNever<V> = V extends ArrayLike<infer U> ? Series<U> : never;
-type DataTypeOrValue<T,U> = U extends true ? DtypeToPrimitive<T> : DtypeToPrimitive<T> | null;
-type ArrayLikeDataType<T> = ArrayLike<DtypeToPrimitive<T>>
-type ArrayLikeOrDataType<T,U> = ArrayLike<DataTypeOrValue<T,U>>
+
 
 const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
@@ -1156,7 +1178,7 @@ const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
   const noArgWrap = <U>(method: string) => () => wrap<U>(method);
   const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
   const dtypeAccessor = (fn) => (method, args: {field,key}, _series = _s) => {
-    const dtype = unwrap<DataType>('dtype');
+    const dtype = unwrap<DataType>("dtype");
     if (args.field?._series) {
 
       return fn(method, { [args.key]: args.field._series }, _series);
@@ -1167,119 +1189,116 @@ const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
       return fn(internalMethod, { [args.key]: args.field }, _series);
     }
   };
-  const clone = <U>() => wrap<U>('clone');
+  const clone = <U>() => wrap<U>("clone");
   const alias = (name: string) => {
     const s = clone<T>();
-    unwrap('rename', { name }, s._series);
+    unwrap("rename", { name }, s._series);
 
     return s;
   };
   const apply = <U>(func: (s: T) => U): Series<U> => {
-    const d = wrap("map", {func});
-
-    return d as any;
+    throw todo();
   };
   const concat = (other: Series<T>): Series<T> => {
     const s = clone<T>();
 
-    unwrap('append', { other: other._series }, s._series);
+    unwrap("append", { other: other._series }, s._series);
 
     return s;
 
   };
   const describe = (): DataFrame => {
-    return null as any;
+    throw todo();
   };
-  const diff = (opt: any, _nb?): any => {
-    if(_nb) {
-      return diff({n: opt.n, nullBehavior: _nb});
-    } else {
-      return wrap('diff', {n: opt.n, null_behavior: opt.nullBehavior});
-    }
+  const diff = (opt?: any, nullBehavior="ignore"): any => {
+    return wrap("diff", {
+      n: opt?.n ?? (typeof opt === "number" ? opt : 1),
+      null_behavior: opt?.nullBehavior ?? nullBehavior
+    });
   };
-  const hash = (obj?: object | number, k1?: any, k2?: any, k3?: any) => {
-    return wrap<bigint>('hash', {
-      k0: obj?.['k0'] ?? typeof obj === 'number' ? obj : 0,
-      k1: obj?.['k1'] ?? k1 ?? 1,
-      k2: obj?.['k2'] ?? k2 ?? 2,
-      k3: obj?.['k3'] ?? k3 ?? 3
+  const hash = (obj?: object | number, k1=1, k2=2, k3=3) => {
+    return wrap<bigint>("hash", {
+      k0: obj?.["k0"] ?? (typeof obj === "number" ? obj : 0),
+      k1: obj?.["k1"] ?? k1,
+      k2: obj?.["k2"] ?? k2,
+      k3: obj?.["k3"] ?? k3
     });
   };
   const isFinite = () => {
-    const dtype = unwrap<DataType>('dtype');
+    const dtype = unwrap<DataType>("dtype");
 
     if (![DataType.Float32, DataType.Float64].includes(dtype)) {
       throw new Error(
         `Invalid operation isFinite is not suppored for ${dtype}`,
       );
     } else {
-      return wrap('is_finite') as any;
+      return wrap("is_finite") as any;
     }
   };
   const isInfinite = () => {
-    const dtype = unwrap<DataType>('dtype');
+    const dtype = unwrap<DataType>("dtype");
 
     if (![DataType.Float32, DataType.Float64].includes(dtype)) {
       throw new Error(
         `Invalid operation isInfinite is not suppored for ${dtype}`,
       );
     } else {
-      return wrap('is_infinite') as any;
+      return wrap("is_infinite") as any;
     }
   };
-  const kurtosis = (obj?: any, bias?: any) => {
-    return unwrap<Optional<number>>('kurtosis', {
-      fisher: obj?.['fisher'] ?? obj ?? true,
-      bias : obj?.['bias'] ?? bias ?? true,
+  const kurtosis = (obj?, bias=true) => {
+    return unwrap<Optional<number>>("kurtosis", {
+      fisher: obj?.["fisher"] ?? (typeof obj === "boolean" ? obj : true),
+      bias : obj?.["bias"] ?? bias,
     });
   };
   const inPlaceOptional = (method: string) =>  (obj?: {inPlace:boolean} | boolean): any  => {
-    if(obj === true || obj?.['inPlace'] === true) {
+    if(obj === true || obj?.["inPlace"] === true) {
       unwrap(method, {inPlace: true});
     } else {
       return wrap(method);
     }
   };
   const reinterpret = (signed=true) => {
-    const dtype = unwrap<DataType>('dtype');
-    if (![DataType.UInt64, DataType.Int64].includes(dtype)) {
-      throw new Error(
-        `Invalid operation reinterpret is not suppored for ${dtype}`,
-      );
+    const dtype = unwrap<string>("dtype");
+    if ([DataType.UInt64, DataType.Int64].includes(DataType[dtype])) {
+      return wrap("reinterpret", { signed }) as any;
     } else {
-      return wrap('reinterpret', { signed }) as any;
+      throw new Error(
+        `Invalid operation reinterpret is not supported for ${dtype}`,
+      );
     }
   };
   const rename = (obj: any, inPlace = false): any => {
     if (obj?.inPlace ?? inPlace) {
-      unwrap('rename', { name: obj?.name ?? obj });
+      unwrap("rename", { name: obj?.name ?? obj });
     } else {
       return alias(obj?.name ?? obj);
     }
   };
   const rolling = (method: string) =>  (opts, weights?, minPeriods?, center?): Series<T> => {
-    const windowSize = opts?.['windowSize'] ?? typeof opts === 'number'? opts : null;
+    const windowSize = opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null);
     if(windowSize === null) {
-      throw new Error('window size is required');
+      throw new Error("window size is required");
     }
     const callOpts = {
-      window_size: opts?.['windowSize'] ?? typeof opts === 'number'? opts : null,
-      weights: opts?.['weights'] ?? weights,
-      min_periods: opts?.['minPeriods'] ?? minPeriods ?? windowSize,
-      center : opts?.['center'] ?? center ?? false,
+      window_size: opts?.["windowSize"] ?? (typeof opts === "number"? opts : null),
+      weights: opts?.["weights"] ?? weights,
+      min_periods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
+      center : opts?.["center"] ?? center ?? false,
     };
 
     return wrap(method, callOpts);
   };
   const sample = (opts?, frac?, withReplacement = false): Series<T> => {
-    if (opts?.n || typeof opts === 'number') {
-      return wrap('sample_n', {
+    if (opts?.n || typeof opts === "number") {
+      return wrap("sample_n", {
         n: opts?.n ?? opts,
         with_replacement: opts?.withReplacement ?? withReplacement
       });
     }
-    if(opts?.frac) {
-      return wrap('sample_frac', {
+    if(opts?.frac ?? frac) {
+      return wrap("sample_frac", {
         frac: opts?.frac ?? frac,
         with_replacement: withReplacement,
       });
@@ -1289,138 +1308,150 @@ const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     }
   };
   const seriesEqual = (other, opt: any = false) => unwrap<boolean>(
-    'series_equal', {
+    "series_equal", {
       other: other._series,
       null_equal: opt?.nullEqual ?? opt
     }
   );
+  const skew = (opt:any = true) => {
+    return unwrap<number | undefined>("skew", {
+      bias: opt?.bias ?? (typeof opt === "boolean" ? opt : true)
+    });
+  };
+  const sqrt = () => {throw todo();};
+
   const propOrVal = (obj: any, key: string) => ({[key]: obj?.[key] ?? obj});
   const propOrElse = (obj: any, key: string, otherwise: boolean) => ({[key]: obj?.[key] ?? obj ?? otherwise});
 
   const out = {
     _series: _s,
-    [inspect](): string { return unwrap<string>('get_fmt');},
+    [inspect](): string { return unwrap<string>("get_fmt");},
     *[Symbol.iterator]() {
       let start = 0;
-      let len = unwrap<number>('len');
+      let len = unwrap<number>("len");
       while (start < len) {
         const v = this.get(start);
         start++;
         yield v;
       }
     },
-    get seriesName() { return unwrap<string>('name');},
-    get dtype(): DataType { return unwrap('dtype');},
-    get name(): string { return unwrap('name');},
-    get length(): number { return unwrap('len');},
-    eq: (field: any) => dtypeAccessor(wrap)('eq', {field, key: 'rhs'}),
-    equals: (field: any) => dtypeAccessor(wrap)('eq', {field, key: 'rhs'}),
-    gt_eq: (field: any) => dtypeAccessor(wrap)('gt_eq', {field, key: 'rhs'}),
-    greaterThanEquals: (field: any) => dtypeAccessor(wrap)('gt_eq', {field, key: 'rhs'}),
-    gt: (field: any) => dtypeAccessor(wrap)('gt', {field, key: 'rhs'}),
-    greaterThan: (field: any) => dtypeAccessor(wrap)('gt', {field, key: 'rhs'}),
-    lt_eq: (field: any) => dtypeAccessor(wrap)('lt_eq', {field, key: 'rhs'}),
-    lessThanEquals: (field: any) => dtypeAccessor(wrap)('lt_eq', {field, key: 'rhs'}),
-    lt: (field: any) => dtypeAccessor(wrap)('lt', {field, key: 'rhs'}),
-    lessThan: (field: any) => dtypeAccessor(wrap)('lt', {field, key: 'rhs'}),
-    neq: (field: any) => dtypeAccessor(wrap)('neq', {field, key: 'rhs'}),
-    notEquals: (field: any) => dtypeAccessor(wrap)('neq', {field, key: 'rhs'}),
-    add: (field: any) => dtypeAccessor(wrap)('add', {field, key: 'other'}),
-    sub: (field: any) => dtypeAccessor(wrap)('sub', {field, key: 'other'}),
-    sum: (field: any) => dtypeAccessor(wrap)('sum', {field, key: 'other'}),
-    div: (field: any) => dtypeAccessor(wrap)('div', {field, key: 'other'}),
-    mul: (field: any) => dtypeAccessor(wrap)('mul', {field, key: 'other'}),
-    rem: (field: any) => dtypeAccessor(wrap)('rem', {field, key: 'other'}),
-    plus: (field: any) => dtypeAccessor(wrap)('add', {field, key: 'other'}),
-    minus: (field: any) => dtypeAccessor(wrap)('sub', {field, key: 'other'}),
-    divide: (field: any) => dtypeAccessor(wrap)('div', {field, key: 'other'}),
-    times: (field: any) => dtypeAccessor(wrap)('mul', {field, key: 'other'}),
-    remainder: (field: any) => dtypeAccessor(wrap)('rem', {field, key: 'other'}),
+    get dtype(): DataType { return unwrap("dtype");},
+    get name(): string { return unwrap("name");},
+    get length(): number { return unwrap("len");},
+    eq: (field: any) => dtypeAccessor(wrap)("eq", {field, key: "rhs"}),
+    equals: (field: any) => dtypeAccessor(wrap)("eq", {field, key: "rhs"}),
+    gt_eq: (field: any) => dtypeAccessor(wrap)("gt_eq", {field, key: "rhs"}),
+    greaterThanEquals: (field: any) => dtypeAccessor(wrap)("gt_eq", {field, key: "rhs"}),
+    gt: (field: any) => dtypeAccessor(wrap)("gt", {field, key: "rhs"}),
+    greaterThan: (field: any) => dtypeAccessor(wrap)("gt", {field, key: "rhs"}),
+    lt_eq: (field: any) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
+    lessThanEquals: (field: any) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
+    lt: (field: any) => dtypeAccessor(wrap)("lt", {field, key: "rhs"}),
+    lessThan: (field: any) => dtypeAccessor(wrap)("lt", {field, key: "rhs"}),
+    neq: (field: any) => dtypeAccessor(wrap)("neq", {field, key: "rhs"}),
+    notEquals: (field: any) => dtypeAccessor(wrap)("neq", {field, key: "rhs"}),
+    add: (field: any) => dtypeAccessor(wrap)("add", {field, key: "other"}),
+    sub: (field: any) => dtypeAccessor(wrap)("sub", {field, key: "other"}),
+    div: (field: any) => dtypeAccessor(wrap)("div", {field, key: "other"}),
+    mul: (field: any) => dtypeAccessor(wrap)("mul", {field, key: "other"}),
+    rem: (field: any) => dtypeAccessor(wrap)("rem", {field, key: "other"}),
+    plus: (field: any) => dtypeAccessor(wrap)("add", {field, key: "other"}),
+    minus: (field: any) => dtypeAccessor(wrap)("sub", {field, key: "other"}),
+    divide: (field: any) => dtypeAccessor(wrap)("div", {field, key: "other"}),
+    times: (field: any) => dtypeAccessor(wrap)("mul", {field, key: "other"}),
+    remainder: (field: any) => dtypeAccessor(wrap)("rem", {field, key: "other"}),
+    abs: noArgWrap("abs"),
     alias,
-    append: (other: Series<T>) => wrap('append', { other: other._series }),
+    append: (other: Series<T>) => wrap("append", { other: other._series }),
     apply,
-    argMax: noArgUnwrap('arg_max'),
-    argMin: noArgUnwrap('arg_min'),
-    argTrue: noArgUnwrap('arg_true'),
-    argUnique: noArgUnwrap('arg_unique'),
-    argSort: (opt?: any) => wrap<T>('argsort', propOrElse(opt, 'reverse', false)),
-    bitand: (other) => wrap('bitand', { other: other._series }),
-    bitor: (other) => wrap('bitor', { other: other._series }),
-    bitxor: (other) => wrap('bitxor', { other: other._series }),
-    cast: <D extends DataType>(dtype: D, opt?: any) => wrap<DtypeToPrimitive<D>>('cast', { dtype, ...propOrElse(opt, 'strict', false)}),
-    chunkLengths: noArgUnwrap('chunk_lengths'),
+    argMax: noArgUnwrap("arg_max"),
+    argMin: noArgUnwrap("arg_min"),
+    argTrue: noArgWrap("arg_true"),
+    argUnique: noArgWrap("arg_unique"),
+    argSort: (opt?: any) => wrap<T>("argsort", propOrElse(opt, "reverse", false)),
+    bitand: (other) => wrap("bitand", { other: other._series }),
+    bitor: (other) => wrap("bitor", { other: other._series }),
+    bitxor: (other) => wrap("bitxor", { other: other._series }),
+    cast: <D extends DataType>(dtype: D, opt?: any) => wrap<DtypeToPrimitive<D>>("cast", { dtype, ...propOrElse(opt, "strict", false)}),
+    chunkLengths: noArgUnwrap("chunk_lengths"),
+    clip: (arg: any, max?: any) => {throw todo();},
     clone,
     concat,
-    cumMax: (opt?: any) => wrap<T>('cummax', propOrElse(opt, 'reverse', false)),
-    cumMin: (opt?: any) => wrap<T>('cummin', propOrElse(opt, 'reverse', false)),
-    cumProd: (opt?: any) => wrap<T>('cumprod', propOrElse(opt, 'reverse', false)),
-    cumSum: (opt?: any) => wrap<T>('cumsum', propOrElse(opt, 'reverse', false)),
+    cumMax: (opt?: any) => wrap<T>("cummax", propOrElse(opt, "reverse", false)),
+    cumMin: (opt?: any) => wrap<T>("cummin", propOrElse(opt, "reverse", false)),
+    cumProd: (opt?: any) => wrap<T>("cumprod", propOrElse(opt, "reverse", false)),
+    cumSum: (opt?: any) => wrap<T>("cumsum", propOrElse(opt, "reverse", false)),
     describe,
     diff,
-    dot: (other) => unwrap('dot', { other: other._series }),
-    dropNulls: noArgWrap('drop_nulls'),
-    explode: noArgWrap('explode'),
-    fillNull: (opt: any) =>  wrap<T>('fill_null', propOrVal(opt, 'strategy')),
-    get: (field: any) => dtypeAccessor(unwrap)('get', {field, key: 'index'}),
-    filter: (opt: any) => wrap<T>('filter', propOrVal(opt, 'predicate')),
-    getIndex: (n) => unwrap('get_idx', {n}),
-    hasValidity: noArgUnwrap('has_validity'),
+    dot: (other) => unwrap("dot", { other: other._series }),
+    dropNulls: noArgWrap("drop_nulls"),
+    explode: noArgWrap("explode"),
+    fillNull: (opt: any) =>  wrap<T>("fill_null", propOrVal(opt, "strategy")),
+    filter: (opt: any) => wrap<T>("filter", propOrVal(opt, "predicate")),
+    floor: noArgWrap("floor"),
+    get: (field: any) => dtypeAccessor(unwrap)("get", {field, key: "index"}),
+    getIndex: (n) => unwrap("get_idx", {n}),
+    hasValidity: noArgUnwrap("has_validity"),
     hash,
-    head: (length=5) => wrap('head', {length}),
+    head: (length=5) => wrap("head", {length}),
     inner: () => _s,
-    interpolate: noArgWrap('interpolate'),
-    isDuplicated: noArgWrap('is_duplicated'),
+    interpolate: noArgWrap("interpolate"),
+    isDuplicated: noArgWrap("is_duplicated"),
     isFinite,
-    isFirst: noArgWrap('is_first'),
+    isFirst: noArgWrap("is_first"),
     isInfinite,
-    isNotNull: noArgWrap('is_not_null'),
-    isNull: noArgWrap('is_null'),
-    isUnique: noArgWrap('is_unique'),
+    isNotNull: noArgWrap("is_not_null"),
+    isNull: noArgWrap("is_null"),
+    isUnique: noArgWrap("is_unique"),
     kurtosis,
-    len: noArgUnwrap('len'),
-    limit: (n=10) => wrap('limit', { num_elements: n }),
-    max: noArgWrap('max'),
-    mean: noArgWrap('mean'),
-    median: noArgWrap('median'),
-    min: noArgWrap('min'),
-    mode: noArgWrap('mode'),
-    nChunks: noArgUnwrap<number>('n_chunks'),
-    nUnique: noArgUnwrap<number>('n_unique'),
-    nullCount: noArgUnwrap<number>('null_count'),
-    peakMax: noArgWrap('peak_max'),
-    peakMin: noArgWrap('peakMin'),
-    quantile: (quantile) => unwrap<number>('quantile', {quantile}),
-    rank: (method='average') => wrap('rank', { method}),
-    rechunk: inPlaceOptional('rechunk'),
+    len: noArgUnwrap("len"),
+    limit: (n=10) => wrap("limit", { num_elements: n }),
+    max: noArgWrap("max"),
+    mean: noArgWrap("mean"),
+    median: noArgWrap("median"),
+    min: noArgWrap("min"),
+    mode: noArgWrap("mode"),
+    nChunks: noArgUnwrap<number>("n_chunks"),
+    nUnique: noArgUnwrap<number>("n_unique"),
+    nullCount: noArgUnwrap<number>("null_count"),
+    peakMax: noArgWrap("peak_max"),
+    peakMin: noArgWrap("peak_min"),
+    quantile: (quantile) => unwrap<number>("quantile", {quantile}),
+    rank: (method="average") => wrap("rank", { method}),
+    rechunk: inPlaceOptional("rechunk"),
     reinterpret,
     rename,
-    rollingMax: rolling('rolling_max'),
-    rollingMean: rolling('rolling_mean'),
-    rollingMin: rolling('rolling_min'),
-    rollingSum: rolling('rolling_sum'),
-    rollingVar: rolling('rolling_var'),
+    rollingMax: rolling("rolling_max"),
+    rollingMean: rolling("rolling_mean"),
+    rollingMin: rolling("rolling_min"),
+    rollingSum: rolling("rolling_sum"),
+    rollingVar: rolling("rolling_var"),
     sample,
     seriesEqual,
-    set: (field: any) => dtypeAccessor(unwrap)('set_at_idx', {field, key: 'index'}),
-    shift: (opt: any = 1) => wrap<T>('shift', {periods: opt?.periods ?? opt}),
-    shiftAndFill: (opt, fillVal) => {throw todo();},
-    shrinkToFit: inPlaceOptional('shrink_to_fit'),
-    skew: (opt: any = true) => unwrap<number | undefined>('shift', {bias: opt?.bias ?? opt}),
-    slice: (opt:any, length?:any) => wrap<T>('slice', {offset: opt?.start ?? opt, length: opt?.length ?? length}),
-    sort: (opt?) => wrap<T>('sort', propOrElse(opt, 'reverse', false)),
-    tail: (length=5) => wrap('tail', {length}),
-    takeEvery: (n) => wrap('take_every', {n}),
-    take: (indices) => wrap('take', {indices}),
-    toArray: (): Array<T> => {throw todo();},
-    unique: noArgWrap('unique'),
+    set: (field: any) => dtypeAccessor(unwrap)("set_at_idx", {field, key: "index"}),
+    shift: (opt: any = 1) => wrap<T>("shift", {periods: opt?.periods ?? opt}),
+    shiftAndFill: (opt?, fillVal?) => {throw todo();},
+    shrinkToFit: inPlaceOptional("shrink_to_fit"),
+    skew,
+    slice: (opt:any, length?:any) => wrap<T>("slice", {offset: opt?.start ?? opt, length: opt?.length ?? length}),
+    sort: (opt?) => wrap<T>("sort", propOrElse(opt, "reverse", false)),
+    sqrt,
+    sum: noArgUnwrap("sum"),
+    tail: (length=5) => wrap("tail", {length}),
+    takeEvery: (n) => wrap("take_every", {n}),
+    take: (indices) => wrap("take", {indices}),
+    toArray: (): Array<T> => [..._wrapSeries(_s)] as any,
+    unique: noArgWrap("unique"),
     valueCounts: () => {throw todo();},
-    zipWith: (mask, other) => wrap('zip_with', {mask: mask._series, other: other._series}),
-    toJS: noArgUnwrap('to_js')
+    zipWith: (mask, other) => wrap("zip_with", {mask: mask._series, other: other._series}),
+    toJS: noArgUnwrap("to_js"),
+    toString(){return `Series('${unwrap("name")}', [${[..._wrapSeries(_s)] }])`;},
+    get [Symbol.toStringTag]() { return "Series";}
   } as Series<T>;
 
   return new Proxy(out, {
     get: function(target, prop, receiver) {
-      if(typeof prop !== 'symbol' && !Number.isNaN(Number(prop))) {
+      if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
         return target.get(Number(prop));
       } else {
         return Reflect.get(target, prop, receiver);
@@ -1428,14 +1459,25 @@ const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     }
   });
 };
+type ValueOrNever<V> = V extends ArrayLike<infer U> ? Series<U> : never;
+type DataTypeOrValue<T,U> = U extends true ? DtypeToPrimitive<T> : DtypeToPrimitive<T> | null;
+type ArrayLikeDataType<T> = ArrayLike<DtypeToPrimitive<T>>
+type ArrayLikeOrDataType<T,U> = ArrayLike<DataTypeOrValue<T,U>>
 
 export function Series<V extends ArrayLike<any>>(values: V): ValueOrNever<V>
 export function Series<V extends ArrayLike<any>>(name: string,values: V): ValueOrNever<V>
-export function Series<T extends DataType, U extends ArrayLikeDataType<T>>(name: string, values: U, dtype: T): Series<DtypeToPrimitive<T>>
-export function Series<T extends DataType, U extends boolean, V extends ArrayLikeOrDataType<T,U>>(name: string, values: V, dtype?: T, strict?: U): Series<DataTypeOrValue<T,U>>
+export function Series<
+T extends DataType,
+U extends ArrayLikeDataType<T>
+>(name: string, values: U, dtype: T): Series<DtypeToPrimitive<T>>
+export function Series<
+T extends DataType,
+U extends boolean,
+V extends ArrayLikeOrDataType<T,U>
+>(name: string, values: V, dtype?: T, strict?: U): Series<DataTypeOrValue<T,U>>
 export function Series(arg0: any, arg1?: any, dtype?: any, strict?: any) {
-  if(typeof arg0 !== 'string') {
-    return Series('', arg0);
+  if(typeof arg0 !== "string") {
+    return Series("", arg0);
   }
   const _s = arrayToJsSeries(arg0, arg1, dtype, strict);
 

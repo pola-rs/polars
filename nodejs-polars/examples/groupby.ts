@@ -1,4 +1,4 @@
-import pl from '../polars';
+import pl from "../polars";
 
 const  df = pl.DataFrame({
   "a": ["a", "b", "a", "b", "b", "c"],
@@ -11,15 +11,7 @@ const  df = pl.DataFrame({
 //   .toArray()
 //   .sort();
 // console.log(df.groupBy('a'));
-// const gb = df.groupBy('a')(['b', 'c']); 
-const restParamGroupBy  = df.groupBy('a', 'b', 'c');
-const singleParamGroupBy  = df.groupBy('a')('a', 'b');
-const arrayParamGroupBy = df.groupBy(['a', 'b']);
-
-df
-  .select('a', 'b', 'c')
-  .peek()
-  .select(['a'])
-  .groupBy('a')
-  .first()
-  .peek();
+// const gb = df.groupBy('a')(['b', 'c']);
+const restParamGroupBy  = df.groupBy("a", "b", "c");
+const singleParamGroupBy  = df.groupBy("a")("a", "b");
+const arrayParamGroupBy = df.groupBy(["a", "b"]);

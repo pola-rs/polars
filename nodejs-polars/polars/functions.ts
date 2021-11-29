@@ -6,7 +6,7 @@ import polars_internal from "./internals/polars_internal";
 
 
 type ConcatItems = Array<DataFrame> | Array<Series<any>>
-type ConcatOptions = {rechunk: boolean, how?: 'vertical'}
+type ConcatOptions = {rechunk: boolean, how?: "vertical"}
 
 
 /**
@@ -34,14 +34,14 @@ export function repeat<V>(value: V, n: number, name= ""): Series<V>{
 export function concat(item: Array<DataFrame>): DataFrame;
 export function concat(item: Array<Series<any>>): Series<any>;
 export function concat(items: ConcatItems, options?: ConcatOptions): DataFrame | Series<any> {
-  const {rechunk, how} = {rechunk: true, how: 'vertical', ...options};
+  const {rechunk, how} = {rechunk: true, how: "vertical", ...options};
 
   if(!items) {
     throw new RangeError("cannot concat empty list");
   }
 
-  if(items[0] instanceof DataFrame) {
-    if(how === 'vertical') {
+  if((items[0] as any)?._df) {
+    if(how === "vertical") {
       let df = items.shift() as DataFrame;
 
       items.forEach(other => {
@@ -54,7 +54,7 @@ export function concat(items: ConcatItems, options?: ConcatOptions): DataFrame |
     }
   }
 
-  if(items[0]?._series) {
+  if((items[0] as any)?._series) {
     const s =  (items as Series<any>[]).reduce((acc,curr) => acc.concat(curr));
 
     return rechunk ? s.rechunk() : s;

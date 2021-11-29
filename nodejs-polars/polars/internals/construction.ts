@@ -1,25 +1,25 @@
-import polars_internal from './polars_internal';
-import { DataType, polarsTypeToConstructor } from '../datatypes';
-import { isTypedArray } from 'util/types';
-import {Series} from '../series';
+import polars_internal from "./polars_internal";
+import { DataType, polarsTypeToConstructor } from "../datatypes";
+import { isTypedArray } from "util/types";
+import {Series, _wrapSeries} from "../series";
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
   if (Array.isArray(value)) {
-    throw new Error("List type not yet supported");
+    return jsTypeToPolarsType(value[0]);
   }
 
   if (value instanceof Date) {
-    return DataType.Date;
+    return DataType.Datetime;
   }
 
   switch (typeof value) {
-  case 'bigint':
+  case "bigint":
     return DataType.UInt64;
-  case 'number':
+  case "number":
     return DataType.Float64;
-  case 'string':
+  case "string":
     return DataType.Utf8;
-  case 'boolean':
+  case "boolean":
     return DataType.Bool;
   default:
     return DataType.Object;
@@ -38,22 +38,33 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   if (!values.length && !dtype) {
     dtype = DataType.Float32;
   }
+  if(Array.isArray(values[0])) {
+    const listDtype = jsTypeToPolarsType(values[0]);
+    const constructor = polarsTypeToConstructor(DataType.List);
+
+    return constructor({ name, values, strict, dtype: listDtype});
+  }
 
   dtype = dtype ?? jsTypeToPolarsType(values[0]);
+  let series;
 
-  if (dtype) {
+  if(values[0] instanceof Date) {
+    series =  polars_internal.series.new_opt_date({name, values, strict});
+  } else {
+
     const constructor = polarsTypeToConstructor(dtype);
-    let series = constructor({ name, values, strict });
-
-    if (dtype === DataType.Datetime) {
-      series = polars_internal.series.cast({ _series: series, dtype, strict: true });
-    }
-
-    return series;
+    series = constructor({ name, values, strict });
   }
+
+  if ([DataType.Datetime, DataType.Date].includes(dtype)) {
+    series = polars_internal.series.cast({ _series: series, dtype, strict: true });
+  }
+
+
+  return series;
 }
 
-export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: 'col'| 'row'): any {
+export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "col"| "row"): any {
   let dataSeries;
 
   if(!data.length) {
@@ -69,7 +80,7 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: 'co
       dataSeries.push(series.inner());
     });
   }
-  else if(data[0].constructor.name === 'Object') {
+  else if(data[0].constructor.name === "Object") {
     const df = polars_internal.df.read_rows({rows: data});
 
     if(columns) {
@@ -80,10 +91,10 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: 'co
   }
   else if (Array.isArray(data[0])) {
     if(!orient && columns) {
-      orient = columns.length === data.length ? 'col' : 'row';
+      orient = columns.length === data.length ? "col" : "row";
     }
 
-    if(orient === 'row') {
+    if(orient === "row") {
       const df = polars_internal.df.read_array_rows({data});
       columns && polars_internal.df.set_column_names({_df: df, names: columns});
 

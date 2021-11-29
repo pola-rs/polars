@@ -1,11 +1,6 @@
-import pl from '../polars';
+import pl from "../polars";
 
-// Creating series
-// console.log(pl.Series('str', ['foo', 'bar', 'baz']))
-// console.log(pl.Series('num', [1, 2, 3]))
-let s = pl.Series('a', ['foo', 'bar'])
-  .rename('new name');
 
-const n = s.apply(item => item.length);
-
-console.log(n);
+const s = pl.Series([[1], [2,2], [0,1]]);
+const dt_series = pl.Series("d", [new Date(13241324)], pl.Date);
+console.log(dt_series);

@@ -5,6 +5,7 @@ use napi::{CallContext, JsObject, Result};
 use polars::prelude::*;
 use polars_core::prelude::FillNullStrategy;
 use polars_core::series::ops::NullBehavior;
+use polars::frame::NullStrategy;
 
 pub fn get_params(cx: &CallContext) -> Result<WrappedObject> {
   Ok(cx.get::<JsObject>(0)?.into())
@@ -38,7 +39,18 @@ pub(crate) fn str_to_rankmethod(method: String) -> JsResult<RankMethod> {
   };
   Ok(method)
 }
-
+pub(crate) fn str_to_null_strategy(strategy: &str) -> JsResult<NullStrategy> {
+  let strategy = match strategy {
+    "ignore" => NullStrategy::Ignore,
+    "propagate" => NullStrategy::Propagate,
+    _ => {
+      return Err(napi::Error::from_reason(
+        "use one of 'ignore', 'propagate'".to_string(),
+      ))
+    }
+  };
+  Ok(strategy)
+}
 pub(crate) fn str_to_null_behavior(null_behavior: String) -> JsResult<NullBehavior> {
   let null_behavior = match null_behavior.as_str() {
     "drop" => NullBehavior::Drop,
@@ -47,4 +59,3 @@ pub(crate) fn str_to_null_behavior(null_behavior: String) -> JsResult<NullBehavi
   };
   Ok(null_behavior)
 }
-

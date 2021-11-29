@@ -17,6 +17,7 @@
         "jest"
     ],
     "rules": {
+        "quotes": ["error", "double"],
         "no-redeclare": "off",
         "no-trailing-spaces": "error",
         "semi": [
