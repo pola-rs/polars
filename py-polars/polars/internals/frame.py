@@ -2193,8 +2193,7 @@ class DataFrame:
         │ 3    ┆ 8    ┆ "c" ┆ null  │
         ╰──────┴──────┴─────┴───────╯
 
-        Asof join
-        ---------
+        **Asof join**
         This is similar to a left-join except that we match on nearest key rather than equal keys.
         The keys must be sorted to perform an asof join
 
