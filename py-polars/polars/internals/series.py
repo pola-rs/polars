@@ -3082,7 +3082,7 @@ class StringNameSpace:
         --------
 
         >>> df = pl.DataFrame({
-        ... 'json_val':['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
+        ...     'json_val':['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
         ... })
         >>> df.select(pl.col('json_val').str.json_path_match('$.a'))
         shape: (5,)

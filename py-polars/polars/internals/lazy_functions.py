@@ -53,9 +53,9 @@ def col(
     --------
 
     >>> df = pl.DataFrame({
-    ... "ham": [1, 2, 3],
-    ... "hamburger": [11, 22, 33],
-    ... "foo": [3, 2, 1]})
+    ...     "ham": [1, 2, 3],
+    ...     "hamburger": [11, 22, 33],
+    ...     "foo": [3, 2, 1]})
     >>> df.select(col("foo"))
     shape: (3, 1)
     ╭─────╮

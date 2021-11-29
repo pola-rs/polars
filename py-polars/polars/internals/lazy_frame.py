@@ -1141,8 +1141,8 @@ class LazyGroupBy:
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
         >>> (df.groupby("letters")
-        ...  .head(2)
-        ...  .sort("letters")
+        ...     .head(2)
+        ...     .sort("letters")
         ... )
         shape: (5, 2)
         ╭─────────┬─────╮
@@ -1200,8 +1200,8 @@ class LazyGroupBy:
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
         >>> (df.groupby("letters")
-        ...  .tail(2)
-        ...  .sort("letters")
+        ...     .tail(2)
+        ...     .sort("letters")
         ... )
         shape: (5, 2)
         ╭─────────┬─────╮

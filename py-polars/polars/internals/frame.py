@@ -1977,7 +1977,7 @@ class DataFrame:
         We can also loop over the grouped `DataFrame`
 
         >>> for sub_df in df.groupby("a"):
-        >>>    print(sub_df)
+        >>>     print(sub_df)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
         │ a   ┆ b   ┆ c   │
@@ -3505,11 +3505,11 @@ class GroupBy:
 
         >>> # use lazy API
         >>> (df.groupby(["foo", "bar"])
-        ... .agg([pl.sum("ham"), col("spam").tail(4).sum()])
+        ...     .agg([pl.sum("ham"), col("spam").tail(4).sum()])
 
         >>> # use a dict
         >>> (df.groupby(["foo", "bar"])
-        ... .agg({"spam": ["sum", "min"})
+        ...     .agg({"spam": ["sum", "min"})
 
         """
         if isinstance(column_to_agg, pli.Expr):
@@ -3592,8 +3592,8 @@ class GroupBy:
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
         >>> (df.groupby("letters")
-        ...  .head(2)
-        ...  .sort("letters")
+        ...     .head(2)
+        ...     .sort("letters")
         ... )
         shape: (5, 2)
         ╭─────────┬─────╮
@@ -3657,8 +3657,8 @@ class GroupBy:
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
         >>> (df.groupby("letters")
-        ...  .tail(2)
-        ...  .sort("letters")
+        ...     .tail(2)
+        ...     .sort("letters")
         ... )
         shape: (5, 2)
         ╭─────────┬─────╮

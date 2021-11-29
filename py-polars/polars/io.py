@@ -445,9 +445,9 @@ def scan_csv(
     Examples
     --------
     >>> (pl.scan_csv("my_long_file.csv")  # lazy, doesn't do a thing
-    ...  .select(["a", "c"])              # select only 2 columns (other columns will not be read)
-    ...  .filter(pl.col("a") > 10)        # the filter is pushed down the the scan, so less data read in memory
-    ...  .fetch(100)                      # pushed a limit of 100 rows to the scan level
+    ...     .select(["a", "c"])              # select only 2 columns (other columns will not be read)
+    ...     .filter(pl.col("a") > 10)        # the filter is pushed down the the scan, so less data read in memory
+    ...     .fetch(100)                      # pushed a limit of 100 rows to the scan level
     ...  )
 
     >>> # we can use `with_column_names` to modify the header before scanning
@@ -456,9 +456,9 @@ def scan_csv(
     ...     "LaNgUaGe": ["is", "terrible", "to", "read"]
     ... })
     >>> df.to_csv("mydf.csv")
-    ... (pl.scan_csv("mydf.csv",
+    >>> (pl.scan_csv("mydf.csv",
     ...     with_column_names=lambda cols: [col.lower() for col in cols])
-    ... .fetch()
+    ...     .fetch()
     ... )
     shape: (4, 2)
     ┌─────────┬──────────┐

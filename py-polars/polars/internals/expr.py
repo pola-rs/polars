@@ -306,12 +306,12 @@ class Expr:
         With `keep_name` we can keep the original name of the column
 
         >>> df = pl.DataFrame({
-        ... "a": [1, 2, 3],
-        ... "b": ["a", "b", None]
+        ...     "a": [1, 2, 3],
+        ...     "b": ["a", "b", None]
         ... })
         >>> (df.groupby("a")
-        ... .agg(col("b").list())
-        ... .sort(by="a")
+        ...     .agg(col("b").list())
+        ...     .sort(by="a")
         ... )
         shape: (3, 2)
         ╭─────┬────────────╮
@@ -327,8 +327,8 @@ class Expr:
         ╰─────┴────────────╯
         >>> # keep the original column name
         >>> (df.groupby("a")
-        ... .agg(col("b").list().keep_name())
-        ... .sort(by="a")
+        ...     .agg(col("b").list().keep_name())
+        ...     .sort(by="a")
         ... )
         shape: (3, 2)
         ╭─────┬────────────╮
@@ -378,8 +378,8 @@ class Expr:
         │ 5   ┆ "banana" ┆ 1   ┆ "beetle" │
         ╰─────┴──────────┴─────┴──────────╯
         >>> (df.select([
-        ... pl.all(),
-        ... pl.all().reverse().suffix("_reverse")
+        ...     pl.all(),
+        ...     pl.all().reverse().suffix("_reverse")
         ... ]))
         shape: (5, 8)
         ╭─────┬──────────┬─────┬──────────┬───────────┬────────────────┬───────────┬──────────────╮
@@ -1072,12 +1072,10 @@ class Expr:
 
         >>> df = pl.DataFrame({"a": [1,  2,  1,  1],
         ...                    "b": ["a", "b", "c", "c"]})
-        >>> df
-        ... .lazy()
-        ... .groupby("b")
-        ... .agg([col("a").apply(lambda x: x.sum())])
-        ... .collect()
-        ... )
+        >>> df.lazy()
+        ...     .groupby("b")
+        ...     .agg([col("a").apply(lambda x: x.sum())])
+        ...     .collect()
         shape: (3, 2)
         ╭─────┬─────╮
         │ b   ┆ a   │
@@ -2068,7 +2066,7 @@ class ExprStringNameSpace:
         --------
 
         >>> df = pl.DataFrame({
-        ...   'json_val': ['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
+        ...     'json_val': ['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
         ... })
         >>> df.select(pl.col('json_val').str.json_path_match('$.a')
         shape: (5,)
@@ -2219,12 +2217,12 @@ class ExprDateTimeNameSpace:
 
         >>> # can be used to perform a downsample operation
         >>> (date_range
-        ...  .to_frame()
-        ...  .groupby(
-        ...      pl.col("date_range").dt.buckets(timedelta(minutes=16)),
-        ...      maintain_order=True
-        ...  )
-        ...  .agg(pl.col("date_range").count())
+        ...     .to_frame()
+        ...     .groupby(
+        ...         pl.col("date_range").dt.buckets(timedelta(minutes=16)),
+        ...         maintain_order=True
+        ...     )
+        ...     .agg(pl.col("date_range").count())
         ... )
         shape: (4, 2)
         ┌─────────────────────┬──────────────────┐
