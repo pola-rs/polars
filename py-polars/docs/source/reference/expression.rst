@@ -182,6 +182,7 @@ Manipulation/ selection
     Expr.lower_bound
     Expr.upper_bound
     Expr.str_concat
+    Expr.reshape
 
 Column names
 ------------
@@ -222,7 +223,7 @@ TimeSeries
 ----------
 The following methods are available under the `expr.dt` attribute.
 
-.. currentmodule:: polars.lazy.expr
+.. currentmodule:: polars.internals.expr
 
 .. autosummary::
    :toctree: api/
@@ -241,13 +242,14 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.round
     ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.timestamp
+    ExprDateTimeNameSpace.buckets
 
 Strings
 -------
 
 The following methods are available under the `Expr.str` attribute.
 
-.. currentmodule:: polars.lazy.expr
+.. currentmodule:: polars.internals.expr
 
 .. autosummary::
    :toctree: api/
@@ -267,7 +269,7 @@ Lists
 -----
 The following methods are available under the `expr.arr` attribute.
 
-.. currentmodule:: polars.lazy.expr
+.. currentmodule:: polars.internals.expr
 
 .. autosummary::
    :toctree: api/

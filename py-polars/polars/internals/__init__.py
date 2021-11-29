@@ -7,6 +7,6 @@ from .expr import Expr, _selection_to_pyexpr_list, expr_to_lit_or_expr, wrap_exp
 from .frame import DataFrame, wrap_df
 from .functions import concat, date_range  # DataFrame.describe() & DataFrame.upsample()
 from .lazy_frame import LazyFrame, wrap_ldf
-from .lazy_functions import argsort_by, col, concat_list, lit
+from .lazy_functions import argsort_by, col, concat_list, lit, select
 from .series import Series, wrap_s
 from .whenthen import when  # used in expr.clip()

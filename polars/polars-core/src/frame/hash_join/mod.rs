@@ -1046,22 +1046,17 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::df;
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
+    ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
+    /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
+    ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
-    ///                              "Phosphorus (mg/100g)" => &[11, 22, 12])?;
-    ///     let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
-    ///                              "Potassium (mg/100g)" => &[107, 358, 115])?;
-    ///
-    ///     let df3: DataFrame = df1.join(&df2, "Fruit", "Name", JoinType::Inner, None)?;
-    ///     assert_eq!(df3.shape(), (3, 3));
-    ///     println!("{}", df3);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df3: DataFrame = df1.join(&df2, "Fruit", "Name", JoinType::Inner, None)?;
+    /// assert_eq!(df3.shape(), (3, 3));
+    /// println!("{}", df3);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -1240,20 +1235,18 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
     ///     left.inner_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn inner_join(
+    pub fn inner_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
         &self,
         other: &DataFrame,
-        left_on: &str,
-        right_on: &str,
+        left_on: S1,
+        right_on: S2,
     ) -> Result<DataFrame> {
-        let s_left = self.column(left_on)?;
-        let s_right = other.column(right_on)?;
-        self.inner_join_from_series(other, s_left, s_right, None)
+        self.join(other, left_on, right_on, JoinType::Inner, None)
     }
 
     pub(crate) fn inner_join_from_series(
@@ -1283,15 +1276,18 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
     ///     left.left_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn left_join(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
-        let s_left = self.column(left_on)?;
-        let s_right = other.column(right_on)?;
-        self.left_join_from_series(other, s_left, s_right, None)
+    pub fn left_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
+        &self,
+        other: &DataFrame,
+        left_on: S1,
+        right_on: S2,
+    ) -> Result<DataFrame> {
+        self.join(other, left_on, right_on, JoinType::Left, None)
     }
 
     pub(crate) fn left_join_from_series(
@@ -1322,20 +1318,18 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
     ///     left.outer_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn outer_join(
+    pub fn outer_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
         &self,
         other: &DataFrame,
-        left_on: &str,
-        right_on: &str,
+        left_on: S1,
+        right_on: S2,
     ) -> Result<DataFrame> {
-        let s_left = self.column(left_on)?;
-        let s_right = other.column(right_on)?;
-        self.outer_join_from_series(other, s_left, s_right, None)
+        self.join(other, left_on, right_on, JoinType::Outer, None)
     }
     pub(crate) fn outer_join_from_series(
         &self,
@@ -1666,7 +1660,7 @@ mod test {
         df.outer_join(&empty_df, "key", "key")?;
 
         let empty: Vec<String> = vec![];
-        let empty_df = DataFrame::new(vec![
+        let _empty_df = DataFrame::new(vec![
             Series::new("key", &empty),
             Series::new("eval", &empty),
         ])

@@ -264,11 +264,11 @@ pub unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
     indices: I,
 ) -> Arc<LargeStringArray> {
-    let iter = indices
-        .into_iter()
-        .map(|idx| Some(arr.value_unchecked(idx)));
-
-    Arc::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
+    let iter = indices.into_iter().map(|idx| {
+        debug_assert!(idx < arr.len());
+        arr.value_unchecked(idx)
+    });
+    Arc::new(MutableUtf8Array::<i64>::from_trusted_len_values_iter_unchecked(iter).into())
 }
 
 /// # Safety
@@ -281,6 +281,7 @@ pub unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
 ) -> Arc<LargeStringArray> {
     let validity = arr.validity().expect("should have nulls");
     let iter = indices.into_iter().map(|idx| {
+        debug_assert!(idx < arr.len());
         if validity.get_bit_unchecked(idx) {
             Some(arr.value_unchecked(idx))
         } else {

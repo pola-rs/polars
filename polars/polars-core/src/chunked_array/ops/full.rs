@@ -107,6 +107,18 @@ impl ListChunked {
 }
 
 #[cfg(feature = "object")]
+impl<T: PolarsObject> ChunkFull<T> for ObjectChunked<T> {
+    fn full(name: &str, value: T, length: usize) -> Self
+    where
+        Self: Sized,
+    {
+        let mut ca: Self = (0..length).map(|_| Some(value.clone())).collect();
+        ca.rename(name);
+        ca
+    }
+}
+
+#[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkFullNull for ObjectChunked<T> {
     fn full_null(name: &str, length: usize) -> ObjectChunked<T> {
         let mut ca: Self = (0..length).map(|_| None).collect();

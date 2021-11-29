@@ -26,6 +26,10 @@ use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use polars_io::csv::NullValues;
+#[cfg(feature = "csv-file")]
+use polars_io::csv_core::utils::get_reader_bytes;
+#[cfg(feature = "csv-file")]
+use polars_io::csv_core::utils::infer_file_schema;
 
 #[derive(Clone)]
 #[cfg(feature = "csv-file")]
@@ -147,6 +151,30 @@ impl<'a> LazyCsvReader<'a> {
     pub fn low_memory(mut self, toggle: bool) -> Self {
         self.low_memory = toggle;
         self
+    }
+
+    /// Modify a schema before we run the lazy scanning.
+    ///
+    /// Important! Run this function latest in the builder!
+    pub fn with_schema_modify<F>(mut self, f: F) -> Result<Self>
+    where
+        F: Fn(Schema) -> Result<Schema>,
+    {
+        let mut file = std::fs::File::open(&self.path)?;
+        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+
+        let (schema, _) = infer_file_schema(
+            &reader_bytes,
+            self.delimiter,
+            self.infer_schema_length,
+            self.has_header,
+            self.schema_overwrite,
+            &mut self.skip_rows,
+            self.comment_char,
+            self.quote_char,
+        )?;
+        let schema = f(schema)?;
+        Ok(self.with_schema(Arc::new(schema)))
     }
 
     pub fn finish(self) -> Result<LazyFrame> {

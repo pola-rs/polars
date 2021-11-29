@@ -60,10 +60,7 @@ fn arithmetic_helper<T, Kernel, F>(
 ) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    Kernel: Fn(
-        &PrimitiveArray<T::Native>,
-        &PrimitiveArray<T::Native>,
-    ) -> arrow::error::Result<PrimitiveArray<T::Native>>,
+    Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     let mut ca = match (lhs.len(), rhs.len()) {
@@ -72,7 +69,7 @@ where
             let chunks = lhs
                 .downcast_iter()
                 .zip(rhs.downcast_iter())
-                .map(|(lhs, rhs)| Arc::new(kernel(lhs, rhs).expect("output")) as ArrayRef)
+                .map(|(lhs, rhs)| Arc::new(kernel(lhs, rhs)) as ArrayRef)
                 .collect();
             lhs.copy_with_chunks(chunks)
         }

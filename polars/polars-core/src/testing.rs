@@ -5,49 +5,25 @@ use std::ops::Deref;
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`
     pub fn series_equal(&self, other: &Series) -> bool {
-        if self.get_data_ptr() == other.get_data_ptr() {
-            return true;
-        }
-        if self.len() != other.len() || self.null_count() != other.null_count() {
-            return false;
-        }
-        if self.dtype() != other.dtype()
-            && !(matches!(self.dtype(), DataType::Utf8 | DataType::Categorical)
-                || matches!(other.dtype(), DataType::Utf8 | DataType::Categorical))
-            && !(self.is_numeric() && other.is_numeric())
-        {
-            return false;
-        }
-        match self.equal(other).sum() {
-            None => false,
-            Some(sum) => sum as usize == self.len(),
+        if self.null_count() > 0 || other.null_count() > 0 {
+            false
+        } else {
+            self.series_equal_missing(other)
         }
     }
 
     /// Check if all values in series are equal where `None == None` evaluates to `true`.
     pub fn series_equal_missing(&self, other: &Series) -> bool {
-        if self.get_data_ptr() == other.get_data_ptr() {
-            return true;
-        }
-        let null_count_left = self.null_count();
-        if self.len() != other.len() || null_count_left != other.null_count() {
-            return false;
-        }
-        if self.dtype() != other.dtype()
-            && !(matches!(self.dtype(), DataType::Utf8 | DataType::Categorical)
-                || matches!(other.dtype(), DataType::Utf8 | DataType::Categorical))
-            && !(self.is_numeric() && other.is_numeric())
-        {
-            return false;
-        }
-        // if all null and previous check did not return (so other is also all null)
-        if null_count_left == self.len() {
-            return true;
-        }
-        match self.eq_missing(other).sum() {
-            None => false,
-            Some(sum) => sum as usize == self.len(),
-        }
+        // differences from Partial::eq in that numerical dtype may be different
+        self.len() == other.len()
+            && self.name() == other.name()
+            && self.null_count() == other.null_count()
+            && self
+                .eq_missing(other)
+                .sum()
+                .map(|s| s as usize)
+                .unwrap_or(0)
+                == self.len()
     }
 
     /// Get a pointer to the underlying data of this Series.
@@ -70,12 +46,30 @@ impl PartialEq for Series {
         self.len() == other.len()
             && self.field() == other.field()
             && self.null_count() == other.null_count()
-            && self.eq_missing(other).sum().map(|s| s as usize) == Some(self.len())
+            && self
+                .eq_missing(other)
+                .sum()
+                .map(|s| s as usize)
+                .unwrap_or(0)
+                == self.len()
     }
 }
 
 impl DataFrame {
     /// Check if `DataFrames` are equal. Note that `None == None` evaluates to `false`
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    /// let df2: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    ///
+    /// assert!(!df1.frame_equal(&df2));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
     pub fn frame_equal(&self, other: &DataFrame) -> bool {
         if self.shape() != other.shape() {
             return false;
@@ -89,6 +83,19 @@ impl DataFrame {
     }
 
     /// Check if all values in `DataFrames` are equal where `None == None` evaluates to `true`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    /// let df2: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    ///
+    /// assert!(df1.frame_equal_missing(&df2));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
     pub fn frame_equal_missing(&self, other: &DataFrame) -> bool {
         if self.shape() != other.shape() {
             return false;
@@ -102,6 +109,18 @@ impl DataFrame {
     }
 
     /// Checks if the Arc ptrs of the Series are equal
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Atomic number" => &[1, 51, 300],
+    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
+    /// let df2: &DataFrame = &df1;
+    ///
+    /// assert!(df1.ptr_equal(df2));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
     pub fn ptr_equal(&self, other: &DataFrame) -> bool {
         self.columns
             .iter()
@@ -128,7 +147,7 @@ mod test {
     #[test]
     fn test_series_equal() {
         let a = Series::new("a", &[1, 2, 3]);
-        let b = Series::new("b", &[1, 2, 3]);
+        let b = Series::new("a", &[1, 2, 3]);
         assert!(a.series_equal(&b));
 
         let s = Series::new("foo", &[None, Some(1i64)]);

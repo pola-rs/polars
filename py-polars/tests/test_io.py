@@ -5,7 +5,7 @@ import io
 import pickle
 import zlib
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple, Type
+from typing import Dict, Type
 
 import numpy as np
 import pandas as pd
@@ -18,16 +18,22 @@ from polars import DataType
 def test_to_from_buffer(df: pl.DataFrame) -> None:
     df = df.drop("strings_nulls")
 
-    for to_fn, from_fn in zip(
+    for to_fn, from_fn, text_based in zip(
         [df.to_parquet, df.to_csv, df.to_ipc, df.to_json],
         [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_json],
+        [False, True, False, True],
     ):
         f = io.BytesIO()
         to_fn(f)  # type: ignore
         f.seek(0)
 
         df_1 = from_fn(f)  # type: ignore
-        assert df.frame_equal(df_1, null_equal=True)
+        # some type information is lost due to text conversion
+        if text_based:
+            df_1 = df_1.with_columns(
+                [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
+            )
+        assert df.frame_equal(df_1)
 
 
 def test_select_columns_and_projection_from_buffer() -> None:
@@ -101,7 +107,7 @@ def test_parquet_chunks() -> None:
 
 def test_parquet_datetime() -> None:
     """
-    This failed because parquet writers cast datetimeto Date
+    This failed because parquet writers cast datetime to Date
     """
     f = io.BytesIO()
     data = {
@@ -267,7 +273,7 @@ a,b,c
     assert out.frame_equal(expected)
 
     # no compression
-    f2 = io.BytesIO(b"a, b\n1,2\n")
+    f2 = io.BytesIO(b"a,b\n1,2\n")
     out2 = pl.read_csv(f2)
     expected = pl.DataFrame({"a": [1], "b": [2]})
     assert out2.frame_equal(expected)

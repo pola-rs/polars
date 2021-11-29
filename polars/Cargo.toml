@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.17.0"
+version = "0.18.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -36,7 +36,7 @@ lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 strings = ["polars-core/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
-object = ["polars-core/object"]
+object = ["polars-core/object", "polars-lazy/object"]
 
 # support for arrows json parsing
 json = ["polars-io", "polars-io/json"]
@@ -175,9 +175,9 @@ bench = [
 ]
 
 [dependencies]
-polars-core = { version = "0.17.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.17.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.17.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-core = { version = "0.18.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.18.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.18.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"

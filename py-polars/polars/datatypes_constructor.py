@@ -4,6 +4,7 @@ import numpy as np
 
 from polars.datatypes import (
     Boolean,
+    Categorical,
     DataType,
     Date,
     Datetime,
@@ -25,7 +26,7 @@ try:
     from polars.polars import PySeries
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 
@@ -46,6 +47,7 @@ if not _DOCUMENTING:
         Boolean: PySeries.new_opt_bool,
         Utf8: PySeries.new_str,
         Object: PySeries.new_object,
+        Categorical: PySeries.new_str,
     }
 
 
@@ -57,7 +59,7 @@ def polars_type_to_constructor(
     """
     try:
         return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
-    except KeyError:
+    except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot construct PySeries for type {dtype}.")
 
 

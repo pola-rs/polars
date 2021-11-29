@@ -12,7 +12,7 @@ try:
     from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars import internals as pli
@@ -53,6 +53,7 @@ class LazyFrame:
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
+        with_column_names: Optional[Callable[[tp.List[str]], tp.List[str]]] = None,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -79,6 +80,7 @@ class LazyFrame:
             quote_char,
             processed_null_values,
             infer_schema_length,
+            with_column_names,
         )
         return self
 
@@ -255,6 +257,9 @@ class LazyFrame:
         """
         Collect into a DataFrame.
 
+        Note: use `fetch` if you want to run this query on the first `n` rows only.
+        This can be a huge time saver in debugging queries.
+
         Parameters
         ----------
         type_coercion
@@ -374,7 +379,7 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.cache())
 
-    def filter(self, predicate: "pli.Expr") -> "LazyFrame":
+    def filter(self, predicate: Union["pli.Expr", str]) -> "LazyFrame":
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -739,9 +744,12 @@ class LazyFrame:
 
     def head(self, n: int) -> "LazyFrame":
         """
-        Get the first `n` rows of the DataFrame
-        Note if you don't want the rows to be scanned,
-        use the `fetch` operation.
+        Gets the first `n` rows of the DataFrame. You probably don't want to use this!
+
+        Consider using the `fetch` operation. The `fetch` operation will truly load the first `n`
+        rows lazily.
+
+        This operation instead loads all the rows and only applies the `head` at the end.
 
         Parameters
         ----------

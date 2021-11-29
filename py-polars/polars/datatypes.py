@@ -6,7 +6,7 @@ try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
 from _ctypes import _SimpleCData
@@ -179,35 +179,24 @@ if _PYARROW_AVAILABLE:
     }
 
 
-def date_like_to_physical(dtype: Type[DataType]) -> Type[DataType]:
-    #  TODO: add more
-    if dtype == Date:
-        return Int32
-    if dtype == Datetime:
-        return Int64
-    if dtype == Time:
-        return Int64
-    return dtype
-
-
 def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:
     try:
         return _DTYPE_TO_CTYPE[dtype]
-    except KeyError:
+    except KeyError:  # pragma: no cover
         raise NotImplementedError
 
 
 def dtype_to_ffiname(dtype: Type[DataType]) -> str:
     try:
         return _DTYPE_TO_FFINAME[dtype]
-    except KeyError:
+    except KeyError:  # pragma: no cover
         raise NotImplementedError
 
 
 def dtype_to_py_type(dtype: Type[DataType]) -> Type:
     try:
         return _DTYPE_TO_PY_TYPE[dtype]
-    except KeyError:
+    except KeyError:  # pragma: no cover
         raise NotImplementedError
 
 
@@ -218,7 +207,7 @@ def py_type_to_dtype(data_type: Type[Any]) -> Type[DataType]:
 
     try:
         return _PY_TYPE_TO_DTYPE[data_type]
-    except KeyError:
+    except KeyError:  # pragma: no cover
         raise NotImplementedError
 
 
@@ -228,7 +217,7 @@ def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
     """
     try:
         return _PY_TYPE_TO_ARROW_TYPE[dtype]
-    except KeyError:
+    except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
 
 

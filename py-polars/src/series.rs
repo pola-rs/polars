@@ -196,6 +196,12 @@ impl PySeries {
     }
 
     #[staticmethod]
+    pub fn new_series_list(name: &str, val: Vec<Self>, _strict: bool) -> Self {
+        let series_vec = to_series_collection(val);
+        Series::new(name, &series_vec).into()
+    }
+
+    #[staticmethod]
     pub fn repeat(name: &str, val: &PyAny, n: usize, dtype: &PyAny) -> Self {
         let str_repr = dtype.str().unwrap().to_str().unwrap();
         let dtype = str_to_polarstype(str_repr);
@@ -580,8 +586,10 @@ impl PySeries {
         s.into()
     }
 
-    pub fn series_equal(&self, other: &PySeries, null_equal: bool) -> bool {
-        if null_equal {
+    pub fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
+        if strict {
+            self.series.eq(&other.series)
+        } else if null_equal {
             self.series.series_equal_missing(&other.series)
         } else {
             self.series.series_equal(&other.series)
@@ -1346,6 +1354,11 @@ impl PySeries {
 
     pub fn abs(&self) -> PyResult<Self> {
         let out = self.series.abs().map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
+
+    pub fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
+        let out = self.series.reshape(&dims).map_err(PyPolarsEr::from)?;
         Ok(out.into())
     }
 }

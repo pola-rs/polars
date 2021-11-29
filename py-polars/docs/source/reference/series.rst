@@ -156,6 +156,7 @@ Manipulation/ selection
     Series.interpolate
     Series.clip
     Series.str_concat
+    Series.reshape
 
 Various
 --------
@@ -172,7 +173,7 @@ TimeSeries
 ----------
 The following methods are available under the `Series.dt` attribute.
 
-.. currentmodule:: polars.eager.series
+.. currentmodule:: polars.internals.series
 
 .. autosummary::
    :toctree: api/
@@ -195,6 +196,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.median
     DateTimeNameSpace.mean
     DateTimeNameSpace.round
+    DateTimeNameSpace.buckets
 
 
 Strings
@@ -202,7 +204,7 @@ Strings
 
 The following methods are available under the `Series.str` attribute.
 
-.. currentmodule:: polars.eager.series
+.. currentmodule:: polars.internals.series
 
 .. autosummary::
    :toctree: api/
@@ -225,7 +227,7 @@ Lists
 
 The following methods are available under the `Series.arr` attribute.
 
-.. currentmodule:: polars.eager.series
+.. currentmodule:: polars.internals.series
 
 .. autosummary::
    :toctree: api/

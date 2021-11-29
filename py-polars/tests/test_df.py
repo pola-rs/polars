@@ -1,4 +1,6 @@
 # flake8: noqa: W191,E101
+import sys
+import typing as tp
 from builtins import range
 from datetime import datetime
 from io import BytesIO
@@ -58,6 +60,15 @@ def test_init_ndarray() -> None:
     truth = pl.DataFrame({"a": [1, 2, 3]})
     assert df.frame_equal(truth)
 
+    # 2D array - default to column orientation
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="column")
+    truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
+    assert df.frame_equal(truth)
+
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="row")
+    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
+    assert df.frame_equal(truth)
+
     # TODO: Uncomment tests below when removing deprecation warning
     # # 2D array - default to column orientation
     # df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
@@ -80,7 +91,7 @@ def test_init_ndarray() -> None:
 
     # 3D array
     with pytest.raises(ValueError):
-        df = pl.DataFrame(np.random.randn(2, 2, 2))
+        _ = pl.DataFrame(np.random.randn(2, 2, 2))
 
 
 # TODO: Remove this test case when removing deprecated behaviour
@@ -95,7 +106,7 @@ def test_init_ndarray_deprecated() -> None:
 def test_init_arrow() -> None:
     # Handle unnamed column
     df = pl.DataFrame(pa.table({"a": [1, 2], None: [3, 4]}))
-    truth = pl.DataFrame({"a": [1, 2], "column_1": [3, 4]})
+    truth = pl.DataFrame({"a": [1, 2], "None": [3, 4]})
     assert df.frame_equal(truth)
 
     # Rename columns
@@ -205,6 +216,10 @@ def test_init_records() -> None:
     assert df.frame_equal(expected)
     assert df.to_dicts() == dicts
 
+    df_cd = pl.DataFrame(dicts, columns=["c", "d"])
+    expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
+    assert df_cd.frame_equal(expected)
+
 
 def test_selection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
@@ -300,7 +315,7 @@ def test_replace() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
     s = pl.Series("c", [True, False, True])
     df.replace("a", s)
-    assert df.frame_equal(pl.DataFrame({"c": [True, False, True], "b": [1, 2, 3]}))
+    assert df.frame_equal(pl.DataFrame({"a": [True, False, True], "b": [1, 2, 3]}))
 
 
 def test_assignment() -> None:
@@ -362,7 +377,10 @@ def test_groupby() -> None:
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
     assert (
-        df.groupby("a").groups().sort("a")["a"].series_equal(pl.Series(["a", "b", "c"]))
+        df.groupby("a")
+        .groups()
+        .sort("a")["a"]
+        .series_equal(pl.Series("a", ["a", "b", "c"]))
     )
 
     for subdf in df.groupby("a"):  # type: ignore
@@ -408,10 +426,10 @@ def test_join() -> None:
     )
 
     joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
-    assert joined["b"].series_equal(pl.Series("", [1, 3, 2, 2]))
+    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2]))
     joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
     assert joined["c_right"].is_null().sum() == 1
-    assert joined["b"].series_equal(pl.Series("", [1, 3, 2, 2, 4]))
+    assert joined["b"].series_equal(pl.Series("b", [1, 3, 2, 2, 4]))
     joined = df_left.join(df_right, left_on="a", right_on="a", how="outer").sort("a")
     assert joined["c_right"].null_count() == 1
     assert joined["c"].null_count() == 1
@@ -608,13 +626,15 @@ def test_concat() -> None:
 
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
-    assert pl.arg_where(s).series_equal(pl.Series([0, 2]))
+    assert pl.arg_where(s).cast(int).series_equal(pl.Series([0, 2]))
 
 
 def test_get_dummies() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     res = pl.get_dummies(df)
-    expected = pl.DataFrame({"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]})
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]}
+    ).with_columns(pl.all().cast(pl.UInt8))
     assert res.frame_equal(expected)
 
 
@@ -786,7 +806,7 @@ def test_describe() -> None:
         }
     )
     assert df.describe().shape != df.shape
-    assert set(df.describe().select_at_idx(2)) == set([1.0, 4.0, 5.0, 6.0])
+    assert set(df.describe().select_at_idx(2)) == {1.0, 4.0, 5.0, 6.0}
 
 
 def test_string_cache_eager_lazy() -> None:
@@ -805,7 +825,7 @@ def test_string_cache_eager_lazy() -> None:
             "region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"],
             "score": [2.0, 1.0, None, 3.0, None],
         }
-    )
+    ).with_column(pl.col("region_ids").cast(pl.Categorical))
 
     assert df1.join(
         df2, left_on="region_ids", right_on="seq_name", how="left"
@@ -828,6 +848,9 @@ def test_to_numpy() -> None:
 def test_argsort_by(df: pl.DataFrame) -> None:
     a = df[pl.argsort_by(["int_nulls", "floats"], reverse=[False, True])]["int_nulls"]
     assert a == [1, 0, 3]
+
+    a = df[pl.argsort_by(["int_nulls", "floats"], reverse=False)]["int_nulls"]
+    assert a == [1, 0, 2]
 
 
 def test_literal_series() -> None:
@@ -864,6 +887,8 @@ def test_rename(df: pl.DataFrame) -> None:
 
 
 def test_to_json(df: pl.DataFrame) -> None:
+    # text based conversion loses time info
+    df = df.select(pl.all().exclude(["cat", "time"]))
     s: str = df.to_json(to_string=True)  # type: ignore
     # TODO add overload on to_json()
     out = pl.read_json(s)
@@ -873,7 +898,9 @@ def test_to_json(df: pl.DataFrame) -> None:
 def test_from_rows() -> None:
     df = pl.from_records([[1, 2, "foo"], [2, 3, "bar"]], orient="row")
     assert df.frame_equal(
-        pl.DataFrame({"column_0": [1, 2], "foo": [2, 3], "column_2": ["foo", "bar"]})
+        pl.DataFrame(
+            {"column_0": [1, 2], "column_1": [2, 3], "column_2": ["foo", "bar"]}
+        )
     )
 
     df = pl.from_records(
@@ -1066,7 +1093,6 @@ def test_asof_join() -> None:
 2016-05-25 13:30:00.075""".split(
         "\n"
     )
-    dates
 
     ticker = """GOOG
 MSFT
@@ -1198,7 +1224,7 @@ def test_transpose() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     expected = pl.DataFrame(
         {
-            "columns": ["a", "b"],
+            "column": ["a", "b"],
             "column_0": [1, 1],
             "column_1": [2, 2],
             "column_2": [3, 3],
@@ -1206,3 +1232,79 @@ def test_transpose() -> None:
     )
     out = df.transpose(include_header=True)
     assert expected.frame_equal(out)
+
+    out = df.transpose(include_header=False, column_names=["a", "b", "c"])
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1],
+            "b": [2, 2],
+            "c": [3, 3],
+        }
+    )
+    assert expected.frame_equal(out)
+
+    out = df.transpose(
+        include_header=True, header_name="foo", column_names=["a", "b", "c"]
+    )
+    expected = pl.DataFrame(
+        {
+            "foo": ["a", "b"],
+            "a": [1, 1],
+            "b": [2, 2],
+            "c": [3, 3],
+        }
+    )
+    assert expected.frame_equal(out)
+
+    def name_generator() -> tp.Iterator[str]:
+        base_name = "my_column_"
+        count = 0
+        while True:
+            yield f"{base_name}{count}"
+            count += 1
+
+    out = df.transpose(include_header=False, column_names=name_generator())
+    expected = pl.DataFrame(
+        {
+            "my_column_0": [1, 1],
+            "my_column_1": [2, 2],
+            "my_column_2": [3, 3],
+        }
+    )
+    assert expected.frame_equal(out)
+
+
+def test_extension() -> None:
+    class Foo:
+        def __init__(self, value):  # type: ignore
+            self.value = value
+
+        def __repr__(self):  # type: ignore
+            return f"foo({self.value})"
+
+    foos = [Foo(1), Foo(2), Foo(3)]
+    # I believe foos, stack, and sys.getrefcount have a ref
+    base_count = 3
+    assert sys.getrefcount(foos[0]) == base_count
+
+    df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
+    assert sys.getrefcount(foos[0]) == base_count + 1
+    del df
+    assert sys.getrefcount(foos[0]) == base_count
+
+    df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
+    assert sys.getrefcount(foos[0]) == base_count + 1
+
+    out = df.groupby("groups", maintain_order=True).agg(pl.col("a").list().alias("a"))
+    assert sys.getrefcount(foos[0]) == base_count + 2
+    s = out["a"].explode()
+    assert sys.getrefcount(foos[0]) == base_count + 3
+    del s
+    assert sys.getrefcount(foos[0]) == base_count + 2
+
+    assert out["a"].explode().to_list() == foos
+    assert sys.getrefcount(foos[0]) == base_count + 2
+    del out
+    assert sys.getrefcount(foos[0]) == base_count + 1
+    del df
+    assert sys.getrefcount(foos[0]) == base_count

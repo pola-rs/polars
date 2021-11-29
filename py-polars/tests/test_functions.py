@@ -14,10 +14,10 @@ def test_date_datetime() -> None:
     out = df.select(
         [
             pl.all(),
-            pl.datetime("year", "month", "day", "hour").dt.hour().alias("h2"),
-            pl.date("year", "month", "day").dt.day().alias("date"),
+            pl.datetime("year", "month", "day", "hour").dt.hour().cast(int).alias("h2"),
+            pl.date("year", "month", "day").dt.day().cast(int).alias("date"),
         ]
     )
 
-    assert out["date"].series_equal(df["day"])
-    assert out["h2"].series_equal(df["hour"])
+    assert out["date"].series_equal(df["day"].rename("date"))
+    assert out["h2"].series_equal(df["hour"].rename("h2"))

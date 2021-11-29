@@ -8,42 +8,50 @@ where
     T: PolarsNumericType,
 {
     fn take_every(&self, n: usize) -> ChunkedArray<T> {
-        if !self.has_validity() {
+        let mut ca = if !self.has_validity() {
             let a: NoNull<_> = self.into_no_null_iter().step_by(n).collect();
             a.into_inner()
         } else {
             self.into_iter().step_by(n).collect()
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 
 impl ChunkTakeEvery<BooleanType> for BooleanChunked {
     fn take_every(&self, n: usize) -> BooleanChunked {
-        if !self.has_validity() {
+        let mut ca: Self = if !self.has_validity() {
             self.into_no_null_iter().step_by(n).collect()
         } else {
             self.into_iter().step_by(n).collect()
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 
 impl ChunkTakeEvery<Utf8Type> for Utf8Chunked {
     fn take_every(&self, n: usize) -> Utf8Chunked {
-        if !self.has_validity() {
+        let mut ca: Self = if !self.has_validity() {
             self.into_no_null_iter().step_by(n).collect()
         } else {
             self.into_iter().step_by(n).collect()
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 
 impl ChunkTakeEvery<ListType> for ListChunked {
     fn take_every(&self, n: usize) -> ListChunked {
-        if !self.has_validity() {
+        let mut ca: Self = if !self.has_validity() {
             self.into_no_null_iter().step_by(n).collect()
         } else {
             self.into_iter().step_by(n).collect()
-        }
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 

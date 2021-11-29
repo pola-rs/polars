@@ -523,7 +523,7 @@ mod test {
         let expr = node_to_exp(root, &expr_arena);
         assert_eq!(
             format!("{:?}", &expr),
-            format!("{:?}", &lit(true).and(predicate_expr))
+            format!("{:?}", predicate_expr.and(lit(true)))
         );
     }
 }

@@ -36,7 +36,8 @@ def test_from_pandas_datetime() -> None:
 
 def test_arrow_list_roundtrip() -> None:
     # https://github.com/pola-rs/polars/issues/1064
-    pl.from_arrow(pa.table({"a": [1], "b": [[1, 2]]})).to_arrow()
+    tbl = pa.table({"a": [1], "b": [[1, 2]]})
+    assert pl.from_arrow(tbl).to_arrow().shape == tbl.shape
 
 
 def test_arrow_dict_to_polars() -> None:
@@ -46,7 +47,7 @@ def test_arrow_dict_to_polars() -> None:
     ).cast(pa.large_utf8())
 
     s = pl.Series(
-        name="s",
+        name="pa_dict",
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
 
@@ -110,11 +111,19 @@ def test_from_arrow() -> None:
     df = pl.from_arrow(data)
     assert df.shape == (3, 2)
 
+    # if not a PyArrow type, raise a ValueError
+    with pytest.raises(ValueError):
+        _ = pl.from_arrow([1, 2])  # type: ignore
+
 
 def test_from_pandas_dataframe() -> None:
     pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
     df = pl.from_pandas(pd_df)
     assert df.shape == (2, 3)
+
+    # if not a Pandas dataframe, raise a ValueError
+    with pytest.raises(ValueError):
+        _ = pl.from_pandas([1, 2])  # type: ignore
 
 
 def test_from_pandas_series() -> None:

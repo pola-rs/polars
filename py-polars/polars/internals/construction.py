@@ -6,10 +6,12 @@ import numpy as np
 
 from polars import internals as pli
 from polars.datatypes import (
+    Categorical,
     DataType,
     Date,
     Datetime,
     Float32,
+    Time,
     py_type_to_arrow_type,
     py_type_to_dtype,
 )
@@ -23,10 +25,10 @@ try:
     from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
     import pyarrow as pa
 
@@ -36,7 +38,7 @@ else:
         import pyarrow as pa
 
         _PYARROW_AVAILABLE = True
-    except ImportError:
+    except ImportError:  # pragma: no cover
         _PYARROW_AVAILABLE = False
 
 ################################
@@ -69,7 +71,7 @@ def numpy_to_pyseries(
     """
     Construct a PySeries from a numpy array.
     """
-    if not values.data.contiguous:
+    if not values.flags["C_CONTIGUOUS"]:
         values = np.array(values)
 
     if len(values.shape) == 1:
@@ -112,6 +114,11 @@ def sequence_to_pyseries(
             pyseries = pyseries.cast(str(Date), True)
         elif dtype == Datetime:
             pyseries = pyseries.cast(str(Datetime), True)
+        elif dtype == Time:
+            pyseries = pyseries.cast(str(Time), True)
+        elif dtype == Categorical:
+            pyseries = pyseries.cast(str(Categorical), True)
+
         return pyseries
 
     else:
@@ -119,33 +126,51 @@ def sequence_to_pyseries(
         dtype_ = type(value) if value is not None else float
 
         if dtype_ == date or dtype_ == datetime:
-            if not _PYARROW_AVAILABLE:
+            if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a Sequence of date or datetime values to a PySeries."
                 )
             return arrow_to_pyseries(name, pa.array(values))
 
-        elif dtype_ == list or dtype_ == tuple or dtype_ == pli.Series:
+        elif dtype_ == list or dtype_ == tuple:
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
 
+            # logs will show a panic if we infer wrong dtype
+            # and its hard to error from rust side
+            # to reduce the likelihood of this happening
+            # we infer the dtype of first 100 elements
+            # if all() fails, we will hit the PySeries.new_object
             if not _PYARROW_AVAILABLE:
-                dtype = py_type_to_dtype(nested_dtype)
-                return PySeries.new_list(name, values, dtype)
+                if all(
+                    isinstance(val, nested_dtype)
+                    for val in values[: min(100, len(values))]
+                ):  # pragma: no cover
+                    dtype = py_type_to_dtype(nested_dtype)
+                    try:
+                        return PySeries.new_list(name, values, dtype)
+                    except BaseException:
+                        pass
+                # pass we create an object if we get here
+            else:
+                try:
+                    nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
+                except ValueError as e:
+                    raise ValueError(
+                        f"Cannot construct Series from sequence of {nested_dtype}."
+                    ) from e
 
-            try:
-                nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
-            except ValueError as e:
-                raise ValueError(
-                    f"Cannot construct Series from sequence of {nested_dtype}."
-                ) from e
+                try:
+                    arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
+                    return arrow_to_pyseries(name, arrow_values)
+                except pa.lib.ArrowInvalid:
+                    pass
 
-            try:
-                arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
-                return arrow_to_pyseries(name, arrow_values)
-            # failure expected for mixed sequences like `[[12], "foo", 9]`
-            except pa.lib.ArrowInvalid:
-                return PySeries.new_object(name, values, strict)
+            # Convert mixed sequences like `[[12], "foo", 9]`
+            return PySeries.new_object(name, values, strict)
+
+        elif dtype_ == pli.Series:
+            return PySeries.new_series_list(name, [v.inner() for v in values], strict)
 
         else:
             constructor = py_type_to_constructor(dtype_)
@@ -201,7 +226,7 @@ def pandas_to_pyseries(
     """
     Construct a PySeries from a pandas Series or DatetimeIndex.
     """
-    if not _PYARROW_AVAILABLE:
+    if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
             "'pyarrow' is required when constructing a PySeries from a pandas Series."
         )
@@ -352,7 +377,7 @@ def arrow_to_pydf(
     """
     Construct a PyDataFrame from an Arrow Table.
     """
-    if not _PYARROW_AVAILABLE:
+    if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
         )
@@ -403,7 +428,7 @@ def pandas_to_pydf(
     """
     Construct a PyDataFrame from a pandas DataFrame.
     """
-    if not _PYARROW_AVAILABLE:
+    if not _PYARROW_AVAILABLE:  # pragma: no cover
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from a pandas DataFrame."
         )
@@ -421,10 +446,11 @@ def pandas_to_pydf(
 def coerce_arrow(array: "pa.Array") -> "pa.Array":
     # also coerces timezone to naive representation
     # units are accounted for by pyarrow
-    if "timestamp" in str(array.type):
-        warnings.warn(
-            "Conversion of (potentially) timezone aware to naive datetimes. TZ information may be lost",
-        )
+    if isinstance(array, pa.TimestampArray):
+        if array.type.tz is not None:
+            warnings.warn(
+                "Conversion of timezone aware to naive datetimes. TZ information may be lost",
+            )
         ts_ms = pa.compute.cast(array, pa.timestamp("ms"), safe=False)
         ms = pa.compute.cast(ts_ms, pa.int64())
         del ts_ms

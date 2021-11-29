@@ -1,6 +1,6 @@
 import copy
 import typing as tp
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
@@ -9,20 +9,18 @@ try:
     from polars.polars import PyExpr
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars import internals as pli
 from polars.datatypes import (
-    Boolean,
     DataType,
     Date,
     Datetime,
     Float64,
-    Int64,
     Object,
     UInt32,
-    Utf8,
+    py_type_to_dtype,
 )
 
 
@@ -58,12 +56,7 @@ class Expr:
         return self
 
     def __to_pyexpr(self, other: Any) -> "PyExpr":
-        if isinstance(other, PyExpr):
-            return other
-        elif isinstance(other, Expr):
-            return other._pyexpr
-        else:
-            return pli.lit(other)._pyexpr
+        return self.__to_expr(other)._pyexpr
 
     def __to_expr(self, other: Any) -> "Expr":
         if isinstance(other, Expr):
@@ -187,16 +180,13 @@ class Expr:
         else:
             dtype = None  # type: ignore
 
-        args = []
-        for inp in inputs:
-            if not isinstance(inp, Expr):
-                args.append(inp)
+        args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
         def function(s: "pli.Series") -> "pli.Series":
-            return ufunc(s, *args, **kwargs)
+            return ufunc(s, *args, **kwargs)  # pragma: no cover
 
         if "dtype" in kwargs:
-            return self.map(function, return_dtype=kwargs["dtype"])
+            dtype = kwargs["dtype"]
 
         return self.map(function, return_dtype=dtype)
 
@@ -672,14 +662,7 @@ class Expr:
         strict
             Throw an error if a cast could not be done for instance due to an overflow
         """
-        if dtype == str:
-            dtype = Utf8
-        elif dtype == bool:
-            dtype = Boolean
-        elif dtype == float:
-            dtype = Float64
-        elif dtype == int:
-            dtype = Int64
+        dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.cast(dtype, strict))
 
     def sort(self, reverse: bool = False) -> "Expr":
@@ -750,7 +733,9 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(self, index: Union[tp.List[int], "Expr", "pli.Series"]) -> "Expr":
+    def take(
+        self, index: Union[tp.List[int], "Expr", "pli.Series", np.ndarray]
+    ) -> "Expr":
         """
         Take values by index.
 
@@ -1052,14 +1037,8 @@ class Expr:
         agg_list
 
         """
-        if return_dtype == str:
-            return_dtype = Utf8
-        elif return_dtype == int:
-            return_dtype = Int64
-        elif return_dtype == float:
-            return_dtype = Float64
-        elif return_dtype == bool:
-            return_dtype = Boolean
+        if return_dtype is not None:
+            return_dtype = py_type_to_dtype(return_dtype)
         return wrap_expr(self._pyexpr.map(f, return_dtype, agg_list))
 
     def apply(
@@ -1905,6 +1884,24 @@ class Expr:
         """
         return np.arctan(self)  # type: ignore
 
+    def reshape(self, dims: tp.Tuple[int, ...]) -> "Expr":
+        """
+        Reshape this Expr to a flat series, shape: (len,)
+        or a List series, shape: (rows, cols)
+
+        if a -1 is used in any of the dimensions, that dimension is inferred.
+
+        Parameters
+        ----------
+        dims
+            Tuple of the dimension sizes
+
+        Returns
+        -------
+        Expr
+        """
+        return wrap_expr(self._pyexpr.reshape(dims))
+
 
 class ExprListNameSpace:
     """
@@ -2169,6 +2166,76 @@ class ExprDateTimeNameSpace:
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
+
+    def buckets(self, interval: timedelta) -> Expr:
+        """
+        Divide the date/ datetime range into buckets.
+        Data will be sorted by this operation.
+
+        Parameters
+        ----------
+        interval
+            python timedelta to indicate bucket size
+
+        Returns
+        -------
+        Date/Datetime series
+
+        Examples
+        --------
+        >>> from datetime import datetime, timedelta
+        >>> import polars as pl
+        >>> date_range = pl.date_range(
+        >>> low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
+        >>> high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
+        >>> interval=timedelta(minutes=8),
+        >>> name="date_range")
+        >>>
+        >>> date_range.dt.buckets(timedelta(minutes=8))
+        shape: (8,)
+        Series: 'date_range' [datetime]
+        [
+            2000-10-01 23:30:00
+            2000-10-01 23:30:00
+            2000-10-01 23:38:00
+            2000-10-01 23:46:00
+            2000-10-01 23:54:00
+            2000-10-02 00:02:00
+            2000-10-02 00:10:00
+            2000-10-02 00:18:00
+        ]
+
+        >>> # can be used to perform a downsample operation
+        >>> (date_range
+        >>>  .to_frame()
+        >>>  .groupby(
+        >>>      pl.col("date_range").dt.buckets(timedelta(minutes=16)),
+        >>>      maintain_order=True
+        >>>  )
+        >>>  .agg(pl.col("date_range").count())
+        >>> )
+        shape: (4, 2)
+        ┌─────────────────────┬──────────────────┐
+        │ date_range          ┆ date_range_count │
+        │ ---                 ┆ ---              │
+        │ datetime            ┆ u32              │
+        ╞═════════════════════╪══════════════════╡
+        │ 2000-10-01 23:30:00 ┆ 3                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2000-10-01 23:46:00 ┆ 2                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2000-10-02 00:02:00 ┆ 2                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2000-10-02 00:18:00 ┆ 1                │
+        └─────────────────────┴──────────────────┘
+
+        """
+
+        return wrap_expr(
+            self._pyexpr.date_buckets(
+                interval.days, interval.seconds, interval.microseconds
+            )
+        )
 
     def strftime(self, fmt: str) -> Expr:
         """

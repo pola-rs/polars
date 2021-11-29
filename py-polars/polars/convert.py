@@ -4,7 +4,7 @@ import numpy as np
 
 from polars.internals import DataFrame, Series
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
     import pyarrow as pa
 
@@ -14,7 +14,7 @@ else:
         import pyarrow as pa
 
         _PYARROW_AVAILABLE = True
-    except ImportError:
+    except ImportError:  # pragma: no cover
         _PYARROW_AVAILABLE = False
 
 
@@ -139,7 +139,7 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
 
 
 def from_arrow(
-    a: Union["pa.Table", "pa.Array"], rechunk: bool = True
+    a: Union["pa.Table", "pa.Array", "pa.ChunkedArray"], rechunk: bool = True
 ) -> Union[DataFrame, Series]:
     """
     Create a DataFrame or Series from an Arrow Table or Array.
@@ -192,7 +192,9 @@ def from_arrow(
     ]
     """
     if not _PYARROW_AVAILABLE:
-        raise ImportError("'pyarrow' is required when using from_arrow().")
+        raise ImportError(
+            "'pyarrow' is required when using from_arrow()."
+        )  # pragma: no cover
     if isinstance(a, pa.Table):
         return DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, (pa.Array, pa.ChunkedArray)):
@@ -257,7 +259,7 @@ def from_pandas(
     """
     try:
         import pandas as pd
-    except ImportError as e:
+    except ImportError as e:  # pragma: no cover
         raise ImportError("'pandas' is required when using from_pandas().") from e
 
     if isinstance(df, (pd.Series, pd.DatetimeIndex)):

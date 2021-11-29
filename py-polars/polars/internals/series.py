@@ -1,5 +1,5 @@
 import typing as tp
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from numbers import Number
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
@@ -9,7 +9,7 @@ try:
     import pyarrow as pa
 
     _PYARROW_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
 from polars import internals as pli
@@ -25,7 +25,7 @@ try:
     from polars.polars import PyDataFrame, PySeries
 
     _DOCUMENTING = False
-except ImportError:
+except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars.datatypes import (
@@ -47,7 +47,6 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
-    date_like_to_physical,
     dtype_to_ctype,
     dtype_to_ffiname,
     maybe_cast,
@@ -59,7 +58,7 @@ try:
     import pandas as pd
 
     _PANDAS_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _PANDAS_AVAILABLE = False
 
 
@@ -76,9 +75,8 @@ def match_dtype(value: Any, dtype: "Type[DataType]") -> Any:
 def get_ffi_func(
     name: str,
     dtype: Type["DataType"],
-    obj: Optional["Series"] = None,
-    default: Optional[Callable[[Any], Any]] = None,
-) -> Callable[..., Any]:
+    obj: "PySeries",
+) -> Optional[Callable[..., Any]]:
     """
     Dynamically obtain the proper ffi function/ method.
 
@@ -91,20 +89,15 @@ def get_ffi_func(
     dtype
         polars dtype.
     obj
-        Optional object to find the method for. If none provided globals are used.
-    default
-        default function to use if not found.
+        Object to find the method for.
 
     Returns
     -------
-    ffi function
+    ffi function, or None if not found
     """
     ffi_name = dtype_to_ffiname(dtype)
     fname = name.replace("<>", ffi_name)
-    if obj:
-        return getattr(obj, fname, default)
-    else:
-        return globals().get(fname, default)
+    return getattr(obj, fname, None)
 
 
 def wrap_s(s: "PySeries") -> "Series":
@@ -364,8 +357,7 @@ class Series:
         if isinstance(other, Series):
             return wrap_s(self._s.add(other._s))
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("add_<>", dtype, self._s)
+        f = get_ffi_func("add_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -374,27 +366,23 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.sub(other._s))
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("sub_<>", dtype, self._s)
+        f = get_ffi_func("sub_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
 
     def __truediv__(self, other: Any) -> "Series":
-        physical_type = date_like_to_physical(self.dtype)
-
         # this branch is exactly the floordiv function without rounding the floats
         if self.is_float():
             if isinstance(other, Series):
                 return Series._from_pyseries(self._s.div(other._s))
 
             other = maybe_cast(other, self.dtype)
-            dtype = date_like_to_physical(self.dtype)
-            f = get_ffi_func("div_<>", dtype, self._s)
+            f = get_ffi_func("div_<>", self.dtype, self._s)
+            if f is None:
+                return NotImplemented
             return wrap_s(f(other))
 
-        if self.dtype != physical_type:
-            return self.__floordiv__(other)
         return self.cast(Float64) / other
 
     def __floordiv__(self, other: Any) -> "Series":
@@ -404,8 +392,9 @@ class Series:
             return Series._from_pyseries(self._s.div(other._s))
 
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("div_<>", dtype, self._s)
+        f = get_ffi_func("div_<>", self.dtype, self._s)
+        if f is None:
+            return NotImplemented
         if self.is_float():
             return wrap_s(f(other)).floor()
         return wrap_s(f(other))
@@ -414,8 +403,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("mul_<>", dtype, self._s)
+        f = get_ffi_func("mul_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -424,8 +412,7 @@ class Series:
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.rem(other._s))
         other = maybe_cast(other, self.dtype)
-        dtype = date_like_to_physical(self.dtype)
-        f = get_ffi_func("rem_<>", dtype, self._s)
+        f = get_ffi_func("rem_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -433,10 +420,9 @@ class Series:
     def __rmod__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.rem(self._s))
-        dtype = date_like_to_physical(self.dtype)
         other = maybe_cast(other, self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("rem_<>_rhs", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("rem_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -444,10 +430,9 @@ class Series:
     def __radd__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.add(other._s))
-        dtype = date_like_to_physical(self.dtype)
         other = maybe_cast(other, self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("add_<>_rhs", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("add_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -455,9 +440,8 @@ class Series:
     def __rsub__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.sub(self._s))
-        dtype = date_like_to_physical(self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("sub_<>_rhs", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("sub_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -468,8 +452,7 @@ class Series:
         return NotImplemented
 
     def __rtruediv__(self, other: Any) -> np.ndarray:
-        primitive = date_like_to_physical(self.dtype)
-        if self.dtype != primitive or self.is_float():
+        if self.is_float():
             self.__rfloordiv__(other)
 
         if isinstance(other, int):
@@ -480,9 +463,8 @@ class Series:
     def __rfloordiv__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(other._s.div(self._s))
-        dtype = date_like_to_physical(self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("div_<>_rhs", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("div_<>_rhs", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -490,9 +472,8 @@ class Series:
     def __rmul__(self, other: Any) -> "Series":
         if isinstance(other, Series):
             return Series._from_pyseries(self._s.mul(other._s))
-        dtype = date_like_to_physical(self.dtype)
-        other = match_dtype(other, dtype)
-        f = get_ffi_func("mul_<>", dtype, self._s)
+        other = match_dtype(other, self.dtype)
+        f = get_ffi_func("mul_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -1123,7 +1104,7 @@ class Series:
         """
         self._s.append(other._s)
 
-    def filter(self, predicate: "Series") -> "Series":
+    def filter(self, predicate: Union["Series", list]) -> "Series":
         """
         Filter elements by a boolean mask.
 
@@ -1630,7 +1611,9 @@ class Series:
         """
         return wrap_s(self._s.explode())
 
-    def series_equal(self, other: "Series", null_equal: bool = False) -> bool:
+    def series_equal(
+        self, other: "Series", null_equal: bool = False, strict: bool = False
+    ) -> bool:
         """
         Check if series is equal with another Series.
 
@@ -1640,6 +1623,8 @@ class Series:
             Series to compare with.
         null_equal
             Consider null values as equal.
+        strict
+            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a `pl.Int64` will return `False`.
 
         Examples
         --------
@@ -1651,7 +1636,7 @@ class Series:
         False
 
         """
-        return self._s.series_equal(other._s, null_equal)
+        return self._s.series_equal(other._s, null_equal, strict)
 
     def len(self) -> int:
         """
@@ -1676,7 +1661,11 @@ class Series:
     def __len__(self) -> int:
         return self.len()
 
-    def cast(self, dtype: Type[DataType], strict: bool = True) -> "Series":
+    def cast(
+        self,
+        dtype: Union[Type[DataType], Type[int], Type[float], Type[str], Type[bool]],
+        strict: bool = True,
+    ) -> "Series":
         """
         Cast between data types.
 
@@ -1879,6 +1868,8 @@ class Series:
 
             try:
                 f = get_ffi_func("apply_ufunc_<>", dtype, self._s)
+                if f is None:
+                    return NotImplemented
                 series = f(lambda out: ufunc(*args, out=out, **kwargs))
                 return wrap_s(series)
             except TypeError:
@@ -1886,6 +1877,8 @@ class Series:
                 s = self.cast(Float64)
                 args[0] = s.view(ignore_nulls=True)
                 f = get_ffi_func("apply_ufunc_<>", Float64, self._s)
+                if f is None:
+                    return NotImplemented
                 series = f(lambda out: ufunc(*args, out=out, **kwargs))
                 return wrap_s(series)
 
@@ -2988,6 +2981,24 @@ class Series:
             pli.col(self.name).str_concat(delimiter)  # type: ignore
         )[self.name]
 
+    def reshape(self, dims: tp.Tuple[int, ...]) -> "Series":
+        """
+        Reshape this Series to a flat series, shape: (len,)
+        or a List series, shape: (rows, cols)
+
+        if a -1 is used in any of the dimensions, that dimension is inferred.
+
+        Parameters
+        ----------
+        dims
+            Tuple of the dimension sizes
+
+        Returns
+        -------
+        Series
+        """
+        return wrap_s(self._s.reshape(dims))
+
 
 class StringNameSpace:
     """
@@ -3280,6 +3291,71 @@ class DateTimeNameSpace:
     def __init__(self, series: Series):
         self._s = series._s
 
+    def buckets(self, interval: timedelta) -> Series:
+        """
+        Divide the date/ datetime range into buckets.
+        Data will be sorted by this operation.
+
+        Parameters
+        ----------
+        interval
+            python timedelta to indicate bucket size
+
+        Returns
+        -------
+        Date/Datetime series
+
+        Examples
+        --------
+        >>> from datetime import datetime, timedelta
+        >>> import polars as pl
+        >>> date_range = pl.date_range(
+        >>> low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
+        >>> high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
+        >>> interval=timedelta(minutes=8),
+        >>> name="date_range")
+        >>>
+        >>> date_range.dt.buckets(timedelta(minutes=8))
+        shape: (8,)
+        Series: 'date_range' [datetime]
+        [
+            2000-10-01 23:30:00
+            2000-10-01 23:30:00
+            2000-10-01 23:38:00
+            2000-10-01 23:46:00
+            2000-10-01 23:54:00
+            2000-10-02 00:02:00
+            2000-10-02 00:10:00
+            2000-10-02 00:18:00
+        ]
+
+        >>> # can be used to perform a downsample operation
+        >>> (date_range
+        >>>  .to_frame()
+        >>>  .groupby(
+        >>>      pl.col("date_range").dt.buckets(timedelta(minutes=16)),
+        >>>      maintain_order=True
+        >>>  )
+        >>>  .agg(pl.col("date_range").count())
+        >>> )
+        shape: (4, 2)
+        ┌─────────────────────┬──────────────────┐
+        │ date_range          ┆ date_range_count │
+        │ ---                 ┆ ---              │
+        │ datetime            ┆ u32              │
+        ╞═════════════════════╪══════════════════╡
+        │ 2000-10-01 23:30:00 ┆ 3                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2000-10-01 23:46:00 ┆ 2                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2000-10-02 00:02:00 ┆ 2                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2000-10-02 00:18:00 ┆ 1                │
+        └─────────────────────┴──────────────────┘
+
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.buckets(interval)).to_series()
+
     def __getitem__(self, item: int) -> Union[date, datetime]:
         s = wrap_s(self._s)
         out = wrap_s(self._s)[item]
@@ -3440,8 +3516,7 @@ class DateTimeNameSpace:
         """
         Go from Date/Datetime to python DateTime objects
         """
-
-        return (self.timestamp() // 1000).apply(
+        return (self.timestamp() / 1000).apply(
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
@@ -3510,7 +3585,7 @@ def _to_python_datetime(
         return datetime.utcfromtimestamp(value * 3600 * 24).date()
     elif dtype == Datetime:
         # ms to seconds
-        return datetime.utcfromtimestamp(value // 1000)
+        return datetime.utcfromtimestamp(value / 1000)
     else:
         raise NotImplementedError
 

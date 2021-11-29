@@ -22,6 +22,8 @@ mod ndarray;
 mod bitwise;
 #[cfg(feature = "dtype-categorical")]
 pub(crate) mod categorical;
+#[cfg(feature = "object")]
+mod drop;
 pub(crate) mod list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
@@ -157,12 +159,10 @@ pub struct ChunkedArray<T> {
 }
 
 impl<T> ChunkedArray<T> {
-    #[cfg(feature = "asof_join")]
     pub(crate) fn is_sorted(&self) -> bool {
         self.bit_settings & 1 != 0
     }
 
-    #[cfg(feature = "asof_join")]
     pub(crate) fn is_sorted_reverse(&self) -> bool {
         self.bit_settings & 1 << 1 != 0
     }
@@ -209,7 +209,7 @@ impl<T> ChunkedArray<T> {
 
     /// Shrink the capacity of this array to fit it's length.
     pub fn shrink_to_fit(&mut self) {
-        self.chunks = vec![arrow::compute::concat::concatenate(
+        self.chunks = vec![arrow::compute::concatenate::concatenate(
             self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
         )
         .unwrap()
@@ -391,7 +391,7 @@ impl<T> ChunkedArray<T> {
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect_vec();
-        BooleanChunked::new_from_chunks("is_null", chunks)
+        BooleanChunked::new_from_chunks(self.name(), chunks)
     }
 
     /// Get a mask of the valid values.
@@ -410,7 +410,7 @@ impl<T> ChunkedArray<T> {
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect_vec();
-        BooleanChunked::new_from_chunks("is_not_null", chunks)
+        BooleanChunked::new_from_chunks(self.name(), chunks)
     }
 
     /// Get data type of ChunkedArray.

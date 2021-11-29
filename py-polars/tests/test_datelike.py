@@ -1,4 +1,8 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+
+import numpy as np
+import pyarrow as pa
+import pytest
 
 import polars as pl
 
@@ -150,8 +154,48 @@ def test_to_python_datetime() -> None:
     )
 
 
+def test_from_numpy() -> None:
+    # numpy support is limited; will be stored as object
+    x = np.asarray(range(100_000, 200_000, 10_000), dtype="datetime64[s]")
+    s = pl.Series(x)
+    assert s[0] == x[0]
+    assert len(s) == 10
+
+
 def test_datetime_consistency() -> None:
-    dt = datetime(2021, 1, 1)
+    # dt = datetime(2021, 1, 1, 10, 30, 45, 123456)
+    dt = datetime(2021, 1, 1, 10, 30, 45, 123000)
     df = pl.DataFrame({"date": [dt]})
     assert df["date"].dt[0] == dt
     assert df.select(pl.lit(dt))["literal"].dt[0] == dt
+
+
+def downsample_with_buckets() -> None:
+    assert (
+        pl.date_range(
+            low=datetime(2000, 10, 1, 23, 30),
+            high=datetime(2000, 10, 2, 0, 30),
+            interval=timedelta(minutes=7),
+            name="date_range",
+        )
+        .to_frame()
+        .groupby(
+            pl.col("date_range").dt.buckets(timedelta(minutes=17)), maintain_order=True
+        )
+        .agg(pl.col("date_range").count().alias("bucket_count"))
+    ).to_series(1).to_list() == [3, 2, 3, 1]
+
+
+def test_timezone() -> None:
+    ts = pa.timestamp("s")
+    data = pa.array([1000, 2000], type=ts)
+    s: pl.Series = pl.from_arrow(data)  # type: ignore
+
+    # with timezone; we do expect a warning here
+    tz_ts = pa.timestamp("s", tz="America/New_York")
+    tz_data = pa.array([1000, 2000], type=tz_ts)
+    with pytest.warns(Warning):
+        tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore
+
+    # timezones have no effect, i.e. `s` equals `tz_s`
+    assert s.series_equal(tz_s)

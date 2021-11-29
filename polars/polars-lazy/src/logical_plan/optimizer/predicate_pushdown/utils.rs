@@ -34,9 +34,9 @@ pub(super) fn insert_and_combine_predicate(
         .or_insert_with(|| arena.add(AExpr::Literal(LiteralValue::Boolean(true))));
 
     let node = arena.add(AExpr::BinaryExpr {
-        left: *existing_predicate,
+        left: predicate,
         op: Operator::And,
-        right: predicate,
+        right: *existing_predicate,
     });
 
     *existing_predicate = node;
@@ -192,9 +192,6 @@ where
         } else {
             expr_depth > 1
         };
-        let output_field = e
-            .to_field(input_schema, Context::Default, expr_arena)
-            .unwrap();
 
         // remove predicates that cannot be done on the input above
         let to_local = acc_predicates
@@ -204,7 +201,7 @@ where
                 if check_input_node(*kv.1, input_schema, expr_arena)
                     // if this predicate not equals a column that is a computation
                     // it is ok
-                    && &**kv.0 != output_field.name() && !is_computation
+                    && !is_computation
                 {
                     None
                 } else {

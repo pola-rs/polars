@@ -1731,6 +1731,32 @@ impl Expr {
             GetOutput::same_type(),
         )
     }
+
+    pub fn reshape(self, dims: &[i64]) -> Self {
+        let dims = dims.to_vec();
+        let output_type = if dims.len() == 1 {
+            GetOutput::map_field(|fld| {
+                Field::new(
+                    fld.name(),
+                    fld.data_type()
+                        .inner_dtype()
+                        .unwrap_or_else(|| fld.data_type())
+                        .clone(),
+                )
+            })
+        } else {
+            GetOutput::map_field(|fld| {
+                let dtype = fld
+                    .data_type()
+                    .inner_dtype()
+                    .unwrap_or_else(|| fld.data_type())
+                    .clone();
+
+                Field::new(fld.name(), DataType::List(Box::new(dtype)))
+            })
+        };
+        self.apply(move |s| s.reshape(&dims), output_type)
+    }
 }
 
 /// Create a Column Expression based on a column name.
