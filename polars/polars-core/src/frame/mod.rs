@@ -2013,7 +2013,7 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```rust
     /// # use polars_core::prelude::*;
     /// let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
     ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
@@ -2021,6 +2021,10 @@ impl DataFrame {
     ///
     /// let df2: DataFrame = df1.max();
     /// assert_eq!(df2.shape(), (1, 2));
+    ///
+    /// let df3: DataFrame = df!("Die n°1" => &[6_i32],
+    ///                          "Die n°2" => &[5_i32])?;
+    /// assert_eq!(df2, df3);
     /// println!("{}", df2);
     /// # Ok::<(), PolarsError>(())
     /// ```
@@ -2038,8 +2042,18 @@ impl DataFrame {
     /// +---------+---------+
     /// ```
     pub fn max(&self) -> Self {
-        let columns = self.columns.par_iter().map(|s| s.max_as_series()).collect();
-        DataFrame::new_no_checks(columns)
+        DataFrame::new_no_checks(
+            rayon::ThreadPoolBuilder::new()
+                .build_scoped(
+                    |thread| thread.run(),
+                    |pool| {
+                        pool.install(|| {
+                            self.columns.par_iter().map(|s| s.max_as_series()).collect()
+                        })
+                    },
+                )
+                .expect("Scoped Rayon ThreadPool failed for DataFrame::max"),
+        )
     }
 
     /// Aggregate the columns to their standard deviation values.
