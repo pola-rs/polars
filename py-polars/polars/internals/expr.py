@@ -614,6 +614,18 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.cummax(reverse))
 
+    def cumcount(self, reverse: bool = False) -> "Expr":
+        """
+        Get an array with the cumulative count computed at every element.
+        Counting from 0 to len
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return wrap_expr(self._pyexpr.cumcount(reverse))
+
     def floor(self) -> "Expr":
         """
         Floor underlying floating point array to the lowest integers smaller or equal to the float value.
