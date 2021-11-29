@@ -633,7 +633,7 @@ impl Field {
         self.name = name;
     }
 
-    /// Converts the `Field` to an [`arrow::datatypes::Field`].
+    /// Converts the `Field` to an `arrow::datatypes::Field`.
     ///
     /// # Example
     ///
