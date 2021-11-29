@@ -3,12 +3,12 @@ name = "py-polars"
 version = "0.10.24"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars-book/"
-description = "Blazingly fast DataFrames in Rust & Python"
 edition = "2018"
 homepage = "https://github.com/pola-rs/polars"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/pola-rs/polars"
+description = "Blazingly fast DataFrames in Rust & Python"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
