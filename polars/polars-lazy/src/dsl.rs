@@ -22,7 +22,7 @@ use polars_arrow::array::default_arrays::FromData;
 use polars_core::frame::select::Selection;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::get_supertype;
+use polars_core::utils::{get_supertype, NoNull};
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> Result<Series>`
 pub trait SeriesUdf: Send + Sync {
@@ -1756,6 +1756,26 @@ impl Expr {
             })
         };
         self.apply(move |s| s.reshape(&dims), output_type)
+    }
+
+    /// Cumulatively count values from 0 to len.
+    pub fn cumcount(self, reverse: bool) -> Self {
+        self.apply(
+            move |s| {
+                if reverse {
+                    let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
+                    let mut ca = ca.into_inner();
+                    ca.rename(s.name());
+                    Ok(ca.into_series())
+                } else {
+                    let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).collect();
+                    let mut ca = ca.into_inner();
+                    ca.rename(s.name());
+                    Ok(ca.into_series())
+                }
+            },
+            GetOutput::from_type(DataType::UInt32),
+        )
     }
 }
 

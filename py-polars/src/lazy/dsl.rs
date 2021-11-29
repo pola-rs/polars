@@ -957,6 +957,10 @@ impl PyExpr {
     pub fn reshape(&self, dims: Vec<i64>) -> Self {
         self.inner.clone().reshape(&dims).into()
     }
+
+    pub fn cumcount(&self, reverse: bool) -> Self {
+        self.inner.clone().cumcount(reverse).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
