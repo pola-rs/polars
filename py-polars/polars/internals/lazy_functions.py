@@ -51,11 +51,14 @@ def col(
     Examples
     --------
 
-    >>> df = pl.DataFrame({
-    >>> "ham": [1, 2, 3],
-    >>> "hamburger": [11, 22, 33],
-    >>> "foo": [3, 2, 1]})
-    >>> df.select(col("foo"))
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "ham": [1, 2, 3],
+    ...         "hamburger": [11, 22, 33],
+    ...         "foo": [3, 2, 1],
+    ...     }
+    ... )
+    >>> df.select(pl.col("foo"))
     shape: (3, 1)
     ╭─────╮
     │ foo │
@@ -68,7 +71,7 @@ def col(
     ├╌╌╌╌╌┤
     │ 1   │
     ╰─────╯
-    >>> df.select(col("*"))
+    >>> df.select(pl.col("*"))
     shape: (3, 3)
     ╭─────┬───────────┬─────╮
     │ ham ┆ hamburger ┆ foo │
@@ -81,7 +84,7 @@ def col(
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 33        ┆ 1   │
     ╰─────┴───────────┴─────╯
-    >>> df.select(col("^ham.*$"))
+    >>> df.select(pl.col("^ham.*$"))
     shape: (3, 2)
     ╭─────┬───────────╮
     │ ham ┆ hamburger │
@@ -94,7 +97,7 @@ def col(
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 33        │
     ╰─────┴───────────╯
-    >>> df.select(col("*").exclude("ham"))
+    >>> df.select(pl.col("*").exclude("ham"))
     shape: (3, 2)
     ╭───────────┬─────╮
     │ hamburger ┆ foo │
@@ -107,7 +110,7 @@ def col(
     ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 33        ┆ 1   │
     ╰───────────┴─────╯
-    >>> df.select(col(["hamburger", "foo"])
+    >>> df.select(pl.col(["hamburger", "foo"]))
     shape: (3, 2)
     ╭───────────┬─────╮
     │ hamburger ┆ foo │
@@ -505,19 +508,19 @@ def lit(
     --------
 
     >>> # literal integer
-    >>> lit(1)
+    >>> pl.lit(1)
 
     >>> # literal str.
-    >>> lit("foo")
+    >>> pl.lit("foo")
 
     >>> # literal datetime
-    >>> lit(datetime(2021, 1, 20))
+    >>> pl.lit(datetime(2021, 1, 20))
 
     >>> # literal Null
-    >>> lit(None)
+    >>> pl.lit(None)
 
     >>> # literal eager Series
-    >>> lit(Series("a", [1, 2, 3])
+    >>> pl.lit(Series("a", [1, 2, 3]))
     """
     if isinstance(value, datetime):
         return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
@@ -734,7 +737,8 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
      Exclude certain columns from a wildcard expression.
 
      Syntactic sugar for:
-     >>> col("*").exclude()
+
+     >>> pl.col("*").exclude()
 
      Parameters
      ----------
@@ -745,11 +749,13 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     Examples
     --------
 
-     >>> df = pl.DataFrame({
-     >>>     "a": [1, 2, 3],
-     >>>     "b": ["a", "b", None],
-     >>>     "c": [None, 2, 1]
-     >>> })
+     >>> df = pl.DataFrame(
+     ...     {
+     ...         "a": [1, 2, 3],
+     ...         "b": ["a", "b", None],
+     ...         "c": [None, 2, 1],
+     ...     }
+     ... )
      >>> df
      shape: (3, 3)
      ╭─────┬──────┬──────╮
@@ -802,7 +808,11 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
     >>> df.select(pl.all().sum())
 
 
-    >>> df.select(pl.all([col(name).is_not_null() for name in df.columns]))
+    >>> df.select(
+    ...     [
+    ...         pl.all([pl.col(name).is_not_null() for name in df.columns]),
+    ...     ]
+    ... )
     """
     if name is None:
         return col("*")
@@ -813,14 +823,14 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
 
 def groups(column: str) -> "pli.Expr":
     """
-    Syntactic sugar for `column("foo").agg_groups()`.
+    Syntactic sugar for `pl.col("foo").agg_groups()`.
     """
     return col(column).agg_groups()
 
 
 def quantile(column: str, quantile: float) -> "pli.Expr":
     """
-    Syntactic sugar for `column("foo").quantile(..)`.
+    Syntactic sugar for `pl.col("foo").quantile(..)`.
     """
     return col(column).quantile(quantile)
 
@@ -838,9 +848,7 @@ def arange(
      Examples
      --------
 
-    >>> (df.lazy()
-        .filter(pl.col("foo") < pl.arange(0, 100))
-        .collect())
+    >>> (df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect())
 
     Parameters
     ----------
@@ -993,10 +1001,17 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     Examples
     --------
 
-    >>> df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-    >>> df.select([
-    >>>     pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")
-    >>> ])
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": ["a", "b", "c"],
+    ...         "b": [1, 2, 3],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     [
+    ...         pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt"),
+    ...     ]
+    ... )
     shape: (3, 1)
     ┌─────────────┐
     │ fmt         │
@@ -1126,9 +1141,11 @@ def select(
 
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
-    >>> pl.select([
-    >>>     pl.min([foo, bar])
-    >>> ])
+    >>> pl.select(
+    ...     [
+    ...         pl.min([foo, bar]),
+    ...     ]
+    ... )
     shape: (3, 1)
     ┌─────┐
     │ min │

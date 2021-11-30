@@ -112,7 +112,7 @@ class DataFrame:
     --------
     Constructing a DataFrame from a dictionary:
 
-    >>> data = {'a': [1, 2], 'b': [3, 4]}
+    >>> data = {"a": [1, 2], "b": [3, 4]}
     >>> df = pl.DataFrame(data)
     >>> df
     shape: (2, 2)
@@ -134,8 +134,10 @@ class DataFrame:
     In order to specify dtypes for your columns, initialize the DataFrame with a list
     of Series instead:
 
-    >>> data = [pl.Series('col1', [1, 2], dtype=pl.Float32),
-    ...         pl.Series('col2', [3, 4], dtype=pl.Int64)]
+    >>> data = [
+    ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
+    ...     pl.Series("col2", [3, 4], dtype=pl.Int64),
+    ... ]
     >>> df2 = pl.DataFrame(series)
     >>> df2
     shape: (2, 2)
@@ -152,7 +154,7 @@ class DataFrame:
     Constructing a DataFrame from a numpy ndarray, specifying column names:
 
     >>> data = np.array([(1, 2), (3, 4)])
-    >>> df3 = pl.DataFrame(data, columns=['a', 'b'], orient='col')
+    >>> df3 = pl.DataFrame(data, columns=["a", "b"], orient="col")
     >>> df3
     shape: (2, 2)
     ╭─────┬─────╮
@@ -168,7 +170,7 @@ class DataFrame:
     Constructing a DataFrame from a list of lists, row orientation inferred:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> df4 = pl.DataFrame(data, columns=['a', 'b', 'c'])
+    >>> df4 = pl.DataFrame(data, columns=["a", "b", "c"])
     >>> df4
     shape: (2, 3)
     ╭─────┬─────┬─────╮
@@ -440,7 +442,7 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.read_csv('file.csv', sep=';', stop_after_n_rows=25)
+        >>> df = pl.read_csv("file.csv", sep=";", stop_after_n_rows=25)
 
         """
         self = DataFrame.__new__(DataFrame)
@@ -596,13 +598,15 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>      "A": [1, 2, 3, 4, 5],
-        >>>      "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        >>>      "B": [5, 4, 3, 2, 1],
-        >>>      "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        >>>      "optional": [28, 300, None, 2, -30],
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "A": [1, 2, 3, 4, 5],
+        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
+        ...         "B": [5, 4, 3, 2, 1],
+        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        ...         "optional": [28, 300, None, 2, -30],
+        ...     }
+        ... )
         shape: (5, 5)
         ┌─────┬──────────┬─────┬──────────┬──────────┐
         │ A   ┆ fruits   ┆ B   ┆ cars     ┆ optional │
@@ -699,11 +703,9 @@ class DataFrame:
         --------
 
         >>> import pandas
-        >>> df = pl.DataFrame({
-            "foo": [1, 2, 3],
-            "bar": [6, 7, 8],
-            "ham": ['a', 'b', 'c']
-            })
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
         >>> pandas_df = df.to_pandas()
         >>> type(pandas_df)
         pandas.core.frame.DataFrame
@@ -731,12 +733,14 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3, 4, 5],
-        >>>     "bar": [6, 7, 8, 9, 10],
-        >>>     "ham": ['a', 'b', 'c', 'd','e']
-        >>>     })
-        >>> df.to_csv('new_file.csv', sep=',')
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        ... df.to_csv("new_file.csv", sep=",")
 
         """
         if file is None:
@@ -841,7 +845,9 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         >>> # include the header as a separate column
-        >>> df.transpose(include_header=True, header_name="foo", column_names=["a", "b", "c"])
+        >>> df.transpose(
+        ...     include_header=True, header_name="foo", column_names=["a", "b", "c"]
+        ... )
         shape: (2, 4)
         ┌─────┬─────┬─────┬─────┐
         │ foo ┆ a   ┆ b   ┆ c   │
@@ -855,11 +861,12 @@ class DataFrame:
 
         >>> # replace the auto generated column with column names from a generator function
         >>> def name_generator():
-        >>>     base_name = "my_column_"
-        >>>     count = 0
-        >>>     while True:
-        >>>         yield f"{base_name}{count}"
-        >>>         count += 1
+        ...     base_name = "my_column_"
+        ...     count = 0
+        ...     while True:
+        ...         yield f"{base_name}{count}"
+        ...         count += 1
+        ...
         >>> df.transpose(include_header=False, column_names=name_generator())
         shape: (2, 3)
         ┌─────────────┬─────────────┬─────────────┐
@@ -962,11 +969,9 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>    "foo": [1, 2, 3],
-        >>>    "bar": [6, 7, 8],
-        >>>    "ham": ['a', 'b', 'c']
-        >>>    })
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
         >>> numpy_array = df.to_numpy()
         >>> type(numpy_array)
         numpy.ndarray
@@ -1025,12 +1030,10 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
-        >>> df.find_idx_by_name("ham"))
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
+        >>> df.find_idx_by_name("ham")
         2
 
         """
@@ -1281,12 +1284,10 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
-        >>> df.to_series(1))
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
+        >>> df.to_series(1)
         shape: (3,)
         Series: 'bar' [i64]
         [
@@ -1310,11 +1311,9 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ... )
         >>> df.rename({"foo": "apple"})
         ╭───────┬─────┬─────╮
         │ apple ┆ bar ┆ ham │
@@ -1359,11 +1358,13 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> # Filter on one condition
         >>> df.filter(pl.col("foo") < 3)
         shape: (2, 3)
@@ -1377,7 +1378,7 @@ class DataFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
-        >>>  # Filter on multiple conditions
+        >>> # Filter on multiple conditions
         >>> df.filter((pl.col("foo") < 3) & (pl.col("ham") == "a"))
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -1446,15 +1447,17 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-            "foo": [1, 2, 3],
-            "bar": [6, 7, 8],
-            "ham": ['a', 'b', 'c']
-            })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.columns
         ['foo', 'bar', 'ham']
         >>> # Set column names
-        >>> df.columns = ['apple', 'banana', 'orange']
+        >>> df.columns = ["apple", "banana", "orange"]
         shape: (3, 3)
         ╭───────┬────────┬────────╮
         │ apple ┆ banana ┆ orange │
@@ -1491,11 +1494,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6.0, 7.0, 8.0],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.dtypes
         [polars.datatypes.Int64, polars.datatypes.Float64, polars.datatypes.Utf8]
         >>> df
@@ -1521,11 +1526,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     'a': [1.0, 2.8, 3.0],
-        >>>     'b': [4, 5, 6],
-        >>>     "c": [True, False, True]
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1.0, 2.8, 3.0],
+        ...         "b": [4, 5, 6],
+        ...         "c": [True, False, True],
+        ...     }
+        ... )
         >>> df.describe()
         shape: (5, 4)
         ╭──────────┬───────┬─────┬──────╮
@@ -1582,11 +1589,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> x = pl.Series("apple", [10, 20, 30])
         >>> df.replace_at_idx(0, x)
         shape: (3, 3)
@@ -1626,12 +1635,14 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6.0, 7.0, 8.0],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
-        >>> df.sort('foo', reverse=True)
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.sort("foo", reverse=True)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
         │ foo ┆ bar ┆ ham │
@@ -1648,7 +1659,10 @@ class DataFrame:
         **Sort by multiple columns.**
         For multiple columns we can also use expression syntax.
 
-        >>> df.sort([pl.col("foo"), pl.col("bar") ** 2], reverse=[True, False])
+        >>> df.sort(
+        ...     [pl.col("foo"), pl.col("bar") ** 2],
+        ...     reverse=[True, False],
+        ... )
 
         """
         if type(by) is list or isinstance(by, pli.Expr):
@@ -1680,16 +1694,20 @@ class DataFrame:
 
         Examples
         --------
-        >>> df1 = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6.0, 7.0, 8.0],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
-        >>> df2 = pl.DataFrame({
-        >>>     "foo": [3, 2, 1],
-        >>>     "bar": [8.0, 7.0, 6.0],
-        >>>     "ham": ['c', 'b', 'a']
-        >>>     })
+        >>> df1 = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "foo": [3, 2, 1],
+        ...         "bar": [8.0, 7.0, 6.0],
+        ...         "ham": ["c", "b", "a"],
+        ...     }
+        ... )
         >>> df1.frame_equal(df1)
         True
         >>> df1.frame_equal(df2)
@@ -1725,11 +1743,13 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6.0, 7.0, 8.0],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.slice(1, 2)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -1760,11 +1780,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.limit(2)
         shape: (2, 3)
         ╭─────┬─────┬─────╮
@@ -1791,11 +1813,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3, 4, 5],
-        >>>     "bar": [6, 7, 8, 9, 10],
-        >>>     "ham": ['a', 'b', 'c', 'd','e']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
         >>> df.head(3)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -1824,11 +1848,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3, 4, 5],
-        >>>     "bar": [6, 7, 8, 9, 10],
-        >>>     "ham": ['a', 'b', 'c', 'd','e']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
         >>> df.tail(3)
         shape: (3, 3)
         ╭─────┬─────┬─────╮
@@ -1852,11 +1878,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, None, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, None, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.drop_nulls()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -1875,12 +1903,12 @@ class DataFrame:
         conditions
 
         >>> df = pl.DataFrame(
-        >>>    {
-        >>>        "a": [None, None, None, None],
-        >>>        "b": [1, 2, None, 1],
-        >>>        "c": [1, None, None, 1],
-        >>>    }
-        >>> )
+        ...     {
+        ...         "a": [None, None, None, None],
+        ...         "b": [1, 2, None, 1],
+        ...         "c": [1, None, None, 1],
+        ...     }
+        ... )
         >>> df
         shape: (4, 3)
         ┌──────┬──────┬──────┐
@@ -1898,7 +1926,13 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         >>> # drop a row only if all values are null
-        >>> df.filter(~pl.fold(acc=True, f=lambda acc, s: acc & s.is_null(), exprs=pl.all()))
+        >>> df.filter(
+        ...     ~pl.fold(
+        ...         acc=True,
+        ...         f=lambda acc, s: acc & s.is_null(),
+        ...         exprs=pl.all(),
+        ...     )
+        ... )
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
@@ -1980,21 +2014,25 @@ class DataFrame:
         --------
         Below we group by column `"a"`, and we sum column `"b"`.
 
-        >>> df = pl.DataFrame({
-        >>>     "a": ["a", "b", "a", "b", "b", "c"],
-        >>>     "b": [1, 2, 3, 4, 5, 6],
-        >>>     "c": [6, 5, 4, 3, 2, 1],
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... )
         >>> assert (
-        >>>     df.groupby("a")["b"]
-        >>>     .sum()
-        >>>     .sort(by_column="a")
-        >>>     .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]})))
+        ...     df.groupby("a")["b"]
+        ...     .sum()
+        ...     .sort(by_column="a")
+        ...     .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
+        ... )
 
         We can also loop over the grouped `DataFrame`
 
         >>> for sub_df in df.groupby("a"):
-        >>>    print(sub_df)
+        ...     print(sub_df)
+        ...
         shape: (3, 3)
         ╭─────┬─────┬─────╮
         │ a   ┆ b   ┆ c   │
@@ -2060,22 +2098,25 @@ class DataFrame:
         --------
 
         >>> df = pl.DataFrame(
-        >>>     {
-        >>>         "A": ["2020-01-01", "2020-01-02", "2020-01-03","2020-01-04","2020-01-05","2020-01-06"],
-        >>>         "B": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0],
-        >>>         "C": [3.0, 6.0, 9.0, 2.0, 13.0, 8.0],
-        >>>         "D": [12.0, 5.0, 9.0, 2.0, 11.0, 2.0],
-        >>>     }
-        >>> )
-        >>> df['A'] = df['A'].str.strptime(pl.Date, "%Y-%m-%d")
+        ...     {
+        ...         "A": [
+        ...             "2020-01-01",
+        ...             "2020-01-02",
+        ...             "2020-01-03",
+        ...             "2020-01-04",
+        ...             "2020-01-05",
+        ...             "2020-01-06",
+        ...         ],
+        ...         "B": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0],
+        ...         "C": [3.0, 6.0, 9.0, 2.0, 13.0, 8.0],
+        ...         "D": [12.0, 5.0, 9.0, 2.0, 11.0, 2.0],
+        ...     }
+        ... )
+        >>> df["A"] = df["A"].str.strptime(pl.Date, "%Y-%m-%d")
         >>>
         >>> df.downsample("A", rule="day", n=3).agg(
-        >>>     {
-        >>>         "B": "max",
-        >>>         "C": "min",
-        >>>         "D": "last"
-        >>>     }
-        >>> )
+        ...     {"B": "max", "C": "min", "D": "last"}
+        ... )
         shape: (3, 4)
         ┌──────────────┬───────┬───────┬────────┐
         │ A            ┆ B_max ┆ C_min ┆ D_last │
@@ -2173,16 +2214,20 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6.0, 7.0, 8.0],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
-        >>> other_df = pl.DataFrame({
-        >>>     "apple": ['x', 'y', 'z'],
-        >>>     "ham": ['a', 'b', 'd']
-        >>>     })
-        >>> df.join(other_df, on='ham')
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> other_df = pl.DataFrame(
+        ...     {
+        ...         "apple": ["x", "y", "z"],
+        ...         "ham": ["a", "b", "d"],
+        ...     }
+        ... )
+        >>> df.join(other_df, on="ham")
         shape: (2, 4)
         ╭─────┬─────┬─────┬───────╮
         │ foo ┆ bar ┆ ham ┆ apple │
@@ -2194,7 +2239,7 @@ class DataFrame:
         │ 2   ┆ 7   ┆ "b" ┆ "y"   │
         ╰─────┴─────┴─────┴───────╯
 
-        >>> df.join(other_df, on='ham', how='outer')
+        >>> df.join(other_df, on="ham", how="outer")
         shape: (4, 4)
         ╭──────┬──────┬─────┬───────╮
         │ foo  ┆ bar  ┆ ham ┆ apple │
@@ -2329,11 +2374,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> x = pl.Series("apple", [10, 20, 30])
         >>> df.hstack([x])
         shape: (3, 4)
@@ -2372,16 +2419,20 @@ class DataFrame:
         Examples
         --------
 
-        >>> df1 = pl.DataFrame({
-        >>>     "foo": [1, 2],
-        >>>     "bar": [6, 7],
-        >>>     "ham": ['a', 'b']
-        >>>     })
-        >>> df2 = pl.DataFrame({
-        >>>     "foo": [3, 4],
-        >>>     "bar": [8 , 9],
-        >>>     "ham": ['c', 'd']
-        >>>     })
+        >>> df1 = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2],
+        ...         "bar": [6, 7],
+        ...         "ham": ["a", "b"],
+        ...     }
+        ... )
+        >>> df2 = pl.DataFrame(
+        ...     {
+        ...         "foo": [3, 4],
+        ...         "bar": [8, 9],
+        ...         "ham": ["c", "d"],
+        ...     }
+        ... )
         >>> df1.vstack(df2)
         shape: (4, 3)
         ╭─────┬─────┬─────╮
@@ -2417,12 +2468,14 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>    "foo": [1, 2, 3],
-        >>>    "bar": [6.0, 7.0, 8.0],
-        >>>    "ham": ['a', 'b', 'c']
-        >>>    })
-        >>> df.drop('ham')
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.drop("ham")
         shape: (3, 2)
         ╭─────┬─────╮
         │ foo ┆ bar │
@@ -2457,11 +2510,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>    "foo": [1, 2, 3],
-        >>>    "bar": [6, 7, 8],
-        >>>    "ham": ['a', 'b', 'c']
-        >>>    })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.drop_in_place("ham")
         shape: (3, 2)
         ╭─────┬─────╮
@@ -2492,12 +2547,14 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
-        >>> df.select_at_idx(1))
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.select_at_idx(1)
         shape: (3,)
         Series: 'bar' [i64]
         [
@@ -2597,10 +2654,12 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]]
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]],
+        ...     }
+        ... )
         >>> df
         shape: (6, 2)
         ╭─────────┬────────────╮
@@ -2687,11 +2746,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.shift(periods=1)
         shape: (3, 3)
         ┌──────┬──────┬──────┐
@@ -2738,11 +2799,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.shift_and_fill(periods=1, fill_value=0)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
@@ -2813,12 +2876,14 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
-        >>> df.select('foo')
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> df.select("foo")
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -2868,11 +2933,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.max()
         shape: (1, 3)
         ╭─────┬─────┬──────╮
@@ -2896,11 +2963,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.min()
         shape: (1, 3)
         ╭─────┬─────┬──────╮
@@ -2934,11 +3003,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.sum()
         shape: (1, 3)
         ╭─────┬─────┬──────╮
@@ -2972,11 +3043,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.mean()
         shape: (1, 3)
         ╭─────┬─────┬──────╮
@@ -3000,11 +3073,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.std()
         shape: (1, 3)
         ╭─────┬─────┬──────╮
@@ -3024,11 +3099,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.var()
         shape: (1, 3)
         ╭─────┬─────┬──────╮
@@ -3048,11 +3125,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.median()
         shape: (1, 3)
         ╭─────┬─────┬──────╮
@@ -3072,11 +3151,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.quantile(0.5)
         shape: (1, 3)
         ╭─────┬─────┬──────╮
@@ -3096,11 +3177,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.to_dummies()
         shape: (3, 9)
         ╭───────┬───────┬───────┬───────┬─────┬───────┬───────┬───────┬───────╮
@@ -3145,11 +3228,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, None, 3],
-        >>>     "bar": [6, 7, None],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, None, 3],
+        ...         "bar": [6, 7, None],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.null_count()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -3183,11 +3268,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.sample(n=2)
         shape: (2, 3)
         ╭─────┬─────┬─────╮
@@ -3223,10 +3310,12 @@ class DataFrame:
         --------
         >>> # A horizontal sum operation
         >>> df = pl.DataFrame(
-        >>>    {"a": [2, 1, 3],
-        >>>    "b": [1, 2, 3],
-        >>>    "c": [1.0, 2.0, 3.0]
-        >>>     })
+        ...     {
+        ...         "a": [2, 1, 3],
+        ...         "b": [1, 2, 3],
+        ...         "c": [1.0, 2.0, 3.0],
+        ...     }
+        ... )
         >>> df.fold(lambda s1, s2: s1 + s2)
         Series: 'a' [f64]
         [
@@ -3236,11 +3325,6 @@ class DataFrame:
         ]
 
         >>> # A horizontal minimum operation
-        >>> df = pl.DataFrame(
-        >>>    {"a": [2, 1, 3],
-        >>>    "b": [1, 2, 3],
-        >>>    "c": [1.0, 2.0, 3.0]
-        >>>     })
         >>> df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2))
         Series: 'a' [f64]
         [
@@ -3251,10 +3335,12 @@ class DataFrame:
 
         >>> # A horizontal string concattenation
         >>> df = pl.DataFrame(
-        >>>    {"a": ["foo", "bar", 2],
-        >>>    "b": [1, 2, 3],
-        >>>    "c": [1.0, 2.0, 3.0]
-        >>>     })
+        ...     {
+        ...         "a": ["foo", "bar", 2],
+        ...         "b": [1, 2, 3],
+        ...         "c": [1.0, 2.0, 3.0],
+        ...     }
+        ... )
         >>> df.fold(lambda s1, s2: s1 + s2)
         Series: '' [f64]
         [
@@ -3289,11 +3375,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.row(2)
         (3, 8, 'c')
 
@@ -3339,11 +3427,13 @@ class DataFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.hash(k0=42)
         shape: (3,)
         Series: '' [u64]
@@ -3378,7 +3468,8 @@ class GroupBy:
     --------
 
     >>> for group in df.groupby("foo"):
-    >>>    print(group)
+    ...     print(group)
+    ...
     """
 
     def __init__(
@@ -3502,7 +3593,7 @@ class GroupBy:
 
             Examples:
                 ## use lazy API syntax (recommended)
-                [col("foo").sum(), col("bar").min()]
+                [pl.col("foo").sum(), pl.col("bar").min()]
 
                 ## column name to aggregation with tuples:
                 [("foo", ["sum", "n_unique", "min"]),
@@ -3510,7 +3601,7 @@ class GroupBy:
 
                 ## column name to aggregation with dict:
                 {"foo": ["sum", "n_unique", "min"],
-                "bar": "max" }
+                 "bar": "max"}
 
         Returns
         -------
@@ -3521,12 +3612,23 @@ class GroupBy:
         --------
 
         >>> # use lazy API
-        >>> (df.groupby(["foo", "bar"])
-        >>> .agg([pl.sum("ham"), col("spam").tail(4).sum()])
+        >>> (
+        ...     df.groupby(["foo", "bar"]).agg(
+        ...         [
+        ...             pl.sum("ham"),
+        ...             pl.col("spam").tail(4).sum(),
+        ...         ]
+        ...     )
+        ... )
 
         >>> # use a dict
-        >>> (df.groupby(["foo", "bar"])
-        >>> .agg({"spam": ["sum", "min"})
+        >>> (
+        ...     df.groupby(["foo", "bar"]).agg(
+        ...         {
+        ...             "spam": ["sum", "min"],
+        ...         }
+        ...     )
+        ... )
 
         """
         if isinstance(column_to_agg, pli.Expr):
@@ -3585,10 +3687,12 @@ class GroupBy:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [1, 2, 3, 4, 5, 6]
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
+        ... )
         >>> df
         shape: (6, 2)
         ╭─────────┬─────╮
@@ -3608,10 +3712,7 @@ class GroupBy:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
-        >>> (df.groupby("letters")
-        >>>  .head(2)
-        >>>  .sort("letters")
-        >>> )
+        >>> (df.groupby("letters").head(2).sort("letters"))
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │
@@ -3650,10 +3751,12 @@ class GroupBy:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [1, 2, 3, 4, 5, 6]
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
+        ... )
         >>> df
         shape: (6, 2)
         ╭─────────┬─────╮
@@ -3673,10 +3776,7 @@ class GroupBy:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
-        >>> (df.groupby("letters")
-        >>>  .tail(2)
-        >>>  .sort("letters")
-        >>> )
+        >>> (df.groupby("letters").tail(2).sort("letters"))
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │

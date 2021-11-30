@@ -162,7 +162,9 @@ def date_range(
     --------
     >>> import polars as pl
     >>> from datetime import datetime, timedelta
-    >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12))
+    >>> pl.date_range(
+    ...     datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
+    ... )
     shape: (7426,)
     Series: '' [datetime]
     [

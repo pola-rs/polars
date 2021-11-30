@@ -12,6 +12,7 @@ maturin==0.12.1
 pytest==6.2.5
 pytest-cov[toml]==3.0.0
 black==21.6b0
+blackdoc==0.3.4
 isort~=5.9.2
 mypy==0.910
 ghp-import==2.0.1
