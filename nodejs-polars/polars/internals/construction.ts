@@ -26,6 +26,7 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
   }
 };
 
+const firstNonNull = (arr: any[]): any => arr.find(x => x !== null && x !== undefined);
 /**
  * Construct an internal `JsSeries` from an array
  */
@@ -38,17 +39,18 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   if (!values.length && !dtype) {
     dtype = DataType.Float32;
   }
-  if(Array.isArray(values[0])) {
-    const listDtype = jsTypeToPolarsType(values[0]);
+  const firstValue = firstNonNull(values);
+  if(Array.isArray(firstValue)) {
+    const listDtype = jsTypeToPolarsType(firstValue);
     const constructor = polarsTypeToConstructor(DataType.List);
 
     return constructor({ name, values, strict, dtype: listDtype});
   }
 
-  dtype = dtype ?? jsTypeToPolarsType(values[0]);
+  dtype = dtype ?? jsTypeToPolarsType(firstValue);
   let series;
 
-  if(values[0] instanceof Date) {
+  if(firstValue instanceof Date) {
     series =  polars_internal.series.new_opt_date({name, values, strict});
   } else {
 
@@ -70,7 +72,7 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "co
   if(!data.length) {
     dataSeries = [];
   }
-  else if (data[0] instanceof Series) {
+  else if (data[0]?._series) {
     dataSeries = [];
 
     data.forEach((series: Series<any>, idx) => {

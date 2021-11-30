@@ -36,7 +36,7 @@ impl JsSeries {
     ])?;
 
     series.define_properties(&[
-      napi::Property::new(env, "_not")?.with_method(not),
+      napi::Property::new(env, "_not")?.with_method(crate::series::not),
       napi::Property::new(env, "abs")?.with_method(abs),
       napi::Property::new(env, "add_f32_rhs")?.with_method(add_f32_rhs),
       napi::Property::new(env, "add_f32")?.with_method(add_f32),
@@ -170,6 +170,7 @@ impl JsSeries {
       napi::Property::new(env, "is_finite")?.with_method(is_finite),
       napi::Property::new(env, "is_first")?.with_method(is_first),
       napi::Property::new(env, "is_infinite")?.with_method(is_infinite),
+      napi::Property::new(env, "is_in")?.with_method(is_in),
       napi::Property::new(env, "is_nan")?.with_method(is_nan),
       napi::Property::new(env, "is_not_nan")?.with_method(is_not_nan),
       napi::Property::new(env, "is_not_null")?.with_method(crate::series::is_not_null),

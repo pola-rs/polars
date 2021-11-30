@@ -4,6 +4,7 @@ use crate::error::JsPolarsEr;
 use crate::series::JsSeries;
 use napi::{CallContext, JsExternal, JsObject, JsUnknown, Result};
 use polars::chunked_array::object::PolarsObjectSafe;
+use crate::lazy::dsl::JsExpr;
 
 #[derive(Debug)]
 pub struct Wrap<T>(pub T);
@@ -55,6 +56,7 @@ impl WrappedObject {
     let s: &JsSeries = cx.env.get_value_external(&v)?;
     Ok(s)
   }
+
   pub fn get_series_mut<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&mut JsSeries> {
     let v: JsExternal = self.0.get_named_property(key)?;
     let s: &mut JsSeries = cx.env.get_value_external(&v)?;
@@ -70,6 +72,16 @@ impl WrappedObject {
     let s: &mut JsDataFrame = cx.env.get_value_external(&v)?;
     Ok(s)
   }
+   pub fn get_expr<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&'a JsExpr> {
+    let v: JsExternal = self.0.get_named_property(key)?;
+    let s: &JsExpr = cx.env.get_value_external(&v)?;
+    Ok(s)
+  }
+  pub fn get_expr_mut<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&mut JsExpr> {
+    let v: JsExternal = self.0.get_named_property(key)?;
+    let s: &mut JsExpr = cx.env.get_value_external(&v)?;
+    Ok(s)
+  } 
 }
 
 pub struct WrappedValue(pub(crate) JsUnknown);

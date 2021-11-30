@@ -5,7 +5,7 @@ use crate::file::JsFileLike;
 use crate::prelude::JsResult;
 use crate::series::JsSeries;
 use napi::{
-  CallContext, Either, JsBoolean, JsExternal, JsNull, JsNumber, JsObject, JsString, JsUndefined,
+  CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsString, JsUndefined,
   JsUnknown,
 };
 use polars::frame::groupby::GroupBy;

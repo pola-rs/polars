@@ -1169,7 +1169,7 @@ export interface DataFrame {
   remainder(other: Series<any>): DataFrame
 }
 
-const dfWrapper = (_df: JsDataFrame): DataFrame => {
+export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const unwrap = <U>(method: string, args?: object, df=_df): U => {
 
     return internal.df[method]({_df: df, ...args });

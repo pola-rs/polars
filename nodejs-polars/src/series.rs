@@ -6,7 +6,6 @@ use crate::prelude::JsResult;
 use napi::Either;
 use napi::JsBoolean;
 use napi::JsExternal;
-use napi::JsFunction;
 use napi::JsNumber;
 use napi::JsTypedArray;
 use napi::JsUndefined;
@@ -231,7 +230,6 @@ pub fn get_idx(cx: CallContext) -> JsResult<JsUnknown> {
   let series = params.get_series(&cx, "_series")?;
   let idx = params.get_as::<usize>("idx")?;
   let val: Wrap<AnyValue> = series.series.get(idx).into();
-  println!("val={:#?}", val.0);
   val.try_into_js(&cx)
 }
 
@@ -642,12 +640,17 @@ pub fn shrink_to_fit(_: CallContext) -> JsResult<JsUnknown> {
   todo!()
 }
 
-#[cfg(feature = "is_in")]
+#[js_function(1)]
 pub fn is_in(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let series = params.get_series(&cx, "_series")?;
   let other = params.get_series(&cx, "other")?;
-  let s: JsSeries = series.series.is_in(&other.series).into_series().into();
+  let s: JsSeries = series
+    .series
+    .is_in(&other.series)
+    .map_err(JsPolarsEr::from)?
+    .into_series()
+    .into();
   s.try_into_js(&cx)
 }
 

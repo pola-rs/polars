@@ -1,3 +1,4 @@
+import {Expr} from "./lazy/expr";
 import path from "path";
 
 export function columnOrColumns(columns: ColumnSelection |  string | Array<string> | undefined): Array<string> | undefined {
@@ -8,6 +9,7 @@ export function columnOrColumns(columns: ColumnSelection |  string | Array<strin
 
 export type ValueOrArray<T> = T | Array<ValueOrArray<T>>;
 export type ColumnSelection = ValueOrArray<string>
+export type ExpressionSelection = ValueOrArray<Expr>
 
 
 export function columnOrColumnsStrict(...columns: string[] | ValueOrArray<string>[]): Array<string> {
