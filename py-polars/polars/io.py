@@ -444,22 +444,27 @@ def scan_csv(
 
     Examples
     --------
-    >>> (pl.scan_csv("my_long_file.csv")  # lazy, doesn't do a thing
-    >>>  .select(["a", "c"])              # select only 2 columns (other columns will not be read)
-    >>>  .filter(pl.col("a") > 10)        # the filter is pushed down the the scan, so less data read in memory
-    >>>  .fetch(100)                      # pushed a limit of 100 rows to the scan level
-    >>>  )
+    >>> (
+    ...     pl.scan_csv("my_long_file.csv")  # lazy, doesn't do a thing
+    ...     .select(
+    ...         ["a", "c"]
+    ...     )  # select only 2 columns (other columns will not be read)
+    ...     .filter(
+    ...         pl.col("a") > 10
+    ...     )  # the filter is pushed down the the scan, so less data read in memory
+    ...     .fetch(100)  # pushed a limit of 100 rows to the scan level
+    ... )
 
     >>> # we can use `with_column_names` to modify the header before scanning
-    >>> df = pl.DataFrame({
-    >>>     "BrEeZaH": [1, 2, 3, 4],
-    >>>     "LaNgUaGe": ["is", "terrible", "to", "read"]
-    >>> })
+    >>> df = pl.DataFrame(
+    ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "terrible", "to", "read"]}
+    ... )
     >>> df.to_csv("mydf.csv")
-    >>> (pl.scan_csv("mydf.csv",
-    >>>     with_column_names=lambda cols: [col.lower() for col in cols])
-    >>> .fetch()
-    >>> )
+    >>> (
+    ...     pl.scan_csv(
+    ...         "mydf.csv", with_column_names=lambda cols: [col.lower() for col in cols]
+    ...     ).fetch()
+    ... )
     shape: (4, 2)
     ┌─────────┬──────────┐
     │ breezah ┆ language │
@@ -748,7 +753,7 @@ def read_sql(
     ## Source not supported?
     If a database source is not supported, pandas can be used to load the query:
 
-    >>>> df = pl.from_pandas(pd.read_sql(sql, engine))
+    >>> df = pl.from_pandas(pd.read_sql(sql, engine))
 
     Parameters
     ----------
@@ -786,7 +791,10 @@ def read_sql(
     Read a DataFrame parallel using 2 threads by manually providing two partition SQLs:
 
     >>> uri = "postgresql://username:password@server:port/database"
-    >>> queries = ["SELECT * FROM lineitem WHERE partition_col <= 10", "SELECT * FROM lineitem WHERE partition_col > 10"]
+    >>> queries = [
+    ...     "SELECT * FROM lineitem WHERE partition_col <= 10",
+    ...     "SELECT * FROM lineitem WHERE partition_col > 10",
+    ... ]
     >>> read_sql(uri, queries)
 
     """

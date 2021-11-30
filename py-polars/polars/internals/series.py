@@ -132,7 +132,7 @@ class Series:
     --------
     Constructing a Series by specifying name and values positionally:
 
-    >>> s = pl.Series('a', [1, 2, 3])
+    >>> s = pl.Series("a", [1, 2, 3])
     >>> s
     shape: (3,)
     Series: 'a' [i64]
@@ -149,7 +149,7 @@ class Series:
 
     Constructing a Series with a specific dtype:
 
-    >>> s2 = pl.Series('a', [1, 2, 3], dtype=pl.Float32)
+    >>> s2 = pl.Series("a", [1, 2, 3], dtype=pl.Float32)
     >>> s2
     shape: (3,)
     Series: 'a' [f32]
@@ -904,7 +904,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.rename('b')
+        >>> s.rename("b")
         shape: (3,)
         Series: 'b' [i64]
         [
@@ -1592,7 +1592,7 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series('a', [[1, 2], [3, 4], [9, 10]])
+        >>> s = pl.Series("a", [[1, 2], [3, 4], [9, 10]])
         >>> s.explode()
         shape: (6,)
         Series: 'a' [i64]
@@ -1630,9 +1630,9 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("b", [4, 5, 6])
-        >>> s.series_equal(s))
+        >>> s.series_equal(s)
         True
-        >>> s.series_equal(s2))
+        >>> s.series_equal(s2)
         False
 
         """
@@ -2019,7 +2019,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.fill_null('forward'))
+        >>> s.fill_null("forward")
         shape: (4,)
         Series: '' [i64]
         [
@@ -2028,7 +2028,7 @@ class Series:
                 3
                 3
         ]
-        >>> s.fill_null('min'))
+        >>> s.fill_null("min")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -2130,7 +2130,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
         >>> s.sin()
         shape: (3,)
         Series: 'a' [f64]
@@ -2149,7 +2149,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
         >>> s.cos()
         shape: (3,)
         Series: 'a' [f64]
@@ -2168,7 +2168,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
         >>> s.tan()
         shape: (3,)
         Series: 'a' [f64]
@@ -2187,7 +2187,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
         >>> s.arcsin()
         shape: (3,)
         Series: 'a' [f64]
@@ -2206,7 +2206,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
         >>> s.arccos()
         shape: (3,)
         Series: 'a' [f64]
@@ -2225,7 +2225,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
         >>> s.arctan()
         shape: (3,)
         Series: 'a' [f64]
@@ -3073,10 +3073,10 @@ class StringNameSpace:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        'json_val':['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}'
-        })
-        >>> df.select(pl.col('json_val').str.json_path_match('$.a')
+        >>> df = pl.DataFrame(
+        ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
+        ... )
+        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))
         shape: (5,)
         Series: 'json_val' [str]
         [
@@ -3109,15 +3109,16 @@ class StringNameSpace:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        ...         'a': [
-        ...             'http://vote.com/ballon_dor?candidate=messi&ref=polars',
-        ...             'http://vote.com/ballon_dor?candidat=jorginho&ref=polars',
-        ...             'http://vote.com/ballon_dor?candidate=ronaldo&ref=polars'
-        ...         ]})
-        >>> df.select([
-        ...             pl.col('a').str.extract(r'candidate=(\w+)', 1)
-        ...         ])
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [
+        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
+        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
+        ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.select([pl.col("a").str.extract(r"candidate=(\w+)", 1)])
         shape: (3, 1)
         ┌─────────┐
         │ a       │
@@ -3310,10 +3311,11 @@ class DateTimeNameSpace:
         >>> from datetime import datetime, timedelta
         >>> import polars as pl
         >>> date_range = pl.date_range(
-        >>> low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
-        >>> high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
-        >>> interval=timedelta(minutes=8),
-        >>> name="date_range")
+        ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
+        ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
+        ...     interval=timedelta(minutes=8),
+        ...     name="date_range",
+        ... )
         >>>
         >>> date_range.dt.buckets(timedelta(minutes=8))
         shape: (8,)
@@ -3330,14 +3332,14 @@ class DateTimeNameSpace:
         ]
 
         >>> # can be used to perform a downsample operation
-        >>> (date_range
-        >>>  .to_frame()
-        >>>  .groupby(
-        >>>      pl.col("date_range").dt.buckets(timedelta(minutes=16)),
-        >>>      maintain_order=True
-        >>>  )
-        >>>  .agg(pl.col("date_range").count())
-        >>> )
+        >>> (
+        ...     date_range.to_frame()
+        ...     .groupby(
+        ...         pl.col("date_range").dt.buckets(timedelta(minutes=16)),
+        ...         maintain_order=True,
+        ...     )
+        ...     .agg(pl.col("date_range").count())
+        ... )
         shape: (4, 2)
         ┌─────────────────────┬──────────────────┐
         │ date_range          ┆ date_range_count │
