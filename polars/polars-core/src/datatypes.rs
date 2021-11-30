@@ -550,6 +550,7 @@ impl PartialEq<ArrowDataType> for DataType {
     }
 }
 
+/// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Field {
     name: String,
@@ -557,28 +558,92 @@ pub struct Field {
 }
 
 impl Field {
+    /// Creates a new `Field`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let f1 = Field::new("Fruit name", DataType::Utf8);
+    /// let f2 = Field::new("Lawful", DataType::Boolean);
+    /// let f2 = Field::new("Departure", DataType::Time);
+    /// ```
     pub fn new(name: &str, data_type: DataType) -> Self {
         Field {
             name: name.to_string(),
             data_type,
         }
     }
+
+    /// Returns a reference to the `Field` name.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let f = Field::new("Year", DataType::Int32);
+    ///
+    /// assert_eq!(f.name(), "Year");
+    /// ```
     pub fn name(&self) -> &String {
         &self.name
     }
 
+    /// Returns a reference to the `Field` datatype.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let f = Field::new("Birthday", DataType::Date);
+    ///
+    /// assert_eq!(f.data_type(), &DataType::Date);
+    /// ```
     pub fn data_type(&self) -> &DataType {
         &self.data_type
     }
 
+    /// Sets the `Field` datatype.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let mut f = Field::new("Temperature", DataType::Int32);
+    /// f.coerce(DataType::Float32);
+    ///
+    /// assert_eq!(f, Field::new("Temperature", DataType::Float32));
+    /// ```
     pub fn coerce(&mut self, dtype: DataType) {
         self.data_type = dtype;
     }
 
+    /// Sets the `Field` name.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let mut f = Field::new("Atomic number", DataType::UInt32);
+    /// f.set_name("Proton".to_owned());
+    ///
+    /// assert_eq!(f, Field::new("Proton", DataType::UInt32));
+    /// ```
     pub fn set_name(&mut self, name: String) {
         self.name = name;
     }
 
+    /// Converts the `Field` to an `arrow::datatypes::Field`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let f = Field::new("Value", DataType::Int64);
+    /// let af = arrow::datatypes::Field::new("Value", arrow::datatypes::DataType::Int64, true);
+    ///
+    /// assert_eq!(f.to_arrow(), af);
+    /// ```
     pub fn to_arrow(&self) -> ArrowField {
         ArrowField::new(&self.name, self.data_type.to_arrow(), true)
     }

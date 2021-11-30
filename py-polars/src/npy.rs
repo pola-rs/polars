@@ -51,3 +51,15 @@ pub unsafe fn vec_from_ptr<T>(ptr: usize, len: usize) -> Vec<T> {
     let ptr = ptr as *mut T;
     Vec::from_raw_parts(ptr, len, len)
 }
+
+/// Get reference counter for numpy arrays.
+///   - For CPython: Get reference counter.
+///   - For PyPy: Reference counters for a live PyPy object = refcnt + 2 << 60.
+pub fn get_refcnt<T>(pyarray: &PyArray1<T>) -> isize {
+    let refcnt = pyarray.get_refcnt();
+    if refcnt >= (2 << 60) {
+        refcnt - (2 << 60)
+    } else {
+        refcnt
+    }
+}

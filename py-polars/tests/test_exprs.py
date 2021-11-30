@@ -20,3 +20,14 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().prefix("reverse_")])
     assert out.columns == ["reverse_A", "reverse_fruits", "reverse_B", "reverse_cars"]
+
+
+def test_cumcount() -> None:
+    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], columns=["A"])
+
+    out = df.groupby("A", maintain_order=True).agg(
+        [pl.col("A").cumcount(reverse=False).alias("foo")]
+    )
+
+    assert out["foo"][0].to_list() == [0, 1, 2, 3]
+    assert out["foo"][1].to_list() == [0, 1]
