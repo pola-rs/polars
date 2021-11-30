@@ -54,7 +54,7 @@ def col(
     >>> df = pl.DataFrame(
     ...     {"ham": [1, 2, 3], "hamburger": [11, 22, 33], "foo": [3, 2, 1]}
     ... )
-    >>> df.select(col("foo"))
+    >>> df.select(pl.col("foo"))
     shape: (3, 1)
     ╭─────╮
     │ foo │
@@ -67,7 +67,7 @@ def col(
     ├╌╌╌╌╌┤
     │ 1   │
     ╰─────╯
-    >>> df.select(col("*"))
+    >>> df.select(pl.col("*"))
     shape: (3, 3)
     ╭─────┬───────────┬─────╮
     │ ham ┆ hamburger ┆ foo │
@@ -80,7 +80,7 @@ def col(
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 33        ┆ 1   │
     ╰─────┴───────────┴─────╯
-    >>> df.select(col("^ham.*$"))
+    >>> df.select(pl.col("^ham.*$"))
     shape: (3, 2)
     ╭─────┬───────────╮
     │ ham ┆ hamburger │
@@ -93,7 +93,7 @@ def col(
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 33        │
     ╰─────┴───────────╯
-    >>> df.select(col("*").exclude("ham"))
+    >>> df.select(pl.col("*").exclude("ham"))
     shape: (3, 2)
     ╭───────────┬─────╮
     │ hamburger ┆ foo │
@@ -106,7 +106,7 @@ def col(
     ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 33        ┆ 1   │
     ╰───────────┴─────╯
-    >>> df.select(col(["hamburger", "foo"]))
+    >>> df.select(pl.col(["hamburger", "foo"]))
     shape: (3, 2)
     ╭───────────┬─────╮
     │ hamburger ┆ foo │
@@ -505,23 +505,23 @@ def lit(
 
     Literal integer:
 
-    >>> lit(1)
+    >>> pl.lit(1)
 
     Literal str:
 
-    >>> lit("foo")
+    >>> pl.lit("foo")
 
     Literal datetime:
 
-    >>> lit(datetime(2021, 1, 20))
+    >>> pl.lit(datetime(2021, 1, 20))
 
     Literal Null:
 
-    >>> lit(None)
+    >>> pl.lit(None)
 
     Literal eager Series:
 
-    >>> lit(Series("a", [1, 2, 3]))
+    >>> pl.lit(Series("a", [1, 2, 3]))
 
     """
     if isinstance(value, datetime):
@@ -736,48 +736,49 @@ def any(name: Union[str, tp.List["pli.Expr"]]) -> "pli.Expr":
 
 def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     """
-     Exclude certain columns from a wildcard expression.
+    Exclude certain columns from a wildcard expression.
 
-     Syntactic sugar for:
-     >>> col("*").exclude()
+    Syntactic sugar for:
 
-     Parameters
-     ----------
-     columns
-         Column(s) to exclude from selection
+    >>> pl.col("*").exclude()
+
+    Parameters
+    ----------
+    columns
+        Column(s) to exclude from selection
 
 
     Examples
     --------
 
-     >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None], "c": [None, 2, 1]})
-     >>> df
-     shape: (3, 3)
-     ╭─────┬──────┬──────╮
-     │ a   ┆ b    ┆ c    │
-     │ --- ┆ ---  ┆ ---  │
-     │ i64 ┆ str  ┆ i64  │
-     ╞═════╪══════╪══════╡
-     │ 1   ┆ "a"  ┆ null │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 2   ┆ "b"  ┆ 2    │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 3   ┆ null ┆ 1    │
-     ╰─────┴──────┴──────╯
+    >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None], "c": [None, 2, 1]})
+    >>> df
+    shape: (3, 3)
+    ╭─────┬──────┬──────╮
+    │ a   ┆ b    ┆ c    │
+    │ --- ┆ ---  ┆ ---  │
+    │ i64 ┆ str  ┆ i64  │
+    ╞═════╪══════╪══════╡
+    │ 1   ┆ "a"  ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2   ┆ "b"  ┆ 2    │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3   ┆ null ┆ 1    │
+    ╰─────┴──────┴──────╯
 
-     >>> df.select(pl.exclude("b"))
-     shape: (3, 2)
-     ╭─────┬──────╮
-     │ a   ┆ c    │
-     │ --- ┆ ---  │
-     │ i64 ┆ i64  │
-     ╞═════╪══════╡
-     │ 1   ┆ null │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 2   ┆ 2    │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 3   ┆ 1    │
-     ╰─────┴──────╯
+    >>> df.select(pl.exclude("b"))
+    shape: (3, 2)
+    ╭─────┬──────╮
+    │ a   ┆ c    │
+    │ --- ┆ ---  │
+    │ i64 ┆ i64  │
+    ╞═════╪══════╡
+    │ 1   ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2   ┆ 2    │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3   ┆ 1    │
+    ╰─────┴──────╯
 
     """
     return col("*").exclude(columns)
@@ -815,14 +816,14 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
 
 def groups(column: str) -> "pli.Expr":
     """
-    Syntactic sugar for `column("foo").agg_groups()`.
+    Syntactic sugar for `pl.col("foo").agg_groups()`.
     """
     return col(column).agg_groups()
 
 
 def quantile(column: str, quantile: float) -> "pli.Expr":
     """
-    Syntactic sugar for `column("foo").quantile(..)`.
+    Syntactic sugar for `pl.col("foo").quantile(..)`.
     """
     return col(column).quantile(quantile)
 

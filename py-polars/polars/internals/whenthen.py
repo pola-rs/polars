@@ -95,7 +95,7 @@ def when(expr: pli.Expr) -> When:
 
     Below we add a column with the value 1, where column "foo" > 2 and the value -1 where it isn't.
 
-    >>> lf.with_column(when(col("foo") > 2).then(lit(1)).otherwise(lit(-1)))
+    >>> lf.with_column(pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1)))
 
     Or with multiple `when, thens` chained:
 
