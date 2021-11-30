@@ -276,13 +276,13 @@ impl PyDataFrame {
 
     #[cfg(feature = "ipc")]
     pub fn to_ipc(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
-        let mut buf = get_file_like(py_f, true)?;
         let compression = match compression {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
             "zstd" => Some(IpcCompression::ZSTD),
             s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
         };
+        let mut buf = get_file_like(py_f, true)?;
 
         IpcWriter::new(&mut buf)
             .with_compression(compression)
@@ -337,8 +337,6 @@ impl PyDataFrame {
 
     #[cfg(feature = "parquet")]
     pub fn to_parquet(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
-        let buf = get_file_like(py_f, true)?;
-
         let compression = match compression {
             "uncompressed" => ParquetCompression::Uncompressed,
             "snappy" => ParquetCompression::Snappy,
@@ -349,6 +347,7 @@ impl PyDataFrame {
             "zstd" => ParquetCompression::Zstd,
             s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
         };
+        let buf = get_file_like(py_f, true)?;
 
         ParquetWriter::new(buf)
             .with_compression(compression)

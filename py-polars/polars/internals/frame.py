@@ -2,6 +2,7 @@
 Module containing logic related to eager DataFrames
 """
 import os
+import sys
 import typing as tp
 from datetime import timedelta
 from io import BytesIO, StringIO
@@ -20,6 +21,11 @@ from typing import (
     Type,
     Union,
 )
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 import numpy as np
 
@@ -747,7 +753,9 @@ class DataFrame:
     def to_ipc(
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
-        compression: str = "uncompressed",
+        compression: Optional[
+            Union[Literal["uncompressed", "lz4", "zstd"], str]
+        ] = "uncompressed",
     ) -> None:
         """
         Write to Arrow IPC binary stream, or a feather file.
@@ -762,6 +770,8 @@ class DataFrame:
                 - "lz4"
                 - "zstd"
         """
+        if compression is None:
+            compression = "uncompressed"
         if isinstance(file, Path):
             file = str(file)
 
@@ -880,7 +890,14 @@ class DataFrame:
     def to_parquet(
         self,
         file: Union[str, Path, BytesIO],
-        compression: Optional[str] = "snappy",
+        compression: Optional[
+            Union[
+                Literal[
+                    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+                ],
+                str,
+            ]
+        ] = "snappy",
         use_pyarrow: bool = False,
         **kwargs: Any,
     ) -> None:
