@@ -208,7 +208,12 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["a", "b", None],
+        ...     }
+        ... )
         >>> df
         shape: (3, 2)
         ╭─────┬──────╮
@@ -222,7 +227,12 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3   ┆ null │
         ╰─────┴──────╯
-        >>> df.select([col("a").alias("bar"), col("b").alias("foo")])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").alias("bar"),
+        ...         pl.col("b").alias("foo"),
+        ...     ]
+        ... )
         shape: (3, 2)
         ╭─────┬──────╮
         │ bar ┆ foo  │
@@ -253,23 +263,29 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame(
-        ...     {"a": [1, 2, 3], "b": ["a", "b", None], "c": [None, 2, 1]}
-        ... )
-        >>> df
-        shape: (3, 3)
-        ╭─────┬──────┬──────╮
-        │ a   ┆ b    ┆ c    │
-        │ --- ┆ ---  ┆ ---  │
-        │ i64 ┆ str  ┆ i64  │
-        ╞═════╪══════╪══════╡
-        │ 1   ┆ "a"  ┆ null │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 2   ┆ "b"  ┆ 2    │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ 3   ┆ null ┆ 1    │
-        ╰─────┴──────┴──────╯
-        >>> df.select(col("*").exclude("b"))
+         >>> df = pl.DataFrame(
+         ...     {
+         ...         "a": [1, 2, 3],
+         ...         "b": ["a", "b", None],
+         ...         "c": [None, 2, 1],
+         ...     }
+         ... )
+         >>> df
+         shape: (3, 3)
+         ╭─────┬──────┬──────╮
+         │ a   ┆ b    ┆ c    │
+         │ --- ┆ ---  ┆ ---  │
+         │ i64 ┆ str  ┆ i64  │
+         ╞═════╪══════╪══════╡
+         │ 1   ┆ "a"  ┆ null │
+         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+         │ 2   ┆ "b"  ┆ 2    │
+         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+         │ 3   ┆ null ┆ 1    │
+         ╰─────┴──────┴──────╯
+         >>> df.select(
+         ...     pl.col("*").exclude("b"),
+         ... )
         shape: (3, 2)
         ╭─────┬──────╮
         │ a   ┆ c    │
@@ -297,8 +313,13 @@ class Expr:
         A groupby aggregation often changes the name of a column.
         With `keep_name` we can keep the original name of the column
 
-        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
-        >>> (df.groupby("a").agg(col("b").list()).sort(by="a"))
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["a", "b", None],
+        ...     }
+        ... )
+        >>> (df.groupby("a").agg(pl.col("b").list()).sort(by="a"))
         shape: (3, 2)
         ╭─────┬────────────╮
         │ a   ┆ b_agg_list │
@@ -596,6 +617,18 @@ class Expr:
             Reverse the operation.
         """
         return wrap_expr(self._pyexpr.cummax(reverse))
+
+    def cumcount(self, reverse: bool = False) -> "Expr":
+        """
+        Get an array with the cumulative count computed at every element.
+        Counting from 0 to len
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return wrap_expr(self._pyexpr.cumcount(reverse))
 
     def floor(self) -> "Expr":
         """
@@ -907,7 +940,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame(
+        >>> df = DataFrame(
         ...     {
         ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
         ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
@@ -915,34 +948,38 @@ class Expr:
         ... )
         >>> (
         ...     df.lazy()
-        ...     .select([pl.col("groups"), pl.sum("values").over("groups")])
+        ...     .select(
+        ...         [
+        ...             pl.col("groups").sum("values").over("groups"),
+        ...         ]
+        ...     )
         ...     .collect()
         ... )
-        ╭────────┬────────╮
-        │ groups ┆ values │
-        │ ---    ┆ ---    │
-        │ i32    ┆ i32    │
-        ╞════════╪════════╡
-        │ 1      ┆ 16     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 1      ┆ 16     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2      ┆ 13     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2      ┆ 13     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ ...    ┆ ...    │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 1      ┆ 16     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2      ┆ 13     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 3      ┆ 15     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 3      ┆ 15     │
-        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 1      ┆ 16     │
-        ╰────────┴────────╯
+            ╭────────┬────────╮
+            │ groups ┆ values │
+            │ ---    ┆ ---    │
+            │ i32    ┆ i32    │
+            ╞════════╪════════╡
+            │ 1      ┆ 16     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1      ┆ 16     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2      ┆ 13     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2      ┆ 13     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ ...    ┆ ...    │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1      ┆ 16     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2      ┆ 13     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3      ┆ 15     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3      ┆ 15     │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1      ┆ 16     │
+            ╰────────┴────────╯
 
         """
 
@@ -1055,8 +1092,22 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
-        >>> df.lazy().groupby("b").agg([col("a").apply(lambda x: x.sum())]).collect()
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 1, 1],
+        ...         "b": ["a", "b", "c", "c"],
+        ...     }
+        ... )
+        >>> (
+        ...     df.lazy()
+        ...     .groupby("b")
+        ...     .agg(
+        ...         [
+        ...             pl.col("a").apply(lambda x: x.sum()),
+        ...         ]
+        ...     )
+        ...     .collect()
+        ... )
         shape: (3, 2)
         ╭─────┬─────╮
         │ b   ┆ a   │
@@ -1348,7 +1399,11 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
-        >>> df.select([pl.col("A").rolling_mean(window_size=2)])
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_mean(window_size=2),
+        ...     ]
+        ... )
         shape: (6, 1)
         ┌──────┐
         │ A    │
@@ -1503,7 +1558,11 @@ class Expr:
         ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
         ...     }
         ... )
-        >>> df.select([pl.col("A").rolling_apply(3, lambda s: s.std())])
+        >>> df.select(
+        ...     [
+        ...         pl.col("A").rolling_apply(3, lambda s: s.std()),
+        ...     ]
+        ... )
         shape: (5, 1)
         ┌────────────────────┐
         │ A                  │
@@ -2091,7 +2150,11 @@ class ExprStringNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> df.select([pl.col("a").str.extract(r"candidate=(\w+)", 1)])
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").str.extract(r"candidate=(\w+)", 1),
+        ...     ]
+        ... )
         shape: (3, 1)
         ┌─────────┐
         │ a       │
@@ -2176,7 +2239,6 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime, timedelta
-        >>> import polars as pl
         >>> date_range = pl.date_range(
         ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
         ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),

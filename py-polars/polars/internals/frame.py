@@ -2,6 +2,7 @@
 Module containing logic related to eager DataFrames
 """
 import os
+import sys
 import typing as tp
 from datetime import timedelta
 from io import BytesIO, StringIO
@@ -20,6 +21,11 @@ from typing import (
     Type,
     Union,
 )
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 import numpy as np
 
@@ -751,7 +757,9 @@ class DataFrame:
     def to_ipc(
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
-        compression: str = "uncompressed",
+        compression: Optional[
+            Union[Literal["uncompressed", "lz4", "zstd"], str]
+        ] = "uncompressed",
     ) -> None:
         """
         Write to Arrow IPC binary stream, or a feather file.
@@ -766,6 +774,8 @@ class DataFrame:
                 - "lz4"
                 - "zstd"
         """
+        if compression is None:
+            compression = "uncompressed"
         if isinstance(file, Path):
             file = str(file)
 
@@ -889,7 +899,14 @@ class DataFrame:
     def to_parquet(
         self,
         file: Union[str, Path, BytesIO],
-        compression: Optional[str] = "snappy",
+        compression: Optional[
+            Union[
+                Literal[
+                    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+                ],
+                str,
+            ]
+        ] = "snappy",
         use_pyarrow: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -1625,7 +1642,10 @@ class DataFrame:
         **Sort by multiple columns.**
         For multiple columns we can also use expression syntax.
 
-        >>> df.sort([pl.col("foo"), pl.col("bar") ** 2], reverse=[True, False])
+        >>> df.sort(
+        ...     [pl.col("foo"), pl.col("bar") ** 2],
+        ...     reverse=[True, False],
+        ... )
 
         """
         if type(by) is list or isinstance(by, pli.Expr):
@@ -3426,7 +3446,7 @@ class GroupBy:
 
             Examples:
                 ## use lazy API syntax (recommended)
-                [col("foo").sum(), col("bar").min()]
+                [pl.col("foo").sum(), pl.col("bar").min()]
 
                 ## column name to aggregation with tuples:
                 [("foo", ["sum", "n_unique", "min"]),
@@ -3434,7 +3454,7 @@ class GroupBy:
 
                 ## column name to aggregation with dict:
                 {"foo": ["sum", "n_unique", "min"],
-                "bar": "max" }
+                 "bar": "max"}
 
         Returns
         -------

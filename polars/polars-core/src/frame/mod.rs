@@ -102,26 +102,24 @@ pub enum NullStrategy {
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// # fn example() ->  Result<()> {
 /// let df = df!("Fruit" => &["Apple", "Apple", "Pear"],
 ///              "Color" => &["Red", "Yellow", "Green"])?;
 ///
 /// assert_eq!(df[0], Series::new("Fruit", &["Apple", "Apple", "Pear"]));
 /// assert_eq!(df[1], Series::new("Color", &["Red", "Yellow", "Green"]));
-/// # Ok(()) }
+/// # Ok::<(), PolarsError>(())
 /// ```
 ///
 /// ## By a `Series` name
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// # fn example() ->  Result<()> {
 /// let df = df!("Fruit" => &["Apple", "Apple", "Pear"],
 ///              "Color" => &["Red", "Yellow", "Green"])?;
 ///
 /// assert_eq!(df["Fruit"], Series::new("Fruit", &["Apple", "Apple", "Pear"]));
 /// assert_eq!(df["Color"], Series::new("Color", &["Red", "Yellow", "Green"]));
-/// # Ok(())}
+/// # Ok::<(), PolarsError>(())
 /// ```
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -175,10 +173,12 @@ impl DataFrame {
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// let s0 = Series::new("days", [0, 1, 2].as_ref());
     /// let s1 = Series::new("temp", [22.1, 19.9, 7.].as_ref());
-    /// let df = DataFrame::new(vec![s0, s1]).unwrap();
+    ///
+    /// let df = DataFrame::new(vec![s0, s1])?;
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn new<S: IntoSeries>(columns: Vec<S>) -> Result<Self> {
         let mut first_len = None;
@@ -253,23 +253,40 @@ impl DataFrame {
         Ok(df)
     }
 
+    /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let s1 = Series::new("Ocean", &["Atlantic", "Indian"]);
+    /// let s2 = Series::new("Area (km²)", &[106_460_000, 70_560_000]);
+    /// let mut df = DataFrame::new(vec![s1.clone(), s2.clone()])?;
+    ///
+    /// assert_eq!(df.pop(), Some(s2));
+    /// assert_eq!(df.pop(), Some(s1));
+    /// assert_eq!(df.pop(), None);
+    /// assert!(df.is_empty());
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn pop(&mut self) -> Option<Series> {
+        self.columns.pop()
+    }
+
     /// Add a new column at index 0 that counts the rows.
     ///
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
+    /// assert_eq!(df1.shape(), (4, 1));
     ///
-    /// fn example() -> Result<()> {
-    ///   let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
-    ///   assert_eq!(df1.shape(), (4, 1));
+    /// let df2: DataFrame = df1.with_row_count("Id")?;
+    /// assert_eq!(df2.shape(), (4, 2));
+    /// println!("{}", df2);
     ///
-    ///   let df2: DataFrame = df1.with_row_count("Id")?;
-    ///   assert_eq!(df2.shape(), (4, 2));
-    ///   println!("{}", df2);
-    ///
-    ///   Ok(())
-    /// }
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -340,7 +357,7 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        self.columns = self.columns.par_iter().map(|s| s.rechunk()).collect();
+        self.columns = POOL.install(|| self.columns.par_iter().map(|s| s.rechunk()).collect());
         self
     }
 
@@ -381,72 +398,62 @@ impl DataFrame {
         }
     }
 
-    /// Get the DataFrame schema.
+    /// Get the `DataFrame` schema.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Thing" => &["Observable universe", "Human stupidity"],
+    ///                         "Diameter (m)" => &[8.8e26, f64::INFINITY])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Thing" => &["Observable universe", "Human stupidity"],
-    ///                             "Diameter (m)" => &[8.8e26, f64::INFINITY])?;
-    ///     let f1: Field = Field::new("Thing", DataType::Utf8);
-    ///     let f2: Field = Field::new("Diameter (m)", DataType::Float64);
-    ///     let sc: Schema = Schema::new(vec![f1, f2]);
+    /// let f1: Field = Field::new("Thing", DataType::Utf8);
+    /// let f2: Field = Field::new("Diameter (m)", DataType::Float64);
+    /// let sc: Schema = Schema::new(vec![f1, f2]);
     ///
-    ///     assert_eq!(df.schema(), sc);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df.schema(), sc);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
         let fields = Self::create_fields(&self.columns);
         Schema::new(fields)
     }
 
-    /// Get a reference to the DataFrame columns.
+    /// Get a reference to the `DataFrame` columns.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*;  // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Name" => &["Adenine", "Cytosine", "Guanine", "Thymine"],
+    ///                         "Symbol" => &["A", "C", "G", "T"])?;
+    /// let columns: &Vec<Series> = df.get_columns();
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Name" => &["Adenine", "Cytosine", "Guanine", "Thymine"],
-    ///                             "Symbol" => &["A", "C", "G", "T"])?;
-    ///     let columns: &Vec<Series> = df.get_columns();
-    ///
-    ///     assert_eq!(columns[0].name(), "Name");
-    ///     assert_eq!(columns[1].name(), "Symbol");
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(columns[0].name(), "Name");
+    /// assert_eq!(columns[1].name(), "Symbol");
+    /// # Ok::<(), PolarsError>(())
     /// ```
     #[inline]
     pub fn get_columns(&self) -> &Vec<Series> {
         &self.columns
     }
 
-    /// Iterator over the columns as Series.
+    /// Iterator over the columns as `Series`.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*;  // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let s1: Series = Series::new("Name", &["Pythagoras' theorem", "Shannon entropy"]);
+    /// let s2: Series = Series::new("Formula", &["a²+b²=c²", "H=-Σ[P(x)log|P(x)|]"]);
+    /// let df: DataFrame = DataFrame::new(vec![s1.clone(), s2.clone()])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let s1: Series = Series::new("Name", &["Pythagoras' theorem", "Shannon entropy"]);
-    ///     let s2: Series = Series::new("Formula", &["a²+b²=c²", "H=-Σ[P(x)log|P(x)|]"]);
-    ///     let df: DataFrame = DataFrame::new(vec![s1.clone(), s2.clone()])?;
+    /// let mut iterator = df.iter();
     ///
-    ///     let mut iterator = df.iter();
-    ///     assert_eq!(iterator.next(), Some(&s1));
-    ///     assert_eq!(iterator.next(), Some(&s2));
-    ///     assert_eq!(iterator.next(), None);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(iterator.next(), Some(&s1));
+    /// assert_eq!(iterator.next(), Some(&s2));
+    /// assert_eq!(iterator.next(), None);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn iter(&self) -> std::slice::Iter<'_, Series> {
         self.columns.iter()
@@ -455,16 +462,12 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Language" => &["Rust", "Python"],
+    ///                         "Designer" => &["Graydon Hoare", "Guido van Rossum"])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Language" => &["Rust", "Python"],
-    ///                             "Designer" => &["Graydon Hoare", "Guido van Rossum"])?;
-    ///
-    ///     assert_eq!(df.get_column_names(), &["Language", "Designer"]);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df.get_column_names(), &["Language", "Designer"]);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn get_column_names(&self) -> Vec<&str> {
         self.columns.iter().map(|s| s.name()).collect()
@@ -474,16 +477,12 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let mut df: DataFrame = df!("Mathematical set" => &["ℕ", "ℤ", "𝔻", "ℚ", "ℝ", "ℂ"])?;
+    /// df.set_column_names(&["Set"])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let mut df: DataFrame = df!("Mathematical set" => &["ℕ", "ℤ", "𝔻", "ℚ", "ℝ", "ℂ"])?;
-    ///     df.set_column_names(&["Set"])?;
-    ///
-    ///     assert_eq!(df.get_column_names(), &["Set"]);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df.get_column_names(), &["Set"]);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> Result<()> {
         if names.len() != self.columns.len() {
@@ -507,16 +506,12 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
-    ///
-    /// fn example() -> Result<()> {
-    ///     let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
-    ///                                    "Fraction" => &[0.965, 0.035])?;
+    /// # use polars_core::prelude::*;
+    /// let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
+    ///                                "Fraction" => &[0.965, 0.035])?;
     ///     
-    ///     assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn dtypes(&self) -> Vec<DataType> {
         self.columns.iter().map(|s| s.dtype().clone()).collect()
@@ -539,24 +534,20 @@ impl DataFrame {
         columns.iter().map(|s| s.field().into_owned()).collect()
     }
 
-    /// Get a reference to the schema fields of the DataFrame.
+    /// Get a reference to the schema fields of the `DataFrame`.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
-    ///
-    /// fn example() -> Result<()> {
-    ///     let earth: DataFrame = df!("Surface type" => &["Water", "Land"],
-    ///                                "Fraction" => &[0.708, 0.292])?;
+    /// # use polars_core::prelude::*;
+    /// let earth: DataFrame = df!("Surface type" => &["Water", "Land"],
+    ///                            "Fraction" => &[0.708, 0.292])?;
     ///     
-    ///     let f1: Field = Field::new("Surface type", DataType::Utf8);
-    ///     let f2: Field = Field::new("Fraction", DataType::Float64);
+    /// let f1: Field = Field::new("Surface type", DataType::Utf8);
+    /// let f2: Field = Field::new("Fraction", DataType::Float64);
     ///
-    ///     assert_eq!(earth.fields(), &[f1, f2]);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(earth.fields(), &[f1, f2]);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn fields(&self) -> Vec<Field> {
         self.columns
@@ -570,20 +561,16 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df0: DataFrame = DataFrame::default();
+    /// let df1: DataFrame = df!("1" => &[1, 2, 3, 4, 5])?;
+    /// let df2: DataFrame = df!("1" => &[1, 2, 3, 4, 5],
+    ///                          "2" => &[1, 2, 3, 4, 5])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df0: DataFrame = DataFrame::default();
-    ///     let df1: DataFrame = df!("1" => &[1, 2, 3, 4, 5])?;
-    ///     let df2: DataFrame = df!("1" => &[1, 2, 3, 4, 5],
-    ///                              "2" => &[1, 2, 3, 4, 5])?;
-    ///
-    ///     assert_eq!(df0.shape(), (0 ,0));
-    ///     assert_eq!(df1.shape(), (5, 1));
-    ///     assert_eq!(df2.shape(), (5, 2));
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df0.shape(), (0 ,0));
+    /// assert_eq!(df1.shape(), (5, 1));
+    /// assert_eq!(df2.shape(), (5, 2));
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn shape(&self) -> (usize, usize) {
         match self.columns.as_slice() {
@@ -597,20 +584,16 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df0: DataFrame = DataFrame::default();
+    /// let df1: DataFrame = df!("Series 1" => &[0; 0])?;
+    /// let df2: DataFrame = df!("Series 1" => &[0; 0],
+    ///                          "Series 2" => &[0; 0])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df0: DataFrame = DataFrame::default();
-    ///     let df1: DataFrame = df!("Series 1" => &[0; 0])?;
-    ///     let df2: DataFrame = df!("Series 1" => &[0; 0],
-    ///                              "Series 2" => &[0; 0])?;
-    ///
-    ///     assert_eq!(df0.width(), 0);
-    ///     assert_eq!(df1.width(), 1);
-    ///     assert_eq!(df2.width(), 2);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df0.width(), 0);
+    /// assert_eq!(df1.width(), 1);
+    /// assert_eq!(df2.width(), 2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn width(&self) -> usize {
         self.columns.len()
@@ -621,41 +604,33 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df0: DataFrame = DataFrame::default();
+    /// let df1: DataFrame = df!("Currency" => &["€", "$"])?;
+    /// let df2: DataFrame = df!("Currency" => &["€", "$", "¥", "£", "₿"])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df0: DataFrame = DataFrame::default();
-    ///     let df1: DataFrame = df!("Currency" => &["€", "$"])?;
-    ///     let df2: DataFrame = df!("Currency" => &["€", "$", "¥", "£", "₿"])?;
-    ///
-    ///     assert_eq!(df0.height(), 0);
-    ///     assert_eq!(df1.height(), 2);
-    ///     assert_eq!(df2.height(), 5);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df0.height(), 0);
+    /// assert_eq!(df1.height(), 2);
+    /// assert_eq!(df2.height(), 5);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn height(&self) -> usize {
         self.shape().0
     }
 
-    /// Check if DataFrame is empty
+    /// Check if the `DataFrame` is empty.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = DataFrame::default();
+    /// assert!(df1.is_empty());
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = DataFrame::default();
-    ///     assert!(df1.is_empty());
-    ///
-    ///     let df2: DataFrame = df!("First name" => &["Forever"],
-    ///                              "Last name" => &["Alone"])?;
-    ///     assert!(!df2.is_empty());
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df!("First name" => &["Forever"],
+    ///                          "Last name" => &["Alone"])?;
+    /// assert!(!df2.is_empty());
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_empty(&self) -> bool {
         self.columns.is_empty()
@@ -669,13 +644,13 @@ impl DataFrame {
         self
     }
 
-    /// Add multiple Series to a DataFrame
-    /// The added Series are required to have the same length.
+    /// Add multiple `Series` to a `DataFrame`.
+    /// The added `Series` are required to have the same length.
     ///
     /// # Example
     ///
-    /// ```
-    /// use polars_core::prelude::*;
+    /// ```rust
+    /// # use polars_core::prelude::*;
     /// fn stack(df: &mut DataFrame, columns: &[Series]) {
     ///     df.hstack_mut(columns);
     /// }
@@ -706,25 +681,21 @@ impl DataFrame {
         Ok(self.hstack_mut_no_checks(columns))
     }
 
-    /// Add multiple Series to a DataFrame
-    /// The added Series are required to have the same length.
+    /// Add multiple `Series` to a `DataFrame`.
+    /// The added `Series` are required to have the same length.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"])?;
+    /// let s1: Series = Series::new("Proton", &[29, 47, 79]);
+    /// let s2: Series = Series::new("Electron", &[29, 47, 79]);
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"])?;
-    ///     let s1: Series = Series::new("Proton", &[29, 47, 79]);
-    ///     let s2: Series = Series::new("Electron", &[29, 47, 79]);
-    ///
-    ///     let df2: DataFrame = df1.hstack(&[s1, s2])?;
-    ///     assert_eq!(df2.shape(), (3, 3));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.hstack(&[s1, s2])?;
+    /// assert_eq!(df2.shape(), (3, 3));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -749,25 +720,22 @@ impl DataFrame {
         DataFrame::new(new_cols)
     }
 
-    /// Concatenate a DataFrame to this DataFrame and return as newly allocated DataFrame
+    /// Concatenate a `DataFrame` to this `DataFrame` and return as newly allocated `DataFrame`.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"],
+    ///                          "Melting Point (K)" => &[1357.77, 1234.93, 1337.33])?;
+    /// let df2: DataFrame = df!("Element" => &["Platinum", "Palladium"],
+    ///                          "Melting Point (K)" => &[2041.4, 1828.05])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"],
-    ///                              "Melting Point (K)" => &[1357.77, 1234.93, 1337.33])?;
-    ///     let df2: DataFrame = df!("Element" => &["Platinum", "Palladium"],
-    ///                              "Melting Point(K)" => &[2041.4, 1828.05])?;
-    ///     
-    ///     let df3: DataFrame = df1.vstack(&df2)?;
-    ///     assert_eq!(df3.shape(), (5, 2));
-    ///     println!("{}", df3);
+    /// let df3: DataFrame = df1.vstack(&df2)?;
     ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df3.shape(), (5, 2));
+    /// println!("{}", df3);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -801,20 +769,17 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let mut df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"],
+    ///                          "Melting Point (K)" => &[1357.77, 1234.93, 1337.33])?;
+    /// let df2: DataFrame = df!("Element" => &["Platinum", "Palladium"],
+    ///                          "Melting Point (K)" => &[2041.4, 1828.05])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let mut df1: DataFrame = df!("Element" => &["Copper", "Silver", "Gold"],
-    ///                              "Melting Point (K)" => &[1357.77, 1234.93, 1337.33])?;
-    ///     let df2: DataFrame = df!("Element" => &["Platinum", "Palladium"],
-    ///                              "Melting Point(K)" => &[2041.4, 1828.05])?;
-    ///     
-    ///     df1.vstack_mut(&df2)?;
-    ///     assert_eq!(df1.shape(), (5, 2));
-    ///     println!("{}", df1);
+    /// df1.vstack_mut(&df2)?;
     ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df1.shape(), (5, 2));
+    /// println!("{}", df1);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -870,20 +835,16 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let mut df: DataFrame = df!("Animal" => &["Tiger", "Lion", "Great auk"],
+    ///                             "IUCN" => &["Endangered", "Vulnerable", "Extinct"])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let mut df: DataFrame = df!("Animal" => &["Tiger", "Lion", "Great auk"],
-    ///                                 "IUCN" => &["Endangered", "Vulnerable", "Extinct"])?;
-    ///     
-    ///     let s1: Result<Series> = df.drop_in_place("Average weight");
-    ///     assert!(s1.is_err());
+    /// let s1: Result<Series> = df.drop_in_place("Average weight");
+    /// assert!(s1.is_err());
     ///
-    ///     let s2: Series = df.drop_in_place("IUCN")?;
-    ///     assert_eq!(s2, Series::new("Animal", &["Tiger", "Lion", "Great auk"]));
-    ///
-    ///     Ok(())
-    /// }
+    /// let s2: Series = df.drop_in_place("Animal")?;
+    /// assert_eq!(s2, Series::new("Animal", &["Tiger", "Lion", "Great auk"]));
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn drop_in_place(&mut self, name: &str) -> Result<Series> {
         let idx = self.name_to_idx(name)?;
@@ -896,20 +857,16 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Country" => &["Malta", "Liechtenstein", "North Korea"],
+    ///                         "Tax revenue (% GDP)" => &[Some(32.7), None, None])?;
+    /// assert_eq!(df1.shape(), (3, 2));
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Country" => &["Malta", "Liechtenstein", "North Korea"],
-    ///                             "Tax revenue (% GDP)" => &[Some(32.7), None, None])?;
-    ///     assert_eq!(df1.shape(), (3, 2));
-    ///
-    ///     let df2: DataFrame = df1.drop_nulls(None)?;
-    ///     assert_eq!(df2.shape(), (1, 2));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.drop_nulls(None)?;
+    /// assert_eq!(df2.shape(), (1, 2));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -958,16 +915,12 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Ray type" => &["α", "β", "X", "γ"])?;
+    /// let df2: DataFrame = df1.drop("Ray type")?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Ray type" => &["α", "β", "X", "γ"])?;
-    ///     let df2: DataFrame = df1.drop("Ray type")?;
-    ///
-    ///     assert_eq!(df1, df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert!(df2.is_empty());
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn drop(&self, name: &str) -> Result<Self> {
         let idx = self.name_to_idx(name)?;
@@ -999,7 +952,7 @@ impl DataFrame {
         }
     }
 
-    /// Insert a new column at a given index
+    /// Insert a new column at a given index.
     pub fn insert_at_idx<S: IntoSeries>(&mut self, index: usize, column: S) -> Result<&mut Self> {
         let series = column.into_series();
         self.has_column(series.name())?;
@@ -1030,12 +983,12 @@ impl DataFrame {
         }
     }
 
-    /// Get a row in the `DataFrame` Beware this is slow.
+    /// Get a row in the `DataFrame`. Beware this is slow.
     ///
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn example(df: &mut DataFrame, idx: usize) -> Option<Vec<AnyValue>> {
     ///     df.get(idx)
     /// }
@@ -1057,19 +1010,15 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Star" => &["Sun", "Betelgeuse", "Sirius A", "Sirius B"],
+    ///                         "Absolute magnitude" => &[4.83, -5.85, 1.42, 11.18])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Star" => &["Sun", "Betelgeuse", "Sirius A", "Sirius B"],
-    ///                             "Absolute magnitude" => &[4.83, -5.85, 1.42, 11.18])?;
-    ///     
-    ///     let s1: Option<&Series> = df.select_at_idx(0);
-    ///     let s2: Series = Series::new("Star", &["Sun", "Betelgeuse", "Sirius A", "Sirius B"]);
+    /// let s1: Option<&Series> = df.select_at_idx(0);
+    /// let s2: Series = Series::new("Star", &["Sun", "Betelgeuse", "Sirius A", "Sirius B"]);
     ///
-    ///     assert_eq!(s1, Some(&s2));
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(s1, Some(&s2));
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn select_at_idx(&self, idx: usize) -> Option<&Series> {
         self.columns.get(idx)
@@ -1083,26 +1032,22 @@ impl DataFrame {
         self.columns.get_mut(idx)
     }
 
-    /// Get column index of a series by name.
+    /// Get column index of a `Series` by name.
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Name" => &["Player 1", "Player 2", "Player 3"],
+    ///                         "Health" => &[100, 200, 500],
+    ///                         "Mana" => &[250, 100, 0],
+    ///                         "Strength" => &[30, 150, 300])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Name" => &["Player 1", "Player 2", "Player 3"],
-    ///                             "Health" => &[100, 200, 500],
-    ///                             "Mana" => &[250, 100, 0],
-    ///                             "Strength" => &[30, 150, 300])?;
-    ///
-    ///     assert_eq!(df.find_idx_by_name("Name"), Some(0));
-    ///     assert_eq!(df.find_idx_by_name("Health"), Some(1));
-    ///     assert_eq!(df.find_idx_by_name("Mana"), Some(2));
-    ///     assert_eq!(df.find_idx_by_name("Strength"), Some(3));
-    ///     assert_eq!(df.find_idx_by_name("Haste"), None);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df.find_idx_by_name("Name"), Some(0));
+    /// assert_eq!(df.find_idx_by_name("Health"), Some(1));
+    /// assert_eq!(df.find_idx_by_name("Mana"), Some(2));
+    /// assert_eq!(df.find_idx_by_name("Strength"), Some(3));
+    /// assert_eq!(df.find_idx_by_name("Haste"), None);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
         self.columns.iter().position(|s| s.name() == name)
@@ -1113,17 +1058,13 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let s1: Series = Series::new("Password", &["123456", "[]B$u$g$s$B#u#n#n#y[]{}"]);
+    /// let s2: Series = Series::new("Robustness", &["Weak", "Strong"]);
+    /// let df: DataFrame = DataFrame::new(vec![s1.clone(), s2])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let s1: Series = Series::new("Password", &["123456", "[]B$u$g$s$B#u#n#n#y[]{}"]);
-    ///     let s2: Series = Series::new("Robustness", &["Weak", "Strong"]);
-    ///     let df: DataFrame = DataFrame::new(vec![s1.clone(), s2])?;
-    ///
-    ///     assert_eq!(df.column("Password")?, &s1);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df.column("Password")?, &s1);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn column(&self, name: &str) -> Result<&Series> {
         let idx = self
@@ -1137,18 +1078,14 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Latin name" => &["Oncorhynchus kisutch", "Salmo salar"],
+    ///                         "Max weight (kg)" => &[16.0, 35.89])?;
+    /// let sv: Vec<&Series> = df.columns(&["Latin name", "Max weight (kg)"])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Latin name" => &["Oncorhynchus kisutch", "Salmo salar"],
-    ///                             "Max weight (kg)" => &[16.0, 35.89])?;
-    ///     let sv: Vec<&Series> = df.columns(&["Latin name", "Max weight (kg)"])?;
-    ///
-    ///     assert_eq!(&df[0], sv[0]);
-    ///     assert_eq!(&df[1], sv[1]);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(&df[0], sv[0]);
+    /// assert_eq!(&df[1], sv[1]);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn columns<I, S>(&self, names: I) -> Result<Vec<&Series>>
     where
@@ -1161,13 +1098,12 @@ impl DataFrame {
             .collect()
     }
 
-    /// Select column(s) from this DataFrame and return a new DataFrame.
+    /// Select column(s) from this `DataFrame` and return a new `DataFrame`.
     ///
     /// # Examples
     ///
     /// ```
-    /// use polars_core::prelude::*;
-    ///
+    /// # use polars_core::prelude::*;
     /// fn example(df: &DataFrame, possible: &str) -> Result<DataFrame> {
     ///     match possible {
     ///         "by_str" => df.select("my-column"),
@@ -1194,24 +1130,20 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(selected))
     }
 
-    /// Select column(s) from this DataFrame and return them into a Vector.
+    /// Select column(s) from this `DataFrame` and return them into a `Vec`.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Name" => &["Methane", "Ethane", "Propane"],
+    ///                         "Carbon" => &[1, 2, 3],
+    ///                         "Hydrogen" => &[4, 6, 8])?;
+    /// let sv: Vec<Series> = df.select_series(&["Carbon", "Hydrogen"])?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Name" => &["Methane", "Ethane", "Propane"],
-    ///                             "Carbon" => &[1, 2, 3],
-    ///                             "Hydrogen" => &[4, 6, 8])?;
-    ///     let sv: Vec<Series> = df.select_series(&["Carbon", "Hydrogen"])?;
-    ///
-    ///     assert_eq!(df["Carbon"], sv[0]);
-    ///     assert_eq!(df["Hydrogen"], sv[1]);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(df["Carbon"], sv[0]);
+    /// assert_eq!(df["Hydrogen"], sv[1]);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn select_series<'a, S, J>(&self, selection: S) -> Result<Vec<Series>>
     where
@@ -1291,17 +1223,16 @@ impl DataFrame {
         }))
     }
 
-    /// Take DataFrame rows by a boolean mask.
+    /// Take the `DataFrame` rows by a boolean mask.
     ///
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let mask = df.column("sepal.width")?.is_not_null();
     ///     df.filter(&mask)
     /// }
-    ///
     /// ```
     pub fn filter(&self, mask: &BooleanChunked) -> Result<Self> {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
@@ -1320,12 +1251,12 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    /// Take DataFrame value by indexes from an iterator.
+    /// Take `DataFrame` value by indexes from an iterator.
     ///
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let iterator = (0..9).into_iter();
     ///     df.take_iter(iterator)
@@ -1335,18 +1266,19 @@ impl DataFrame {
     where
         I: Iterator<Item = usize> + Clone + Sync,
     {
-        let new_col = self
-            .columns
-            .par_iter()
-            .map(|s| {
-                let mut i = iter.clone();
-                s.take_iter(&mut i)
-            })
-            .collect::<Result<_>>()?;
+        let new_col = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| {
+                    let mut i = iter.clone();
+                    s.take_iter(&mut i)
+                })
+                .collect::<Result<_>>()
+        })?;
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    /// Take DataFrame values by indexes from an iterator.
+    /// Take `DataFrame` values by indexes from an iterator.
     ///
     /// # Safety
     ///
@@ -1381,18 +1313,20 @@ impl DataFrame {
                 .map(|s| s.take_iter_unchecked(&mut iter))
                 .collect::<Vec<_>>()
         } else {
-            self.columns
-                .par_iter()
-                .map(|s| {
-                    let mut i = iter.clone();
-                    s.take_iter_unchecked(&mut i)
-                })
-                .collect::<Vec<_>>()
+            POOL.install(|| {
+                self.columns
+                    .par_iter()
+                    .map(|s| {
+                        let mut i = iter.clone();
+                        s.take_iter_unchecked(&mut i)
+                    })
+                    .collect::<Vec<_>>()
+            })
         };
         DataFrame::new_no_checks(new_col)
     }
 
-    /// Take DataFrame values by indexes from an iterator that may contain None values.
+    /// Take `DataFrame` values by indexes from an iterator that may contain None values.
     ///
     /// # Safety
     ///
@@ -1428,24 +1362,26 @@ impl DataFrame {
                 .map(|s| s.take_opt_iter_unchecked(&mut iter))
                 .collect::<Vec<_>>()
         } else {
-            self.columns
-                .par_iter()
-                .map(|s| {
-                    let mut i = iter.clone();
-                    s.take_opt_iter_unchecked(&mut i)
-                })
-                .collect::<Vec<_>>()
+            POOL.install(|| {
+                self.columns
+                    .par_iter()
+                    .map(|s| {
+                        let mut i = iter.clone();
+                        s.take_opt_iter_unchecked(&mut i)
+                    })
+                    .collect::<Vec<_>>()
+            })
         };
 
         DataFrame::new_no_checks(new_col)
     }
 
-    /// Take DataFrame rows by index values.
+    /// Take `DataFrame` rows by index values.
     ///
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
     ///     let idx = UInt32Chunked::new_from_slice("idx", &[0, 1, 9]);
     ///     df.take(&idx)
@@ -1508,12 +1444,12 @@ impl DataFrame {
         })
     }
 
-    /// Rename a column in the DataFrame
+    /// Rename a column in the `DataFrame`.
     ///
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// fn example(df: &mut DataFrame) -> Result<&mut DataFrame> {
     ///     let original_name = "foo";
     ///     let new_name = "bar";
@@ -1527,7 +1463,7 @@ impl DataFrame {
         Ok(self)
     }
 
-    /// Sort DataFrame in place by a column.
+    /// Sort `DataFrame` in place by a column.
     pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<&mut Self> {
         self.columns = self.sort(by_column, reverse)?.columns;
         Ok(self)
@@ -1574,13 +1510,12 @@ impl DataFrame {
         Ok(df)
     }
 
-    /// Return a sorted clone of this DataFrame.
+    /// Return a sorted clone of this `DataFrame`.
     ///
     /// # Example
     ///
     /// ```
-    /// use polars_core::prelude::*;
-    ///
+    /// # use polars_core::prelude::*;
     /// fn sort_example(df: &DataFrame, reverse: bool) -> Result<DataFrame> {
     ///     df.sort("a", reverse)
     /// }
@@ -1599,23 +1534,19 @@ impl DataFrame {
         self.sort_impl(by_column, reverse)
     }
 
-    /// Replace a column with a series.
+    /// Replace a column with a `Series`.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let mut df: DataFrame = df!("Country" => &["United States", "China"],
+    ///                         "Area (km²)" => &[9_833_520, 9_596_961])?;
+    /// let s: Series = Series::new("Country", &["USA", "PRC"]);
     ///
-    /// fn example() -> Result<()> {
-    ///     let mut df: DataFrame = df!("Country" => &["United States", "China"],
-    ///                             "Area (km²)" => &[9_833_520, 9_596_961])?;
-    ///     let s: Series = Series::new("Country", &["USA", "PRC"]);
-    ///
-    ///     assert!(df.replace("Nation", s.clone()).is_err());
-    ///     assert!(df.replace("Country", s).is_ok());
-    ///
-    ///     Ok(())
-    /// }
+    /// assert!(df.replace("Nation", s.clone()).is_err());
+    /// assert!(df.replace("Country", s).is_ok());
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn replace<S: IntoSeries>(&mut self, column: &str, new_col: S) -> Result<&mut Self> {
         self.apply(column, |_| new_col.into_series())
@@ -1630,18 +1561,19 @@ impl DataFrame {
         self.with_column(new_col)
     }
 
-    /// Replace column at index `idx` with a series.
+    /// Replace column at index `idx` with a `Series`.
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*;
+    /// ```ignored
+    /// # use polars_core::prelude::*;
     /// let s0 = Series::new("foo", &["ham", "spam", "egg"]);
     /// let s1 = Series::new("ascii", &[70, 79, 79]);
-    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // Add 32 to get lowercase ascii values
     /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn replace_at_idx<S: IntoSeries>(&mut self, idx: usize, new_col: S) -> Result<&mut Self> {
         let mut new_column = new_col.into_series();
@@ -1671,10 +1603,10 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// let s0 = Series::new("foo", &["ham", "spam", "egg"]);
     /// let s1 = Series::new("names", &["Jean", "Claude", "van"]);
-    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// fn str_to_len(str_val: &Series) -> Series {
     ///     str_val.utf8()
@@ -1689,6 +1621,7 @@ impl DataFrame {
     ///
     /// // Replace the names column by the length of the names.
     /// df.apply("names", str_to_len);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     /// Results in:
     ///
@@ -1722,13 +1655,14 @@ impl DataFrame {
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
     /// let s0 = Series::new("foo", &["ham", "spam", "egg"]);
     /// let s1 = Series::new("ascii", &[70, 79, 79]);
-    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // Add 32 to get lowercase ascii values
     /// df.apply_at_idx(1, |s| s + 32);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     /// Results in:
     ///
@@ -1799,11 +1733,11 @@ impl DataFrame {
     ///
     /// This is the idomatic way to replace some values a column of a `DataFrame` given range of indexes.
     ///
-    /// ```
+    /// ```rust
     /// # use polars_core::prelude::*;
     /// let s0 = Series::new("foo", &["ham", "spam", "egg", "bacon", "quack"]);
     /// let s1 = Series::new("values", &[1, 2, 3, 4, 5]);
-    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// let idx = vec![0, 1, 4];
     ///
@@ -1811,6 +1745,7 @@ impl DataFrame {
     ///     s.utf8()?
     ///     .set_at_idx_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
     /// });
+    /// # Ok::<(), PolarsError>(())
     /// ```
     /// Results in:
     ///
@@ -1866,20 +1801,21 @@ impl DataFrame {
     ///
     /// This is the idomatic way to replace some values a column of a `DataFrame` given a boolean mask.
     ///
-    /// ```
+    /// ```rust
     /// # use polars_core::prelude::*;
     /// let s0 = Series::new("foo", &["ham", "spam", "egg", "bacon", "quack"]);
     /// let s1 = Series::new("values", &[1, 2, 3, 4, 5]);
-    /// let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+    /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // create a mask
-    /// let values = df.column("values").unwrap();
-    /// let mask = values.lt_eq(1) | values.gt_eq(5);
+    /// let values = df.column("values")?;
+    /// let mask = values.lt_eq(1) | values.gt_eq(5_i32);
     ///
     /// df.may_apply("foo", |s| {
     ///     s.utf8()?
     ///     .set(&mask, Some("not_within_bounds"))
     /// });
+    /// # Ok::<(), PolarsError>(())
     /// ```
     /// Results in:
     ///
@@ -1911,23 +1847,19 @@ impl DataFrame {
         self.may_apply_at_idx(idx, f)
     }
 
-    /// Slice the DataFrame along the rows.
+    /// Slice the `DataFrame` along the rows.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Fruit" => &["Apple", "Grape", "Grape", "Fig", "Fig"],
+    ///                         "Color" => &["Green", "Red", "White", "White", "Red"])?;
+    /// let sl: DataFrame = df.slice(2, 3);
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Fruit" => &["Apple", "Grape", "Grape", "Fig", "Fig"],
-    ///                             "Color" => &["Green", "Red", "White", "White", "Red"])?;
-    ///     let sl: DataFrame = df.slice(2, 3);
-    ///
-    ///     assert_eq!(sl.shape(), (3, 2));
-    ///     println!("{}", sl);
-    ///
-    ///     Ok(())
-    /// }
+    /// assert_eq!(sl.shape(), (3, 2));
+    /// println!("{}", sl);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     /// Output:
     /// ```text
@@ -1953,25 +1885,21 @@ impl DataFrame {
         DataFrame::new_no_checks(col)
     }
 
-    /// Get the head of the DataFrame
+    /// Get the head of the `DataFrame`.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
+    /// let countries: DataFrame =
+    ///     df!("Rank by GDP (2021)" => &[1, 2, 3, 4, 5],
+    ///         "Continent" => &["North America", "Asia", "Asia", "Europe", "Europe"],
+    ///         "Country" => &["United States", "China", "Japan", "Germany", "United Kingdom"],
+    ///         "Capital" => &["Washington", "Beijing", "Tokyo", "Berlin", "London"])?;
+    /// assert_eq!(countries.shape(), (5, 4));
     ///
-    /// fn example() -> Result<()> {
-    ///     let countries: DataFrame =
-    ///         df!("Rank by GDP (2021)" => &[1, 2, 3, 4, 5],
-    ///          "Continent" => &["North America", "Asia", "Asia", "Europe", "Europe"],
-    ///          "Country" => &["United States", "China", "Japan", "Germany", "United Kingdom"],
-    ///          "Capital" => &["Washington", "Beijing", "Tokyo", "Berlin", "London"])?;
-    ///     assert_eq!(countries.shape(), (5, 4));
-    ///
-    ///     println!("{}", countries.head(Some(3)));
-    ///
-    ///     Ok(())
-    /// }
+    /// println!("{}", countries.head(Some(3)));
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -1999,24 +1927,20 @@ impl DataFrame {
         DataFrame::new_no_checks(col)
     }
 
-    /// Get the tail of the DataFrame
+    /// Get the tail of the `DataFrame`.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use polars_core::prelude::*;
+    /// # use polars_core::prelude::*;
+    /// let countries: DataFrame =
+    ///     df!("Rank (2021)" => &[105, 106, 107, 108, 109],
+    ///         "Apple Price (€/kg)" => &[0.75, 0.70, 0.70, 0.65, 0.52],
+    ///         "Country" => &["Kosovo", "Moldova", "North Macedonia", "Syria", "Turkey"])?;
+    /// assert_eq!(countries.shape(), (5, 3));
     ///
-    /// fn example() -> Result<()> {
-    ///     let countries: DataFrame =
-    ///         df!("Rank (2021)" => &[105, 106, 107, 108, 109],
-    ///             "Apple Price (€/kg)" => &[0.76, 0.72, 0.70, 0.63],
-    ///             "Country" => &["Kosovo", "Moldova", "North Macedonia", "Syria", "Turkey"])?;
-    ///     assert_eq!(countries.shape(), (5, 3));
-    ///
-    ///     println!("{}", countries.tail(Some(2)));
-    ///
-    ///     Ok(())
-    /// }
+    /// println!("{}", countries.tail(Some(2)));
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2042,13 +1966,13 @@ impl DataFrame {
         DataFrame::new_no_checks(col)
     }
 
-    /// Transform the underlying chunks in the DataFrame to Arrow RecordBatches
+    /// Transform the underlying chunks in the `DataFrame` to Arrow RecordBatches.
     pub fn as_record_batches(&self) -> Result<Vec<RecordBatch>> {
         self.n_chunks()?;
         Ok(self.iter_record_batches().collect())
     }
 
-    /// Iterator over the rows in this DataFrame as Arrow RecordBatches.
+    /// Iterator over the rows in this `DataFrame` as Arrow RecordBatches.
     pub fn iter_record_batches(&self) -> impl Iterator<Item = RecordBatch> + '_ {
         RecordBatchIter {
             columns: &self.columns,
@@ -2058,7 +1982,7 @@ impl DataFrame {
         }
     }
 
-    /// Get a DataFrame with all the columns in reversed order
+    /// Get a `DataFrame` with all the columns in reversed order.
     pub fn reverse(&self) -> Self {
         let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
         DataFrame::new_no_checks(col)
@@ -2069,7 +1993,7 @@ impl DataFrame {
     ///
     /// See the method on [Series](../series/enum.Series.html#method.shift) for more info on the `shift` operation.
     pub fn shift(&self, periods: i64) -> Self {
-        let col = self.columns.par_iter().map(|s| s.shift(periods)).collect();
+        let col = POOL.install(|| self.columns.par_iter().map(|s| s.shift(periods)).collect());
         DataFrame::new_no_checks(col)
     }
 
@@ -2082,11 +2006,12 @@ impl DataFrame {
     ///
     /// See the method on [Series](../series/enum.Series.html#method.fill_null) for more info on the `fill_null` operation.
     pub fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
-        let col = self
-            .columns
-            .par_iter()
-            .map(|s| s.fill_null(strategy))
-            .collect::<Result<Vec<_>>>()?;
+        let col = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| s.fill_null(strategy))
+                .collect::<Result<Vec<_>>>()
+        })?;
         Ok(DataFrame::new_no_checks(col))
     }
 
@@ -2094,20 +2019,16 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
+    /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
-    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
-    ///     assert_eq!(df1.shape(), (5, 2));
-    ///
-    ///     let df2: DataFrame = df1.max();
-    ///     assert_eq!(df2.shape(), (1, 2));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.max();
+    /// assert_eq!(df2.shape(), (1, 2));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2123,7 +2044,7 @@ impl DataFrame {
     /// +---------+---------+
     /// ```
     pub fn max(&self) -> Self {
-        let columns = self.columns.par_iter().map(|s| s.max_as_series()).collect();
+        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.max_as_series()).collect());
         DataFrame::new_no_checks(columns)
     }
 
@@ -2131,20 +2052,16 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
+    /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
-    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
-    ///     assert_eq!(df1.shape(), (5, 2));
-    ///
-    ///     let df2: DataFrame = df1.std();
-    ///     assert_eq!(df2.shape(), (1, 2));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.std();
+    /// assert_eq!(df2.shape(), (1, 2));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2160,27 +2077,23 @@ impl DataFrame {
     /// +-------------------+--------------------+
     /// ```
     pub fn std(&self) -> Self {
-        let columns = self.columns.par_iter().map(|s| s.std_as_series()).collect();
+        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.std_as_series()).collect());
         DataFrame::new_no_checks(columns)
     }
     /// Aggregate the columns to their variation values.
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
+    /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
-    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
-    ///     assert_eq!(df1.shape(), (5, 2));
-    ///
-    ///     let df2: DataFrame = df1.var();
-    ///     assert_eq!(df2.shape(), (1, 2));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.var();
+    /// assert_eq!(df2.shape(), (1, 2));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2196,7 +2109,7 @@ impl DataFrame {
     /// +---------+---------+
     /// ```
     pub fn var(&self) -> Self {
-        let columns = self.columns.par_iter().map(|s| s.var_as_series()).collect();
+        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.var_as_series()).collect());
         DataFrame::new_no_checks(columns)
     }
 
@@ -2204,20 +2117,16 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
+    /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
-    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
-    ///     assert_eq!(df1.shape(), (5, 2));
-    ///
-    ///     let df2: DataFrame = df1.min();
-    ///     assert_eq!(df2.shape(), (1, 2));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.min();
+    /// assert_eq!(df2.shape(), (1, 2));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2233,7 +2142,7 @@ impl DataFrame {
     /// +---------+---------+
     /// ```
     pub fn min(&self) -> Self {
-        let columns = self.columns.par_iter().map(|s| s.min_as_series()).collect();
+        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.min_as_series()).collect());
         DataFrame::new_no_checks(columns)
     }
 
@@ -2241,20 +2150,16 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
+    /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
-    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
-    ///     assert_eq!(df1.shape(), (5, 2));
-    ///
-    ///     let df2: DataFrame = df1.sum();
-    ///     assert_eq!(df2.shape(), (1, 2));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.sum();
+    /// assert_eq!(df2.shape(), (1, 2));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2270,7 +2175,7 @@ impl DataFrame {
     /// +---------+---------+
     /// ```
     pub fn sum(&self) -> Self {
-        let columns = self.columns.par_iter().map(|s| s.sum_as_series()).collect();
+        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.sum_as_series()).collect());
         DataFrame::new_no_checks(columns)
     }
 
@@ -2278,20 +2183,16 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
+    /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
-    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
-    ///     assert_eq!(df1.shape(), (5, 2));
-    ///
-    ///     let df2: DataFrame = df1.mean();
-    ///     assert_eq!(df2.shape(), (1, 2));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.mean();
+    /// assert_eq!(df2.shape(), (1, 2));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2307,11 +2208,12 @@ impl DataFrame {
     /// +---------+---------+
     /// ```
     pub fn mean(&self) -> Self {
-        let columns = self
-            .columns
-            .par_iter()
-            .map(|s| s.mean_as_series())
-            .collect();
+        let columns = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| s.mean_as_series())
+                .collect()
+        });
         DataFrame::new_no_checks(columns)
     }
 
@@ -2319,20 +2221,16 @@ impl DataFrame {
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*;
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
+    ///                          "Die n°2" => &[3, 2, 3, 5, 3])?;
+    /// assert_eq!(df1.shape(), (5, 2));
     ///
-    /// fn example() -> Result<()> {
-    ///     let df1: DataFrame = df!("Die n°1" => &[1, 3, 1, 5, 6],
-    ///                              "Die n°2" => &[3, 2, 3, 5, 3])?;
-    ///     assert_eq!(df1.shape(), (5, 2));
-    ///
-    ///     let df2: DataFrame = df1.median();
-    ///     assert_eq!(df2.shape(), (1, 2));
-    ///     println!("{}", df2);
-    ///
-    ///     Ok(())
-    /// }
+    /// let df2: DataFrame = df1.median();
+    /// assert_eq!(df2.shape(), (1, 2));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2348,25 +2246,27 @@ impl DataFrame {
     /// +---------+---------+
     /// ```
     pub fn median(&self) -> Self {
-        let columns = self
-            .columns
-            .par_iter()
-            .map(|s| s.median_as_series())
-            .collect();
+        let columns = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| s.median_as_series())
+                .collect()
+        });
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their quantile values.
     pub fn quantile(&self, quantile: f64) -> Result<Self> {
-        let columns = self
-            .columns
-            .par_iter()
-            .map(|s| s.quantile_as_series(quantile))
-            .collect::<Result<Vec<_>>>()?;
+        let columns = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| s.quantile_as_series(quantile))
+                .collect::<Result<Vec<_>>>()
+        })?;
         Ok(DataFrame::new_no_checks(columns))
     }
 
-    /// Aggregate the column horizontally to their min values
+    /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmin(&self) -> Result<Option<Series>> {
@@ -2388,7 +2288,7 @@ impl DataFrame {
         }
     }
 
-    /// Aggregate the column horizontally to their max values
+    /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmax(&self) -> Result<Option<Series>> {
@@ -2411,7 +2311,7 @@ impl DataFrame {
         }
     }
 
-    /// Aggregate the column horizontally to their sum values
+    /// Aggregate the column horizontally to their sum values.
     pub fn hsum(&self, none_strategy: NullStrategy) -> Result<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
@@ -2441,7 +2341,7 @@ impl DataFrame {
         }
     }
 
-    /// Aggregate the column horizontally to their mean values
+    /// Aggregate the column horizontally to their mean values.
     pub fn hmean(&self, none_strategy: NullStrategy) -> Result<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
@@ -2545,35 +2445,31 @@ impl DataFrame {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     pub fn to_dummies(&self) -> Result<Self> {
-        let cols = self
-            .columns
-            .par_iter()
-            .map(|s| s.to_dummies())
-            .collect::<Result<Vec<_>>>()?;
+        let cols = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| s.to_dummies())
+                .collect::<Result<Vec<_>>>()
+        })?;
 
         accumulate_dataframes_horizontal(cols)
     }
 
-    /// Drop duplicate rows from a DataFrame.
+    /// Drop duplicate rows from a `DataFrame`.
     /// *This fails when there is a column of type List in DataFrame*
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df = df! {
+    ///               "flt" => [1., 1., 2., 2., 3., 3.],
+    ///               "int" => [1, 1, 2, 2, 3, 3, ],
+    ///               "str" => ["a", "a", "b", "b", "c", "c"]
+    ///           }?;
     ///
-    /// # #[macro_use] extern crate polars_core;
-    /// # fn main() {
-    ///  use polars_core::prelude::*;
-    ///
-    ///  fn example() -> Result<DataFrame> {
-    ///      let df = df! {
-    ///                    "flt" => [1., 1., 2., 2., 3., 3.],
-    ///                    "int" => [1, 1, 2, 2, 3, 3, ],
-    ///                    "str" => ["a", "a", "b", "b", "c", "c"]
-    ///                }?;
-    ///      df.drop_duplicates(true, None)
-    ///  }
-    /// # }
+    /// println!("{}", df.drop_duplicates(true, None)?);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     /// Returns
     ///
@@ -2609,22 +2505,18 @@ impl DataFrame {
         Ok(df)
     }
 
-    /// Get a mask of all the unique rows in the DataFrame.
+    /// Get a mask of all the unique rows in the `DataFrame`.
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Company" => &["Apple", "Microsoft"],
+    ///                         "ISIN" => &["US0378331005", "US5949181045"])?;
+    /// let ca: ChunkedArray<BooleanType> = df.is_unique()?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Company" => &["Apple", "Microsoft"],
-    ///                             "ISIN" => &["US0378331005", "US5949181045"])?;
-    ///     let ca: ChunkedArray<BooleanType> = df.is_unique()?;
-    ///
-    ///     assert!(ca.all_true());
-    ///
-    ///     Ok(())
-    /// }
+    /// assert!(ca.all_true());
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
@@ -2632,22 +2524,18 @@ impl DataFrame {
         Ok(is_unique_helper(groups, self.height() as u32, true, false))
     }
 
-    /// Get a mask of all the duplicated rows in the DataFrame.
+    /// Get a mask of all the duplicated rows in the `DataFrame`.
     ///
     /// # Example
     ///
-    /// ```rust
-    /// use polars_core::prelude::*; // or "use polars::prelude::*"
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df: DataFrame = df!("Company" => &["Alphabet", "Alphabet"],
+    ///                         "ISIN" => &["US02079K3059", "US02079K1079"])?;
+    /// let ca: ChunkedArray<BooleanType> = df.is_duplicated()?;
     ///
-    /// fn example() -> Result<()> {
-    ///     let df: DataFrame = df!("Company" => &["Alphabet", "Alphabet"],
-    ///                             "ISIN" => &["US02079K3059", "US02079K1079"])?;
-    ///     let ca: ChunkedArray<BooleanType> = df.is_duplicated()?;
-    ///
-    ///     assert!(ca.all_false());
-    ///
-    ///     Ok(())
-    /// }
+    /// assert!(ca.all_false());
+    /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
@@ -2655,7 +2543,7 @@ impl DataFrame {
         Ok(is_unique_helper(groups, self.height() as u32, false, true))
     }
 
-    /// Create a new DataFrame that shows the null counts per column.
+    /// Create a new `DataFrame` that shows the null counts per column.
     pub fn null_count(&self) -> Self {
         let cols = self
             .columns

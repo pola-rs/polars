@@ -117,6 +117,7 @@ Computations
     Expr.cummin
     Expr.cummax
     Expr.cumprod
+    Expr.cumcount
     Expr.dot
     Expr.mode
     Expr.n_unique

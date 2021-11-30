@@ -100,7 +100,11 @@ def when(expr: pli.Expr) -> When:
     Or with multiple `when, thens` chained:
 
     >>> lf.with_column(
-    ...     when(col("foo") > 2).then(1).when(col("bar") > 2).then(4).otherwise(-1)
+    ...     pl.when(pl.col("foo") > 2)
+    ...     .then(1)
+    ...     .when(pl.col("bar") > 2)
+    ...     .then(4)
+    ...     .otherwise(-1)
     ... )
     """
     expr = pli.expr_to_lit_or_expr(expr)

@@ -45,8 +45,7 @@ def col(
      * column by regular expression if the regex starts with `^` and ends with `$`
 
     Parameters
-    ----------
-    name
+    col
         A string that holds the name of the column
 
     Examples
@@ -160,8 +159,9 @@ def count(column: Union[str, "pli.Series"] = "") -> Union["pli.Expr", int]:
 def to_list(name: str) -> "pli.Expr":
     """
     Aggregate to list.
+
+    Re-exported as `pl.list()`
     """
-    # Re-exported as pl.list()
     return col(name).list()
 
 
@@ -226,7 +226,6 @@ def max(
         input:
             - Union[str, Series] -> aggregate the maximum value of that column.
             - tp.List[Expr] -> aggregate the maximum value horizontally.
-
     """
     if isinstance(column, pli.Series):
         return column.max()
@@ -265,7 +264,6 @@ def min(
         input:
             - Union[str, Series] -> aggregate the sum value of that column.
             - tp.List[Expr] -> aggregate the sum value horizontally.
-
     """
     if isinstance(column, pli.Series):
         return column.min()
@@ -304,7 +302,6 @@ def sum(
         input:
             - Union[str, Series] -> aggregate the sum value of that column.
             - tp.List[Expr] -> aggregate the sum value horizontally.
-
     """
     if isinstance(column, pli.Series):
         return column.sum()
@@ -802,11 +799,9 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
     Examples
     --------
 
-    Sum all columns:
-
+    >>> # sum all columns
     >>> df.select(pl.all().sum())
 
-    Sum all non-null elements:
 
     >>> df.select(pl.all([col(name).is_not_null() for name in df.columns]))
 
@@ -842,10 +837,12 @@ def arange(
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
 
-    Examples
-    --------
+     Examples
+     --------
 
-    >>> (df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect())
+    >>> (df.lazy()
+        .filter(pl.col("foo") < pl.arange(0, 100))
+        .collect())
 
     Parameters
     ----------
@@ -1120,7 +1117,6 @@ def select(
     ----------
     exprs
         Expressions to run
-
     Returns
     -------
     DataFrame

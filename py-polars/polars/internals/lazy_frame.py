@@ -813,7 +813,7 @@ class LazyFrame:
         """
         Fill floating point NaN values.
 
-        .. warning::
+        ..warning::
 
             NOTE that floating point NaN (No a Number) are not missing values!
             to replace missing values, use `fill_null`.
@@ -885,12 +885,10 @@ class LazyFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "letters": ["c", "c", "a", "c", "a", "b"],
-        ...         "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({
+        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
+        >>>     "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]]
+        >>> })
         >>> df
         shape: (6, 2)
         ╭─────────┬────────────╮
@@ -984,12 +982,12 @@ class LazyFrame:
         conditions
 
         >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [None, None, None, None],
-        ...         "b": [1, 2, None, 1],
-        ...         "c": [1, None, None, 1],
-        ...     }
-        ... )
+        >>>    {
+        >>>        "a": [None, None, None, None],
+        >>>        "b": [1, 2, None, 1],
+        >>>        "c": [1, None, None, 1],
+        >>>    }
+        >>> )
         >>> df
         shape: (4, 3)
         ┌──────┬──────┬──────┐
@@ -1146,7 +1144,10 @@ class LazyGroupBy:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
-        >>> (df.groupby("letters").head(2).sort("letters"))
+        >>> (df.groupby("letters")
+        >>>  .head(2)
+        >>>  .sort("letters")
+        >>> )
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │
@@ -1201,7 +1202,10 @@ class LazyGroupBy:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
-        >>> (df.groupby("letters").tail(2).sort("letters"))
+        >>> (df.groupby("letters")
+        >>>  .tail(2)
+        >>>  .sort("letters")
+        >>> )
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │
