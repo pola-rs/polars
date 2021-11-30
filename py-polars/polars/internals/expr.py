@@ -208,10 +208,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        ...     "a": [1, 2, 3],
-        ...     "b": ["a", "b", None]
-        ... })
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
         >>> df
         shape: (3, 2)
         ╭─────┬──────╮
@@ -225,10 +222,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3   ┆ null │
         ╰─────┴──────╯
-        >>> df.select([
-        ...     col("a").alias("bar"),
-        ...     col("b").alias("foo")
-        ... ])
+        >>> df.select([col("a").alias("bar"), col("b").alias("foo")])
         shape: (3, 2)
         ╭─────┬──────╮
         │ bar ┆ foo  │
@@ -259,11 +253,9 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        ...     "a": [1, 2, 3],
-        ...     "b": ["a", "b", None],
-        ...     "c": [None, 2, 1]
-        ... })
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2, 3], "b": ["a", "b", None], "c": [None, 2, 1]}
+        ... )
         >>> df
         shape: (3, 3)
         ╭─────┬──────┬──────╮
@@ -305,14 +297,8 @@ class Expr:
         A groupby aggregation often changes the name of a column.
         With `keep_name` we can keep the original name of the column
 
-        >>> df = pl.DataFrame({
-        ...     "a": [1, 2, 3],
-        ...     "b": ["a", "b", None]
-        ... })
-        >>> (df.groupby("a")
-        ...     .agg(col("b").list())
-        ...     .sort(by="a")
-        ... )
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
+        >>> (df.groupby("a").agg(col("b").list()).sort(by="a"))
         shape: (3, 2)
         ╭─────┬────────────╮
         │ a   ┆ b_agg_list │
@@ -325,11 +311,10 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ [null]     │
         ╰─────┴────────────╯
-        >>> # keep the original column name
-        >>> (df.groupby("a")
-        ...     .agg(col("b").list().keep_name())
-        ...     .sort(by="a")
-        ... )
+
+        Keep the original column name:
+
+        >>> (df.groupby("a").agg(col("b").list().keep_name()).sort(by="a"))
         shape: (3, 2)
         ╭─────┬────────────╮
         │ a   ┆ b          │
@@ -355,12 +340,13 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame(
-        ... {
-        ...     "A": [1, 2, 3, 4, 5],
-        ...     "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...     "B": [5, 4, 3, 2, 1],
-        ...     "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ... })
+        ...     {
+        ...         "A": [1, 2, 3, 4, 5],
+        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
+        ...         "B": [5, 4, 3, 2, 1],
+        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        ...     }
+        ... )
         shape: (5, 4)
         ╭─────┬──────────┬─────┬──────────╮
         │ A   ┆ fruits   ┆ B   ┆ cars     │
@@ -377,10 +363,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ "banana" ┆ 1   ┆ "beetle" │
         ╰─────┴──────────┴─────┴──────────╯
-        >>> (df.select([
-        ...     pl.all(),
-        ...     pl.all().reverse().suffix("_reverse")
-        ... ]))
+        >>> (df.select([pl.all(), pl.all().reverse().suffix("_reverse")]))
         shape: (5, 8)
         ╭─────┬──────────┬─────┬──────────┬───────────┬────────────────┬───────────┬──────────────╮
         │ A   ┆ fruits   ┆ B   ┆ cars     ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
@@ -409,12 +392,13 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame(
-        ... {
-        ...     "A": [1, 2, 3, 4, 5],
-        ...     "fruits": ["banana", "banana", "apple", "apple", "banana"],
-        ...     "B": [5, 4, 3, 2, 1],
-        ...     "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        ... })
+        ...     {
+        ...         "A": [1, 2, 3, 4, 5],
+        ...         "fruits": ["banana", "banana", "apple", "apple", "banana"],
+        ...         "B": [5, 4, 3, 2, 1],
+        ...         "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+        ...     }
+        ... )
         shape: (5, 4)
         ╭─────┬──────────┬─────┬──────────╮
         │ A   ┆ fruits   ┆ B   ┆ cars     │
@@ -431,10 +415,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ "banana" ┆ 1   ┆ "beetle" │
         ╰─────┴──────────┴─────┴──────────╯
-        >>> (df.select([
-        ... pl.all(),
-        ... pl.all().reverse().prefix("reverse_")
-        ... ]))
+        >>> (df.select([pl.all(), pl.all().reverse().prefix("reverse_")]))
         shape: (5, 8)
         ╭─────┬──────────┬─────┬──────────┬───────────┬────────────────┬───────────┬──────────────╮
         │ A   ┆ fruits   ┆ B   ┆ cars     ┆ reverse_A ┆ reverse_fruits ┆ reverse_B ┆ reverse_cars │
@@ -462,10 +443,12 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        ...     "a": [True, False, False],
-        ...     "b": ["a", "b", None],
-        ... })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [True, False, False],
+        ...         "b": ["a", "b", None],
+        ...     }
+        ... )
         shape: (3, 2)
         ╭───────┬──────╮
         │ a     ┆ b    │
@@ -924,15 +907,17 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        ...    "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
-        ...    "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
-        ... })
-        >>> (df.lazy()
-        ...    .select([
-        ...       pl.col("groups")
-        ...       pl.sum("values").over("groups")
-        ...   ]).collect())
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
+        ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
+        ...     }
+        ... )
+        >>> (
+        ...     df.lazy()
+        ...     .select([pl.col("groups"), pl.sum("values").over("groups")])
+        ...     .collect()
+        ... )
         ╭────────┬────────╮
         │ groups ┆ values │
         │ ---    ┆ ---    │
@@ -1070,12 +1055,8 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame({"a": [1,  2,  1,  1],
-        ...                    "b": ["a", "b", "c", "c"]})
-        >>> df.lazy()
-        ...     .groupby("b")
-        ...     .agg([col("a").apply(lambda x: x.sum())])
-        ...     .collect()
+        >>> df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
+        >>> df.lazy().groupby("b").agg([col("a").apply(lambda x: x.sum())]).collect()
         shape: (3, 2)
         ╭─────┬─────╮
         │ b   ┆ a   │
@@ -1366,14 +1347,8 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]
-        ...     }
-        ... )
-        >>> df.select([
-        ...     pl.col("A").rolling_mean(window_size=2)
-        ... ])
+        >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
+        >>> df.select([pl.col("A").rolling_mean(window_size=2)])
         shape: (6, 1)
         ┌──────┐
         │ A    │
@@ -1506,6 +1481,7 @@ class Expr:
         Prefer the specific rolling window functions over this one, as they are faster.
 
         Prefer:
+
             * rolling_min
             * rolling_max
             * rolling_mean
@@ -1527,9 +1503,7 @@ class Expr:
         ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
         ...     }
         ... )
-        >>> df.select([
-        ...     pl.col("A").rolling_apply(3, lambda s: s.std())
-        ... ])
+        >>> df.select([pl.col("A").rolling_apply(3, lambda s: s.std())])
         shape: (5, 1)
         ┌────────────────────┐
         │ A                  │
@@ -1745,6 +1719,8 @@ class Expr:
         Series of dtype Utf8
 
         Examples
+        --------
+
         >>> df = pl.DataFrame({"foo": [1, None, 2]})
         >>> df = df.select(pl.col("foo").str_concat("-"))
         shape: (1, 1)
@@ -1767,6 +1743,8 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
+
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").sin())
         shape: (1, 1)
@@ -1790,6 +1768,7 @@ class Expr:
 
         Examples
         --------
+
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").cos())
         shape: (1, 1)
@@ -1812,6 +1791,8 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
+
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").tan())
         shape: (1, 1)
@@ -2065,10 +2046,10 @@ class ExprStringNameSpace:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        ...     'json_val': ['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}']
-        ... })
-        >>> df.select(pl.col('json_val').str.json_path_match('$.a')
+        >>> df = pl.DataFrame(
+        ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
+        ... )
+        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))
         shape: (5,)
         Series: 'json_val' [str]
         [
@@ -2101,15 +2082,16 @@ class ExprStringNameSpace:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        ...         'a': [
-        ...             'http://vote.com/ballon_dor?candidate=messi&ref=polars',
-        ...             'http://vote.com/ballon_dor?candidat=jorginho&ref=polars',
-        ...             'http://vote.com/ballon_dor?candidate=ronaldo&ref=polars'
-        ...         ]})
-        >>> df.select([
-        ...             pl.col('a').str.extract(r'candidate=(\w+)', 1)
-        ...         ])
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [
+        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
+        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
+        ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.select([pl.col("a").str.extract(r"candidate=(\w+)", 1)])
         shape: (3, 1)
         ┌─────────┐
         │ a       │
@@ -2215,12 +2197,13 @@ class ExprDateTimeNameSpace:
             2000-10-02 00:18:00
         ]
 
-        >>> # can be used to perform a downsample operation
-        >>> (date_range
-        ...     .to_frame()
+        Can be used to perform a downsample operation:
+
+        >>> (
+        ...     date_range.to_frame()
         ...     .groupby(
         ...         pl.col("date_range").dt.buckets(timedelta(minutes=16)),
-        ...         maintain_order=True
+        ...         maintain_order=True,
         ...     )
         ...     .agg(pl.col("date_range").count())
         ... )

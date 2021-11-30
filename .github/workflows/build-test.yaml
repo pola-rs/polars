@@ -86,7 +86,7 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
-          cd py-polars && black --check . && isort --check . && rustup override set nightly-2021-10-21 && cargo fmt --all -- --check && cd ..
+          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2021-10-21 && cargo fmt --all -- --check && cd ..
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..

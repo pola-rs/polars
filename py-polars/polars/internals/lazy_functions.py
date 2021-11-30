@@ -52,10 +52,9 @@ def col(
     Examples
     --------
 
-    >>> df = pl.DataFrame({
-    ...     "ham": [1, 2, 3],
-    ...     "hamburger": [11, 22, 33],
-    ...     "foo": [3, 2, 1]})
+    >>> df = pl.DataFrame(
+    ...     {"ham": [1, 2, 3], "hamburger": [11, 22, 33], "foo": [3, 2, 1]}
+    ... )
     >>> df.select(col("foo"))
     shape: (3, 1)
     ╭─────╮
@@ -108,7 +107,7 @@ def col(
     ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 33        ┆ 1   │
     ╰───────────┴─────╯
-    >>> df.select(col(["hamburger", "foo"])
+    >>> df.select(col(["hamburger", "foo"]))
     shape: (3, 2)
     ╭───────────┬─────╮
     │ hamburger ┆ foo │
@@ -161,9 +160,8 @@ def count(column: Union[str, "pli.Series"] = "") -> Union["pli.Expr", int]:
 def to_list(name: str) -> "pli.Expr":
     """
     Aggregate to list.
-
-    Re-exported as `pl.list()`
     """
+    # Re-exported as pl.list()
     return col(name).list()
 
 
@@ -228,6 +226,7 @@ def max(
         input:
             - Union[str, Series] -> aggregate the maximum value of that column.
             - tp.List[Expr] -> aggregate the maximum value horizontally.
+
     """
     if isinstance(column, pli.Series):
         return column.max()
@@ -266,6 +265,7 @@ def min(
         input:
             - Union[str, Series] -> aggregate the sum value of that column.
             - tp.List[Expr] -> aggregate the sum value horizontally.
+
     """
     if isinstance(column, pli.Series):
         return column.min()
@@ -304,6 +304,7 @@ def sum(
         input:
             - Union[str, Series] -> aggregate the sum value of that column.
             - tp.List[Expr] -> aggregate the sum value horizontally.
+
     """
     if isinstance(column, pli.Series):
         return column.sum()
@@ -505,20 +506,26 @@ def lit(
     Examples
     --------
 
-    >>> # literal integer
+    Literal integer:
+
     >>> lit(1)
 
-    >>> # literal str.
+    Literal str:
+
     >>> lit("foo")
 
-    >>> # literal datetime
+    Literal datetime:
+
     >>> lit(datetime(2021, 1, 20))
 
-    >>> # literal Null
+    Literal Null:
+
     >>> lit(None)
 
-    >>> # literal eager Series
-    >>> lit(Series("a", [1, 2, 3])
+    Literal eager Series:
+
+    >>> lit(Series("a", [1, 2, 3]))
+
     """
     if isinstance(value, datetime):
         return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
@@ -746,11 +753,7 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     Examples
     --------
 
-     >>> df = pl.DataFrame({
-     ...     "a": [1, 2, 3],
-     ...     "b": ["a", "b", None],
-     ...     "c": [None, 2, 1]
-     ... })
+     >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None], "c": [None, 2, 1]})
      >>> df
      shape: (3, 3)
      ╭─────┬──────┬──────╮
@@ -799,11 +802,14 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
     Examples
     --------
 
-    >>> # sum all columns
+    Sum all columns:
+
     >>> df.select(pl.all().sum())
 
+    Sum all non-null elements:
 
     >>> df.select(pl.all([col(name).is_not_null() for name in df.columns]))
+
     """
     if name is None:
         return col("*")
@@ -839,9 +845,7 @@ def arange(
     Examples
     --------
 
-    >>> (df.lazy()
-    ...    .filter(pl.col("foo") < pl.arange(0, 100))
-    ...    .collect())
+    >>> (df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect())
 
     Parameters
     ----------
@@ -995,9 +999,7 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     --------
 
     >>> df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-    >>> df.select([
-    ...     pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")
-    ... ])
+    >>> df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
     shape: (3, 1)
     ┌─────────────┐
     │ fmt         │
@@ -1118,6 +1120,7 @@ def select(
     ----------
     exprs
         Expressions to run
+
     Returns
     -------
     DataFrame
@@ -1127,9 +1130,7 @@ def select(
 
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
-    >>> pl.select([
-    ...     pl.min([foo, bar])
-    ... ])
+    >>> pl.select([pl.min([foo, bar])])
     shape: (3, 1)
     ┌─────┐
     │ min │
