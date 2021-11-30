@@ -866,7 +866,7 @@ def arange(
 
     if eager:
         df = pli.DataFrame({"a": [1]})
-        return df.select(arange(low, high, step).alias("arange"))["arange"]  # type: ignore
+        return df.select(arange(low, high, step).alias("arange"))["arange"]
 
     return pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
 
@@ -928,9 +928,9 @@ def _datetime(
     Expr of type pl.Datetime
     """
 
-    year = pli.expr_to_lit_or_expr(year, str_to_lit=False)  # type: ignore
-    month = pli.expr_to_lit_or_expr(month, str_to_lit=False)  # type: ignore
-    day = pli.expr_to_lit_or_expr(day, str_to_lit=False)  # type: ignore
+    year_expr = pli.expr_to_lit_or_expr(year, str_to_lit=False)
+    month_expr = pli.expr_to_lit_or_expr(month, str_to_lit=False)
+    day_expr = pli.expr_to_lit_or_expr(day, str_to_lit=False)
 
     if hour is not None:
         hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr  # type: ignore
@@ -942,7 +942,13 @@ def _datetime(
         millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr  # type: ignore
     return pli.wrap_expr(
         py_datetime(
-            year._pyexpr, month._pyexpr, day._pyexpr, hour, minute, second, millisecond
+            year_expr._pyexpr,
+            month_expr._pyexpr,
+            day_expr._pyexpr,
+            hour,
+            minute,
+            second,
+            millisecond,
         )
     )
 

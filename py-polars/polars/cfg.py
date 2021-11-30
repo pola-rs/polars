@@ -14,7 +14,7 @@ class Config:
         """
         Use utf8 characters to print tables
         """
-        os.environ.unsetenv("POLARS_FMT_NO_UTF8")  # type: ignore
+        os.environ["POLARS_FMT_NO_UTF8"] = ""
         return cls
 
     @classmethod

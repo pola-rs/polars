@@ -110,14 +110,9 @@ def sequence_to_pyseries(
     if dtype is not None:
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values, strict)
-        if dtype == Date:
-            pyseries = pyseries.cast(str(Date), True)
-        elif dtype == Datetime:
-            pyseries = pyseries.cast(str(Datetime), True)
-        elif dtype == Time:
-            pyseries = pyseries.cast(str(Time), True)
-        elif dtype == Categorical:
-            pyseries = pyseries.cast(str(Categorical), True)
+
+        if dtype in (Date, Datetime, Time, Categorical):
+            pyseries = pyseries.cast(str(dtype), True)
 
         return pyseries
 
@@ -155,7 +150,7 @@ def sequence_to_pyseries(
             else:
                 try:
                     nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
-                except ValueError as e:
+                except ValueError as e:  # pragma: no cover
                     raise ValueError(
                         f"Cannot construct Series from sequence of {nested_dtype}."
                     ) from e
