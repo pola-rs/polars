@@ -62,7 +62,7 @@ def test_select_columns_and_projection_from_buffer() -> None:
 
 def test_compressed_to_ipc() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
-    compressions = ["uncompressed", "lz4", "zstd"]
+    compressions = [None, "uncompressed", "lz4", "zstd"]
 
     for compression in compressions:
         f = io.BytesIO()
