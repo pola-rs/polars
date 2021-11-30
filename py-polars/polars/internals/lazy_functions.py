@@ -840,9 +840,7 @@ def arange(
      Examples
      --------
 
-    >>> (df.lazy()
-        .filter(pl.col("foo") < pl.arange(0, 100))
-        .collect())
+    >>> (df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect())
 
     Parameters
     ----------
