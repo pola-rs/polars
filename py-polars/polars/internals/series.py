@@ -1232,7 +1232,7 @@ class Series:
 
         """
         if in_place:
-            self._s.sort_in_place(reverse)
+            self._s = self._s.sort(reverse)
             return self
         else:
             return wrap_s(self._s.sort(reverse))

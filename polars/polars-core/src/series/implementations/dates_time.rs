@@ -467,11 +467,6 @@ macro_rules! impl_dyn_series {
                 self.0.get_any_value_unchecked(index).$into_logical()
             }
 
-            fn sort_in_place(&mut self, reverse: bool) {
-                let ca = self.0.deref().sort(reverse);
-                self.0 = ca.$into_logical();
-            }
-
             fn sort(&self, reverse: bool) -> Series {
                 self.0.sort(reverse).$into_logical().into_series()
             }

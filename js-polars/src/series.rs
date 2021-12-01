@@ -185,11 +185,6 @@ impl Series {
         (self.series.tail(length)).into()
     }
 
-    #[wasm_bindgen(js_name = SortInPlace)]
-    pub fn sort_in_place(&mut self, reverse: bool) {
-        self.series.sort_in_place(reverse);
-    }
-
     pub fn sort(&mut self, reverse: bool) -> Self {
         (self.series.sort(reverse)).into()
     }

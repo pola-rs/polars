@@ -182,13 +182,6 @@ impl Series {
         Ok(self)
     }
 
-    /// Sort in place.
-    pub fn sort_in_place(&mut self, reverse: bool) -> &mut Self {
-        self.get_inner_mut().sort_in_place(reverse);
-        self
-    }
-
-    /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> Result<usize> {
         self.get_inner_mut().as_single_ptr()
