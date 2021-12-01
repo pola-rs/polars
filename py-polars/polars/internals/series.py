@@ -3076,7 +3076,7 @@ class StringNameSpace:
         >>> df = pl.DataFrame(
         ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
         ... )
-        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))[:,0]
+        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))[:, 0]
         shape: (5,)
         Series: 'json_val' [str]
         [
