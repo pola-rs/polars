@@ -1,4 +1,4 @@
-use crate::prelude::{BooleanChunked, ChunkedArray, PolarsNumericType};
+use crate::prelude::*;
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use std::sync::Arc;
 
@@ -8,6 +8,12 @@ impl<T: PolarsNumericType> From<(&str, PrimitiveArray<T::Native>)> for ChunkedAr
         let arr = tpl.1;
 
         ChunkedArray::new_from_chunks(name, vec![Arc::new(arr)])
+    }
+}
+
+impl<T: PolarsNumericType> From<&[T::Native]> for ChunkedArray<T> {
+    fn from(slice: &[T::Native]) -> Self {
+        ChunkedArray::new_from_slice("", slice)
     }
 }
 

@@ -174,12 +174,15 @@ impl CategoricalChunkedBuilder {
     }
 
     pub fn finish(self) -> ChunkedArray<CategoricalType> {
+        // both for the local and the global map, we own a map that has all unique keys
+        let bit_settings = 1u8 << 4;
+
         ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![self.array_builder.into_arc()],
             phantom: PhantomData,
             categorical_map: Some(Arc::new(self.reverse_mapping.finish())),
-            ..Default::default()
+            bit_settings,
         }
     }
 }
