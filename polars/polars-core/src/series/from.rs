@@ -99,6 +99,28 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     }
 }
 
+impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
+    fn new(name: &str, s: T) -> Self {
+        let series_slice = s.as_ref();
+        let values_cap = series_slice.iter().fold(0, |acc, opt_s| {
+            acc + opt_s.as_ref().map(|s| s.len()).unwrap_or(0)
+        });
+
+        let dt = series_slice
+            .iter()
+            .filter_map(|opt| opt.as_ref())
+            .next()
+            .expect("cannot create List Series from a slice of nulls")
+            .dtype();
+
+        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
+        for series in series_slice {
+            builder.append_opt_series(series.as_ref())
+        }
+        builder.finish().into_series()
+    }
+}
+
 fn convert_list_inner(arr: &ArrayRef, fld: &ArrowField) -> ArrayRef {
     // if inner type is Utf8, we need to convert that to large utf8
     match fld.data_type() {
