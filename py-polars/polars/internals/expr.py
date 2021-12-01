@@ -4,11 +4,6 @@ import typing as tp
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Optional, Sequence, Type, Union
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
 import numpy as np
 
 try:
@@ -1661,9 +1656,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rank(method))
 
-    def diff(
-        self, n: int = 1, null_behavior: Literal["ignore", "drop"] = "ignore"
-    ) -> "Expr":
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
         """
         Calculate the n-th discrete difference.
 

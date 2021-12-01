@@ -3027,7 +3027,7 @@ class DataFrame:
         raise ValueError("Axis should be 0 or 1.")
 
     def mean(
-        self, axis: int = 0, null_strategy: Literal["ignore", "propagate"] = "ignore"
+        self, axis: int = 0, null_strategy: str = "ignore"
     ) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their mean value.
