@@ -3635,7 +3635,12 @@ class GroupBy:
 
         Use lazy API:
 
-        >>> df.groupby(["foo", "bar"]).agg([pl.sum("ham"), col("spam").tail(4).sum()])
+        >>> df.groupby(["foo", "bar"]).agg(
+        ...     [
+        ...         pl.sum("ham"),
+        ...         pl.col("spam").tail(4).sum(),
+        ...     ]
+        ... )
 
         Use a dict:
 
