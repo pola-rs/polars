@@ -3343,10 +3343,14 @@ class DateTimeNameSpace:
 
         Can be used to perform a downsample operation:
 
-        >>> date_range.to_frame().groupby(
-        ...     pl.col("date_range").dt.buckets(timedelta(minutes=16)),
-        ...     maintain_order=True,
-        ... ).agg(pl.col("date_range").count())
+        >>> (
+        ...     date_range.to_frame()
+        ...     .groupby(
+        ...         pl.col("date_range").dt.buckets(timedelta(minutes=16)),
+        ...         maintain_order=True,
+        ...     )
+        ...     .agg(pl.col("date_range").count())
+        ... )
         shape: (4, 2)
         ┌─────────────────────┬──────────────────┐
         │ date_range          ┆ date_range_count │

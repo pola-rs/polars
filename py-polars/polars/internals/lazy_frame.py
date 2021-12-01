@@ -207,7 +207,11 @@ class LazyFrame:
         Prints the value that this node in the computation graph evaluates to and passes on the value.
 
         >>> (
-        ...     df.select(pl.col("foo").cumsum().alias("bar"))
+        ...     df.select(
+        ...         [
+        ...             pl.col("foo").cumsum().alias("bar"),
+        ...         ]
+        ...     )
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )
@@ -362,7 +366,11 @@ class LazyFrame:
 
         >>> df = (
         ...     pl.DataFrame(
-        ...         {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...         {
+        ...             "foo": [1, 2, 3],
+        ...             "bar": [6, 7, 8],
+        ...             "ham": ["a", "b", "c"],
+        ...         }
         ...     )
         ...     .lazy()
         ...     .select(["foo", "bar"])
@@ -395,7 +403,11 @@ class LazyFrame:
         --------
 
         >>> lf = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... ).lazy()
 
         Filter on one condition:
@@ -964,7 +976,11 @@ class LazyFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, None, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, None, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
         >>> df.lazy().drop_nulls().collect()
         shape: (2, 3)
@@ -1009,7 +1025,11 @@ class LazyFrame:
         Drop a row only if all values are null:
 
         >>> df.filter(
-        ...     ~pl.fold(acc=True, f=lambda acc, s: acc & s.is_null(), exprs=pl.all())
+        ...     ~pl.fold(
+        ...         acc=True,
+        ...         f=lambda acc, s: acc & s.is_null(),
+        ...         exprs=pl.all(),
+        ...     )
         ... )
         shape: (3, 3)
         ┌──────┬─────┬──────┐
@@ -1105,7 +1125,10 @@ class LazyGroupBy:
         ...     pl.scan_csv("data.csv")
         ...     .groupby("groups")
         ...     .agg(
-        ...         [pl.col("name").n_unique().alias("unique_names"), pl.max("values")]
+        ...         [
+        ...             pl.col("name").n_unique().alias("unique_names"),
+        ...             pl.max("values"),
+        ...         ]
         ...     )
         ... )
         """
@@ -1125,7 +1148,10 @@ class LazyGroupBy:
         --------
 
         >>> df = pl.DataFrame(
-        ...     {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
         ... )
         >>> df
         shape: (6, 2)
@@ -1180,7 +1206,10 @@ class LazyGroupBy:
         --------
 
         >>> df = pl.DataFrame(
-        ...     {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
         ... )
         >>> df
         shape: (6, 2)

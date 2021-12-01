@@ -52,7 +52,11 @@ def col(
     --------
 
     >>> df = pl.DataFrame(
-    ...     {"ham": [1, 2, 3], "hamburger": [11, 22, 33], "foo": [3, 2, 1]}
+    ...     {
+    ...         "ham": [1, 2, 3],
+    ...         "hamburger": [11, 22, 33],
+    ...         "foo": [3, 2, 1],
+    ...     }
     ... )
     >>> df.select(pl.col("foo"))
     shape: (3, 1)
@@ -751,7 +755,13 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     Examples
     --------
 
-    >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None], "c": [None, 2, 1]})
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": ["a", "b", None],
+    ...         "c": [None, 2, 1],
+    ...     }
+    ... )
     >>> df
     shape: (3, 3)
     ╭─────┬──────┬──────╮
@@ -800,11 +810,16 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
     Examples
     --------
 
-    >>> # sum all columns
+    Sum all columns
+
     >>> df.select(pl.all().sum())
 
 
-    >>> df.select(pl.all([col(name).is_not_null() for name in df.columns]))
+    >>> df.select(
+    ...     [
+    ...         pl.all([pl.col(name).is_not_null() for name in df.columns]),
+    ...     ]
+    ... )
 
     """
     if name is None:
@@ -994,8 +1009,17 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     Examples
     --------
 
-    >>> df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-    >>> df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": ["a", "b", "c"],
+    ...         "b": [1, 2, 3],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     [
+    ...         pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt"),
+    ...     ]
+    ... )
     shape: (3, 1)
     ┌─────────────┐
     │ fmt         │
@@ -1125,7 +1149,11 @@ def select(
 
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
-    >>> pl.select([pl.min([foo, bar])])
+    >>> pl.select(
+    ...     [
+    ...         pl.min([foo, bar]),
+    ...     ]
+    ... )
     shape: (3, 1)
     ┌─────┐
     │ min │

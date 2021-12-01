@@ -1369,7 +1369,11 @@ class DataFrame:
         --------
 
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
 
         Filter on one condition:
@@ -1601,7 +1605,11 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
         >>> x = pl.Series("apple", [10, 20, 30])
         >>> df.replace_at_idx(0, x)
@@ -3347,7 +3355,11 @@ class DataFrame:
         A horizontal string concattenation:
 
         >>> df = pl.DataFrame(
-        ...     {"a": ["foo", "bar", 2], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]}
+        ...     {
+        ...         "a": ["foo", "bar", 2],
+        ...         "b": [1, 2, 3],
+        ...         "c": [1.0, 2.0, 3.0],
+        ...     }
         ... )
         >>> df.fold(lambda s1, s2: s1 + s2)
         Series: '' [f64]
@@ -3384,7 +3396,11 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
         >>> df.row(2)
         (3, 8, 'c')
@@ -3597,12 +3613,13 @@ class GroupBy:
 
         Column name to aggregation with tuples:
 
-        >>> [("foo", ["sum", "n_unique", "min"]),
-        ... ("bar": ["max"])]
+        >>> [
+        ...     ("foo", ["sum", "n_unique", "min"]),
+        ...     ("bar", ["max"]),
+        ... ]
 
         Column name to aggregation with dict:
-        >>> {"foo": ["sum", "n_unique", "min"],
-        ... "bar": "max"}
+        >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}
 
         Returns
         -------
@@ -3618,7 +3635,11 @@ class GroupBy:
 
         Use a dict:
 
-        >>> df.groupby(["foo", "bar"]).agg({"spam": ["sum", "min"]})
+        >>> df.groupby(["foo", "bar"]).agg(
+        ...     {
+        ...         "spam": ["sum", "min"],
+        ...     }
+        ... )
 
         """
         if isinstance(column_to_agg, pli.Expr):
@@ -3678,7 +3699,10 @@ class GroupBy:
         --------
 
         >>> df = pl.DataFrame(
-        ...     {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
         ... )
         >>> df
         shape: (6, 2)
@@ -3739,7 +3763,10 @@ class GroupBy:
         --------
 
         >>> df = pl.DataFrame(
-        ...     {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
         ... )
         >>> df
         shape: (6, 2)
