@@ -7,9 +7,64 @@ use polars_arrow::prelude::ValueSize;
 use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
 use std::cmp::Ordering;
+use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::{Deref, DerefMut};
+
+/// # Safety
+/// only may produce true, for f32/f64::NaN
+pub unsafe trait PlIsNan {
+    fn isnan(&self) -> bool {
+        false
+    }
+}
+
+unsafe impl PlIsNan for f32 {
+    fn isnan(&self) -> bool {
+        self.is_nan()
+    }
+}
+unsafe impl PlIsNan for f64 {
+    fn isnan(&self) -> bool {
+        self.is_nan()
+    }
+}
+
+unsafe impl PlIsNan for u8 {}
+unsafe impl PlIsNan for u16 {}
+unsafe impl PlIsNan for u32 {}
+unsafe impl PlIsNan for u64 {}
+unsafe impl PlIsNan for i8 {}
+unsafe impl PlIsNan for i16 {}
+unsafe impl PlIsNan for i32 {}
+unsafe impl PlIsNan for i64 {}
+
+/// Reverse sorting when there are no nulls
+fn order_reverse<T: PartialOrd + PlIsNan>(a: &T, b: &T) -> Ordering {
+    b.partial_cmp(a).unwrap()
+}
+
+/// Default sorting when there are no nulls
+fn order_default<T: PartialOrd>(a: &T, b: &T) -> Ordering {
+    a.partial_cmp(b).unwrap()
+}
+
+fn order_default_flt<T: PartialOrd + PlIsNan>(a: &T, b: &T) -> Ordering {
+    a.partial_cmp(b).unwrap_or_else(|| {
+        match (a.isnan(), b.isnan()) {
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+            // Safety: PlIsNan is only implemented for numbers
+            _ => unsafe { unreachable_unchecked() },
+        }
+    })
+}
+
+fn order_reverse_flt<T: PartialOrd + PlIsNan>(a: &T, b: &T) -> Ordering {
+    order_default_flt(b, a)
+}
 
 /// Sort with null values, to reverse, swap the arguments.
 fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
@@ -19,34 +74,6 @@ fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
         (Some(_), None) => Ordering::Greater,
         (None, None) => Ordering::Equal,
     }
-}
-
-/// Reverse sorting when there are no nulls
-fn order_reverse<T: PartialOrd>(a: &T, b: &T) -> Ordering {
-    b.partial_cmp(a).unwrap_or_else(|| {
-        // nan != nan
-        #[allow(clippy::eq_op)]
-        if a != a {
-            Ordering::Greater
-        } else {
-            Ordering::Less
-        }
-    })
-}
-
-/// Default sorting when there are no nulls
-fn order_default<T: PartialOrd>(a: &T, b: &T) -> Ordering {
-    a.partial_cmp(b).unwrap_or_else(|| {
-        // nan != nan
-        // this is a simple way to check if it is nan
-        // without convincing the compiler we deal with floats
-        #[allow(clippy::eq_op)]
-        if a != a {
-            Ordering::Less
-        } else {
-            Ordering::Greater
-        }
-    })
 }
 
 /// Default sorting nulls
@@ -141,7 +168,7 @@ where
 impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: Default,
+    T::Native: Default + PlIsNan,
 {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
         if self.is_empty() {
@@ -167,12 +194,22 @@ where
         }
         if !self.has_validity() {
             let mut vals = memcpy_values(self);
-            sort_branch(
-                vals.as_mut_slice(),
-                options.descending,
-                order_default,
-                order_reverse,
-            );
+
+            if matches!(self.dtype(), DataType::Float32 | DataType::Float64) {
+                sort_branch(
+                    vals.as_mut_slice(),
+                    options.descending,
+                    order_default_flt,
+                    order_reverse_flt,
+                );
+            } else {
+                sort_branch(
+                    vals.as_mut_slice(),
+                    options.descending,
+                    order_default,
+                    order_reverse,
+                );
+            }
 
             ChunkedArray::new_from_aligned_vec(self.name(), vals)
         } else {
@@ -197,7 +234,17 @@ where
             } else {
                 &mut vals[null_count..]
             };
-            sort_branch(mut_slice, options.descending, order_default, order_reverse);
+
+            if matches!(self.dtype(), DataType::Float32 | DataType::Float64) {
+                sort_branch(
+                    mut_slice,
+                    options.descending,
+                    order_default_flt,
+                    order_reverse_flt,
+                );
+            } else {
+                sort_branch(mut_slice, options.descending, order_default, order_reverse);
+            }
 
             let mut ca: Self = if options.nulls_last {
                 vals.extend(std::iter::repeat(T::Native::default()).take(self.null_count()));
@@ -264,8 +311,8 @@ where
             argsort_branch(
                 vals.as_mut_slice(),
                 reverse,
-                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+                |(_, a), (_, b)| order_default(a, b),
+                |(_, a), (_, b)| order_reverse(a, b),
             );
 
             let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();

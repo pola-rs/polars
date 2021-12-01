@@ -188,7 +188,7 @@ mod test {
 
     #[test]
     fn test_fast_unique() {
-        let mut s = Series::new("1", vec!["a", "b", "c"])
+        let s = Series::new("1", vec!["a", "b", "c"])
             .cast(&DataType::Categorical)
             .unwrap();
 

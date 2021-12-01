@@ -11,6 +11,7 @@ use crate::chunked_array::categorical::RevMapping;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
+use crate::chunked_array::ops::sort::PlIsNan;
 use crate::prelude::*;
 use ahash::RandomState;
 use arrow::compute::comparison::Simd8;
@@ -144,6 +145,7 @@ pub trait NumericNative:
     + AddAssign
     + Bounded
     + FromPrimitive
+    + PlIsNan
 {
 }
 impl NumericNative for i8 {}
