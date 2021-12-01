@@ -165,33 +165,41 @@ where
     vals
 }
 
+macro_rules! sort_with_fast_path {
+    ($ca:ident, $options:expr) => {{
+        if $ca.is_empty() {
+            return $ca.clone();
+        }
+
+        if $options.descending && $ca.is_sorted_reverse() || $ca.is_sorted() {
+            // there are nulls
+            if $ca.has_validity() {
+                // if the nulls are already last we can clone
+                if $options.nulls_last && $ca.get($ca.len() - 1).is_none()  ||
+                // if the nulls are already first we can clone
+                $ca.get(0).is_none()
+                {
+                    return $ca.clone();
+                }
+                // nulls are not at the right place
+                // continue w/ sorting
+                // TODO: we can optimize here and just put the null at the correct place
+            } else {
+                return $ca.clone();
+            }
+        }
+
+
+    }}
+}
+
 impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Default + PlIsNan,
 {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
-        if self.is_empty() {
-            return self.clone();
-        }
-
-        if options.descending && self.is_sorted_reverse() || self.is_sorted() {
-            // there are nulls
-            if self.has_validity() {
-                // if the nulls are already last we can clone
-                if options.nulls_last && self.get(self.len() - 1).is_none()  ||
-                // if the nulls are already first we can clone
-                self.get(0).is_none()
-                {
-                    return self.clone();
-                }
-                // nulls are not at the right place
-                // continue w/ sorting
-                // TODO: we can optimize here and just put the null at the correct place
-            } else {
-                return self.clone();
-            }
-        }
+        sort_with_fast_path!(self, options);
         if !self.has_validity() {
             let mut vals = memcpy_values(self);
 
@@ -454,7 +462,7 @@ fn ordering_other_columns<'a>(
 }
 
 macro_rules! sort {
-    ($self:ident, $reverse:ident) => {{
+    ($self:ident, $reverse:expr) => {{
         if $reverse {
             $self
                 .into_iter()
@@ -470,11 +478,17 @@ macro_rules! sort {
 }
 
 impl ChunkSort<Utf8Type> for Utf8Chunked {
-    fn sort(&self, reverse: bool) -> Utf8Chunked {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
+        sort_with_fast_path!(self, options);
+        assert!(
+            !options.nulls_last,
+            "null last not yet supported for utf8 dtype"
+        );
+
         let mut v = Vec::from_iter(self);
         sort_branch(
             v.as_mut_slice(),
-            reverse,
+            options.descending,
             order_default_null,
             order_reverse_null,
         );
@@ -483,8 +497,15 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
         v.into_iter().for_each(|opt_v| builder.append_option(opt_v));
         let mut ca = builder.finish();
-        ca.set_sorted(reverse);
+        ca.set_sorted(options.descending);
         ca
+    }
+
+    fn sort(&self, reverse: bool) -> Utf8Chunked {
+        self.sort_with(SortOptions {
+            descending: reverse,
+            nulls_last: false,
+        })
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
@@ -551,6 +572,10 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
 
 #[cfg(feature = "dtype-categorical")]
 impl ChunkSort<CategoricalType> for CategoricalChunked {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<CategoricalType> {
+        self.deref().sort_with(options).into()
+    }
+
     fn sort(&self, reverse: bool) -> Self {
         self.deref().sort(reverse).into()
     }
@@ -565,8 +590,20 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
 }
 
 impl ChunkSort<BooleanType> for BooleanChunked {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<BooleanType> {
+        sort_with_fast_path!(self, options);
+        assert!(
+            !options.nulls_last,
+            "null last not yet supported for bool dtype"
+        );
+        sort!(self, options.descending)
+    }
+
     fn sort(&self, reverse: bool) -> BooleanChunked {
-        sort!(self, reverse)
+        self.sort_with(SortOptions {
+            descending: reverse,
+            nulls_last: false,
+        })
     }
 
     fn sort_in_place(&mut self, reverse: bool) {
