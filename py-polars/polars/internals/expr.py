@@ -797,7 +797,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: Union[int, "Expr"]) -> "Expr":
+    def shift_and_fill(self, periods: int, fill_value: Union[int, float, bool, str, "Expr"]) -> "Expr":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
@@ -812,7 +812,7 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.shift_and_fill(periods, fill_value._pyexpr))
 
-    def fill_null(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
+    def fill_null(self, fill_value: Union[int, float, bool, str, "Expr"]) -> "Expr":
         """
         Fill none value with a fill value or strategy
 
@@ -842,7 +842,7 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
 
-    def fill_nan(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
+    def fill_nan(self, fill_value: Union[str, int, float, bool, "Expr"]) -> "Expr":
         """
         Fill none value with a fill value
         """
@@ -953,7 +953,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = DataFrame(
+        >>> df = pl.DataFrame(
         ...     {
         ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
         ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
