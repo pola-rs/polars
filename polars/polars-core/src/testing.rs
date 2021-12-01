@@ -199,4 +199,18 @@ mod test {
         assert_eq!(df3, df3);
         assert_ne!(df4, df4);
     }
+
+    //-----RAYON LEAK PROOF-----
+    #[test]
+    fn test_miri_rayonthread_leak1() {
+        crate::POOL.install(|| ());
+    }
+
+    #[test]
+    fn test_miri_rayonthread_leak2() {
+        use rayon::prelude::*;
+        let tmp: Vec<i32> = [1, 2].par_iter().map(|x| x * x).collect();
+        assert_eq!(tmp, &[1, 4]);
+    }
+    //--------------
 }
