@@ -175,6 +175,9 @@ features = [
   "compute_take",
 ]
 
+[dev-dependencies]
+bincode = "1"
+
 [package.metadata.docs.rs]
 # not all because arrow 4.3 does not compile with simd
 # all-features = true
