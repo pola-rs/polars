@@ -157,8 +157,14 @@ impl PyExpr {
         };
         expr.into()
     }
-    pub fn sort(&self, reverse: bool) -> PyExpr {
-        self.clone().inner.sort(reverse).into()
+    pub fn sort_with(&self, descending: bool, nulls_last: bool) -> PyExpr {
+        self.clone()
+            .inner
+            .sort_with(SortOptions {
+                descending,
+                nulls_last,
+            })
+            .into()
     }
 
     pub fn arg_sort(&self, reverse: bool) -> PyExpr {

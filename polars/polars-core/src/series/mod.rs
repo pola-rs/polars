@@ -182,6 +182,13 @@ impl Series {
         Ok(self)
     }
 
+    pub fn sort(&self, reverse: bool) -> Self {
+        self.sort_with(SortOptions {
+            descending: reverse,
+            ..Default::default()
+        })
+    }
+
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> Result<usize> {
         self.get_inner_mut().as_single_ptr()

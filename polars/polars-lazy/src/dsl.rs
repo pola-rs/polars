@@ -269,7 +269,7 @@ pub enum Expr {
     },
     Sort {
         expr: Box<Expr>,
-        reverse: bool,
+        options: SortOptions,
     },
     Take {
         expr: Box<Expr>,
@@ -387,7 +387,7 @@ impl fmt::Debug for Expr {
             Not(expr) => write!(f, "NOT {:?}", expr),
             IsNull(expr) => write!(f, "{:?} IS NULL", expr),
             IsNotNull(expr) => write!(f, "{:?} IS NOT NULL", expr),
-            Sort { expr, reverse } => match reverse {
+            Sort { expr, options } => match options.descending {
                 true => write!(f, "{:?} DESC", expr),
                 false => write!(f, "{:?} ASC", expr),
             },
@@ -840,12 +840,21 @@ impl Expr {
     }
 
     /// Sort in increasing order. See [the eager implementation](polars_core::series::SeriesTrait::sort).
-    ///
-    /// Can be used in `default` and `aggregation` context.
     pub fn sort(self, reverse: bool) -> Self {
         Expr::Sort {
             expr: Box::new(self),
-            reverse,
+            options: SortOptions {
+                descending: reverse,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Sort with given options.
+    pub fn sort_with(self, options: SortOptions) -> Self {
+        Expr::Sort {
+            expr: Box::new(self),
+            options,
         }
     }
 

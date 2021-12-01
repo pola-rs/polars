@@ -496,10 +496,10 @@ pub trait ToDummies<T>: ChunkUnique<T> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
 pub struct SortOptions {
-    descending: bool,
-    nulls_last: bool,
+    pub descending: bool,
+    pub nulls_last: bool,
 }
 
 /// Sort operations on `ChunkedArray`.

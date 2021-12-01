@@ -594,6 +594,11 @@ class Expr:
         ----------
         reverse
             Reverse the operation.
+
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
         """
         return wrap_expr(self._pyexpr.cumsum(reverse))
 
@@ -605,6 +610,11 @@ class Expr:
         ----------
         reverse
             Reverse the operation.
+
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
         """
         return wrap_expr(self._pyexpr.cumprod(reverse))
 
@@ -693,7 +703,7 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.cast(dtype, strict))
 
-    def sort(self, reverse: bool = False) -> "Expr":
+    def sort(self, reverse: bool = False, nulls_last: bool = False) -> "Expr":
         """
         Sort this column. In projection/ selection context the whole column is sorted.
         If used in a groupby context, the groups are sorted.
@@ -703,8 +713,10 @@ class Expr:
         reverse
             False -> order from small to large.
             True -> order from large to small.
+        nulls_last
+            If True nulls are considered to be larger than any valid value
         """
-        return wrap_expr(self._pyexpr.sort(reverse))
+        return wrap_expr(self._pyexpr.sort_with(reverse, nulls_last))
 
     def arg_sort(self, reverse: bool = False) -> "Expr":
         """
@@ -894,7 +906,9 @@ class Expr:
         """
         Get sum value.
 
-        Note that dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
         Int64 before summing to prevent overflow issues.
         """
         return wrap_expr(self._pyexpr.sum())

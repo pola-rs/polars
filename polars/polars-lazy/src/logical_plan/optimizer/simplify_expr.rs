@@ -345,10 +345,14 @@ impl OptimizationRule for SimplifyExprRule {
             AExpr::Reverse(expr) => {
                 let input = expr_arena.get(*expr);
                 match input {
-                    AExpr::Sort { expr, reverse } => Some(AExpr::Sort {
-                        expr: *expr,
-                        reverse: !*reverse,
-                    }),
+                    AExpr::Sort { expr, options } => {
+                        let mut options = *options;
+                        options.descending = !options.descending;
+                        Some(AExpr::Sort {
+                            expr: *expr,
+                            options,
+                        })
+                    }
                     AExpr::SortBy { expr, by, reverse } => Some(AExpr::SortBy {
                         expr: *expr,
                         by: by.clone(),
