@@ -542,7 +542,7 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn sum_as_series(&self) -> Series {
+            fn _sum_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
                     .cast(self.dtype())
                     .unwrap()

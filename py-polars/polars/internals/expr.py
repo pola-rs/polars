@@ -893,6 +893,9 @@ class Expr:
     def sum(self) -> "Expr":
         """
         Get sum value.
+
+        Note that dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
         """
         return wrap_expr(self._pyexpr.sum())
 

@@ -350,7 +350,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
     }
 
-    fn sum_as_series(&self) -> Series {
+    fn _sum_as_series(&self) -> Series {
         CategoricalChunked::full_null(self.name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {

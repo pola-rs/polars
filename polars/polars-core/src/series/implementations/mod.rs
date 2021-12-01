@@ -181,7 +181,11 @@ macro_rules! impl_dyn_series {
             }
 
             fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                self.0.agg_sum(groups)
+                use DataType::*;
+                match self.dtype() {
+                    Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().agg_sum(groups),
+                    _ => self.0.agg_sum(groups),
+                }
             }
 
             fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
@@ -684,7 +688,7 @@ macro_rules! impl_dyn_series {
                 ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
             }
 
-            fn sum_as_series(&self) -> Series {
+            fn _sum_as_series(&self) -> Series {
                 ChunkAggSeries::sum_as_series(&self.0)
             }
             fn max_as_series(&self) -> Series {
