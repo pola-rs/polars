@@ -158,7 +158,9 @@ unsafe_unwrap = "^0.1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-version = "0.8"
+git = "https://github.com/ritchie46/arrow2"
+branch = "offset_pub"
+# version = "0.8"
 default-features = false
 features = [
   "compute_aggregate",
