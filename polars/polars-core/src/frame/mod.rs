@@ -461,7 +461,7 @@ impl DataFrame {
 
     /// # Example
     ///
-    /// ```rust
+    /// ```no_run
     /// # use polars_core::prelude::*;
     /// let df: DataFrame = df!("Language" => &["Rust", "Python"],
     ///                         "Designer" => &["Graydon Hoare", "Guido van Rossum"])?;
@@ -470,13 +470,13 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn get_column_names(&self) -> Vec<&str> {
-        self.columns.iter().map(|s| s.name()).collect()
+        POOL.install(|| self.columns.par_iter().map(|s| s.name()).collect())
     }
 
     /// Set the column names.
     /// # Example
     ///
-    /// ```rust
+    /// ```no_run
     /// # use polars_core::prelude::*;
     /// let mut df: DataFrame = df!("Mathematical set" => &["ℕ", "ℤ", "𝔻", "ℚ", "ℝ", "ℂ"])?;
     /// df.set_column_names(&["Set"])?;
@@ -2912,6 +2912,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_replace_or_add() -> Result<()> {
         let mut df = df!(
             "a" => [1, 2, 3],
@@ -2923,5 +2924,19 @@ mod test {
 
         assert_eq!(df.get_column_names(), &["a", "b", "c"]);
         Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_get_column_names() {
+        let df = df!("a" => [1, 2, 3],
+                     "β" => [1.0, 2.0, 3.0],
+                     "ت" => [Some(1), Some(2), None],
+                     "我" => [1.0, f32::NAN, f32::INFINITY])
+        .unwrap();
+        assert_eq!(df.get_column_names(), &["a", "β", "ت", "我"]);
+
+        let df = DataFrame::default();
+        assert!(df.get_column_names().is_empty());
     }
 }
