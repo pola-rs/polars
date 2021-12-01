@@ -464,10 +464,6 @@ impl PySeries {
         (self.series.tail(length)).into()
     }
 
-    pub fn sort_in_place(&mut self, reverse: bool) {
-        self.series.sort_in_place(reverse);
-    }
-
     pub fn sort(&mut self, reverse: bool) -> Self {
         PySeries::new(self.series.sort(reverse))
     }

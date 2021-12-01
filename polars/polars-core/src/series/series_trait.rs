@@ -661,11 +661,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Sort in place.
-    fn sort_in_place(&mut self, _reverse: bool) {
-        invalid_operation_panic!(self)
-    }
-
     fn sort(&self, _reverse: bool) -> Series {
         invalid_operation_panic!(self)
     }

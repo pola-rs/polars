@@ -510,9 +510,6 @@ pub trait ChunkSort<T> {
     /// Returned a sorted `ChunkedArray`.
     fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 
-    /// Sort this array in place.
-    fn sort_in_place(&mut self, reverse: bool);
-
     /// Retrieve the indexes needed to sort this array.
     fn argsort(&self, reverse: bool) -> UInt32Chunked;
 

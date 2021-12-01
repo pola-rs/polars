@@ -616,10 +616,6 @@ macro_rules! impl_dyn_series {
                 self.0.get_any_value_unchecked(index)
             }
 
-            fn sort_in_place(&mut self, reverse: bool) {
-                ChunkSort::sort_in_place(&mut self.0, reverse);
-            }
-
             fn sort(&self, reverse: bool) -> Series {
                 ChunkSort::sort(&self.0, reverse).into_series()
             }

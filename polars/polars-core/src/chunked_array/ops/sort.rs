@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 #[cfg(feature = "dtype-categorical")]
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 /// # Safety
 /// only may produce true, for f32/f64::NaN
@@ -297,11 +297,6 @@ where
         })
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
-        let mut sorted = self.sort(reverse);
-        self.chunks = std::mem::take(&mut sorted.chunks);
-    }
-
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         if !self.has_validity() {
             let mut vals = Vec::with_capacity(self.len());
@@ -508,11 +503,6 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         })
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
-        let mut sorted = self.sort(reverse);
-        self.chunks = std::mem::take(&mut sorted.chunks);
-    }
-
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         argsort!(self, reverse)
     }
@@ -580,10 +570,6 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
         self.deref().sort(reverse).into()
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
-        self.deref_mut().sort_in_place(reverse)
-    }
-
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         self.deref().argsort(reverse)
     }
@@ -604,11 +590,6 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             descending: reverse,
             nulls_last: false,
         })
-    }
-
-    fn sort_in_place(&mut self, reverse: bool) {
-        let mut sorted = self.sort(reverse);
-        self.chunks = std::mem::take(&mut sorted.chunks);
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
