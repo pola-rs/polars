@@ -384,7 +384,12 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ "banana" ┆ 1   ┆ "beetle" │
         ╰─────┴──────────┴─────┴──────────╯
-        >>> (df.select([pl.all(), pl.all().reverse().suffix("_reverse")]))
+        >>> df.select(
+        ...     [
+        ...         pl.all(),
+        ...         pl.all().reverse().suffix("_reverse"),
+        ...     ]
+        ... )
         shape: (5, 8)
         ╭─────┬──────────┬─────┬──────────┬───────────┬────────────────┬───────────┬──────────────╮
         │ A   ┆ fruits   ┆ B   ┆ cars     ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
@@ -436,7 +441,12 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ "banana" ┆ 1   ┆ "beetle" │
         ╰─────┴──────────┴─────┴──────────╯
-        >>> (df.select([pl.all(), pl.all().reverse().prefix("reverse_")]))
+        >>> df.select(
+        ...     [
+        ...         pl.all(),
+        ...         pl.all().reverse().prefix("reverse_"),
+        ...     ]
+        ... )
         shape: (5, 8)
         ╭─────┬──────────┬─────┬──────────┬───────────┬────────────────┬───────────┬──────────────╮
         │ A   ┆ fruits   ┆ B   ┆ cars     ┆ reverse_A ┆ reverse_fruits ┆ reverse_B ┆ reverse_cars │
