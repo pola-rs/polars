@@ -383,7 +383,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
     }
 
-    fn sum_as_series(&self) -> Series {
+    fn _sum_as_series(&self) -> Series {
         ChunkAggSeries::sum_as_series(&self.0)
     }
     fn max_as_series(&self) -> Series {

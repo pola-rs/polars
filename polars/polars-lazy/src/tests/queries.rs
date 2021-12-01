@@ -1779,7 +1779,7 @@ fn test_groupby_small_ints() -> Result<()> {
         .sort("foo", true)
         .collect()?;
 
-    assert_eq!(Vec::from(out.column("foo")?.i16()?), &[Some(2), Some(1)]);
+    assert_eq!(Vec::from(out.column("foo")?.i64()?), &[Some(2), Some(1)]);
     Ok(())
 }
 

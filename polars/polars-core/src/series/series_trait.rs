@@ -165,6 +165,8 @@ pub(crate) mod private {
         fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             None
         }
+        /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+        /// first cast to `Int64` to prevent overflow issues.
         fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             None
         }
@@ -818,7 +820,10 @@ pub trait SeriesTrait:
     }
 
     /// Get the sum of the Series as a new Series of length 1.
-    fn sum_as_series(&self) -> Series {
+    ///
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+    /// first cast to `Int64` to prevent overflow issues.
+    fn _sum_as_series(&self) -> Series {
         invalid_operation_panic!(self)
     }
     /// Get the max of the Series as a new Series of length 1.

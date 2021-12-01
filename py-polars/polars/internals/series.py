@@ -700,6 +700,9 @@ class Series:
         """
         Reduce this Series to the sum value.
 
+        Note that dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
