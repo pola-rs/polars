@@ -251,53 +251,53 @@ class Expr:
 
     def exclude(self, columns: Union[str, tp.List[str]]) -> "Expr":
         """
-         Exclude certain columns from a wildcard/regex selection.
+        Exclude certain columns from a wildcard/regex selection.
 
-         You may also use regexes int he exclude list. They must start with `^` and end with `$`.
+        You may also use regexes int he exclude list. They must start with `^` and end with `$`.
 
-         Parameters
-         ----------
-         columns
-             Column(s) to exclude from selection
+        Parameters
+        ----------
+        columns
+            Column(s) to exclude from selection
 
-         Examples
-         --------
+        Examples
+        --------
 
-         >>> df = pl.DataFrame(
-         ...     {
-         ...         "a": [1, 2, 3],
-         ...         "b": ["a", "b", None],
-         ...         "c": [None, 2, 1],
-         ...     }
-         ... )
-         >>> df
-         shape: (3, 3)
-         ╭─────┬──────┬──────╮
-         │ a   ┆ b    ┆ c    │
-         │ --- ┆ ---  ┆ ---  │
-         │ i64 ┆ str  ┆ i64  │
-         ╞═════╪══════╪══════╡
-         │ 1   ┆ "a"  ┆ null │
-         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-         │ 2   ┆ "b"  ┆ 2    │
-         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-         │ 3   ┆ null ┆ 1    │
-         ╰─────┴──────┴──────╯
-         >>> df.select(
-         ...     pl.col("*").exclude("b"),
-         ... )
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": ["a", "b", None],
+        ...         "c": [None, 2, 1],
+        ...     }
+        ... )
+        >>> df
+        shape: (3, 3)
+        ╭─────┬──────┬──────╮
+        │ a   ┆ b    ┆ c    │
+        │ --- ┆ ---  ┆ ---  │
+        │ i64 ┆ str  ┆ i64  │
+        ╞═════╪══════╪══════╡
+        │ 1   ┆ "a"  ┆ null │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ "b"  ┆ 2    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3   ┆ null ┆ 1    │
+        ╰─────┴──────┴──────╯
+        >>> df.select(
+        ...     pl.col("*").exclude("b"),
+        ... )
         shape: (3, 2)
-         ╭─────┬──────╮
-         │ a   ┆ c    │
-         │ --- ┆ ---  │
-         │ i64 ┆ i64  │
-         ╞═════╪══════╡
-         │ 1   ┆ null │
-         ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-         │ 2   ┆ 2    │
-         ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-         │ 3   ┆ 1    │
-         ╰─────┴──────╯
+        ╭─────┬──────╮
+        │ a   ┆ c    │
+        │ --- ┆ ---  │
+        │ i64 ┆ i64  │
+        ╞═════╪══════╡
+        │ 1   ┆ null │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ 2    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3   ┆ 1    │
+        ╰─────┴──────╯
         """
         if isinstance(columns, str):
             columns = [columns]

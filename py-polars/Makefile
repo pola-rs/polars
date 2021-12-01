@@ -34,4 +34,4 @@ build-and-test: test-install
 	pytest tests
 
 build-and-test-with-cov: test-install
-	cd tests && pytest --cov=polars --import-mode=importlib
+	cd tests && pytest --cov=polars --import-mode=importlib && cd .. && pytest --doctest-modules
