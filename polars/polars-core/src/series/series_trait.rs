@@ -661,7 +661,7 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    fn sort(&self, _reverse: bool) -> Series {
+    fn sort_with(&self, _options: SortOptions) -> Series {
         invalid_operation_panic!(self)
     }
 

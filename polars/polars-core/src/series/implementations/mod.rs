@@ -616,8 +616,8 @@ macro_rules! impl_dyn_series {
                 self.0.get_any_value_unchecked(index)
             }
 
-            fn sort(&self, reverse: bool) -> Series {
-                ChunkSort::sort(&self.0, reverse).into_series()
+            fn sort_with(&self, options: SortOptions) -> Series {
+                ChunkSort::sort_with(&self.0, options).into_series()
             }
 
             fn argsort(&self, reverse: bool) -> UInt32Chunked {
