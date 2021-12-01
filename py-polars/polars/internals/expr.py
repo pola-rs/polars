@@ -797,7 +797,9 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: Union[int, float, bool, str, "Expr"]) -> "Expr":
+    def shift_and_fill(
+        self, periods: int, fill_value: Union[int, float, bool, str, "Expr"]
+    ) -> "Expr":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
