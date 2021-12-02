@@ -1,6 +1,7 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
+use crate::utils::slice_offsets;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::concatenate;
@@ -8,11 +9,40 @@ use itertools::Itertools;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
-pub trait ChunkOps {
-    /// Aggregate to contiguous memory.
-    fn rechunk(&self) -> Self
-    where
-        Self: std::marker::Sized;
+#[inline]
+fn slice(
+    chunks: &[ArrayRef],
+    offset: i64,
+    slice_length: usize,
+    own_length: usize,
+) -> Vec<ArrayRef> {
+    let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
+
+    let mut remaining_length = slice_len;
+    let mut remaining_offset = raw_offset;
+    let mut new_chunks = Vec::with_capacity(1);
+
+    for chunk in chunks {
+        let chunk_len = chunk.len();
+        if remaining_offset > 0 && remaining_offset >= chunk_len {
+            remaining_offset -= chunk_len;
+            continue;
+        }
+        let take_len;
+        if remaining_length + remaining_offset > chunk_len {
+            take_len = chunk_len - remaining_offset;
+        } else {
+            take_len = remaining_length;
+        }
+
+        new_chunks.push(chunk.slice(remaining_offset, take_len).into());
+        remaining_length -= take_len;
+        remaining_offset = 0;
+        if remaining_length == 0 {
+            break;
+        }
+    }
+    new_chunks
 }
 
 impl<T> ChunkOps for ChunkedArray<T>
@@ -31,6 +61,10 @@ where
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
+    #[inline]
+    fn slice(&self, offset: i64, length: usize) -> Self {
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+    }
 }
 
 impl ChunkOps for BooleanChunked {
@@ -45,6 +79,10 @@ impl ChunkOps for BooleanChunked {
             .into()];
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
+    }
+    #[inline]
+    fn slice(&self, offset: i64, length: usize) -> Self {
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -61,6 +99,10 @@ impl ChunkOps for Utf8Chunked {
             ChunkedArray::new_from_chunks(self.name(), chunks)
         }
     }
+    #[inline]
+    fn slice(&self, offset: i64, length: usize) -> Self {
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+    }
 }
 
 #[cfg(feature = "dtype-categorical")]
@@ -72,6 +114,12 @@ impl ChunkOps for CategoricalChunked {
         let mut out: CategoricalChunked = self.deref().rechunk().into();
         let cat_map = self.categorical_map.clone();
         out.categorical_map = cat_map;
+        out
+    }
+    #[inline]
+    fn slice(&self, offset: i64, length: usize) -> Self {
+        let mut out = self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()));
+        out.set_fast_unique(false);
         out
     }
 }
@@ -92,6 +140,10 @@ impl ChunkOps for ListChunked {
             }
             ca
         }
+    }
+    #[inline]
+    fn slice(&self, offset: i64, length: usize) -> Self {
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -131,6 +183,10 @@ where
             }
             builder.finish()
         }
+    }
+    #[inline]
+    fn slice(&self, offset: i64, length: usize) -> Self {
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
     }
 }
 

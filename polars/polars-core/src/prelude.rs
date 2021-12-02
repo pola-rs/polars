@@ -11,7 +11,7 @@ pub use crate::{
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
         iterator::{IntoNoNullIterator, PolarsIterator},
-        ops::{aggregate::*, chunkops::ChunkOps, *},
+        ops::{aggregate::*, *},
         ChunkedArray,
     },
     datatypes,

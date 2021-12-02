@@ -49,7 +49,7 @@ use polars_arrow::prelude::*;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::RevMapping;
-use crate::utils::{slice_offsets, CustomIterTools};
+use crate::utils::CustomIterTools;
 use std::mem;
 
 #[cfg(not(feature = "dtype-categorical"))]
@@ -264,16 +264,6 @@ impl<T> ChunkedArray<T> {
         }
     }
 
-    /// Combined length of all the chunks.
-    pub fn len(&self) -> usize {
-        self.chunks.iter().fold(0, |acc, arr| acc + arr.len())
-    }
-
-    /// Check if ChunkedArray is empty.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     /// Unique id representing the number of chunks
     pub fn chunk_id(&self) -> ChunkIdIter {
         self.chunks.iter().map(|chunk| chunk.len())
@@ -293,11 +283,6 @@ impl<T> ChunkedArray<T> {
     #[inline]
     pub fn null_count(&self) -> usize {
         self.chunks.iter().map(|arr| arr.null_count()).sum()
-    }
-
-    /// Take a view of top n elements
-    pub fn limit(&self, num_elements: usize) -> Self {
-        self.slice(0, num_elements)
     }
 
     /// Append arrow array in place.
@@ -342,41 +327,6 @@ impl<T> ChunkedArray<T> {
         }
     }
 
-    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
-    ///
-    /// When offset is negative it will be counted from the end of the array.
-    /// This method will never error,
-    /// and will slice the best match when offset, or length is out of bounds
-    pub fn slice(&self, offset: i64, length: usize) -> Self {
-        let (raw_offset, slice_len) = slice_offsets(offset, length, self.len());
-
-        let mut remaining_length = slice_len;
-        let mut remaining_offset = raw_offset;
-        let mut new_chunks = vec![];
-
-        for chunk in &self.chunks {
-            let chunk_len = chunk.len();
-            if remaining_offset > 0 && remaining_offset >= chunk_len {
-                remaining_offset -= chunk_len;
-                continue;
-            }
-            let take_len;
-            if remaining_length + remaining_offset > chunk_len {
-                take_len = chunk_len - remaining_offset;
-            } else {
-                take_len = remaining_length;
-            }
-
-            new_chunks.push(chunk.slice(remaining_offset, take_len).into());
-            remaining_length -= take_len;
-            remaining_offset = 0;
-            if remaining_length == 0 {
-                break;
-            }
-        }
-        self.copy_with_chunks(new_chunks)
-    }
-
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
         if !self.has_validity() {
@@ -418,23 +368,6 @@ impl<T> ChunkedArray<T> {
     /// Get data type of ChunkedArray.
     pub fn dtype(&self) -> &DataType {
         self.field.data_type()
-    }
-
-    /// Get the head of the ChunkedArray
-    pub fn head(&self, length: Option<usize>) -> Self {
-        match length {
-            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
-            None => self.slice(0, std::cmp::min(10, self.len())),
-        }
-    }
-
-    /// Get the tail of the ChunkedArray
-    pub fn tail(&self, length: Option<usize>) -> Self {
-        let len = match length {
-            Some(len) => std::cmp::min(len, self.len()),
-            None => std::cmp::min(10, self.len()),
-        };
-        self.slice(-(len as i64), len)
     }
 
     /// Name of the ChunkedArray.
