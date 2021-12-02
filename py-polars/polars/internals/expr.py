@@ -197,6 +197,27 @@ class Expr:
         """
         return self ** 0.5
 
+    def log(self) -> "Expr":
+        """
+        Natural logarithm, element-wise.
+
+        The natural logarithm log is the inverse of the exponential function, so that log(exp(x)) = x.
+        The natural logarithm is logarithm in base e.
+        """
+        return np.log(self)  # type: ignore
+
+    def log10(self) -> "Expr":
+        """
+        Return the base 10 logarithm of the input array, element-wise.
+        """
+        return np.log10(self)  # type: ignore
+
+    def exp(self) -> "Expr":
+        """
+        Return the exponential element-wise
+        """
+        return np.exp(self)  # type: ignore
+
     def alias(self, name: str) -> "Expr":
         """
         Rename the output of an expression.

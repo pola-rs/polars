@@ -1,4 +1,7 @@
+import numpy as np
+
 import polars as pl
+from polars import testing
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
@@ -31,3 +34,18 @@ def test_cumcount() -> None:
 
     assert out["foo"][0].to_list() == [0, 1, 2, 3]
     assert out["foo"][1].to_list() == [0, 1]
+
+
+def test_log_exp() -> None:
+    a = pl.Series("a", [1, 100, 1000])
+    out = pl.select(a.log10()).to_series()
+    expected = pl.Series("a", [0.0, 2.0, 3.0])
+    testing.assert_series_equal(out, expected)
+
+    out = pl.select(a.log()).to_series()
+    expected = pl.Series("a", np.log(a.to_numpy()))
+    testing.assert_series_equal(out, expected)
+
+    out = pl.select(a.exp()).to_series()
+    expected = pl.Series("a", np.exp(a.to_numpy()))
+    testing.assert_series_equal(out, expected)

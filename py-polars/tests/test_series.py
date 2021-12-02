@@ -1076,3 +1076,20 @@ def test_nested_list_types_preserved() -> None:
     srs1 = pl.Series([pl.Series([3, 4, 5, 6], dtype=expected_dtype) for _ in range(5)])
     for srs2 in srs1:
         assert srs2.dtype == expected_dtype
+
+
+def test_log_exp() -> None:
+    a = pl.Series("a", [1, 100, 1000])
+
+    out = a.log10()
+    expected = pl.Series("a", [0.0, 2.0, 3.0])
+    testing.assert_series_equal(out, expected)
+    a = pl.Series("a", [1, 100, 1000])
+
+    out = a.log()
+    expected = pl.Series("a", np.log(a.to_numpy()))
+    testing.assert_series_equal(out, expected)
+
+    out = a.exp()
+    expected = pl.Series("a", np.exp(a.to_numpy()))
+    testing.assert_series_equal(out, expected)
