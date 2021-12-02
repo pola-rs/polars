@@ -559,6 +559,27 @@ class Series:
         """
         return self ** 0.5
 
+    def log(self) -> "Series":
+        """
+        Natural logarithm, element-wise.
+
+        The natural logarithm log is the inverse of the exponential function, so that log(exp(x)) = x.
+        The natural logarithm is logarithm in base e.
+        """
+        return np.log(self)  # type: ignore
+
+    def log10(self) -> "Series":
+        """
+        Return the base 10 logarithm of the input array, element-wise.
+        """
+        return np.log10(self)  # type: ignore
+
+    def exp(self) -> "Series":
+        """
+        Return the exponential element-wise
+        """
+        return np.exp(self)  # type: ignore
+
     def drop_nulls(self) -> "Series":
         """
         Create a new Series that copies data from this Series without null values.

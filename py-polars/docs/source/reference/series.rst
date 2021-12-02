@@ -121,6 +121,9 @@ Computations
     Series.arcsin
     Series.arccos
     Series.arctan
+    Series.log
+    Series.log10
+    Series.exp
 
 Manipulation/ selection
 -----------------------

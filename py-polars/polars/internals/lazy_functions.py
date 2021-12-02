@@ -1135,7 +1135,7 @@ def collect_all(
 
 
 def select(
-    exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"]]
+    exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"]
 ) -> "pli.DataFrame":
     """
     Run polars expressions without a context.
