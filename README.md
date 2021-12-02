@@ -175,10 +175,10 @@ Arrow2 also has a more granular code base, helping to reduce the compiler bloat.
 
 Development of Polars is proudly powered by
 
+
 [![Xomnia](https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png)](https://www.xomnia.com/)
 
 
 ## Sponsors
 
-  * [Xomnia](https://www.xomnia.com/)
-  * [JetBrains](https://www.jetbrains.com/company/brand/img/jetbrains_logo.png)
+[<img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png" height="40" />](https://www.xomnia.com/) &emsp; [<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" height="50" />](https://www.jetbrains.com)
