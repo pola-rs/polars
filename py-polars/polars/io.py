@@ -455,7 +455,8 @@ def scan_csv(
     ...     .fetch(100)  # pushed a limit of 100 rows to the scan level
     ... )
 
-    >>> # we can use `with_column_names` to modify the header before scanning
+    We can use `with_column_names` to modify the header before scanning:
+
     >>> df = pl.DataFrame(
     ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "terrible", "to", "read"]}
     ... )

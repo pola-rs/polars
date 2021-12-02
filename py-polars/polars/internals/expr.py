@@ -252,17 +252,17 @@ class Expr:
 
     def exclude(self, columns: Union[str, tp.List[str]]) -> "Expr":
         """
-         Exclude certain columns from a wildcard/regex selection.
+        Exclude certain columns from a wildcard/regex selection.
 
-         You may also use regexes int he exclude list. They must start with `^` and end with `$`.
+        You may also use regexes in the exclude list. They must start with `^` and end with `$`.
 
-         Parameters
-         ----------
-         columns
-             Column(s) to exclude from selection
+        Parameters
+        ----------
+        columns
+            Column(s) to exclude from selection
 
-         Examples
-         --------
+        Examples
+        --------
 
          >>> df = pl.DataFrame(
          ...     {
@@ -288,17 +288,17 @@ class Expr:
          ...     pl.col("*").exclude("b"),
          ... )
         shape: (3, 2)
-         ╭─────┬──────╮
-         │ a   ┆ c    │
-         │ --- ┆ ---  │
-         │ i64 ┆ i64  │
-         ╞═════╪══════╡
-         │ 1   ┆ null │
-         ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-         │ 2   ┆ 2    │
-         ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-         │ 3   ┆ 1    │
-         ╰─────┴──────╯
+        ╭─────┬──────╮
+        │ a   ┆ c    │
+        │ --- ┆ ---  │
+        │ i64 ┆ i64  │
+        ╞═════╪══════╡
+        │ 1   ┆ null │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2   ┆ 2    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3   ┆ 1    │
+        ╰─────┴──────╯
         """
         if isinstance(columns, str):
             columns = [columns]
@@ -333,8 +333,10 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3   ┆ [null]     │
         ╰─────┴────────────╯
-        >>> # keep the original column name
-        >>> (df.groupby("a").agg(pl.col("b").list().keep_name()).sort(by="a"))
+
+        Keep the original column name:
+
+        >>> (df.groupby("a").agg(col("b").list().keep_name()).sort(by="a"))
         shape: (3, 2)
         ╭─────┬────────────╮
         │ a   ┆ b          │
@@ -383,13 +385,11 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ "banana" ┆ 1   ┆ "beetle" │
         ╰─────┴──────────┴─────┴──────────╯
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.all(),
-        ...             pl.all().reverse().suffix("_reverse"),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.all(),
+        ...         pl.all().reverse().suffix("_reverse"),
+        ...     ]
         ... )
         shape: (5, 8)
         ╭─────┬──────────┬─────┬──────────┬───────────┬────────────────┬───────────┬──────────────╮
@@ -442,13 +442,11 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
         │ 5   ┆ "banana" ┆ 1   ┆ "beetle" │
         ╰─────┴──────────┴─────┴──────────╯
-        >>> (
-        ...     df.select(
-        ...         [
-        ...             pl.all(),
-        ...             pl.all().reverse().prefix("reverse_"),
-        ...         ]
-        ...     )
+        >>> df.select(
+        ...     [
+        ...         pl.all(),
+        ...         pl.all().reverse().prefix("reverse_"),
+        ...     ]
         ... )
         shape: (5, 8)
         ╭─────┬──────────┬─────┬──────────┬───────────┬────────────────┬───────────┬──────────────╮
@@ -1547,6 +1545,7 @@ class Expr:
         Prefer the specific rolling window functions over this one, as they are faster.
 
         Prefer:
+
             * rolling_min
             * rolling_max
             * rolling_mean
@@ -1707,19 +1706,21 @@ class Expr:
         -----
         The sample skewness is computed as the Fisher-Pearson coefficient
         of skewness, i.e.
-        .. math::
-            g_1=\frac{m_3}{m_2^{3/2}}
+
+        .. math:: g_1=\frac{m_3}{m_2^{3/2}}
+
         where
-        .. math::
-            m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
+        .. math:: m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
         the sample mean.  If ``bias`` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
-        .. math::
-            G_1=\frac{k_3}{k_2^{3/2}}=
-                \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}.
+
+        .. math:: G_1=\frac{k_3}{k_2^{3/2}}= \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+
         """
         return wrap_expr(self._pyexpr.skew(bias))
 
@@ -1749,8 +1750,10 @@ class Expr:
 
         Parameters
         ----------
-        min_val, max_val
-            Minimum and maximum value.
+        min_val
+            Minimum value.
+        max_val
+            Maximum value.
         """
         min_val_lit = pli.lit(min_val)
         max_val_lit = pli.lit(max_val)
@@ -1784,6 +1787,8 @@ class Expr:
         Series of dtype Utf8
 
         Examples
+        --------
+
         >>> df = pl.DataFrame({"foo": [1, None, 2]})
         >>> df = df.select(pl.col("foo").str_concat("-"))
         shape: (1, 1)
@@ -1806,6 +1811,8 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
+
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").sin())
         shape: (1, 1)
@@ -1828,6 +1835,8 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
+
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").cos())
         shape: (1, 1)
@@ -1850,6 +1859,8 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
+
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").tan())
         shape: (1, 1)
@@ -1872,6 +1883,7 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arcsin())
         shape: (1, 1)
@@ -1894,6 +1906,7 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").arccos())
         shape: (1, 1)
@@ -1916,6 +1929,7 @@ class Expr:
         Series of dtype Float64
 
         Examples
+        --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arctan())
         shape: (1, 1)
@@ -2258,14 +2272,12 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime, timedelta
-        >>> import polars as pl
         >>> date_range = pl.date_range(
         ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
         ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
         ...     interval=timedelta(minutes=8),
         ...     name="date_range",
         ... )
-        >>>
         >>> date_range.dt.buckets(timedelta(minutes=8))
         shape: (8,)
         Series: 'date_range' [datetime]
@@ -2280,7 +2292,8 @@ class ExprDateTimeNameSpace:
             2000-10-02 00:18:00
         ]
 
-        >>> # can be used to perform a downsample operation
+        Can be used to perform a downsample operation:
+
         >>> (
         ...     date_range.to_frame()
         ...     .groupby(

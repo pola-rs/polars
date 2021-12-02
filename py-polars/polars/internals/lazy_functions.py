@@ -507,20 +507,26 @@ def lit(
     Examples
     --------
 
-    >>> # literal integer
+    Literal integer:
+
     >>> pl.lit(1)
 
-    >>> # literal str.
+    Literal str:
+
     >>> pl.lit("foo")
 
-    >>> # literal datetime
+    Literal datetime:
+
     >>> pl.lit(datetime(2021, 1, 20))
 
-    >>> # literal Null
+    Literal Null:
+
     >>> pl.lit(None)
 
-    >>> # literal eager Series
+    Literal eager Series:
+
     >>> pl.lit(Series("a", [1, 2, 3]))
+
     """
     if isinstance(value, datetime):
         return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
@@ -734,55 +740,55 @@ def any(name: Union[str, tp.List["pli.Expr"]]) -> "pli.Expr":
 
 def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     """
-     Exclude certain columns from a wildcard expression.
+    Exclude certain columns from a wildcard expression.
 
-     Syntactic sugar for:
+    Syntactic sugar for:
 
-     >>> pl.col("*").exclude()
+    >>> pl.col("*").exclude()
 
-     Parameters
-     ----------
-     columns
-         Column(s) to exclude from selection
+    Parameters
+    ----------
+    columns
+        Column(s) to exclude from selection
 
 
     Examples
     --------
 
-     >>> df = pl.DataFrame(
-     ...     {
-     ...         "a": [1, 2, 3],
-     ...         "b": ["a", "b", None],
-     ...         "c": [None, 2, 1],
-     ...     }
-     ... )
-     >>> df
-     shape: (3, 3)
-     ╭─────┬──────┬──────╮
-     │ a   ┆ b    ┆ c    │
-     │ --- ┆ ---  ┆ ---  │
-     │ i64 ┆ str  ┆ i64  │
-     ╞═════╪══════╪══════╡
-     │ 1   ┆ "a"  ┆ null │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 2   ┆ "b"  ┆ 2    │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 3   ┆ null ┆ 1    │
-     ╰─────┴──────┴──────╯
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": ["a", "b", None],
+    ...         "c": [None, 2, 1],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ╭─────┬──────┬──────╮
+    │ a   ┆ b    ┆ c    │
+    │ --- ┆ ---  ┆ ---  │
+    │ i64 ┆ str  ┆ i64  │
+    ╞═════╪══════╪══════╡
+    │ 1   ┆ "a"  ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2   ┆ "b"  ┆ 2    │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3   ┆ null ┆ 1    │
+    ╰─────┴──────┴──────╯
 
-     >>> df.select(pl.exclude("b"))
-     shape: (3, 2)
-     ╭─────┬──────╮
-     │ a   ┆ c    │
-     │ --- ┆ ---  │
-     │ i64 ┆ i64  │
-     ╞═════╪══════╡
-     │ 1   ┆ null │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 2   ┆ 2    │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 3   ┆ 1    │
-     ╰─────┴──────╯
+    >>> df.select(pl.exclude("b"))
+    shape: (3, 2)
+    ╭─────┬──────╮
+    │ a   ┆ c    │
+    │ --- ┆ ---  │
+    │ i64 ┆ i64  │
+    ╞═════╪══════╡
+    │ 1   ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2   ┆ 2    │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3   ┆ 1    │
+    ╰─────┴──────╯
 
     """
     return col("*").exclude(columns)
@@ -804,7 +810,8 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
     Examples
     --------
 
-    >>> # sum all columns
+    Sum all columns
+
     >>> df.select(pl.all().sum())
 
 
@@ -813,6 +820,7 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
     ...         pl.all([pl.col(name).is_not_null() for name in df.columns]),
     ...     ]
     ... )
+
     """
     if name is None:
         return col("*")

@@ -1276,7 +1276,7 @@ class Series:
 
     def arg_sort(self, reverse: bool = False) -> "Series":
         """
-        ..deprecate::
+        .. deprecated::
 
         Index location of the sorted variant of this Series.
 
@@ -1838,10 +1838,12 @@ class Series:
 
             This function can lead to undefined behavior in the following cases:
 
-            >>> # returns a view to a piece of memory that is already dropped.
+            Returns a view to a piece of memory that is already dropped:
+
             >>> pl.Series([1, 3, 5]).sort().view()
 
-            >>> # Sums invalid data that is missing.
+            Sums invalid data that is missing:
+
             >>> pl.Series([1, 2, None]).view().sum()
 
         """
@@ -2609,16 +2611,19 @@ class Series:
         Allows a custom rolling window function.
         Prefer the specific rolling window functions over this one, as they are faster.
         Prefer:
+
             * rolling_min
             * rolling_max
             * rolling_mean
             * rolling_sum
+
         Parameters
         ----------
         window_size
             Size of the rolling window
         function
             Aggregation function
+
         Examples
         --------
         >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
@@ -2668,6 +2673,9 @@ class Series:
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
         """
         Compute a rolling skew
+
+        Parameters
+        ----------
         window_size
             Size of the rolling window
         bias
@@ -2686,6 +2694,15 @@ class Series:
         """
         Sample from this Series by setting either `n` or `frac`.
 
+        Parameters
+        ----------
+        n
+            Number of samples < self.len().
+        frac
+            Fraction between 0.0 and 1.0 .
+        with_replacement
+            sample with replacement.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
@@ -2696,15 +2713,6 @@ class Series:
                 1
                 5
         ]
-
-        Parameters
-        ----------
-        n
-            Number of samples < self.len().
-        frac
-            Fraction between 0.0 and 1.0 .
-        with_replacement
-            sample with replacement.
         """
         if n is not None:
             return wrap_s(self._s.sample_n(n, with_replacement))
@@ -2873,6 +2881,7 @@ class Series:
                 the order that the values occur in `a`.
               * 'random': Like 'ordinal', but the rank for ties is not dependent
                 on the order that the values occur in `a`.
+
         """
         return wrap_s(self._s.rank(method))
 
@@ -2909,19 +2918,21 @@ class Series:
         -----
         The sample skewness is computed as the Fisher-Pearson coefficient
         of skewness, i.e.
-        .. math::
-            g_1=\frac{m_3}{m_2^{3/2}}
+
+        .. math:: g_1=\frac{m_3}{m_2^{3/2}}
+
         where
-        .. math::
-            m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
+        .. math:: m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
         the sample mean.  If ``bias`` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
-        .. math::
-            G_1=\frac{k_3}{k_2^{3/2}}=
-                \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}.
+
+        .. math::  G_1=\frac{k_3}{k_2^{3/2}}=\frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+
         """
         return self._s.skew(bias)
 
@@ -2967,6 +2978,7 @@ class Series:
         Series of dtype Utf8
 
         Examples
+        --------
         >>> pl.Series([1, None, 2]).str_concat("-")[0]
         "1-null-2"
 
@@ -3327,14 +3339,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime, timedelta
-        >>> import polars as pl
         >>> date_range = pl.date_range(
         ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
         ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
         ...     interval=timedelta(minutes=8),
         ...     name="date_range",
         ... )
-        >>>
         >>> date_range.dt.buckets(timedelta(minutes=8))
         shape: (8,)
         Series: 'date_range' [datetime]
@@ -3349,7 +3359,8 @@ class DateTimeNameSpace:
             2000-10-02 00:18:00
         ]
 
-        >>> # can be used to perform a downsample operation
+        Can be used to perform a downsample operation:
+
         >>> (
         ...     date_range.to_frame()
         ...     .groupby(

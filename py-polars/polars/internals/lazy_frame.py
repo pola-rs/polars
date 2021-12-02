@@ -409,7 +409,9 @@ class LazyFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... ).lazy()
-        >>> # Filter on one condition
+
+        Filter on one condition:
+
         >>> lf.filter(pl.col("foo") < 3).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -422,7 +424,8 @@ class LazyFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
-        >>> # Filter on multiple conditions
+        Filter on multiple conditions:
+
         >>> lf.filter((pl.col("foo") < 3) & (pl.col("ham") == "a")).collect()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -1022,7 +1025,8 @@ class LazyFrame:
         │ null ┆ 1    ┆ 1    │
         └──────┴──────┴──────┘
 
-        >>> # drop a row only if all values are null
+        Drop a row only if all values are null:
+
         >>> df.filter(
         ...     ~pl.fold(
         ...         acc=True,
