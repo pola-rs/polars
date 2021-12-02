@@ -1,10 +1,8 @@
 use crate::conversion::prelude::*;
-use crate::dataframe::JsDataFrame;
 use crate::error::JsPolarsEr;
 use crate::series::JsSeries;
 use napi::{CallContext, JsExternal, JsObject, JsUnknown, Result};
 use polars::chunked_array::object::PolarsObjectSafe;
-use crate::lazy::dsl::JsExpr;
 
 #[derive(Debug)]
 pub struct Wrap<T>(pub T);
@@ -37,6 +35,10 @@ impl WrappedObject {
     V::from_js(v)
   }
 
+  pub fn get_or<V: FromJsUnknown>(&self, key: &str, default: V) -> Result<V> {
+    let v: JsUnknown = self.0.get_named_property(key)?;
+    Option::<V>::from_js(v).map(|opt| opt.unwrap_or(default))
+  }
   pub fn get<V: napi::NapiValue>(&self, key: &str) -> Result<V> {
     self.0.get_named_property::<V>(key)
   }
@@ -57,31 +59,36 @@ impl WrappedObject {
     Ok(s)
   }
 
-  pub fn get_series_mut<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&mut JsSeries> {
+  pub fn get_external<'a, Out: 'static>(&'a self, cx: &'a CallContext, key: &str) -> Result<&Out> {
     let v: JsExternal = self.0.get_named_property(key)?;
-    let s: &mut JsSeries = cx.env.get_value_external(&v)?;
+    let s: &Out = cx.env.get_value_external(&v)?;
     Ok(s)
   }
-  pub fn get_df<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&'a JsDataFrame> {
+
+  pub fn get_external_mut<'a, Out: 'static>(
+    &'a self,
+    cx: &'a CallContext,
+    key: &str,
+  ) -> Result<&mut Out> {
     let v: JsExternal = self.0.get_named_property(key)?;
-    let s: &JsDataFrame = cx.env.get_value_external(&v)?;
+    let s: &mut Out = cx.env.get_value_external(&v)?;
     Ok(s)
   }
-  pub fn get_df_mut<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&mut JsDataFrame> {
-    let v: JsExternal = self.0.get_named_property(key)?;
-    let s: &mut JsDataFrame = cx.env.get_value_external(&v)?;
-    Ok(s)
+  pub fn get_external_vec<'a, Out: 'static + Clone>(
+    &'a self,
+    cx: &'a CallContext,
+    key: &str,
+  ) -> Result<Vec<Out>> {
+    let jsv: JsObject = self.0.get_named_property(key)?;
+    let len = jsv.get_array_length()?;
+    (0..len)
+      .map(|idx| {
+        let ext = jsv.get_element_unchecked::<JsExternal>(idx)?;
+        let s: &mut Out = cx.env.get_value_external(&ext)?;
+        Ok(s.clone())
+      })
+      .collect()
   }
-   pub fn get_expr<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&'a JsExpr> {
-    let v: JsExternal = self.0.get_named_property(key)?;
-    let s: &JsExpr = cx.env.get_value_external(&v)?;
-    Ok(s)
-  }
-  pub fn get_expr_mut<'a>(&'a self, cx: &'a CallContext, key: &str) -> Result<&mut JsExpr> {
-    let v: JsExternal = self.0.get_named_property(key)?;
-    let s: &mut JsExpr = cx.env.get_value_external(&v)?;
-    Ok(s)
-  } 
 }
 
 pub struct WrappedValue(pub(crate) JsUnknown);
@@ -114,11 +121,11 @@ impl WrappedValue {
 }
 
 pub struct ObjectValue {
-  pub inner: JsUnknown
+  pub inner: JsUnknown,
 }
 
 impl From<&dyn PolarsObjectSafe> for &ObjectValue {
   fn from(val: &dyn PolarsObjectSafe) -> Self {
-      unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
+    unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
   }
 }

@@ -1,5 +1,6 @@
-import {Expr} from "./lazy/expr";
+import type {Expr} from "./lazy/expr";
 import path from "path";
+import type {Series} from "./series";
 
 export function columnOrColumns(columns: ColumnSelection |  string | Array<string> | undefined): Array<string> | undefined {
   if (columns) {
@@ -10,6 +11,8 @@ export function columnOrColumns(columns: ColumnSelection |  string | Array<strin
 export type ValueOrArray<T> = T | Array<ValueOrArray<T>>;
 export type ColumnSelection = ValueOrArray<string>
 export type ExpressionSelection = ValueOrArray<Expr>
+export type ColumnsOrExpr = ColumnSelection | ExpressionSelection
+export type Option<T> = T | undefined;
 
 
 export function columnOrColumnsStrict(...columns: string[] | ValueOrArray<string>[]): Array<string> {
@@ -27,3 +30,6 @@ export const range = (start:number, end:number) => {
 
   return Array.from({ length }, (_, i) => start + i);
 };
+
+export const isSeries = <T>(ty: any): ty is Series<T> => ty._series !== undefined;
+export const isExpr = (ty: any): ty is Expr => ty._expr !== undefined;

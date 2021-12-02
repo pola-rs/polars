@@ -1,4 +1,4 @@
-import polars_internal from "./internals/polars_internal";
+import pli from "./internals/polars_internal";
 import {Stream} from "stream";
 
 export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
@@ -127,5 +127,5 @@ export const polarsTypeToConstructor = (dtype: DataType): CallableFunction => {
     throw new Error(`Cannot construct Series for type ${DataType[dtype]}.`);
   }
 
-  return polars_internal.series[constructor];
+  return pli.series[constructor];
 };

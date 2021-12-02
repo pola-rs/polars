@@ -2,7 +2,8 @@
 import {jsTypeToPolarsType} from "./internals/construction";
 import {Series, _wrapSeries} from "./series";
 import {DataFrame} from "./dataframe";
-import polars_internal from "./internals/polars_internal";
+import {Expr} from "./lazy/expr";
+import pli from "./internals/polars_internal";
 
 
 type ConcatItems = Array<DataFrame> | Array<Series<any>>
@@ -26,7 +27,7 @@ type ConcatOptions = {rechunk: boolean, how?: "vertical"}
  */
 export function repeat<V>(value: V, n: number, name= ""): Series<V>{
   const dtype = jsTypeToPolarsType(value);
-  const s = polars_internal.repeat({name, value, dtype, n});
+  const s = pli.repeat({name, value, dtype, n});
 
   return _wrapSeries(s);
 }
@@ -45,7 +46,7 @@ export function concat(items: ConcatItems, options?: ConcatOptions): DataFrame |
       let df = items.shift() as DataFrame;
 
       items.forEach(other => {
-        polars_internal.df.vstack({_df: df.inner(), other: other.inner(), in_place: true});
+        pli.df.vstack({_df: df.inner(), other: other.inner(), in_place: true});
       });
 
       return rechunk ? df.rechunk() : df;
@@ -60,4 +61,13 @@ export function concat(items: ConcatItems, options?: ConcatOptions): DataFrame |
     return rechunk ? s.rechunk() : s;
   }
   throw new Error();
+}
+
+
+export function col(name: string) {
+  return Expr(pli.col({name}));
+}
+
+export function lit(value: any) {
+  return Expr(pli.lit({value}));
 }

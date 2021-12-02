@@ -7,6 +7,7 @@ impl JsDataFrame {
     let mut df = env.create_object()?;
 
     df.define_properties(&[
+      napi::Property::new(env, "lazy")?.with_method(lazy),
       napi::Property::new(env, "add")?.with_method(add),
       napi::Property::new(env, "as_str")?.with_method(as_str),
       napi::Property::new(env, "clone")?.with_method(clone),

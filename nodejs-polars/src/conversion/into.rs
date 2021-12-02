@@ -1,9 +1,8 @@
-use crate::prelude::Wrap;
 use crate::dataframe::JsDataFrame;
+use crate::prelude::Wrap;
 use crate::series::JsSeries;
 use napi::{CallContext, JsBigint, JsExternal, JsNumber, JsString, JsUnknown, Result};
 use polars_core::prelude::AnyValue;
-use crate::lazy::dsl::JsExpr;
 pub trait IntoJs<T>: Send + Sized {
   fn into_js(self, cx: &CallContext) -> T {
     self.try_into_js(cx).expect("Use 'try_into_js' instead")
@@ -23,11 +22,6 @@ impl IntoJs<JsExternal> for JsDataFrame {
   }
 }
 
-impl IntoJs<JsExternal> for JsExpr {
-  fn try_into_js(self, cx: &CallContext) -> Result<JsExternal> {
-    cx.env.create_external(self, None)
-  }
-}
 impl IntoJs<JsString> for &str {
   fn try_into_js(self, cx: &CallContext) -> Result<JsString> {
     cx.env.create_string(self)
@@ -98,7 +92,6 @@ impl IntoJs<JsNumber> for f64 {
     cx.env.create_double(self)
   }
 }
-
 
 impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
   fn try_into_js(self, cx: &CallContext) -> Result<JsUnknown> {

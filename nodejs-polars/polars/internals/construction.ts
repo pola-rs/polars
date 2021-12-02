@@ -1,4 +1,4 @@
-import polars_internal from "./polars_internal";
+import pli from "./polars_internal";
 import { DataType, polarsTypeToConstructor } from "../datatypes";
 import { isTypedArray } from "util/types";
 import {Series, _wrapSeries} from "../series";
@@ -32,7 +32,7 @@ const firstNonNull = (arr: any[]): any => arr.find(x => x !== null && x !== unde
  */
 export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict = false): any {
   if (isTypedArray(values)) {
-    return polars_internal.series.new_from_typed_array({ name, values, strict });
+    return pli.series.new_from_typed_array({ name, values, strict });
   }
 
   //Empty sequence defaults to Float32 type
@@ -51,7 +51,7 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   let series;
 
   if(firstValue instanceof Date) {
-    series =  polars_internal.series.new_opt_date({name, values, strict});
+    series =  pli.series.new_opt_date({name, values, strict});
   } else {
 
     const constructor = polarsTypeToConstructor(dtype);
@@ -59,7 +59,7 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   }
 
   if ([DataType.Datetime, DataType.Date].includes(dtype)) {
-    series = polars_internal.series.cast({ _series: series, dtype, strict: true });
+    series = pli.series.cast({ _series: series, dtype, strict: true });
   }
 
 
@@ -83,10 +83,10 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "co
     });
   }
   else if(data[0].constructor.name === "Object") {
-    const df = polars_internal.df.read_rows({rows: data});
+    const df = pli.df.read_rows({rows: data});
 
     if(columns) {
-      polars_internal.df.set_column_names({_df: df, names: columns});
+      pli.df.set_column_names({_df: df, names: columns});
     }
 
     return df;
@@ -97,8 +97,8 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "co
     }
 
     if(orient === "row") {
-      const df = polars_internal.df.read_array_rows({data});
-      columns && polars_internal.df.set_column_names({_df: df, names: columns});
+      const df = pli.df.read_array_rows({data});
+      columns && pli.df.set_column_names({_df: df, names: columns});
 
       return df;
     } else {
@@ -111,7 +111,7 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "co
   }
   dataSeries = handleColumnsArg(dataSeries, columns);
 
-  return polars_internal.df.read_columns({columns: dataSeries});
+  return pli.df.read_columns({columns: dataSeries});
 }
 
 function handleColumnsArg(data: Series<any>[], columns?: string[]) {
@@ -122,7 +122,7 @@ function handleColumnsArg(data: Series<any>[], columns?: string[]) {
       return columns.map(c => Series(c, []).inner());
     } else if(data.length === columns.length) {
       columns.forEach((name, i) => {
-        polars_internal.series.rename({_series: data[i], name});
+        pli.series.rename({_series: data[i], name});
       });
 
       return data;

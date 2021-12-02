@@ -2,7 +2,6 @@ import {Series} from "./series";
 import {DataFrame, readCSV, readJSON} from "./dataframe";
 import { DataType } from "./datatypes";
 import * as func from "./functions";
-import * as dsl from "./lazy/expr";
 export default {
   Int8:  DataType.Int8 as DataType.Int8,
   Int16:  DataType.Int16 as DataType.Int16,
@@ -22,7 +21,8 @@ export default {
   Time:  DataType.Time as DataType.Time,
   Object:  DataType.Object as DataType.Object,
   Categorical:  DataType.Categorical as DataType.Categorical,
-  col: dsl.col,
+  col: func.col,
+  lit: func.lit,
   repeat: func.repeat,
   readCSV,
   readJSON,

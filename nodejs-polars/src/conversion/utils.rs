@@ -2,10 +2,10 @@ use crate::conversion::wrap::*;
 use crate::error::JsPolarsEr;
 use crate::prelude::JsResult;
 use napi::{CallContext, JsObject, Result};
+use polars::frame::NullStrategy;
 use polars::prelude::*;
 use polars_core::prelude::FillNullStrategy;
 use polars_core::series::ops::NullBehavior;
-use polars::frame::NullStrategy;
 
 pub fn get_params(cx: &CallContext) -> Result<WrappedObject> {
   Ok(cx.get::<JsObject>(0)?.into())
@@ -58,4 +58,22 @@ pub(crate) fn str_to_null_behavior(null_behavior: String) -> JsResult<NullBehavi
     _ => return Err(JsPolarsEr::Other("use one of 'drop', 'ignore'".to_string()).into()),
   };
   Ok(null_behavior)
+}
+
+pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::Result<Series> {
+  match (s.dtype(), signed) {
+    (DataType::UInt64, true) => {
+      let ca = s.u64().unwrap();
+      Ok(ca.reinterpret_signed().into_series())
+    }
+    (DataType::UInt64, false) => Ok(s.clone()),
+    (DataType::Int64, false) => {
+      let ca = s.i64().unwrap();
+      Ok(ca.reinterpret_unsigned().into_series())
+    }
+    (DataType::Int64, true) => Ok(s.clone()),
+    _ => Err(PolarsError::ComputeError(
+      "reinterpret is only allowed for 64bit integers dtype, use cast otherwise".into(),
+    )),
+  }
 }

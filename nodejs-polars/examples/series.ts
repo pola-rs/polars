@@ -1,4 +1,4 @@
 import pl from "../polars";
 
-
-console.log((new TypeError()) instanceof TypeError);
+const s = pl.Series([2,3,4]);
+console.log(s);

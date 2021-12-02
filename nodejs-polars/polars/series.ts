@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import internal from "./internals/polars_internal";
+import pli from "./internals/polars_internal";
 import { arrayToJsSeries } from "./internals/construction";
 import { DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, Optional } from "./datatypes";
 import {DataFrame, dfWrapper} from "./dataframe";
@@ -607,6 +607,11 @@ export interface Series<T> {
    * ```
    */
   limit(n:number): Series<T>
+  /**
+   * @see {@link Series.apply}
+   */
+  map<U>(func: (s: T) => U): Series<U>
+
   /**
    * Get the maximum value in this Series.
    * @example
@@ -1221,7 +1226,7 @@ export interface Series<T> {
 const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
 
-    return internal.series[method]({_series, ...args });
+    return pli.series[method]({_series, ...args });
   };
   const wrap = <U>(method, args?, _series = _s): Series<U> => {
     return seriesWrapper(unwrap(method, args, _series));
@@ -1500,8 +1505,9 @@ const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     unique: noArgWrap("unique"),
     zipWith: (mask, other) => wrap("zip_with", {mask: mask._series, other: other._series}),
     toJS: noArgUnwrap("to_js"),
-    toFrame: () => dfWrapper(internal.df.read_columns({columns: [_s]})),
+    toFrame: () => dfWrapper(pli.df.read_columns({columns: [_s]})),
     apply: <U>(func: (s: T) => U): Series<U> => {throw todo();},
+    map: <U>(func: (s: T) => U): Series<U> => wrap("map", {func}),
     clip: (arg: any, max?: any) => {throw todo();},
     describe: (): DataFrame => {throw todo();},
     shiftAndFill: (opt?, fillVal?) => {throw todo();},

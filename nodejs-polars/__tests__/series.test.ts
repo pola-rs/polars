@@ -469,5 +469,23 @@ describe("series", () => {
     } catch(err) {
       expect(err).toBeInstanceOf(errorType);
     }
+
+
+  });
+});
+
+describe("StringFunctions", () => {
+  it.each`
+  name               | actual                                           |  expected
+  ${"toUpperCase"}   | ${pl.Series(["foo"]).str.toUpperCase()}          | ${pl.Series(["FOO"])}
+  ${"lstrip"}        | ${pl.Series(["  foo"]).str.lstrip()}             | ${pl.Series(["foo"])}
+  ${"rstrip"}        | ${pl.Series(["foo   "]).str.rstrip()}            | ${pl.Series(["foo"])}
+  ${"toLowerCase"}   | ${pl.Series(["FOO"]).str.toLowerCase()}          | ${pl.Series(["foo"])}
+  ${"contains"}      | ${pl.Series(["f1", "f0"]).str.contains(/[0]/)}   | ${pl.Series([false, true])}
+  ${"lengths"}       | ${pl.Series(["apple", "ham"]).str.lengths()}     | ${pl.Series([5, 3])}
+  ${"slice"}         | ${pl.Series(["apple", "ham"]).str.slice(1)}      | ${pl.Series(["pple", "am"])}
+  `("$# $name expected matches actual", ({expected, actual}) =>{
+
+    expect(expected).toStrictEqual(actual);
   });
 });

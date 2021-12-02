@@ -1,6 +1,5 @@
-import internal from "./internals/polars_internal";
-import { arrayToJsDataFrame, arrayToJsSeries } from "./internals/construction";
-import util from "util";
+import pli from "./internals/polars_internal";
+import { arrayToJsDataFrame } from "./internals/construction";
 import { DataType, JoinOptions, JsDataFrame, ReadCsvOptions, ReadJsonOptions, WriteCsvOptions} from "./datatypes";
 import {Series, _wrapSeries} from "./series";
 import {Stream} from "stream";
@@ -8,7 +7,8 @@ import fs from "fs";
 import {isPath, columnOrColumns, columnOrColumnsStrict, ColumnSelection, range} from "./utils";
 import {GroupBy} from "./groupby";
 import path from "path";
-import pl from "./";
+import {LazyDataFrame} from "./lazy/dataframe";
+import {concat} from "./functions";
 
 const todo = () => new Error("not yet implemented");
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -547,6 +547,7 @@ export interface DataFrame {
    * ```
    */
   join(df: DataFrame, options: JoinOptions): DataFrame
+  lazy(): LazyDataFrame
   /**
    * Get first N rows as DataFrame.
    * @see {@link head}
@@ -1172,7 +1173,7 @@ export interface DataFrame {
 export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const unwrap = <U>(method: string, args?: object, df=_df): U => {
 
-    return internal.df[method]({_df: df, ...args });
+    return pli.df[method]({_df: df, ...args });
   };
   const wrap = (method, args?, df=_df): DataFrame => {
     return dfWrapper(unwrap(method, args, df));
@@ -1211,7 +1212,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       const columns = [];
       // df.getColumns().map(s => s.isNum)
     };
-    const summary = pl.concat([
+    const summary = concat([
       df.mean(),
       df.std(),
       df.min(),
@@ -1220,7 +1221,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     ]);
     summary.insertAtIdx(
       0,
-      pl.Series(
+      Series(
         "describe",
         ["mean", "std", "min", "max", "median"]
       )
@@ -1405,6 +1406,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     isEmpty: () => unwrap("height") === 0,
     isUnique: () => _wrapSeries(unwrap("is_unique")),
     join,
+    lazy: () => LazyDataFrame(unwrap("lazy")),
     limit: (length=5) => wrap("head", {length}),
     max: (axis=0) => axis === 0 ? wrap("max") : _wrapSeries<any>(unwrap<any>("hmax")) as any,
     mean: (axis=0, nullStrategy?) => axis === 0 ? wrap("mean") : _wrapSeries(unwrap("hmean", {nullStrategy})) as any,
@@ -1456,7 +1458,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     withRowCount: (index) => {throw todo();},
   };
 };
-export const _wrapDataFrame = (df, method, args) => dfWrapper(internal.df[method]({_df: df, ...args }));
+export const _wrapDataFrame = (df, method, args) => dfWrapper(pli.df[method]({_df: df, ...args }));
 
 const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   inferSchemaLength: 10,
@@ -1514,7 +1516,7 @@ export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
   }
   options = {...readCsvDefaultOptions, ...arg};
 
-  return dfWrapper(internal.df.read_csv(options));
+  return dfWrapper(pli.df.read_csv(options));
 }
 
 const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
@@ -1564,7 +1566,7 @@ export function readJSON(arg: ReadJsonOptions | string, options?: any) {
   }
   options = {...readJsonDefaultOptions, ...arg};
 
-  return dfWrapper(internal.df.read_json(options));
+  return dfWrapper(pli.df.read_json(options));
 }
 /**
  *
@@ -1665,5 +1667,5 @@ function objToDF(obj: Record<string, Array<any>>, columns?: Array<string>): any 
     return Series(columns?.[idx] ?? key, value)._series;
   });
 
-  return internal.df.read_columns({columns: data});
+  return pli.df.read_columns({columns: data});
 }

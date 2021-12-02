@@ -1,4 +1,4 @@
-import internal from "../internals/polars_internal";
+import pli from "../internals/polars_internal";
 import {DataType, DtypeToPrimitive} from "../datatypes";
 import {JsSeries, Series, _wrapSeries} from "../series";
 
@@ -79,7 +79,7 @@ export interface StringFunctions {
    * └─────────┘
    * ```
    */
-  extract(pattern: string, groupIndex: number) : Series<string>
+  extract(pattern: RegExp, groupIndex: number) : Series<string>
   /**
    * Replace first regex match with a string value.
    * @param pattern A valid regex pattern
@@ -119,7 +119,7 @@ export interface StringFunctions {
 
 export const StringFunctions = (_s: JsSeries): StringFunctions => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
-    return internal.series.str[method]({_series, ...args });
+    return pli.series.str[method]({_series, ...args });
   };
 
   const wrap = <U>(method, args?, _series = _s): Series<U> => {
@@ -138,15 +138,15 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
   return {
     strptime,
     lengths: () => wrap("lengths"),
-    contains: (pattern) => wrap("contains", {pattern}),
+    contains: (pat) => wrap("contains", {pat: pat.source}),
     jsonPathMatch: (jsonPath) => wrap("json_path_match", {jsonPath}),
-    extract: (pattern, groupIndex=1) => wrap("extract", {pattern, groupIndex}),
-    replace: (pattern, value) => wrap("replace", {pattern, value}),
-    replaceAll: (pattern, value) => wrap("replace_all", {pattern, value}),
+    extract: (pat, groupIndex=1) => wrap("extract", {pat: pat.source, groupIndex}),
+    replace: (pat, val) => wrap("replace", {pat: pat.source, val}),
+    replaceAll: (pat, val) => wrap("replace_all", {pat: pat.source, val}),
     toLowerCase: () => wrap("to_lowercase"),
     toUpperCase: () => wrap("to_uppercase"),
-    rstrip: () => wrap("replace", {pattern: /[ \t]+$/, value: ""}),
-    lstrip: () => wrap("replace", {pattern: /^\s*/, value: ""}),
+    rstrip: () => wrap("replace", {pat: /[ \t]+$/.source, val: ""}),
+    lstrip: () => wrap("replace", {pat: /^\s*/.source, val: ""}),
     slice: (start, length) => wrap("slice", {start, length}),
   };
 };

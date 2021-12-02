@@ -1,10 +1,11 @@
-import {DataFrame} from "@polars/dataframe";
-import {ColumnSelection, ExpressionSelection} from "@polars/utils";
+import {DataFrame, dfWrapper} from "../dataframe";
+import {exprToLitOrExpr} from "./expr";
+import {ColumnSelection, ColumnsOrExpr, ExpressionSelection} from "../utils";
+import pli from "../internals/polars_internal";
 
 type AnyFunc = (...args: any[]) => any
 type Expr = any;
 export type Option<T> = T | undefined;
-type ColumnsOrExpr = ColumnSelection | ExpressionSelection
 
 type LazyJoinOptions =  {
   leftOn?: ColumnsOrExpr;
@@ -59,7 +60,8 @@ export interface LazyDataFrame {
    * @return DataFrame
    *
    */
-  collect(opts?: LazyOptions): DataFrame
+  collect(opts?: LazyOptions): Promise<DataFrame>
+  collectSync(opts?: LazyOptions): DataFrame
   /**
    * A string representation of the optimized query plan.
    */
@@ -241,6 +243,8 @@ export interface LazyDataFrame {
    */
   sort(by: string, reverse?: boolean): LazyDataFrame
   sort(opts: {by: string, reverse?: boolean}): LazyDataFrame
+  sort(by: ColumnsOrExpr, reverse?: boolean[]): LazyDataFrame
+  sort(opts: {by: ColumnsOrExpr, reverse?: boolean[]}): LazyDataFrame
   /**
    * @see {@link DataFrame.std}
    */
@@ -276,3 +280,65 @@ export interface LazyDataFrame {
    */
   withRowCount()
 }
+
+export const LazyDataFrame = (ldf: any): LazyDataFrame => {
+  const unwrap = <U>(method: string, args?: object, _ldf=ldf): any => {
+    console.log({method, args, _ldf});
+
+    return pli.lazy[method]({_ldf, ...args });
+  };
+
+  const wrap = (method, args?, _ldf=ldf): LazyDataFrame => {
+    return LazyDataFrame(unwrap(method, args, _ldf));
+  };
+  const wrapNullArgs = (method: string) => () => wrap(method);
+  const withOptimizationToggle = (method) =>  (lazyOptions?: LazyOptions) => {
+    const ldf = unwrap("optimizationToggle", lazyOptions);
+
+    return unwrap(method, {}, ldf);
+
+  };
+  const sort = (arg, reverse=false) => {
+    if(arg?.by) {
+      return sort(arg.by, arg.reverse);
+    }
+    if(typeof arg === "string") {
+      return wrap("sort", {by: arg, reverse});
+    } else {
+      reverse = [reverse].flat(3) as any;
+      const by = exprToLitOrExpr([arg].flat(3), false).map(v => v._expr);
+
+      return wrap("sort_by_exprs", {by, reverse});
+    }
+  };
+  const select = (...exprs) => {
+
+    const predicate = exprs
+      .flat(3)
+      .map(e => typeof e === "string"? exprToLitOrExpr(e, false)._expr : e._expr);
+
+    return wrap("select", {predicate});
+  };
+
+  return {
+    get columns() { return unwrap("columns");},
+    describePlan: () => unwrap("describePlan"),
+    describeOptimizedPlan: withOptimizationToggle("describeOptimizedPlan"),
+    collectSync: () => dfWrapper(unwrap("collectSync")),
+    collect: () => unwrap("collect").then(dfWrapper),
+    min: wrapNullArgs("min"),
+    max: wrapNullArgs("max"),
+    sum: wrapNullArgs("sum"),
+    mean: wrapNullArgs("mean"),
+    std: wrapNullArgs("std"),
+    var: wrapNullArgs("var"),
+    median: wrapNullArgs("median"),
+    reverse: wrapNullArgs("reverse"),
+    cache: wrapNullArgs("cache"),
+    clone: wrapNullArgs("clone"),
+    tail: (length=5) => wrap("tail", {length}),
+    sort,
+    select
+
+  } as any;
+};

@@ -1,5 +1,5 @@
 import { DataType, DTYPE_TO_FFINAME } from "../datatypes";
-import polars_internal from "./polars_internal";
+import pli from "./polars_internal";
 
 export const todo = () => new Error("not yet implemented");
 
@@ -24,6 +24,6 @@ export function getInternalFunc(
   if (obj) {
     return (<any>obj)[fName] ?? defaultFunc;
   } else {
-    return polars_internal.series[fName] ?? defaultFunc;
+    return pli.series[fName] ?? defaultFunc;
   }
 }

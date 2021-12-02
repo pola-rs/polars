@@ -1,8 +1,8 @@
-import internal from "../internals/polars_internal";
+import pli from "../internals/polars_internal";
 import {ValueOrArray} from "../utils";
 import {JsSeries, Series, _wrapSeries} from "../series";
-import {col} from "../lazy/expr";
 import {todo} from "../internals/utils";
+import {col} from "../functions";
 
 export interface ListFunctions {
   /**
@@ -54,12 +54,12 @@ export const ListFunctions = (_s: JsSeries): ListFunctions => {
   const callMethod = (method) => (...args) => {
     const s = _wrapSeries(_s);
 
-    return s.toFrame().select(col(s.name).arr[method](...args)) as any;
+    return s.toFrame().select(col(s.name).lst[method](...args)) as any;
   };
 
   return {
     concat: (...others) => {throw todo();},
-    lengths: () => _wrapSeries(internal.series.arr_lengths({_series: _s})),
+    lengths: () => _wrapSeries(pli.series.arr_lengths({_series: _s})),
     max: callMethod("max"),
     mean: callMethod("mean"),
     min: callMethod("min"),
