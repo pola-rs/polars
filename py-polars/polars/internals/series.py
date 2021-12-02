@@ -132,7 +132,7 @@ class Series:
     --------
     Constructing a Series by specifying name and values positionally:
 
-    >>> s = pl.Series('a', [1, 2, 3])
+    >>> s = pl.Series("a", [1, 2, 3])
     >>> s
     shape: (3,)
     Series: 'a' [i64]
@@ -149,7 +149,7 @@ class Series:
 
     Constructing a Series with a specific dtype:
 
-    >>> s2 = pl.Series('a', [1, 2, 3], dtype=pl.Float32)
+    >>> s2 = pl.Series("a", [1, 2, 3], dtype=pl.Float32)
     >>> s2
     shape: (3,)
     Series: 'a' [f32]
@@ -559,6 +559,27 @@ class Series:
         """
         return self ** 0.5
 
+    def log(self) -> "Series":
+        """
+        Natural logarithm, element-wise.
+
+        The natural logarithm log is the inverse of the exponential function, so that log(exp(x)) = x.
+        The natural logarithm is logarithm in base e.
+        """
+        return np.log(self)  # type: ignore
+
+    def log10(self) -> "Series":
+        """
+        Return the base 10 logarithm of the input array, element-wise.
+        """
+        return np.log10(self)  # type: ignore
+
+    def exp(self) -> "Series":
+        """
+        Return the exponential element-wise
+        """
+        return np.exp(self)  # type: ignore
+
     def drop_nulls(self) -> "Series":
         """
         Create a new Series that copies data from this Series without null values.
@@ -699,6 +720,11 @@ class Series:
     def sum(self) -> Union[int, float]:
         """
         Reduce this Series to the sum value.
+
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
 
         Examples
         --------
@@ -904,7 +930,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.rename('b')
+        >>> s.rename("b")
         shape: (3,)
         Series: 'b' [i64]
         [
@@ -940,6 +966,11 @@ class Series:
         ----------
         reverse
             reverse the operation.
+
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
 
         Examples
         --------
@@ -1012,6 +1043,11 @@ class Series:
         ----------
         reverse
             reverse the operation.
+
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
 
         Examples
         --------
@@ -1229,7 +1265,7 @@ class Series:
 
         """
         if in_place:
-            self._s.sort_in_place(reverse)
+            self._s = self._s.sort(reverse)
             return self
         else:
             return wrap_s(self._s.sort(reverse))
@@ -1261,7 +1297,7 @@ class Series:
 
     def arg_sort(self, reverse: bool = False) -> "Series":
         """
-        ..deprecate::
+        .. deprecated::
 
         Index location of the sorted variant of this Series.
 
@@ -1514,9 +1550,9 @@ class Series:
         ]
 
         """
-        if type(other) is list:
+        if isinstance(other, list):
             other = Series("", other)
-        return wrap_s(self._s.is_in(other._s))  # type: ignore
+        return wrap_s(self._s.is_in(other._s))
 
     def arg_true(self) -> "Series":
         """
@@ -1592,7 +1628,7 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series('a', [[1, 2], [3, 4], [9, 10]])
+        >>> s = pl.Series("a", [[1, 2], [3, 4], [9, 10]])
         >>> s.explode()
         shape: (6,)
         Series: 'a' [i64]
@@ -1630,9 +1666,9 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("b", [4, 5, 6])
-        >>> s.series_equal(s))
+        >>> s.series_equal(s)
         True
-        >>> s.series_equal(s2))
+        >>> s.series_equal(s2)
         False
 
         """
@@ -1823,10 +1859,12 @@ class Series:
 
             This function can lead to undefined behavior in the following cases:
 
-            >>> # returns a view to a piece of memory that is already dropped.
+            Returns a view to a piece of memory that is already dropped:
+
             >>> pl.Series([1, 3, 5]).sort().view()
 
-            >>> # Sums invalid data that is missing.
+            Sums invalid data that is missing:
+
             >>> pl.Series([1, 2, None]).view().sum()
 
         """
@@ -1839,7 +1877,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array__(self, dtype=None) -> np.ndarray:  # type: ignore
+    def __array__(self, dtype: Any = None) -> np.ndarray:
         return self.to_numpy().__array__(dtype)
 
     def __array_ufunc__(
@@ -2006,10 +2044,10 @@ class Series:
         """
         return wrap_s(self._s.clone())
 
-    def __copy__(self) -> "Series":  # type: ignore
+    def __copy__(self) -> "Series":
         return self.clone()
 
-    def __deepcopy__(self, memodict={}) -> "Series":  # type: ignore
+    def __deepcopy__(self, memodict: Any = {}) -> "Series":
         return self.clone()
 
     def fill_null(self, strategy: Union[str, int, "pli.Expr"]) -> "Series":
@@ -2019,7 +2057,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.fill_null('forward'))
+        >>> s.fill_null("forward")
         shape: (4,)
         Series: '' [i64]
         [
@@ -2028,7 +2066,7 @@ class Series:
                 3
                 3
         ]
-        >>> s.fill_null('min'))
+        >>> s.fill_null("min")
         shape: (4,)
         Series: 'a' [i64]
         [
@@ -2130,7 +2168,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
         >>> s.sin()
         shape: (3,)
         Series: 'a' [f64]
@@ -2149,7 +2187,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
         >>> s.cos()
         shape: (3,)
         Series: 'a' [f64]
@@ -2168,7 +2206,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((0., np.pi/2., np.pi)))
+        >>> s = pl.Series("a", np.array((0.0, np.pi / 2.0, np.pi)))
         >>> s.tan()
         shape: (3,)
         Series: 'a' [f64]
@@ -2187,7 +2225,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
         >>> s.arcsin()
         shape: (3,)
         Series: 'a' [f64]
@@ -2206,7 +2244,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
         >>> s.arccos()
         shape: (3,)
         Series: 'a' [f64]
@@ -2225,7 +2263,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", np.array((1.0, 0., -1)))
+        >>> s = pl.Series("a", np.array((1.0, 0.0, -1)))
         >>> s.arctan()
         shape: (3,)
         Series: 'a' [f64]
@@ -2323,7 +2361,7 @@ class Series:
             Fill None values with the result of this expression.
         """
         return self.to_frame().select(
-            pli.col(self.name).shift_and_fill(periods, fill_value)  # type: ignore
+            pli.col(self.name).shift_and_fill(periods, fill_value)
         )[self.name]
 
     def zip_with(self, mask: "Series", other: "Series") -> "Series":
@@ -2594,16 +2632,19 @@ class Series:
         Allows a custom rolling window function.
         Prefer the specific rolling window functions over this one, as they are faster.
         Prefer:
+
             * rolling_min
             * rolling_max
             * rolling_mean
             * rolling_sum
+
         Parameters
         ----------
         window_size
             Size of the rolling window
         function
             Aggregation function
+
         Examples
         --------
         >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
@@ -2619,7 +2660,7 @@ class Series:
         ]
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_apply(window_size, function)  # type: ignore
+            pli.col(self.name).rolling_apply(window_size, function)
         )[self.name]
 
     def rolling_median(self, window_size: int) -> "Series":
@@ -2631,9 +2672,9 @@ class Series:
         window_size
             Size of the rolling window
         """
-        return self.to_frame().select(
-            pli.col(self.name).rolling_median(window_size)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).rolling_median(window_size))[
+            self.name
+        ]
 
     def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
         """
@@ -2647,19 +2688,22 @@ class Series:
             quantile to compute
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_quantile(window_size, quantile)  # type: ignore
+            pli.col(self.name).rolling_quantile(window_size, quantile)
         )[self.name]
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
         """
         Compute a rolling skew
+
+        Parameters
+        ----------
         window_size
             Size of the rolling window
         bias
             If False, then the calculations are corrected for statistical bias.
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_skew(window_size, bias)  # type: ignore
+            pli.col(self.name).rolling_skew(window_size, bias)
         )[self.name]
 
     def sample(
@@ -2671,6 +2715,15 @@ class Series:
         """
         Sample from this Series by setting either `n` or `frac`.
 
+        Parameters
+        ----------
+        n
+            Number of samples < self.len().
+        frac
+            Fraction between 0.0 and 1.0 .
+        with_replacement
+            sample with replacement.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
@@ -2681,15 +2734,6 @@ class Series:
                 1
                 5
         ]
-
-        Parameters
-        ----------
-        n
-            Number of samples < self.len().
-        frac
-            Fraction between 0.0 and 1.0 .
-        with_replacement
-            sample with replacement.
         """
         if n is not None:
             return wrap_s(self._s.sample_n(n, with_replacement))
@@ -2761,27 +2805,6 @@ class Series:
             series = self.clone()
             series._s.shrink_to_fit()
             return series
-
-    @property
-    def dt(self) -> "DateTimeNameSpace":
-        """
-        Create an object namespace of all datetime related methods.
-        """
-        return DateTimeNameSpace(self)
-
-    @property
-    def arr(self) -> "ListNameSpace":
-        """
-        Create an object namespace of all list related methods.
-        """
-        return ListNameSpace(self)
-
-    @property
-    def str(self) -> "StringNameSpace":
-        """
-        Create an object namespace of all string related methods.
-        """
-        return StringNameSpace(self)
 
     def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pli.Series":
         """
@@ -2855,7 +2878,7 @@ class Series:
         """
         return wrap_s(self._s.abs())
 
-    def rank(self, method: str = "average") -> "Series":  # type: ignore
+    def rank(self, method: str = "average") -> "Series":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -2879,10 +2902,11 @@ class Series:
                 the order that the values occur in `a`.
               * 'random': Like 'ordinal', but the rank for ties is not dependent
                 on the order that the values occur in `a`.
+
         """
         return wrap_s(self._s.rank(method))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":  # type: ignore
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":
         """
         Calculate the n-th discrete difference.
 
@@ -2915,19 +2939,21 @@ class Series:
         -----
         The sample skewness is computed as the Fisher-Pearson coefficient
         of skewness, i.e.
-        .. math::
-            g_1=\frac{m_3}{m_2^{3/2}}
+
+        .. math:: g_1=\frac{m_3}{m_2^{3/2}}
+
         where
-        .. math::
-            m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
+        .. math:: m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
         the sample mean.  If ``bias`` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
-        .. math::
-            G_1=\frac{k_3}{k_2^{3/2}}=
-                \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}.
+
+        .. math::  G_1=\frac{k_3}{k_2^{3/2}}=\frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+
         """
         return self._s.skew(bias)
 
@@ -2960,11 +2986,11 @@ class Series:
         min_val, max_val
             Minimum and maximum value.
         """
-        return self.to_frame().select(
-            pli.col(self.name).clip(min_val, max_val)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
+            self.name
+        ]
 
-    def str_concat(self, delimiter: str = "-") -> "Series":  # type: ignore
+    def str_concat(self, delimiter: str = "-") -> "Series":
         """
         Vertically concat the values in the Series to a single string value.
 
@@ -2973,13 +2999,14 @@ class Series:
         Series of dtype Utf8
 
         Examples
+        --------
         >>> pl.Series([1, None, 2]).str_concat("-")[0]
         "1-null-2"
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).str_concat(delimiter)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).str_concat(delimiter))[
+            self.name
+        ]
 
     def reshape(self, dims: tp.Tuple[int, ...]) -> "Series":
         """
@@ -2998,6 +3025,30 @@ class Series:
         Series
         """
         return wrap_s(self._s.reshape(dims))
+
+    # Below are the namespaces defined. Do not move these up in the definition of Series, as it confuses mypy between the
+    # type annotation `str` and the namespace "str
+
+    @property
+    def dt(self) -> "DateTimeNameSpace":
+        """
+        Create an object namespace of all datetime related methods.
+        """
+        return DateTimeNameSpace(self)
+
+    @property
+    def arr(self) -> "ListNameSpace":
+        """
+        Create an object namespace of all list related methods.
+        """
+        return ListNameSpace(self)
+
+    @property
+    def str(self) -> "StringNameSpace":
+        """
+        Create an object namespace of all string related methods.
+        """
+        return StringNameSpace(self)
 
 
 class StringNameSpace:
@@ -3073,10 +3124,10 @@ class StringNameSpace:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        'json_val':['{"a":"1"}',None,'{"a":2}', '{"a":2.1}', '{"a":true}'
-        })
-        >>> df.select(pl.col('json_val').str.json_path_match('$.a')
+        >>> df = pl.DataFrame(
+        ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
+        ... )
+        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))
         shape: (5,)
         Series: 'json_val' [str]
         [
@@ -3109,15 +3160,16 @@ class StringNameSpace:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        ...         'a': [
-        ...             'http://vote.com/ballon_dor?candidate=messi&ref=polars',
-        ...             'http://vote.com/ballon_dor?candidat=jorginho&ref=polars',
-        ...             'http://vote.com/ballon_dor?candidate=ronaldo&ref=polars'
-        ...         ]})
-        >>> df.select([
-        ...             pl.col('a').str.extract(r'candidate=(\w+)', 1)
-        ...         ])
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [
+        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
+        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
+        ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.select([pl.col("a").str.extract(r"candidate=(\w+)", 1)])
         shape: (3, 1)
         ┌─────────┐
         │ a       │
@@ -3308,13 +3360,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime, timedelta
-        >>> import polars as pl
         >>> date_range = pl.date_range(
-        >>> low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
-        >>> high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
-        >>> interval=timedelta(minutes=8),
-        >>> name="date_range")
-        >>>
+        ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
+        ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
+        ...     interval=timedelta(minutes=8),
+        ...     name="date_range",
+        ... )
         >>> date_range.dt.buckets(timedelta(minutes=8))
         shape: (8,)
         Series: 'date_range' [datetime]
@@ -3329,15 +3380,16 @@ class DateTimeNameSpace:
             2000-10-02 00:18:00
         ]
 
-        >>> # can be used to perform a downsample operation
-        >>> (date_range
-        >>>  .to_frame()
-        >>>  .groupby(
-        >>>      pl.col("date_range").dt.buckets(timedelta(minutes=16)),
-        >>>      maintain_order=True
-        >>>  )
-        >>>  .agg(pl.col("date_range").count())
-        >>> )
+        Can be used to perform a downsample operation:
+
+        >>> (
+        ...     date_range.to_frame()
+        ...     .groupby(
+        ...         pl.col("date_range").dt.buckets(timedelta(minutes=16)),
+        ...         maintain_order=True,
+        ...     )
+        ...     .agg(pl.col("date_range").count())
+        ... )
         shape: (4, 2)
         ┌─────────────────────┬──────────────────┐
         │ date_range          ┆ date_range_count │

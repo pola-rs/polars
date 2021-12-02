@@ -261,7 +261,7 @@ where
         &self.0
     }
 
-    fn sum_as_series(&self) -> Series {
+    fn _sum_as_series(&self) -> Series {
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {

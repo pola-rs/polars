@@ -51,11 +51,14 @@ def col(
     Examples
     --------
 
-    >>> df = pl.DataFrame({
-    >>> "ham": [1, 2, 3],
-    >>> "hamburger": [11, 22, 33],
-    >>> "foo": [3, 2, 1]})
-    >>> df.select(col("foo"))
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "ham": [1, 2, 3],
+    ...         "hamburger": [11, 22, 33],
+    ...         "foo": [3, 2, 1],
+    ...     }
+    ... )
+    >>> df.select(pl.col("foo"))
     shape: (3, 1)
     ╭─────╮
     │ foo │
@@ -68,7 +71,7 @@ def col(
     ├╌╌╌╌╌┤
     │ 1   │
     ╰─────╯
-    >>> df.select(col("*"))
+    >>> df.select(pl.col("*"))
     shape: (3, 3)
     ╭─────┬───────────┬─────╮
     │ ham ┆ hamburger ┆ foo │
@@ -81,7 +84,7 @@ def col(
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 33        ┆ 1   │
     ╰─────┴───────────┴─────╯
-    >>> df.select(col("^ham.*$"))
+    >>> df.select(pl.col("^ham.*$"))
     shape: (3, 2)
     ╭─────┬───────────╮
     │ ham ┆ hamburger │
@@ -94,7 +97,7 @@ def col(
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 33        │
     ╰─────┴───────────╯
-    >>> df.select(col("*").exclude("ham"))
+    >>> df.select(pl.col("*").exclude("ham"))
     shape: (3, 2)
     ╭───────────┬─────╮
     │ hamburger ┆ foo │
@@ -107,7 +110,7 @@ def col(
     ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 33        ┆ 1   │
     ╰───────────┴─────╯
-    >>> df.select(col(["hamburger", "foo"])
+    >>> df.select(pl.col(["hamburger", "foo"]))
     shape: (3, 2)
     ╭───────────┬─────╮
     │ hamburger ┆ foo │
@@ -504,20 +507,26 @@ def lit(
     Examples
     --------
 
-    >>> # literal integer
-    >>> lit(1)
+    Literal integer:
 
-    >>> # literal str.
-    >>> lit("foo")
+    >>> pl.lit(1)
 
-    >>> # literal datetime
-    >>> lit(datetime(2021, 1, 20))
+    Literal str:
 
-    >>> # literal Null
-    >>> lit(None)
+    >>> pl.lit("foo")
 
-    >>> # literal eager Series
-    >>> lit(Series("a", [1, 2, 3])
+    Literal datetime:
+
+    >>> pl.lit(datetime(2021, 1, 20))
+
+    Literal Null:
+
+    >>> pl.lit(None)
+
+    Literal eager Series:
+
+    >>> pl.lit(Series("a", [1, 2, 3]))
+
     """
     if isinstance(value, datetime):
         return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
@@ -731,52 +740,55 @@ def any(name: Union[str, tp.List["pli.Expr"]]) -> "pli.Expr":
 
 def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     """
-     Exclude certain columns from a wildcard expression.
+    Exclude certain columns from a wildcard expression.
 
-     Syntactic sugar for:
-     >>> col("*").exclude()
+    Syntactic sugar for:
 
-     Parameters
-     ----------
-     columns
-         Column(s) to exclude from selection
+    >>> pl.col("*").exclude()
+
+    Parameters
+    ----------
+    columns
+        Column(s) to exclude from selection
 
 
     Examples
     --------
 
-     >>> df = pl.DataFrame({
-     >>>     "a": [1, 2, 3],
-     >>>     "b": ["a", "b", None],
-     >>>     "c": [None, 2, 1]
-     >>> })
-     >>> df
-     shape: (3, 3)
-     ╭─────┬──────┬──────╮
-     │ a   ┆ b    ┆ c    │
-     │ --- ┆ ---  ┆ ---  │
-     │ i64 ┆ str  ┆ i64  │
-     ╞═════╪══════╪══════╡
-     │ 1   ┆ "a"  ┆ null │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 2   ┆ "b"  ┆ 2    │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 3   ┆ null ┆ 1    │
-     ╰─────┴──────┴──────╯
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": ["a", "b", None],
+    ...         "c": [None, 2, 1],
+    ...     }
+    ... )
+    >>> df
+    shape: (3, 3)
+    ╭─────┬──────┬──────╮
+    │ a   ┆ b    ┆ c    │
+    │ --- ┆ ---  ┆ ---  │
+    │ i64 ┆ str  ┆ i64  │
+    ╞═════╪══════╪══════╡
+    │ 1   ┆ "a"  ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2   ┆ "b"  ┆ 2    │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3   ┆ null ┆ 1    │
+    ╰─────┴──────┴──────╯
 
-     >>> df.select(pl.exclude("b"))
-     shape: (3, 2)
-     ╭─────┬──────╮
-     │ a   ┆ c    │
-     │ --- ┆ ---  │
-     │ i64 ┆ i64  │
-     ╞═════╪══════╡
-     │ 1   ┆ null │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 2   ┆ 2    │
-     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
-     │ 3   ┆ 1    │
-     ╰─────┴──────╯
+    >>> df.select(pl.exclude("b"))
+    shape: (3, 2)
+    ╭─────┬──────╮
+    │ a   ┆ c    │
+    │ --- ┆ ---  │
+    │ i64 ┆ i64  │
+    ╞═════╪══════╡
+    │ 1   ┆ null │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2   ┆ 2    │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3   ┆ 1    │
+    ╰─────┴──────╯
 
     """
     return col("*").exclude(columns)
@@ -798,11 +810,17 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
     Examples
     --------
 
-    >>> # sum all columns
+    Sum all columns
+
     >>> df.select(pl.all().sum())
 
 
-    >>> df.select(pl.all([col(name).is_not_null() for name in df.columns]))
+    >>> df.select(
+    ...     [
+    ...         pl.all([pl.col(name).is_not_null() for name in df.columns]),
+    ...     ]
+    ... )
+
     """
     if name is None:
         return col("*")
@@ -813,14 +831,14 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
 
 def groups(column: str) -> "pli.Expr":
     """
-    Syntactic sugar for `column("foo").agg_groups()`.
+    Syntactic sugar for `pl.col("foo").agg_groups()`.
     """
     return col(column).agg_groups()
 
 
 def quantile(column: str, quantile: float) -> "pli.Expr":
     """
-    Syntactic sugar for `column("foo").quantile(..)`.
+    Syntactic sugar for `pl.col("foo").quantile(..)`.
     """
     return col(column).quantile(quantile)
 
@@ -838,9 +856,7 @@ def arange(
      Examples
      --------
 
-    >>> (df.lazy()
-        .filter(pl.col("foo") < pl.arange(0, 100))
-        .collect())
+    >>> (df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect())
 
     Parameters
     ----------
@@ -858,7 +874,7 @@ def arange(
 
     if eager:
         df = pli.DataFrame({"a": [1]})
-        return df.select(arange(low, high, step).alias("arange"))["arange"]  # type: ignore
+        return df.select(arange(low, high, step).alias("arange"))["arange"]
 
     return pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
 
@@ -920,9 +936,9 @@ def _datetime(
     Expr of type pl.Datetime
     """
 
-    year = pli.expr_to_lit_or_expr(year, str_to_lit=False)  # type: ignore
-    month = pli.expr_to_lit_or_expr(month, str_to_lit=False)  # type: ignore
-    day = pli.expr_to_lit_or_expr(day, str_to_lit=False)  # type: ignore
+    year_expr = pli.expr_to_lit_or_expr(year, str_to_lit=False)
+    month_expr = pli.expr_to_lit_or_expr(month, str_to_lit=False)
+    day_expr = pli.expr_to_lit_or_expr(day, str_to_lit=False)
 
     if hour is not None:
         hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr  # type: ignore
@@ -934,7 +950,13 @@ def _datetime(
         millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr  # type: ignore
     return pli.wrap_expr(
         py_datetime(
-            year._pyexpr, month._pyexpr, day._pyexpr, hour, minute, second, millisecond
+            year_expr._pyexpr,
+            month_expr._pyexpr,
+            day_expr._pyexpr,
+            hour,
+            minute,
+            second,
+            millisecond,
         )
     )
 
@@ -993,10 +1015,17 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     Examples
     --------
 
-    >>> df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-    >>> df.select([
-    >>>     pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")
-    >>> ])
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": ["a", "b", "c"],
+    ...         "b": [1, 2, 3],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     [
+    ...         pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt"),
+    ...     ]
+    ... )
     shape: (3, 1)
     ┌─────────────┐
     │ fmt         │
@@ -1106,7 +1135,7 @@ def collect_all(
 
 
 def select(
-    exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"]]
+    exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"]
 ) -> "pli.DataFrame":
     """
     Run polars expressions without a context.
@@ -1126,9 +1155,11 @@ def select(
 
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
-    >>> pl.select([
-    >>>     pl.min([foo, bar])
-    >>> ])
+    >>> pl.select(
+    ...     [
+    ...         pl.min([foo, bar]),
+    ...     ]
+    ... )
     shape: (3, 1)
     ┌─────┐
     │ min │

@@ -1555,7 +1555,7 @@ mod test {
 
         let out = df.groupby("g")?.select("int").var()?;
         assert_eq!(
-            out.column("int_agg_var")?.f64()?.sort(false).get(1),
+            out.column("int_agg_var")?.f64()?.sort(false).get(0),
             Some(0.5)
         );
         let out = df.groupby("g")?.select("int").std()?;
@@ -1563,7 +1563,7 @@ mod test {
             .column("int_agg_std")?
             .f64()?
             .sort(false)
-            .get(1)
+            .get(0)
             .unwrap();
         let expected = f64::FRAC_1_SQRT_2();
         assert!((val - expected).abs() < 0.000001);

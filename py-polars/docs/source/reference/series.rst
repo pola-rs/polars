@@ -76,8 +76,10 @@ Descriptive stats
     Series.is_float
     Series.is_boolean
     Series.is_utf8
+    Series.is_datetime
     Series.len
     Series.n_unique
+    Series.has_validity
 
 
 Computations
@@ -119,6 +121,9 @@ Computations
     Series.arcsin
     Series.arccos
     Series.arctan
+    Series.log
+    Series.log10
+    Series.exp
 
 Manipulation/ selection
 -----------------------
@@ -157,6 +162,7 @@ Manipulation/ selection
     Series.clip
     Series.str_concat
     Series.reshape
+    Series.to_dummies
 
 Various
 --------

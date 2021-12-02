@@ -49,3 +49,7 @@ def test_sort_by() -> None:
 
     out = df.select([pl.col("a").sort_by(by, reverse=[True, False])])
     assert out["a"].to_list() == [5, 4, 3, 1, 2]
+
+    # by can also be a single column
+    out = df.select([pl.col("a").sort_by("b", reverse=[False])])
+    assert out["a"].to_list() == [1, 2, 3, 4, 5]

@@ -49,7 +49,7 @@ pub enum AExpr {
     },
     Sort {
         expr: Node,
-        reverse: bool,
+        options: SortOptions,
     },
     Take {
         expr: Node,
@@ -368,7 +368,7 @@ impl AExpr {
                 (Literal(left), Literal(right)) => left == right,
                 (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
                 (Cast { data_type: l, .. }, Cast { data_type: r, .. }) => l == r,
-                (Sort { reverse: l, .. }, Sort { reverse: r, .. }) => l == r,
+                (Sort { options: l, .. }, Sort { options: r, .. }) => l == r,
                 (SortBy { reverse: l, .. }, SortBy { reverse: r, .. }) => l == r,
                 (Shift { periods: l, .. }, Shift { periods: r, .. }) => l == r,
                 (

@@ -79,6 +79,8 @@ Manipulation/ selection
     DataFrame.with_row_count
     DataFrame.insert_at_idx
     DataFrame.filter
+    DataFrame.find_idx_by_name
+    DataFrame.select_at_idx
     DataFrame.replace_at_idx
     DataFrame.sort
     DataFrame.replace
@@ -106,6 +108,7 @@ Manipulation/ selection
     DataFrame.downsample
     DataFrame.select
     DataFrame.with_columns
+    DataFrame.with_column_renamed
     DataFrame.sample
     DataFrame.row
     DataFrame.rows

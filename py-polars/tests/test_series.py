@@ -39,10 +39,15 @@ def test_init_inputs() -> None:
     assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
     assert pl.Series("a", [pl.Series([1, 2, 4]), pl.Series([3, 2, 1])]).dtype == pl.List
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
+    assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
     # 2d numpy array
     res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
     assert all(res[0] == np.array([1, 2]))
     assert all(res[1] == np.array([3, 4]))
+    assert (
+        pl.Series(values=np.array([["foo", "bar"], ["foo2", "bar2"]])).dtype
+        == pl.Object
+    )
 
     # Bad inputs
     with pytest.raises(ValueError):
@@ -1071,3 +1076,20 @@ def test_nested_list_types_preserved() -> None:
     srs1 = pl.Series([pl.Series([3, 4, 5, 6], dtype=expected_dtype) for _ in range(5)])
     for srs2 in srs1:
         assert srs2.dtype == expected_dtype
+
+
+def test_log_exp() -> None:
+    a = pl.Series("a", [1, 100, 1000])
+
+    out = a.log10()
+    expected = pl.Series("a", [0.0, 2.0, 3.0])
+    testing.assert_series_equal(out, expected)
+    a = pl.Series("a", [1, 100, 1000])
+
+    out = a.log()
+    expected = pl.Series("a", np.log(a.to_numpy()))
+    testing.assert_series_equal(out, expected)
+
+    out = a.exp()
+    expected = pl.Series("a", np.exp(a.to_numpy()))
+    testing.assert_series_equal(out, expected)

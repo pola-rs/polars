@@ -60,22 +60,24 @@ dependencies = [
 
 [[package]]
 name = "arrow2"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02b39f376298030a620034a2965a480fada646830d18a4eacb2e49715416eff1"
+version = "0.8.1"
+source = "git+https://github.com/ritchie46/arrow2?branch=offset_pub#46a80f0fa84023207452b8625f9be27135a898ca"
 dependencies = [
+ "ahash",
  "arrow-format",
  "base64",
  "chrono",
  "csv",
  "futures",
  "hash_hasher",
+ "itertools",
  "lexical-core",
  "lz4",
  "multiversion",
  "num-traits",
  "packed_simd_2",
  "parquet2",
+ "regex",
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",

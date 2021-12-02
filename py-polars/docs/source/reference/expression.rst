@@ -62,6 +62,7 @@ Attributes
 .. autosummary::
    :toctree: api/
 
+   Expr.arr
    Expr.dt
    Expr.str
 
@@ -146,6 +147,9 @@ Computations
     Expr.arcsin
     Expr.arccos
     Expr.arctan
+    Expr.log
+    Expr.log10
+    Expr.exp
 
 Manipulation/ selection
 -----------------------

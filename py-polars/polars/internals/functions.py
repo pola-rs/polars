@@ -89,7 +89,7 @@ def concat(
         out = pli.wrap_s(_concat_series(items))
 
     if rechunk:
-        return out.rechunk()  # type: ignore
+        return out.rechunk()
     return out
 
 
@@ -154,6 +154,7 @@ def date_range(
         Make the interval closed to the 'left', 'right', or both sides (None, the default).
     name
         Name of the output Series
+
     Returns
     -------
     A Series of type `Datetime`
@@ -162,7 +163,9 @@ def date_range(
     --------
     >>> import polars as pl
     >>> from datetime import datetime, timedelta
-    >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12))
+    >>> pl.date_range(
+    ...     datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
+    ... )
     shape: (7426,)
     Series: '' [datetime]
     [

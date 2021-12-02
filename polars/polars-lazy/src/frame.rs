@@ -519,7 +519,7 @@ impl LazyFrame {
                 .iter()
                 .zip(new)
                 .map(|(old, new)| col(old).alias(new.as_ref()))
-                .collect(),
+                .collect::<Vec<_>>(),
         )
         .drop_columns_impl(&existing)
     }
@@ -959,7 +959,8 @@ impl LazyFrame {
     ///          )
     /// }
     /// ```
-    pub fn with_columns(self, exprs: Vec<Expr>) -> LazyFrame {
+    pub fn with_columns<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
+        let exprs = exprs.as_ref().to_vec();
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(exprs).build();
         Self::from_logical_plan(lp, opt_state)

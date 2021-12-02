@@ -69,6 +69,18 @@ impl CategoricalChunked {
         self
     }
 
+    pub(crate) fn can_fast_unique(&self) -> bool {
+        self.bit_settings & 1 << 3 != 0 && self.chunks.len() == 1
+    }
+
+    pub(crate) fn set_fast_unique(&mut self, can: bool) {
+        if can {
+            self.bit_settings |= 1u8 << 3;
+        } else {
+            self.bit_settings &= !(1u8 << 3);
+        }
+    }
+
     /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
     pub fn iter_str(&self) -> CatIter<'_> {
         let iter = self.deref().into_iter();
@@ -177,5 +189,19 @@ mod test {
         assert_eq!(appended.str_value(1), "\"b\"");
         assert_eq!(appended.str_value(4), "\"x\"");
         assert_eq!(appended.str_value(5), "\"y\"");
+    }
+
+    #[test]
+    fn test_fast_unique() {
+        let s = Series::new("1", vec!["a", "b", "c"])
+            .cast(&DataType::Categorical)
+            .unwrap();
+
+        assert_eq!(s.n_unique().unwrap(), 3);
+        // make sure that it does not take the fast path after take/ slice
+        let out = s.take(&([1, 2].as_ref()).into()).unwrap();
+        assert_eq!(out.n_unique().unwrap(), 2);
+        let out = s.slice(1, 2);
+        assert_eq!(out.n_unique().unwrap(), 2);
     }
 }

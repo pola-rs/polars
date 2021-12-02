@@ -451,12 +451,8 @@ macro_rules! impl_dyn_series {
                 self.0.get_any_value_unchecked(index)
             }
 
-            fn sort_in_place(&mut self, reverse: bool) {
-                ChunkSort::sort_in_place(&mut self.0, reverse);
-            }
-
-            fn sort(&self, reverse: bool) -> Series {
-                ChunkSort::sort(&self.0, reverse).into_series()
+            fn sort_with(&self, options: SortOptions) -> Series {
+                ChunkSort::sort_with(&self.0, options).into_series()
             }
 
             fn argsort(&self, reverse: bool) -> UInt32Chunked {
@@ -523,7 +519,7 @@ macro_rules! impl_dyn_series {
                 ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
             }
 
-            fn sum_as_series(&self) -> Series {
+            fn _sum_as_series(&self) -> Series {
                 ChunkAggSeries::sum_as_series(&self.0)
             }
             fn max_as_series(&self) -> Series {

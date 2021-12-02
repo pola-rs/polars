@@ -3,6 +3,7 @@ SHELL=/bin/bash
 pre-commit:
 	isort .
 	black .
+	blackdoc .
 	mypy
 	flake8 .
 	make -C .. fmt_toml

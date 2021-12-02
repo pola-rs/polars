@@ -531,11 +531,11 @@ impl DefaultPlanner {
                 column,
                 node_to_exp(expression, expr_arena),
             ))),
-            Sort { expr, reverse } => {
+            Sort { expr, options } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 Ok(Arc::new(SortExpr::new(
                     phys_expr,
-                    reverse,
+                    options,
                     node_to_exp(expression, expr_arena),
                 )))
             }

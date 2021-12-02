@@ -202,17 +202,23 @@ class LazyFrame:
                 plt.show()
         return None
 
-    def inspect(self, fmt: str = "{}") -> "LazyFrame":  # type: ignore
+    def inspect(self, fmt: str = "{}") -> "LazyFrame":
         """
         Prints the value that this node in the computation graph evaluates to and passes on the value.
 
-        >>> (df.select(pl.col("foo").cumsum().alias("bar"))
-        >>>    .inspect()  # print the node before the filter
-        >>>    .filter(pl.col("bar") == pl.col("foo")))
+        >>> (
+        ...     df.select(
+        ...         [
+        ...             pl.col("foo").cumsum().alias("bar"),
+        ...         ]
+        ...     )
+        ...     .inspect()  # print the node before the filter
+        ...     .filter(pl.col("bar") == pl.col("foo"))
+        ... )
         """
 
         def inspect(s: pli.DataFrame) -> pli.DataFrame:
-            print(fmt.format(s))  # type: ignore
+            print(fmt.format(s))
             return s
 
         return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
@@ -358,12 +364,17 @@ class LazyFrame:
         Examples
         --------
 
-        >>> df = (pl.DataFrame({
-        >>>    "foo": [1, 2, 3],
-        >>>    "bar": [6, 7, 8],
-        >>>    "ham": ['a', 'b', 'c']
-        >>>    }).lazy()
-        >>>     .select(["foo", "bar"]))
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "foo": [1, 2, 3],
+        ...             "bar": [6, 7, 8],
+        ...             "ham": ["a", "b", "c"],
+        ...         }
+        ...     )
+        ...     .lazy()
+        ...     .select(["foo", "bar"])
+        ... )
 
         >>> df.columns
         ["foo", "bar"]
@@ -391,12 +402,16 @@ class LazyFrame:
         Examples
         --------
 
-        >>> lf = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, 7, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>> }).lazy()
-        >>> # Filter on one condition
+        >>> lf = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+
+        Filter on one condition:
+
         >>> lf.filter(pl.col("foo") < 3).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -409,7 +424,8 @@ class LazyFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
-        >>>  # Filter on multiple conditions
+        Filter on multiple conditions:
+
         >>> lf.filter((pl.col("foo") < 3) & (pl.col("ham") == "a")).collect()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -426,7 +442,10 @@ class LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(
-        self, exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"]]
+        self,
+        exprs: Union[
+            str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"
+        ],
     ) -> "LazyFrame":
         """
         Select columns from this DataFrame.
@@ -472,12 +491,12 @@ class LazyFrame:
         self,
         ldf: "LazyFrame",
         left_on: Optional[
-            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
         ] = None,
         right_on: Optional[
-            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
         ] = None,
-        on: Optional[Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]] = None,
+        on: Optional[Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]] = None,
         how: str = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
@@ -539,15 +558,15 @@ class LazyFrame:
                 )
             )
 
-        left_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        left_on_: Optional[tp.List[Union[str, pli.Expr]]]
         if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]  # type: ignore[assignment]
+            left_on_ = [left_on]
         else:
             left_on_ = left_on
 
-        right_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        right_on_: Optional[tp.List[Union[str, pli.Expr]]]
         if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]  # type: ignore[assignment]
+            right_on_ = [right_on]
         else:
             right_on_ = right_on
 
@@ -576,13 +595,13 @@ class LazyFrame:
 
         left_asof_by_: Union[tp.List[str], None]
         if isinstance(asof_by_left, str):
-            left_asof_by_ = [asof_by_left]  # type: ignore[assignment]
+            left_asof_by_ = [asof_by_left]
         else:
             left_asof_by_ = asof_by_left
 
         right_asof_by_: Union[tp.List[str], None]
         if isinstance(asof_by_right, (str, pli.Expr)):
-            right_asof_by_ = [asof_by_right]  # type: ignore[assignment]
+            right_asof_by_ = [asof_by_right]
         else:
             right_asof_by_ = asof_by_right
 
@@ -881,10 +900,12 @@ class LazyFrame:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]]
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [[1, 2], [1, 3], [4, 3], [5, 5, 5], [6], [2, 1, 2]],
+        ...     }
+        ... )
         >>> df
         shape: (6, 2)
         ╭─────────┬────────────╮
@@ -957,11 +978,13 @@ class LazyFrame:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        >>>     "foo": [1, 2, 3],
-        >>>     "bar": [6, None, 8],
-        >>>     "ham": ['a', 'b', 'c']
-        >>>     })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, None, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
         >>> df.lazy().drop_nulls().collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -980,12 +1003,12 @@ class LazyFrame:
         conditions
 
         >>> df = pl.DataFrame(
-        >>>    {
-        >>>        "a": [None, None, None, None],
-        >>>        "b": [1, 2, None, 1],
-        >>>        "c": [1, None, None, 1],
-        >>>    }
-        >>> )
+        ...     {
+        ...         "a": [None, None, None, None],
+        ...         "b": [1, 2, None, 1],
+        ...         "c": [1, None, None, 1],
+        ...     }
+        ... )
         >>> df
         shape: (4, 3)
         ┌──────┬──────┬──────┐
@@ -1002,8 +1025,15 @@ class LazyFrame:
         │ null ┆ 1    ┆ 1    │
         └──────┴──────┴──────┘
 
-        >>> # drop a row only if all values are null
-        >>> df.filter(~pl.fold(acc=True, f=lambda acc, s: acc & s.is_null(), exprs=pl.all()))
+        Drop a row only if all values are null:
+
+        >>> df.filter(
+        ...     ~pl.fold(
+        ...         acc=True,
+        ...         f=lambda acc, s: acc & s.is_null(),
+        ...         exprs=pl.all(),
+        ...     )
+        ... )
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
@@ -1071,7 +1101,7 @@ class LazyFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
-        return self.select(pli.col("*").interpolate())  # type: ignore
+        return self.select(pli.col("*").interpolate())
 
 
 class LazyGroupBy:
@@ -1094,13 +1124,16 @@ class LazyGroupBy:
         Examples
         --------
 
-        >>> (pl.scan_csv("data.csv")
-            .groupby("groups")
-            .agg([
-                    pl.col("name").n_unique().alias("unique_names"),
-                    pl.max("values")
-                ])
-        )
+        >>> (
+        ...     pl.scan_csv("data.csv")
+        ...     .groupby("groups")
+        ...     .agg(
+        ...         [
+        ...             pl.col("name").n_unique().alias("unique_names"),
+        ...             pl.max("values"),
+        ...         ]
+        ...     )
+        ... )
         """
         aggs = pli._selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
@@ -1117,10 +1150,12 @@ class LazyGroupBy:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [1, 2, 3, 4, 5, 6]
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
+        ... )
         >>> df
         shape: (6, 2)
         ╭─────────┬─────╮
@@ -1140,10 +1175,7 @@ class LazyGroupBy:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
-        >>> (df.groupby("letters")
-        >>>  .head(2)
-        >>>  .sort("letters")
-        >>> )
+        >>> (df.groupby("letters").head(2).sort("letters"))
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │
@@ -1176,10 +1208,12 @@ class LazyGroupBy:
         Examples
         --------
 
-        >>> df = pl.DataFrame({
-        >>>     "letters": ["c", "c", "a", "c", "a", "b"],
-        >>>     "nrs": [1, 2, 3, 4, 5, 6]
-        >>> })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
+        ... )
         >>> df
         shape: (6, 2)
         ╭─────────┬─────╮
@@ -1199,10 +1233,7 @@ class LazyGroupBy:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
-        >>> (df.groupby("letters")
-        >>>  .tail(2)
-        >>>  .sort("letters")
-        >>> )
+        >>> (df.groupby("letters").tail(2).sort("letters"))
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │
