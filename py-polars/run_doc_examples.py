@@ -18,7 +18,9 @@ if __name__ == "__main__":
         pretty_file_name = file.relative_to(src_dir)
 
         print(f"===== Testing {pretty_file_name} =====")
-        res = doctest.testfile(str(file), globs={"pl": polars}, optionflags=1)  # optionflags=1 enables the NORMALIZE_WHITESPACE and other optiosn above
+        res = doctest.testfile(
+            str(file), globs={"pl": polars}, optionflags=1
+        )  # optionflags=1 enables the NORMALIZE_WHITESPACE and other optiosn above
         results_list.append(
             {
                 "name": str(pretty_file_name),
