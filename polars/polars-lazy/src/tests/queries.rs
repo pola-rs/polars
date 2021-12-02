@@ -2360,3 +2360,25 @@ fn test_binary_agg_context_2() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_single_ranked_group() -> Result<()> {
+    // tests type consistency of rank algorithm
+    let df = df!["group" => [1, 2, 2],
+        "value"=> [100, 50, 10]
+    ]?;
+
+    let out = df
+        .lazy()
+        .with_columns([col("value").rank(RankMethod::Average).over([col("group")])])
+        .collect()?;
+
+    let out = out.column("value")?.explode()?;
+    let out = out.f32()?;
+    assert_eq!(
+        Vec::from(out),
+        &[Some(1.0), Some(2.0), Some(1.0), Some(2.0), Some(1.0)]
+    );
+
+    Ok(())
+}
