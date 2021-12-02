@@ -23,7 +23,7 @@ test:
 
 test-with-cov:
 	maturin develop
-	cd tests && pytest --cov=polars --import-mode=importlib --ignore=legacy --ignore=db-benchmark
+	cd tests && pytest --cov=polars --import-mode=importlib
 
 test-build:
 	maturin build -o wheels
@@ -34,4 +34,4 @@ build-and-test: test-install
 	pytest tests
 
 build-and-test-with-cov: test-install
-	cd tests && pytest --cov=polars --import-mode=importlib && cd .. && pytest --doctest-modules --ignore=legacy --ignore=db-benchmark
+	cd tests && pytest --cov=polars --import-mode=importlib && cd .. && pytest polars --doctest-modules
