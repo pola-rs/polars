@@ -1,8 +1,10 @@
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
+use arrow::buffer::MutableBuffer;
 use arrow::{bitmap::MutableBitmap, buffer::Buffer};
 use itertools::Itertools;
+use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_arrow::prelude::ValueSize;
 use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
@@ -41,7 +43,7 @@ unsafe impl PlIsNan for i32 {}
 unsafe impl PlIsNan for i64 {}
 
 /// Reverse sorting when there are no nulls
-fn order_reverse<T: PartialOrd + PlIsNan>(a: &T, b: &T) -> Ordering {
+fn order_reverse<T: PartialOrd>(a: &T, b: &T) -> Ordering {
     b.partial_cmp(a).unwrap()
 }
 
@@ -475,23 +477,87 @@ macro_rules! sort {
 impl ChunkSort<Utf8Type> for Utf8Chunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
         sort_with_fast_path!(self, options);
-        assert!(
-            !options.nulls_last,
-            "null last not yet supported for utf8 dtype"
-        );
+        let mut v: Vec<&str> = if self.null_count() > 0 {
+            Vec::from_iter(self.into_iter().flatten())
+        } else {
+            Vec::from_iter(self.into_no_null_iter())
+        };
 
-        let mut v = Vec::from_iter(self);
         sort_branch(
             v.as_mut_slice(),
             options.descending,
-            order_default_null,
-            order_reverse_null,
+            order_default,
+            order_reverse,
         );
 
-        // We don't collect from an iterator because we know the total value size
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
-        v.into_iter().for_each(|opt_v| builder.append_option(opt_v));
-        let mut ca = builder.finish();
+        let mut values = MutableBuffer::<u8>::with_capacity(self.get_values_size());
+        let mut offsets = MutableBuffer::<i64>::with_capacity(self.len() + 1);
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+
+        let len = self.len();
+        let null_count = self.null_count();
+        let mut ca: Self = match (null_count, options.nulls_last) {
+            (0, _) => {
+                for val in v {
+                    values.extend_from_slice(val.as_bytes());
+                    length_so_far = values.len() as i64;
+                    offsets.push(length_so_far);
+                }
+                // Safety:
+                // we pass valid utf8
+                let ar = unsafe {
+                    Utf8Array::from_data_unchecked_default(offsets.into(), values.into(), None)
+                };
+                (self.name(), ar).into()
+            }
+            (_, true) => {
+                for val in v {
+                    values.extend_from_slice(val.as_bytes());
+                    length_so_far = values.len() as i64;
+                    offsets.push(length_so_far);
+                }
+                let mut validity = MutableBitmap::with_capacity(len);
+                validity.extend_constant(len - null_count, true);
+                validity.extend_constant(null_count, false);
+                offsets.extend_constant(null_count, length_so_far);
+
+                // Safety:
+                // we pass valid utf8
+                let ar = unsafe {
+                    Utf8Array::from_data_unchecked_default(
+                        offsets.into(),
+                        values.into(),
+                        Some(validity.into()),
+                    )
+                };
+                (self.name(), ar).into()
+            }
+            (_, false) => {
+                let mut validity = MutableBitmap::with_capacity(len);
+                validity.extend_constant(null_count, false);
+                validity.extend_constant(len - null_count, true);
+                offsets.extend_constant(null_count, length_so_far);
+
+                for val in v {
+                    values.extend_from_slice(val.as_bytes());
+                    length_so_far = values.len() as i64;
+                    offsets.push(length_so_far);
+                }
+
+                // Safety:
+                // we pass valid utf8
+                let ar = unsafe {
+                    Utf8Array::from_data_unchecked_default(
+                        offsets.into(),
+                        values.into(),
+                        Some(validity.into()),
+                    )
+                };
+                (self.name(), ar).into()
+            }
+        };
+
         ca.set_sorted(options.descending);
         ca
     }
@@ -773,5 +839,49 @@ mod test {
         assert!(out.frame_equal(&expected));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_sort_utf8() {
+        let ca =
+            Utf8Chunked::new_from_opt_slice("a", &[Some("a"), None, Some("c"), None, Some("b")]);
+        let out = ca.sort_with(SortOptions {
+            descending: false,
+            nulls_last: false,
+        });
+        let expected = &[None, None, Some("a"), Some("b"), Some("c")];
+        assert_eq!(Vec::from(&out), expected);
+
+        let out = ca.sort_with(SortOptions {
+            descending: true,
+            nulls_last: false,
+        });
+
+        let expected = &[None, None, Some("c"), Some("b"), Some("a")];
+        assert_eq!(Vec::from(&out), expected);
+
+        let out = ca.sort_with(SortOptions {
+            descending: false,
+            nulls_last: true,
+        });
+        let expected = &[Some("a"), Some("b"), Some("c"), None, None];
+        assert_eq!(Vec::from(&out), expected);
+
+        let out = ca.sort_with(SortOptions {
+            descending: true,
+            nulls_last: true,
+        });
+        let expected = &[Some("c"), Some("b"), Some("a"), None, None];
+        assert_eq!(Vec::from(&out), expected);
+
+        // no nulls
+        let ca = Utf8Chunked::new_from_opt_slice("a", &[Some("a"), Some("c"), Some("b")]);
+        let out = ca.sort(false);
+        let expected = &[Some("a"), Some("b"), Some("c")];
+        assert_eq!(Vec::from(&out), expected);
+
+        let out = ca.sort(true);
+        let expected = &[Some("c"), Some("b"), Some("a")];
+        assert_eq!(Vec::from(&out), expected);
     }
 }
