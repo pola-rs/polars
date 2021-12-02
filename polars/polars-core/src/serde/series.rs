@@ -159,11 +159,11 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(Series::new(&name, values))
                     }
                     DeDataType::Utf8 => {
-                        let values: Vec<Option<&str>> = map.next_value()?;
+                        let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
                     DeDataType::List => {
-                        let values: Vec<Series> = map.next_value()?;
+                        let values: Vec<Option<Series>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     }
                     dt => {

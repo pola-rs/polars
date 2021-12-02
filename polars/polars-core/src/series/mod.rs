@@ -182,13 +182,13 @@ impl Series {
         Ok(self)
     }
 
-    /// Sort in place.
-    pub fn sort_in_place(&mut self, reverse: bool) -> &mut Self {
-        self.get_inner_mut().sort_in_place(reverse);
-        self
+    pub fn sort(&self, reverse: bool) -> Self {
+        self.sort_with(SortOptions {
+            descending: reverse,
+            ..Default::default()
+        })
     }
 
-    /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> Result<usize> {
         self.get_inner_mut().as_single_ptr()
@@ -198,10 +198,16 @@ impl Series {
     pub fn cast(&self, dtype: &DataType) -> Result<Self> {
         self.0.cast(dtype)
     }
+
+    /// Compute the sum of all values in this Series.
     /// Returns `None` if the array is empty or only contains null values.
+    ///
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+    /// first cast to `Int64` to prevent overflow issues.
+    ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
+    /// let s = Series::new("days", &[1, 2, 3]);
     /// assert_eq!(s.sum(), Some(6));
     /// ```
     pub fn sum<T>(&self) -> Option<T>
@@ -482,6 +488,18 @@ impl Series {
         UInt64Chunked::new_from_aligned_vec(self.name(), self.0.vec_hash(build_hasher))
     }
 
+    /// Get the sum of the Series as a new Series of length 1.
+    ///
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+    /// first cast to `Int64` to prevent overflow issues.
+    pub fn sum_as_series(&self) -> Series {
+        use DataType::*;
+        match self.dtype() {
+            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
+            _ => self._sum_as_series(),
+        }
+    }
+
     /// Get an array with the cumulative max computed at every element
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cummax(&self, _reverse: bool) -> Series {
@@ -509,12 +527,17 @@ impl Series {
     }
 
     /// Get an array with the cumulative sum computed at every element
+    ///
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+    /// first cast to `Int64` to prevent overflow issues.
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cumsum(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
+            use DataType::*;
             match self.dtype() {
-                DataType::Boolean => self.cast(&DataType::UInt32).unwrap()._cumsum(_reverse),
+                Boolean => self.cast(&DataType::UInt32).unwrap()._cumsum(_reverse),
+                Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap()._cumsum(_reverse),
                 _ => self._cumsum(_reverse),
             }
         }
@@ -525,12 +548,17 @@ impl Series {
     }
 
     /// Get an array with the cumulative product computed at every element
+    ///
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+    /// first cast to `Int64` to prevent overflow issues.
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
     pub fn cumprod(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
+            use DataType::*;
             match self.dtype() {
-                DataType::Boolean => self.cast(&DataType::UInt32).unwrap()._cumprod(_reverse),
+                Boolean => self.cast(&UInt32).unwrap()._cumprod(_reverse),
+                Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap()._cumprod(_reverse),
                 _ => self._cumprod(_reverse),
             }
         }

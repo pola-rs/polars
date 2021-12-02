@@ -704,7 +704,11 @@ class DataFrame:
 
         >>> import pandas
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
         >>> pandas_df = df.to_pandas()
         >>> type(pandas_df)
@@ -722,7 +726,7 @@ class DataFrame:
         Write Dataframe to comma-separated values file (csv).
 
         Parameters
-        ---
+        ----------
         file
             File path to which the file should be written.
         has_headers
@@ -740,7 +744,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c", "d", "e"],
         ...     }
         ... )
-        ... df.to_csv("new_file.csv", sep=",")
+        >>> df.to_csv("new_file.csv", sep=",")
 
         """
         if file is None:
@@ -757,9 +761,7 @@ class DataFrame:
     def to_ipc(
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
-        compression: Optional[
-            Union[Literal["uncompressed", "lz4", "zstd"], str]
-        ] = "uncompressed",
+        compression: Optional[Literal["uncompressed", "lz4", "zstd"]] = "uncompressed",
     ) -> None:
         """
         Write to Arrow IPC binary stream, or a feather file.
@@ -844,7 +846,8 @@ class DataFrame:
         │ 1   ┆ 2   ┆ 3   │
         └─────┴─────┴─────┘
 
-        >>> # include the header as a separate column
+        Include the header as a separate column
+
         >>> df.transpose(
         ...     include_header=True, header_name="foo", column_names=["a", "b", "c"]
         ... )
@@ -859,7 +862,8 @@ class DataFrame:
         │ b   ┆ 1   ┆ 2   ┆ 3   │
         └─────┴─────┴─────┴─────┘
 
-        >>> # replace the auto generated column with column names from a generator function
+        Replace the auto generated column with column names from a generator function
+
         >>> def name_generator():
         ...     base_name = "my_column_"
         ...     count = 0
@@ -1285,7 +1289,11 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
         >>> df.to_series(1)
         shape: (3,)
@@ -1365,7 +1373,9 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> # Filter on one condition
+
+        Filter on one condition:
+
         >>> df.filter(pl.col("foo") < 3)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -1378,7 +1388,8 @@ class DataFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
-        >>> # Filter on multiple conditions
+        Filter on multiple conditions:
+
         >>> df.filter((pl.col("foo") < 3) & (pl.col("ham") == "a"))
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -1456,7 +1467,9 @@ class DataFrame:
         ... )
         >>> df.columns
         ['foo', 'bar', 'ham']
-        >>> # Set column names
+
+        Set column names:
+
         >>> df.columns = ["apple", "banana", "orange"]
         shape: (3, 3)
         ╭───────┬────────┬────────╮
@@ -1925,7 +1938,8 @@ class DataFrame:
         │ null ┆ 1    ┆ 1    │
         └──────┴──────┴──────┘
 
-        >>> # drop a row only if all values are null
+        Drop a row only if all values are null:
+
         >>> df.filter(
         ...     ~pl.fold(
         ...         acc=True,
@@ -1946,7 +1960,8 @@ class DataFrame:
         │ null ┆ 1   ┆ 1    │
         └──────┴─────┴──────┘
 
-        >>> # drop a column if all values are null
+        Drop a column if all values are null:
+
         >>> df[:, [not (s.null_count() == df.height) for s in df]]
         shape: (4, 2)
         ┌──────┬──────┐
@@ -2113,7 +2128,6 @@ class DataFrame:
         ...     }
         ... )
         >>> df["A"] = df["A"].str.strptime(pl.Date, "%Y-%m-%d")
-        >>>
         >>> df.downsample("A", rule="day", n=3).agg(
         ...     {"B": "max", "C": "min", "D": "last"}
         ... )
@@ -2162,18 +2176,18 @@ class DataFrame:
         low = bounds["low"].dt[0]
         high = bounds["high"].dt[0]
         upsampled = pli.date_range(low, high, interval, name=by)
-        return DataFrame(upsampled).join(self, on=by, how="left")  # type: ignore
+        return DataFrame(upsampled).join(self, on=by, how="left")
 
     def join(
         self,
         df: "DataFrame",
         left_on: Optional[
-            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
         ] = None,
         right_on: Optional[
-            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
         ] = None,
-        on: Optional[Union[str, tp.List[str]]] = None,
+        on: Optional[Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]] = None,
         how: str = "inner",
         suffix: str = "_right",
         asof_by: Optional[Union[str, tp.List[str]]] = None,
@@ -2208,6 +2222,7 @@ class DataFrame:
             join on these columns before doing asof join
         asof_by_right
             join on these columns before doing asof join
+
         Returns
         -------
             Joined DataFrame
@@ -2255,8 +2270,7 @@ class DataFrame:
         │ 3    ┆ 8    ┆ "c" ┆ null  │
         ╰──────┴──────┴─────┴───────╯
 
-        Asof join
-        =========
+        **Asof join**
         This is similar to a left-join except that we match on nearest key rather than equal keys.
         The keys must be sorted to perform an asof join
 
@@ -2264,15 +2278,15 @@ class DataFrame:
         if how == "cross":
             return wrap_df(self._df.join(df._df, [], [], how, suffix))
 
-        left_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        left_on_: Optional[tp.List[Union[str, pli.Expr]]]
         if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]  # type: ignore[assignment]
+            left_on_ = [left_on]
         else:
             left_on_ = left_on
 
-        right_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        right_on_: Optional[tp.List[Union[str, pli.Expr]]]
         if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]  # type: ignore[assignment]
+            right_on_ = [right_on]
         else:
             right_on_ = right_on
 
@@ -2864,6 +2878,7 @@ class DataFrame:
             Sequence[bool],
             Sequence[int],
             Sequence[float],
+            "pli.Series",
         ],
     ) -> "DataFrame":
         """
@@ -3308,7 +3323,8 @@ class DataFrame:
 
         Examples
         --------
-        >>> # A horizontal sum operation
+        A horizontal sum operation:
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [2, 1, 3],
@@ -3324,7 +3340,9 @@ class DataFrame:
             9
         ]
 
-        >>> # A horizontal minimum operation
+        A horizontal minimum operation:
+
+        >>> df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
         >>> df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2))
         Series: 'a' [f64]
         [
@@ -3333,7 +3351,8 @@ class DataFrame:
             3
         ]
 
-        >>> # A horizontal string concattenation
+        A horizontal string concattenation:
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["foo", "bar", 2],
@@ -3449,7 +3468,7 @@ class DataFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
-        return self.select(pli.col("*").interpolate())  # type: ignore
+        return self.select(pli.col("*").interpolate())
 
     def is_empty(self) -> bool:
         """
@@ -3591,17 +3610,19 @@ class GroupBy:
         column_to_agg
             map column to aggregation functions.
 
-            Examples:
-                ## use lazy API syntax (recommended)
-                [pl.col("foo").sum(), pl.col("bar").min()]
+        Use lazy API syntax (recommended)
 
-                ## column name to aggregation with tuples:
-                [("foo", ["sum", "n_unique", "min"]),
-                 ("bar": ["max"])]
+        >>> [pl.col("foo").sum(), pl.col("bar").min()]
 
-                ## column name to aggregation with dict:
-                {"foo": ["sum", "n_unique", "min"],
-                 "bar": "max"}
+        Column name to aggregation with tuples:
+
+        >>> [
+        ...     ("foo", ["sum", "n_unique", "min"]),
+        ...     ("bar", ["max"]),
+        ... ]
+
+        Column name to aggregation with dict:
+        >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}
 
         Returns
         -------
@@ -3611,23 +3632,21 @@ class GroupBy:
         Examples
         --------
 
-        >>> # use lazy API
-        >>> (
-        ...     df.groupby(["foo", "bar"]).agg(
-        ...         [
-        ...             pl.sum("ham"),
-        ...             pl.col("spam").tail(4).sum(),
-        ...         ]
-        ...     )
+        Use lazy API:
+
+        >>> df.groupby(["foo", "bar"]).agg(
+        ...     [
+        ...         pl.sum("ham"),
+        ...         pl.col("spam").tail(4).sum(),
+        ...     ]
         ... )
 
-        >>> # use a dict
-        >>> (
-        ...     df.groupby(["foo", "bar"]).agg(
-        ...         {
-        ...             "spam": ["sum", "min"],
-        ...         }
-        ...     )
+        Use a dict:
+
+        >>> df.groupby(["foo", "bar"]).agg(
+        ...     {
+        ...         "spam": ["sum", "min"],
+        ...     }
         ... )
 
         """
@@ -3712,7 +3731,7 @@ class GroupBy:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
-        >>> (df.groupby("letters").head(2).sort("letters"))
+        >>> df.groupby("letters").head(2).sort("letters")
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │
@@ -3735,7 +3754,7 @@ class GroupBy:
             wrap_df(self._df)
             .lazy()
             .groupby(self.by, self.maintain_order)
-            .head(n)  # type: ignore[arg-type]
+            .head(n)
             .collect(no_optimization=True, string_cache=False)
         )
 
@@ -3799,7 +3818,7 @@ class GroupBy:
             wrap_df(self._df)
             .lazy()
             .groupby(self.by, self.maintain_order)
-            .tail(n)  # type: ignore[arg-type]
+            .tail(n)
             .collect(no_optimization=True, string_cache=False)
         )
 

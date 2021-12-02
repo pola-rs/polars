@@ -41,9 +41,9 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             expr: to_aexpr(*expr, arena),
             idx: to_aexpr(*idx, arena),
         },
-        Expr::Sort { expr, reverse } => AExpr::Sort {
+        Expr::Sort { expr, options } => AExpr::Sort {
             expr: to_aexpr(*expr, arena),
-            reverse,
+            options,
         },
         Expr::SortBy { expr, by, reverse } => AExpr::SortBy {
             expr: to_aexpr(*expr, arena),
@@ -450,11 +450,11 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 strict,
             }
         }
-        AExpr::Sort { expr, reverse } => {
+        AExpr::Sort { expr, options } => {
             let exp = node_to_exp(expr, expr_arena);
             Expr::Sort {
                 expr: Box::new(exp),
-                reverse,
+                options,
             }
         }
         AExpr::Take { expr, idx } => {

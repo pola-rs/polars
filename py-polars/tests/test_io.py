@@ -66,7 +66,7 @@ def test_compressed_to_ipc() -> None:
 
     for compression in compressions:
         f = io.BytesIO()
-        df.to_ipc(f, compression)
+        df.to_ipc(f, compression)  # type: ignore
         f.seek(0)
 
         df_read = pl.read_ipc(f, use_pyarrow=False)

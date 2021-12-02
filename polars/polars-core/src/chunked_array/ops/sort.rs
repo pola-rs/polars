@@ -7,9 +7,64 @@ use polars_arrow::prelude::ValueSize;
 use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
 use std::cmp::Ordering;
+use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 #[cfg(feature = "dtype-categorical")]
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
+
+/// # Safety
+/// only may produce true, for f32/f64::NaN
+pub unsafe trait PlIsNan {
+    fn isnan(&self) -> bool {
+        false
+    }
+}
+
+unsafe impl PlIsNan for f32 {
+    fn isnan(&self) -> bool {
+        self.is_nan()
+    }
+}
+unsafe impl PlIsNan for f64 {
+    fn isnan(&self) -> bool {
+        self.is_nan()
+    }
+}
+
+unsafe impl PlIsNan for u8 {}
+unsafe impl PlIsNan for u16 {}
+unsafe impl PlIsNan for u32 {}
+unsafe impl PlIsNan for u64 {}
+unsafe impl PlIsNan for i8 {}
+unsafe impl PlIsNan for i16 {}
+unsafe impl PlIsNan for i32 {}
+unsafe impl PlIsNan for i64 {}
+
+/// Reverse sorting when there are no nulls
+fn order_reverse<T: PartialOrd + PlIsNan>(a: &T, b: &T) -> Ordering {
+    b.partial_cmp(a).unwrap()
+}
+
+/// Default sorting when there are no nulls
+fn order_default<T: PartialOrd>(a: &T, b: &T) -> Ordering {
+    a.partial_cmp(b).unwrap()
+}
+
+fn order_default_flt<T: PartialOrd + PlIsNan>(a: &T, b: &T) -> Ordering {
+    a.partial_cmp(b).unwrap_or_else(|| {
+        match (a.isnan(), b.isnan()) {
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+            // Safety: PlIsNan is only implemented for numbers
+            _ => unsafe { unreachable_unchecked() },
+        }
+    })
+}
+
+fn order_reverse_flt<T: PartialOrd + PlIsNan>(a: &T, b: &T) -> Ordering {
+    order_default_flt(b, a)
+}
 
 /// Sort with null values, to reverse, swap the arguments.
 fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
@@ -19,34 +74,6 @@ fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
         (Some(_), None) => Ordering::Greater,
         (None, None) => Ordering::Equal,
     }
-}
-
-/// Reverse sorting when there are no nulls
-fn order_reverse<T: PartialOrd>(a: &T, b: &T) -> Ordering {
-    b.partial_cmp(a).unwrap_or_else(|| {
-        // nan != nan
-        #[allow(clippy::eq_op)]
-        if a != a {
-            Ordering::Greater
-        } else {
-            Ordering::Less
-        }
-    })
-}
-
-/// Default sorting when there are no nulls
-fn order_default<T: PartialOrd>(a: &T, b: &T) -> Ordering {
-    a.partial_cmp(b).unwrap_or_else(|| {
-        // nan != nan
-        // this is a simple way to check if it is nan
-        // without convincing the compiler we deal with floats
-        #[allow(clippy::eq_op)]
-        if a != a {
-            Ordering::Less
-        } else {
-            Ordering::Greater
-        }
-    })
 }
 
 /// Default sorting nulls
@@ -138,41 +165,59 @@ where
     vals
 }
 
-impl<T> ChunkSort<T> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: Default,
-{
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
-        if self.is_empty() {
-            return self.clone();
+macro_rules! sort_with_fast_path {
+    ($ca:ident, $options:expr) => {{
+        if $ca.is_empty() {
+            return $ca.clone();
         }
 
-        if options.descending && self.is_sorted_reverse() || self.is_sorted() {
+        if $options.descending && $ca.is_sorted_reverse() || $ca.is_sorted() {
             // there are nulls
-            if self.has_validity() {
+            if $ca.has_validity() {
                 // if the nulls are already last we can clone
-                if options.nulls_last && self.get(self.len() - 1).is_none()  ||
+                if $options.nulls_last && $ca.get($ca.len() - 1).is_none()  ||
                 // if the nulls are already first we can clone
-                self.get(0).is_none()
+                $ca.get(0).is_none()
                 {
-                    return self.clone();
+                    return $ca.clone();
                 }
                 // nulls are not at the right place
                 // continue w/ sorting
                 // TODO: we can optimize here and just put the null at the correct place
             } else {
-                return self.clone();
+                return $ca.clone();
             }
         }
+
+
+    }}
+}
+
+impl<T> ChunkSort<T> for ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: Default + PlIsNan,
+{
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
+        sort_with_fast_path!(self, options);
         if !self.has_validity() {
             let mut vals = memcpy_values(self);
-            sort_branch(
-                vals.as_mut_slice(),
-                options.descending,
-                order_default,
-                order_reverse,
-            );
+
+            if matches!(self.dtype(), DataType::Float32 | DataType::Float64) {
+                sort_branch(
+                    vals.as_mut_slice(),
+                    options.descending,
+                    order_default_flt,
+                    order_reverse_flt,
+                );
+            } else {
+                sort_branch(
+                    vals.as_mut_slice(),
+                    options.descending,
+                    order_default,
+                    order_reverse,
+                );
+            }
 
             ChunkedArray::new_from_aligned_vec(self.name(), vals)
         } else {
@@ -197,7 +242,17 @@ where
             } else {
                 &mut vals[null_count..]
             };
-            sort_branch(mut_slice, options.descending, order_default, order_reverse);
+
+            if matches!(self.dtype(), DataType::Float32 | DataType::Float64) {
+                sort_branch(
+                    mut_slice,
+                    options.descending,
+                    order_default_flt,
+                    order_reverse_flt,
+                );
+            } else {
+                sort_branch(mut_slice, options.descending, order_default, order_reverse);
+            }
 
             let mut ca: Self = if options.nulls_last {
                 vals.extend(std::iter::repeat(T::Native::default()).take(self.null_count()));
@@ -242,11 +297,6 @@ where
         })
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
-        let mut sorted = self.sort(reverse);
-        self.chunks = std::mem::take(&mut sorted.chunks);
-    }
-
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         if !self.has_validity() {
             let mut vals = Vec::with_capacity(self.len());
@@ -264,8 +314,8 @@ where
             argsort_branch(
                 vals.as_mut_slice(),
                 reverse,
-                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
+                |(_, a), (_, b)| order_default(a, b),
+                |(_, a), (_, b)| order_reverse(a, b),
             );
 
             let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
@@ -407,7 +457,7 @@ fn ordering_other_columns<'a>(
 }
 
 macro_rules! sort {
-    ($self:ident, $reverse:ident) => {{
+    ($self:ident, $reverse:expr) => {{
         if $reverse {
             $self
                 .into_iter()
@@ -423,11 +473,17 @@ macro_rules! sort {
 }
 
 impl ChunkSort<Utf8Type> for Utf8Chunked {
-    fn sort(&self, reverse: bool) -> Utf8Chunked {
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
+        sort_with_fast_path!(self, options);
+        assert!(
+            !options.nulls_last,
+            "null last not yet supported for utf8 dtype"
+        );
+
         let mut v = Vec::from_iter(self);
         sort_branch(
             v.as_mut_slice(),
-            reverse,
+            options.descending,
             order_default_null,
             order_reverse_null,
         );
@@ -436,13 +492,15 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
         v.into_iter().for_each(|opt_v| builder.append_option(opt_v));
         let mut ca = builder.finish();
-        ca.set_sorted(reverse);
+        ca.set_sorted(options.descending);
         ca
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
-        let mut sorted = self.sort(reverse);
-        self.chunks = std::mem::take(&mut sorted.chunks);
+    fn sort(&self, reverse: bool) -> Utf8Chunked {
+        self.sort_with(SortOptions {
+            descending: reverse,
+            nulls_last: false,
+        })
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
@@ -504,12 +562,12 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
 
 #[cfg(feature = "dtype-categorical")]
 impl ChunkSort<CategoricalType> for CategoricalChunked {
-    fn sort(&self, reverse: bool) -> Self {
-        self.deref().sort(reverse).into()
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<CategoricalType> {
+        self.deref().sort_with(options).into()
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
-        self.deref_mut().sort_in_place(reverse)
+    fn sort(&self, reverse: bool) -> Self {
+        self.deref().sort(reverse).into()
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
@@ -518,13 +576,20 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
 }
 
 impl ChunkSort<BooleanType> for BooleanChunked {
-    fn sort(&self, reverse: bool) -> BooleanChunked {
-        sort!(self, reverse)
+    fn sort_with(&self, options: SortOptions) -> ChunkedArray<BooleanType> {
+        sort_with_fast_path!(self, options);
+        assert!(
+            !options.nulls_last,
+            "null last not yet supported for bool dtype"
+        );
+        sort!(self, options.descending)
     }
 
-    fn sort_in_place(&mut self, reverse: bool) {
-        let mut sorted = self.sort(reverse);
-        self.chunks = std::mem::take(&mut sorted.chunks);
+    fn sort(&self, reverse: bool) -> BooleanChunked {
+        self.sort_with(SortOptions {
+            descending: reverse,
+            nulls_last: false,
+        })
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {

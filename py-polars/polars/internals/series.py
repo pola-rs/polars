@@ -700,6 +700,11 @@ class Series:
         """
         Reduce this Series to the sum value.
 
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -941,6 +946,11 @@ class Series:
         reverse
             reverse the operation.
 
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -1012,6 +1022,11 @@ class Series:
         ----------
         reverse
             reverse the operation.
+
+        Notes
+        -----
+        Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+        Int64 before summing to prevent overflow issues.
 
         Examples
         --------
@@ -1229,7 +1244,7 @@ class Series:
 
         """
         if in_place:
-            self._s.sort_in_place(reverse)
+            self._s = self._s.sort(reverse)
             return self
         else:
             return wrap_s(self._s.sort(reverse))
@@ -1261,7 +1276,7 @@ class Series:
 
     def arg_sort(self, reverse: bool = False) -> "Series":
         """
-        ..deprecate::
+        .. deprecated::
 
         Index location of the sorted variant of this Series.
 
@@ -1514,9 +1529,9 @@ class Series:
         ]
 
         """
-        if type(other) is list:
+        if isinstance(other, list):
             other = Series("", other)
-        return wrap_s(self._s.is_in(other._s))  # type: ignore
+        return wrap_s(self._s.is_in(other._s))
 
     def arg_true(self) -> "Series":
         """
@@ -1823,10 +1838,12 @@ class Series:
 
             This function can lead to undefined behavior in the following cases:
 
-            >>> # returns a view to a piece of memory that is already dropped.
+            Returns a view to a piece of memory that is already dropped:
+
             >>> pl.Series([1, 3, 5]).sort().view()
 
-            >>> # Sums invalid data that is missing.
+            Sums invalid data that is missing:
+
             >>> pl.Series([1, 2, None]).view().sum()
 
         """
@@ -1839,7 +1856,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array__(self, dtype=None) -> np.ndarray:  # type: ignore
+    def __array__(self, dtype: Any = None) -> np.ndarray:
         return self.to_numpy().__array__(dtype)
 
     def __array_ufunc__(
@@ -2006,10 +2023,10 @@ class Series:
         """
         return wrap_s(self._s.clone())
 
-    def __copy__(self) -> "Series":  # type: ignore
+    def __copy__(self) -> "Series":
         return self.clone()
 
-    def __deepcopy__(self, memodict={}) -> "Series":  # type: ignore
+    def __deepcopy__(self, memodict: Any = {}) -> "Series":
         return self.clone()
 
     def fill_null(self, strategy: Union[str, int, "pli.Expr"]) -> "Series":
@@ -2323,7 +2340,7 @@ class Series:
             Fill None values with the result of this expression.
         """
         return self.to_frame().select(
-            pli.col(self.name).shift_and_fill(periods, fill_value)  # type: ignore
+            pli.col(self.name).shift_and_fill(periods, fill_value)
         )[self.name]
 
     def zip_with(self, mask: "Series", other: "Series") -> "Series":
@@ -2594,16 +2611,19 @@ class Series:
         Allows a custom rolling window function.
         Prefer the specific rolling window functions over this one, as they are faster.
         Prefer:
+
             * rolling_min
             * rolling_max
             * rolling_mean
             * rolling_sum
+
         Parameters
         ----------
         window_size
             Size of the rolling window
         function
             Aggregation function
+
         Examples
         --------
         >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
@@ -2619,7 +2639,7 @@ class Series:
         ]
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_apply(window_size, function)  # type: ignore
+            pli.col(self.name).rolling_apply(window_size, function)
         )[self.name]
 
     def rolling_median(self, window_size: int) -> "Series":
@@ -2631,9 +2651,9 @@ class Series:
         window_size
             Size of the rolling window
         """
-        return self.to_frame().select(
-            pli.col(self.name).rolling_median(window_size)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).rolling_median(window_size))[
+            self.name
+        ]
 
     def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
         """
@@ -2647,19 +2667,22 @@ class Series:
             quantile to compute
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_quantile(window_size, quantile)  # type: ignore
+            pli.col(self.name).rolling_quantile(window_size, quantile)
         )[self.name]
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
         """
         Compute a rolling skew
+
+        Parameters
+        ----------
         window_size
             Size of the rolling window
         bias
             If False, then the calculations are corrected for statistical bias.
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_skew(window_size, bias)  # type: ignore
+            pli.col(self.name).rolling_skew(window_size, bias)
         )[self.name]
 
     def sample(
@@ -2671,6 +2694,15 @@ class Series:
         """
         Sample from this Series by setting either `n` or `frac`.
 
+        Parameters
+        ----------
+        n
+            Number of samples < self.len().
+        frac
+            Fraction between 0.0 and 1.0 .
+        with_replacement
+            sample with replacement.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
@@ -2681,15 +2713,6 @@ class Series:
                 1
                 5
         ]
-
-        Parameters
-        ----------
-        n
-            Number of samples < self.len().
-        frac
-            Fraction between 0.0 and 1.0 .
-        with_replacement
-            sample with replacement.
         """
         if n is not None:
             return wrap_s(self._s.sample_n(n, with_replacement))
@@ -2761,27 +2784,6 @@ class Series:
             series = self.clone()
             series._s.shrink_to_fit()
             return series
-
-    @property
-    def dt(self) -> "DateTimeNameSpace":
-        """
-        Create an object namespace of all datetime related methods.
-        """
-        return DateTimeNameSpace(self)
-
-    @property
-    def arr(self) -> "ListNameSpace":
-        """
-        Create an object namespace of all list related methods.
-        """
-        return ListNameSpace(self)
-
-    @property
-    def str(self) -> "StringNameSpace":
-        """
-        Create an object namespace of all string related methods.
-        """
-        return StringNameSpace(self)
 
     def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pli.Series":
         """
@@ -2855,7 +2857,7 @@ class Series:
         """
         return wrap_s(self._s.abs())
 
-    def rank(self, method: str = "average") -> "Series":  # type: ignore
+    def rank(self, method: str = "average") -> "Series":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -2879,10 +2881,11 @@ class Series:
                 the order that the values occur in `a`.
               * 'random': Like 'ordinal', but the rank for ties is not dependent
                 on the order that the values occur in `a`.
+
         """
         return wrap_s(self._s.rank(method))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":  # type: ignore
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":
         """
         Calculate the n-th discrete difference.
 
@@ -2915,19 +2918,21 @@ class Series:
         -----
         The sample skewness is computed as the Fisher-Pearson coefficient
         of skewness, i.e.
-        .. math::
-            g_1=\frac{m_3}{m_2^{3/2}}
+
+        .. math:: g_1=\frac{m_3}{m_2^{3/2}}
+
         where
-        .. math::
-            m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
+        .. math:: m_i=\frac{1}{N}\sum_{n=1}^N(x[n]-\bar{x})^i
+
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
         the sample mean.  If ``bias`` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
-        .. math::
-            G_1=\frac{k_3}{k_2^{3/2}}=
-                \frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}.
+
+        .. math::  G_1=\frac{k_3}{k_2^{3/2}}=\frac{\sqrt{N(N-1)}}{N-2}\frac{m_3}{m_2^{3/2}}
+
         """
         return self._s.skew(bias)
 
@@ -2960,11 +2965,11 @@ class Series:
         min_val, max_val
             Minimum and maximum value.
         """
-        return self.to_frame().select(
-            pli.col(self.name).clip(min_val, max_val)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
+            self.name
+        ]
 
-    def str_concat(self, delimiter: str = "-") -> "Series":  # type: ignore
+    def str_concat(self, delimiter: str = "-") -> "Series":
         """
         Vertically concat the values in the Series to a single string value.
 
@@ -2973,13 +2978,14 @@ class Series:
         Series of dtype Utf8
 
         Examples
+        --------
         >>> pl.Series([1, None, 2]).str_concat("-")[0]
         "1-null-2"
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).str_concat(delimiter)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).str_concat(delimiter))[
+            self.name
+        ]
 
     def reshape(self, dims: tp.Tuple[int, ...]) -> "Series":
         """
@@ -2998,6 +3004,30 @@ class Series:
         Series
         """
         return wrap_s(self._s.reshape(dims))
+
+    # Below are the namespaces defined. Do not move these up in the definition of Series, as it confuses mypy between the
+    # type annotation `str` and the namespace "str
+
+    @property
+    def dt(self) -> "DateTimeNameSpace":
+        """
+        Create an object namespace of all datetime related methods.
+        """
+        return DateTimeNameSpace(self)
+
+    @property
+    def arr(self) -> "ListNameSpace":
+        """
+        Create an object namespace of all list related methods.
+        """
+        return ListNameSpace(self)
+
+    @property
+    def str(self) -> "StringNameSpace":
+        """
+        Create an object namespace of all string related methods.
+        """
+        return StringNameSpace(self)
 
 
 class StringNameSpace:
@@ -3309,14 +3339,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime, timedelta
-        >>> import polars as pl
         >>> date_range = pl.date_range(
         ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
         ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
         ...     interval=timedelta(minutes=8),
         ...     name="date_range",
         ... )
-        >>>
         >>> date_range.dt.buckets(timedelta(minutes=8))
         shape: (8,)
         Series: 'date_range' [datetime]
@@ -3331,7 +3359,8 @@ class DateTimeNameSpace:
             2000-10-02 00:18:00
         ]
 
-        >>> # can be used to perform a downsample operation
+        Can be used to perform a downsample operation:
+
         >>> (
         ...     date_range.to_frame()
         ...     .groupby(

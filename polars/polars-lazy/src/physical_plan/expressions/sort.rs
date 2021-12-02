@@ -6,15 +6,15 @@ use std::sync::Arc;
 
 pub struct SortExpr {
     pub(crate) physical_expr: Arc<dyn PhysicalExpr>,
-    pub(crate) reverse: bool,
+    pub(crate) options: SortOptions,
     expr: Expr,
 }
 
 impl SortExpr {
-    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, reverse: bool, expr: Expr) -> Self {
+    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, options: SortOptions, expr: Expr) -> Self {
         Self {
             physical_expr,
-            reverse,
+            options,
             expr,
         }
     }
@@ -27,7 +27,7 @@ impl PhysicalExpr for SortExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
-        Ok(series.sort(self.reverse))
+        Ok(series.sort_with(self.options))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -49,7 +49,7 @@ impl PhysicalExpr for SortExpr {
                 let group =
                     unsafe { series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
 
-                let sorted_idx = group.argsort(self.reverse);
+                let sorted_idx = group.argsort(self.options.descending);
 
                 let new_idx: Vec<_> = sorted_idx
                     .cont_slice()
@@ -90,7 +90,7 @@ impl PhysicalAggregation for SortExpr {
         let agg_s = agg_s
             .list()
             .unwrap()
-            .apply_amortized(|s| s.as_ref().sort(self.reverse))
+            .apply_amortized(|s| s.as_ref().sort_with(self.options))
             .into_series();
         Ok(Some(agg_s))
     }

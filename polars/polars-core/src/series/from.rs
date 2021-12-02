@@ -5,6 +5,7 @@ use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;
 use polars_arrow::compute::cast::cast;
+use std::borrow::Cow;
 use std::convert::TryFrom;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
@@ -30,6 +31,24 @@ impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
 impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
     fn new(name: &str, v: T) -> Self {
         Utf8Chunked::new_from_opt_slice(name, v.as_ref()).into_series()
+    }
+}
+
+impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
+            .into_series()
+    }
+}
+impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_opt_iter(
+            name,
+            v.as_ref()
+                .iter()
+                .map(|opt| opt.as_ref().map(|value| value.as_ref())),
+        )
+        .into_series()
     }
 }
 
@@ -75,6 +94,28 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
         let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
         for series in series_slice {
             builder.append_series(series)
+        }
+        builder.finish().into_series()
+    }
+}
+
+impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
+    fn new(name: &str, s: T) -> Self {
+        let series_slice = s.as_ref();
+        let values_cap = series_slice.iter().fold(0, |acc, opt_s| {
+            acc + opt_s.as_ref().map(|s| s.len()).unwrap_or(0)
+        });
+
+        let dt = series_slice
+            .iter()
+            .filter_map(|opt| opt.as_ref())
+            .next()
+            .expect("cannot create List Series from a slice of nulls")
+            .dtype();
+
+        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
+        for series in series_slice {
+            builder.append_opt_series(series.as_ref())
         }
         builder.finish().into_series()
     }

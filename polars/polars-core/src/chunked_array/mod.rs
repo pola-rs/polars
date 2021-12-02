@@ -155,6 +155,8 @@ pub struct ChunkedArray<T> {
     /// third bit dtype list: fast_explode
     ///     - unset: unknown or not all arrays have at least one value
     ///     - set: all list arrays are filled (this allows for cheap explode)
+    /// fourth bit: original local categorical
+    ///             meaning that n_unique is the same as the cat map length
     pub(crate) bit_settings: u8,
 }
 

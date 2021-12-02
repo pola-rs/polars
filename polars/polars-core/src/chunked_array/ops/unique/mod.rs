@@ -264,11 +264,17 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
 impl ChunkUnique<CategoricalType> for CategoricalChunked {
     fn unique(&self) -> Result<Self> {
         let cat_map = self.categorical_map.as_ref().unwrap();
-        let mut ca = match &**cat_map {
-            RevMapping::Local(a) => UInt32Chunked::new_from_iter(self.name(), 0..(a.len() as u32)),
-            RevMapping::Global(map, _, _) => {
-                UInt32Chunked::new_from_iter(self.name(), map.keys().copied())
+        let mut ca = if self.can_fast_unique() {
+            match &**cat_map {
+                RevMapping::Local(a) => {
+                    UInt32Chunked::new_from_iter(self.name(), 0..(a.len() as u32))
+                }
+                RevMapping::Global(map, _, _) => {
+                    UInt32Chunked::new_from_iter(self.name(), map.keys().copied())
+                }
             }
+        } else {
+            self.deref().unique()?
         };
         ca.categorical_map = self.categorical_map.clone();
         Ok(ca.into())
@@ -289,7 +295,11 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         impl_value_counts!(self)
     }
     fn n_unique(&self) -> Result<usize> {
-        Ok(self.categorical_map.as_ref().unwrap().len())
+        if self.can_fast_unique() {
+            Ok(self.categorical_map.as_ref().unwrap().len())
+        } else {
+            self.deref().n_unique()
+        }
     }
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Self> {
