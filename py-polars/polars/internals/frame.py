@@ -757,9 +757,7 @@ class DataFrame:
     def to_ipc(
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
-        compression: Optional[
-            Union[Literal["uncompressed", "lz4", "zstd"], str]
-        ] = "uncompressed",
+        compression: Optional[Literal["uncompressed", "lz4", "zstd"]] = "uncompressed",
     ) -> None:
         """
         Write to Arrow IPC binary stream, or a feather file.
@@ -2162,18 +2160,18 @@ class DataFrame:
         low = bounds["low"].dt[0]
         high = bounds["high"].dt[0]
         upsampled = pli.date_range(low, high, interval, name=by)
-        return DataFrame(upsampled).join(self, on=by, how="left")  # type: ignore
+        return DataFrame(upsampled).join(self, on=by, how="left")
 
     def join(
         self,
         df: "DataFrame",
         left_on: Optional[
-            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
         ] = None,
         right_on: Optional[
-            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
         ] = None,
-        on: Optional[Union[str, tp.List[str]]] = None,
+        on: Optional[Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]] = None,
         how: str = "inner",
         suffix: str = "_right",
         asof_by: Optional[Union[str, tp.List[str]]] = None,
@@ -2264,15 +2262,15 @@ class DataFrame:
         if how == "cross":
             return wrap_df(self._df.join(df._df, [], [], how, suffix))
 
-        left_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        left_on_: Optional[tp.List[Union[str, pli.Expr]]]
         if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]  # type: ignore[assignment]
+            left_on_ = [left_on]
         else:
             left_on_ = left_on
 
-        right_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        right_on_: Optional[tp.List[Union[str, pli.Expr]]]
         if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]  # type: ignore[assignment]
+            right_on_ = [right_on]
         else:
             right_on_ = right_on
 
@@ -2864,6 +2862,7 @@ class DataFrame:
             Sequence[bool],
             Sequence[int],
             Sequence[float],
+            "pli.Series",
         ],
     ) -> "DataFrame":
         """
@@ -3449,7 +3448,7 @@ class DataFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
-        return self.select(pli.col("*").interpolate())  # type: ignore
+        return self.select(pli.col("*").interpolate())
 
     def is_empty(self) -> bool:
         """
@@ -3735,7 +3734,7 @@ class GroupBy:
             wrap_df(self._df)
             .lazy()
             .groupby(self.by, self.maintain_order)
-            .head(n)  # type: ignore[arg-type]
+            .head(n)
             .collect(no_optimization=True, string_cache=False)
         )
 
@@ -3799,7 +3798,7 @@ class GroupBy:
             wrap_df(self._df)
             .lazy()
             .groupby(self.by, self.maintain_order)
-            .tail(n)  # type: ignore[arg-type]
+            .tail(n)
             .collect(no_optimization=True, string_cache=False)
         )
 

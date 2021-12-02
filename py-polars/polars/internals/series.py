@@ -1529,9 +1529,9 @@ class Series:
         ]
 
         """
-        if type(other) is list:
+        if isinstance(other, list):
             other = Series("", other)
-        return wrap_s(self._s.is_in(other._s))  # type: ignore
+        return wrap_s(self._s.is_in(other._s))
 
     def arg_true(self) -> "Series":
         """
@@ -1854,7 +1854,7 @@ class Series:
         array.setflags(write=False)
         return array
 
-    def __array__(self, dtype=None) -> np.ndarray:  # type: ignore
+    def __array__(self, dtype: Any = None) -> np.ndarray:
         return self.to_numpy().__array__(dtype)
 
     def __array_ufunc__(
@@ -2021,10 +2021,10 @@ class Series:
         """
         return wrap_s(self._s.clone())
 
-    def __copy__(self) -> "Series":  # type: ignore
+    def __copy__(self) -> "Series":
         return self.clone()
 
-    def __deepcopy__(self, memodict={}) -> "Series":  # type: ignore
+    def __deepcopy__(self, memodict: Any = {}) -> "Series":
         return self.clone()
 
     def fill_null(self, strategy: Union[str, int, "pli.Expr"]) -> "Series":
@@ -2338,7 +2338,7 @@ class Series:
             Fill None values with the result of this expression.
         """
         return self.to_frame().select(
-            pli.col(self.name).shift_and_fill(periods, fill_value)  # type: ignore
+            pli.col(self.name).shift_and_fill(periods, fill_value)
         )[self.name]
 
     def zip_with(self, mask: "Series", other: "Series") -> "Series":
@@ -2634,7 +2634,7 @@ class Series:
         ]
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_apply(window_size, function)  # type: ignore
+            pli.col(self.name).rolling_apply(window_size, function)
         )[self.name]
 
     def rolling_median(self, window_size: int) -> "Series":
@@ -2646,9 +2646,9 @@ class Series:
         window_size
             Size of the rolling window
         """
-        return self.to_frame().select(
-            pli.col(self.name).rolling_median(window_size)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).rolling_median(window_size))[
+            self.name
+        ]
 
     def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
         """
@@ -2662,7 +2662,7 @@ class Series:
             quantile to compute
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_quantile(window_size, quantile)  # type: ignore
+            pli.col(self.name).rolling_quantile(window_size, quantile)
         )[self.name]
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
@@ -2674,7 +2674,7 @@ class Series:
             If False, then the calculations are corrected for statistical bias.
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_skew(window_size, bias)  # type: ignore
+            pli.col(self.name).rolling_skew(window_size, bias)
         )[self.name]
 
     def sample(
@@ -2777,27 +2777,6 @@ class Series:
             series._s.shrink_to_fit()
             return series
 
-    @property
-    def dt(self) -> "DateTimeNameSpace":
-        """
-        Create an object namespace of all datetime related methods.
-        """
-        return DateTimeNameSpace(self)
-
-    @property
-    def arr(self) -> "ListNameSpace":
-        """
-        Create an object namespace of all list related methods.
-        """
-        return ListNameSpace(self)
-
-    @property
-    def str(self) -> "StringNameSpace":
-        """
-        Create an object namespace of all string related methods.
-        """
-        return StringNameSpace(self)
-
     def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pli.Series":
         """
         Hash the Series.
@@ -2870,7 +2849,7 @@ class Series:
         """
         return wrap_s(self._s.abs())
 
-    def rank(self, method: str = "average") -> "Series":  # type: ignore
+    def rank(self, method: str = "average") -> "Series":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -2897,7 +2876,7 @@ class Series:
         """
         return wrap_s(self._s.rank(method))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":  # type: ignore
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":
         """
         Calculate the n-th discrete difference.
 
@@ -2975,11 +2954,11 @@ class Series:
         min_val, max_val
             Minimum and maximum value.
         """
-        return self.to_frame().select(
-            pli.col(self.name).clip(min_val, max_val)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
+            self.name
+        ]
 
-    def str_concat(self, delimiter: str = "-") -> "Series":  # type: ignore
+    def str_concat(self, delimiter: str = "-") -> "Series":
         """
         Vertically concat the values in the Series to a single string value.
 
@@ -2992,9 +2971,9 @@ class Series:
         "1-null-2"
 
         """
-        return self.to_frame().select(
-            pli.col(self.name).str_concat(delimiter)  # type: ignore
-        )[self.name]
+        return self.to_frame().select(pli.col(self.name).str_concat(delimiter))[
+            self.name
+        ]
 
     def reshape(self, dims: tp.Tuple[int, ...]) -> "Series":
         """
@@ -3013,6 +2992,30 @@ class Series:
         Series
         """
         return wrap_s(self._s.reshape(dims))
+
+    # Below are the namespaces defined. Do not move these up in the definition of Series, as it confuses mypy between the
+    # type annotation `str` and the namespace "str
+
+    @property
+    def dt(self) -> "DateTimeNameSpace":
+        """
+        Create an object namespace of all datetime related methods.
+        """
+        return DateTimeNameSpace(self)
+
+    @property
+    def arr(self) -> "ListNameSpace":
+        """
+        Create an object namespace of all list related methods.
+        """
+        return ListNameSpace(self)
+
+    @property
+    def str(self) -> "StringNameSpace":
+        """
+        Create an object namespace of all string related methods.
+        """
+        return StringNameSpace(self)
 
 
 class StringNameSpace:

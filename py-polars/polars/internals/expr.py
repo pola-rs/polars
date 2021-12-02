@@ -25,7 +25,7 @@ from polars.datatypes import (
 
 
 def _selection_to_pyexpr_list(
-    exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]]]
+    exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]], "pli.Series"]
 ) -> tp.List["PyExpr"]:
     pyexpr_list: tp.List[PyExpr]
     if isinstance(exprs, Sequence) and not isinstance(exprs, str):
@@ -47,7 +47,7 @@ class Expr:
     """
 
     def __init__(self) -> None:
-        self._pyexpr: PyExpr
+        self._pyexpr: PyExpr  # pragma: no cover
 
     @staticmethod
     def _from_pyexpr(pyexpr: "PyExpr") -> "Expr":
@@ -166,7 +166,7 @@ class Expr:
         return wrap_expr(self._pyexpr.lt(other._pyexpr))
 
     def __neg__(self) -> "Expr":
-        return pli.lit(0) - self  # type: ignore
+        return pli.lit(0) - self
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -175,10 +175,11 @@ class Expr:
         Numpy universal functions.
         """
         out_type = ufunc(np.array([1])).dtype
+        dtype: Optional[Type[DataType]]
         if "float" in str(out_type):
-            dtype = Float64  # type: ignore
+            dtype = Float64
         else:
-            dtype = None  # type: ignore
+            dtype = None
 
         args = [inp for inp in inputs if not isinstance(inp, Expr)]
 
@@ -789,12 +790,12 @@ class Expr:
         Values taken by index
         """
         if isinstance(index, (list, np.ndarray)):
-            index = pli.lit(pli.Series("", index, dtype=UInt32))  # type: ignore
+            index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
         elif isinstance(index, pli.Series):
-            index = pli.lit(index)  # type: ignore
+            index_lit = pli.lit(index)
         else:
-            index = pli.expr_to_lit_or_expr(index, str_to_lit=False)  # type: ignore
-        return pli.wrap_expr(self._pyexpr.take(index._pyexpr))  # type: ignore
+            index_lit = pli.expr_to_lit_or_expr(index, str_to_lit=False)
+        return pli.wrap_expr(self._pyexpr.take(index_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> "Expr":
         """
@@ -808,7 +809,9 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: "Expr") -> "Expr":
+    def shift_and_fill(
+        self, periods: int, fill_value: Union[int, float, bool, str, "Expr"]
+    ) -> "Expr":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
@@ -823,7 +826,7 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.shift_and_fill(periods, fill_value._pyexpr))
 
-    def fill_null(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
+    def fill_null(self, fill_value: Union[int, float, bool, str, "Expr"]) -> "Expr":
         """
         Fill none value with a fill value or strategy
 
@@ -853,7 +856,7 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
 
-    def fill_nan(self, fill_value: Union[str, int, float, "Expr"]) -> "Expr":
+    def fill_nan(self, fill_value: Union[str, int, float, bool, "Expr"]) -> "Expr":
         """
         Fill none value with a fill value
         """
@@ -969,7 +972,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = DataFrame(
+        >>> df = pl.DataFrame(
         ...     {
         ...         "groups": [1, 1, 2, 2, 1, 2, 3, 3, 1],
         ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
@@ -1261,27 +1264,6 @@ class Expr:
             expr = self
         return ((expr > start) & (expr < end)).alias("is_between")
 
-    @property
-    def dt(self) -> "ExprDateTimeNameSpace":
-        """
-        Create an object namespace of all datetime related methods.
-        """
-        return ExprDateTimeNameSpace(self)
-
-    @property
-    def str(self) -> "ExprStringNameSpace":
-        """
-        Create an object namespace of all string related methods.
-        """
-        return ExprStringNameSpace(self)
-
-    @property
-    def arr(self) -> "ExprListNameSpace":
-        """
-        Create an object namespace of all datetime related methods.
-        """
-        return ExprListNameSpace(self)
-
     def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "Expr":
         """
         Hash the Series.
@@ -1315,7 +1297,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reinterpret(signed))
 
-    def inspect(self, fmt: str = "{}") -> "Expr":  # type: ignore
+    def inspect(self, fmt: str = "{}") -> "Expr":
         """
         Prints the value that this expression evaluates to and passes on the value.
 
@@ -1323,7 +1305,7 @@ class Expr:
         """
 
         def inspect(s: "pli.Series") -> "pli.Series":
-            print(fmt.format(s))  # type: ignore
+            print(fmt.format(s))
             return s
 
         return self.map(inspect, return_dtype=None, agg_list=True)
@@ -1665,7 +1647,7 @@ class Expr:
         """
         return pli.argsort_by([self], [reverse])
 
-    def rank(self, method: str = "average") -> "Expr":  # type: ignore
+    def rank(self, method: str = "average") -> "Expr":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -1692,7 +1674,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rank(method))
 
-    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":  # type: ignore
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
         """
         Calculate the n-th discrete difference.
 
@@ -1770,14 +1752,14 @@ class Expr:
         min_val, max_val
             Minimum and maximum value.
         """
-        min_val = pli.lit(min_val)  # type: ignore
-        max_val = pli.lit(max_val)  # type: ignore
+        min_val_lit = pli.lit(min_val)
+        max_val_lit = pli.lit(max_val)
 
         return (
-            pli.when(self < min_val)  # type: ignore
-            .then(min_val)
-            .when(self > max_val)
-            .then(max_val)
+            pli.when(self < min_val_lit)
+            .then(min_val_lit)
+            .when(self > max_val_lit)
+            .then(max_val_lit)
             .otherwise(self)
         ).keep_name()
 
@@ -1793,7 +1775,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.upper_bound())
 
-    def str_concat(self, delimiter: str = "-") -> "Expr":  # type: ignore
+    def str_concat(self, delimiter: str = "-") -> "Expr":
         """
         Vertically concat the values in the Series to a single string value.
 
@@ -1965,6 +1947,30 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reshape(dims))
 
+    # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
+    # the type annotation `str` with the namespace "str"
+
+    @property
+    def dt(self) -> "ExprDateTimeNameSpace":
+        """
+        Create an object namespace of all datetime related methods.
+        """
+        return ExprDateTimeNameSpace(self)
+
+    @property
+    def str(self) -> "ExprStringNameSpace":
+        """
+        Create an object namespace of all string related methods.
+        """
+        return ExprStringNameSpace(self)
+
+    @property
+    def arr(self) -> "ExprListNameSpace":
+        """
+        Create an object namespace of all datetime related methods.
+        """
+        return ExprListNameSpace(self)
+
 
 class ExprListNameSpace:
     """
@@ -2022,7 +2028,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_unique())
 
-    def concat(self, other: Union[tp.List[Expr], Expr, str, tp.List[str]]) -> "Expr":
+    def concat(self, other: Union[tp.List[Union[Expr, str]], Expr, str]) -> "Expr":
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -2031,13 +2037,13 @@ class ExprListNameSpace:
         other
             Columns to concat into a List Series
         """
+        other_list: tp.List[Union[Expr, str]]
         if not isinstance(other, list):
-            other = [other]  # type: ignore
+            other_list = [other]
         else:
-            other = copy.copy(other)
-        # mypy does not understand we have a list by now
-        other.insert(0, wrap_expr(self._pyexpr))  # type: ignore
-        return pli.concat_list(other)  # type: ignore
+            other_list = copy.copy(other)
+        other_list.insert(0, wrap_expr(self._pyexpr))
+        return pli.concat_list(other_list)
 
 
 class ExprStringNameSpace:

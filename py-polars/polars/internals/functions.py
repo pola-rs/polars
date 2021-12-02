@@ -89,7 +89,7 @@ def concat(
         out = pli.wrap_s(_concat_series(items))
 
     if rechunk:
-        return out.rechunk()  # type: ignore
+        return out.rechunk()
     return out
 
 

@@ -202,7 +202,7 @@ class LazyFrame:
                 plt.show()
         return None
 
-    def inspect(self, fmt: str = "{}") -> "LazyFrame":  # type: ignore
+    def inspect(self, fmt: str = "{}") -> "LazyFrame":
         """
         Prints the value that this node in the computation graph evaluates to and passes on the value.
 
@@ -218,7 +218,7 @@ class LazyFrame:
         """
 
         def inspect(s: pli.DataFrame) -> pli.DataFrame:
-            print(fmt.format(s))  # type: ignore
+            print(fmt.format(s))
             return s
 
         return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
@@ -439,7 +439,10 @@ class LazyFrame:
         return wrap_ldf(self._ldf.filter(predicate._pyexpr))
 
     def select(
-        self, exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"]]
+        self,
+        exprs: Union[
+            str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"
+        ],
     ) -> "LazyFrame":
         """
         Select columns from this DataFrame.
@@ -485,12 +488,12 @@ class LazyFrame:
         self,
         ldf: "LazyFrame",
         left_on: Optional[
-            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
         ] = None,
         right_on: Optional[
-            Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]
+            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
         ] = None,
-        on: Optional[Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]]] = None,
+        on: Optional[Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]] = None,
         how: str = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
@@ -552,15 +555,15 @@ class LazyFrame:
                 )
             )
 
-        left_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        left_on_: Optional[tp.List[Union[str, pli.Expr]]]
         if isinstance(left_on, (str, pli.Expr)):
-            left_on_ = [left_on]  # type: ignore[assignment]
+            left_on_ = [left_on]
         else:
             left_on_ = left_on
 
-        right_on_: Union[tp.List[str], tp.List[pli.Expr], None]
+        right_on_: Optional[tp.List[Union[str, pli.Expr]]]
         if isinstance(right_on, (str, pli.Expr)):
-            right_on_ = [right_on]  # type: ignore[assignment]
+            right_on_ = [right_on]
         else:
             right_on_ = right_on
 
@@ -589,13 +592,13 @@ class LazyFrame:
 
         left_asof_by_: Union[tp.List[str], None]
         if isinstance(asof_by_left, str):
-            left_asof_by_ = [asof_by_left]  # type: ignore[assignment]
+            left_asof_by_ = [asof_by_left]
         else:
             left_asof_by_ = asof_by_left
 
         right_asof_by_: Union[tp.List[str], None]
         if isinstance(asof_by_right, (str, pli.Expr)):
-            right_asof_by_ = [asof_by_right]  # type: ignore[assignment]
+            right_asof_by_ = [asof_by_right]
         else:
             right_asof_by_ = asof_by_right
 
@@ -1094,7 +1097,7 @@ class LazyFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
         """
-        return self.select(pli.col("*").interpolate())  # type: ignore
+        return self.select(pli.col("*").interpolate())
 
 
 class LazyGroupBy:
