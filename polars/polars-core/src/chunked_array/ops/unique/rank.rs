@@ -19,7 +19,7 @@ pub enum RankMethod {
 pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
     if s.len() == 1 {
         return match method {
-            Average => Series::new(s.name(), &[1.0]),
+            Average => Series::new(s.name(), &[1.0f32]),
             _ => Series::new(s.name(), &[1u32]),
         };
     }
