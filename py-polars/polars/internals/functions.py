@@ -154,6 +154,7 @@ def date_range(
         Make the interval closed to the 'left', 'right', or both sides (None, the default).
     name
         Name of the output Series
+
     Returns
     -------
     A Series of type `Datetime`

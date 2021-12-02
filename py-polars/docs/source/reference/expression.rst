@@ -62,6 +62,7 @@ Attributes
 .. autosummary::
    :toctree: api/
 
+   Expr.arr
    Expr.dt
    Expr.str
 

@@ -704,7 +704,11 @@ class DataFrame:
 
         >>> import pandas
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
         >>> pandas_df = df.to_pandas()
         >>> type(pandas_df)
@@ -722,7 +726,7 @@ class DataFrame:
         Write Dataframe to comma-separated values file (csv).
 
         Parameters
-        ---
+        ----------
         file
             File path to which the file should be written.
         has_headers
@@ -740,7 +744,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c", "d", "e"],
         ...     }
         ... )
-        ... df.to_csv("new_file.csv", sep=",")
+        >>> df.to_csv("new_file.csv", sep=",")
 
         """
         if file is None:
@@ -844,7 +848,8 @@ class DataFrame:
         │ 1   ┆ 2   ┆ 3   │
         └─────┴─────┴─────┘
 
-        >>> # include the header as a separate column
+        Include the header as a separate column
+
         >>> df.transpose(
         ...     include_header=True, header_name="foo", column_names=["a", "b", "c"]
         ... )
@@ -859,7 +864,8 @@ class DataFrame:
         │ b   ┆ 1   ┆ 2   ┆ 3   │
         └─────┴─────┴─────┴─────┘
 
-        >>> # replace the auto generated column with column names from a generator function
+        Replace the auto generated column with column names from a generator function
+
         >>> def name_generator():
         ...     base_name = "my_column_"
         ...     count = 0
@@ -1285,7 +1291,11 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
         >>> df.to_series(1)
         shape: (3,)
@@ -1365,7 +1375,9 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> # Filter on one condition
+
+        Filter on one condition:
+
         >>> df.filter(pl.col("foo") < 3)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
@@ -1378,7 +1390,8 @@ class DataFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
-        >>> # Filter on multiple conditions
+        Filter on multiple conditions:
+
         >>> df.filter((pl.col("foo") < 3) & (pl.col("ham") == "a"))
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -1456,7 +1469,9 @@ class DataFrame:
         ... )
         >>> df.columns
         ['foo', 'bar', 'ham']
-        >>> # Set column names
+
+        Set column names:
+
         >>> df.columns = ["apple", "banana", "orange"]
         shape: (3, 3)
         ╭───────┬────────┬────────╮
@@ -1925,7 +1940,8 @@ class DataFrame:
         │ null ┆ 1    ┆ 1    │
         └──────┴──────┴──────┘
 
-        >>> # drop a row only if all values are null
+        Drop a row only if all values are null:
+
         >>> df.filter(
         ...     ~pl.fold(
         ...         acc=True,
@@ -1946,7 +1962,8 @@ class DataFrame:
         │ null ┆ 1   ┆ 1    │
         └──────┴─────┴──────┘
 
-        >>> # drop a column if all values are null
+        Drop a column if all values are null:
+
         >>> df[:, [not (s.null_count() == df.height) for s in df]]
         shape: (4, 2)
         ┌──────┬──────┐
@@ -2113,7 +2130,6 @@ class DataFrame:
         ...     }
         ... )
         >>> df["A"] = df["A"].str.strptime(pl.Date, "%Y-%m-%d")
-        >>>
         >>> df.downsample("A", rule="day", n=3).agg(
         ...     {"B": "max", "C": "min", "D": "last"}
         ... )
@@ -2208,6 +2224,7 @@ class DataFrame:
             join on these columns before doing asof join
         asof_by_right
             join on these columns before doing asof join
+
         Returns
         -------
             Joined DataFrame
@@ -2255,8 +2272,7 @@ class DataFrame:
         │ 3    ┆ 8    ┆ "c" ┆ null  │
         ╰──────┴──────┴─────┴───────╯
 
-        Asof join
-        =========
+        **Asof join**
         This is similar to a left-join except that we match on nearest key rather than equal keys.
         The keys must be sorted to perform an asof join
 
@@ -3308,7 +3324,8 @@ class DataFrame:
 
         Examples
         --------
-        >>> # A horizontal sum operation
+        A horizontal sum operation:
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": [2, 1, 3],
@@ -3324,7 +3341,9 @@ class DataFrame:
             9
         ]
 
-        >>> # A horizontal minimum operation
+        A horizontal minimum operation:
+
+        >>> df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
         >>> df.fold(lambda s1, s2: s1.zip_with(s1 < s2, s2))
         Series: 'a' [f64]
         [
@@ -3333,7 +3352,8 @@ class DataFrame:
             3
         ]
 
-        >>> # A horizontal string concattenation
+        A horizontal string concattenation:
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["foo", "bar", 2],
@@ -3591,17 +3611,19 @@ class GroupBy:
         column_to_agg
             map column to aggregation functions.
 
-            Examples:
-                ## use lazy API syntax (recommended)
-                [pl.col("foo").sum(), pl.col("bar").min()]
+        Use lazy API syntax (recommended)
 
-                ## column name to aggregation with tuples:
-                [("foo", ["sum", "n_unique", "min"]),
-                 ("bar": ["max"])]
+        >>> [pl.col("foo").sum(), pl.col("bar").min()]
 
-                ## column name to aggregation with dict:
-                {"foo": ["sum", "n_unique", "min"],
-                 "bar": "max"}
+        Column name to aggregation with tuples:
+
+        >>> [
+        ...     ("foo", ["sum", "n_unique", "min"]),
+        ...     ("bar", ["max"]),
+        ... ]
+
+        Column name to aggregation with dict:
+        >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}
 
         Returns
         -------
@@ -3611,23 +3633,21 @@ class GroupBy:
         Examples
         --------
 
-        >>> # use lazy API
-        >>> (
-        ...     df.groupby(["foo", "bar"]).agg(
-        ...         [
-        ...             pl.sum("ham"),
-        ...             pl.col("spam").tail(4).sum(),
-        ...         ]
-        ...     )
+        Use lazy API:
+
+        >>> df.groupby(["foo", "bar"]).agg(
+        ...     [
+        ...         pl.sum("ham"),
+        ...         pl.col("spam").tail(4).sum(),
+        ...     ]
         ... )
 
-        >>> # use a dict
-        >>> (
-        ...     df.groupby(["foo", "bar"]).agg(
-        ...         {
-        ...             "spam": ["sum", "min"],
-        ...         }
-        ...     )
+        Use a dict:
+
+        >>> df.groupby(["foo", "bar"]).agg(
+        ...     {
+        ...         "spam": ["sum", "min"],
+        ...     }
         ... )
 
         """
@@ -3712,7 +3732,7 @@ class GroupBy:
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ "b"     ┆ 6   │
         ╰─────────┴─────╯
-        >>> (df.groupby("letters").head(2).sort("letters"))
+        >>> df.groupby("letters").head(2).sort("letters")
         shape: (5, 2)
         ╭─────────┬─────╮
         │ letters ┆ nrs │
