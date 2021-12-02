@@ -70,9 +70,14 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn can_fast_unique(&self) -> bool {
-        self.bit_settings & 1 << 4 != 0 && self.chunks.len() == 1 && {
-            let arr = self.downcast_iter().next().unwrap();
-            arr.values().offset() == 0
+        self.bit_settings & 1 << 3 != 0 && self.chunks.len() == 1
+    }
+
+    pub(crate) fn set_fast_unique(&mut self, can: bool) {
+        if can {
+            self.bit_settings |= 1u8 << 3;
+        } else {
+            self.bit_settings &= !(1u8 << 3);
         }
     }
 

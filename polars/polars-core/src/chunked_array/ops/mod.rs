@@ -33,6 +33,7 @@ pub mod full;
 mod interpolate;
 #[cfg(feature = "is_in")]
 mod is_in;
+mod len;
 mod peaks;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;
@@ -775,4 +776,61 @@ pub trait StrConcat {
     ///
     /// * `delimiter` - A string that will act as delimiter between values.
     fn str_concat(&self, delimiter: &str) -> Utf8Chunked;
+}
+
+pub trait ChunkLen {
+    /// Get the length of the ChunkedArray
+    fn len(&self) -> usize;
+
+    /// Check if ChunkedArray is empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+pub trait ChunkOps: ChunkLen {
+    /// Aggregate to contiguous memory.
+    fn rechunk(&self) -> Self
+    where
+        Self: std::marker::Sized;
+
+    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
+    ///
+    /// When offset is negative it will be counted from the end of the array.
+    /// This method will never error,
+    /// and will slice the best match when offset, or length is out of bounds
+    fn slice(&self, offset: i64, length: usize) -> Self
+    where
+        Self: std::marker::Sized;
+
+    /// Take a view of top n elements
+    fn limit(&self, num_elements: usize) -> Self
+    where
+        Self: Sized,
+    {
+        self.slice(0, num_elements)
+    }
+
+    /// Get the head of the ChunkedArray
+    fn head(&self, length: Option<usize>) -> Self
+    where
+        Self: Sized,
+    {
+        match length {
+            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
+            None => self.slice(0, std::cmp::min(10, self.len())),
+        }
+    }
+
+    /// Get the tail of the ChunkedArray
+    fn tail(&self, length: Option<usize>) -> Self
+    where
+        Self: Sized,
+    {
+        let len = match length {
+            Some(len) => std::cmp::min(len, self.len()),
+            None => std::cmp::min(10, self.len()),
+        };
+        self.slice(-(len as i64), len)
+    }
 }
