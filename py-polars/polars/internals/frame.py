@@ -3336,7 +3336,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.sample(n=2)  # doctest: +SKIP
+        >>> df.sample(n=2)  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -3502,7 +3502,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.hash(k0=42)  # doctest: +SKIP
+        >>> df.hash(k0=42)  # doctest: +IGNORE_RESULT
         shape: (3,)
         Series: '' [u64]
         [
@@ -3538,6 +3538,7 @@ class GroupBy:
     >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
     >>> for group in df.groupby("foo"):
     ...     print(group)
+    ... # doctest: +IGNORE_RESULT
     ...
     shape: (2, 2)
     ┌─────┬─────┐

@@ -509,24 +509,24 @@ def lit(
 
     Literal integer:
 
-    >>> pl.lit(1)  # doctest: +SKIP
+    >>> pl.lit(1)  # doctest: +IGNORE_RESULT
 
     Literal str:
 
-    >>> pl.lit("foo")  # doctest: +SKIP
+    >>> pl.lit("foo")  # doctest: +IGNORE_RESULT
 
     Literal datetime:
 
     >>> from datetime import datetime
-    >>> pl.lit(datetime(2021, 1, 20))  # doctest: +SKIP
+    >>> pl.lit(datetime(2021, 1, 20))  # doctest: +IGNORE_RESULT
 
     Literal Null:
 
-    >>> pl.lit(None)  # doctest: +SKIP
+    >>> pl.lit(None)  # doctest: +IGNORE_RESULT
 
     Literal eager Series:
 
-    >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +SKIP
+    >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +IGNORE_RESULT
 
     """
     if isinstance(value, datetime):
