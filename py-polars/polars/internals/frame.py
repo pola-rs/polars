@@ -444,7 +444,9 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.read_csv("file.csv", sep=";", stop_after_n_rows=25)  # doctest: +SKIP
+        >>> df = pl.read_csv(
+        ...     "file.csv", sep=";", stop_after_n_rows=25
+        ... )  # doctest: +SKIP
 
         """
         self = DataFrame.__new__(DataFrame)
@@ -2096,6 +2098,7 @@ class DataFrame:
 
         >>> for sub_df in df.groupby("a"):
         ...     print(sub_df)  # doctest: +IGNORE_RESULT
+        ...
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -3535,6 +3538,7 @@ class GroupBy:
     >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
     >>> for group in df.groupby("foo"):
     ...     print(group)
+    ...
     shape: (2, 2)
     ┌─────┬─────┐
     │ foo ┆ bar │

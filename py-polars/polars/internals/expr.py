@@ -585,7 +585,7 @@ class Expr:
         """
         Syntactic sugar for:
 
-        >>> pl.col("foo").filter(pl.col("foo").is_not_null()) # doctest: +IGNORE_RESULT
+        >>> pl.col("foo").filter(pl.col("foo").is_not_null())  # doctest: +IGNORE_RESULT
 
         """
         return self.filter(self.is_not_null())

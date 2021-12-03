@@ -453,7 +453,7 @@ def scan_csv(
     ...         pl.col("a") > 10
     ...     )  # the filter is pushed down the the scan, so less data read in memory
     ...     .fetch(100)  # pushed a limit of 100 rows to the scan level
-    ... )   # doctest: +SKIP
+    ... )  # doctest: +SKIP
 
     We can use `with_column_names` to modify the header before scanning:
 
@@ -785,7 +785,9 @@ def read_sql(
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
-    >>> pl.read_sql(query, uri, partition_on="partition_col", partition_num=10)  # doctest: +SKIP
+    >>> pl.read_sql(
+    ...     query, uri, partition_on="partition_col", partition_num=10
+    ... )  # doctest: +SKIP
 
     ## Using
     Read a DataFrame parallel using 2 threads by manually providing two partition SQLs:

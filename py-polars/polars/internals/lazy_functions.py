@@ -813,9 +813,9 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
 
     Sum all columns
 
-    >>> df = pl.DataFrame({"a": [1, 2, 3],
-    ...                 "b": ["hello", "foo", "bar"],
-    ...                 "c": [1, 1, 1]})
+    >>> df = pl.DataFrame(
+    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
+    ... )
     >>> df.select(pl.all().sum())
     shape: (1, 3)
     ┌─────┬──────┬─────┐
