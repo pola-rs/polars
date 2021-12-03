@@ -468,5 +468,18 @@ def coerce_arrow(array: "pa.Array") -> "pa.Array":
                 chunks.append(pli.Series._from_arrow("", arr).to_arrow())
             array = pa.chunked_array(chunks)
 
+        # small integer keys can often not be combined, so let's already cast
+        # to the uint32 used by polars
+        elif pa.types.is_dictionary(array.type) and (
+            pa.types.is_int8(array.type.index_type)
+            or pa.types.is_uint8(array.type.index_type)
+            or pa.types.is_int16(array.type.index_type)
+            or pa.types.is_uint16(array.type.index_type)
+            or pa.types.is_int32(array.type.index_type)
+        ):
+            array = pa.compute.cast(
+                array, pa.dictionary(pa.uint32(), pa.large_string())
+            )
+
         array = array.combine_chunks()
     return array
