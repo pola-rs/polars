@@ -6,6 +6,30 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
+trait ToSeries {
+    fn to_series(&self, py: Python, py_polars_module: &PyObject, name: &str) -> Series;
+}
+
+impl ToSeries for PyObject {
+    fn to_series(&self, py: Python, py_polars_module: &PyObject, name: &str) -> Series {
+        let py_pyseries = match self.getattr(py, "_s") {
+            Ok(s) => s,
+            // the lambda did not return a series, we try to create a new python Series
+            _ => {
+                let python_s = py_polars_module
+                    .getattr(py, "Series")
+                    .unwrap()
+                    .call1(py, (name, PyList::new(py, [self])))
+                    .unwrap();
+                python_s.getattr(py, "_s").unwrap()
+            }
+        };
+        let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
+        // Finally get the actual Series
+        pyseries.series
+    }
+}
+
 fn get_output_type(obj: &PyAny) -> Option<DataType> {
     match obj.is_none() {
         true => None,
@@ -82,12 +106,7 @@ pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<S
         let s = out.select_at_idx(0).unwrap().clone();
         PySeries::new(s)
     } else {
-        // unpack the wrapper in a PySeries
-        let py_pyseries = result_series_wrapper.getattr(py, "_s").expect(
-            "Could net get series attribute '_s'. Make sure that you return a Series object.",
-        );
-        // Downcast to Rust
-        py_pyseries.extract::<PySeries>(py).unwrap()
+        return Ok(result_series_wrapper.to_series(py, &pypolars.into_py(py), ""));
     };
 
     // Finally get the actual Series
@@ -134,17 +153,9 @@ pub fn map_single(
         let py = gil.python();
 
         // this is a python Series
-        let out = call_lambda_with_series(py, s, &lambda, &pypolars);
+        let out = call_lambda_with_series(py, s.clone(), &lambda, &pypolars);
 
-        // unpack the wrapper in a PySeries
-        let py_pyseries = out.getattr(py, "_s").expect(
-            "Could net get series attribute '_s'. \
-                Make sure that you return a Series object from a custom function.",
-        );
-        // Downcast to Rust
-        let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
-        // Finally get the actual Series
-        Ok(pyseries.series)
+        Ok(out.to_series(py, &pypolars, s.name()))
     };
 
     let output_map = GetOutput::map_field(move |fld| match output_type {
@@ -209,15 +220,7 @@ pub fn map_mul(
             return Err(PolarsError::NoData("".into()));
         }
 
-        // unpack the wrapper in a PySeries
-        let py_pyseries = out.getattr(py, "_s").expect(
-            "Could net get series attribute '_s'. \
-                Make sure that you return a Series object from a custom function.",
-        );
-        // Downcast to Rust
-        let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
-        // Finally get the actual Series
-        Ok(pyseries.series)
+        Ok(out.to_series(py, &pypolars, ""))
     };
 
     let exprs = pyexpr.iter().map(|pe| pe.clone().inner).collect::<Vec<_>>();
