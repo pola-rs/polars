@@ -73,7 +73,7 @@ def col(
     └─────┘
     >>> df.select(pl.col("*"))
     shape: (3, 3)
-    ╭─────┬───────────┬─────╮
+    ┌─────┬───────────┬─────┐
     │ ham ┆ hamburger ┆ foo │
     │ --- ┆ ---       ┆ --- │
     │ i64 ┆ i64       ┆ i64 │
@@ -83,7 +83,7 @@ def col(
     │ 2   ┆ 22        ┆ 2   │
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 33        ┆ 1   │
-    ╰─────┴───────────┴─────╯
+    └─────┴───────────┴─────┘
     >>> df.select(pl.col("^ham.*$"))
     shape: (3, 2)
     ┌─────┬───────────┐
@@ -99,7 +99,7 @@ def col(
     └─────┴───────────┘
     >>> df.select(pl.col("*").exclude("ham"))
     shape: (3, 2)
-    ╭───────────┬─────╮
+    ┌───────────┬─────┐
     │ hamburger ┆ foo │
     │ ---       ┆ --- │
     │ i64       ┆ i64 │
@@ -109,7 +109,7 @@ def col(
     │ 22        ┆ 2   │
     ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 33        ┆ 1   │
-    ╰───────────┴─────╯
+    └───────────┴─────┘
     >>> df.select(pl.col(["hamburger", "foo"]))
     shape: (3, 2)
     ┌───────────┬─────┐
@@ -813,6 +813,9 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
 
     Sum all columns
 
+    >>> df = pl.DataFrame({"a": [1, 2, 3],
+    ...                 "b": ["hello", "foo", "bar"],
+    ...                 "c": [1, 1, 1]})
     >>> df.select(pl.all().sum())
     shape: (1, 3)
     ┌─────┬──────┬─────┐
@@ -822,11 +825,6 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
     ╞═════╪══════╪═════╡
     │ 6   ┆ null ┆ 3   │
     └─────┴──────┴─────┘
-    >>> df.select(
-    ...     [
-    ...         pl.all([pl.col(name).is_not_null() for name in df.columns]),
-    ...     ]
-    ... )
 
     """
     if name is None:

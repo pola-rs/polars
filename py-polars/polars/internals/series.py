@@ -1853,11 +1853,11 @@ class Series:
 
             Returns a view to a piece of memory that is already dropped:
 
-            >>> pl.Series([1, 3, 5]).sort().view()
+            >>> pl.Series([1, 3, 5]).sort().view()  # doctest: +IGNORE_RESULT
 
             Sums invalid data that is missing:
 
-            >>> pl.Series([1, 2, None]).view().sum()
+            >>> pl.Series([1, 2, None]).view().sum()  # doctest: +SKIP
 
         """
         if not ignore_nulls:

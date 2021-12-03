@@ -206,7 +206,7 @@ class LazyFrame:
         """
         Prints the value that this node in the computation graph evaluates to and passes on the value.
 
-        >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]})
+        >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]}).lazy()
         >>> (
         ...     df.select(
         ...         [
@@ -215,7 +215,8 @@ class LazyFrame:
         ...     )
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
-        ... )
+        ... )  # doctest: +ELLIPSIS
+        <polars.internals.lazy_frame.LazyFrame object at ...>
 
         """
 
@@ -1161,40 +1162,40 @@ class LazyGroupBy:
         ... )
         >>> df
         shape: (6, 2)
-        ╭─────────┬─────╮
+        ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
         │ str     ┆ i64 │
         ╞═════════╪═════╡
-        │ "c"     ┆ 1   │
+        │ c       ┆ 1   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "c"     ┆ 2   │
+        │ c       ┆ 2   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "a"     ┆ 3   │
+        │ a       ┆ 3   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "c"     ┆ 4   │
+        │ c       ┆ 4   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "a"     ┆ 5   │
+        │ a       ┆ 5   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "b"     ┆ 6   │
-        ╰─────────┴─────╯
-        >>> (df.groupby("letters").head(2).sort("letters"))
+        │ b       ┆ 6   │
+        └─────────┴─────┘
+        >>> df.groupby("letters").head(2).sort("letters")
         shape: (5, 2)
-        ╭─────────┬─────╮
+        ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
         │ str     ┆ i64 │
         ╞═════════╪═════╡
-        │ "a"     ┆ 3   │
+        │ a       ┆ 3   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "a"     ┆ 5   │
+        │ a       ┆ 5   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "b"     ┆ 6   │
+        │ b       ┆ 6   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "c"     ┆ 1   │
+        │ c       ┆ 1   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "c"     ┆ 2   │
-        ╰─────────┴─────╯
+        │ c       ┆ 2   │
+        └─────────┴─────┘
 
         """
         return wrap_ldf(self.lgb.head(n))

@@ -116,7 +116,7 @@ class DataFrame:
     >>> df = pl.DataFrame(data)
     >>> df
     shape: (2, 2)
-    ╭─────┬─────╮
+    ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
     │ i64 ┆ i64 │
@@ -124,7 +124,7 @@ class DataFrame:
     │ 1   ┆ 3   │
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   │
-    ╰─────┴─────╯
+    └─────┴─────┘
 
     Notice that the dtype is automatically inferred as a polars Int64:
 
@@ -138,10 +138,10 @@ class DataFrame:
     ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
     ...     pl.Series("col2", [3, 4], dtype=pl.Int64),
     ... ]
-    >>> df2 = pl.DataFrame(series)
+    >>> df2 = pl.DataFrame(data)
     >>> df2
     shape: (2, 2)
-    ╭──────┬──────╮
+    ┌──────┬──────┐
     │ col1 ┆ col2 │
     │ ---  ┆ ---  │
     │ f32  ┆ i64  │
@@ -149,23 +149,24 @@ class DataFrame:
     │ 1    ┆ 3    │
     ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ 2    ┆ 4    │
-    ╰──────┴──────╯
+    └──────┴──────┘
 
     Constructing a DataFrame from a numpy ndarray, specifying column names:
 
+    >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)])
     >>> df3 = pl.DataFrame(data, columns=["a", "b"], orient="col")
     >>> df3
     shape: (2, 2)
-    ╭─────┬─────╮
+    ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
-    │ i64 ┆ i64 │
+    │ i32 ┆ i32 │
     ╞═════╪═════╡
     │ 1   ┆ 3   │
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   │
-    ╰─────┴─────╯
+    └─────┴─────┘
 
     Constructing a DataFrame from a list of lists, row orientation inferred:
 
@@ -173,7 +174,7 @@ class DataFrame:
     >>> df4 = pl.DataFrame(data, columns=["a", "b", "c"])
     >>> df4
     shape: (2, 3)
-    ╭─────┬─────┬─────╮
+    ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
     │ i64 ┆ i64 ┆ i64 │
@@ -181,7 +182,8 @@ class DataFrame:
     │ 1   ┆ 2   ┆ 3   │
     ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
     │ 4   ┆ 5   ┆ 6   │
-    ╰─────┴─────┴─────╯
+    └─────┴─────┴─────┘
+
     """
 
     def __init__(
@@ -442,7 +444,7 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.read_csv("file.csv", sep=";", stop_after_n_rows=25)
+        >>> df = pl.read_csv("file.csv", sep=";", stop_after_n_rows=25)  # doctest: +SKIP
 
         """
         self = DataFrame.__new__(DataFrame)
@@ -607,22 +609,23 @@ class DataFrame:
         ...         "optional": [28, 300, None, 2, -30],
         ...     }
         ... )
+        >>> df
         shape: (5, 5)
-        ┌─────┬──────────┬─────┬──────────┬──────────┐
-        │ A   ┆ fruits   ┆ B   ┆ cars     ┆ optional │
-        │ --- ┆ ---      ┆ --- ┆ ---      ┆ ---      │
-        │ i64 ┆ str      ┆ i64 ┆ str      ┆ i64      │
-        ╞═════╪══════════╪═════╪══════════╪══════════╡
-        │ 1   ┆ "banana" ┆ 5   ┆ "beetle" ┆ 28       │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ 2   ┆ "banana" ┆ 4   ┆ "audi"   ┆ 300      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ 3   ┆ "apple"  ┆ 3   ┆ "beetle" ┆ null     │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ 4   ┆ "apple"  ┆ 2   ┆ "beetle" ┆ 2        │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-        │ 5   ┆ "banana" ┆ 1   ┆ "beetle" ┆ -30      │
-        └─────┴──────────┴─────┴──────────┴──────────┘
+        ┌─────┬────────┬─────┬────────┬──────────┐
+        │ A   ┆ fruits ┆ B   ┆ cars   ┆ optional │
+        │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---      │
+        │ i64 ┆ str    ┆ i64 ┆ str    ┆ i64      │
+        ╞═════╪════════╪═════╪════════╪══════════╡
+        │ 1   ┆ banana ┆ 5   ┆ beetle ┆ 28       │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ banana ┆ 4   ┆ audi   ┆ 300      │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ apple  ┆ 3   ┆ beetle ┆ null     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4   ┆ apple  ┆ 2   ┆ beetle ┆ 2        │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 5   ┆ banana ┆ 1   ┆ beetle ┆ -30      │
+        └─────┴────────┴─────┴────────┴──────────┘
         >>> df.to_dict(as_series=False)
         {'A': [1, 2, 3, 4, 5],
         'fruits': ['banana', 'banana', 'apple', 'apple', 'banana'],
@@ -631,24 +634,46 @@ class DataFrame:
         'optional': [28, 300, None, 2, -30]}
         >>> df.to_dict(as_series=True)
         {'A': shape: (5,)
-         Series: 'A' [i64]
-         [
+        Series: 'A' [i64]
+        [
             1
             2
             3
             4
             5
-         ],
-         'fruits': shape: (5,)
-         ...
-         Series: 'optional' [i64]
-         [
+        ], 'fruits': shape: (5,)
+        Series: 'fruits' [str]
+        [
+            "banana"
+            "banana"
+            "apple"
+            "apple"
+            "banana"
+        ], 'B': shape: (5,)
+        Series: 'B' [i64]
+        [
+            5
+            4
+            3
+            2
+            1
+        ], 'cars': shape: (5,)
+        Series: 'cars' [str]
+        [
+            "beetle"
+            "audi"
+            "beetle"
+            "beetle"
+            "beetle"
+        ], 'optional': shape: (5,)
+        Series: 'optional' [i64]
+        [
             28
             300
             null
             2
             -30
-         ]}
+        ]}
 
         """
         if as_series:
@@ -712,7 +737,8 @@ class DataFrame:
         ... )
         >>> pandas_df = df.to_pandas()
         >>> type(pandas_df)
-        pandas.core.frame.DataFrame
+        <class 'pandas.core.frame.DataFrame'>
+
         """
         return self.to_arrow().to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
@@ -978,7 +1004,7 @@ class DataFrame:
         ... )
         >>> numpy_array = df.to_numpy()
         >>> type(numpy_array)
-        numpy.ndarray
+        <class 'numpy.ndarray'>
 
         """
         return np.vstack([self.to_series(i).to_numpy() for i in range(self.width)]).T
@@ -1323,17 +1349,18 @@ class DataFrame:
         ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
         ... )
         >>> df.rename({"foo": "apple"})
-        ╭───────┬─────┬─────╮
+        shape: (3, 3)
+        ┌───────┬─────┬─────┐
         │ apple ┆ bar ┆ ham │
         │ ---   ┆ --- ┆ --- │
         │ i64   ┆ i64 ┆ str │
         ╞═══════╪═════╪═════╡
-        │ 1     ┆ 6   ┆ "a" │
+        │ 1     ┆ 6   ┆ a   │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2     ┆ 7   ┆ "b" │
+        │ 2     ┆ 7   ┆ b   │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3     ┆ 8   ┆ "c" │
-        ╰───────┴─────┴─────╯
+        │ 3     ┆ 8   ┆ c   │
+        └───────┴─────┴─────┘
 
         """
         df = self.clone()
@@ -1416,7 +1443,7 @@ class DataFrame:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
         >>> df.shape
-        shape: (5, 1)
+        (5, 1)
 
         """
         return self._df.shape()
@@ -1447,6 +1474,7 @@ class DataFrame:
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5]})
         >>> df.width
         1
+
         """
         return self._df.width()
 
@@ -1471,18 +1499,19 @@ class DataFrame:
         Set column names:
 
         >>> df.columns = ["apple", "banana", "orange"]
+        >>> df
         shape: (3, 3)
-        ╭───────┬────────┬────────╮
+        ┌───────┬────────┬────────┐
         │ apple ┆ banana ┆ orange │
         │ ---   ┆ ---    ┆ ---    │
         │ i64   ┆ i64    ┆ str    │
         ╞═══════╪════════╪════════╡
-        │ 1     ┆ 6      ┆ "a"    │
+        │ 1     ┆ 6      ┆ a      │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2     ┆ 7      ┆ "b"    │
+        │ 2     ┆ 7      ┆ b      │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 3     ┆ 8      ┆ "c"    │
-        ╰───────┴────────┴────────╯
+        │ 3     ┆ 8      ┆ c      │
+        └───────┴────────┴────────┘
 
         """
         return self._df.columns()
@@ -1515,20 +1544,20 @@ class DataFrame:
         ...     }
         ... )
         >>> df.dtypes
-        [polars.datatypes.Int64, polars.datatypes.Float64, polars.datatypes.Utf8]
+        [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Float64'>, <class 'polars.datatypes.Utf8'>]
         >>> df
         shape: (3, 3)
-        ╭─────┬─────┬─────╮
+        ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ f64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 1   ┆ 6   ┆ "a" │
+        │ 1   ┆ 6   ┆ a   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 7   ┆ "b" │
+        │ 2   ┆ 7   ┆ b   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 8   ┆ "c" │
-        ╰─────┴─────┴─────╯
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
 
         """
         return [DTYPES[idx] for idx in self._df.dtypes()]
@@ -1548,21 +1577,21 @@ class DataFrame:
         ... )
         >>> df.describe()
         shape: (5, 4)
-        ╭──────────┬───────┬─────┬──────╮
-        │ describe ┆ a     ┆ b   ┆ c    │
-        │ ---      ┆ ---   ┆ --- ┆ ---  │
-        │ str      ┆ f64   ┆ f64 ┆ f64  │
-        ╞══════════╪═══════╪═════╪══════╡
-        │ "mean"   ┆ 2.267 ┆ 5   ┆ null │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ "std"    ┆ 1.102 ┆ 1   ┆ null │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ "min"    ┆ 1     ┆ 4   ┆ 0.0  │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ "max"    ┆ 3     ┆ 6   ┆ 1    │
-        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
-        │ "median" ┆ 2.8   ┆ 5   ┆ null │
-        ╰──────────┴───────┴─────┴──────╯
+        ┌──────────┬────────────────────┬─────┬──────┐
+        │ describe ┆ a                  ┆ b   ┆ c    │
+        │ ---      ┆ ---                ┆ --- ┆ ---  │
+        │ str      ┆ f64                ┆ f64 ┆ f64  │
+        ╞══════════╪════════════════════╪═════╪══════╡
+        │ mean     ┆ 2.2666666666666666 ┆ 5   ┆ null │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ std      ┆ 1.1015141094572205 ┆ 1   ┆ null │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ min      ┆ 1                  ┆ 4   ┆ 0.0  │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ max      ┆ 3                  ┆ 6   ┆ 1    │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ median   ┆ 2.8                ┆ 5   ┆ null │
+        └──────────┴────────────────────┴─────┴──────┘
 
         """
 
@@ -1611,18 +1640,19 @@ class DataFrame:
         ... )
         >>> x = pl.Series("apple", [10, 20, 30])
         >>> df.replace_at_idx(0, x)
+        >>> df
         shape: (3, 3)
-        ╭───────┬─────┬─────╮
+        ┌───────┬─────┬─────┐
         │ apple ┆ bar ┆ ham │
         │ ---   ┆ --- ┆ --- │
         │ i64   ┆ i64 ┆ str │
         ╞═══════╪═════╪═════╡
-        │ 10    ┆ 6   ┆ "a" │
+        │ 10    ┆ 6   ┆ a   │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 20    ┆ 7   ┆ "b" │
+        │ 20    ┆ 7   ┆ b   │
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 30    ┆ 8   ┆ "c" │
-        ╰───────┴─────┴─────╯
+        │ 30    ┆ 8   ┆ c   │
+        └───────┴─────┴─────┘
 
         """
         self._df.replace_at_idx(index, series._s)
@@ -2048,18 +2078,24 @@ class DataFrame:
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> assert (
-        ...     df.groupby("a")["b"]
-        ...     .sum()
-        ...     .sort(by="a")
-        ...     .frame_equal(DataFrame({"a": ["a", "b", "c"], "": [4, 11, 6]}))
-        ... )
+        >>> df.groupby("a")["b"].sum().sort(by="a")
+        shape: (3, 2)
+        ┌─────┬───────┐
+        │ a   ┆ b_sum │
+        │ --- ┆ ---   │
+        │ str ┆ i64   │
+        ╞═════╪═══════╡
+        │ a   ┆ 4     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ b   ┆ 11    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ c   ┆ 6     │
+        └─────┴───────┘
 
         We can also loop over the grouped `DataFrame`
 
         >>> for sub_df in df.groupby("a"):
-        ...     print(sub_df)
-        ...
+        ...     print(sub_df)  # doctest: +IGNORE_RESULT
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -3499,7 +3535,24 @@ class GroupBy:
     >>> df = pl.DataFrame({"foo": ["a", "a", "b"], "bar": [1, 2, 3]})
     >>> for group in df.groupby("foo"):
     ...     print(group)
-    ...
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ a   ┆ 1   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ a   ┆ 2   │
+    └─────┴─────┘
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ foo ┆ bar │
+    │ --- ┆ --- │
+    │ str ┆ i64 │
+    ╞═════╪═════╡
+    │ b   ┆ 3   │
+    └─────┴─────┘
 
     """
 
@@ -3659,18 +3712,18 @@ class GroupBy:
         ...     {
         ...         "spam": ["sum", "min"],
         ...     }
-        ... )
+        ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
         │ --- ┆ --- │
-        │ i64 ┆ i64 │
+        │ str ┆ i64 │
         ╞═════╪═════╡
-        │ 2   ┆ 7   │
+        │ a   ┆ 1   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 3   ┆ 8   │
+        │ a   ┆ 2   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 1   ┆ 6   │
+        │ b   ┆ 3   │
         └─────┴─────┘
 
         """
@@ -3757,21 +3810,21 @@ class GroupBy:
         └─────────┴─────┘
         >>> df.groupby("letters").head(2).sort("letters")
         shape: (5, 2)
-        ╭─────────┬─────╮
+        ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
         │ str     ┆ i64 │
         ╞═════════╪═════╡
-        │ "a"     ┆ 3   │
+        │ a       ┆ 3   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "a"     ┆ 5   │
+        │ a       ┆ 5   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "b"     ┆ 6   │
+        │ b       ┆ 6   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "c"     ┆ 1   │
+        │ c       ┆ 1   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ "c"     ┆ 2   │
-        ╰─────────┴─────╯
+        │ c       ┆ 2   │
+        └─────────┴─────┘
 
         """
         return (
