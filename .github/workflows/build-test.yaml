@@ -100,8 +100,7 @@ jobs:
           cargo clippy
       - name: Check doc examples
         run: |
-          python run_doc_examples.py
-
+          cd py-polars && python run_doc_examples.py && cd ..
       # test if we can import polars without any requirements
       - name: Import polars
         run: |
