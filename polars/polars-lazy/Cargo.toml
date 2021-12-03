@@ -67,6 +67,7 @@ test = [
   "cum_agg",
   "regex",
   "polars-core/plain_fmt",
+  "diff",
 ]
 
 [dependencies]

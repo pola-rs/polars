@@ -993,7 +993,7 @@ impl Expr {
                     let len = s.len();
                     let mut bits = MutableBitmap::with_capacity(s.len());
                     bits.extend_constant(periods as usize, false);
-                    bits.extend_constant(len - periods as usize, true);
+                    bits.extend_constant(len.saturating_sub(periods as usize), true);
                     let mask = BooleanArray::from_data_default(bits.into(), None);
                     let ca: BooleanChunked = mask.into();
                     Ok(ca.into_series())
@@ -1007,7 +1007,7 @@ impl Expr {
                 move |s: Series| {
                     let length = s.len() as i64;
                     // periods is negative, so subtraction.
-                    let tipping_point = length + periods;
+                    let tipping_point = std::cmp::max(length + periods, 0);
                     let mut bits = MutableBitmap::with_capacity(s.len());
                     bits.extend_constant(tipping_point as usize, true);
                     bits.extend_constant(-periods as usize, false);

@@ -1,4 +1,5 @@
 use super::*;
+use polars_core::series::ops::NullBehavior;
 
 #[test]
 fn test_lazy_ternary() {
@@ -2379,6 +2380,27 @@ fn test_single_ranked_group() -> Result<()> {
         Vec::from(out),
         &[Some(1.0), Some(2.0), Some(1.0), Some(2.0), Some(1.0)]
     );
+
+    Ok(())
+}
+
+#[test]
+fn empty_df() -> Result<()> {
+    let df = fruits_cars();
+    let df = df.filter(&BooleanChunked::full("", false, df.height()))?;
+
+    df.lazy()
+        .select([
+            col("A").shift(1).alias("1"),
+            col("A").shift_and_fill(1, lit(1)).alias("2"),
+            col("A").shift_and_fill(-1, lit(1)).alias("3"),
+            col("A").fill_null(lit(1)).alias("4"),
+            col("A").cumcount(false).alias("5"),
+            col("A").diff(1, NullBehavior::Ignore).alias("6"),
+            col("A").cummax(false).alias("7"),
+            col("A").cummin(false).alias("8"),
+        ])
+        .collect()?;
 
     Ok(())
 }
