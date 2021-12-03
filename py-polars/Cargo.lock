@@ -61,23 +61,20 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.8.1"
-source = "git+https://github.com/ritchie46/arrow2?branch=offset_pub#46a80f0fa84023207452b8625f9be27135a898ca"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=4320687d5f0c06f3bb6ea398dfe0a4214a25a0c6#4320687d5f0c06f3bb6ea398dfe0a4214a25a0c6"
 dependencies = [
- "ahash",
  "arrow-format",
  "base64",
  "chrono",
  "csv",
  "futures",
  "hash_hasher",
- "itertools",
  "lexical-core",
  "lz4",
  "multiversion",
  "num-traits",
  "packed_simd_2",
  "parquet2",
- "regex",
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
