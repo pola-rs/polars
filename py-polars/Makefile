@@ -8,6 +8,7 @@ pre-commit:
 	flake8 .
 	make -C .. fmt_toml
 	cargo fmt --all
+	python run_doc_examples.py
 
 pip:
 	pip install --force-reinstall -U wheels/polars-*.whl
