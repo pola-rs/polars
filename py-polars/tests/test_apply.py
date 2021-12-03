@@ -1,3 +1,4 @@
+from functools import reduce
 from typing import List, Optional
 
 import polars as pl
@@ -41,3 +42,11 @@ def test_apply_none() -> None:
         )
     )["multiple"]
     assert out[1] is None
+
+
+def test_apply_return_py_object() -> None:
+    df = pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+
+    out = df.select([pl.all().map(lambda s: reduce(lambda a, b: a + b, s))])
+
+    assert out.shape == (1, 2)
