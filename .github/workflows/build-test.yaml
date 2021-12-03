@@ -11,7 +11,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2021-10-21
+          toolchain: nightly-2021-12-02
           override: true
           components: rustfmt, clippy, miri
       - name: Cache Cargo
@@ -73,7 +73,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2021-10-21
+          toolchain: nightly-2021-12-02
           override: true
           components: rustfmt, clippy
       - name: Set up Python
@@ -86,7 +86,7 @@ jobs:
           pip install -r py-polars/build.requirements.txt
       - name: Run formatting checks
         run: |
-          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2021-10-21 && cargo fmt --all -- --check && cd ..
+          cd py-polars && black --check . && blackdoc --check . && isort --check . && rustup override set nightly-2021-12-02 && cargo fmt --all -- --check && cd ..
       - name: Run linting
         run: |
           cd py-polars && flake8 && cd ..
@@ -96,7 +96,7 @@ jobs:
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2021-10-21 && make build-and-test-with-cov
+          cd py-polars && rustup override set nightly-2021-12-02 && make build-and-test-with-cov
           cargo clippy
       # test if we can import polars without any requirements
       - name: Import polars
