@@ -1,4 +1,4 @@
-mod predicate_pushdown;
+mod optimizations;
 mod queries;
 use polars_core::prelude::*;
 use polars_io::prelude::*;

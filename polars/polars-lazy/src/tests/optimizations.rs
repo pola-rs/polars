@@ -36,3 +36,29 @@ fn test_pred_pd_1() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_window_separation() -> Result<()> {
+    let df = fruits_cars();
+
+    let mut expr_arena = Arena::with_capacity(16);
+    let mut lp_arena = Arena::with_capacity(8);
+    let lp = df
+        .clone()
+        .lazy()
+        .select([
+
+            col("A").over([col("B")]).alias("1"),
+            col("B").over([col("B")]).alias("2"),
+            col("B").over([col("A")]).alias("3"),
+            col("fruits")
+        ])
+        .optimize(&mut lp_arena, &mut expr_arena)?;
+
+    let lp = node_to_lp(lp, &mut expr_arena, &mut lp_arena);
+    dbg!(lp);
+
+    Ok(())
+
+
+}

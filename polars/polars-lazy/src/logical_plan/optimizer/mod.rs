@@ -13,6 +13,8 @@ pub(crate) mod projection_pushdown;
 pub(crate) mod simplify_expr;
 pub(crate) mod stack_opt;
 pub(crate) mod type_coercion;
+pub(crate) mod separate_window_functions;
+use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan>;

@@ -30,6 +30,7 @@ use polars_io::csv::NullValues;
 use polars_io::csv_core::utils::get_reader_bytes;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
+use crate::prelude::separate_window_functions::SeparateWindowExprs;
 
 #[derive(Clone)]
 #[cfg(feature = "csv-file")]
@@ -665,6 +666,7 @@ impl LazyFrame {
 
         rules.push(Box::new(FastProjection {}));
         rules.push(Box::new(ReplaceDropNulls {}));
+        rules.push(Box::new(SeparateWindowExprs {}));
 
         let opt = StackOptimizer {};
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);

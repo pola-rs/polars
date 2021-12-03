@@ -5,6 +5,7 @@ use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, Arena, Node};
 use std::sync::Arc;
+use crate::logical_plan::iterator::ArenaExprIter;
 
 #[derive(Clone, Debug)]
 pub enum AAggExpr {
@@ -107,6 +108,12 @@ impl Default for AExpr {
     }
 }
 impl AExpr {
+    pub(crate) fn depth(&self, expr_arena: &Arena<AExpr>) -> Option<usize> {
+        expr_arena.get_node(self).map(|node| {
+            expr_arena.iter(node).count()
+        })
+    }
+
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
     pub(crate) fn get_type(
         &self,

@@ -176,6 +176,7 @@ pub struct WindowOptions {
     /// Explode the aggregated list and just do a hstack instead of a join
     /// this requires the groups to be sorted to make any sense
     pub(crate) explode: bool,
+    pub(crate) cache: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -1159,7 +1160,7 @@ impl Expr {
             function: Box::new(self),
             partition_by: partition_by.as_ref().to_vec(),
             order_by: None,
-            options: WindowOptions { explode: false },
+            options: WindowOptions { explode: false, cache: false },
         }
     }
 
