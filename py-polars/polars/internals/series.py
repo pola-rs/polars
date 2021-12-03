@@ -1961,8 +1961,8 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s = s.to_arrow()
-        >>> s
-        <pyarrow.lib.Int64Array object at 0x0000025EF8F67700>
+        >>> s  # doctest: +ELLIPSIS
+        <pyarrow.lib.Int64Array object at ...>
         [
           1,
           2,
@@ -2725,7 +2725,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s.sample(2)
+        >>> s.sample(2)  # doctest: +SKIP
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -2814,7 +2814,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.hash(k0=42)
+        >>> s.hash(k0=42)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [u64]
         [
