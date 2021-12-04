@@ -143,3 +143,22 @@ def test_from_pandas_nan_to_none() -> None:
     assert [np.isnan(val) for val in out_false[1:]]
     with pytest.raises(ArrowInvalid, match="Could not convert"):
         pl.from_pandas(df, nan_to_none=False)
+
+
+def test_upcast_pyarrow_dicts() -> None:
+    # 1752
+    tbls = []
+    for i in range(128):
+        tbls.append(
+            pa.table(
+                {
+                    "col_name": pa.array(
+                        ["value_" + str(i)], pa.dictionary(pa.int8(), pa.string())
+                    ),
+                }
+            )
+        )
+
+    tbl = pa.concat_tables(tbls, promote=True)
+    out = pl.from_arrow(tbl)
+    assert out.shape == (128, 1)

@@ -36,8 +36,7 @@ impl Executor for StackExec {
         })?;
 
         for s in res {
-            let name = s.name().to_string();
-            df.replace_or_add(&name, s)?;
+            df.with_column(s)?;
         }
 
         state.clear_expr_cache();

@@ -32,7 +32,7 @@ impl From<BooleanArray> for BooleanChunked {
     }
 }
 
-impl From<(&str, Utf8Array<i64>)> for BooleanChunked {
+impl From<(&str, Utf8Array<i64>)> for Utf8Chunked {
     fn from(tpl: (&str, Utf8Array<i64>)) -> Self {
         let name = tpl.0;
         let arr = tpl.1;
