@@ -1,6 +1,6 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::parser::{
-    next_line_position, skip_bom, skip_line_ending, skip_whitespace, SplitFields, SplitLines,
+    next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines,
 };
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use lazy_static::lazy_static;
@@ -132,7 +132,7 @@ pub fn infer_file_schema(
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
-    let bytes = skip_line_ending(skip_whitespace(skip_bom(reader_bytes)).0).0;
+    let bytes = skip_line_ending(skip_bom(reader_bytes)).0;
     let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
 
     // get or create header names
