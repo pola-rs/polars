@@ -237,7 +237,7 @@ export function GroupBy(
   );
 
   const inspectOpts = {colors:true, depth:null};
-  const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBy {\n    by: %O\n}", by, );
+  const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBy {by: %O}", by, );
 
   return Object.seal(
     Object.assign(
@@ -260,6 +260,7 @@ export function GroupBy(
         sum: selectAll().sum,
         tail: (n=5) => {throw todo();},
         [Symbol.isConcatSpreadable]: true,
+        toString: () => "GroupBy",
         [inspect]: customInspect
       }
     )

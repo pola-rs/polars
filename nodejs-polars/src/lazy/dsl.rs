@@ -1,11 +1,12 @@
 use crate::conversion::prelude::*;
+use crate::conversion::utils;
+use crate::datatypes::JsDataType;
+use crate::prelude::JsPolarsEr;
 use crate::prelude::JsResult;
 use crate::series::JsSeries;
 use napi::*;
-use polars::lazy::dsl;
-use crate::conversion::utils;
-use crate::datatypes::JsDataType;
 use polars::chunked_array::temporal::timedelta::TimeDeltaBuilder;
+use polars::lazy::dsl;
 use polars::prelude::*;
 
 #[derive(Clone)]
@@ -57,12 +58,27 @@ pub fn lit(cx: CallContext) -> JsResult<JsExternal> {
         dsl::lit(f_val)
       }
     }
+    ValueType::Object => {
+      let obj: JsObject = unsafe { value.cast() };
+      if obj.is_date()? {
+        let d: JsDate = unsafe { value.cast() };
+        let d = d.value_of()?;
+        dsl::lit(d).cast(DataType::Datetime)
+      } else {
+        panic!(
+          "could not convert value {:?} as a Literal",
+          value.coerce_to_string()?.into_utf8()?.into_owned()?
+        )
+      }
+    }
     ValueType::String => String::from_js(value).map(dsl::lit)?,
     ValueType::Null | ValueType::Undefined => dsl::lit(Null {}),
     ValueType::External => {
       let val = unsafe { value.cast::<JsExternal>() };
       if let Ok(series) = cx.env.get_value_external::<JsSeries>(&val) {
-        dsl::lit((&series).series.clone())
+        let n = (&series).series.name();
+        let series = (&series).series.clone();
+        dsl::lit(series).alias(n)
       } else {
         panic!(
           "could not convert value {:?} as a Literal",

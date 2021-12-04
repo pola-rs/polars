@@ -22,7 +22,7 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
   case "boolean":
     return DataType.Bool;
   default:
-    return DataType.Object;
+    return DataType.Float64;
   }
 };
 
@@ -53,13 +53,12 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   if(firstValue instanceof Date) {
     series =  pli.series.new_opt_date({name, values, strict});
   } else {
-
     const constructor = polarsTypeToConstructor(dtype);
     series = constructor({ name, values, strict });
   }
-
   if ([DataType.Datetime, DataType.Date].includes(dtype)) {
-    series = pli.series.cast({ _series: series, dtype, strict: true });
+    series = pli.series.cast({ _series: series, dtype, strict: false });
+    console.log("s", values, dtype, _wrapSeries(series));
   }
 
 

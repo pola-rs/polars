@@ -13,7 +13,9 @@ export type ColumnSelection = ValueOrArray<string>
 export type ExpressionSelection = ValueOrArray<Expr>
 export type ColumnsOrExpr = ColumnSelection | ExpressionSelection
 export type Option<T> = T | undefined;
-
+export type DownsampleRule =  "month" | "week" | "day" | "hour" | "minute" | "second"
+export type FillNullStrategy = "backward" | "forward" | "mean" | "min" | "max" | "zero" | "one"
+export type RankMethod = "average" | "min" | "max" | "dense" | "ordinal" | "random";
 
 export function columnOrColumnsStrict(...columns: string[] | ValueOrArray<string>[]): Array<string> {
   return columns.flat(3) as any;
@@ -32,4 +34,5 @@ export const range = (start:number, end:number) => {
 };
 
 export const isSeries = <T>(ty: any): ty is Series<T> => ty._series !== undefined;
+export const isSeriesArray = <T>(ty: any[]): ty is Series<T>[] => ty[0]._series !== undefined;
 export const isExpr = (ty: any): ty is Expr => ty._expr !== undefined;

@@ -1,6 +1,6 @@
 import {DataFrame, dfWrapper} from "../dataframe";
 import {exprToLitOrExpr} from "./expr";
-import {ColumnSelection, ColumnsOrExpr, ExpressionSelection} from "../utils";
+import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, ValueOrArray} from "../utils";
 import pli from "../internals/polars_internal";
 
 type AnyFunc = (...args: any[]) => any
@@ -226,8 +226,8 @@ export interface LazyDataFrame {
   /**
    * @see {@link DataFrame.shiftAndFill}
    */
-  shiftAndFill(periods: number, fillValue: number | string): LazyDataFrame
-  shiftAndFill(opts: {periods: number, fillValue: number | string}): LazyDataFrame
+  shiftAndFill(periods: number, fillValue: number | string | Expr): LazyDataFrame
+  shiftAndFill(opts: {periods: number, fillValue: number | string | Expr}): LazyDataFrame
   /**
    * @see {@link DataFrame.shift}
    */
@@ -241,10 +241,8 @@ export interface LazyDataFrame {
   /**
    * @see {@link DataFrame.sort}
    */
-  sort(by: string, reverse?: boolean): LazyDataFrame
-  sort(opts: {by: string, reverse?: boolean}): LazyDataFrame
-  sort(by: ColumnsOrExpr, reverse?: boolean[]): LazyDataFrame
-  sort(opts: {by: ColumnsOrExpr, reverse?: boolean[]}): LazyDataFrame
+  sort(by: ColumnsOrExpr, reverse?: ValueOrArray<boolean> ): LazyDataFrame
+  sort(opts: {by: ColumnsOrExpr, reverse?: ValueOrArray<boolean>}): LazyDataFrame
   /**
    * @see {@link DataFrame.std}
    */
@@ -273,7 +271,7 @@ export interface LazyDataFrame {
    * @param exprs - List of Expressions that evaluate to columns.
    *
    */
-  with_columns(...exprs: ExpressionSelection[]): LazyDataFrame
+  withColumns(...exprs: ExpressionSelection[]): LazyDataFrame
   /**
    * Add a column at index 0 that counts the rows.
    * @see {@link DataFrame.withRowCount}
@@ -283,7 +281,6 @@ export interface LazyDataFrame {
 
 export const LazyDataFrame = (ldf: any): LazyDataFrame => {
   const unwrap = <U>(method: string, args?: object, _ldf=ldf): any => {
-    console.log({method, args, _ldf});
 
     return pli.lazy[method]({_ldf, ...args });
   };
@@ -312,12 +309,29 @@ export const LazyDataFrame = (ldf: any): LazyDataFrame => {
     }
   };
   const select = (...exprs) => {
-
     const predicate = exprs
       .flat(3)
-      .map(e => typeof e === "string"? exprToLitOrExpr(e, false)._expr : e._expr);
+      .map(e => exprToLitOrExpr(e, false)._expr);
 
     return wrap("select", {predicate});
+  };
+  const shiftAndFill = (optOrPeriods, fillValue?) => {
+    if(optOrPeriods?.periods) {
+      return shiftAndFill(optOrPeriods.periods, optOrPeriods.fillValue);
+    } else {
+      const periods = optOrPeriods;
+      fillValue = exprToLitOrExpr(fillValue)._expr;
+
+      return wrap("shiftAndFill", {periods, fillValue});
+    }
+
+  };
+  const withColumns = (...columns) => {
+    const exprs = columns
+      .flat(3)
+      .map(e => exprToLitOrExpr(e, false)._expr);
+
+    return wrap("withColumns", {exprs});
   };
 
   return {
@@ -338,7 +352,9 @@ export const LazyDataFrame = (ldf: any): LazyDataFrame => {
     clone: wrapNullArgs("clone"),
     tail: (length=5) => wrap("tail", {length}),
     sort,
-    select
+    select,
+    shiftAndFill,
+    withColumns
 
   } as any;
 };

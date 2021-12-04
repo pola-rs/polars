@@ -9,7 +9,8 @@ const ldf = pl.readCSV(csvpath)
     pl.col("hash").alias("num_hashes")
       .nUnique(),
     pl.col("number").alias("max_block_height")
-      .max(),
+      .max()
+      .as("foo"),
     pl.col("gas_used").alias("gas"),
     pl.col("transaction_count").mean(),
   )

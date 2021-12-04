@@ -342,7 +342,7 @@ pub(crate) fn to_csv(cx: CallContext) -> JsResult<JsUndefined> {
 pub(crate) fn add(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-  let s = params.get_external::<JsSeries>(&cx, "_series")?;
+  let s = params.get_external::<JsSeries>(&cx, "other")?;
   let df = (&df.df + &s.series).map_err(JsPolarsEr::from)?;
   JsDataFrame::new(df).try_into_js(&cx)
 }
@@ -350,7 +350,7 @@ pub(crate) fn add(cx: CallContext) -> JsResult<JsExternal> {
 pub(crate) fn sub(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-  let s = params.get_external::<JsSeries>(&cx, "_series")?;
+  let s = params.get_external::<JsSeries>(&cx, "other")?;
   let df = (&df.df - &s.series).map_err(JsPolarsEr::from)?;
   JsDataFrame::new(df).try_into_js(&cx)
 }
@@ -359,7 +359,7 @@ pub(crate) fn sub(cx: CallContext) -> JsResult<JsExternal> {
 pub(crate) fn div(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-  let s = params.get_external::<JsSeries>(&cx, "_series")?;
+  let s = params.get_external::<JsSeries>(&cx, "other")?;
   let df = (&df.df / &s.series).map_err(JsPolarsEr::from)?;
   JsDataFrame::new(df).try_into_js(&cx)
 }
@@ -368,7 +368,7 @@ pub(crate) fn div(cx: CallContext) -> JsResult<JsExternal> {
 pub(crate) fn mul(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-  let s = params.get_external::<JsSeries>(&cx, "_series")?;
+  let s = params.get_external::<JsSeries>(&cx, "other")?;
   let df = (&df.df * &s.series).map_err(JsPolarsEr::from)?;
   JsDataFrame::new(df).try_into_js(&cx)
 }
@@ -377,7 +377,7 @@ pub(crate) fn mul(cx: CallContext) -> JsResult<JsExternal> {
 pub(crate) fn rem(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-  let s = params.get_external::<JsSeries>(&cx, "_series")?;
+  let s = params.get_external::<JsSeries>(&cx, "other")?;
   let df = (&df.df % &s.series).map_err(JsPolarsEr::from)?;
   JsDataFrame::new(df).try_into_js(&cx)
 }
@@ -516,13 +516,13 @@ pub fn with_column(cx: CallContext) -> JsResult<JsExternal> {
 pub fn dtypes(cx: CallContext) -> JsResult<JsUnknown> {
   let params = get_params(&cx)?;
   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-  let dtypes: Vec<u32> = df
+  let dtypes: Vec<String> = df
     .df
     .dtypes()
     .iter()
     .map(|arrow_dtype| {
       let dt: JsDataType = arrow_dtype.into();
-      dt as u32
+      dt.to_string()
     })
     .collect();
 
@@ -590,19 +590,13 @@ pub fn hstack(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
 }
 
 #[js_function(1)]
-pub fn vstack(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
+pub fn vstack(cx: CallContext) -> JsResult<JsExternal> {
   let params = get_params(&cx)?;
   let df = params.get_external_mut::<JsDataFrame>(&cx, "_df")?;
   let other = params.get_external::<JsDataFrame>(&cx, "other")?;
-  let in_place = params.get_as::<bool>("in_place")?;
 
-  if in_place {
-    df.df.vstack_mut(&other.df).map_err(JsPolarsEr::from)?;
-    cx.env.get_undefined().map(Either::B)
-  } else {
-    let df = df.df.vstack(&other.df).map_err(JsPolarsEr::from)?;
-    JsDataFrame::new(df).try_into_js(&cx).map(Either::A)
-  }
+  let df = df.df.vstack(&other.df).map_err(JsPolarsEr::from)?;
+  JsDataFrame::new(df).try_into_js(&cx)
 }
 
 #[js_function(1)]

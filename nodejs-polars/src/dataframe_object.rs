@@ -82,6 +82,7 @@ impl JsDataFrame {
       napi::Property::new(env, "var")?.with_method(var),
       napi::Property::new(env, "vstack")?.with_method(vstack),
       napi::Property::new(env, "width")?.with_method(width),
+      napi::Property::new(env, "with_column")?.with_method(with_column),
       napi::Property::new(env, "with_row_count")?.with_method(with_row_count),
       napi::Property::new(env, "write_json")?.with_method(write_json),
     ])?;

@@ -4,17 +4,29 @@ import { DataType, JoinOptions, JsDataFrame, ReadCsvOptions, ReadJsonOptions, Wr
 import {Series, _wrapSeries} from "./series";
 import {Stream} from "stream";
 import fs from "fs";
-import {isPath, columnOrColumns, columnOrColumnsStrict, ColumnSelection, range} from "./utils";
+import {
+  isPath,
+  columnOrColumns,
+  columnOrColumnsStrict,
+  ColumnSelection,
+  range,
+  DownsampleRule,
+  FillNullStrategy,
+  isExpr,
+  isSeries,
+  ExpressionSelection,
+  ColumnsOrExpr,
+  isSeriesArray
+} from "./utils";
 import {GroupBy} from "./groupby";
 import path from "path";
 import {LazyDataFrame} from "./lazy/dataframe";
 import {concat} from "./functions";
+import {Expr} from "./lazy/expr";
 
 const todo = () => new Error("not yet implemented");
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
-export type DownsampleRule =  "month" | "week" | "day" | "hour" | "minute" | "second"
-export type FillNullStrategy = "backward" | "forward" | "mean" | "min" | "max" | "zero" | "one"
 
 export interface DataFrame {
   _df: JsDataFrame
@@ -144,36 +156,9 @@ export interface DataFrame {
    * @param maintainOrder
    * @param subset - subset to drop duplicates for
    */
+  dropDuplicates(maintainOrder?: boolean, subset?: ColumnSelection): DataFrame
   dropDuplicates(options: {maintainOrder?: boolean, subset?: ColumnSelection}): DataFrame
-  dropDuplicates(maintainOrder: boolean, subset?: ColumnSelection): DataFrame
-  /**
-   * Drop in place.
-   * ___
-   *
-   * @param name - Column to drop.
-   * @example
-   * ```
-   * > df = pl.DataFrame({
-   * >   "foo": [1, 2, 3],
-   * >   "bar": [6, 7, 8],
-   * >   "ham": ['a', 'b', 'c']
-   * > })
-   * > df.dropInPlace("ham")
-   * shape: (3, 2)
-   * ╭─────┬─────╮
-   * │ foo ┆ bar │
-   * │ --- ┆ --- │
-   * │ i64 ┆ i64 │
-   * ╞═════╪═════╡
-   * │ 1   ┆ 6   │
-   * ├╌╌╌╌╌┼╌╌╌╌╌┤
-   * │ 2   ┆ 7   │
-   * ├╌╌╌╌╌┼╌╌╌╌╌┤
-   * │ 3   ┆ 8   │
-   * ╰─────┴─────╯
-   * ```
-   */
-  dropInPlace(name: string): void
+
   /**
    * __Return a new DataFrame where the null values are dropped.__
    *
@@ -468,10 +453,10 @@ export interface DataFrame {
    * @example
    * ```
    * >>> df = pl.DataFrame({
-   * >>>     "foo": [1, 2, 3],
-   * >>>     "bar": [6, 7, 8],
-   * >>>     "ham": ['a', 'b', 'c']
-   * >>>     })
+   * >>>   "foo": [1, 2, 3],
+   * >>>   "bar": [6, 7, 8],
+   * >>>   "ham": ['a', 'b', 'c']
+   * >>> })
    * >>> x = pl.Series("apple", [10, 20, 30])
    * >>> df.hStack([x])
    * shape: (3, 4)
@@ -606,7 +591,7 @@ export interface DataFrame {
    * │ --- ┆ --- ┆ ---  │
    * │ f64 ┆ f64 ┆ str  │
    * ╞═════╪═════╪══════╡
-   * │ 1   ┆ 1   ┆ null │
+   * │ 2   ┆ 7   ┆ null │
    * ╰─────┴─────┴──────╯
    * ```
    */
@@ -782,10 +767,10 @@ export interface DataFrame {
    * @example
    * ```
    * >>> df = pl.DataFrame({
-   * >>>     "foo": [1, 2, 3],
-   * >>>     "bar": [6, 7, 8],
-   * >>>     "ham": ['a', 'b', 'c']
-   * >>>     })
+   * >>>   "foo": [1, 2, 3],
+   * >>>   "bar": [6, 7, 8],
+   * >>>   "ham": ['a', 'b', 'c']
+   * >>> })
    * >>> df.sample({n: 2})
    * shape: (2, 3)
    * ╭─────┬─────┬─────╮
@@ -827,7 +812,7 @@ export interface DataFrame {
    * └─────┘
    * ```
    */
-  select(...selection: ColumnSelection[]): DataFrame
+  select(...columns: ColumnsOrExpr[]): DataFrame
   /**
    * Shift the values by a given period and fill the parts that will be empty due to this operation
    * with `Nones`.
@@ -868,8 +853,8 @@ export interface DataFrame {
    * └──────┴──────┴──────┘
    * ```
    */
-  shift(periods:number): DataFrame
-  shift(opts: {periods: number}): DataFrame
+  shift(periods?: number): DataFrame
+  shift({periods}: {periods: number}): DataFrame
   /**
    * Shift the values by a given period and fill the parts that will be empty due to this operation
    * with the result of the `fill_value` expression.
@@ -900,14 +885,13 @@ export interface DataFrame {
    * ```
    */
   shiftAndFill(periods: number, fillValue: number | string): DataFrame
-  shiftAndFill(opts: {periods: number, fillValue: number | string}): DataFrame
+  shiftAndFill({periods, fillValue}: {periods: number, fillValue: number | string}): DataFrame
   /**
    * Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
-   * @param inPlace - optionally shrink in place
    */
   shrinkToFit(): DataFrame
-  shrinkToFit(inPlace: true): void
-  shrinkToFit(inPlace: false): DataFrame
+  shrinkToFit(inPlace:true): void
+  shrinkToFit({inPlace}: {inPlace:true}): void
   /**
    * Slice this DataFrame over the rows direction.
    * ___
@@ -934,17 +918,16 @@ export interface DataFrame {
    * └─────┴─────┴─────┘
    * ```
    */
-  slice(opts: {offset: number, length: number}): DataFrame
+  slice({offset, length}: {offset: number, length: number}): DataFrame
   slice(offset: number, length: number): DataFrame
   /**
    * Sort the DataFrame by column.
    * ___
-   * @param by - By which column to sort. Only accepts string.
+   * @param by - By which columns to sort. Only accepts string.
    * @param reverse - Reverse/descending sort.
-   * @param inPlace - Perform operation in-place.
    */
-  sort(by: string, reverse?: boolean, inPlace?: boolean): DataFrame
-  sort(opts: {by: string, reverse?: boolean, inPlace?: boolean}): DataFrame
+  sort(by: ColumnsOrExpr, reverse?: boolean): DataFrame
+  sort({by, reverse}: {by: ColumnsOrExpr, reverse?: boolean}): DataFrame
   /**
    * Aggregate the columns of this DataFrame to their standard deviation value.
    * ___
@@ -1107,7 +1090,6 @@ export interface DataFrame {
   /**
    * Grow this DataFrame vertically by stacking a DataFrame to it.
    * @param df - DataFrame to stack.
-   * @param inPlace - Modify in place
    * @example
    * ```
    * >>> df1 = pl.DataFrame({
@@ -1138,40 +1120,48 @@ export interface DataFrame {
    * ```
    */
   vstack(df: DataFrame): DataFrame
-  vstack(df: DataFrame, inPlace: true): void
-  vstack(df: DataFrame, {inPlace}: {inPlace: true}): void
   /**
    * Return a new DataFrame with the column added or replaced.
    * @param column - Series, where the name of the Series refers to the column in the DataFrame.
    */
-  withColumn(column: Series<any>): DataFrame
+  withColumn(column: Series<any> | Expr): DataFrame
+  withColumns(...columns: Expr[] | Series<any>[] ): DataFrame
   /**
    * Return a new DataFrame with the column renamed.
    * @param existingName
    * @param newName
    */
-  withColumnRenamed(opts: {existingName: string, newName: string}): DataFrame
-  withColumnRenamed(existingName: string, newName: string): DataFrame
+  withColumnRenamed(existing: string, replacement: string): DataFrame
+  withColumnRenamed(opts: {existing: string, replacement: string}): DataFrame
   /**
    * Add a column at index 0 that counts the rows.
    * @param name - name of the column to add
    */
-  withRowCount(name: string): DataFrame
+  withRowCount(name?: string): DataFrame
 
-  add(other: Series<any>): DataFrame
-  sub(other: Series<any>): DataFrame
-  div(other: Series<any>): DataFrame
-  mul(other: Series<any>): DataFrame
-  rem(other: Series<any>): DataFrame
-  plus(other: Series<any>): DataFrame
-  minus(other: Series<any>): DataFrame
-  divide(other: Series<any>): DataFrame
-  times(other: Series<any>): DataFrame
-  remainder(other: Series<any>): DataFrame
+  add(other: any): DataFrame
+  sub(other: any): DataFrame
+  div(other: any): DataFrame
+  mul(other: any): DataFrame
+  rem(other: any): DataFrame
+  plus(other: any): DataFrame
+  minus(other: any): DataFrame
+  divide(other: any): DataFrame
+  times(other: any): DataFrame
+  remainder(other: any): DataFrame
 }
 
+function prepareOtherArg<T>(anyValue:T | Series<T>): Series<T> {
+  if(isSeries(anyValue)) {
+
+    return anyValue;
+  } else {
+    return Series([anyValue]) as Series<T>;
+  }
+}
 export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const unwrap = <U>(method: string, args?: object, df=_df): U => {
+    console.log({method, args});
 
     return pli.df[method]({_df: df, ...args });
   };
@@ -1180,14 +1170,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   };
   const noArgWrap = (method: string) => () => wrap(method);
   const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
-
-  const inPlaceOptional = (method: string) =>  (obj?: {inPlace:boolean} | boolean): any  => {
-    if(obj === true || obj?.["inPlace"] === true) {
-      unwrap(method, {inPlace: true});
-    } else {
-      return wrap(method);
-    }
-  };
   const clone = noArgWrap("clone");
   const drop = (nameToDrop) => {
     if(Array.isArray(nameToDrop)) {
@@ -1204,10 +1186,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   };
   const describe = () => {
     const df = dfWrapper(_df);
-    console.log(df.mean());
-    console.log(df.std());
-    console.log(df.min());
-    console.log(df.max());
     const describeCast = (df:DataFrame) => {
       const columns = [];
       // df.getColumns().map(s => s.isNum)
@@ -1250,16 +1228,15 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       k3: obj?.["k3"] ?? k3 ?? 3
     }));
   };
-  const hstack = (columns, inPlace?) => {
-    if(inPlace) {
-      throw todo();
-    } else {
-      if(!Array.isArray(columns)) {
-        columns = columns.getColumns();
-      }
-
-      return wrap("hstack", {columns: columns.map(col => col._series), in_place: !!inPlace} );
+  const hstack = (columns) => {
+    if(!Array.isArray(columns)) {
+      columns = columns.getColumns();
     }
+
+    return wrap("hstack", {
+      columns: columns.map(col => col._series),
+      in_place: false
+    });
   };
   const join = (df: DataFrame, options: JoinOptions): DataFrame  => {
     options =  {how: "inner", suffix: "right", ...options};
@@ -1274,7 +1251,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       leftOn = on;
       rightOn = on;
     }
-
     if(!leftOn && !rightOn) {
       throw new TypeError("You should pass the column to join on as an argument.");
     }
@@ -1301,32 +1277,32 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     if (opts?.n || typeof opts === "number") {
       return wrap("sample_n", {
         n: opts?.n ?? opts,
-        with_replacement: opts?.withReplacement ?? withReplacement
+        withReplacement: opts?.withReplacement ?? withReplacement
       });
     }
     if(opts?.frac) {
       return wrap("sample_frac", {
         frac: opts?.frac ?? frac,
-        with_replacement: withReplacement,
+        withReplacement: withReplacement,
       });
     }
     else {
       throw new Error("must specify either 'frac' or 'n'");
     }
   };
-  const sort = (arg,  reverse=false,  inPlace=false): DataFrame =>  {
-    if(typeof arg === "string") {
-      return sort({by: arg, reverse, inPlace});
-    } else {
-      if(inPlace) {
-        const df = clone();
-        unwrap("sort_in_place", arg, df._df);
-
-        return df;
-      } else {
-        return wrap("sort", arg);
-      }
+  const sort = (arg,  reverse=false): DataFrame =>  {
+    if(arg?.by) {
+      return sort(arg.by, arg.reverse);
     }
+    if(Array.isArray(arg) || isExpr(arg)) {
+      return dfWrapper(_df).lazy()
+        .sort(arg, reverse)
+        .collectSync({noOptimization: true, stringCache: false});
+
+    }
+
+    return wrap("sort", {by: arg, reverse});
+
   };
   const toCSV = (dest?: string | Stream | WriteCsvOptions, options?: WriteCsvOptions) =>  {
     options = { hasHeader:true, sep: ",", ...options};
@@ -1374,6 +1350,60 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
 
   };
+  const withColumn = (column: Series<any> | Expr) => {
+    if(isSeries(column)) {
+      return wrap("with_column", {_series: column._series});
+    } else {
+      return dfWrapper(_df).withColumns(column);
+    }
+  };
+  const withColumns = (...columns: Expr[] | Series<any>[]) => {
+    if(isSeriesArray(columns)) {
+      return columns.reduce((acc, curr) => acc.withColumn(curr), dfWrapper(_df));
+    } else {
+      return dfWrapper(_df)
+        .lazy()
+        .withColumns(columns)
+        .collectSync({noOptimization: true, stringCache: false});
+    }
+
+  };
+  const select = (...selection) => {
+    const hasExpr = selection.some(s => isExpr(s));
+    if(hasExpr) {
+      return dfWrapper(_df)
+        .lazy()
+        .select(selection)
+        .collectSync();
+    } else {
+
+      return wrap("select", {selection: columnOrColumnsStrict(selection)});
+    }
+  };
+  const shiftAndFill = (periods:any, fillValue?: number | string)  => {
+    return dfWrapper(_df)
+      .lazy()
+      .shiftAndFill(periods, fillValue)
+      .collectSync();
+  };
+
+  const shrinkToFit = (inPlace:any=false): any => {
+    if(inPlace) {
+      return unwrap<void>("shrink_to_fit");
+    } else {
+      const d = dfWrapper(_df).clone();
+      unwrap("shrink_to_fit",{}, d._df);
+
+      return d;
+    }
+  };
+  const withColumnRenamed = (opt, replacement?) => {
+    if(opt?.existing) {
+      return withColumnRenamed(opt.existing, opt.replacement);
+    } else {
+      return dfWrapper(_df).rename({[opt]: replacement});
+    }
+  };
 
   return {
     _df,
@@ -1388,7 +1418,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     describe,
     downsample: (opt, rule?, n?) => GroupBy( _df, opt?.by ?? opt, true, opt?.rule ?? rule, opt?.n ?? n),
     drop,
-    dropInPlace: (name) => unwrap("drop_in_place", {name}),
     dropNulls: (subset?: any) => wrap("drop_nulls", {subset: columnOrColumns(subset)}),
     fillNull: (strategy) => wrap("fill_null", {strategy}),
     findIdxByName: (name) => unwrap("find_idx_by_name", {name}),
@@ -1409,7 +1438,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     lazy: () => LazyDataFrame(unwrap("lazy")),
     limit: (length=5) => wrap("head", {length}),
     max: (axis=0) => axis === 0 ? wrap("max") : _wrapSeries<any>(unwrap<any>("hmax")) as any,
-    mean: (axis=0, nullStrategy?) => axis === 0 ? wrap("mean") : _wrapSeries(unwrap("hmean", {nullStrategy})) as any,
+    mean: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("mean") : _wrapSeries(unwrap("hmean", {nullStrategy})) as any,
     median: noArgWrap("median"),
     melt: (ids, values) => wrap("melt", {idVars: columnOrColumns(ids), valueVars: columnOrColumns(values)}),
     min: (axis=0) => axis === 0 ? wrap("min") : _wrapSeries<any>(unwrap("hmin")) as any,
@@ -1421,29 +1450,29 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     replaceAtIdx: (index, newColumn) => unwrap("replace_at_idx", {index, newColumn: newColumn._series}),
     rows: noArgUnwrap("to_rows"),
     sample,
-    select: (...selection) => wrap("select", {selection: columnOrColumnsStrict(selection)}),
+    select,
     shift: (opt) => wrap("shift", {periods: opt?.periods ?? opt }),
-    shiftAndFill: (opt, fillVal?) => wrap("shift", {periods: opt?.periods ?? opt, fillValue: opt?.fillValue ?? fillVal}),
-    shrinkToFit: inPlaceOptional("shrink_to_fit"),
+    shiftAndFill,
+    shrinkToFit,
     slice: (opts, length?) => wrap("slice", {offset: opts?.offset ?? opts, length: opts?.length ?? length}),
     sort,
     std: noArgWrap("std"),
-    sum: (axis=0, nullStrategy?) => axis === 0 ? wrap("sum") : _wrapSeries(unwrap("hsum", {nullStrategy})) as any,
+    sum: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("sum") : _wrapSeries(unwrap("hsum", {nullStrategy})) as any,
     tail: (length=5) => wrap("tail", {length}),
     toCSV,
     toJS: noArgUnwrap("to_js"),
     toJSON,
     toSeries: (index) => _wrapSeries(unwrap("select_at_idx", {index})),
-    add: (other) =>  wrap("add", {other}),
-    sub: (other) =>  wrap("sub", {other}),
-    div: (other) =>  wrap("div", {other}),
-    mul: (other) =>  wrap("mul", {other}),
-    rem: (other) =>  wrap("rem", {other}),
-    plus: (other) =>  wrap("add", {other}),
-    minus: (other) =>  wrap("sub", {other}),
-    divide: (other) =>  wrap("div", {other}),
-    times: (other) =>  wrap("mul", {other}),
-    remainder: (other) =>  wrap("rem", {other}),
+    add: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
+    sub: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
+    div: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
+    mul: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
+    rem: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
+    plus: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
+    minus: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
+    divide: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
+    times: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
+    remainder: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
     var: noArgWrap("var"),
     apply: () => {throw todo();},
     dropDuplicates: () => {throw todo();},
@@ -1452,10 +1481,11 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     pipe: (fn?) => {throw todo();},
     row: (index) => unwrap("to_row", {idx: index}),
     upsample: (index) => {throw todo();},
-    vstack: (index) => {throw todo();},
-    withColumn: (index) => {throw todo();},
-    withColumnRenamed: (index) => {throw todo();},
-    withRowCount: (index) => {throw todo();},
+    vstack: (other) => wrap("vstack", {other: other._df}),
+    withColumn,
+    withColumns,
+    withColumnRenamed,
+    withRowCount: (name="row_nr") => wrap("with_row_count", {name}),
   };
 };
 export const _wrapDataFrame = (df, method, args) => dfWrapper(pli.df[method]({_df: df, ...args }));
@@ -1646,10 +1676,11 @@ export function readJSON(arg: ReadJsonOptions | string, options?: any) {
   ```
  */
 export function DataFrame(data: Record<string, any[]>): DataFrame
+export function DataFrame(data: Record<string, any>[]): DataFrame
 export function DataFrame(data: Series<any>[]): DataFrame
 export function DataFrame(data: any[][]): DataFrame
 export function DataFrame(data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
-export function DataFrame(data: Record<string, any[]> | any[][] | Series<any>[],options?: {columns?: any[], orient?: "row" | "col"}): DataFrame {
+export function DataFrame(data: Record<string, any[]> | Record<string, any>[] | any[][] | Series<any>[],options?: {columns?: any[], orient?: "row" | "col"}): DataFrame {
 
   if(!data) {
     return dfWrapper(objToDF({}));

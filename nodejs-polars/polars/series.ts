@@ -7,6 +7,7 @@ import {todo} from "./internals/utils";
 import {StringFunctions} from "./series/string";
 import {ListFunctions} from "./series/list";
 import {InvalidOperationError} from "./error";
+import {RankMethod} from "./utils";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 type RollingOptions = {
@@ -388,9 +389,9 @@ export interface Series<T> {
    * shape: (3,)
    * Series: 'a' [u64]
    * [
-   *         7499844439152382372
-   *         821952831504499201
-   *         6685218033491627602
+   *   7499844439152382372
+   *   821952831504499201
+   *   6685218033491627602
    * ]
    * ```
    */
@@ -768,7 +769,7 @@ export interface Series<T> {
    *  * __'random'__: Like 'ordinal', but the rank for ties is not dependent
    *    on the order that the values occur in `a`.
    */
-  rank(method?: "average" | "min" | "max" | "dense" | "ordinal" | "random"): Series<number>
+  rank(method?: RankMethod): Series<number>
   rechunk(): Series<T>
   rechunk(inPlace: boolean): void
   rechunk({inPlace}: {inPlace: true}): void

@@ -63,11 +63,10 @@ export function concat(items: ConcatItems, options?: ConcatOptions): DataFrame |
   throw new Error();
 }
 
-
-export function col(name: string) {
+export function col(name: string): Expr {
   return Expr(pli.col({name}));
 }
 
-export function lit(value: any) {
+export function lit(value: any): Expr {
   return Expr(pli.lit({value}));
 }

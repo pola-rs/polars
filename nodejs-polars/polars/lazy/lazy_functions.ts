@@ -1,5 +1,5 @@
-import {Expr} from "@polars/lazy/expr";
-import {Series} from "@polars/series";
+import {Expr} from "./expr";
+import {Series} from "../series";
 import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, isSeries, Option} from "../utils";
 import pli from "../internals/polars_internal";
 

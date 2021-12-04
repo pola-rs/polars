@@ -2,10 +2,11 @@ import pli from "./internals/polars_internal";
 import {Stream} from "stream";
 
 export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
- T extends DataType.Utf8 ? string : T extends DataType.Date ? Date : T extends DataType.UInt64 ? bigint : number
+ T extends DataType.Utf8 ? string : T extends DataType.Datetime ? number | Date :
+ T extends DataType.Date ? Date : T extends DataType.UInt64 ? bigint : number
 
 export type PrimitiveToDtype<T> = T extends boolean ? DataType.Bool :
- T extends string ? DataType.Utf8 : T extends Date ? DataType.Date :
+ T extends string ? DataType.Utf8 : T extends Date ? DataType.Datetime :
  T extends number ? DataType.Float64 : T extends bigint ? DataType.UInt64 :
  T extends ArrayLike<any> ? DataType.List : DataType.Object
 
