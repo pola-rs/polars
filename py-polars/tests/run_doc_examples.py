@@ -59,7 +59,7 @@ if __name__ == "__main__":
     # doctest.REPORT_NDIFF = True
 
     results_list = []
-    src_dir = Path(__file__).parent.parent / "polars"
+    src_dir = Path(polars.__file__).parent  # __file__ returns the __init__.py
     print(src_dir)
     for file in src_dir.rglob("*.py"):
         pretty_file_name = file.relative_to(src_dir)
