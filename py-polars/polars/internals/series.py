@@ -1926,7 +1926,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s = s.to_numpy()
+        >>> s = s.to_numpy(dtype=np.int64)
         >>> s
         array([1, 2, 3], dtype=int64)
         >>> type(s)

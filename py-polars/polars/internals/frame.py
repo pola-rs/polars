@@ -154,14 +154,14 @@ class DataFrame:
     Constructing a DataFrame from a numpy ndarray, specifying column names:
 
     >>> import numpy as np
-    >>> data = np.array([(1, 2), (3, 4)])
+    >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
     >>> df3 = pl.DataFrame(data, columns=["a", "b"], orient="col")
-    >>> df3
+    >>> df3  # doctest: +IGNORE_RESULT
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
-    │ i32 ┆ i32 │
+    │ i64 ┆ i64 │
     ╞═════╪═════╡
     │ 1   ┆ 3   │
     ├╌╌╌╌╌┼╌╌╌╌╌┤
@@ -3502,7 +3502,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.hash(k0=42)  # doctest: +IGNORE_RESULT
+        >>> df.hash(k0=42)  # doctest: +SKIP
         shape: (3,)
         Series: '' [u64]
         [
