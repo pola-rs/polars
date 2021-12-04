@@ -1358,4 +1358,19 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
 
         Ok(())
     }
+
+    #[test]
+    fn test_tsv_header_offset() -> Result<()> {
+        let csv = "foo\tbar\n\t1000011\t1\n\t1000026\t2\n\t1000949\t2";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).with_delimiter(b'\t').finish()?;
+
+        assert_eq!(df.shape(), (3, 2));
+        assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64]);
+        let a = df.column("foo")?;
+        let a = a.utf8()?;
+        assert_eq!(a.get(0), Some(""));
+
+        Ok(())
+    }
 }

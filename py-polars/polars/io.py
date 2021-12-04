@@ -155,7 +155,7 @@ def read_csv(
     quote_char: Optional[str] = r'"',
     storage_options: Optional[Dict] = None,
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
-    parse_dates: bool = True,
+    parse_dates: bool = False,
 ) -> DataFrame:
     """
     Read into a DataFrame from a csv file.

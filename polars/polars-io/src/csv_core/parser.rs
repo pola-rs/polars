@@ -118,6 +118,14 @@ pub(crate) fn skip_whitespace(input: &[u8]) -> (&[u8], usize) {
     skip_condition(input, |b| is_whitespace(b) || is_line_ending(b))
 }
 
+#[inline]
+/// Can be used to skip whitespace, but exclude the delimiter
+pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> (&[u8], usize) {
+    skip_condition(input, |b| {
+        b != exclude && (is_whitespace(b) || is_line_ending(b))
+    })
+}
+
 /// Local version of slice::starts_with (as it won't inline)
 #[inline]
 fn starts_with(bytes: &[u8], needle: u8) -> bool {
@@ -406,7 +414,7 @@ pub(crate) fn parse_lines(
             let end = bytes.as_ptr() as usize;
             return Ok(end - start);
         }
-        let (b, _) = skip_whitespace(bytes);
+        let (b, _) = skip_whitespace_exclude(bytes, delimiter);
         bytes = b;
         if bytes.is_empty() {
             return Ok(original_bytes_len);
