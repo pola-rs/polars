@@ -1344,4 +1344,18 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
 
         Ok(())
     }
+
+    #[test]
+    fn test_scientific_floats() -> Result<()> {
+        let csv = r#"foo,bar
+10000001,1e-5
+10000002,.04
+"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish()?;
+        assert_eq!(df.shape(), (2, 2));
+        assert_eq!(df.dtypes(), &[DataType::Int64, DataType::Float64]);
+
+        Ok(())
+    }
 }
