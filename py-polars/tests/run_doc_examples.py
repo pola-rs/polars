@@ -64,11 +64,13 @@ if __name__ == "__main__":
     print(src_dir)
     for file in src_dir.rglob("*.py"):
         pretty_file_name = file.relative_to(src_dir)
-
+        print(file)
         print(f"===== Testing {pretty_file_name} =====")
         # The globs arg means we do not have to do `import polars as pl` on each example
         # optionflags=1 enables the NORMALIZE_WHITESPACE and other options above
-        res = doctest.testfile(str(file), globs={"pl": polars}, optionflags=1)
+        res = doctest.testfile(
+            str(file), module_relative=False, globs={"pl": polars}, optionflags=1
+        )
         results_list.append(
             {
                 "name": str(pretty_file_name),
