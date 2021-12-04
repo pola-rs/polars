@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import polars
+
 print(polars.__file__)
 if __name__ == "__main__":
     # set to True to just run the code, and do not check any output. Will still report errors if the code is invalid
