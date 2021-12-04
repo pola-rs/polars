@@ -1325,4 +1325,23 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
         assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64,]);
         Ok(())
     }
+
+    #[test]
+    fn test_whitespace_delimiters() -> Result<()> {
+        let tsv = "\ta\tb\tc\n1\ta1\tb1\tc1\n2\ta2\tb2\tc2\n".to_string();
+        let mut contents = Vec::with_capacity(3);
+        contents.push((tsv.replace('\t', " "), b' '));
+        contents.push((tsv.replace('\t', "-"), b'-'));
+        contents.push((tsv, b'\t'));
+
+        for (content, sep) in contents {
+            let file = Cursor::new(&content);
+            let df = CsvReader::new(file).with_delimiter(sep).finish()?;
+
+            assert_eq!(df.shape(), (2, 4));
+            assert_eq!(df.get_column_names(), &["", "a", "b", "c"]);
+        }
+
+        Ok(())
+    }
 }
