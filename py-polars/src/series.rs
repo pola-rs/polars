@@ -632,6 +632,11 @@ impl PySeries {
         self.series.len()
     }
 
+    pub fn to_physical(&self) -> Self {
+        let s = self.series.to_physical_repr().into_owned();
+        s.into()
+    }
+
     pub fn to_list(&self) -> PyObject {
         let gil = Python::acquire_gil();
         let python = gil.python();
@@ -682,8 +687,14 @@ impl PySeries {
                 }
                 v
             }
-            DataType::Date => PyList::new(python, &series.date().unwrap().0),
-            DataType::Datetime => PyList::new(python, &series.datetime().unwrap().0),
+            DataType::Date => {
+                let ca = series.date().unwrap();
+                return Wrap(ca).to_object(python);
+            }
+            DataType::Datetime => {
+                let ca = series.datetime().unwrap();
+                return Wrap(ca).to_object(python);
+            }
             dt => primitive_to_list(dt, series),
         };
         pylist.to_object(python)

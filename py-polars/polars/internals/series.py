@@ -1735,6 +1735,17 @@ class Series:
         pl_dtype = py_type_to_dtype(dtype)
         return wrap_s(self._s.cast(str(pl_dtype), strict))
 
+    def to_physical(self) -> "Series":
+        """
+        Cast to physical representation of the logical dtype.
+
+        Date -> Int32
+        Datetime -> Int64
+        Time -> Int64
+        other -> other
+        """
+        return wrap_s(self._s.to_physical)
+
     def to_list(self, use_pyarrow: bool = False) -> tp.List[Optional[Any]]:
         """
         Convert this Series to a Python List. This operation clones data.

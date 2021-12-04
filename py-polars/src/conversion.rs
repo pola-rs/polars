@@ -13,7 +13,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PySequence};
+use pyo3::types::{PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -193,6 +193,38 @@ impl ToPyObject for Wrap<DataType> {
 impl ToPyObject for Wrap<AnyValue<'_>> {
     fn to_object(&self, py: Python) -> PyObject {
         self.clone().into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&DatetimeChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let pl = PyModule::import(py, "polars").unwrap();
+        let pli = pl.getattr("internals").unwrap();
+        let m_series = pli.getattr("series").unwrap();
+        let convert = m_series.getattr("_to_python_datetime").unwrap();
+        let py_date_dtype = pl.getattr("Datetime").unwrap();
+
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype)).unwrap()));
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&DateChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let pl = PyModule::import(py, "polars").unwrap();
+        let pli = pl.getattr("internals").unwrap();
+        let m_series = pli.getattr("series").unwrap();
+        let convert = m_series.getattr("_to_python_datetime").unwrap();
+        let py_date_dtype = pl.getattr("Date").unwrap();
+
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype)).unwrap()));
+        PyList::new(py, iter).into_py(py)
     }
 }
 
