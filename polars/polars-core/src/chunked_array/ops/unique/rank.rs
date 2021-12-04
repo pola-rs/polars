@@ -27,6 +27,13 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
     // impute with the maximum value possible.
     // todo! maybe add + 1 at the end on the null values.
     if s.has_validity() {
+        // if s.null_count() == s.len() {
+        //     return match method {
+        //         Average => Float32Chunked::full_null(s.name(), s.len()).into_series(),
+        //         _ => UInt32Chunked::full_null(s.name(), s.len()).into_series()
+        //     }
+        // }
+
         // replace null values with the maximum value of that dtype
         let s = s.fill_null(FillNullStrategy::MaxBound).unwrap();
         return rank(&s, method);
@@ -319,5 +326,15 @@ mod test {
         assert_eq!(out, &[4, 5, 3, 8, 7, 3, 1, 6]);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_rank_all_null() {
+        let s = UInt32Chunked::new_from_opt_slice("", &[None, None, None]).into_series();
+        let out = rank(&s, RankMethod::Average);
+        assert_eq!(out.null_count(), 3);
+        assert_eq!(out.dtype(), &DataType::Float32);
+        let out = rank(&s, RankMethod::Max);
+        assert_eq!(out.dtype(), &DataType::UInt32);
     }
 }
