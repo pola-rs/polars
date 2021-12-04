@@ -19,9 +19,10 @@ pub use crate::{
     df,
     error::{PolarsError, Result},
     frame::{hash_join::JoinType, DataFrame},
+    named_from::NamedFrom,
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
-        IntoSeries, NamedFrom, Series, SeriesTrait,
+        IntoSeries, Series, SeriesTrait,
     },
     testing::*,
     utils::IntoVec,

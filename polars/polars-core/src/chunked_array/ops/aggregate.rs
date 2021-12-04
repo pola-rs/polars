@@ -588,7 +588,7 @@ mod test {
 
     #[test]
     fn test_mean() {
-        let ca = Float32Chunked::new_from_opt_slice("", &[Some(1.0), Some(2.0), None]);
+        let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
         // all mean_as_series are cast to f64.
         assert_eq!(ca.mean_as_series().f64().unwrap().get(0).unwrap(), 1.5);
@@ -600,7 +600,7 @@ mod test {
 
     #[test]
     fn test_quantile_all_null() {
-        let ca = Float32Chunked::new_from_opt_slice("", &[None, None, None]);
+        let ca = Float32Chunked::new("", &[None, None, None]);
         let out = ca.quantile(0.9).unwrap();
         assert_eq!(out, None)
     }
