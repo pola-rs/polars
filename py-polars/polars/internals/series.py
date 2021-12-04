@@ -1926,10 +1926,10 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s = s.to_numpy(dtype=np.int64)
-        >>> s
+        >>> arr = s.to_numpy()
+        >>> arr  # doctest: +IGNORE_RESULT
         array([1, 2, 3], dtype=int64)
-        >>> type(s)
+        >>> type(arr)
         <class 'numpy.ndarray'>
 
         Parameters
