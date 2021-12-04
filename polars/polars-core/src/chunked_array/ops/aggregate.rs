@@ -43,21 +43,6 @@ pub trait VarAggSeries {
     fn std_as_series(&self) -> Series;
 }
 
-macro_rules! impl_quantile {
-    ($self:expr, $quantile:expr) => {{
-        let null_count = $self.null_count();
-        let opt = ChunkSort::sort($self, false)
-            .slice(
-                ((($self.len() - null_count) as f64) * $quantile + null_count as f64) as i64,
-                1,
-            )
-            .into_iter()
-            .next()
-            .unwrap();
-        opt
-    }};
-}
-
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -120,7 +105,16 @@ where
                 "quantile should be between 0.0 and 1.0".into(),
             ))
         } else {
-            let opt = impl_quantile!(self, quantile);
+            let null_count = self.null_count();
+            let opt = ChunkSort::sort(self, false)
+                .slice(
+                    (((self.len() - null_count) as f64) * quantile + null_count as f64) as i64,
+                    1,
+                )
+                .into_iter()
+                .next()
+                .flatten();
+
             Ok(opt)
         }
     }
@@ -602,5 +596,12 @@ mod test {
         let ca = Float32Chunked::full_null("", 3);
         assert_eq!(ca.mean(), None);
         assert_eq!(ca.mean_as_series().f64().unwrap().get(0), None);
+    }
+
+    #[test]
+    fn test_quantile_all_null() {
+        let ca = Float32Chunked::new_from_opt_slice("", &[None, None, None]);
+        let out = ca.quantile(0.9).unwrap();
+        assert_eq!(out, None)
     }
 }
