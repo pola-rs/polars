@@ -24,6 +24,7 @@ package, not the code in the repo. This is similar to how pytest works.
 import doctest
 import sys
 from pathlib import Path
+from typing import Any
 
 import polars
 
@@ -39,7 +40,7 @@ if __name__ == "__main__":
     OutputChecker = doctest.OutputChecker
 
     class CustomOutputChecker(OutputChecker):
-        def check_output(self, want, got, optionflags):
+        def check_output(self, want: str, got: str, optionflags: Any) -> bool:
             if IGNORE_RESULT_ALL:
                 return True
             if IGNORE_RESULT & optionflags:
@@ -47,7 +48,7 @@ if __name__ == "__main__":
             else:
                 return OutputChecker.check_output(self, want, got, optionflags)
 
-    doctest.OutputChecker = CustomOutputChecker
+    doctest.OutputChecker = CustomOutputChecker  # type: ignore
 
     # We want to be relaxed about whitespace, but strict on True vs 1
     doctest.NORMALIZE_WHITESPACE = True
