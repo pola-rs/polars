@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import polars
-
+print(polars.__file__)
 if __name__ == "__main__":
     # set to True to just run the code, and do not check any output. Will still report errors if the code is invalid
     IGNORE_RESULT_ALL = False
@@ -60,6 +60,7 @@ if __name__ == "__main__":
 
     results_list = []
     src_dir = Path(__file__).parent.parent / "polars"
+    print(src_dir)
     for file in src_dir.rglob("*.py"):
         pretty_file_name = file.relative_to(src_dir)
 
