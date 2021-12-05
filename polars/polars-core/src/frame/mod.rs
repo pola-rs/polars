@@ -135,22 +135,12 @@ fn duplicate_err(name: &str) -> Result<()> {
 
 impl DataFrame {
     /// Get the index of the column.
-    fn name_to_idx(&self, name: &str) -> Result<usize> {
-        let mut idx = 0;
-        for column in &self.columns {
-            if column.name() == name {
-                break;
-            }
-            idx += 1;
-        }
-        if idx == self.columns.len() {
-            Err(PolarsError::NotFound(name.into()))
-        } else {
-            Ok(idx)
-        }
+    fn check_name_to_idx(&self, name: &str) -> Result<usize> {
+        self.find_idx_by_name(name)
+            .ok_or_else(|| PolarsError::NotFound(name.into()))
     }
 
-    fn has_column(&self, name: &str) -> Result<()> {
+    fn check_already_present(&self, name: &str) -> Result<()> {
         if self.columns.iter().any(|s| s.name() == name) {
             Err(PolarsError::Duplicate(
                 format!("column with name: '{}' already present in DataFrame", name).into(),
@@ -847,10 +837,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn drop_in_place(&mut self, name: &str) -> Result<Series> {
-        let idx = self.name_to_idx(name)?;
-        let result = Ok(self.columns.remove(idx));
-        self.rechunk();
-        result
+        let idx = self.check_name_to_idx(name)?;
+        Ok(self.columns.remove(idx))
     }
 
     /// Return a new `DataFrame` where all null values are dropped.
@@ -923,7 +911,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn drop(&self, name: &str) -> Result<Self> {
-        let idx = self.name_to_idx(name)?;
+        let idx = self.check_name_to_idx(name)?;
         let mut new_cols = Vec::with_capacity(self.columns.len() - 1);
 
         self.columns.iter().enumerate().for_each(|(i, s)| {
@@ -955,7 +943,7 @@ impl DataFrame {
     /// Insert a new column at a given index.
     pub fn insert_at_idx<S: IntoSeries>(&mut self, index: usize, column: S) -> Result<&mut Self> {
         let series = column.into_series();
-        self.has_column(series.name())?;
+        self.check_already_present(series.name())?;
         self.insert_at_idx_no_name_check(index, series)
     }
 
@@ -963,9 +951,8 @@ impl DataFrame {
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
         let series = column.into_series();
         if series.len() == self.height() || self.is_empty() {
-            if self.has_column(series.name()).is_err() {
-                let name = series.name().to_string();
-                self.apply(&name, |_| series)?;
+            if let Some(idx) = self.find_idx_by_name(series.name()) {
+                self.replace_at_idx(idx, series)?;
             } else {
                 self.columns.push(series);
                 self.rechunk();
@@ -1638,14 +1625,12 @@ impl DataFrame {
     /// | "egg"  | 3     |
     /// +--------+-------+
     /// ```
-    pub fn apply<F, S>(&mut self, column: &str, f: F) -> Result<&mut Self>
+    pub fn apply<F, S>(&mut self, name: &str, f: F) -> Result<&mut Self>
     where
         F: FnOnce(&Series) -> S,
         S: IntoSeries,
     {
-        let idx = self
-            .find_idx_by_name(column)
-            .ok_or_else(|| PolarsError::NotFound(column.to_string()))?;
+        let idx = self.check_name_to_idx(name)?;
         self.apply_at_idx(idx, f)
     }
 

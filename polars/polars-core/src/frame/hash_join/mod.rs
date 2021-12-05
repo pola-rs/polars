@@ -1215,7 +1215,7 @@ impl DataFrame {
                 for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
                     let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
                     s.rename(s_left.name());
-                    df_left.hstack_mut(&[s])?;
+                    df_left.with_column(s)?;
                 }
                 self.finish_join(df_left, df_right, suffix)
             }
