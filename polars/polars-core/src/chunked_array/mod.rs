@@ -766,7 +766,7 @@ pub(crate) mod test {
         // path with continuous slice
         assert_slice_equal(&s.reverse(), &[3, 2, 1]);
         // path with options
-        let s = UInt32Chunked::new_from_opt_slice("", &[Some(1), None, Some(3)]);
+        let s = UInt32Chunked::new("", &[Some(1), None, Some(3)]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(3), None, Some(1)]);
         let s = BooleanChunked::new_from_slice("", &[true, false]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(false), Some(true)]);
@@ -774,7 +774,7 @@ pub(crate) mod test {
         let s = Utf8Chunked::new_from_slice("", &["a", "b", "c"]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), Some("b"), Some("a")]);
 
-        let s = Utf8Chunked::new_from_opt_slice("", &[Some("a"), None, Some("c")]);
+        let s = Utf8Chunked::new("", &[Some("a"), None, Some("c")]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), None, Some("a")]);
     }
 
@@ -795,8 +795,7 @@ pub(crate) mod test {
         use crate::SINGLE_LOCK;
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
-        let ca =
-            Utf8Chunked::new_from_opt_slice("", &[Some("foo"), None, Some("bar"), Some("ham")]);
+        let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca.cast(&DataType::Categorical).unwrap();
         let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.into_iter().collect();

@@ -418,7 +418,7 @@ mod test {
 
     #[test]
     fn test_rolling_mean() {
-        let ca = Float64Chunked::new_from_opt_slice(
+        let ca = Float64Chunked::new(
             "foo",
             &[
                 Some(0.0),
@@ -484,7 +484,7 @@ mod test {
 
     #[test]
     fn test_rolling_apply() {
-        let ca = Float64Chunked::new_from_opt_slice(
+        let ca = Float64Chunked::new(
             "foo",
             &[
                 Some(0.0),
@@ -514,7 +514,7 @@ mod test {
 
     #[test]
     fn test_rolling_var() {
-        let ca = Float64Chunked::new_from_opt_slice(
+        let ca = Float64Chunked::new(
             "foo",
             &[
                 Some(0.0),

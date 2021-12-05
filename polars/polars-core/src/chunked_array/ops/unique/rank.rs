@@ -330,7 +330,7 @@ mod test {
 
     #[test]
     fn test_rank_all_null() {
-        let s = UInt32Chunked::new_from_opt_slice("", &[None, None, None]).into_series();
+        let s = UInt32Chunked::new("", &[None, None, None]).into_series();
         let out = rank(&s, RankMethod::Average);
         assert_eq!(out.null_count(), 3);
         assert_eq!(out.dtype(), &DataType::Float32);

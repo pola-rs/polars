@@ -494,7 +494,7 @@ mod test {
         // Note that numpy as an argument ddof wich influences results. The default is ddof=0
         // we chose ddof=1, which is standard in statistics
         let ca1 = Int32Chunked::new_from_slice("", &[5, 8, 9, 5, 0]);
-        let ca2 = Int32Chunked::new_from_opt_slice(
+        let ca2 = Int32Chunked::new(
             "",
             &[
                 Some(5),
@@ -528,12 +528,12 @@ mod test {
 
     #[test]
     fn test_median() {
-        let ca = UInt32Chunked::new_from_opt_slice(
+        let ca = UInt32Chunked::new(
             "a",
             &[Some(2), Some(1), None, Some(3), Some(5), None, Some(4)],
         );
         assert_eq!(ca.median(), Some(3.0));
-        let ca = UInt32Chunked::new_from_opt_slice(
+        let ca = UInt32Chunked::new(
             "a",
             &[
                 None,

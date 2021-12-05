@@ -22,35 +22,6 @@ macro_rules! impl_named_from {
     };
 }
 
-impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
-    fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_slice(name, v.as_ref()).into_series()
-    }
-}
-impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
-    fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_opt_slice(name, v.as_ref()).into_series()
-    }
-}
-
-impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Series {
-    fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
-            .into_series()
-    }
-}
-impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> for Series {
-    fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_opt_iter(
-            name,
-            v.as_ref()
-                .iter()
-                .map(|opt| opt.as_ref().map(|value| value.as_ref())),
-        )
-        .into_series()
-    }
-}
-
 impl_named_from!([String], Utf8Type, new_from_slice);
 impl_named_from!([bool], BooleanType, new_from_slice);
 #[cfg(feature = "dtype-u8")]
@@ -117,5 +88,72 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
             builder.append_opt_series(series.as_ref())
         }
         builder.finish().into_series()
+    }
+}
+impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_slice(name, v.as_ref()).into_series()
+    }
+}
+
+impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Utf8Chunked {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_slice(name, v.as_ref())
+    }
+}
+
+impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_opt_slice(name, v.as_ref()).into_series()
+    }
+}
+
+impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Utf8Chunked {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_opt_slice(name, v.as_ref())
+    }
+}
+
+impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
+            .into_series()
+    }
+}
+
+impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Utf8Chunked {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
+    }
+}
+
+impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new(name, v).into_series()
+    }
+}
+
+impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> for Utf8Chunked {
+    fn new(name: &str, v: T) -> Self {
+        Utf8Chunked::new_from_opt_iter(
+            name,
+            v.as_ref()
+                .iter()
+                .map(|opt| opt.as_ref().map(|value| value.as_ref())),
+        )
+    }
+}
+
+#[cfg(feature = "object")]
+impl<T: PolarsObject> NamedFrom<&[T], &[T]> for ObjectChunked<T> {
+    fn new(name: &str, v: &[T]) -> Self {
+        ObjectChunked::new_from_slice(name, v)
+    }
+}
+
+#[cfg(feature = "object")]
+impl<T: PolarsObject, S: AsRef<[Option<T>]>> NamedFrom<S, [Option<T>]> for ObjectChunked<T> {
+    fn new(name: &str, v: S) -> Self {
+        ObjectChunked::new_from_opt_slice(name, v.as_ref())
     }
 }

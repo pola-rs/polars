@@ -706,7 +706,7 @@ mod test {
 
     #[test]
     fn test_argsort() {
-        let a = Int32Chunked::new_from_opt_slice(
+        let a = Int32Chunked::new(
             "a",
             &[
                 Some(1), // 0
@@ -734,7 +734,7 @@ mod test {
 
     #[test]
     fn test_sort() {
-        let a = Int32Chunked::new_from_opt_slice(
+        let a = Int32Chunked::new(
             "a",
             &[
                 Some(1),
@@ -843,8 +843,7 @@ mod test {
 
     #[test]
     fn test_sort_utf8() {
-        let ca =
-            Utf8Chunked::new_from_opt_slice("a", &[Some("a"), None, Some("c"), None, Some("b")]);
+        let ca = Utf8Chunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
@@ -875,7 +874,7 @@ mod test {
         assert_eq!(Vec::from(&out), expected);
 
         // no nulls
-        let ca = Utf8Chunked::new_from_opt_slice("a", &[Some("a"), Some("c"), Some("b")]);
+        let ca = Utf8Chunked::new("a", &[Some("a"), Some("c"), Some("b")]);
         let out = ca.sort(false);
         let expected = &[Some("a"), Some("b"), Some("c")];
         assert_eq!(Vec::from(&out), expected);

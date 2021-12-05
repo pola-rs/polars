@@ -37,7 +37,7 @@ impl PhysicalExpr for LiteralExpr {
             Float32(v) => Float32Chunked::full("literal", *v, 1).into_series(),
             Float64(v) => Float64Chunked::full("literal", *v, 1).into_series(),
             Boolean(v) => BooleanChunked::full("literal", *v, 1).into_series(),
-            Null => BooleanChunked::new_from_opt_slice("literal", &[None]).into_series(),
+            Null => BooleanChunked::new("literal", &[None]).into_series(),
             Range {
                 low,
                 high,
