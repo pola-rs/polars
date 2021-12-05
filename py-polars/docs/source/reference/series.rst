@@ -174,6 +174,7 @@ Various
     Series.dt
     Series.str
     Series.reinterpret
+    Series.to_physical
 
 TimeSeries
 ----------
