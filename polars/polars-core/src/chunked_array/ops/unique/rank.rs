@@ -17,11 +17,20 @@ pub enum RankMethod {
 }
 
 pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
-    if s.len() == 1 {
-        return match method {
-            Average => Series::new(s.name(), &[1.0f32]),
-            _ => Series::new(s.name(), &[1u32]),
-        };
+    match s.len() {
+        1 => {
+            return match method {
+                Average => Series::new(s.name(), &[1.0f32]),
+                _ => Series::new(s.name(), &[1u32]),
+            };
+        }
+        0 => {
+            return match method {
+                Average => Float32Chunked::new_from_slice(s.name(), &[]).into_series(),
+                _ => UInt32Chunked::new_from_slice(s.name(), &[]).into_series(),
+            }
+        }
+        _ => {}
     }
     // don't fully understand how to deal with nulls yet
     // impute with the maximum value possible.
@@ -333,6 +342,14 @@ mod test {
         let s = UInt32Chunked::new("", &[None, None, None]).into_series();
         let out = rank(&s, RankMethod::Average);
         assert_eq!(out.null_count(), 3);
+        assert_eq!(out.dtype(), &DataType::Float32);
+        let out = rank(&s, RankMethod::Max);
+        assert_eq!(out.dtype(), &DataType::UInt32);
+    }
+    #[test]
+    fn test_rank_empty() {
+        let s = UInt32Chunked::new_from_slice("", &[]).into_series();
+        let out = rank(&s, RankMethod::Average);
         assert_eq!(out.dtype(), &DataType::Float32);
         let out = rank(&s, RankMethod::Max);
         assert_eq!(out.dtype(), &DataType::UInt32);
