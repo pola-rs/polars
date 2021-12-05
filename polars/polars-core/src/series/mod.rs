@@ -689,6 +689,44 @@ impl Series {
         }
     }
 
+    /// Check if the underlying data is a logical type.
+    pub fn is_logical(&self) -> bool {
+        use DataType::*;
+        matches!(self.dtype(), Date | Datetime | Time | Categorical)
+    }
+
+    /// Check if underlying physical data is numeric.
+    ///
+    /// Date types and Categoricals are also considered numeric.
+    pub fn is_numeric_physical(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self.dtype() {
+            DataType::Utf8 | DataType::List(_) | DataType::Boolean | DataType::Null => false,
+            #[cfg(feature = "object")]
+            DataType::Object(_) => false,
+            _ => true,
+        }
+    }
+
+    /// Check if underlying data is numeric
+    pub fn is_numeric(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self.dtype() {
+            DataType::Utf8
+            | DataType::List(_)
+            | DataType::Categorical
+            | DataType::Date
+            | DataType::Datetime
+            | DataType::Boolean
+            | DataType::Null => false,
+            #[cfg(feature = "object")]
+            DataType::Object(_) => false,
+            _ => true,
+        }
+    }
+
     #[cfg(feature = "abs")]
     #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
     /// convert numerical values to their absolute value
