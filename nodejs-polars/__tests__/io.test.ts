@@ -21,7 +21,7 @@ describe("io", () => {
         const df = pl.readCSV(csvString);
         expect(df.toCSV()).toEqual(csvString);
       });
-      it("can parse datetimes", () => {
+      it.todo("can parse datetimes", () => {
         const csv = `timestamp,open,high
 2021-01-01 00:00:00,0.00305500,0.00306000
 2021-01-01 00:15:00,0.00298800,0.00300400
@@ -30,7 +30,7 @@ describe("io", () => {
         const df = pl.readCSV(csv);
         expect(df.dtypes).toEqual([pl.Datetime, pl.Float64, pl.Float64]);
       });
-      it.only.each`
+      it.each`
       csv                         | nullValues
       ${"a,b,c\nna,b,c\na,na,c"}  | ${"na"}
       ${"a,b,c\nna,b,c\na,n/a,c"} | ${["na", "n/a"]}

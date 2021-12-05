@@ -109,6 +109,11 @@ export function col(col: string | string[] | Series<string>): Expr {
   }
 }
 
+
+export function lit(value: any): Expr {
+  return Expr(pli.lit({value}));
+}
+
 /**
  * Count the number of values in this column.
  */
@@ -142,39 +147,7 @@ function max(column): Expr | number | bigint {
 
   return null as any;
 }
-// function max_() {}
-// function min() {}
-// function min() {}
-// function min() {}
-// function min_() {}
-// function sum() {}
-// function sum() {}
-// function sum() {}
-// function mean() {}
-// function mean() {}
-// function mean() {}
-// function avg() {}
-// function avg() {}
-// function avg() {}
-// function median() {}
-// function median() {}
-// function median() {}
-// function n_unique() {}
-// function n_unique() {}
-// function n_unique() {}
-// function first() {}
-// function first() {}
-// function first() {}
-// function last() {}
-// function last() {}
-// function last() {}
-// function head() {}
-// function head() {}
-// function head() {}
-// function tail() {}
-// function tail() {}
-// function tail() {}
-function lit() {}
+
 function spearman_rank_corr() {}
 function pearson_corr() {}
 function cov() {}

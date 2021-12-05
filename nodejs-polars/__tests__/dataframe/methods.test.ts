@@ -5,7 +5,7 @@ describe("dataframe", () => {
   const chance = new Chance();
   const buildDF = () => pl.DataFrame({
     "num": [chance.natural(), chance.natural(), chance.natural()],
-    "str": [chance.string(),chance.string(),chance.string()],
+    "str": [chance.string(), chance.string(), chance.string()],
     "date": [chance.date(), chance.date(), chance.date()]
   });
 
@@ -28,16 +28,10 @@ describe("dataframe", () => {
   it.todo("can drop duplicates");
   it.todo("can drop duplicates for only a subset of columns");
 
-  it("can drop in place", () => {
-    const df = buildDF();
-    df.dropInPlace("date");
-    expect(df.columns).toEqual(["num", "str"]);
-  });
-
   it("can drop nulls", () => {
     const df = pl.DataFrame({
       "num": [chance.natural(), null, chance.natural()],
-      "str": [chance.string(),chance.string(),chance.string()],
+      "str": [chance.string(), chance.string(), chance.string()],
       "date": [chance.date(), chance.date(), chance.date()]
     }).dropNulls();
     expect(df.height).toStrictEqual(2);
@@ -46,14 +40,14 @@ describe("dataframe", () => {
   it("can drop nulls for a given subset", () => {
     const df = pl.DataFrame({
       "num": [chance.natural(), null, chance.natural()],
-      "str": [chance.string(),chance.string(),chance.string()],
+      "str": [chance.string(), chance.string(), chance.string()],
       "date": [chance.date(), chance.date(), chance.date()],
       "num2": [chance.natural(), null, null],
     }).dropNulls("num");
     expect(df.height).toStrictEqual(2);
     const df2 = pl.DataFrame({
       "num": [chance.natural(), null, chance.natural()],
-      "str": [chance.string(),chance.string(),chance.string()],
+      "str": [chance.string(), chance.string(), chance.string()],
       "date": [chance.date(), chance.date(), chance.date()],
       "num2": [chance.natural(), null, null],
     }).dropNulls(["num", "str"]);
@@ -83,15 +77,15 @@ describe("dataframe", () => {
 
   it.each`
   method        | expected
-  ${"plus"}     | ${[5,6,8]}
-  ${"minus"}    | ${[-1,-2,-4]}
-  ${"times"}    | ${[4,8,16]}
-  ${"divide"}    | ${[1,0.5, 0.25]}
+  ${"plus"}     | ${[5, 6, 8]}
+  ${"minus"}    | ${[-1, -2, -4]}
+  ${"times"}    | ${[4, 8, 16]}
+  ${"divide"}    | ${[1, 0.5, 0.25]}
   `("can fold", ({method, expected}) => {
     const df = pl.DataFrame({
-      "a": [2,2,2],
-      "b": [2,2,2],
-      "c": [1,2,4]
+      "a": [2, 2, 2],
+      "b": [2, 2, 2],
+      "c": [1, 2, 4]
     });
     const s = df.fold((s1: any, s2: any) => s1[method](s2));
     expect([...s]).toEqual(expected);
@@ -107,7 +101,7 @@ describe("dataframe", () => {
         .getColumns()
         .map(s => s.name)
     )
-      .toEqual(["num", "str","date"]);
+      .toEqual(["num", "str", "date"]);
 
   });
 
@@ -124,7 +118,7 @@ describe("dataframe", () => {
 
   it("can insert at an index", () => {
     const df = buildDF();
-    const s = pl.Series("new_col", [1,2,3]);
+    const s = pl.Series("new_col", [1, 2, 3]);
     df.insertAtIdx(0, s);
     expect(df.findIdxByName("new_col")).toStrictEqual(0);
   });
@@ -132,9 +126,9 @@ describe("dataframe", () => {
 
   it("can get tell you what rows are duplicated", () => {
     const series = pl.DataFrame({
-      "a": [2,2,2,2],
-      "b": [2,2,2,2],
-      "c": [1,2,2,4]
+      "a": [2, 2, 2, 2],
+      "b": [2, 2, 2, 2],
+      "c": [1, 2, 2, 4]
     }).isDuplicated();
     expect([...series]).toEqual([false, true, true, false]);
   });
@@ -146,9 +140,9 @@ describe("dataframe", () => {
 
   it("can get tell you what rows are unique", () => {
     const series = pl.DataFrame({
-      "a": [2,2,2,2],
-      "b": [2,2,2,2],
-      "c": [1,2,2,4]
+      "a": [2, 2, 2, 2],
+      "b": [2, 2, 2, 2],
+      "c": [1, 2, 2, 4]
     }).isUnique();
     expect([...series]).toEqual([true, false, false, true]);
   });
@@ -203,7 +197,7 @@ describe("dataframe", () => {
       "bar": [6, 7, 8],
       "ham": ["a", "b", "c"]
     }).max();
-    expect(df.rows()[0]).toEqual([3,8,null]);
+    expect(df.rows()[0]).toEqual([3, 8, null]);
   });
 
   it("can get the min of a dataframe", () => {
@@ -212,7 +206,7 @@ describe("dataframe", () => {
       "bar": [6, 7, 8],
       "ham": ["a", "b", "c"]
     }).min();
-    expect(df.rows()[0]).toEqual([1,6,null]);
+    expect(df.rows()[0]).toEqual([1, 6, null]);
   });
   it("can get the number of chunks", () => {});
 
@@ -222,7 +216,7 @@ describe("dataframe", () => {
       "bar": [6, 7, null],
       "ham": ["a", "b", "c"]
     }).nullCount();
-    expect(df.rows()[0]).toEqual([1,1,0]);
+    expect(df.rows()[0]).toEqual([1, 1, 0]);
   });
   it.todo("can pipe");
 
@@ -232,7 +226,7 @@ describe("dataframe", () => {
       "bar": [6, 7, 8],
       "ham": ["a", "b", "c"]
     }).quantile(0.5);
-    expect(df.rows()[0]).toEqual([2,7,null]);
+    expect(df.rows()[0]).toEqual([2, 7, null]);
   });
 
   it("can get number of chunks", () => {

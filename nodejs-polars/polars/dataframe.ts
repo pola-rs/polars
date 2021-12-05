@@ -1,9 +1,10 @@
 import pli from "./internals/polars_internal";
 import { arrayToJsDataFrame } from "./internals/construction";
 import { DataType, JoinOptions, JsDataFrame, ReadCsvOptions, ReadJsonOptions, WriteCsvOptions} from "./datatypes";
-import {Series, _wrapSeries} from "./series";
+import {Series, seriesWrapper} from "./series";
 import {Stream} from "stream";
 import fs from "fs";
+
 import {
   isPath,
   columnOrColumns,
@@ -14,9 +15,8 @@ import {
   FillNullStrategy,
   isExpr,
   isSeries,
-  ExpressionSelection,
-  ColumnsOrExpr,
-  isSeriesArray
+  isSeriesArray,
+  ColumnsOrExpr
 } from "./utils";
 import {GroupBy} from "./groupby";
 import path from "path";
@@ -157,7 +157,7 @@ export interface DataFrame {
    * @param subset - subset to drop duplicates for
    */
   dropDuplicates(maintainOrder?: boolean, subset?: ColumnSelection): DataFrame
-  dropDuplicates(options: {maintainOrder?: boolean, subset?: ColumnSelection}): DataFrame
+  dropDuplicates(opts: {maintainOrder?: boolean, subset?: ColumnSelection}): DataFrame
 
   /**
    * __Return a new DataFrame where the null values are dropped.__
@@ -243,7 +243,7 @@ export interface DataFrame {
    * ╰─────────┴─────╯
    * ```
    */
-  explode(columns: ColumnSelection): DataFrame
+  explode(...columns: Expr[] | string[]): DataFrame
   /**
    * Fill null/missing values by a filling strategy
    *
@@ -710,7 +710,7 @@ export interface DataFrame {
    * ╰───────┴─────┴─────╯
    * ```
    */
-  rename(mapping: Record<string,string>): DataFrame
+  rename(mapping: Record<string, string>): DataFrame
   /**
    * Replace a column at an index location.
    * ___
@@ -1059,6 +1059,7 @@ export interface DataFrame {
   toJSON(dest: string | Stream): void
   toJSON(dest?: string | Stream): void | string
   toSeries(index:number): Series<any>
+  toString(): string
   /**
    * Upsample a DataFrame at a regular frequency.
    * @param by - Column that will be used as key in the upsampling operation. (This should be a datetime column.)
@@ -1159,9 +1160,9 @@ function prepareOtherArg<T>(anyValue:T | Series<T>): Series<T> {
     return Series([anyValue]) as Series<T>;
   }
 }
+
 export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const unwrap = <U>(method: string, args?: object, df=_df): U => {
-    console.log({method, args});
 
     return pli.df[method]({_df: df, ...args });
   };
@@ -1221,7 +1222,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     return acc;
   };
   const hashRows = (obj?: object | number, k1?: any, k2?: any, k3?: any): Series<any>=> {
-    return _wrapSeries(unwrap("hash_rows", {
+    return seriesWrapper(unwrap("hash_rows", {
       k0: obj?.["k0"] ?? typeof obj === "number" ? obj : 0,
       k1: obj?.["k1"] ?? k1 ?? 1,
       k2: obj?.["k2"] ?? k2 ?? 2,
@@ -1380,7 +1381,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return wrap("select", {selection: columnOrColumnsStrict(selection)});
     }
   };
-  const shiftAndFill = (periods:any, fillValue?: number | string)  => {
+  const shiftAndFill = (periods:any, fillValue?)  => {
     return dfWrapper(_df)
       .lazy()
       .shiftAndFill(periods, fillValue)
@@ -1392,7 +1393,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return unwrap<void>("shrink_to_fit");
     } else {
       const d = dfWrapper(_df).clone();
-      unwrap("shrink_to_fit",{}, d._df);
+      unwrap("shrink_to_fit", {}, d._df);
 
       return d;
     }
@@ -1403,6 +1404,23 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     } else {
       return dfWrapper(_df).rename({[opt]: replacement});
     }
+  };
+
+  const dropDuplicates = (opts:any=true, subset?): DataFrame => {
+    if(opts?.maintainOrder !== undefined) {
+      return dropDuplicates(opts.maintainOrder, opts.subset);
+    }
+    if(subset) {
+      subset = [subset].flat(2);
+    }
+
+    return wrap("drop_duplicates", {maintainOrder: opts.maintainOrder, subset});
+  };
+
+  const explode = (...columns: Expr[] | string[]) => {
+    return dfWrapper(_df).lazy()
+      .explode(columns)
+      .collectSync({noOptimization:true});
   };
 
   return {
@@ -1422,26 +1440,26 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     fillNull: (strategy) => wrap("fill_null", {strategy}),
     findIdxByName: (name) => unwrap("find_idx_by_name", {name}),
     fold,
-    frameEqual: (other, nullEq=false) => unwrap<boolean>("frame_equal", {other: other?._df ?? other, nullEqual: other?.nullEqual ?? nullEq}),
-    getColumn: (name) => _wrapSeries(unwrap<any[]>("column", {name})),
-    getColumns: () => unwrap<any[]>("get_columns").map(s => _wrapSeries(s)),
+    frameEqual: (other, nullEq=true) => unwrap<boolean>("frame_equal", {other: other?._df ?? other, nullEqual: other?.nullEqual ?? nullEq}),
+    getColumn: (name) => seriesWrapper(unwrap<any[]>("column", {name})),
+    getColumns: () => unwrap<any[]>("get_columns").map(s => seriesWrapper(s)),
     groupBy: (...by) => GroupBy(_df, columnOrColumnsStrict(by)),
     hashRows,
     head: (length=5) => wrap("head", {length}),
     hstack,
     insertAtIdx: (index, s) => unwrap("insert_at_idx", {index, new_col: s._series}),
     interpolate: noArgWrap("interpolate"),
-    isDuplicated: () => _wrapSeries(unwrap("is_duplicated")),
+    isDuplicated: () => seriesWrapper(unwrap("is_duplicated")),
     isEmpty: () => unwrap("height") === 0,
-    isUnique: () => _wrapSeries(unwrap("is_unique")),
+    isUnique: () => seriesWrapper(unwrap("is_unique")),
     join,
     lazy: () => LazyDataFrame(unwrap("lazy")),
     limit: (length=5) => wrap("head", {length}),
-    max: (axis=0) => axis === 0 ? wrap("max") : _wrapSeries<any>(unwrap<any>("hmax")) as any,
-    mean: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("mean") : _wrapSeries(unwrap("hmean", {nullStrategy})) as any,
+    max: (axis=0) => axis === 0 ? wrap("max") : seriesWrapper<any>(unwrap<any>("hmax")) as any,
+    mean: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("mean") : seriesWrapper(unwrap("hmean", {nullStrategy})) as any,
     median: noArgWrap("median"),
     melt: (ids, values) => wrap("melt", {idVars: columnOrColumns(ids), valueVars: columnOrColumns(values)}),
-    min: (axis=0) => axis === 0 ? wrap("min") : _wrapSeries<any>(unwrap("hmin")) as any,
+    min: (axis=0) => axis === 0 ? wrap("min") : seriesWrapper<any>(unwrap("hmin")) as any,
     nChunks: noArgUnwrap("n_chunks"),
     nullCount: noArgWrap("null_count"),
     quantile: (quantile) => wrap("quantile", {quantile}),
@@ -1457,12 +1475,13 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     slice: (opts, length?) => wrap("slice", {offset: opts?.offset ?? opts, length: opts?.length ?? length}),
     sort,
     std: noArgWrap("std"),
-    sum: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("sum") : _wrapSeries(unwrap("hsum", {nullStrategy})) as any,
+    sum: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("sum") : seriesWrapper(unwrap("hsum", {nullStrategy})) as any,
     tail: (length=5) => wrap("tail", {length}),
     toCSV,
     toJS: noArgUnwrap("to_js"),
     toJSON,
-    toSeries: (index) => _wrapSeries(unwrap("select_at_idx", {index})),
+    toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
+    toString: () => unwrap<string>("as_str"),
     add: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
     sub: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
     div: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
@@ -1475,8 +1494,8 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     remainder: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
     var: noArgWrap("var"),
     apply: () => {throw todo();},
-    dropDuplicates: () => {throw todo();},
-    explode: (columns?) => {throw todo();},
+    dropDuplicates,
+    explode,
     filter: (predicate) => {throw todo();},
     pipe: (fn?) => {throw todo();},
     row: (index) => unwrap("to_row", {idx: index}),
@@ -1680,7 +1699,7 @@ export function DataFrame(data: Record<string, any>[]): DataFrame
 export function DataFrame(data: Series<any>[]): DataFrame
 export function DataFrame(data: any[][]): DataFrame
 export function DataFrame(data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
-export function DataFrame(data: Record<string, any[]> | Record<string, any>[] | any[][] | Series<any>[],options?: {columns?: any[], orient?: "row" | "col"}): DataFrame {
+export function DataFrame(data: Record<string, any[]> | Record<string, any>[] | any[][] | Series<any>[], options?: {columns?: any[], orient?: "row" | "col"}): DataFrame {
 
   if(!data) {
     return dfWrapper(objToDF({}));

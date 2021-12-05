@@ -1,7 +1,7 @@
 import pli from "./polars_internal";
 import { DataType, polarsTypeToConstructor } from "../datatypes";
 import { isTypedArray } from "util/types";
-import {Series, _wrapSeries} from "../series";
+import {Series, seriesWrapper} from "../series";
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
   if (Array.isArray(value)) {
@@ -58,7 +58,6 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   }
   if ([DataType.Datetime, DataType.Date].includes(dtype)) {
     series = pli.series.cast({ _series: series, dtype, strict: false });
-    console.log("s", values, dtype, _wrapSeries(series));
   }
 
 
@@ -101,7 +100,7 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "co
 
       return df;
     } else {
-      dataSeries = data.map((s,idx) => Series(`column_${idx}`, s).inner());
+      dataSeries = data.map((s, idx) => Series(`column_${idx}`, s).inner());
     }
 
   }

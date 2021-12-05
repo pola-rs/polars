@@ -17,6 +17,18 @@
         "jest"
     ],
     "rules": {
+        "func-call-spacing": "off",
+        "@typescript-eslint/func-call-spacing": [
+            "error"
+        ],
+        "no-duplicate-imports": "off",
+        "@typescript-eslint/no-duplicate-imports": [
+            "error"
+        ],
+        "comma-spacing": "off",
+        "@typescript-eslint/comma-spacing": [
+            "error"
+        ],
         "quotes": ["error", "double"],
         "no-redeclare": "off",
         "no-trailing-spaces": "error",

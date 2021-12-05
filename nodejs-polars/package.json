@@ -3,7 +3,6 @@
   "version": "0.0.1",
   "repository": "git@github.com/pola-rs/polars.git",
   "license": "MIT",
-  
   "files": [
     "index.d.ts",
     "index.js"
@@ -99,5 +98,5 @@
     "arrowParens": "always",
     "parser": "typescript"
   },
-  "packageManager": "yarn@3.1.0"
+  "packageManager": "yarn@3.1.1"
 }

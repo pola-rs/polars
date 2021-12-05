@@ -1,10 +1,11 @@
 import {DataFrame, dfWrapper} from "../dataframe";
-import {exprToLitOrExpr} from "./expr";
+import {Expr, exprToLitOrExpr} from "./expr";
 import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, ValueOrArray} from "../utils";
 import pli from "../internals/polars_internal";
+import {LazyGroupBy} from "./groupby";
 
-type AnyFunc = (...args: any[]) => any
-type Expr = any;
+
+type JsLazyFrame = any;
 export type Option<T> = T | undefined;
 
 type LazyJoinOptions =  {
@@ -17,12 +18,6 @@ type LazyJoinOptions =  {
   forceParallel: boolean
 };
 
-export interface LazyGroupBy {
-  agg(aggs: Array<Expr>): LazyDataFrame
-  head(n: number): LazyDataFrame
-  tail(n: number): LazyDataFrame
-  apply(func: AnyFunc): LazyDataFrame
-}
 
 type LazyOptions = {
   typeCoercion?: boolean,
@@ -92,8 +87,7 @@ export interface LazyDataFrame {
   /**
    * Explode lists to long format.
    */
-  explode(columns: ColumnsOrExpr): LazyDataFrame
-  explode(opts: {columns: ColumnsOrExpr}): LazyDataFrame
+  explode(...columns: ColumnsOrExpr[]): LazyDataFrame
   /**
    * Fetch is like a collect operation, but it overwrites the number of rows read by every scan
    *
@@ -147,8 +141,8 @@ export interface LazyDataFrame {
   /**
    * Start a groupby operation.
    */
-  groupby(by: ColumnsOrExpr, maintainOrder?: boolean): LazyGroupBy
-  groupby(by: ColumnsOrExpr, opts: {maintainOrder: boolean}): LazyGroupBy
+  groupBy(by: ColumnsOrExpr, maintainOrder?: boolean): LazyGroupBy
+  groupBy(by: ColumnsOrExpr, opts: {maintainOrder: boolean}): LazyGroupBy
   /**
    * Gets the first `n` rows of the DataFrame. You probably don't want to use this!
    *
@@ -214,7 +208,7 @@ export interface LazyDataFrame {
   /**
    * @see {@link DataFrame.rename}
    */
-  rename(mapping: Record<string,string>)
+  rename(mapping: Record<string, string>)
   /**
    * Reverse the DataFrame.
    */
@@ -279,10 +273,10 @@ export interface LazyDataFrame {
   withRowCount()
 }
 
-export const LazyDataFrame = (ldf: any): LazyDataFrame => {
+export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
   const unwrap = <U>(method: string, args?: object, _ldf=ldf): any => {
 
-    return pli.lazy[method]({_ldf, ...args });
+    return pli.ldf[method]({_ldf, ...args });
   };
 
   const wrap = (method, args?, _ldf=ldf): LazyDataFrame => {
@@ -334,6 +328,21 @@ export const LazyDataFrame = (ldf: any): LazyDataFrame => {
     return wrap("withColumns", {exprs});
   };
 
+  const explode = (...columns) => {
+    const column = columns
+      .flat(3)
+      .map(e => exprToLitOrExpr(e, false)._expr);
+
+    return wrap("explode", {column});
+  };
+  const groupBy = (opt, maintainOrder=true) => {
+    if(opt?.by) {
+      return groupBy(opt.by, opt.maintainOrder);
+    }
+
+    return LazyGroupBy(ldf, opt, maintainOrder);
+  };
+
   return {
     get columns() { return unwrap("columns");},
     describePlan: () => unwrap("describePlan"),
@@ -354,7 +363,8 @@ export const LazyDataFrame = (ldf: any): LazyDataFrame => {
     sort,
     select,
     shiftAndFill,
-    withColumns
-
+    withColumns,
+    explode,
+    groupBy
   } as any;
 };

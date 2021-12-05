@@ -1,22 +1,23 @@
 /* eslint-disable no-redeclare */
-import {DataFrame, _wrapDataFrame} from "./dataframe";
+import {DataFrame, dfWrapper, _wrapDataFrame} from "./dataframe";
 import * as utils from "./utils";
-import type {ColumnSelection} from "./utils";
+import type {ColumnSelection, ExpressionSelection} from "./utils";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 import util from "util";
 import {todo} from "./internals/utils";
+import {InvalidOperationError} from "./error";
+import {Expr, exprToLitOrExpr} from "./lazy/expr";
+import {col} from "./lazy/lazy_functions";
 
-class UnsupportedError extends Error {
-  constructor(prop, target) {
-    super(`${prop} is not supported for ${target}`);
-  }
-}
+const inspectOpts = {colors:true, depth:null};
+
 /**
  * Starts a new GroupBy operation.
  */
 export interface GroupBy {
   (...columns: string[]): GroupBySelection,
   (columns: string | string[]): GroupBySelection,
+  [inspect](): string,
   /**
    * Aggregate the groups into Series.
    */
@@ -36,9 +37,9 @@ export interface GroupBy {
    * >>> df.groupBy('foo', 'bar')
    * >>>   .agg(pl.sum('ham'), col('spam').tail(4).sum())
    *
-   * // use lazy api array styple
+   * // use lazy api array style
    * >>> df.groupBy('foo', 'bar')
-   * >>>   .agg({pl.sum('ham'), col('spam').tail(4).sum()])
+   * >>>   .agg([pl.sum('ham'), col('spam').tail(4).sum()])
    *
    * // use a mapping
    * >>> df.groupBy('foo', 'bar')
@@ -46,7 +47,8 @@ export interface GroupBy {
    *
    * ```
    */
-  agg(columns: Record<string, string | string[]>): DataFrame
+  agg(...aggs: Expr[]): DataFrame
+  agg(columns: Record<string, keyof Expr | (keyof Expr)[]>): DataFrame
   /**
    * Apply a function over the groups as a sub-DataFrame.
    * @param func Function to apply on groupings
@@ -180,7 +182,7 @@ export type GroupBySelection = Pick<GroupBy,
   | "numUnique"
   | "quantile"
   | "sum"
->
+> & {[inspect](): string}
 
 export type PivotOps = Pick<GroupBy,
   "count"
@@ -190,18 +192,21 @@ export type PivotOps = Pick<GroupBy,
   | "median"
   | "min"
   | "sum"
->
+> & {[inspect](): string}
 
 export function GroupBy(
   df: DataFrame,
   by: string[],
+  maintainOrder = false,
   downsample = false,
   rule?: string,
-  downsampleN = 0
+  downsampleN = 0,
 ) {
+  const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBy {by: %O}", by);
+
   const pivot = (opts: {pivotCol: string, valuesCol: string} | string, valuesCol?: string): PivotOps => {
     if(downsample) {
-      throw new UnsupportedError("pivot", "downsample");
+      throw new InvalidOperationError("pivot", "downsample");
     }
 
     if(typeof opts === "string") {
@@ -236,14 +241,34 @@ export function GroupBy(
     downsampleN
   );
 
-  const inspectOpts = {colors:true, depth:null};
-  const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBy {by: %O}", by, );
+  const agg = (...aggs: Expr[] | Record<string, string | string[]>[]): any => {
+
+    if(utils.isExprArray(aggs))  {
+      aggs = [aggs].flat(2);
+
+      return dfWrapper(df).lazy()
+        .groupBy(by, maintainOrder)
+        .agg(...aggs)
+        .collectSync({noOptimization:true});
+    } else {
+      let pairs = Object.entries(aggs[0])
+        .flatMap(([key, values]) => {
+          return [values].flat(2).map(v => col(key)[v]());
+        });
+
+      return dfWrapper(df).lazy()
+        .groupBy(by, maintainOrder)
+        .agg(...pairs)
+        .collectSync({noOptimization:true});
+    }
+  };
+
 
   return Object.seal(
     Object.assign(
       select, {
         aggList: selectAll().aggList,
-        agg: () => {throw todo();},
+        agg,
         count: selectAll().count,
         first: selectAll().first,
         getGroup: () => {throw todo();},
@@ -286,13 +311,16 @@ function GroupBySelection(
 
   const quantile = (quantile:number) => {
     if(downsample) {
-      throw new UnsupportedError("quantile", "downsample");
+      throw new InvalidOperationError("quantile", "downsample");
     } else {
       return _wrapDataFrame(df, "groupby", {by, selection, agg: "quantile", quantile});
     }
   };
 
+  const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBySelection {by: %O}", by);
+
   return {
+    [inspect]: customInspect,
     apply: (fn: (df: DataFrame) => DataFrame) => {throw todo();},
     aggList: wrapCall("agg_list"),
     count: wrapCall("count"),
@@ -304,7 +332,8 @@ function GroupBySelection(
     min: wrapCall("min"),
     numUnique: wrapCall("n_unique"),
     quantile,
-    sum: wrapCall("sum")
+    sum: wrapCall("sum"),
+
   };
 }
 
@@ -315,9 +344,11 @@ function PivotOps(
   valueCol: string
 ): PivotOps {
 
-  const pivot =  (agg:string) => () =>  _wrapDataFrame(df, "pivot", {by, pivotCol, valueCol, agg});
+  const pivot =  (agg) => () =>  _wrapDataFrame(df, "pivot", {by, pivotCol, valueCol, agg});
+  const customInspect = () => util.formatWithOptions(inspectOpts, "PivotOps {by: %O}", by);
 
   return {
+    [inspect]: customInspect,
     first: pivot("first"),
     sum: pivot("sum"),
     min: pivot("min"),

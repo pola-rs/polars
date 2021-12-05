@@ -1,8 +1,9 @@
 import {DataType} from "../datatypes";
 import pli from "../internals/polars_internal";
-import {col, lit} from "../functions";
+import {col, lit} from "./lazy_functions";
 import {ColumnSelection, ExpressionSelection, FillNullStrategy, isExpr, RankMethod} from "../utils";
 import {Series} from "../series";
+const inspect = Symbol.for("nodejs.util.inspect.custom");
 
 type JsExpr = any;
 type ColumnsOrExpr = ColumnSelection | ExpressionSelection
@@ -53,6 +54,8 @@ export interface Expr {
   get date(): ExprDateTimeFunctions
   get str(): ExprStringFunctions
   get lst(): ExprListFunctions
+  [inspect](): string;
+
   /** Take absolute values */
   abs(): Expr
   aggGroups(): Expr
@@ -243,7 +246,7 @@ export interface Expr {
   gtEq(other: Expr): Expr
   /** Hash the Series. */
   hash(k0?: number, k1?: number, k2?: number, k3?: number): Expr
-  hash({k0,k1,k2,k3}: {k0?:number, k1?: number, k2?: number, k3?:number}): Expr
+  hash({k0, k1, k2, k3}: {k0?:number, k1?: number, k2?: number, k3?:number}): Expr
   /** Take the first n values.  */
   head(length?: number): Expr
   head({length}: {length: number}): Expr
@@ -313,7 +316,7 @@ export interface Expr {
   keepName(): Expr
   kurtosis(): Expr
   kurtosis(fisher:boolean, bias?:boolean): Expr
-  kurtosis({fisher,bias}:{fisher?:boolean, bias?:boolean}): Expr
+  kurtosis({fisher, bias}:{fisher?:boolean, bias?:boolean}): Expr
   /** Get the last value.  */
   last(): Expr
   /** Aggregate to list. */
@@ -626,9 +629,18 @@ export const Expr = (_expr: JsExpr): Expr => {
 
     return wrap("over", {partitionBy});
   };
+  const shiftAndFill = (opt, fillValue?) => {
+    if(opt?.periods) {
+      return shiftAndFill(opt.periods, opt.fillValue);
+    }
+    fillValue = exprToLitOrExpr(fillValue, true)._expr;
+
+    return wrap("shiftAndFill", {periods: opt, fillValue});
+  };
 
   return {
     _expr,
+    [inspect]() { return pli.expr.as_str({_expr});},
     get lst() {return ExprListFunctions(_expr);},
     get date() {return ExprDateTimeFunctions(_expr);},
     abs: wrapNullArgs("abs"),
@@ -709,9 +721,9 @@ export const Expr = (_expr: JsExpr): Expr => {
     diff: wrapBinary("diff", "n", "nullBehavior"),
     slice: wrapBinary("slice", "offset", "length"),
     rollingQuantile: wrapBinary("rollingQuantile", "windowSize", "quantile"),
-    shiftAndFill: wrapBinary("shiftAndFill", "periods", "fillValue"),
     cast: (dtype, strict=false) => wrap("cast", {dtype, strict}),
     rollingSkew: (windowSize, bias=false) => wrap("rollingSkew", {windowSize, bias}),
+    shiftAndFill,
     kurtosis,
     hash
   } as any;

@@ -9,11 +9,10 @@ export default {
   moduleDirectories: ["node_modules"],
 
   moduleFileExtensions: ["js", "ts", "node"],
-
+  setupFilesAfterEnv : ["<rootDir>/__tests__/setup.ts"],
   moduleNameMapper: {
     "@polars": "<rootDir>/polars/index.ts",
     "@polars/(.*)$": "<rootDir>/polars/*",
   },
-  // testMatch: ['__tests__/**/*.test.ts'],
-
+  testPathIgnorePatterns: ["<rootDir>/__tests__/setup.ts"]
 };

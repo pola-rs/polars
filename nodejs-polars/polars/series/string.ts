@@ -1,6 +1,6 @@
 import pli from "../internals/polars_internal";
 import {DataType, DtypeToPrimitive} from "../datatypes";
-import {JsSeries, Series, _wrapSeries} from "../series";
+import {JsSeries, Series, seriesWrapper} from "../series";
 
 
 /**
@@ -123,7 +123,7 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
   };
 
   const wrap = <U>(method, args?, _series = _s): Series<U> => {
-    return _wrapSeries(unwrap(method, args, _series));
+    return seriesWrapper(unwrap(method, args, _series));
   };
   const strptime = (dtype: DataType, fmt?): Series<any> => {
     if (dtype === DataType.Date) {
