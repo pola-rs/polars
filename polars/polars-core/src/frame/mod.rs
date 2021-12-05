@@ -1,11 +1,11 @@
 //! DataFrame module.
 use std::borrow::Cow;
 use std::collections::HashSet;
-use std::iter::Iterator;
+use std::iter::{FromIterator, Iterator};
 use std::mem;
 use std::sync::Arc;
 
-use ahash::RandomState;
+use ahash::{AHashSet, RandomState};
 use arrow::record_batch::RecordBatch;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -478,6 +478,14 @@ impl DataFrame {
         if names.len() != self.columns.len() {
             return Err(PolarsError::ShapeMisMatch("the provided slice with column names has not the same size as the DataFrame's width".into()));
         }
+        let unique_names: AHashSet<&str, ahash::RandomState> =
+            AHashSet::from_iter(names.iter().map(|name| name.as_ref()));
+        if unique_names.len() != self.columns.len() {
+            return Err(PolarsError::SchemaMisMatch(
+                "duplicate column names found".into(),
+            ));
+        }
+
         let columns = mem::take(&mut self.columns);
         self.columns = columns
             .into_iter()
@@ -1447,6 +1455,14 @@ impl DataFrame {
         self.select_mut(column)
             .ok_or_else(|| PolarsError::NotFound(name.into()))
             .map(|s| s.rename(name))?;
+
+        let unique_names: AHashSet<&str, ahash::RandomState> =
+            AHashSet::from_iter(self.columns.iter().map(|s| s.name()));
+        if unique_names.len() != self.columns.len() {
+            return Err(PolarsError::SchemaMisMatch(
+                "duplicate column names found".into(),
+            ));
+        }
         Ok(self)
     }
 

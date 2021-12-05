@@ -1316,3 +1316,12 @@ def test_schema() -> None:
     )
     expected = {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
     assert df.schema == expected
+
+
+def test_df_schema_unique() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    with pytest.raises(Exception):
+        df.columns = ["a", "a"]
+
+    with pytest.raises(Exception):
+        df.rename({"b": "a"})
