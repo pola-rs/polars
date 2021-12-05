@@ -1308,3 +1308,11 @@ def test_extension() -> None:
     assert sys.getrefcount(foos[0]) == base_count + 1
     del df
     assert sys.getrefcount(foos[0]) == base_count
+
+
+def test_schema() -> None:
+    df = pl.DataFrame(
+        {"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0], "ham": ["a", "b", "c"]}
+    )
+    expected = {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
+    assert df.schema == expected
