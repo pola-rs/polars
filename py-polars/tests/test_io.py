@@ -4,6 +4,7 @@ import gzip
 import io
 import pickle
 import zlib
+from functools import partial
 from pathlib import Path
 from typing import Dict, Type
 
@@ -20,7 +21,12 @@ def test_to_from_buffer(df: pl.DataFrame) -> None:
 
     for to_fn, from_fn, text_based in zip(
         [df.to_parquet, df.to_csv, df.to_ipc, df.to_json],
-        [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_json],
+        [
+            pl.read_parquet,
+            partial(pl.read_csv, parse_dates=True),
+            pl.read_ipc,
+            pl.read_json,
+        ],
         [False, True, False, True],
     ):
         f = io.BytesIO()
@@ -170,7 +176,7 @@ timestamp,open,high
 """
 
     f = io.StringIO(csv)
-    df = pl.read_csv(f)
+    df = pl.read_csv(f, parse_dates=True)
     assert df.dtypes == [pl.Datetime, pl.Float64, pl.Float64]
 
 

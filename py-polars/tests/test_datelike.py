@@ -199,3 +199,15 @@ def test_timezone() -> None:
 
     # timezones have no effect, i.e. `s` equals `tz_s`
     assert s.series_equal(tz_s)
+
+
+def test_to_list() -> None:
+
+    s = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
+
+    out = s.to_list()
+    assert out[0] == date(2308, 4, 2)
+
+    s = pl.Series("datetime", [123543, 283478, 1243]).cast(pl.Datetime)
+    out = s.to_list()
+    assert out[0] == datetime(1970, 1, 1, 0, 2, 3, 543000)
