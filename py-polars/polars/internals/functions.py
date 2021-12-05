@@ -161,7 +161,6 @@ def date_range(
 
     Examples
     --------
-    >>> import polars as pl
     >>> from datetime import datetime, timedelta
     >>> pl.date_range(
     ...     datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
@@ -195,6 +194,7 @@ def date_range(
         2015-06-29 00:00:00
         2015-06-30 12:00:00
     ]
+
     """
     values = np.arange(low, high, interval, dtype="datetime64[ms]")
     if closed in (None, "right") and (high - low) % interval == timedelta(0):

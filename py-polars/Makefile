@@ -35,3 +35,6 @@ build-and-test: test-install
 
 build-and-test-with-cov: test-install
 	cd tests && pytest --cov=polars --import-mode=importlib
+
+doctest:
+	cd tests && python run_doc_examples.py

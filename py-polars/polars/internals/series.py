@@ -556,6 +556,13 @@ class Series:
         Syntactic sugar for
 
         >>> pl.Series([1, 2]) ** 0.5
+        shape: (2,)
+        Series: '' [f64]
+        [
+            1
+            1.4142135623730951
+        ]
+
         """
         return self ** 0.5
 
@@ -596,7 +603,7 @@ class Series:
         >>> df = s.to_frame()
         >>> df
         shape: (3, 1)
-        ╭─────╮
+        ┌─────┐
         │ a   │
         │ --- │
         │ i64 │
@@ -606,10 +613,10 @@ class Series:
         │ 2   │
         ├╌╌╌╌╌┤
         │ 3   │
-        ╰─────╯
+        └─────┘
 
         >>> type(df)
-        <class 'polars.eager.frame.DataFrame'>
+        <class 'polars.internals.frame.DataFrame'>
 
         """
         return pli.wrap_df(PyDataFrame([self._s]))
@@ -641,38 +648,38 @@ class Series:
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
         shape: (6, 2)
-        ┌──────────────┬────────────────────┐
-        │ statistic    ┆ value              │
-        │ ---          ┆ ---                │
-        │ str          ┆ f64                │
-        ╞══════════════╪════════════════════╡
-        │ "min"        ┆ 1                  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ "max"        ┆ 5                  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ "null_count" ┆ 0.0                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ "mean"       ┆ 3                  │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ "std"        ┆ 1.5811388300841898 │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ "count"      ┆ 5                  │
-        └──────────────┴────────────────────┘
+        ┌────────────┬────────────────────┐
+        │ statistic  ┆ value              │
+        │ ---        ┆ ---                │
+        │ str        ┆ f64                │
+        ╞════════════╪════════════════════╡
+        │ min        ┆ 1                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ max        ┆ 5                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null_count ┆ 0.0                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ mean       ┆ 3                  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ std        ┆ 1.5811388300841898 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ count      ┆ 5                  │
+        └────────────┴────────────────────┘
 
         >>> series_str = pl.Series(["a", "a", None, "b", "c"])
         >>> series_str.describe()
         shape: (3, 2)
-        ┌──────────────┬───────┐
-        │ statistic    ┆ value │
-        │ ---          ┆ ---   │
-        │ str          ┆ i64   │
-        ╞══════════════╪═══════╡
-        │ "unique"     ┆ 4     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ "null_count" ┆ 1     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ "count"      ┆ 5     │
-        └──────────────┴───────┘
+        ┌────────────┬───────┐
+        │ statistic  ┆ value │
+        │ ---        ┆ ---   │
+        │ str        ┆ i64   │
+        ╞════════════╪═══════╡
+        │ unique     ┆ 4     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ null_count ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ count      ┆ 5     │
+        └────────────┴───────┘
 
         """
         stats: Dict[str, Union[Optional[float], int, str]]
@@ -769,7 +776,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.min()
-        3
+        1
 
         """
         return self._s.max()
@@ -853,7 +860,7 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.to_dummies()
         shape: (3, 3)
-        ╭─────┬─────┬─────╮
+        ┌─────┬─────┬─────┐
         │ a_1 ┆ a_2 ┆ a_3 │
         │ --- ┆ --- ┆ --- │
         │ u8  ┆ u8  ┆ u8  │
@@ -863,7 +870,7 @@ class Series:
         │ 0   ┆ 1   ┆ 0   │
         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
         │ 0   ┆ 0   ┆ 1   │
-        ╰─────┴─────┴─────╯
+        └─────┴─────┴─────┘
 
         """
         return pli.wrap_df(self._s.to_dummies())
@@ -875,19 +882,19 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 2, 3])
-        >>> s.value_counts()
+        >>> s.value_counts().sort(by="a")
         shape: (3, 2)
-        ╭─────┬────────╮
+        ┌─────┬────────┐
         │ a   ┆ counts │
         │ --- ┆ ---    │
         │ i64 ┆ u32    │
         ╞═════╪════════╡
-        │ 2   ┆ 2      │
-        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 1   ┆ 1      │
         ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ 2      │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
         │ 3   ┆ 1      │
-        ╰─────┴────────╯
+        └─────┴────────┘
 
         """
         return pli.wrap_df(self._s.value_counts())
@@ -977,11 +984,11 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.cumsum()
         shape: (3,)
-        Series: 'b' [i64]
+        Series: 'a' [i64]
         [
-                1
-                3
-                6
+            1
+            3
+            6
         ]
 
         """
@@ -1001,11 +1008,11 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.cummin()
         shape: (3,)
-        Series: 'b' [i64]
+        Series: 'a' [i64]
         [
-                1
-                1
-                1
+            1
+            1
+            1
         ]
 
         """
@@ -1025,11 +1032,11 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.cummax()
         shape: (3,)
-        Series: 'b' [i64]
+        Series: 'a' [i64]
         [
-                1
-                2
-                3
+            1
+            2
+            3
         ]
 
         """
@@ -1054,11 +1061,11 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.cumprod()
         shape: (3,)
-        Series: 'b' [i64]
+        Series: 'a' [i64]
         [
-                1
-                2
-                6
+            1
+            2
+            6
         ]
 
         """
@@ -1126,15 +1133,16 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("b", [4, 5, 6])
         >>> s.append(s2)
+        >>> s
         shape: (6,)
         Series: 'a' [i64]
         [
-                1
-                2
-                3
-                4
-                5
-                6
+            1
+            2
+            3
+            4
+            5
+            6
         ]
 
         """
@@ -1221,10 +1229,10 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3, 4])
         >>> s.take_every(2)
         shape: (2,)
-        Series: '' [i64]
+        Series: 'a' [i64]
         [
-                1
-                3
+            1
+            3
         ]
 
         """
@@ -1283,8 +1291,8 @@ class Series:
         --------
         >>> s = pl.Series("a", [5, 3, 4, 1, 2])
         >>> s.argsort()
-        shape: (4,)
-        Series: 'a' [i64]
+        shape: (5,)
+        Series: 'a' [u32]
         [
             3
             4
@@ -1292,6 +1300,7 @@ class Series:
             2
             0
         ]
+
         """
         return wrap_s(self._s.argsort(reverse))
 
@@ -1333,13 +1342,13 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 2, 3])
-        >>> s.unique()
+        >>> s.unique().sort()
         shape: (3,)
         Series: 'a' [i64]
         [
-                1
-                2
-                3
+            1
+            2
+            3
         ]
 
         """
@@ -1396,12 +1405,12 @@ class Series:
         >>> s = pl.Series("a", [1.0, 2.0, 3.0, None])
         >>> s.is_null()
         shape: (4,)
-        Series: 'is_null' [bool]
+        Series: 'a' [bool]
         [
-                false
-                false
-                false
-                true
+            false
+            false
+            false
+            true
         ]
 
         """
@@ -1420,12 +1429,12 @@ class Series:
         >>> s = pl.Series("a", [1.0, 2.0, 3.0, None])
         >>> s.is_not_null()
         shape: (4,)
-        Series: 'is_not_null' [bool]
+        Series: 'a' [bool]
         [
-                true
-                true
-                true
-                false
+            true
+            true
+            true
+            false
         ]
 
         """
@@ -1715,6 +1724,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [True, False, True])
+        >>> s
         shape: (3,)
         Series: 'a' [bool]
         [
@@ -1722,6 +1732,7 @@ class Series:
             false
             true
         ]
+
         >>> s.cast(pl.UInt32)
         shape: (3,)
         Series: 'a' [u32]
@@ -1760,7 +1771,7 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.to_list()
         [1, 2, 3]
-        >>> type(s)
+        >>> type(s.to_list())
         <class 'list'>
 
         """
@@ -1816,6 +1827,7 @@ class Series:
 
         Examples
         --------
+        >>> from datetime import date
         >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
         >>> s.is_datetime()
         True
@@ -1858,6 +1870,7 @@ class Series:
         >>> s = pl.Series("x", ["a", "b", "c"])
         >>> s.is_utf8()
         True
+
         """
         return self.dtype is Utf8
 
@@ -1872,11 +1885,11 @@ class Series:
 
             Returns a view to a piece of memory that is already dropped:
 
-            >>> pl.Series([1, 3, 5]).sort().view()
+            >>> pl.Series([1, 3, 5]).sort().view()  # doctest: +IGNORE_RESULT
 
             Sums invalid data that is missing:
 
-            >>> pl.Series([1, 2, None]).view().sum()
+            >>> pl.Series([1, 2, None]).view().sum()  # doctest: +SKIP
 
         """
         if not ignore_nulls:
@@ -1945,10 +1958,10 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.to_numpy()
-        >>> s
-        [1 2 3]
-        >>> type(s)
+        >>> arr = s.to_numpy()
+        >>> arr  # doctest: +IGNORE_RESULT
+        array([1, 2, 3], dtype=int64)
+        >>> type(arr)
         <class 'numpy.ndarray'>
 
         Parameters
@@ -1979,15 +1992,14 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.to_arrow()
-        >>> s
+        >>> s = s.to_arrow()
+        >>> s  # doctest: +ELLIPSIS
+        <pyarrow.lib.Int64Array object at ...>
         [
-        1,
-        2,
-        3
+          1,
+          2,
+          3
         ]
-        >>> type(s)
-        <class 'pyarrow.lib.Int64Array'>
 
         """
         return self._s.to_arrow()
@@ -2070,12 +2082,12 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3, None])
         >>> s.fill_null("forward")
         shape: (4,)
-        Series: '' [i64]
+        Series: 'a' [i64]
         [
-                1
-                2
-                3
-                3
+            1
+            2
+            3
+            3
         ]
         >>> s.fill_null("min")
         shape: (4,)
@@ -2184,10 +2196,11 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-                0.0
-                1
-                1.2246467991473532e-16
+            0.0
+            1
+            1.2246467991473532e-16
         ]
+
         """
         return np.sin(self)  # type: ignore
 
@@ -2203,10 +2216,11 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-                1
-                6.123233995736766e-17
-                -1e0
+            1
+            6.123233995736766e-17
+            -1e0
         ]
+
         """
         return np.cos(self)  # type: ignore
 
@@ -2222,10 +2236,11 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-                1
-                6.123233995736766e-17
-                -1e0
+            0.0
+            1.633123935319537e16
+            -1.2246467991473532e-16
         ]
+
         """
         return np.tan(self)  # type: ignore
 
@@ -2241,10 +2256,11 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-                1.5707963267948966
-                0.0
-                -1.5707963267948966e0
+            1.5707963267948966
+            0.0
+            -1.5707963267948966e0
         ]
+
         """
         return np.arcsin(self)  # type: ignore
 
@@ -2260,10 +2276,11 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-                0.0
-                1.5707963267948966
-                3.141592653589793
+            0.0
+            1.5707963267948966
+            3.141592653589793
         ]
+
         """
         return np.arccos(self)  # type: ignore
 
@@ -2279,10 +2296,11 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-                0.7853981633974483
-                0.0
-                -7.853981633974483e-1
+            0.7853981633974483
+            0.0
+            -7.853981633974483e-1
         ]
+
         """
         return np.arctan(self)  # type: ignore
 
@@ -2423,13 +2441,13 @@ class Series:
         >>> s = pl.Series("a", [100, 200, 300, 400, 500])
         >>> s.rolling_min(window_size=3)
         shape: (5,)
-        Series: '' [i64]
+        Series: 'a' [i64]
         [
-                null
-                null
-                100
-                200
-                300
+            null
+            null
+            100
+            200
+            300
         ]
 
         """
@@ -2468,13 +2486,13 @@ class Series:
         >>> s = pl.Series("a", [100, 200, 300, 400, 500])
         >>> s.rolling_max(window_size=2)
         shape: (5,)
-        Series: '' [i64]
+        Series: 'a' [i64]
         [
-                null
-                null
-                300
-                400
-                500
+            null
+            200
+            300
+            400
+            500
         ]
 
         """
@@ -2513,13 +2531,13 @@ class Series:
         >>> s = pl.Series("a", [100, 200, 300, 400, 500])
         >>> s.rolling_mean(window_size=2)
         shape: (5,)
-        Series: '' [i64]
+        Series: 'a' [f64]
         [
-                null
-                150
-                250
-                350
-                450
+            null
+            150
+            250
+            350
+            450
         ]
 
         """
@@ -2558,7 +2576,7 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
         >>> s.rolling_sum(window_size=2)
         shape: (5,)
-        Series: '' [i64]
+        Series: 'a' [i64]
         [
                 null
                 3
@@ -2669,6 +2687,7 @@ class Series:
             4.041451884327381
             5.5677643628300215
         ]
+
         """
         return self.to_frame().select(
             pli.col(self.name).rolling_apply(window_size, function)
@@ -2738,13 +2757,14 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s.sample(2)
+        >>> s.sample(2)  # doctest: +IGNORE_RESULT
         shape: (2,)
         Series: 'a' [i64]
         [
-                1
-                5
+            1
+            5
         ]
+
         """
         if n is not None:
             return wrap_s(self._s.sample_n(n, with_replacement))
@@ -2782,11 +2802,11 @@ class Series:
         shape: (5,)
         Series: '' [bool]
         [
-                false
-                true
-                false
-                true
-                false
+            false
+            true
+            false
+            true
+            false
         ]
 
         """
@@ -2826,7 +2846,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.hash(k0=42)
+        >>> s.hash(k0=42)  # doctest: +IGNORE_RESULT
         shape: (3,)
         Series: 'a' [u64]
         [
@@ -2873,11 +2893,11 @@ class Series:
         shape: (5,)
         Series: 'a' [i64]
         [
-                1
-                2
-                3
-                4
-                5
+            1
+            2
+            3
+            4
+            5
         ]
 
         """
@@ -3012,7 +3032,7 @@ class Series:
         Examples
         --------
         >>> pl.Series([1, None, 2]).str_concat("-")[0]
-        "1-null-2"
+        '1-null-2'
 
         """
         return self.to_frame().select(pli.col(self.name).str_concat(delimiter))[
@@ -3138,7 +3158,7 @@ class StringNameSpace:
         >>> df = pl.DataFrame(
         ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
         ... )
-        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))
+        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))[:, 0]
         shape: (5,)
         Series: 'json_val' [str]
         [
@@ -3148,6 +3168,7 @@ class StringNameSpace:
             "2.1"
             "true"
         ]
+
         """
         return wrap_s(self._s.str_json_path_match(json_path))
 
@@ -3193,6 +3214,7 @@ class StringNameSpace:
         ├╌╌╌╌╌╌╌╌╌┤
         │ ronaldo │
         └─────────┘
+
         """
         return wrap_s(self._s.str_extract(pattern, group_index))
 
