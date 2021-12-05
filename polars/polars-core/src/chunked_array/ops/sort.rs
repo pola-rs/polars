@@ -787,9 +787,9 @@ mod test {
     #[cfg(feature = "sort_multiple")]
     #[cfg_attr(miri, ignore)]
     fn test_argsort_multiple() -> Result<()> {
-        let a = Int32Chunked::new_from_slice("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
-        let b = Int64Chunked::new_from_slice("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
-        let c = Utf8Chunked::new_from_slice("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);
+        let a = Int32Chunked::new("a", &[1, 2, 1, 1, 3, 4, 3, 3]);
+        let b = Int64Chunked::new("b", &[0, 1, 2, 3, 4, 5, 6, 1]);
+        let c = Utf8Chunked::new("c", &["a", "b", "c", "d", "e", "f", "g", "h"]);
         let df = DataFrame::new(vec![a.into_series(), b.into_series(), c.into_series()])?;
 
         let out = df.sort(&["a", "b", "c"], false)?;
@@ -808,8 +808,8 @@ mod test {
         );
 
         // now let the first sort be a string
-        let a = Utf8Chunked::new_from_slice("a", &["a", "b", "c", "a", "b", "c"]).into_series();
-        let b = Int32Chunked::new_from_slice("b", &[5, 4, 2, 3, 4, 5]).into_series();
+        let a = Utf8Chunked::new("a", &["a", "b", "c", "a", "b", "c"]).into_series();
+        let b = Int32Chunked::new("b", &[5, 4, 2, 3, 4, 5]).into_series();
         let df = DataFrame::new(vec![a, b])?;
 
         let out = df.sort(&["a", "b"], false)?;

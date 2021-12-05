@@ -681,7 +681,7 @@ ChunkedArray: 'Date' [Int32]
 ]"#,
             format!("{:?}", ca)
         );
-        let ca = Utf8Chunked::new_from_slice("name", &["a", "b"]);
+        let ca = Utf8Chunked::new("name", &["a", "b"]);
         println!("{:?}", ca);
         assert_eq!(
             r#"shape: (2,)

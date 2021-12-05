@@ -45,7 +45,7 @@
 //! let ca: UInt32Chunked = (0..10).map(Some).collect();
 //!
 //! // from slices
-//! let ca = UInt32Chunked::new_from_slice("foo", &[1, 2, 3]);
+//! let ca = UInt32Chunked::new("foo", &[1, 2, 3]);
 //!
 //! // use builders
 //! let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new("foo", 10);
@@ -146,7 +146,7 @@
 //!
 //! ```rust
 //! # use polars::prelude::*;
-//! let ca = UInt32Chunked::new_from_slice("foo", &[1, 2, 3]);
+//! let ca = UInt32Chunked::new("foo", &[1, 2, 3]);
 //!
 //! // 1 / ca
 //! let divide_one_by_ca = ca.apply(|rhs| 1 / rhs);

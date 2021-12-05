@@ -421,7 +421,7 @@ mod test {
 
     #[test]
     fn test_downsample() -> Result<()> {
-        let ts = Int64Chunked::new_from_slice(
+        let ts = Int64Chunked::new(
             "ms",
             &[
                 946684800000,
@@ -487,7 +487,7 @@ mod test {
 20210319 23:59:01";
         let data: Vec<_> = data.split('\n').collect();
 
-        let date = Utf8Chunked::new_from_slice("date", &data);
+        let date = Utf8Chunked::new("date", &data);
         let date = date.as_datetime(None)?.into_series();
         let values =
             UInt32Chunked::new_from_iter("values", (0..date.len()).map(|v| v as u32)).into_series();

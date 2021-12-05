@@ -131,7 +131,7 @@ mod test {
 
     #[test]
     fn test_shift() {
-        let ca = Int32Chunked::new_from_slice("", &[1, 2, 3]);
+        let ca = Int32Chunked::new("", &[1, 2, 3]);
 
         // shift by 0, 1, 2, 3, 4
         let shifted = ca.shift_and_fill(0, Some(5));

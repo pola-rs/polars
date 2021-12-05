@@ -1383,7 +1383,7 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
-    ///     let idx = UInt32Chunked::new_from_slice("idx", &[0, 1, 9]);
+    ///     let idx = UInt32Chunked::new("idx", &[0, 1, 9]);
     ///     df.take(&idx)
     /// }
     /// ```

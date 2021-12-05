@@ -38,7 +38,7 @@
 //! // Parsing fmt
 //! let fmt = "%Y-%m%-d %H:%M:%S";
 //! // Create the ChunkedArray
-//! let ca = Utf8Chunked::new_from_slice("datetime", datetime_values);
+//! let ca = Utf8Chunked::new("datetime", datetime_values);
 //! // Parse strings as DateTime objects
 //! let date_ca = ca.as_datetime(Some(fmt));
 //! ```

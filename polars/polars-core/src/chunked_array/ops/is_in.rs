@@ -188,8 +188,8 @@ mod test {
 
     #[test]
     fn test_is_in() -> Result<()> {
-        let a = Int32Chunked::new_from_slice("a", &[1, 2, 3, 4]);
-        let b = Int64Chunked::new_from_slice("b", &[4, 5, 1]);
+        let a = Int32Chunked::new("a", &[1, 2, 3, 4]);
+        let b = Int64Chunked::new("b", &[4, 5, 1]);
 
         let out = a.is_in(&b.into_series())?;
         assert_eq!(
@@ -197,8 +197,8 @@ mod test {
             [Some(true), Some(false), Some(false), Some(true)]
         );
 
-        let a = Utf8Chunked::new_from_slice("a", &["a", "b", "c", "d"]);
-        let b = Utf8Chunked::new_from_slice("b", &["d", "e", "c"]);
+        let a = Utf8Chunked::new("a", &["a", "b", "c", "d"]);
+        let b = Utf8Chunked::new("b", &["d", "e", "c"]);
 
         let out = a.is_in(&b.into_series())?;
         assert_eq!(
