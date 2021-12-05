@@ -1570,7 +1570,7 @@ class DataFrame:
     @property
     def schema(self) -> Dict[str, Type[DataType]]:
         """
-        Get a dict[column name, DataType]]
+        Get a dict[column name, DataType]
 
         Examples
         --------
