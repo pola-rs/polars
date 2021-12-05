@@ -783,7 +783,7 @@ mod test {
 
     #[test]
     fn cast() {
-        let ar = UInt32Chunked::new_from_slice("a", &[1, 2]);
+        let ar = UInt32Chunked::new("a", &[1, 2]);
         let s = ar.into_series();
         let s2 = s.cast(&DataType::Int64).unwrap();
 
@@ -796,7 +796,7 @@ mod test {
     fn new_series() {
         Series::new("boolean series", &vec![true, false, true]);
         Series::new("int series", &[1, 2, 3]);
-        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let ca = Int32Chunked::new("a", &[1, 2, 3]);
         ca.into_series();
     }
 

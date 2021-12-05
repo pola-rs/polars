@@ -493,7 +493,7 @@ mod test {
         // validated with numpy
         // Note that numpy as an argument ddof wich influences results. The default is ddof=0
         // we chose ddof=1, which is standard in statistics
-        let ca1 = Int32Chunked::new_from_slice("", &[5, 8, 9, 5, 0]);
+        let ca1 = Int32Chunked::new("", &[5, 8, 9, 5, 0]);
         let ca2 = Int32Chunked::new(
             "",
             &[
@@ -517,10 +517,10 @@ mod test {
 
     #[test]
     fn test_agg_float() {
-        let ca1 = Float32Chunked::new_from_slice("a", &[1.0, f32::NAN]);
-        let ca2 = Float32Chunked::new_from_slice("b", &[f32::NAN, 1.0]);
+        let ca1 = Float32Chunked::new("a", &[1.0, f32::NAN]);
+        let ca2 = Float32Chunked::new("b", &[f32::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
-        let ca1 = Float64Chunked::new_from_slice("a", &[1.0, f64::NAN]);
+        let ca1 = Float64Chunked::new("a", &[1.0, f64::NAN]);
         let ca2 = Float64Chunked::new_from_slice("b", &[f64::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         println!("{:?}", (ca1.min(), ca2.min()))

@@ -289,8 +289,8 @@ impl<T> ChunkedArray<T> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let mut array = Int32Chunked::new_from_slice("array", &[1, 2]);
-    /// let array_2 = Int32Chunked::new_from_slice("2nd", &[3]);
+    /// let mut array = Int32Chunked::new("array", &[1, 2]);
+    /// let array_2 = Int32Chunked::new("2nd", &[3]);
     ///
     /// array.append(&array_2);
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
@@ -615,19 +615,19 @@ pub(crate) mod test {
     use crate::prelude::*;
 
     pub(crate) fn get_chunked_array() -> Int32Chunked {
-        ChunkedArray::new_from_slice("a", &[1, 2, 3])
+        ChunkedArray::new("a", &[1, 2, 3])
     }
 
     #[test]
     fn test_sort() {
-        let a = Int32Chunked::new_from_slice("a", &[1, 9, 3, 2]);
+        let a = Int32Chunked::new("a", &[1, 9, 3, 2]);
         let b = a
             .sort(false)
             .into_iter()
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
-        let a = Utf8Chunked::new_from_slice("a", &["b", "a", "c"]);
+        let a = Utf8Chunked::new("a", &["b", "a", "c"]);
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
@@ -663,10 +663,7 @@ pub(crate) mod test {
     fn filter() {
         let a = get_chunked_array();
         let b = a
-            .filter(&BooleanChunked::new_from_slice(
-                "filter",
-                &[true, false, false],
-            ))
+            .filter(&BooleanChunked::new("filter", &[true, false, false]))
             .unwrap();
         assert_eq!(b.len(), 1);
         assert_eq!(b.into_iter().next(), Some(Some(1)));
@@ -716,8 +713,8 @@ pub(crate) mod test {
 
     #[test]
     fn slice() {
-        let mut first = UInt32Chunked::new_from_slice("first", &[0, 1, 2]);
-        let second = UInt32Chunked::new_from_slice("second", &[3, 4, 5]);
+        let mut first = UInt32Chunked::new("first", &[0, 1, 2]);
+        let second = UInt32Chunked::new("second", &[3, 4, 5]);
         first.append(&second);
         assert_slice_equal(&first.slice(0, 3), &[0, 1, 2]);
         assert_slice_equal(&first.slice(0, 4), &[0, 1, 2, 3]);
@@ -735,7 +732,7 @@ pub(crate) mod test {
 
     #[test]
     fn sorting() {
-        let s = UInt32Chunked::new_from_slice("", &[9, 2, 4]);
+        let s = UInt32Chunked::new("", &[9, 2, 4]);
         let sorted = s.sort(false);
         assert_slice_equal(&sorted, &[2, 4, 9]);
         let sorted = s.sort(true);
@@ -762,16 +759,16 @@ pub(crate) mod test {
 
     #[test]
     fn reverse() {
-        let s = UInt32Chunked::new_from_slice("", &[1, 2, 3]);
+        let s = UInt32Chunked::new("", &[1, 2, 3]);
         // path with continuous slice
         assert_slice_equal(&s.reverse(), &[3, 2, 1]);
         // path with options
         let s = UInt32Chunked::new("", &[Some(1), None, Some(3)]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(3), None, Some(1)]);
-        let s = BooleanChunked::new_from_slice("", &[true, false]);
+        let s = BooleanChunked::new("", &[true, false]);
         assert_eq!(Vec::from(&s.reverse()), &[Some(false), Some(true)]);
 
-        let s = Utf8Chunked::new_from_slice("", &["a", "b", "c"]);
+        let s = Utf8Chunked::new("", &["a", "b", "c"]);
         assert_eq!(Vec::from(&s.reverse()), &[Some("c"), Some("b"), Some("a")]);
 
         let s = Utf8Chunked::new("", &[Some("a"), None, Some("c")]);
@@ -780,11 +777,11 @@ pub(crate) mod test {
 
     #[test]
     fn test_null_sized_chunks() {
-        let mut s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());
-        s.append(&Float64Chunked::new_from_slice("s2", &[1., 2., 3.]));
+        let mut s = Float64Chunked::new("s", &Vec::<f64>::new());
+        s.append(&Float64Chunked::new("s2", &[1., 2., 3.]));
         dbg!(&s);
 
-        let s = Float64Chunked::new_from_slice("s", &Vec::<f64>::new());
+        let s = Float64Chunked::new("s", &Vec::<f64>::new());
         dbg!(&s.into_iter().next());
     }
 

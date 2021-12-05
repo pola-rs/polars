@@ -349,7 +349,7 @@ mod test {
 
     #[test]
     fn test_rolling() {
-        let ca = Int32Chunked::new_from_slice("foo", &[1, 2, 3, 2, 1]);
+        let ca = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]);
         let a = ca
             .rolling_sum(RollingOptions {
                 window_size: 2,
