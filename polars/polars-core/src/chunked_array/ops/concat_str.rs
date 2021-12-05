@@ -61,7 +61,7 @@ mod test {
 
     #[test]
     fn test_str_concat() {
-        let ca = Int32Chunked::new_from_opt_slice("foo", &[Some(1), None, Some(3)]);
+        let ca = Int32Chunked::new("foo", &[Some(1), None, Some(3)]);
         let out = ca.str_concat("-");
 
         let out = out.get(0);

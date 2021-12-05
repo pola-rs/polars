@@ -159,7 +159,7 @@ mod test {
             Some("foo"),
             Some("bar"),
         ];
-        let ca = Utf8Chunked::new_from_opt_slice("a", slice);
+        let ca = Utf8Chunked::new("a", slice);
         let ca = ca.cast(&DataType::Categorical)?;
         let ca = ca.categorical().unwrap();
 

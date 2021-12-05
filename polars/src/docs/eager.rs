@@ -67,7 +67,7 @@
 //! let s = Series::new("foo", &[1, 2, 3]);
 //!
 //! // from a chunked-array
-//! let ca = UInt32Chunked::new_from_opt_slice("foo", &[Some(1), None, Some(3)]);
+//! let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(3)]);
 //! let s = ca.into_series();
 //! ```
 //!
@@ -161,7 +161,7 @@
 //! # fn example() -> Result<()> {
 //!
 //! let s = Series::new("a", &[1, 2, 3]);
-//! let ca = UInt32Chunked::new_from_opt_slice("b", &[Some(3), None, Some(1)]);
+//! let ca = UInt32Chunked::new("b", &[Some(3), None, Some(1)]);
 //!
 //! // compare Series with numeric values
 //! // ==

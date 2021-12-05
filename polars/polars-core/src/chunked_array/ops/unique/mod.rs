@@ -407,7 +407,7 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
                 unique.push(v)
             }
         }
-        Ok(ChunkedArray::new_from_opt_slice(self.name(), &unique))
+        Ok(ChunkedArray::new(self.name(), &unique))
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
@@ -570,8 +570,7 @@ mod test {
             vec![Some(true), Some(false)]
         );
 
-        let ca =
-            Utf8Chunked::new_from_opt_slice("", &[Some("a"), None, Some("a"), Some("b"), None]);
+        let ca = Utf8Chunked::new("", &[Some("a"), None, Some("a"), Some("b"), None]);
         assert_eq!(
             Vec::from(&ca.unique().unwrap().sort(false)),
             &[None, Some("a"), Some("b")]
@@ -605,7 +604,7 @@ mod test {
     #[test]
     #[cfg(feature = "is_first")]
     fn is_first() {
-        let ca = UInt32Chunked::new_from_opt_slice(
+        let ca = UInt32Chunked::new(
             "a",
             &[Some(1), Some(2), Some(1), Some(1), None, Some(3), None],
         );

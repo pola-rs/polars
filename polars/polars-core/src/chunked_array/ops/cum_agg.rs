@@ -160,7 +160,7 @@ mod test {
 
     #[test]
     fn test_cummax() {
-        let ca = UInt8Chunked::new_from_opt_slice("foo", &[None, Some(1), Some(3), None, Some(1)]);
+        let ca = UInt8Chunked::new("foo", &[None, Some(1), Some(3), None, Some(1)]);
         let out = ca.cummax(true);
         assert_eq!(Vec::from(&out), &[None, Some(3), Some(3), None, Some(1)]);
         let out = ca.cummax(false);
@@ -169,7 +169,7 @@ mod test {
 
     #[test]
     fn test_cummin() {
-        let ca = UInt8Chunked::new_from_opt_slice("foo", &[None, Some(1), Some(3), None, Some(2)]);
+        let ca = UInt8Chunked::new("foo", &[None, Some(1), Some(3), None, Some(2)]);
         let out = ca.cummin(true);
         assert_eq!(Vec::from(&out), &[None, Some(1), Some(2), None, Some(2)]);
         let out = ca.cummin(false);
@@ -178,17 +178,14 @@ mod test {
 
     #[test]
     fn test_cumsum() {
-        let ca = Int32Chunked::new_from_opt_slice("foo", &[None, Some(1), Some(3), None, Some(1)]);
+        let ca = Int32Chunked::new("foo", &[None, Some(1), Some(3), None, Some(1)]);
         let out = ca.cumsum(true);
         assert_eq!(Vec::from(&out), &[None, Some(5), Some(4), None, Some(1)]);
         let out = ca.cumsum(false);
         assert_eq!(Vec::from(&out), &[None, Some(1), Some(4), None, Some(5)]);
 
         // just check if the trait bounds allow for floats
-        let ca = Float32Chunked::new_from_opt_slice(
-            "foo",
-            &[None, Some(1.0), Some(3.0), None, Some(1.0)],
-        );
+        let ca = Float32Chunked::new("foo", &[None, Some(1.0), Some(3.0), None, Some(1.0)]);
         let _out = ca.cumsum(false);
     }
 }

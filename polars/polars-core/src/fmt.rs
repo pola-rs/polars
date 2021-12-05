@@ -642,7 +642,7 @@ Series: 'a' [list]
 
     #[test]
     fn test_fmt_temporal() {
-        let s = Int32Chunked::new_from_opt_slice("Date", &[Some(1), None, Some(3)]).into_date();
+        let s = Int32Chunked::new("Date", &[Some(1), None, Some(3)]).into_date();
         assert_eq!(
             r#"shape: (3,)
 Series: 'Date' [date]
@@ -654,8 +654,7 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new_from_opt_slice("", &[Some(1), None, Some(1_000_000_000_000)])
-            .into_date();
+        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)]).into_date();
         assert_eq!(
             r#"shape: (3,)
 Series: '' [datetime]
@@ -670,7 +669,7 @@ Series: '' [datetime]
 
     #[test]
     fn test_fmt_chunkedarray() {
-        let ca = Int32Chunked::new_from_opt_slice("Date", &[Some(1), None, Some(3)]);
+        let ca = Int32Chunked::new("Date", &[Some(1), None, Some(3)]);
         println!("{:?}", ca);
         assert_eq!(
             r#"shape: (3,)

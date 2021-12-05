@@ -205,7 +205,7 @@ mod test {
             Some("foo"),
             Some("bar"),
         ];
-        let ca = Utf8Chunked::new_from_opt_slice("a", slice);
+        let ca = Utf8Chunked::new("a", slice);
         let out = ca.cast(&DataType::Categorical)?;
         let mut out = out.categorical().unwrap().clone();
         assert_eq!(out.categorical_map.take().unwrap().len(), 2);
@@ -224,9 +224,9 @@ mod test {
         // Check that we don't panic if we append two categorical arrays
         // build under the same string cache
         // https://github.com/pola-rs/polars/issues/1115
-        let ca1 = Utf8Chunked::new_from_opt_slice("a", slice).cast(&DataType::Categorical)?;
+        let ca1 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical)?;
         let mut ca1 = ca1.categorical().unwrap().clone();
-        let ca2 = Utf8Chunked::new_from_opt_slice("a", slice).cast(&DataType::Categorical)?;
+        let ca2 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical)?;
         let ca2 = ca2.categorical().unwrap();
         ca1.append(ca2);
 

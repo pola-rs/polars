@@ -185,7 +185,7 @@ mod test {
         };
 
         let values = &[Some(foo1), None, Some(foo2), None];
-        let ca = ObjectChunked::new_from_opt_slice("", values);
+        let ca = ObjectChunked::new("", values);
 
         let groups = vec![(0u32, vec![0u32, 1]), (2, vec![2]), (3, vec![3])];
         let out = ca.agg_list(&groups).unwrap();
@@ -208,7 +208,7 @@ mod test {
         };
 
         let values = &[Some(foo1.clone()), None, Some(foo2.clone()), None];
-        let ca = ObjectChunked::new_from_opt_slice("", values);
+        let ca = ObjectChunked::new("", values);
 
         let groups = vec![(0u32, vec![0u32, 1]), (2, vec![2]), (3, vec![3])];
         let out = ca.agg_list(&groups).unwrap();

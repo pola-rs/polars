@@ -246,8 +246,7 @@ mod test {
 
     #[test]
     fn test_fill_null() {
-        let ca =
-            Int32Chunked::new_from_opt_slice("a", &[None, Some(2), Some(3), None, Some(4), None]);
+        let ca = Int32Chunked::new("a", &[None, Some(2), Some(3), None, Some(4), None]);
         let filled = ca.fill_null(FillNullStrategy::Forward).unwrap();
         assert_eq!(filled.name(), "a");
 
@@ -279,7 +278,7 @@ mod test {
             Vec::from(&filled),
             &[Some(3), Some(2), Some(3), Some(3), Some(4), Some(3)]
         );
-        let ca = Int32Chunked::new_from_opt_slice("a", &[None, None, None, None, Some(4), None]);
+        let ca = Int32Chunked::new("a", &[None, None, None, None, Some(4), None]);
         let filled = ca.fill_null(FillNullStrategy::Backward).unwrap();
         assert_eq!(filled.name(), "a");
         assert_eq!(

@@ -122,25 +122,21 @@ mod test {
 
     #[test]
     fn test_interpolate() {
-        let ca = UInt32Chunked::new_from_opt_slice("", &[Some(1), None, None, Some(4), Some(5)]);
+        let ca = UInt32Chunked::new("", &[Some(1), None, None, Some(4), Some(5)]);
         let out = ca.interpolate();
         assert_eq!(
             Vec::from(&out),
             &[Some(1), Some(2), Some(3), Some(4), Some(5)]
         );
 
-        let ca =
-            UInt32Chunked::new_from_opt_slice("", &[None, Some(1), None, None, Some(4), Some(5)]);
+        let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5)]);
         let out = ca.interpolate();
         assert_eq!(
             Vec::from(&out),
             &[None, Some(1), Some(2), Some(3), Some(4), Some(5)]
         );
 
-        let ca = UInt32Chunked::new_from_opt_slice(
-            "",
-            &[None, Some(1), None, None, Some(4), Some(5), None],
-        );
+        let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5), None]);
         let out = ca.interpolate();
         assert_eq!(
             Vec::from(&out),

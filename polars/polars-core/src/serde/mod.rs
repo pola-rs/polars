@@ -75,7 +75,7 @@ mod test {
 
     #[test]
     fn test_serde() -> Result<()> {
-        let ca = UInt32Chunked::new_from_opt_slice("foo", &[Some(1), None, Some(2)]);
+        let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(2)]);
 
         let json = serde_json::to_string(&ca).unwrap();
         dbg!(&json);
@@ -83,7 +83,7 @@ mod test {
         let out = serde_json::from_str::<Series>(&json).unwrap();
         assert!(ca.into_series().series_equal_missing(&out));
 
-        let ca = Utf8Chunked::new_from_opt_slice("foo", &[Some("foo"), None, Some("bar")]);
+        let ca = Utf8Chunked::new("foo", &[Some("foo"), None, Some("bar")]);
 
         let json = serde_json::to_string(&ca).unwrap();
         dbg!(&json);
@@ -97,7 +97,7 @@ mod test {
     /// test using the `DeserializedOwned` trait
     #[test]
     fn test_serde_owned() {
-        let ca = UInt32Chunked::new_from_opt_slice("foo", &[Some(1), None, Some(2)]);
+        let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(2)]);
 
         let json = serde_json::to_string(&ca).unwrap();
         dbg!(&json);
