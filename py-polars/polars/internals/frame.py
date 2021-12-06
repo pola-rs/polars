@@ -2501,6 +2501,10 @@ class DataFrame:
     def vstack(self, df: "DataFrame", in_place: Literal[False] = ...) -> "DataFrame":
         ...
 
+    @tp.overload
+    def vstack(self, df: "DataFrame", in_place: bool) -> Optional["DataFrame"]:
+        ...
+
     def vstack(self, df: "DataFrame", in_place: bool = False) -> Optional["DataFrame"]:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
