@@ -96,8 +96,13 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.agg_list(groups)
     }
 
-    fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
-        self.0.agg_quantile(groups, quantile)
+    fn agg_quantile(
+        &self,
+        groups: &[(u32, Vec<u32>)],
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Option<Series> {
+        self.0.agg_quantile(groups, quantile, interpol)
     }
 
     fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -400,8 +405,12 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     fn std_as_series(&self) -> Series {
         VarAggSeries::std_as_series(&self.0)
     }
-    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-        ChunkAggSeries::quantile_as_series(&self.0, quantile)
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        ChunkAggSeries::quantile_as_series(&self.0, quantile, interpol)
     }
 
     fn fmt_list(&self) -> String {

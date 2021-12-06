@@ -8,6 +8,19 @@ use arrow::types::simd::Simd;
 use num::{NumCast, ToPrimitive};
 use std::ops::Add;
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum QuantileInterpolOptions {
+    Nearest,
+    Lower,
+    Higher,
+}
+
+impl Default for QuantileInterpolOptions {
+    fn default() -> Self {
+        QuantileInterpolOptions::Nearest
+    }
+}
+
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
     /// Get the sum of the ChunkedArray as a new Series of length 1.
@@ -31,7 +44,11 @@ pub trait ChunkAggSeries {
         unimplemented!()
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
         unimplemented!()
     }
 }
@@ -99,18 +116,39 @@ where
         }
     }
 
-    fn quantile(&self, quantile: f64) -> Result<Option<T::Native>> {
+    fn quantile(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Option<T::Native>> {
         if !(0.0..=1.0).contains(&quantile) {
             Err(PolarsError::ValueError(
                 "quantile should be between 0.0 and 1.0".into(),
             ))
         } else {
             let null_count = self.null_count();
+            let length = self.len();
+
+            let mut idx = match interpol {
+                QuantileInterpolOptions::Nearest => {
+                    (((length - null_count) as f64) * quantile + null_count as f64) as i64
+                }
+                QuantileInterpolOptions::Lower => {
+                    (((length - 1 - null_count) as f64) * quantile + null_count as f64) as i64
+                }
+                QuantileInterpolOptions::Higher => {
+                    (((length - 1 - null_count) as f64) * quantile + null_count as f64) as i64 + 1
+                }
+            };
+
+            if idx >= length as i64 {
+                idx = (length - 1) as i64;
+            } else if idx <= 0i64 {
+                idx = 0;
+            }
+
             let opt = ChunkSort::sort(self, false)
-                .slice(
-                    (((self.len() - null_count) as f64) * quantile + null_count as f64) as i64,
-                    1,
-                )
+                .slice(idx, 1)
                 .into_iter()
                 .next()
                 .flatten();
@@ -262,8 +300,12 @@ where
         let val = [self.median()];
         Series::new(self.name(), val)
     }
-    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-        let v = self.quantile(quantile)?;
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        let v = self.quantile(quantile, interpol)?;
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
         Ok(ca.into_series())
@@ -388,7 +430,11 @@ impl ChunkAggSeries for BooleanChunked {
     fn median_as_series(&self) -> Series {
         BooleanChunked::full_null(self.name(), 1).into_series()
     }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
         Ok(BooleanChunked::full_null(self.name(), 1).into_series())
     }
 }
@@ -417,7 +463,11 @@ impl ChunkAggSeries for Utf8Chunked {
     fn median_as_series(&self) -> Series {
         one_null_utf8!(self)
     }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
         Ok(one_null_utf8!(self))
     }
 }
@@ -449,7 +499,11 @@ impl ChunkAggSeries for ListChunked {
     fn median_as_series(&self) -> Series {
         one_null_list!(self)
     }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
         Ok(one_null_list!(self))
     }
 }
@@ -600,8 +654,11 @@ mod test {
 
     #[test]
     fn test_quantile_all_null() {
-        let ca = Float32Chunked::new("", &[None, None, None]);
-        let out = ca.quantile(0.9).unwrap();
+        let ca = Float32Chunked::new_from_opt_slice("", &[None, None, None]);
+        let out = ca
+            .quantile(0.9, QuantileInterpolOptions::default())
+            .unwrap();
+
         assert_eq!(out, None)
     }
 }

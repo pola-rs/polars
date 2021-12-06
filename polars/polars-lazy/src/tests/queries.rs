@@ -192,7 +192,9 @@ fn test_lazy_agg() {
         .agg([
             col("rain").min(),
             col("rain").sum(),
-            col("rain").quantile(0.5).alias("median_rain"),
+            col("rain")
+                .quantile(0.5, QuantileInterpolOptions::default())
+                .alias("median_rain"),
         ])
         .sort("date", false);
 
@@ -651,10 +653,13 @@ fn test_lazy_df_aggregations() {
     assert!(df
         .clone()
         .lazy()
-        .quantile(0.5)
+        .quantile(0.5, QuantileInterpolOptions::default())
         .collect()
         .unwrap()
-        .frame_equal_missing(&df.quantile(0.5).unwrap()));
+        .frame_equal_missing(
+            &df.quantile(0.5, QuantileInterpolOptions::default())
+                .unwrap()
+        ));
 }
 
 #[test]
