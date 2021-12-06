@@ -2257,11 +2257,11 @@ impl DataFrame {
     }
 
     /// Aggregate the columns to their quantile values.
-    pub fn quantile(&self, quantile: f64) -> Result<Self> {
+    pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Self> {
         let columns = POOL.install(|| {
             self.columns
                 .par_iter()
-                .map(|s| s.quantile_as_series(quantile))
+                .map(|s| s.quantile_as_series(quantile, interpol))
                 .collect::<Result<Vec<_>>>()
         })?;
         Ok(DataFrame::new_no_checks(columns))

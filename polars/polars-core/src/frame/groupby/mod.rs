@@ -848,10 +848,10 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").quantile(0.2)
-    /// }
+    ///     df.groupby("date")?.select("temp").quantile(0.2, QuantileInterpolOptions::default())
+    /// } //TODO: update this
     /// ```
-    pub fn quantile(&self, quantile: f64) -> Result<DataFrame> {
+    pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<DataFrame> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be within 0.0 and 1.0".into(),
@@ -859,8 +859,9 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         }
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile));
-            let opt_agg = agg_col.agg_quantile(&self.groups, quantile);
+            let new_name =
+                fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile, interpol));
+            let opt_agg = agg_col.agg_quantile(&self.groups, quantile, interpol);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -1214,7 +1215,7 @@ pub enum GroupByMethod {
     Sum,
     Groups,
     NUnique,
-    Quantile(f64),
+    Quantile(f64, QuantileInterpolOptions),
     Count,
     List,
     Std,
@@ -1236,7 +1237,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
         NUnique => format!("{}_n_unique", name),
         Count => format!("{}_count", name),
         List => format!("{}_agg_list", name),
-        Quantile(quantile) => format!("{}_quantile_{:.2}", name, quantile),
+        Quantile(quantile, _interpol) => format!("{}_quantile_{:.2}", name, quantile),
         Std => format!("{}_agg_std", name),
         Var => format!("{}_agg_var", name),
     }
@@ -1335,7 +1336,7 @@ mod test {
             df.groupby("date")
                 .unwrap()
                 .select("temp")
-                .quantile(0.2)
+                .quantile(0.2, QuantileInterpolOptions::default())
                 .unwrap()
         );
         println!(

@@ -16,7 +16,11 @@ pub enum AAggExpr {
     Last(Node),
     Mean(Node),
     List(Node),
-    Quantile { expr: Node, quantile: f64 },
+    Quantile {
+        expr: Node,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    },
     Sum(Node),
     Count(Node),
     Std(Node),
@@ -296,11 +300,15 @@ impl AExpr {
                         let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
                         Field::new(&new_name, DataType::List(DataType::UInt32.into()))
                     }
-                    Quantile { expr, quantile } => {
+                    Quantile {
+                        expr,
+                        quantile,
+                        interpol,
+                    } => {
                         let mut field = field_by_context(
                             arena.get(*expr).to_field(schema, ctxt, arena)?,
                             ctxt,
-                            GroupByMethod::Quantile(*quantile),
+                            GroupByMethod::Quantile(*quantile, *interpol),
                         );
                         field.coerce(DataType::Float64);
                         field

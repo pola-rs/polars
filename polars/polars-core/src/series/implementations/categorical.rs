@@ -367,7 +367,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn std_as_series(&self) -> Series {
         CategoricalChunked::full_null(self.name(), 1).into_series()
     }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
         Ok(CategoricalChunked::full_null(self.name(), 1).into_series())
     }
 
