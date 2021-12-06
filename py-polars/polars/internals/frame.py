@@ -1682,12 +1682,43 @@ class DataFrame:
         """
         self._df.replace_at_idx(index, series._s)
 
+    @tp.overload
+    def sort(
+        self,
+        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
+        reverse: Union[bool, tp.List[bool]] = ...,
+        *,
+        in_place: Literal[False] = ...,
+    ) -> "DataFrame":
+        ...
+
+    @tp.overload
+    def sort(
+        self,
+        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
+        reverse: Union[bool, tp.List[bool]] = ...,
+        *,
+        in_place: Literal[True],
+    ) -> None:
+        ...
+
+    @tp.overload
+    def sort(
+        self,
+        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
+        reverse: Union[bool, tp.List[bool]] = ...,
+        *,
+        in_place: bool,
+    ) -> Optional["DataFrame"]:
+        ...
+
     def sort(
         self,
         by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
         reverse: Union[bool, tp.List[bool]] = False,
+        *,
         in_place: bool = False,
-    ) -> "DataFrame":
+    ) -> Optional["DataFrame"]:
         """
         Sort the DataFrame by column.
 
@@ -1757,7 +1788,7 @@ class DataFrame:
             return df
         if in_place:
             self._df.sort_in_place(by, reverse)
-            return self
+            return None
         else:
             return wrap_df(self._df.sort(by, reverse))
 
