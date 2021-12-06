@@ -2493,6 +2493,18 @@ class DataFrame:
         else:
             return wrap_df(self._df.hstack([s.inner() for s in columns]))
 
+    @tp.overload
+    def vstack(self, df: "DataFrame", in_place: Literal[True]) -> None:
+        ...
+
+    @tp.overload
+    def vstack(self, df: "DataFrame", in_place: Literal[False] = ...) -> "DataFrame":
+        ...
+
+    @tp.overload
+    def vstack(self, df: "DataFrame", in_place: bool) -> Optional["DataFrame"]:
+        ...
+
     def vstack(self, df: "DataFrame", in_place: bool = False) -> Optional["DataFrame"]:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
