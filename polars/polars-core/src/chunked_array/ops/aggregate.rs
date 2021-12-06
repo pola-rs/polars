@@ -134,10 +134,10 @@ where
                     (((length - null_count) as f64) * quantile + null_count as f64) as i64
                 }
                 QuantileInterpolOptions::Lower => {
-                    (((length - 1 - null_count) as f64) * quantile + null_count as f64) as i64
+                    (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
                 }
                 QuantileInterpolOptions::Higher => {
-                    (((length - 1 - null_count) as f64) * quantile + null_count as f64) as i64 + 1
+                    (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64 + 1
                 }
             };
 
@@ -655,10 +655,39 @@ mod test {
     #[test]
     fn test_quantile_all_null() {
         let ca = Float32Chunked::new_from_opt_slice("", &[None, None, None]);
-        let out = ca
-            .quantile(0.9, QuantileInterpolOptions::default())
-            .unwrap();
 
-        assert_eq!(out, None)
+        let interpol_options = vec![
+            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Lower,
+            QuantileInterpolOptions::Higher,
+        ];
+
+        for interpol in interpol_options {
+            let out = ca.quantile(0.9, interpol).unwrap();
+
+            assert_eq!(out, None)
+        }
+    }
+
+    #[test]
+    fn test_quantile_min_max() {
+        let ca =
+            Float32Chunked::new_from_opt_slice("", &[None, Some(1f32), Some(5f32), Some(1f32)]);
+
+        let interpol_options = vec![
+            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Lower,
+            QuantileInterpolOptions::Higher,
+        ];
+
+        for interpol in interpol_options {
+            let min = ca.quantile(0.0, interpol).unwrap();
+
+            assert_eq!(min, ca.min());
+
+            let max = ca.quantile(1.0, interpol).unwrap();
+
+            assert_eq!(max, ca.max());
+        }
     }
 }
