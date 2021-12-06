@@ -5,7 +5,6 @@ import io
 import os
 import pickle
 import zlib
-
 from datetime import date
 from functools import partial
 from pathlib import Path
