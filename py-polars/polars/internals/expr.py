@@ -1077,11 +1077,11 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
-    def quantile(self, quantile: float) -> "Expr":
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> "Expr":
         """
         Get quantile value.
         """
-        return wrap_expr(self._pyexpr.quantile(quantile))
+        return wrap_expr(self._pyexpr.quantile(quantile, interpolation))
 
     def filter(self, predicate: "Expr") -> "Expr":
         """
@@ -1682,7 +1682,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rolling_median(window_size))
 
-    def rolling_quantile(self, window_size: int, quantile: float) -> "Expr":
+    def rolling_quantile(self, window_size: int, quantile: float, interpolation: str = "nearest") -> "Expr":
         """
         Compute a rolling quantile
 
@@ -1692,8 +1692,10 @@ class Expr:
             Size of the rolling window
         quantile
             quantile to compute
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower']
         """
-        return wrap_expr(self._pyexpr.rolling_quantile(window_size, quantile))
+        return wrap_expr(self._pyexpr.rolling_quantile(window_size, quantile, interpolation))
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Expr":
         """
