@@ -230,12 +230,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": ["a", "b", None],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None],})
         >>> df
         shape: (3, 2)
         ┌─────┬──────┐
@@ -250,10 +245,7 @@ class Expr:
         │ 3   ┆ null │
         └─────┴──────┘
         >>> df.select(
-        ...     [
-        ...         pl.col("a").alias("bar"),
-        ...         pl.col("b").alias("foo"),
-        ...     ]
+        ...     [pl.col("a").alias("bar"), pl.col("b").alias("foo"),]
         ... )
         shape: (3, 2)
         ┌─────┬──────┐
@@ -286,11 +278,7 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": ["a", "b", None],
-        ...         "c": [None, 2, 1],
-        ...     }
+        ...     {"a": [1, 2, 3], "b": ["a", "b", None], "c": [None, 2, 1],}
         ... )
         >>> df
         shape: (3, 3)
@@ -305,9 +293,7 @@ class Expr:
         ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
         │ 3   ┆ null ┆ 1    │
         └─────┴──────┴──────┘
-        >>> df.select(
-        ...     pl.col("*").exclude("b"),
-        ... )
+        >>> df.select(pl.col("*").exclude("b"),)
         shape: (3, 2)
         ┌─────┬──────┐
         │ a   ┆ c    │
@@ -336,12 +322,7 @@ class Expr:
         A groupby aggregation often changes the name of a column.
         With `keep_name` we can keep the original name of the column
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": ["a", "b", None],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None],})
         >>> df.groupby("a").agg(pl.col("b").list()).sort(by="a")
         shape: (3, 2)
         ┌─────┬────────────┐
@@ -409,10 +390,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle │
         └─────┴────────┴─────┴────────┘
         >>> df.select(
-        ...     [
-        ...         pl.all(),
-        ...         pl.all().reverse().suffix("_reverse"),
-        ...     ]
+        ...     [pl.all(), pl.all().reverse().suffix("_reverse"),]
         ... )
         shape: (5, 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
@@ -467,10 +445,7 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle │
         └─────┴────────┴─────┴────────┘
         >>> df.select(
-        ...     [
-        ...         pl.all(),
-        ...         pl.all().reverse().prefix("reverse_"),
-        ...     ]
+        ...     [pl.all(), pl.all().reverse().prefix("reverse_"),]
         ... )
         shape: (5, 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
@@ -499,12 +474,7 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [True, False, False],
-        ...         "b": ["a", "b", None],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({"a": [True, False, False], "b": ["a", "b", None],})
         >>> df
         shape: (3, 2)
         ┌───────┬──────┐
@@ -1002,15 +972,7 @@ class Expr:
         ...         "values": [1, 2, 3, 4, 5, 6, 7, 8, 8],
         ...     }
         ... )
-        >>> (
-        ...     df.lazy()
-        ...     .select(
-        ...         [
-        ...             pl.col("groups").sum().over("groups"),
-        ...         ]
-        ...     )
-        ...     .collect()
-        ... )
+        >>> (df.lazy().select([pl.col("groups").sum().over("groups"),]).collect())
         shape: (9, 1)
         ┌────────┐
         │ groups │
@@ -1149,20 +1111,11 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 1, 1],
-        ...         "b": ["a", "b", "c", "c"],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"],})
         >>> (
         ...     df.lazy()
         ...     .groupby("b")
-        ...     .agg(
-        ...         [
-        ...             pl.col("a").apply(lambda x: x.sum()),
-        ...         ]
-        ...     )
+        ...     .agg([pl.col("a").apply(lambda x: x.sum()),])
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
@@ -1457,9 +1410,7 @@ class Expr:
 
         >>> df = pl.DataFrame({"A": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0]})
         >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_mean(window_size=2),
-        ...     ]
+        ...     [pl.col("A").rolling_mean(window_size=2),]
         ... )
         shape: (6, 1)
         ┌──────┐
@@ -1610,15 +1561,9 @@ class Expr:
         Examples
         --------
 
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({"A": [1.0, 2.0, 9.0, 2.0, 13.0],})
         >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_apply(3, lambda s: s.std()),
-        ...     ]
+        ...     [pl.col("A").rolling_apply(3, lambda s: s.std()),]
         ... )
         shape: (5, 1)
         ┌────────────────────┐
@@ -1651,7 +1596,9 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rolling_median(window_size))
 
-    def rolling_quantile(self, window_size: int, quantile: float, interpolation: str = "nearest") -> "Expr":
+    def rolling_quantile(
+        self, window_size: int, quantile: float, interpolation: str = "nearest"
+    ) -> "Expr":
         """
         Compute a rolling quantile
 
@@ -1664,7 +1611,9 @@ class Expr:
         interpolation
             interpolation type, options: ['nearest', 'higher', 'lower']
         """
-        return wrap_expr(self._pyexpr.rolling_quantile(window_size, quantile, interpolation))
+        return wrap_expr(
+            self._pyexpr.rolling_quantile(window_size, quantile, interpolation)
+        )
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Expr":
         """
@@ -2127,9 +2076,7 @@ class ExprStringNameSpace:
         self._pyexpr = expr._pyexpr
 
     def strptime(
-        self,
-        datatype: Union[Type[Date], Type[Datetime]],
-        fmt: Optional[str] = None,
+        self, datatype: Union[Type[Date], Type[Datetime]], fmt: Optional[str] = None,
     ) -> Expr:
         """
         Parse utf8 expression as a Date/Datetimetype.
@@ -2250,9 +2197,7 @@ class ExprStringNameSpace:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("a").str.extract(r"candidate=(\w+)", 1),
-        ...     ]
+        ...     [pl.col("a").str.extract(r"candidate=(\w+)", 1),]
         ... )
         shape: (3, 1)
         ┌─────────┐

@@ -19,8 +19,7 @@ else:
 
 
 def from_dict(
-    data: Dict[str, Sequence[Any]],
-    columns: Optional[Sequence[str]] = None,
+    data: Dict[str, Sequence[Any]], columns: Optional[Sequence[str]] = None,
 ) -> DataFrame:
     """
     Construct a DataFrame from a dictionary of sequences.

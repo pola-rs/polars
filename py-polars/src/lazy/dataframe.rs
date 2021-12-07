@@ -7,9 +7,9 @@ use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{DataFrame, Field, JoinType, Schema};
+use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use polars_core::prelude::QuantileInterpolOptions;
 
 #[pyclass]
 #[repr(transparent)]

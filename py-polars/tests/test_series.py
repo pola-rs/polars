@@ -332,7 +332,8 @@ def test_rolling() -> None:
         a.rolling_median(4), pl.Series("a", [None, None, None, 2, 2], dtype=Float64)
     )
     testing.assert_series_equal(
-        a.rolling_quantile(3, 0, 'nearest'), pl.Series("a", [None, None, 1, 2, 1], dtype=Float64)
+        a.rolling_quantile(3, 0, "nearest"),
+        pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
     )
     assert a.rolling_skew(4).null_count() == 3
 
@@ -368,7 +369,7 @@ def test_median() -> None:
 
 def test_quantile() -> None:
     s = pl.Series([1, 2, 3])
-    assert s.quantile(0.5, 'nearest') == 2
+    assert s.quantile(0.5, "nearest") == 2
 
 
 def test_shape() -> None:
@@ -491,16 +492,7 @@ def test_mode() -> None:
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
     testing.assert_series_equal(
-        s.str.json_path_match("$.a"),
-        pl.Series(
-            [
-                "1",
-                None,
-                "2",
-                "2.1",
-                "true",
-            ]
-        ),
+        s.str.json_path_match("$.a"), pl.Series(["1", None, "2", "2.1", "true",]),
     )
 
 
@@ -513,14 +505,7 @@ def test_extract_regex() -> None:
         ]
     )
     testing.assert_series_equal(
-        s.str.extract(r"candidate=(\w+)", 1),
-        pl.Series(
-            [
-                "messi",
-                None,
-                "ronaldo",
-            ]
-        ),
+        s.str.extract(r"candidate=(\w+)", 1), pl.Series(["messi", None, "ronaldo",]),
     )
 
 

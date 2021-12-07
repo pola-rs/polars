@@ -31,18 +31,14 @@ def get_dummies(df: "pli.DataFrame") -> "pli.DataFrame":
 
 @overload
 def concat(
-    items: Sequence["pli.DataFrame"],
-    rechunk: bool = True,
-    how: str = "vertical",
+    items: Sequence["pli.DataFrame"], rechunk: bool = True, how: str = "vertical",
 ) -> "pli.DataFrame":
     ...
 
 
 @overload
 def concat(
-    items: Sequence["pli.Series"],
-    rechunk: bool = True,
-    how: str = "vertical",
+    items: Sequence["pli.Series"], rechunk: bool = True, how: str = "vertical",
 ) -> "pli.Series":
     ...
 

@@ -764,7 +764,7 @@ impl PyDataFrame {
         by: Vec<&str>,
         select: Vec<String>,
         quantile: f64,
-        interpolation: &str, 
+        interpolation: &str,
     ) -> PyResult<Self> {
         let interpol = match interpolation {
             "nearest" => QuantileInterpolOptions::Nearest,
@@ -899,7 +899,10 @@ impl PyDataFrame {
             "higher" => QuantileInterpolOptions::Higher,
             _ => panic!("not supported"),
         };
-        let df = self.df.quantile(quantile, interpol).map_err(PyPolarsEr::from)?;
+        let df = self
+            .df
+            .quantile(quantile, interpol)
+            .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
