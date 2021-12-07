@@ -79,9 +79,7 @@ def match_dtype(value: Any, dtype: "Type[DataType]") -> Any:
 
 
 def get_ffi_func(
-    name: str,
-    dtype: Type["DataType"],
-    obj: "PySeries",
+    name: str, dtype: Type["DataType"], obj: "PySeries",
 ) -> Optional[Callable[..., Any]]:
     """
     Dynamically obtain the proper ffi function/ method.
@@ -2363,9 +2361,7 @@ class Series:
         return np.arctan(self)  # type: ignore
 
     def apply(
-        self,
-        func: Callable[[Any], Any],
-        return_dtype: Optional[Type[DataType]] = None,
+        self, func: Callable[[Any], Any], return_dtype: Optional[Type[DataType]] = None,
     ) -> "Series":
         """
         Apply a function over elements in this Series and return a new Series.
@@ -2764,7 +2760,9 @@ class Series:
             self.name
         ]
 
-    def rolling_quantile(self, window_size: int, quantile: float, interpolation: str = "nearest") -> "Series":
+    def rolling_quantile(
+        self, window_size: int, quantile: float, interpolation: str = "nearest"
+    ) -> "Series":
         """
         Compute a rolling quantile
 
