@@ -3241,7 +3241,7 @@ class DataFrame:
         """
         return wrap_df(self._df.median())
 
-    def quantile(self, quantile: float) -> "DataFrame":
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their quantile value.
 
@@ -3254,7 +3254,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.quantile(0.5)
+        >>> df.quantile(0.5, "nearest")
         shape: (1, 3)
         ┌─────┬─────┬──────┐
         │ foo ┆ bar ┆ ham  │
@@ -3265,7 +3265,7 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return wrap_df(self._df.quantile(quantile))
+        return wrap_df(self._df.quantile(quantile, interpolation))
 
     def to_dummies(self) -> "DataFrame":
         """
@@ -4010,11 +4010,11 @@ class GroupBy:
         """
         return self._select_all().n_unique()
 
-    def quantile(self, quantile: float) -> DataFrame:
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
         """
         Compute the quantile per group.
         """
-        return self._select_all().quantile(quantile)
+        return self._select_all().quantile(quantile, interpolation)
 
     def median(self) -> DataFrame:
         """
@@ -4189,13 +4189,13 @@ class GBSelection:
             return wrap_df(self._df.downsample(self.by, self.rule, self.n, "n_unique"))
         return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))
 
-    def quantile(self, quantile: float) -> DataFrame:
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
         """
         Compute the quantile per group.
         """
         if self.downsample:
             raise ValueError("quantile operation not supported during downsample")
-        return wrap_df(self._df.groupby_quantile(self.by, self.selection, quantile))
+        return wrap_df(self._df.groupby_quantile(self.by, self.selection, quantile, interpolation))
 
     def median(self) -> DataFrame:
         """
