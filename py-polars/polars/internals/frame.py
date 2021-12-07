@@ -683,10 +683,41 @@ class DataFrame:
         else:
             return {s.name: s.to_list() for s in self}
 
+    @tp.overload
+    def to_json(
+        self,
+        file: Optional[Union[BytesIO, str, Path]] = ...,
+        pretty: bool = ...,
+        *,
+        to_string: Literal[True],
+    ) -> str:
+        ...
+
+    @tp.overload
+    def to_json(
+        self,
+        file: Optional[Union[BytesIO, str, Path]] = ...,
+        pretty: bool = ...,
+        *,
+        to_string: Literal[False] = ...,
+    ) -> None:
+        ...
+
+    @tp.overload
+    def to_json(
+        self,
+        file: Optional[Union[BytesIO, str, Path]] = ...,
+        pretty: bool = ...,
+        *,
+        to_string: bool = ...,
+    ) -> Optional[str]:
+        ...
+
     def to_json(
         self,
         file: Optional[Union[BytesIO, str, Path]] = None,
         pretty: bool = False,
+        *,
         to_string: bool = False,
     ) -> Optional[str]:
         """
