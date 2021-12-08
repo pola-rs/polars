@@ -99,6 +99,10 @@ where
                 }
             }
         }
+        .map(|mut ca| {
+            ca.rename(self.name());
+            ca
+        })
     }
 }
 impl IsIn for Utf8Chunked {
@@ -143,6 +147,10 @@ impl IsIn for Utf8Chunked {
                 .into(),
             )),
         }
+        .map(|mut ca| {
+            ca.rename(self.name());
+            ca
+        })
     }
 }
 
@@ -172,6 +180,10 @@ impl IsIn for BooleanChunked {
                 .into(),
             )),
         }
+        .map(|mut ca| {
+            ca.rename(self.name());
+            ca
+        })
     }
 }
 

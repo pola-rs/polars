@@ -1558,6 +1558,34 @@ class Series:
                 false
         ]
 
+        >>> # check if some values are a member of sublists
+        >>> sets = pl.Series("sets", [[1, 2, 3], [1, 2], [9, 10]])
+        >>> optional_members = pl.Series("optional_members", [1, 2, 3])
+        >>> print(sets)
+        shape: (3,)
+        Series: 'sets' [list]
+        [
+            [1, 2, 3]
+            [1, 2]
+            [9, 10]
+        ]
+        >>> print(optional_members)
+        shape: (3,)
+        Series: 'optional_members' [i64]
+        [
+            1
+            2
+            3
+        ]
+        >>> optional_members.is_in(sets)
+        shape: (3,)
+        Series: 'optional_members' [bool]
+        [
+            true
+            true
+            false
+        ]
+
         """
         if isinstance(other, list):
             other = Series("", other)
