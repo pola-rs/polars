@@ -1245,6 +1245,26 @@ class Expr:
         Returns
         -------
         Expr that evaluates to a Boolean Series.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
+        ... )
+        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
+        shape: (3, 1)
+        ┌──────────┐
+        │ contains │
+        │ ---      │
+        │ bool     │
+        ╞══════════╡
+        │ true     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ true     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ false    │
+        └──────────┘
+
         """
         if isinstance(other, list):
             other = pli.lit(pli.Series(other))
