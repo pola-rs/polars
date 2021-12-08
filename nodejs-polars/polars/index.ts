@@ -1,34 +1,72 @@
-import {Series} from "./series";
-import {DataFrame, readCSV, readJSON} from "./dataframe";
+import * as series from "./series";
+import * as df from "./dataframe";
 import { DataType } from "./datatypes";
 import * as func from "./functions";
-import * as lf from "./lazy/lazy_functions";
+import {funcs as lazy, Expr as lazyExpr, GroupBy as lazyGroupBy} from "./lazy";
+import * as io from "./io";
+namespace pl {
+  export type Expr = lazyExpr;
+  export type LazyGroupBy = lazyGroupBy;
 
-export default {
-  Int8:  DataType.Int8 as DataType.Int8,
-  Int16:  DataType.Int16 as DataType.Int16,
-  Int32:  DataType.Int32 as DataType.Int32,
-  Int64:  DataType.Int64 as DataType.Int64,
-  UInt8:  DataType.UInt8 as DataType.UInt8,
-  UInt16:  DataType.UInt16 as DataType.UInt16,
-  UInt32:  DataType.UInt32 as DataType.UInt32,
-  UInt64:  DataType.UInt64 as DataType.UInt64,
-  Float32:  DataType.Float32 as DataType.Float32,
-  Float64:  DataType.Float64 as DataType.Float64,
-  Bool:  DataType.Bool as DataType.Bool,
-  Utf8:  DataType.Utf8 as DataType.Utf8,
-  List:  DataType.List as DataType.List,
-  Date:  DataType.Date as DataType.Date,
-  Datetime:  DataType.Datetime as DataType.Datetime,
-  Time:  DataType.Time as DataType.Time,
-  Object:  DataType.Object as DataType.Object,
-  Categorical:  DataType.Categorical as DataType.Categorical,
-  col: lf.col,
-  lit: lf.lit,
-  repeat: func.repeat,
-  readCSV,
-  readJSON,
-  concat: func.concat,
-  Series,
-  DataFrame,
-};
+  export import DataFrame = df.DataFrame
+  export import Series = series.Series;
+  export import Int16 = DataType.Int16
+  export import Int32 =  DataType.Int32;
+  export import Int64 =  DataType.Int64;
+  export import UInt8 =  DataType.UInt8;
+  export import UInt16 =  DataType.UInt16;
+  export import UInt32 =  DataType.UInt32;
+  export import UInt64 =  DataType.UInt64;
+  export import Float32 =  DataType.Float32;
+  export import Float64 =  DataType.Float64;
+  export import Bool =  DataType.Bool;
+  export import Utf8 =  DataType.Utf8;
+  export import List =  DataType.List;
+  export import Date = DataType.Date;
+  export import Datetime = DataType.Datetime;
+  export import Time = DataType.Time;
+  export import Object = DataType.Object;
+  export import Categorical = DataType.Categorical;
+
+  export import repeat =  func.repeat;
+  export import concat =  func.concat;
+
+  // IO
+  export import scanCSV = io.scanCSV;
+  export import scanJSON = io.scanJSON;
+  export import scanParquet = io.scanParquet;
+  export import readCSV = io.readCSV;
+  export import scanIPC = io.scanIPC;
+  export import readIPC = io.readIPC;
+  export import readParquet = io.readParquet;
+  export import readJSON = io.readJSON;
+
+  // lazy
+  export import col = lazy.col
+  export import lit = lazy.lit
+  export import max = lazy.max
+  export import fold = lazy.fold
+  export import arange = lazy.arange
+  export import argSortBy = lazy.argSortBy
+  export import avg = lazy.avg
+  export import concatList = lazy.concatList
+  export import concatString = lazy.concatString
+  export import count = lazy.count
+  export import cov = lazy.cov
+  export import exclude = lazy.exclude
+  export import first = lazy.first
+  export import format = lazy.format
+  export import groups = lazy.groups
+  export import head = lazy.head
+  export import last = lazy.last
+  export import mean = lazy.mean
+  export import median = lazy.median
+  export import nUnique = lazy.nUnique
+  export import pearsonCorr = lazy.pearsonCorr
+  export import quantile = lazy.quantile
+  export import select = lazy.select
+  export import spearmanRankCorr = lazy.spearmanRankCorr
+  export import tail = lazy.tail
+  export import list = lazy.list
+}
+export = pl;

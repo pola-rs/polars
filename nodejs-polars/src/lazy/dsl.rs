@@ -1,10 +1,11 @@
 use crate::conversion::prelude::*;
 use crate::conversion::utils;
 use crate::datatypes::JsDataType;
-use crate::prelude::JsPolarsEr;
 use crate::prelude::JsResult;
 use crate::series::JsSeries;
+use napi::threadsafe_function::ThreadSafeCallContext;
 use napi::*;
+
 use polars::chunked_array::temporal::timedelta::TimeDeltaBuilder;
 use polars::lazy::dsl;
 use polars::prelude::*;
@@ -23,7 +24,26 @@ impl IntoJs<JsExternal> for Expr {
         cx.env.create_external(self, None)
     }
 }
+fn binary_lambda(cx: &CallContext, func: &JsFunction, a: Series, b: Series) -> JsResult<Series> {
+    // let tsfn =
+    //     cx.env
+    //         .create_threadsafe_function(func, 0, |ctx: ThreadSafeCallContext<Series>| {
+    //             ctx.value.
+    //         });
 
+    todo!()
+}
+
+#[js_function(1)]
+pub fn fold(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let acc = params.get_external::<Expr>(&cx, "acc")?;
+    let exprs = params.get_external_vec::<Expr>(&cx, "exprs")?;
+    let func = params.get::<JsFunction>("func")?;
+
+    todo!()
+    // dsl::col(n).try_into_js(&cx)
+}
 
 #[js_function(1)]
 pub fn col(cx: CallContext) -> JsResult<JsExternal> {

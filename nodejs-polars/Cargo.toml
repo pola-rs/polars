@@ -19,6 +19,7 @@ thiserror = "1.0.20"
 polars-core = { path = "../polars/polars-core", default-features = false }
 napi-derive = "1"
 ahash = "0.7"
+dirs = "4.0"
 serde_json = { version = "1"}
 
 
@@ -58,7 +59,7 @@ features = [
   "concat_str",
   "row_hash",
   "reinterpret",
-  "decompress-fast",
+  # "decompress-fast",
   "mode",
   "extract_jsonpath",
   "json",
@@ -71,11 +72,11 @@ features = [
   "diff",
   "moment",
   "arange",
-  "true_div",
+  # "true_div",
   "diagonal_concat",
   "serde",
-  "asof_join",
-  "cross_join",
+  # "asof_join",
+  # "cross_join",
   "lazy",
   "repeat_by",
 ]

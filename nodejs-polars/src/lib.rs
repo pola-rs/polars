@@ -11,9 +11,8 @@ pub mod series;
 pub mod series_object;
 use crate::dataframe::JsDataFrame;
 use crate::lazy::dsl;
-use crate::lazy::lazyframe_object::{JsLazyFrame};
+use crate::lazy::lazyframe_object::JsLazyFrame;
 use crate::series::{repeat, JsSeries};
-
 use napi::{JsObject, Result};
 
 #[macro_use]

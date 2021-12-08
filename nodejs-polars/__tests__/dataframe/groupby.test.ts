@@ -1,14 +1,19 @@
 import pl from "@polars";
 
 describe("groupby", () => {
-  const  df = pl.DataFrame([
-    ["a", 1, 2],
-    ["b", 3, 4],
-    ["a", 3, 4],
-    ["c", 5, 6],
-    ["b", 7, 8],
-  ], {columns: ["name", "foo", "bar"]});
+  let df;
+  beforeEach(() => {
+    df = pl.DataFrame([
+      ["a", 1, 2],
+      ["b", 3, 4],
+      ["a", 3, 4],
+      ["c", 5, 6],
+      ["b", 7, 8],
+    ], {columns: ["name", "foo", "bar"]});
+  });
+
   test("aggList", () => {
+    const s = pl.Series("a", [1], pl.Int16);
     const actual = df
       .groupBy("name")
       .aggList()
@@ -59,5 +64,8 @@ describe("groupby", () => {
       "bar_sum": [6, 12, 6]
     });
     expect(actual).toFrameEqual(expected);
+  });
+  test("count", () => {
+
   });
 });

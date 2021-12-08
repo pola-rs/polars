@@ -1,6 +1,6 @@
 import {DataFrame, dfWrapper} from "../dataframe";
 import {Expr, exprToLitOrExpr} from "./expr";
-import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, ValueOrArray} from "../utils";
+import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, selectionToExprList, ValueOrArray} from "../utils";
 import pli from "../internals/polars_internal";
 import {LazyDataFrame} from "./dataframe";
 import {todo} from "../internals/utils";
@@ -17,9 +17,7 @@ export const LazyGroupBy = (
   by: any[],
   maintainOrder: boolean
 ): LazyGroupBy => {
-  by = by
-    .flat(3)
-    .map(e => exprToLitOrExpr(e, false)._expr);
+  by = selectionToExprList(by, false);
 
   const baseArgs = {by, _ldf, maintainOrder};
   const unwrap = (args) => LazyDataFrame(pli.ldf.groupby(args));

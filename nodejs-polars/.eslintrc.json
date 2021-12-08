@@ -17,6 +17,7 @@
         "jest"
     ],
     "rules": {
+        "no-inner-declarations": "off",
         "func-call-spacing": "off",
         "@typescript-eslint/func-call-spacing": [
             "error"

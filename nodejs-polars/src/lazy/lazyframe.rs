@@ -254,14 +254,14 @@ pub fn join(cx: CallContext) -> JsResult<JsExternal> {
     let force_parallel: bool = params.get_or("forceParallel", false)?;
     let how: String = params.get_or("how", "inner".to_owned())?;
     let suffix: String = params.get_or("suffix", "_right".to_owned())?;
-    let asof_by_left: Vec<String> = params.get_as("asofByLeft")?;
-    let asof_by_right: Vec<String> = params.get_as("asofByRight")?;
+    // let asof_by_left: Vec<String> = params.get_as("asofByLeft")?;
+    // let asof_by_right: Vec<String> = params.get_as("asofByRight")?;
     let how = match how.as_str() {
         "left" => JoinType::Left,
         "inner" => JoinType::Inner,
         "outer" => JoinType::Outer,
-        "asof" => JoinType::AsOf,
-        "cross" => JoinType::Cross,
+        // "asof" => JoinType::AsOf,
+        // "cross" => JoinType::Cross,
         _ => panic!("not supported"),
     };
     ldf.join_builder()
@@ -272,7 +272,7 @@ pub fn join(cx: CallContext) -> JsResult<JsExternal> {
         .force_parallel(force_parallel)
         .how(how)
         .suffix(suffix)
-        .asof_by(asof_by_left, asof_by_right)
+        // .asof_by(asof_by_left, asof_by_right)
         .finish()
         .try_into_js(&cx)
 }

@@ -9,51 +9,51 @@ type JsExpr = any;
 type ColumnsOrExpr = ColumnSelection | ExpressionSelection
 
 export interface ExprListFunctions {
-  lengths(): Expr
-  max(): Expr
-  mean(): Expr
-  min(): Expr
-  reverse(): Expr
-  sort(reverse?: boolean): Expr
-  sum(): Expr
-  unique(): Expr
+  lengths(): Expr;
+  max(): Expr;
+  mean(): Expr;
+  min(): Expr;
+  reverse(): Expr;
+  sort(reverse?: boolean): Expr;
+  sum(): Expr;
+  unique(): Expr;
 }
 
 export interface ExprStringFunctions {
-  concat(delimiter: string): Expr
-  contains(pat: RegExp): Expr
-  extract(pat: RegExp, groupIndex: number): Expr
-  jsonPathMatch(pat: string): Expr
-  lengths(): Expr
-  parseDate(fmt?: string): Expr
-  parseDateTime(fmt?: string): Expr
-  replace(pat: RegExp, val: string): Expr
-  replaceAll(pat: RegExp, val: string): Expr
-  toLowercase(): Expr
-  toUppercase(): Expr
-  slice(start: number, length?: number): Expr
+  concat(delimiter: string): Expr;
+  contains(pat: RegExp): Expr;
+  extract(pat: RegExp, groupIndex: number): Expr;
+  jsonPathMatch(pat: string): Expr;
+  lengths(): Expr;
+  parseDate(fmt?: string): Expr;
+  parseDateTime(fmt?: string): Expr;
+  replace(pat: RegExp, val: string): Expr;
+  replaceAll(pat: RegExp, val: string): Expr;
+  toLowercase(): Expr;
+  toUppercase(): Expr;
+  slice(start: number, length?: number): Expr;
 }
 
 interface ExprDateTimeFunctions {
-  day(): Expr
-  hour(): Expr
-  minute(): Expr
-  month(): Expr
-  nanosecond(): Expr
-  ordinalDay(): Expr
-  second(): Expr
-  strftime(fmt: string): Expr
-  timestamp(): Expr
-  week(): Expr
-  weekday(): Expr
-  year(): Expr
+  day(): Expr;
+  hour(): Expr;
+  minute(): Expr;
+  month(): Expr;
+  nanosecond(): Expr;
+  ordinalDay(): Expr;
+  second(): Expr;
+  strftime(fmt: string): Expr;
+  timestamp(): Expr;
+  week(): Expr;
+  weekday(): Expr;
+  year(): Expr;
 }
 
 export interface Expr {
-  _expr: any
-  get date(): ExprDateTimeFunctions
-  get str(): ExprStringFunctions
-  get lst(): ExprListFunctions
+  _expr: any;
+  get date(): ExprDateTimeFunctions;
+  get str(): ExprStringFunctions;
+  get lst(): ExprListFunctions;
   [inspect](): string;
 
   /** Take absolute values */
@@ -567,6 +567,7 @@ const ExprListFunctions = (_expr: JsExpr): ExprListFunctions => {
     unique: wrapNullArgs("unique"),
   };
 };
+
 const ExprDateTimeFunctions = (_expr: JsExpr): ExprDateTimeFunctions => {
   const wrap = <U>(method, args?): Expr => {
 
@@ -729,14 +730,13 @@ export const Expr = (_expr: JsExpr): Expr => {
   } as any;
 };
 
-
-export const exprToLitOrExpr = (expr: any, stringToLit = true)  => {
+export const exprToLitOrExpr = (expr: any, stringToLit = true): Expr  => {
   if(typeof expr === "string" && !stringToLit) {
     return col(expr);
   } else if (isExpr(expr)) {
     return expr;
   } else if (Array.isArray(expr)) {
-    return expr.map(e => exprToLitOrExpr(e, stringToLit));
+    return expr.map(e => exprToLitOrExpr(e, stringToLit)) as any;
   } else {
     return lit(expr);
   }

@@ -1,9 +1,9 @@
+
 import {DataFrame, dfWrapper} from "../dataframe";
 import {Expr, exprToLitOrExpr} from "./expr";
-import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, ValueOrArray} from "../utils";
+import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, selectionToExprList, ValueOrArray} from "../utils";
 import pli from "../internals/polars_internal";
 import {LazyGroupBy} from "./groupby";
-
 
 type JsLazyFrame = any;
 export type Option<T> = T | undefined;
@@ -31,6 +31,7 @@ type LazyOptions = {
 /**
  * Representation of a Lazy computation graph/ query.
  */
+
 export interface LazyDataFrame {
   get columns(): string
   /**
@@ -273,9 +274,9 @@ export interface LazyDataFrame {
   withRowCount()
 }
 
+
 export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
   const unwrap = <U>(method: string, args?: object, _ldf=ldf): any => {
-
     return pli.ldf[method]({_ldf, ...args });
   };
 
@@ -297,15 +298,13 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
       return wrap("sort", {by: arg, reverse});
     } else {
       reverse = [reverse].flat(3) as any;
-      const by = exprToLitOrExpr([arg].flat(3), false).map(v => v._expr);
+      const by = selectionToExprList(arg, false);
 
       return wrap("sort_by_exprs", {by, reverse});
     }
   };
   const select = (...exprs) => {
-    const predicate = exprs
-      .flat(3)
-      .map(e => exprToLitOrExpr(e, false)._expr);
+    const predicate = selectionToExprList(exprs, false);
 
     return wrap("select", {predicate});
   };
@@ -321,17 +320,13 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
 
   };
   const withColumns = (...columns) => {
-    const exprs = columns
-      .flat(3)
-      .map(e => exprToLitOrExpr(e, false)._expr);
+    const exprs = selectionToExprList(columns, false);
 
     return wrap("withColumns", {exprs});
   };
 
   const explode = (...columns) => {
-    const column = columns
-      .flat(3)
-      .map(e => exprToLitOrExpr(e, false)._expr);
+    const column = selectionToExprList(columns, false);
 
     return wrap("explode", {column});
   };

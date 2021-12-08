@@ -1,6 +1,5 @@
 use crate::conversion::wrap::*;
 use crate::error::JsPolarsEr;
-use crate::prelude::*;
 use napi::{
     JsBigint, JsBoolean, JsDate, JsNumber, JsObject, JsString, JsUnknown, Result, ValueType,
 };

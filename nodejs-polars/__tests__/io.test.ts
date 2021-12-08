@@ -21,14 +21,14 @@ describe("io", () => {
         const df = pl.readCSV(csvString);
         expect(df.toCSV()).toEqual(csvString);
       });
-      it.todo("can parse datetimes", () => {
+      it("can parse datetimes", () => {
         const csv = `timestamp,open,high
 2021-01-01 00:00:00,0.00305500,0.00306000
 2021-01-01 00:15:00,0.00298800,0.00300400
 2021-01-01 00:30:00,0.00298300,0.00300100
 2021-01-01 00:45:00,0.00299400,0.00304000`;
         const df = pl.readCSV(csv);
-        expect(df.dtypes).toEqual([pl.Datetime, pl.Float64, pl.Float64]);
+        expect(df.dtypes).toEqual(["Datetime", "Float64", "Float64"]);
       });
       it.each`
       csv                         | nullValues

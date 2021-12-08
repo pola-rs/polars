@@ -1,6 +1,6 @@
 import pli from "./internals/polars_internal";
 import { arrayToJsDataFrame } from "./internals/construction";
-import { DataType, JoinOptions, JsDataFrame, ReadCsvOptions, ReadJsonOptions, WriteCsvOptions} from "./datatypes";
+import { DataType, JoinBaseOptions, JoinOptions, JsDataFrame, ReadCsvOptions, ReadJsonOptions, WriteCsvOptions} from "./datatypes";
 import {Series, seriesWrapper} from "./series";
 import {Stream} from "stream";
 import fs from "fs";
@@ -16,7 +16,8 @@ import {
   isExpr,
   isSeries,
   isSeriesArray,
-  ColumnsOrExpr
+  ColumnsOrExpr,
+  ValueOrArray
 } from "./utils";
 import {GroupBy} from "./groupby";
 import path from "path";
@@ -148,7 +149,9 @@ export interface DataFrame {
    * ```
    *
    */
-  drop(name: ColumnSelection): DataFrame
+  drop(name: string): DataFrame
+  drop(names: string[]): DataFrame
+  drop(...names: string[]): DataFrame
   /**
    * __Drop duplicate rows from this DataFrame.__
    *
@@ -531,7 +534,8 @@ export interface DataFrame {
    * ╰─────┴─────┴─────┴───────╯
    * ```
    */
-  join(df: DataFrame, options: JoinOptions): DataFrame
+  join(df: DataFrame, options: {on: ValueOrArray<string>} & JoinBaseOptions): DataFrame
+  join(df: DataFrame, options: {leftOn: ValueOrArray<string>, rightOn: ValueOrArray<string>} & JoinBaseOptions): DataFrame
   lazy(): LazyDataFrame
   /**
    * Get first N rows as DataFrame.
@@ -784,7 +788,8 @@ export interface DataFrame {
    * ╰─────┴─────┴─────╯
    * ```
    */
-  sample(opts: {n?: number, frac?: number, withReplacement?:boolean}): DataFrame
+  sample(opts: {n: number, withReplacement?:boolean}): DataFrame
+  sample(opts: {frac: number, withReplacement?:boolean}): DataFrame
   sample(n?: number, frac?: number, withReplacement?:boolean): DataFrame
   /**
    * Select columns from this DataFrame.
@@ -1147,9 +1152,9 @@ export interface DataFrame {
   rem(other: any): DataFrame
   plus(other: any): DataFrame
   minus(other: any): DataFrame
-  divide(other: any): DataFrame
-  times(other: any): DataFrame
-  remainder(other: any): DataFrame
+  divideBy(other: any): DataFrame
+  multiplyBy(other: any): DataFrame
+  modulo(other: any): DataFrame
 }
 
 function prepareOtherArg<T>(anyValue:T | Series<T>): Series<T> {
@@ -1172,31 +1177,39 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const noArgWrap = (method: string) => () => wrap(method);
   const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
   const clone = noArgWrap("clone");
-  const drop = (nameToDrop) => {
-    if(Array.isArray(nameToDrop)) {
-      const df = clone();
-
-      nameToDrop.forEach((name) => {
-        unwrap("drop_in_place", {name}, df._df);
-      });
-
-      return df;
+  const drop = (...names) => {
+    if(!Array.isArray(names[0]) && names.length === 1) {
+      return wrap("drop", {name: names[0]});
     }
 
-    return wrap("drop", {name: nameToDrop});
+    const df = clone();
+
+    names.flat(2).forEach((name) => {
+      unwrap("drop_in_place", {name}, df._df);
+    });
+
+    return df;
+
+
   };
   const describe = () => {
     const df = dfWrapper(_df);
     const describeCast = (df:DataFrame) => {
-      const columns = [];
-      // df.getColumns().map(s => s.isNum)
+      return DataFrame(df.getColumns().map(s => {
+        if(s.isNumeric() || s.isBoolean()) {
+
+          return s.cast(DataType.Float64);
+        } else {
+          return s;
+        }
+      }));
     };
     const summary = concat([
-      df.mean(),
-      df.std(),
-      df.min(),
-      df.max(),
-      df.median()
+      describeCast(df.mean()),
+      describeCast(df.std()),
+      describeCast(df.min()),
+      describeCast(df.max()),
+      describeCast(df.median())
     ]);
     summary.insertAtIdx(
       0,
@@ -1213,20 +1226,20 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     if(df.width === 1) {
       return df.toSeries(0);
     }
-    let acc: Series<any> = fn(df.toSeries(0), df.toSeries(1));
 
-    for(let i of range(2, df.width)) {
-      acc = fn(acc, df.toSeries(i));
+    return df.getColumns().reduce((acc, curr) => fn(acc, curr));
+
+  };
+  const hashRows = (obj?, k1?: any, k2?: any, k3?: any): Series<any>=> {
+    if(obj?.k0) {
+      return hashRows(obj.k0, obj.k1, obj.k2, obj.k3);
     }
 
-    return acc;
-  };
-  const hashRows = (obj?: object | number, k1?: any, k2?: any, k3?: any): Series<any>=> {
     return seriesWrapper(unwrap("hash_rows", {
-      k0: obj?.["k0"] ?? typeof obj === "number" ? obj : 0,
-      k1: obj?.["k1"] ?? k1 ?? 1,
-      k2: obj?.["k2"] ?? k2 ?? 2,
-      k3: obj?.["k3"] ?? k3 ?? 3
+      k0: obj ?? 0,
+      k1: k1 ?? 1,
+      k2: k2 ?? 2,
+      k3: k3 ?? 3
     }));
   };
   const hstack = (columns) => {
@@ -1239,7 +1252,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       in_place: false
     });
   };
-  const join = (df: DataFrame, options: JoinOptions): DataFrame  => {
+  const join = (df: DataFrame, options): DataFrame  => {
     options =  {how: "inner", suffix: "right", ...options};
     const on = columnOrColumns(options.on);
     const how = options.how;
@@ -1252,7 +1265,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       leftOn = on;
       rightOn = on;
     }
-    if(!leftOn && !rightOn) {
+    if((leftOn && !rightOn) || (rightOn && !leftOn)) {
       throw new TypeError("You should pass the column to join on as an argument.");
     }
 
@@ -1275,20 +1288,23 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     return df;
   };
   const sample = (opts?, frac?, withReplacement = false): DataFrame => {
-    if (opts?.n || typeof opts === "number") {
+    if(opts?.n || opts?.frac) {
+      return sample(opts.n, opts.frac, opts.withReplacement);
+    }
+    if (typeof opts === "number") {
       return wrap("sample_n", {
-        n: opts?.n ?? opts,
-        withReplacement: opts?.withReplacement ?? withReplacement
+        n: opts,
+        withReplacement
       });
     }
-    if(opts?.frac) {
+    if(typeof frac === "number") {
       return wrap("sample_frac", {
-        frac: opts?.frac ?? frac,
-        withReplacement: withReplacement,
+        frac,
+        withReplacement,
       });
     }
     else {
-      throw new Error("must specify either 'frac' or 'n'");
+      throw new TypeError("must specify either 'frac' or 'n'");
     }
   };
   const sort = (arg,  reverse=false): DataFrame =>  {
@@ -1309,10 +1325,11 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     options = { hasHeader:true, sep: ",", ...options};
 
     if(dest instanceof Stream.Writable) {
-      unwrap("to_csv", {writeStream: dest, ...options});
+      unwrap("write_csv_stream", {writeStream: dest, ...options});
+
     } else if (typeof dest === "string") {
-      const writeStream = fs.createWriteStream(dest);
-      unwrap("to_csv", {writeStream, ...options});
+      unwrap("write_csv", {path: dest, ...options});
+
     } else if (!dest || (dest.constructor.name === "Object" && !dest["dest"])) {
       let body = "";
       const writeStream = new Stream.Writable({
@@ -1321,21 +1338,21 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
           callback(null);
         }
       });
-      unwrap("to_csv", {writeStream, ...options, ...dest});
+      unwrap("write_csv_stream", {writeStream, ...options, ...dest});
 
       return body;
+    } else {
+      throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
     }
-    throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
 
   };
   const toJSON = (dest?: string | Stream) => {
     if(dest instanceof Stream.Writable) {
-      unwrap("write_json", {writeStream: dest});
+      unwrap("write_json_stream", {writeStream: dest});
+
     } else if (typeof dest === "string") {
       // eslint-disable-next-line no-undef
-      dest = path.resolve(__dirname, dest);
-      const writeStream = fs.createWriteStream(dest);
-      unwrap("write_json", {writeStream});
+      unwrap("write_json", {path: dest});
     } else if (!dest) {
       let body = "";
       const writeStream = new Stream.Writable({
@@ -1344,12 +1361,13 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
           callback(null);
         }
       });
-      unwrap("write_json", {writeStream});
+      unwrap("write_json_stream", {writeStream});
 
       return body;
-    }
-    throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
+    } else {
 
+      throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
+    }
   };
   const withColumn = (column: Series<any> | Expr) => {
     if(isSeries(column)) {
@@ -1440,7 +1458,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     fillNull: (strategy) => wrap("fill_null", {strategy}),
     findIdxByName: (name) => unwrap("find_idx_by_name", {name}),
     fold,
-    frameEqual: (other, nullEq=true) => unwrap<boolean>("frame_equal", {other: other?._df ?? other, nullEqual: other?.nullEqual ?? nullEq}),
+    frameEqual: (other, nullEqual=true) => unwrap<boolean>("frame_equal", {other: other._df, nullEqual}),
     getColumn: (name) => seriesWrapper(unwrap<any[]>("column", {name})),
     getColumns: () => unwrap<any[]>("get_columns").map(s => seriesWrapper(s)),
     groupBy: (...by) => GroupBy(_df, columnOrColumnsStrict(by)),
@@ -1477,9 +1495,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     std: noArgWrap("std"),
     sum: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("sum") : seriesWrapper(unwrap("hsum", {nullStrategy})) as any,
     tail: (length=5) => wrap("tail", {length}),
-    toCSV,
+    toCSV: toCSV as any,
     toJS: noArgUnwrap("to_js"),
-    toJSON,
+    toJSON: toJSON as any,
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => unwrap<string>("as_str"),
     add: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
@@ -1489,9 +1507,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     rem: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
     plus: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
     minus: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
-    divide: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
-    times: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
-    remainder: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
+    divideBy: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
+    multiplyBy: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
+    modulo: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
     var: noArgWrap("var"),
     apply: () => {throw todo();},
     dropDuplicates,
@@ -1509,114 +1527,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 };
 export const _wrapDataFrame = (df, method, args) => dfWrapper(pli.df[method]({_df: df, ...args }));
 
-const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
-  inferSchemaLength: 10,
-  batchSize: 10,
-  ignoreErrors: true,
-  hasHeader: true,
-  sep: ",",
-  rechunk: false,
-  startRows: 0,
-  encoding: "utf8",
-  lowMemory: false,
-  parseDates: true,
-};
 
-/**
- * __Read a CSV file or string into a Dataframe.__
- * ___
- * @param options
- * @param options.file - Path to a file or a file like string. Any valid filepath can be used. Example: `file.csv`.
- *     Any string containing the contents of a csv can also be used
- * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
- *     If set to `null`, a full table scan will be done (slow).
- * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
- * @param options.hasHeader - Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`,
- *     `x` being an enumeration over every column in the dataset.
- * @param options.ignoreErrors -Try to keep reading lines if some lines yield errors.
- * @param options.endRows -After n rows are read from the CSV, it stops reading.
- *     During multi-threaded parsing, an upper bound of `n` rows
- *     cannot be guaranteed.
- * @param options.startRows -Start reading after `startRows` position.
- * @param options.projection -Indices of columns to select. Note that column indices start at zero.
- * @param options.sep -Character to use as delimiter in the file.
- * @param options.columns -Columns to select.
- * @param options.rechunk -Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
- * @param options.encoding -Allowed encodings: `utf8`, `utf8-lossy`. Lossy means that invalid utf8 values are replaced with `�` character.
- * @param options.numThreads -Number of threads to use in csv parsing. Defaults to the number of physical cpu's of your system.
- * @param options.dtype -Overwrite the dtypes during inference.
- * @param options.lowMemory - Reduce memory usage in expense of performance.
- * @param options.commentChar - character that indicates the start of a comment line, for instance '#'.
- * @param options.quotChar -character that is used for csv quoting, default = ''. Set to null to turn special handling and escaping of quotes off.
- * @param options.nullValues - Values to interpret as null values. You can provide a
- *     - `string` -> all values encountered equal to this string will be null
- *     - `Array<string>` -> A null value per column.
- *     - `Record<string,string>` -> An object or map that maps column name to a null value string.Ex. {"column_1": 0}
- * @param options.parseDates -Whether to attempt to parse dates or not
- * @returns DataFrame
- */
-export function readCSV(options: Partial<ReadCsvOptions>): DataFrame
-export function readCSV(path: string): DataFrame
-export function readCSV(path: string, options: Partial<ReadCsvOptions>): DataFrame
-export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
-  const extensions = [".tsv", ".csv"];
-  if(typeof arg === "string") {
-    return readCSV({...options, file: arg, inline: !isPath(arg, extensions)});
-  }
-  options = {...readCsvDefaultOptions, ...arg};
-
-  return dfWrapper(pli.df.read_csv(options));
-}
-
-const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
-  batchSize: 1000,
-  inline: false,
-  inferSchemaLength: 10
-};
-
-/**
- * __Read a JSON file or string into a DataFrame.__
- *
- * _Note: Currently only newline delimited JSON is supported_
- * @param options
- * @param options.file - Path to a file, or a file like string
- * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
- *    If set to `null`, a full table scan will be done (slow).
- * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
- * @returns ({@link DataFrame})
- * @example
- * ```
- * const jsonString = `
- * {"a", 1, "b", "foo", "c": 3}
- * {"a": 2, "b": "bar", "c": 6}
- * `
- * > const df = pl.readJSON({file: jsonString})
- * > console.log(df)
- *   shape: (2, 3)
- * ╭─────┬─────┬─────╮
- * │ a   ┆ b   ┆ c   │
- * │ --- ┆ --- ┆ --- │
- * │ i64 ┆ str ┆ i64 │
- * ╞═════╪═════╪═════╡
- * │ 1   ┆ foo ┆ 3   │
- * ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
- * │ 2   ┆ bar ┆ 6   │
- * ╰─────┴─────┴─────╯
- * ```
- */
-export function readJSON(options: ReadJsonOptions): DataFrame
-export function readJSON(path: string): DataFrame
-export function readJSON(path: string, options: ReadJsonOptions): DataFrame
-export function readJSON(arg: ReadJsonOptions | string, options?: any) {
-  const extensions = [".ndjson", ".json", ".jsonl"];
-  if(typeof arg === "string") {
-
-    return readJSON({...options, file: arg, inline: !isPath(arg, extensions)});
-  }
-  options = {...readJsonDefaultOptions, ...arg};
-
-  return dfWrapper(pli.df.read_json(options));
-}
 /**
  *
   A DataFrame is a two-dimensional data structure that represents data as a table
@@ -1694,12 +1605,13 @@ export function readJSON(arg: ReadJsonOptions | string, options?: any) {
   ╰─────┴─────┴─────╯
   ```
  */
+export function DataFrame(): DataFrame
 export function DataFrame(data: Record<string, any[]>): DataFrame
 export function DataFrame(data: Record<string, any>[]): DataFrame
 export function DataFrame(data: Series<any>[]): DataFrame
 export function DataFrame(data: any[][]): DataFrame
 export function DataFrame(data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
-export function DataFrame(data: Record<string, any[]> | Record<string, any>[] | any[][] | Series<any>[], options?: {columns?: any[], orient?: "row" | "col"}): DataFrame {
+export function DataFrame(data?: Record<string, any[]> | Record<string, any>[] | any[][] | Series<any>[], options?: {columns?: any[], orient?: "row" | "col"}): DataFrame {
 
   if(!data) {
     return dfWrapper(objToDF({}));
@@ -1712,9 +1624,9 @@ export function DataFrame(data: Record<string, any[]> | Record<string, any>[] | 
   return dfWrapper(objToDF(data as any));
 }
 
-function objToDF(obj: Record<string, Array<any>>, columns?: Array<string>): any {
-  const data =  Object.entries(obj).map(([key, value], idx) => {
-    return Series(columns?.[idx] ?? key, value)._series;
+function objToDF(obj: Record<string, Array<any>>): any {
+  const data =  Object.entries(obj).map(([key, value]) => {
+    return Series(key, value)._series;
   });
 
   return pli.df.read_columns({columns: data});

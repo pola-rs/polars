@@ -1,7 +1,5 @@
 import pl from "../polars";
 
-const df = pl.DataFrame([
-  pl.Series("date", [new Date(), new Date()], pl.Date),
-  pl.Series("datetime", [new Date(), new Date()], pl.Datetime),
-]);
-console.log(df);
+const s = pl.Series([1, 2, 3]).map(x => x + 1);
+
+console.log(scrollTo);

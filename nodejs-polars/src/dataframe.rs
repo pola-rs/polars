@@ -13,6 +13,7 @@ use polars::frame::row::{rows_to_schema, Row};
 use polars::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
+use std::path::{Path, PathBuf};
 
 #[repr(transparent)]
 #[derive(Clone)]
@@ -208,7 +209,7 @@ pub(crate) fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
 }
 
 #[js_function(1)]
-pub(crate) fn write_json(cx: CallContext) -> JsResult<JsUndefined> {
+pub(crate) fn write_json_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
     let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
     let stream = params.get::<JsObject>("writeStream")?;
@@ -217,6 +218,19 @@ pub(crate) fn write_json(cx: CallContext) -> JsResult<JsUndefined> {
         env: cx.env,
     };
     let w = JsonWriter::new(writeable);
+    w.finish(&df.df).unwrap();
+    cx.env.get_undefined()
+}
+
+#[js_function(1)]
+pub(crate) fn write_json(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
+    let path = params.get_as::<String>("path")?;
+    let p = std::path::Path::new(&path);
+    let p = resolve_homedir(p);
+    let f = File::create(&p)?;
+    let w = JsonWriter::new(f);
     w.finish(&df.df).unwrap();
     cx.env.get_undefined()
 }
@@ -313,7 +327,7 @@ pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub(crate) fn to_csv(cx: CallContext) -> JsResult<JsUndefined> {
+pub(crate) fn write_csv_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
     let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
     let has_headers: bool = params.get_as("hasHeader")?;
@@ -328,6 +342,28 @@ pub(crate) fn to_csv(cx: CallContext) -> JsResult<JsUndefined> {
     };
 
     CsvWriter::new(writeable)
+        .has_header(has_headers)
+        .with_delimiter(sep as u8)
+        .finish(&df.df)
+        .map_err(JsPolarsEr::from)?;
+    cx.env.get_undefined()
+}
+
+#[js_function(1)]
+pub(crate) fn write_csv(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
+    let has_headers: bool = params.get_as("hasHeader")?;
+
+    let sep: String = params.get_as("sep")?;
+    let sep = sep.chars().next().unwrap();
+
+    let path = params.get_as::<String>("path")?;
+    let p = std::path::Path::new(&path);
+    let p = resolve_homedir(p);
+    let f = File::create(&p)?;
+
+    CsvWriter::new(f)
         .has_header(has_headers)
         .with_delimiter(sep as u8)
         .finish(&df.df)
@@ -453,8 +489,8 @@ pub fn join(cx: CallContext) -> JsResult<JsExternal> {
         "left" => JoinType::Left,
         "inner" => JoinType::Inner,
         "outer" => JoinType::Outer,
-        "asof" => JoinType::AsOf,
-        "cross" => JoinType::Cross,
+        // "asof" => JoinType::AsOf,
+        // "cross" => JoinType::Cross,
         _ => panic!("not supported"),
     };
 
@@ -1138,4 +1174,16 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> JsResult<JsDataFrame> {
     let df = df.map_err(JsPolarsEr::from)?;
 
     Ok(JsDataFrame::new(df))
+}
+
+
+pub fn resolve_homedir(path: &Path) -> PathBuf {
+    // replace "~" with home directory
+    if path.starts_with("~") {
+        if let Some(homedir) = dirs::home_dir() {
+            return homedir.join(path.strip_prefix("~").unwrap());
+        }
+    }
+
+    path.into()
 }

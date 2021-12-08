@@ -74,7 +74,6 @@ impl JsDataFrame {
             napi::Property::new(env, "tail")?.with_method(tail),
             napi::Property::new(env, "take_with_series")?.with_method(take_with_series),
             napi::Property::new(env, "take")?.with_method(take),
-            napi::Property::new(env, "to_csv")?.with_method(to_csv),
             napi::Property::new(env, "to_js")?.with_method(to_js),
             napi::Property::new(env, "to_json")?.with_method(to_json),
             napi::Property::new(env, "to_row")?.with_method(to_row),
@@ -85,9 +84,11 @@ impl JsDataFrame {
             napi::Property::new(env, "width")?.with_method(width),
             napi::Property::new(env, "with_column")?.with_method(with_column),
             napi::Property::new(env, "with_row_count")?.with_method(with_row_count),
+            napi::Property::new(env, "write_csv")?.with_method(write_csv),
+            napi::Property::new(env, "write_csv_stream")?.with_method(write_csv_stream),
             napi::Property::new(env, "write_json")?.with_method(write_json),
+            napi::Property::new(env, "write_json_stream")?.with_method(write_json_stream),
         ])?;
-
         Ok(df)
     }
 }

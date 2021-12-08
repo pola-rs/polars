@@ -144,6 +144,7 @@ export interface Series<T> {
   /**
    * Cast between data types.
    */
+
   cast<D extends DataType>(dtype: D): Series<DtypeToPrimitive<D>>
   cast<D extends DataType>(dtype: D, strict:boolean): Series<DtypeToPrimitive<D>>
   cast<D extends DataType>(dtype: D, opt: {strict: boolean}): Series<DtypeToPrimitive<D>>
@@ -1279,6 +1280,13 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
       null_behavior: opt?.nullBehavior ?? nullBehavior
     });
   };
+  const filter = (opt) => {
+    if(opt?.predicate) {
+      return filter(opt.predicate);
+    }
+
+    return wrap("filter", {filter: opt._series});
+  };
   const hash = (obj?: object | number, k1=1, k2=2, k3=3) => {
     return wrap<bigint>("hash", {
       k0: obj?.["k0"] ?? (typeof obj === "number" ? obj : 0),
@@ -1421,6 +1429,45 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
 
     return wrap(`set_at_idx_${dt}`, {indices, value});
   };
+  const describe = () => {
+    let s = seriesWrapper(_s);
+    let stats = {};
+    if(!s.length) {
+      throw new RangeError("Series must contain at least one value");
+    }
+    if(s.isNumeric()) {
+      s = s.cast(DataType.Float64);
+      stats = {
+        "min": s.min(),
+        "max": s.max(),
+        "null_count": s.nullCount(),
+        "mean": s.mean(),
+        "count": s.len(),
+      };
+    } else if (s.isBoolean()) {
+      stats = {
+        "sum": s.sum(),
+        "null_count": s.nullCount(),
+        "count": s.len(),
+      };
+    } else if (s.isUtf8()) {
+      stats = {
+        "unique": s.nUnique(),
+        "null_count": s.nullCount(),
+        "count": s.len(),
+      };
+    } else if (s.isDateTime()) {
+      throw todo();
+
+    } else {
+      throw new InvalidOperationError("describe", s.dtype);
+    }
+
+    return DataFrame({
+      "statistic": Object.keys(stats),
+      "value": Object.values(stats)
+    });
+  };
 
   const propOrVal = (obj: any, key: string) => ({[key]: obj?.[key] ?? obj});
   const propOrElse = (obj: any, key: string, otherwise: boolean) => ({[key]: obj?.[key] ?? obj ?? otherwise});
@@ -1490,7 +1537,7 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     dropNulls: noArgWrap("drop_nulls"),
     explode: noArgWrap("explode"),
     fillNull: (opt: any) =>  wrap<T>("fill_null", propOrVal(opt, "strategy")),
-    filter: (opt: any) => wrap<T>("filter", propOrVal(opt, "predicate")),
+    filter,
     floor: noArgWrap("floor"),
     get: (field: any) => dtypeAccessor(unwrap)("get", {field, key: "index"}),
     getIndex: (idx) => unwrap("get_idx", {idx}),
@@ -1554,9 +1601,9 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     zipWith: (mask, other) => wrap("zip_with", {mask: mask._series, other: other._series}),
     toJS: noArgUnwrap("to_js"),
     toFrame: () => dfWrapper(pli.df.read_columns({columns: [_s]})),
-    apply: <U>(func: (s: T) => U): Series<U> => {throw todo();},
+    apply: <U>(func: (s: T) => U): Series<U> =>  wrap("map", {func}),
     map: <U>(func: (s: T) => U): Series<U> => wrap("map", {func}),
-    describe: (): DataFrame => {throw todo();},
+    describe,
     shiftAndFill,
     valueCounts: () => dfWrapper(unwrap("value_counts")),
 

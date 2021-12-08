@@ -27,16 +27,5 @@
     "./examples/*",
     "./bin/*",
     "./docs/*",
-    "./jest.config.ts"
-  ],
-  "typedocOptions": {
-    "excludePrivate": true,
-    "entryPoints": [
-      "polars/series.ts",
-      "polars/dataframe.ts",
-      "polars/groupby.ts",
-      "polars/index.ts"
-    ],
-    "out": "docs"
-  }
+  ]
 }

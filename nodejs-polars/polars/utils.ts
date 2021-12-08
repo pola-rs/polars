@@ -1,4 +1,4 @@
-import type {Expr} from "./lazy/expr";
+import {Expr, exprToLitOrExpr} from "./lazy/expr";
 import type {Series} from "./series";
 import type {DataFrame} from "./dataframe";
 import path from "path";
@@ -7,6 +7,7 @@ export type ValueOrArray<T> = T | Array<ValueOrArray<T>>;
 export type ColumnSelection = ValueOrArray<string>
 export type ExpressionSelection = ValueOrArray<Expr>
 export type ColumnsOrExpr = ColumnSelection | ExpressionSelection
+export type ExprOrString = Expr | string
 export type Option<T> = T | undefined;
 export type DownsampleRule =  "month" | "week" | "day" | "hour" | "minute" | "second"
 export type FillNullStrategy = "backward" | "forward" | "mean" | "min" | "max" | "zero" | "one"
@@ -19,6 +20,9 @@ export function columnOrColumns(columns: ColumnSelection |  string | Array<strin
 }
 export function columnOrColumnsStrict(...columns: string[] | ValueOrArray<string>[]): Array<string> {
   return columns.flat(3) as any;
+}
+export function selectionToExprList(columns: any[], stringToLit?): Expr[] {
+  return [columns].flat(3).map(expr => exprToLitOrExpr(expr, stringToLit)._expr);
 }
 
 export function isPath(s: string, expectedExtensions?: string[]): boolean {

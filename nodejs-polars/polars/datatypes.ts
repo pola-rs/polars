@@ -63,6 +63,10 @@ export type ReadJsonOptions = Partial<{
   batchSize?: number;
   inline?: boolean;
 }>;
+export type JoinBaseOptions = {
+  how?: "left" | "inner" | "outer" | "cross";
+  suffix?: string;
+}
 export type JoinOptions = {
   leftOn?: string | Array<string>;
   rightOn?: string | Array<string>;

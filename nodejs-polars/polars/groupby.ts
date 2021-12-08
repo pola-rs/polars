@@ -7,6 +7,8 @@ import util from "util";
 import {todo} from "./internals/utils";
 import {InvalidOperationError} from "./error";
 import {Expr, exprToLitOrExpr} from "./lazy/expr";
+
+
 import {col} from "./lazy/lazy_functions";
 
 const inspectOpts = {colors:true, depth:null};

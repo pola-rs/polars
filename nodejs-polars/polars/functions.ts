@@ -20,8 +20,8 @@ type ConcatOptions = {rechunk: boolean, how?: "vertical"}
  * ```
  *
  * > const s = pl.repeat("a", 5)
- * > s.dtype
- * 'Utf8Type'
+ * > s.toArray()
+ * ["a", "a", "a", "a", "a"]
  *
  * ```
  */

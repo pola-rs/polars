@@ -8,6 +8,7 @@ use crate::prelude::JsResult;
 use napi::Either;
 use napi::JsBoolean;
 use napi::JsExternal;
+use napi::JsFunction;
 use napi::JsNumber;
 use napi::JsTypedArray;
 use napi::JsUndefined;
@@ -557,8 +558,39 @@ pub fn fill_null(cx: CallContext) -> JsResult<JsExternal> {
     JsSeries::new(series).try_into_js(&cx)
 }
 
+use polars_core::chunked_array::iterator::*;
+
 #[js_function(1)]
-pub fn map(_cx: CallContext) -> JsResult<JsExternal> {
+pub fn map(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series: &JsSeries = params.get_external::<JsSeries>(&cx, "_series")?;
+    let func: JsFunction = params.get("func")?;
+    let series: Series = (&series).series.clone();
+    let len = series.len();
+    let arr = cx.env.create_array_with_length(len)?;
+
+    // for idx in 0..len {
+    //     let item: AnyValue = series.get(idx);
+    //     item
+    // }
+    let mut v: Vec<f64> = Vec::with_capacity(len);
+
+    for val in series.f64().map_err(JsPolarsEr::from)?.into_iter() {
+        println!("item = {:#?}", val);
+        let mapped = match val {
+            Some(i) => {
+                let v = i.try_into_js(&cx).expect("ok");
+                func.call(None, &[v])?
+            }
+            None => cx.env.get_undefined().map(|v| v.into_unknown())?,
+        };
+
+        match mapped.get_type()? {
+            ValueType::Number => v.push(f64::from_js(mapped)?),
+            _ => panic!("error"),
+        };
+    }
+    println!("newvec={:#?}", v);
     todo!()
 }
 

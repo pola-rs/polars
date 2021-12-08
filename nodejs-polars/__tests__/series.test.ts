@@ -198,7 +198,7 @@ describe("series", () => {
   ${numSeries()}  | ${"dropNulls"}    | ${[]}
   ${numSeries()}  | ${"fillNull"}     | ${["zero"]}
   ${numSeries()}  | ${"fillNull"}     | ${[{strategy: "zero"}]}
-  ${numSeries()}  | ${"filter"}       | ${[]}
+  ${numSeries()}  | ${"filter"}       | ${[boolSeries()]}
   ${fltSeries()}  | ${"floor"}        | ${[]}
   ${numSeries()}  | ${"hasValidity"}  | ${[]}
   ${numSeries()}  | ${"hash"}         | ${[]}
@@ -253,8 +253,6 @@ describe("series", () => {
   ${numSeries()}  | ${"rechunk"}      | ${[]}
   ${numSeries()}  | ${"rechunk"}      | ${[true]}
   ${numSeries()}  | ${"rechunk"}      | ${[{inPlace: true}]}
-  ${numSeries()}  | ${"reinterpret"}  | ${[]}
-  ${numSeries()}  | ${"reinterpret"}  | ${[true]}
   ${numSeries()}  | ${"rename"}       | ${["new name"]}
   ${numSeries()}  | ${"rename"}       | ${["new name", true]}
   ${numSeries()}  | ${"rename"}       | ${[{name: "new name"}]}
@@ -482,7 +480,6 @@ describe("series", () => {
   name | fn | errorType
   ${"isFinite"} | ${pl.Series(["foo"]).isFinite} | ${InvalidOperationError}
   ${"isInfinite"} | ${pl.Series(["foo"]).isInfinite} | ${InvalidOperationError}
-  ${"reinterpret"} | ${pl.Series(["foo"]).reinterpret} | ${InvalidOperationError}
   ${"rollingMax"} | ${() => pl.Series(["foo"]).rollingMax(null as any)} | ${Error}
   ${"sample"} | ${() => pl.Series(["foo"]).sample(null as any)} | ${Error}
   `("$# $name throws an error ", ({fn, errorType}) => {

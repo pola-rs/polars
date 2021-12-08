@@ -1,7 +1,9 @@
-import {Expr} from "./expr";
+import {Expr, exprToLitOrExpr} from "./expr";
 import {Series} from "../series";
-import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, isSeries, Option} from "../utils";
+import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, ExprOrString, isSeries, Option, selectionToExprList} from "../utils";
 import pli from "../internals/polars_internal";
+import pl from "../index";
+
 
 /**
  * __A column in a DataFrame.__
@@ -94,6 +96,7 @@ import pli from "../internals/polars_internal";
  * ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
  * │ 33        ┆ 1   │
  * ╰───────────┴─────╯
+ * ```
  */
 export function col(col: string): Expr
 export function col(col: string[]): Expr
@@ -108,15 +111,142 @@ export function col(col: string | string[] | Series<string>): Expr {
     return Expr(pli.col({name: col}));
   }
 }
-
-
 export function lit(value: any): Expr {
   return Expr(pli.lit({value}));
 }
 
+// ----------
+// Helper Functions
+// ------
+
+
 /**
- * Count the number of values in this column.
+ * Get the maximum value. Can be used horizontally or vertically.
+ * @param column
  */
+export function max(column: ColumnsOrExpr): Expr;
+export function max<T>(column: Series<T>): number | bigint;
+export function max(column): Expr | number | bigint {
+  if(isSeries(column)) {
+    return column.max();
+  } else if (Array.isArray(column)) {
+    const max = (acc:Series<any>, curr:Series<any>): Series<any> => {
+      const mask = acc.greaterThan(curr);
+
+      return acc.zipWith(mask, curr);
+    };
+
+    let first = column[0];
+    if(typeof first === "string") {
+      first = col(first);
+    }
+  }
+
+  return null as any;
+}
+
+
+export function fold<T>(
+  acc: Expr,
+  func: (curr:Series<T>, next: Series<T>) => Series<T>,
+  exprs: ColumnsOrExpr
+): Expr {
+  exprs = [exprs]
+    .flat(3)
+    .map(e => exprToLitOrExpr(e, false)._expr);
+
+  return null as any;
+}
+
+/**
+ * __Create a range expression.__
+ * ___
+ *
+ * This can be used in a `select`, `with_column` etc.
+ * Be sure that the range size is equal to the DataFrame you are collecting.
+ * @param low - Lower bound of range.
+ * @param high - Upper bound of range.
+ * @param step - Step size of the range
+ * @param eager - If eager evaluation is `True`, a Series is returned instead of an Expr
+ * @example
+ * ```
+ * >>> df.lazy()
+ * >>>   .filter(pl.col("foo").lt(pl.arange(0, 100)))
+ * >>>   .collect()
+ * ```
+ */
+export function arange<T>(opts: {low: Series<T> | Expr, high: Series<T> | Expr, step:number, eager:boolean});
+export function arange<T>(low: Series<T> | Expr, high?: Series<T> | Expr, step?: number, eager?: true): Series<T>;
+export function arange<T>(low: Series<T> | Expr, high?: Series<T> | Expr, step?: number, eager?: false): Expr;
+export function arange<T>(opts:any, high?, step?, eager?): Series<T> | Expr {
+  if(opts?.low) {
+    return arange(opts.low, opts.high, opts.step, opts.eager);
+  } else {
+    const low = exprToLitOrExpr(opts, false);
+    high = exprToLitOrExpr(high, false);
+    if(eager) {
+      const df = pl.DataFrame({"a": [1]});
+
+      return df.select(arange(low, high, step).alias("arange") as any).getColumn("arange") as any;
+    }
+
+    return Expr(pli.arange({low: low._expr, high: high._expr, step}));
+  }
+}
+/**
+ * __Find the indexes that would sort the columns.__
+ * ___
+ * Argsort by multiple columns. The first column will be used for the ordering.
+ * If there are duplicates in the first column, the second column will be used to determine the ordering
+ * and so on.
+ */
+export function argSortBy(opts: {expr: Expr | string, reverse?: boolean});
+export function argSortBy(opts: {expr: Expr[] | string[], reverse?: boolean[]});
+export function argSortBy(expr: Expr | string, reverse?: boolean);
+export function argSortBy(exprs: Expr[] | string[], reverse?: boolean[]);
+export function argSortBy(opts, reverse?: boolean | boolean[]) {
+  if(opts?.expr) {
+    return argSortBy(opts.expr, opts.reverse);
+  }
+  if(reverse && !Array.isArray(reverse)) {
+    reverse = Array.from({length: opts.length - 1}, () => reverse) as any;
+  }
+  const exprs = selectionToExprList(opts);
+
+  return Expr(pli.argSortBy({exprs, reverse}));
+}
+/** Alias for mean. @see {@link mean} */
+export function avg(column: string): Expr;
+export function avg(column: Series<any>): number;
+export function avg(column: Series<any> | string): number | Expr {
+  return mean(column as any);
+}
+
+/**
+ * Concat the arrays in a Series dtype List in linear time.
+ * @param exprs Columns to concat into a List Series
+ */
+export function concatList(exprs: ColumnsOrExpr): Expr
+export function concatList(exprs: ColumnsOrExpr): Expr {
+  const cols = selectionToExprList(exprs as any);
+
+  return Expr(pli.concatList({cols}));
+}
+
+/** Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8. */
+export function concatString(opts: {exprs: ColumnsOrExpr, sep: string});
+export function concatString(exprs: ColumnsOrExpr, sep?: string);
+export function concatString(opts, sep=",") {
+  if(opts?.exprs) {
+    return concatString(opts.exprs, opts.sep);
+  }
+  const cols = selectionToExprList(opts as any);
+
+  return Expr(pli.concatString({cols}));
+
+}
+
+/** Count the number of values in this column. */
 export function count(column: string): Expr
 export function count(column: Series<any>): number
 export function count(column: string | Series<any>): Expr | number {
@@ -126,46 +256,163 @@ export function count(column: string | Series<any>): Expr | number {
     return col(column).count();
   }
 }
+
+/** Compute the covariance between two columns/ expressions. */
+export function cov(a: ExprOrString, b: ExprOrString): Expr {
+  a = exprToLitOrExpr(a)._expr;
+  b = exprToLitOrExpr(b)._expr;
+
+  return Expr(pli.cov({a, b}));
+}
 /**
- * Aggregate to list.
+ * Exclude certain columns from a wildcard expression.
  *
- *  Re-exported as `pl.list()`
- * @param name coulmn name
+ * Syntactic sugar for:
+ * ```
+ * >>> pl.col("*").exclude(columns)
+ * ```
  */
-export function toList(name:string): Expr {
-  return col(name).list();
+export function exclude(...columns: ColumnSelection[]) {
+  return col("*").exclude(columns);
 }
 
+/** Get the first value. */
+export function first(column: string): Expr
+export function first<T>(column: Series<T>): T
+export function first<T>(column: string | Series<T>): Expr | T {
+  if(isSeries(column)) {
+    if(column.length) {
+      return column[0];
+    } else {
+      throw new RangeError("The series is empty, so no first value can be returned.");
+    }
+  } else {
+    return col(column).first();
+  }
+}
 
 /**
- * Get the maximum value. Can be used horizontally or vertically.
- * @param column
+ * String format utility for expressions
  */
-function max(column: ExpressionSelection): Expr;
-function max<T>(column: Series<T>): number | bigint;
-function max(column): Expr | number | bigint {
-
-  return null as any;
+export function format() {}
+/** Syntactic sugar for `pl.col(column).aggGroups()` */
+export function groups(column: string): Expr {
+  return col(column).aggGroups();
+}
+/** Get the first n rows of an Expression. */
+export function head(column: string, n?: number):Expr;
+export function head<T>(column: Series<T>, n?: number): Series<T>;
+export function head<T>(column: Series<T> | string, n?: number): Series<T> | Expr {
+  if(isSeries(column)) {
+    return column.head(n);
+  } else {
+    return col(column).head(n);
+  }
 }
 
-function spearman_rank_corr() {}
-function pearson_corr() {}
-function cov() {}
-function map() {}
-function apply() {}
-function map_binary() {}
-function fold() {}
-function any() {}
-function exclude() {}
-function all() {}
-function groups() {}
-function quantile() {}
-function arange() {}
-function argsort_by() {}
-function _datetime() {}
-function _date() {}
-function concat_str() {}
-function format() {}
-function concat_list() {}
-function collect_all() {}
-function select() {}
+/** Get the last value. */
+export function last(column: string): Expr
+export function last<T>(column: Series<T>): T
+export function last<T>(column: string | Series<T>): Expr | T {
+  if(isSeries(column)) {
+    if(column.length) {
+      return column[0];
+    } else {
+      throw new RangeError("The series is empty, so no last value can be returned.");
+    }
+  } else {
+    return col(column).last();
+  }
+}
+
+/** Get the mean value. */
+export function mean(column: string): Expr;
+export function mean(column: Series<any>): number;
+export function mean(column: Series<any> | string): number | Expr {
+  if(isSeries(column)) {
+    return column.mean();
+  }
+
+  return col(column).mean();
+}
+
+/** Get the median value. */
+export function median(column: string): Expr;
+export function median(column: Series<any>): number;
+export function median(column: Series<any> | string): number | Expr {
+  if(isSeries(column)) {
+    return column.median();
+  }
+
+  return col(column).median();
+}
+
+/** Count unique values. */
+export function nUnique(column: string): Expr;
+export function nUnique(column: Series<any>): number;
+export function nUnique(column: Series<any> | string): number | Expr {
+  if(isSeries(column)) {
+    return column.nUnique();
+  }
+
+  return col(column).nUnique();
+}
+
+
+/** Compute the pearson's correlation between two columns. */
+export function pearsonCorr(a: ExprOrString, b: ExprOrString): Expr {
+  a = exprToLitOrExpr(a)._expr;
+  b = exprToLitOrExpr(b)._expr;
+
+  return Expr(pli.pearsonCorr({a, b}));
+}
+
+/** Syntactic sugar for `pl.col(column).quantile(..)`. */
+export function quantile(column:string, quantile: number) {
+  return col(column).quantile(quantile);
+}
+/**
+ * __Run polars expressions without a context.__
+ *
+ * This is syntactic sugar for running `df.select` on an empty DataFrame.
+ */
+export function select(...exprs: ColumnsOrExpr[]) {
+  return pli.DataFrame({}).select(exprs);
+}
+
+/** Compute the spearman rank correlation between two columns. */
+export function spearmanRankCorr(a: ExprOrString, b: ExprOrString): Expr {
+  a = exprToLitOrExpr(a)._expr;
+  b = exprToLitOrExpr(b)._expr;
+
+  return Expr(pli.spearmanRankCorr({a, b}));
+}
+
+
+/** Get the last n rows of an Expression. */
+export function tail(column: string, n?: number):Expr;
+export function tail<T>(column: Series<T>, n?: number): Series<T>;
+export function tail<T>(column: Series<T> | string, n?: number): Series<T> | Expr {
+  if(isSeries(column)) {
+    return column.tail(n);
+  } else {
+    return col(column).tail(n);
+  }
+}
+
+/** Syntactic sugar for `pl.col(column).list()` */
+export function list(column:string): Expr {
+  return col(column).list();
+}
+
+
+// export function collect_all() {}
+// export function all() {} // fold
+// export function any() {} // fold
+// export function apply() {} // lambda
+// export function fold() {}
+// export function map_binary() {} //lambda
+// export function map() {} //lambda
+// export function max() {} // fold
+// export function min() {} // fold
+// export function sum() {} // fold
