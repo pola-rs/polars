@@ -1280,7 +1280,7 @@ impl DataFrame {
     /// let df1: DataFrame = df!("Wavelength (nm)" => &[480.0, 650.0, 577.0, 1201.0, 100.0])?;
     /// let df2: DataFrame = df!("Color" => &["Blue", "Yellow", "Red"],
     ///                          "Wavelength nm" => &[480.0, 577.0, 650.0])?;
-    /// 
+    ///
     /// let df3: DataFrame = df1.left_join(&df2, "Wavelength (nm)", "Wavelength nm")?;
     /// println!("{:?}", df3);
     /// # Ok::<(), PolarsError>(())
