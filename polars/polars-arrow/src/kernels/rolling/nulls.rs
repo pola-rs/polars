@@ -197,7 +197,7 @@ where
 {
     let null_count = count_zeros(validity_bytes, offset, values.len());
     if null_count == 0 {
-        Some(no_nulls::compute_min(values))
+        Some(no_nulls::compute_max(values))
     } else if (values.len() - null_count) < min_periods {
         None
     } else {
