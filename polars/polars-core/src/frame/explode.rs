@@ -77,9 +77,9 @@ impl DataFrame {
         // below will panic
         let mut columns = self.select_series(columns)?;
         columns.sort_by(|sa, sb| {
-            self.name_to_idx(sa.name())
+            self.check_name_to_idx(sa.name())
                 .expect("checked above")
-                .partial_cmp(&self.name_to_idx(sb.name()).expect("checked above"))
+                .partial_cmp(&self.check_name_to_idx(sb.name()).expect("checked above"))
                 .expect("cmp usize -> Ordering")
         });
 
@@ -93,7 +93,7 @@ impl DataFrame {
             // Safety:
             // offsets are not take longer than the Series.
             if let Ok((exploded, offsets)) = get_exploded(s) {
-                let col_idx = self.name_to_idx(s.name())?;
+                let col_idx = self.check_name_to_idx(s.name())?;
 
                 // expand all the other columns based the exploded first column
                 if i == 0 {

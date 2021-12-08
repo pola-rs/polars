@@ -10,6 +10,7 @@ pub mod export;
 mod fmt;
 pub mod frame;
 pub mod functions;
+mod named_from;
 pub mod prelude;
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]

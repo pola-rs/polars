@@ -453,7 +453,7 @@ def scan_csv(
     ...         pl.col("a") > 10
     ...     )  # the filter is pushed down the the scan, so less data read in memory
     ...     .fetch(100)  # pushed a limit of 100 rows to the scan level
-    ... )
+    ... )  # doctest: +SKIP
 
     We can use `with_column_names` to modify the header before scanning:
 
@@ -461,11 +461,9 @@ def scan_csv(
     ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "terrible", "to", "read"]}
     ... )
     >>> df.to_csv("mydf.csv")
-    >>> (
-    ...     pl.scan_csv(
-    ...         "mydf.csv", with_column_names=lambda cols: [col.lower() for col in cols]
-    ...     ).fetch()
-    ... )
+    >>> pl.scan_csv(
+    ...     "mydf.csv", with_column_names=lambda cols: [col.lower() for col in cols]
+    ... ).fetch()
     shape: (4, 2)
     ┌─────────┬──────────┐
     │ breezah ┆ language │
@@ -737,10 +735,11 @@ def read_sql(
     partition_on: Optional[str] = None,
     partition_range: Optional[Tuple[int, int]] = None,
     partition_num: Optional[int] = None,
+    protocol: Optional[str] = None,
 ) -> DataFrame:
     """
-    Read a SQL query into a DataFrame
-    Make sure to install connextorx>=0.2
+    Read a SQL query into a DataFrame.
+    Make sure to install connectorx>=0.2
 
     # Sources
     Supports reading a sql query from the following data sources:
@@ -754,49 +753,53 @@ def read_sql(
     ## Source not supported?
     If a database source is not supported, pandas can be used to load the query:
 
-    >>> df = pl.from_pandas(pd.read_sql(sql, engine))
+    >>> import pandas as pd
+    >>> df = pl.from_pandas(pd.read_sql(sql, engine))  # doctest: +SKIP
 
     Parameters
     ----------
     sql
-        raw sql query
+        raw sql query.
     connection_uri
         connectorx connection uri:
             - "postgresql://username:password@server:port/database"
     partition_on
-      the column to partition the result.
+      the column on which to partition the result.
     partition_range
       the value range of the partition column.
     partition_num
-      how many partition to generate.
-
+      how many partitions to generate.
+    protocol
+      backend-specific transfer protocol directive; see connectorx documentation for details.
 
     Examples
     --------
 
     ## Single threaded
-    Read a DataFrame from a SQL using a single thread:
+    Read a DataFrame from a SQL query using a single thread:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
-    >>> pl.read_sql(query, uri)
+    >>> pl.read_sql(query, uri)  # doctest: +SKIP
 
     ## Using 10 threads
-    Read a DataFrame parallelly using 10 threads by automatically partitioning the provided SQL on the partition column:
+    Read a DataFrame in parallel using 10 threads by automatically partitioning the provided SQL on the partition column:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
-    >>> read_sql(query, uri, partition_on="partition_col", partition_num=10)
+    >>> pl.read_sql(
+    ...     query, uri, partition_on="partition_col", partition_num=10
+    ... )  # doctest: +SKIP
 
     ## Using
-    Read a DataFrame parallel using 2 threads by manually providing two partition SQLs:
+    Read a DataFrame in parallel using 2 threads by explicitly providing two SQL queries:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> queries = [
     ...     "SELECT * FROM lineitem WHERE partition_col <= 10",
     ...     "SELECT * FROM lineitem WHERE partition_col > 10",
     ... ]
-    >>> read_sql(uri, queries)
+    >>> pl.read_sql(uri, queries)  # doctest: +SKIP
 
     """
     if _WITH_CX:
@@ -807,9 +810,10 @@ def read_sql(
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,
+            protocol=protocol,
         )
         return from_arrow(tbl)  # type: ignore[return-value]
     else:
         raise ImportError(
-            "connectorx is not installed." "Please run pip install connectorx>=0.2.0a3"
+            "connectorx is not installed." "Please run pip install connectorx>=0.2.2"
         )

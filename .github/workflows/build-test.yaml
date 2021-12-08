@@ -98,6 +98,9 @@ jobs:
           export RUSTFLAGS="-C debuginfo=0"
           cd py-polars && rustup override set nightly-2021-12-02 && make build-and-test-with-cov
           cargo clippy
+      - name: Check doc examples
+        run: |
+          cd py-polars && make doctest
       # test if we can import polars without any requirements
       - name: Import polars
         run: |

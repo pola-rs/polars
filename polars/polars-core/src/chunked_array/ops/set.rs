@@ -288,23 +288,23 @@ mod test {
 
     #[test]
     fn test_set() {
-        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-        let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+        let ca = Int32Chunked::new("a", &[1, 2, 3]);
+        let mask = BooleanChunked::new("mask", &[false, true, false]);
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(5), Some(3)]);
 
-        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-        let mask = BooleanChunked::new_from_opt_slice("mask", &[None, Some(true), None]);
+        let ca = Int32Chunked::new("a", &[1, 2, 3]);
+        let mask = BooleanChunked::new("mask", &[None, Some(true), None]);
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(5), Some(3)]);
 
-        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-        let mask = BooleanChunked::new_from_opt_slice("mask", &[None, None, None]);
+        let ca = Int32Chunked::new("a", &[1, 2, 3]);
+        let mask = BooleanChunked::new("mask", &[None, None, None]);
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(2), Some(3)]);
 
-        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-        let mask = BooleanChunked::new_from_opt_slice("mask", &[Some(true), Some(false), None]);
+        let ca = Int32Chunked::new("a", &[1, 2, 3]);
+        let mask = BooleanChunked::new("mask", &[Some(true), Some(false), None]);
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(5), Some(2), Some(3)]);
 
@@ -314,30 +314,30 @@ mod test {
         assert!(ca.set_at_idx(vec![0, 10], Some(0)).is_err());
 
         // test booleans
-        let ca = BooleanChunked::new_from_slice("a", &[true, true, true]);
-        let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+        let ca = BooleanChunked::new("a", &[true, true, true]);
+        let mask = BooleanChunked::new("mask", &[false, true, false]);
         let ca = ca.set(&mask, None).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(true), None, Some(true)]);
 
         // test utf8
-        let ca = Utf8Chunked::new_from_slice("a", &["foo", "foo", "foo"]);
-        let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+        let ca = Utf8Chunked::new("a", &["foo", "foo", "foo"]);
+        let mask = BooleanChunked::new("mask", &[false, true, false]);
         let ca = ca.set(&mask, Some("bar")).unwrap();
         assert_eq!(Vec::from(&ca), &[Some("foo"), Some("bar"), Some("foo")]);
     }
 
     #[test]
     fn test_set_null_values() {
-        let ca = Int32Chunked::new_from_opt_slice("a", &[Some(1), None, Some(3)]);
-        let mask = BooleanChunked::new_from_opt_slice("mask", &[Some(false), Some(true), None]);
+        let ca = Int32Chunked::new("a", &[Some(1), None, Some(3)]);
+        let mask = BooleanChunked::new("mask", &[Some(false), Some(true), None]);
         let ca = ca.set(&mask, Some(2)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(1), Some(2), Some(3)]);
 
-        let ca = Utf8Chunked::new_from_opt_slice("a", &[Some("foo"), None, Some("bar")]);
+        let ca = Utf8Chunked::new("a", &[Some("foo"), None, Some("bar")]);
         let ca = ca.set(&mask, Some("foo")).unwrap();
         assert_eq!(Vec::from(&ca), &[Some("foo"), Some("foo"), Some("bar")]);
 
-        let ca = BooleanChunked::new_from_opt_slice("a", &[Some(false), None, Some(true)]);
+        let ca = BooleanChunked::new("a", &[Some(false), None, Some(true)]);
         let ca = ca.set(&mask, Some(true)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(false), Some(true), Some(true)]);
     }

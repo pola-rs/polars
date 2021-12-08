@@ -45,7 +45,7 @@ def from_dict(
     >>> df = pl.from_dict(data)
     >>> df
     shape: (2, 2)
-    ╭─────┬─────╮
+    ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
     │ i64 ┆ i64 │
@@ -53,7 +53,8 @@ def from_dict(
     │ 1   ┆ 3   │
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 2   ┆ 4   │
-    ╰─────┴─────╯
+    └─────┴─────┘
+
     """
     return DataFrame._from_dict(data=data, columns=columns)
 
@@ -88,8 +89,8 @@ def from_records(
     >>> data = [[1, 2, 3], [4, 5, 6]]
     >>> df = pl.from_records(data, columns=["a", "b"])
     >>> df
-    shape: (3, 2)
-    ╭─────┬─────╮
+        shape: (3, 2)
+    ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
     │ i64 ┆ i64 │
@@ -99,7 +100,8 @@ def from_records(
     │ 2   ┆ 5   │
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 6   │
-    ╰─────┴─────╯
+    └─────┴─────┘
+
     """
     return DataFrame._from_records(data, columns=columns, orient=orient)
 
@@ -124,7 +126,7 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     >>> df = pl.from_dicts(data)
     >>> df
     shape: (3, 2)
-    ╭─────┬─────╮
+    ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
     │ i64 ┆ i64 │
@@ -134,7 +136,8 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     │ 2   ┆ 5   │
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 6   │
-    ╰─────┴─────╯
+    └─────┴─────┘
+
     """
     return DataFrame._from_dicts(dicts)
 
@@ -163,11 +166,12 @@ def from_arrow(
     --------
     Constructing a DataFrame from an Arrow Table:
 
+    >>> import pyarrow as pa
     >>> data = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
     >>> df = pl.from_arrow(data)
     >>> df
     shape: (3, 2)
-    ╭─────┬─────╮
+    ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
     │ i64 ┆ i64 │
@@ -177,20 +181,22 @@ def from_arrow(
     │ 2   ┆ 5   │
     ├╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 6   │
-    ╰─────┴─────╯
+    └─────┴─────┘
 
     Constructing a Series from an Arrow Array:
 
+    >>> import pyarrow as pa
     >>> data = pa.array([1, 2, 3])
     >>> series = pl.from_arrow(data)
     >>> series
     shape: (3,)
     Series: '' [i64]
     [
-            1
-            2
-            3
+        1
+        2
+        3
     ]
+
     """
     if not _PYARROW_AVAILABLE:
         raise ImportError(
@@ -231,11 +237,12 @@ def from_pandas(
     --------
     Constructing a DataFrame from a pandas DataFrame:
 
+    >>> import pandas as pd
     >>> pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
     >>> df = pl.from_pandas(pd_df)
     >>> df
-    shape: (2, 3)
-    ╭─────┬─────┬─────╮
+        shape: (2, 3)
+    ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
     │ i64 ┆ i64 ┆ i64 │
@@ -243,20 +250,22 @@ def from_pandas(
     │ 1   ┆ 2   ┆ 3   │
     ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
     │ 4   ┆ 5   ┆ 6   │
-    ╰─────┴─────┴─────╯
+    └─────┴─────┴─────┘
 
     Constructing a Series from a pandas Series:
 
+    >>> import pandas as pd
     >>> pd_series = pd.Series([1, 2, 3], name="pd")
     >>> df = pl.from_pandas(pd_series)
     >>> df
     shape: (3,)
     Series: 'pd' [i64]
     [
-            1
-            2
-            3
+        1
+        2
+        3
     ]
+
     """
     try:
         import pandas as pd

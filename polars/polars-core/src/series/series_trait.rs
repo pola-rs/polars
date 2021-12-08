@@ -467,38 +467,6 @@ pub trait SeriesTrait:
         ))
     }
 
-    /// Check if underlying physical data is numeric.
-    ///
-    /// Date types and Categoricals are also considered numeric.
-    fn is_numeric_physical(&self) -> bool {
-        // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
-        match self.dtype() {
-            DataType::Utf8 | DataType::List(_) | DataType::Boolean | DataType::Null => false,
-            #[cfg(feature = "object")]
-            DataType::Object(_) => false,
-            _ => true,
-        }
-    }
-
-    /// Check if underlying data is numeric
-    fn is_numeric(&self) -> bool {
-        // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
-        match self.dtype() {
-            DataType::Utf8
-            | DataType::List(_)
-            | DataType::Categorical
-            | DataType::Date
-            | DataType::Datetime
-            | DataType::Boolean
-            | DataType::Null => false,
-            #[cfg(feature = "object")]
-            DataType::Object(_) => false,
-            _ => true,
-        }
-    }
-
     /// Append Arrow array of same dtype to this Series.
     fn append_array(&mut self, _other: ArrayRef) -> Result<()> {
         invalid_operation_panic!(self)

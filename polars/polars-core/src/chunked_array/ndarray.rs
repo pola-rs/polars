@@ -79,8 +79,8 @@ impl DataFrame {
     ///
     /// ```rust
     /// use polars_core::prelude::*;
-    /// let a = UInt32Chunked::new_from_slice("a", &[1, 2, 3]).into_series();
-    /// let b = Float64Chunked::new_from_slice("b", &[10., 8., 6.]).into_series();
+    /// let a = UInt32Chunked::new("a", &[1, 2, 3]).into_series();
+    /// let b = Float64Chunked::new("b", &[10., 8., 6.]).into_series();
     ///
     /// let df = DataFrame::new(vec![a, b]).unwrap();
     /// let ndarray = df.to_ndarray::<Float64Type>().unwrap();
@@ -124,7 +124,7 @@ mod test {
 
     #[test]
     fn test_ndarray_from_ca() -> Result<()> {
-        let ca = Float64Chunked::new_from_slice("", &[1.0, 2.0, 3.0]);
+        let ca = Float64Chunked::new("", &[1.0, 2.0, 3.0]);
         let ndarr = ca.to_ndarray()?;
         assert_eq!(ndarr, ArrayView1::from(&[1.0, 2.0, 3.0]));
 

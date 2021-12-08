@@ -474,8 +474,7 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let a =
-                    <$ca_type>::new_from_opt_slice("test", &[$first_val, $second_val, $third_val]);
+                let a = <$ca_type>::new("test", &[$first_val, $second_val, $third_val]);
 
                 // normal iterator
                 let mut it = a.into_iter();
@@ -617,8 +616,8 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let mut a = <$ca_type>::new_from_opt_slice("test", &[$first_val, $second_val]);
-                let a_b = <$ca_type>::new_from_opt_slice("", &[$third_val]);
+                let mut a = <$ca_type>::new("test", &[$first_val, $second_val]);
+                let a_b = <$ca_type>::new("", &[$third_val]);
                 a.append(&a_b);
 
                 // normal iterator
@@ -886,7 +885,7 @@ mod test {
         8,
         Some("0"),
         None,
-        { Utf8Chunked::new_from_opt_slice("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE)) }
+        { Utf8Chunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE)) }
     );
 
     impl_test_iter_skip!(utf8_iter_many_chunk_skip, 18, Some("0"), Some("9"), {
@@ -897,10 +896,8 @@ mod test {
     });
 
     impl_test_iter_skip!(utf8_iter_many_chunk_null_check_skip, 18, Some("0"), None, {
-        let mut a =
-            Utf8Chunked::new_from_opt_slice("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
-        let a_b =
-            Utf8Chunked::new_from_opt_slice("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
+        let mut a = Utf8Chunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
+        let a_b = Utf8Chunked::new("test", &generate_opt_utf8_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
     });
@@ -925,7 +922,7 @@ mod test {
     });
 
     impl_test_iter_skip!(bool_iter_single_chunk_null_check_skip, 8, None, None, {
-        BooleanChunked::new_from_opt_slice("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE))
+        BooleanChunked::new("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE))
     });
 
     impl_test_iter_skip!(bool_iter_many_chunk_skip, 18, Some(true), Some(false), {
@@ -937,14 +934,8 @@ mod test {
     });
 
     impl_test_iter_skip!(bool_iter_many_chunk_null_check_skip, 18, None, None, {
-        let mut a = BooleanChunked::new_from_opt_slice(
-            "test",
-            &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE),
-        );
-        let a_b = BooleanChunked::new_from_opt_slice(
-            "test",
-            &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE),
-        );
+        let mut a = BooleanChunked::new("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE));
+        let a_b = BooleanChunked::new("test", &generate_opt_boolean_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
     });

@@ -205,17 +205,17 @@ mod test {
     // Single Chunk Null Check Parallel Iterator Tests.
     impl_par_iter_return_option_map_test!(
         utf8_par_iter_single_chunk_null_check_return_option_map,
-        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+        { Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
     );
 
     impl_par_iter_return_option_filter_test!(
         utf8_par_iter_single_chunk_null_check_return_option_filter,
-        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+        { Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
     );
 
     impl_par_iter_return_option_fold_test!(
         utf8_par_iter_single_chunk_null_check_return_option_fold,
-        { Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
+        { Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE)) }
     );
 
     // Many Chunk Parallel Iterator Tests.
@@ -242,10 +242,8 @@ mod test {
 
     // Many Chunk Null Check Parallel Iterator Tests.
     impl_par_iter_return_option_map_test!(utf8_par_iter_many_chunk_null_check_return_option_map, {
-        let mut a =
-            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            Utf8Chunked::new_from_opt_slice("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let mut a = Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+        let a_b = Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
@@ -253,14 +251,8 @@ mod test {
     impl_par_iter_return_option_filter_test!(
         utf8_par_iter_many_chunk_null_check_return_option_filter,
         {
-            let mut a = Utf8Chunked::new_from_opt_slice(
-                "a",
-                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
-            );
-            let a_b = Utf8Chunked::new_from_opt_slice(
-                "a",
-                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
-            );
+            let mut a = Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+            let a_b = Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
             a.append(&a_b);
             a
         }
@@ -269,14 +261,8 @@ mod test {
     impl_par_iter_return_option_fold_test!(
         utf8_par_iter_many_chunk_null_check_return_option_fold,
         {
-            let mut a = Utf8Chunked::new_from_opt_slice(
-                "a",
-                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
-            );
-            let a_b = Utf8Chunked::new_from_opt_slice(
-                "a",
-                &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE),
-            );
+            let mut a = Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+            let a_b = Utf8Chunked::new("a", &generate_opt_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
             a.append(&a_b);
             a
         }

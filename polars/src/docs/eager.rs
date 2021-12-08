@@ -45,7 +45,7 @@
 //! let ca: UInt32Chunked = (0..10).map(Some).collect();
 //!
 //! // from slices
-//! let ca = UInt32Chunked::new_from_slice("foo", &[1, 2, 3]);
+//! let ca = UInt32Chunked::new("foo", &[1, 2, 3]);
 //!
 //! // use builders
 //! let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new("foo", 10);
@@ -67,7 +67,7 @@
 //! let s = Series::new("foo", &[1, 2, 3]);
 //!
 //! // from a chunked-array
-//! let ca = UInt32Chunked::new_from_opt_slice("foo", &[Some(1), None, Some(3)]);
+//! let ca = UInt32Chunked::new("foo", &[Some(1), None, Some(3)]);
 //! let s = ca.into_series();
 //! ```
 //!
@@ -146,7 +146,7 @@
 //!
 //! ```rust
 //! # use polars::prelude::*;
-//! let ca = UInt32Chunked::new_from_slice("foo", &[1, 2, 3]);
+//! let ca = UInt32Chunked::new("foo", &[1, 2, 3]);
 //!
 //! // 1 / ca
 //! let divide_one_by_ca = ca.apply(|rhs| 1 / rhs);
@@ -161,7 +161,7 @@
 //! # fn example() -> Result<()> {
 //!
 //! let s = Series::new("a", &[1, 2, 3]);
-//! let ca = UInt32Chunked::new_from_opt_slice("b", &[Some(3), None, Some(1)]);
+//! let ca = UInt32Chunked::new("b", &[Some(3), None, Some(1)]);
 //!
 //! // compare Series with numeric values
 //! // ==

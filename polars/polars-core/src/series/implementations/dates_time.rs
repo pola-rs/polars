@@ -756,9 +756,7 @@ mod test {
 
     #[test]
     fn test_arithmetic_dispatch() {
-        let s = Int64Chunked::new_from_slice("", &[1, 2, 3])
-            .into_date()
-            .into_series();
+        let s = Int64Chunked::new("", &[1, 2, 3]).into_date().into_series();
 
         // check if we don't panic.
         let out = &s * 100;

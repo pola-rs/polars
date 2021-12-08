@@ -493,8 +493,8 @@ mod test {
         // validated with numpy
         // Note that numpy as an argument ddof wich influences results. The default is ddof=0
         // we chose ddof=1, which is standard in statistics
-        let ca1 = Int32Chunked::new_from_slice("", &[5, 8, 9, 5, 0]);
-        let ca2 = Int32Chunked::new_from_opt_slice(
+        let ca1 = Int32Chunked::new("", &[5, 8, 9, 5, 0]);
+        let ca2 = Int32Chunked::new(
             "",
             &[
                 Some(5),
@@ -517,10 +517,10 @@ mod test {
 
     #[test]
     fn test_agg_float() {
-        let ca1 = Float32Chunked::new_from_slice("a", &[1.0, f32::NAN]);
-        let ca2 = Float32Chunked::new_from_slice("b", &[f32::NAN, 1.0]);
+        let ca1 = Float32Chunked::new("a", &[1.0, f32::NAN]);
+        let ca2 = Float32Chunked::new("b", &[f32::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
-        let ca1 = Float64Chunked::new_from_slice("a", &[1.0, f64::NAN]);
+        let ca1 = Float64Chunked::new("a", &[1.0, f64::NAN]);
         let ca2 = Float64Chunked::new_from_slice("b", &[f64::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         println!("{:?}", (ca1.min(), ca2.min()))
@@ -528,12 +528,12 @@ mod test {
 
     #[test]
     fn test_median() {
-        let ca = UInt32Chunked::new_from_opt_slice(
+        let ca = UInt32Chunked::new(
             "a",
             &[Some(2), Some(1), None, Some(3), Some(5), None, Some(4)],
         );
         assert_eq!(ca.median(), Some(3.0));
-        let ca = UInt32Chunked::new_from_opt_slice(
+        let ca = UInt32Chunked::new(
             "a",
             &[
                 None,
@@ -588,7 +588,7 @@ mod test {
 
     #[test]
     fn test_mean() {
-        let ca = Float32Chunked::new_from_opt_slice("", &[Some(1.0), Some(2.0), None]);
+        let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
         // all mean_as_series are cast to f64.
         assert_eq!(ca.mean_as_series().f64().unwrap().get(0).unwrap(), 1.5);
@@ -600,7 +600,7 @@ mod test {
 
     #[test]
     fn test_quantile_all_null() {
-        let ca = Float32Chunked::new_from_opt_slice("", &[None, None, None]);
+        let ca = Float32Chunked::new("", &[None, None, None]);
         let out = ca.quantile(0.9).unwrap();
         assert_eq!(out, None)
     }

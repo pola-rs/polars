@@ -349,7 +349,7 @@ mod test {
 
     #[test]
     fn test_rolling() {
-        let ca = Int32Chunked::new_from_slice("foo", &[1, 2, 3, 2, 1]);
+        let ca = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]);
         let a = ca
             .rolling_sum(RollingOptions {
                 window_size: 2,
@@ -418,7 +418,7 @@ mod test {
 
     #[test]
     fn test_rolling_mean() {
-        let ca = Float64Chunked::new_from_opt_slice(
+        let ca = Float64Chunked::new(
             "foo",
             &[
                 Some(0.0),
@@ -484,7 +484,7 @@ mod test {
 
     #[test]
     fn test_rolling_apply() {
-        let ca = Float64Chunked::new_from_opt_slice(
+        let ca = Float64Chunked::new(
             "foo",
             &[
                 Some(0.0),
@@ -514,7 +514,7 @@ mod test {
 
     #[test]
     fn test_rolling_var() {
-        let ca = Float64Chunked::new_from_opt_slice(
+        let ca = Float64Chunked::new(
             "foo",
             &[
                 Some(0.0),

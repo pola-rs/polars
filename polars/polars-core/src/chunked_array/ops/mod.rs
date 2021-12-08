@@ -225,7 +225,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let ca = UInt32Chunked::new("a", &[1, 2, 3]);
     /// let new = ca.set_at_idx(vec![0, 1], Some(10)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(10), Some(10), Some(3)]);
@@ -244,7 +244,7 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+    /// let ca = Int32Chunked::new("a", &[1, 2, 3]);
     /// let new = ca.set_at_idx_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
@@ -259,8 +259,8 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-    /// let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+    /// let ca = Int32Chunked::new("a", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new("mask", &[false, true, false]);
     /// let new = ca.set(&mask, Some(5)).unwrap();
     /// assert_eq!(Vec::from(&new), &[Some(1), Some(5), Some(3)]);
     /// ```
@@ -274,8 +274,8 @@ pub trait ChunkSet<'a, A, B> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let ca = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
-    /// let mask = BooleanChunked::new_from_slice("mask", &[false, true, false]);
+    /// let ca = UInt32Chunked::new("a", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new("mask", &[false, true, false]);
     /// let new = ca.set_with(&mask, |opt_v| opt_v.map(
     ///     |v| v * 2
     /// )).unwrap();
@@ -590,8 +590,8 @@ pub trait ChunkFilter<T> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// let array = Int32Chunked::new_from_slice("array", &[1, 2, 3]);
-    /// let mask = BooleanChunked::new_from_slice("mask", &[true, false, true]);
+    /// let array = Int32Chunked::new("array", &[1, 2, 3]);
+    /// let mask = BooleanChunked::new("mask", &[true, false, true]);
     ///
     /// let filtered = array.filter(&mask).unwrap();
     /// assert_eq!(Vec::from(&filtered), [Some(1), Some(3)])

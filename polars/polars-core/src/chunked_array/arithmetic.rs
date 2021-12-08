@@ -440,9 +440,9 @@ pub(crate) mod test {
     use crate::prelude::*;
 
     pub(crate) fn create_two_chunked() -> (Int32Chunked, Int32Chunked) {
-        let mut a1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
-        let a2 = Int32Chunked::new_from_slice("a", &[4, 5, 6]);
-        let a3 = Int32Chunked::new_from_slice("a", &[1, 2, 3, 4, 5, 6]);
+        let mut a1 = Int32Chunked::new("a", &[1, 2, 3]);
+        let a2 = Int32Chunked::new("a", &[4, 5, 6]);
+        let a3 = Int32Chunked::new("a", &[1, 2, 3, 4, 5, 6]);
         a1.append(&a2);
         (a1, a3)
     }
@@ -466,7 +466,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_power() {
-        let a = UInt32Chunked::new_from_slice("", &[1, 2, 3]);
+        let a = UInt32Chunked::new("", &[1, 2, 3]);
         let b = a.pow_f64(2.);
         println!("{:?}", b);
     }

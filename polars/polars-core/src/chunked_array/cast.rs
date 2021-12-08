@@ -167,7 +167,7 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
-        let ca = Utf8Chunked::new_from_slice("foo", &["bar", "ham"]);
+        let ca = Utf8Chunked::new("foo", &["bar", "ham"]);
         let out = ca.cast(&DataType::Categorical).unwrap();
         let out = out.cast(&DataType::Categorical).unwrap();
         assert_eq!(out.dtype(), &DataType::Categorical)

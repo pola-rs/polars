@@ -44,7 +44,7 @@ impl Index<&str> for DataFrame {
     type Output = Series;
 
     fn index(&self, index: &str) -> &Self::Output {
-        let idx = self.name_to_idx(index).unwrap();
+        let idx = self.check_name_to_idx(index).unwrap();
         &self.columns[idx]
     }
 }

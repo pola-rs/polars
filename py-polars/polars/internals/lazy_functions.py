@@ -60,7 +60,7 @@ def col(
     ... )
     >>> df.select(pl.col("foo"))
     shape: (3, 1)
-    ╭─────╮
+    ┌─────┐
     │ foo │
     │ --- │
     │ i64 │
@@ -70,10 +70,10 @@ def col(
     │ 2   │
     ├╌╌╌╌╌┤
     │ 1   │
-    ╰─────╯
+    └─────┘
     >>> df.select(pl.col("*"))
     shape: (3, 3)
-    ╭─────┬───────────┬─────╮
+    ┌─────┬───────────┬─────┐
     │ ham ┆ hamburger ┆ foo │
     │ --- ┆ ---       ┆ --- │
     │ i64 ┆ i64       ┆ i64 │
@@ -83,10 +83,10 @@ def col(
     │ 2   ┆ 22        ┆ 2   │
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 3   ┆ 33        ┆ 1   │
-    ╰─────┴───────────┴─────╯
+    └─────┴───────────┴─────┘
     >>> df.select(pl.col("^ham.*$"))
     shape: (3, 2)
-    ╭─────┬───────────╮
+    ┌─────┬───────────┐
     │ ham ┆ hamburger │
     │ --- ┆ ---       │
     │ i64 ┆ i64       │
@@ -96,10 +96,10 @@ def col(
     │ 2   ┆ 22        │
     ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
     │ 3   ┆ 33        │
-    ╰─────┴───────────╯
+    └─────┴───────────┘
     >>> df.select(pl.col("*").exclude("ham"))
     shape: (3, 2)
-    ╭───────────┬─────╮
+    ┌───────────┬─────┐
     │ hamburger ┆ foo │
     │ ---       ┆ --- │
     │ i64       ┆ i64 │
@@ -109,10 +109,10 @@ def col(
     │ 22        ┆ 2   │
     ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 33        ┆ 1   │
-    ╰───────────┴─────╯
+    └───────────┴─────┘
     >>> df.select(pl.col(["hamburger", "foo"]))
     shape: (3, 2)
-    ╭───────────┬─────╮
+    ┌───────────┬─────┐
     │ hamburger ┆ foo │
     │ ---       ┆ --- │
     │ i64       ┆ i64 │
@@ -122,7 +122,7 @@ def col(
     │ 22        ┆ 2   │
     ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
     │ 33        ┆ 1   │
-    ╰───────────┴─────╯
+    └───────────┴─────┘
 
     """
     if isinstance(name, pli.Series):
@@ -509,23 +509,24 @@ def lit(
 
     Literal integer:
 
-    >>> pl.lit(1)
+    >>> pl.lit(1)  # doctest: +IGNORE_RESULT
 
     Literal str:
 
-    >>> pl.lit("foo")
+    >>> pl.lit("foo")  # doctest: +IGNORE_RESULT
 
     Literal datetime:
 
-    >>> pl.lit(datetime(2021, 1, 20))
+    >>> from datetime import datetime
+    >>> pl.lit(datetime(2021, 1, 20))  # doctest: +IGNORE_RESULT
 
     Literal Null:
 
-    >>> pl.lit(None)
+    >>> pl.lit(None)  # doctest: +IGNORE_RESULT
 
     Literal eager Series:
 
-    >>> pl.lit(Series("a", [1, 2, 3]))
+    >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +IGNORE_RESULT
 
     """
     if isinstance(value, datetime):
@@ -744,7 +745,7 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
 
     Syntactic sugar for:
 
-    >>> pl.col("*").exclude()
+    >>> pl.col("*").exclude(columns)  # doctest: +SKIP
 
     Parameters
     ----------
@@ -764,21 +765,21 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     ... )
     >>> df
     shape: (3, 3)
-    ╭─────┬──────┬──────╮
+    ┌─────┬──────┬──────┐
     │ a   ┆ b    ┆ c    │
     │ --- ┆ ---  ┆ ---  │
     │ i64 ┆ str  ┆ i64  │
     ╞═════╪══════╪══════╡
-    │ 1   ┆ "a"  ┆ null │
+    │ 1   ┆ a    ┆ null │
     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-    │ 2   ┆ "b"  ┆ 2    │
+    │ 2   ┆ b    ┆ 2    │
     ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ 3   ┆ null ┆ 1    │
-    ╰─────┴──────┴──────╯
+    └─────┴──────┴──────┘
 
     >>> df.select(pl.exclude("b"))
     shape: (3, 2)
-    ╭─────┬──────╮
+    ┌─────┬──────┐
     │ a   ┆ c    │
     │ --- ┆ ---  │
     │ i64 ┆ i64  │
@@ -788,7 +789,7 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     │ 2   ┆ 2    │
     ├╌╌╌╌╌┼╌╌╌╌╌╌┤
     │ 3   ┆ 1    │
-    ╰─────┴──────╯
+    └─────┴──────┘
 
     """
     return col("*").exclude(columns)
@@ -812,14 +813,18 @@ def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
 
     Sum all columns
 
-    >>> df.select(pl.all().sum())
-
-
-    >>> df.select(
-    ...     [
-    ...         pl.all([pl.col(name).is_not_null() for name in df.columns]),
-    ...     ]
+    >>> df = pl.DataFrame(
+    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
     ... )
+    >>> df.select(pl.all().sum())
+    shape: (1, 3)
+    ┌─────┬──────┬─────┐
+    │ a   ┆ b    ┆ c   │
+    │ --- ┆ ---  ┆ --- │
+    │ i64 ┆ str  ┆ i64 │
+    ╞═════╪══════╪═════╡
+    │ 6   ┆ null ┆ 3   │
+    └─────┴──────┴─────┘
 
     """
     if name is None:
@@ -853,10 +858,9 @@ def arange(
     Create a range expression. This can be used in a `select`, `with_column` etc.
     Be sure that the range size is equal to the DataFrame you are collecting.
 
-     Examples
-     --------
-
-    >>> (df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect())
+    Examples
+    --------
+    >>> df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect()  # doctest: +SKIP
 
     Parameters
     ----------
@@ -1172,5 +1176,6 @@ def select(
     ├╌╌╌╌╌┤
     │ 1   │
     └─────┘
+
     """
     return pli.DataFrame([]).select(exprs)
