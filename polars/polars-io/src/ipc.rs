@@ -109,8 +109,15 @@ impl<R: Read + Seek> IpcReader<R> {
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        let reader =
-            read::FileReader::new(&mut self.reader, metadata, projection.map(|x| x.to_vec()));
+        let reader = read::FileReader::new(
+            &mut self.reader,
+            metadata,
+            projection.map(|x| {
+                let mut x = x.to_vec();
+                x.sort_unstable();
+                x
+            }),
+        );
 
         finish_reader(
             reader,
