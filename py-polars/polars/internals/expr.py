@@ -2161,6 +2161,21 @@ class ExprListNameSpace:
         """
         return self.get(-1)
 
+    def contains(self, item: Union[float, str, bool, int, date, datetime]) -> "Expr":
+        """
+        Check if sublists contain the given item.
+
+        Parameters
+        ----------
+        item
+            Item that will be checked for membership
+
+        Returns
+        -------
+        Boolean mask
+        """
+        return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item))
+
 
 class ExprStringNameSpace:
     """

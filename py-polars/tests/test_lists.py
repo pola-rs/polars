@@ -24,3 +24,13 @@ def test_list_arr_get() -> None:
     out = a.arr.get(-3)
     expected = pl.Series("a", [1, None, 7])
     testing.assert_series_equal(out, expected)
+
+
+def test_contains() -> None:
+    a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
+    out = a.arr.contains(2)
+    expected = pl.Series("a", [True, True, False])
+    testing.assert_series_equal(out, expected)
+
+    out = pl.select(pl.lit(a).arr.contains(2)).to_series()
+    testing.assert_series_equal(out, expected)

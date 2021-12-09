@@ -52,17 +52,32 @@ where
                     return left.is_in(&right);
                 }
 
-                let ca: BooleanChunked = self
-                    .into_iter()
-                    .zip(other.list()?.into_iter())
-                    .map(|(value, series)| match (value, series) {
-                        (val, Some(series)) => {
-                            let ca = series.unpack::<T>().unwrap();
-                            ca.into_iter().any(|a| a == val)
-                        }
-                        _ => false,
-                    })
-                    .collect_trusted();
+                let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
+                    let value = self.get(0);
+                    other
+                        .list()?
+                        .amortized_iter()
+                        .map(|opt_s| {
+                            opt_s.map(|s| {
+                                let ca = s.as_ref().unpack::<T>().unwrap();
+                                ca.into_iter().any(|a| a == value)
+                            }) == Some(true)
+                        })
+                        .trust_my_length(other.len())
+                        .collect_trusted()
+                } else {
+                    self.into_iter()
+                        .zip(other.list()?.amortized_iter())
+                        .map(|(value, series)| match (value, series) {
+                            (val, Some(series)) => {
+                                let ca = series.as_ref().unpack::<T>().unwrap();
+                                ca.into_iter().any(|a| a == val)
+                            }
+                            _ => false,
+                        })
+                        .collect_trusted()
+                };
+                ca.rename(self.name());
                 Ok(ca)
             }
             _ => {
@@ -109,17 +124,32 @@ impl IsIn for Utf8Chunked {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         match other.dtype() {
             DataType::List(dt) if self.dtype() == &**dt => {
-                let ca: BooleanChunked = self
-                    .into_iter()
-                    .zip(other.list()?.into_iter())
-                    .map(|(value, series)| match (value, series) {
-                        (val, Some(series)) => {
-                            let ca = series.unpack::<Utf8Type>().unwrap();
-                            ca.into_iter().any(|a| a == val)
-                        }
-                        _ => false,
-                    })
-                    .collect_trusted();
+                let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
+                    let value = self.get(0);
+                    other
+                        .list()?
+                        .amortized_iter()
+                        .map(|opt_s| {
+                            opt_s.map(|s| {
+                                let ca = s.as_ref().unpack::<Utf8Type>().unwrap();
+                                ca.into_iter().any(|a| a == value)
+                            }) == Some(true)
+                        })
+                        .trust_my_length(other.len())
+                        .collect_trusted()
+                } else {
+                    self.into_iter()
+                        .zip(other.list()?.amortized_iter())
+                        .map(|(value, series)| match (value, series) {
+                            (val, Some(series)) => {
+                                let ca = series.as_ref().unpack::<Utf8Type>().unwrap();
+                                ca.into_iter().any(|a| a == val)
+                            }
+                            _ => false,
+                        })
+                        .collect_trusted()
+                };
+                ca.rename(self.name());
                 Ok(ca)
             }
             DataType::Utf8 => {
@@ -158,17 +188,32 @@ impl IsIn for BooleanChunked {
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
         match other.dtype() {
             DataType::List(dt) if self.dtype() == &**dt => {
-                let ca: BooleanChunked = self
-                    .into_iter()
-                    .zip(other.list()?.into_iter())
-                    .map(|(value, series)| match (value, series) {
-                        (val, Some(series)) => {
-                            let ca = series.unpack::<BooleanType>().unwrap();
-                            ca.into_iter().any(|a| a == val)
-                        }
-                        _ => false,
-                    })
-                    .collect_trusted();
+                let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
+                    let value = self.get(0);
+                    other
+                        .list()?
+                        .amortized_iter()
+                        .map(|opt_s| {
+                            opt_s.map(|s| {
+                                let ca = s.as_ref().unpack::<BooleanType>().unwrap();
+                                ca.into_iter().any(|a| a == value)
+                            }) == Some(true)
+                        })
+                        .trust_my_length(other.len())
+                        .collect_trusted()
+                } else {
+                    self.into_iter()
+                        .zip(other.list()?.amortized_iter())
+                        .map(|(value, series)| match (value, series) {
+                            (val, Some(series)) => {
+                                let ca = series.as_ref().unpack::<BooleanType>().unwrap();
+                                ca.into_iter().any(|a| a == val)
+                            }
+                            _ => false,
+                        })
+                        .collect_trusted()
+                };
+                ca.rename(self.name());
                 Ok(ca)
             }
             _ => Err(PolarsError::SchemaMisMatch(

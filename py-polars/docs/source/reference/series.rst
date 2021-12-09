@@ -251,3 +251,4 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.get
     ListNameSpace.first
     ListNameSpace.last
+    ListNameSpace.contains
