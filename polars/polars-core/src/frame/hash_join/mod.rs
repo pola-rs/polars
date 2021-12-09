@@ -1275,11 +1275,36 @@ impl DataFrame {
     /// Perform a left join on two DataFrames
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// # use polars_core::prelude::*;
-    /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
-    ///     left.left_join(right, "join_column_left", "join_column_right")
-    /// }
+    /// let df1: DataFrame = df!("Wavelength (nm)" => &[480.0, 650.0, 577.0, 1201.0, 100.0])?;
+    /// let df2: DataFrame = df!("Color" => &["Blue", "Yellow", "Red"],
+    ///                          "Wavelength nm" => &[480.0, 577.0, 650.0])?;
+    ///
+    /// let df3: DataFrame = df1.left_join(&df2, "Wavelength (nm)", "Wavelength nm")?;
+    /// println!("{:?}", df3);
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (5, 2)
+    /// +-----------------+--------+
+    /// | Wavelength (nm) | Color  |
+    /// | ---             | ---    |
+    /// | f64             | str    |
+    /// +=================+========+
+    /// | 480             | Blue   |
+    /// +-----------------+--------+
+    /// | 650             | Red    |
+    /// +-----------------+--------+
+    /// | 577             | Yellow |
+    /// +-----------------+--------+
+    /// | 1201            | null   |
+    /// +-----------------+--------+
+    /// | 100             | null   |
+    /// +-----------------+--------+
     /// ```
     pub fn left_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
         &self,

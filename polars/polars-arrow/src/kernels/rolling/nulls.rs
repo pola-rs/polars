@@ -197,7 +197,7 @@ where
 {
     let null_count = count_zeros(validity_bytes, offset, values.len());
     if null_count == 0 {
-        Some(no_nulls::compute_min(values))
+        Some(no_nulls::compute_max(values))
     } else if (values.len() - null_count) < min_periods {
         None
     } else {
@@ -221,6 +221,7 @@ where
         out
     }
 }
+
 pub fn rolling_var<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
@@ -430,5 +431,29 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None]);
+    }
+
+    #[test]
+    fn test_rolling_max_no_nulls() {
+        let buf = Buffer::from([1.0, 2.0, 3.0, 4.0]);
+        let arr = &PrimitiveArray::from_data(
+            DataType::Float64,
+            buf,
+            Some(Bitmap::from(&[true, true, true, true])),
+        );
+        let out = rolling_max(arr, 4, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(1.0), Some(2.0), Some(3.0), Some(4.0)]);
+
+        let out = rolling_max(arr, 2, 2, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, Some(2.0), Some(3.0), Some(4.0)]);
+
+        let out = rolling_max(arr, 4, 4, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, Some(4.0)])
     }
 }

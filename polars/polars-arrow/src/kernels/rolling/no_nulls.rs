@@ -114,7 +114,7 @@ where
         .unwrap()
 }
 
-fn compute_max<T>(values: &[T]) -> T
+pub(crate) fn compute_max<T>(values: &[T]) -> T
 where
     T: NativeType + PartialOrd,
 {
@@ -181,6 +181,7 @@ where
         }
     }
 }
+
 pub fn rolling_min<T>(
     values: &[T],
     window_size: usize,
