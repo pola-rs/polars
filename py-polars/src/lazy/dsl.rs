@@ -980,6 +980,16 @@ impl PyExpr {
     pub fn cumcount(&self, reverse: bool) -> Self {
         self.inner.clone().cumcount(reverse).into()
     }
+
+    pub fn to_physical(&self) -> Self {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.to_physical_repr().into_owned()),
+                GetOutput::map_dtype(|dt| dt.to_physical()),
+            )
+            .into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

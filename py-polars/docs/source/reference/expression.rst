@@ -188,6 +188,7 @@ Manipulation/ selection
     Expr.upper_bound
     Expr.str_concat
     Expr.reshape
+    Series.to_physical
 
 Column names
 ------------
