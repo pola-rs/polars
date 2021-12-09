@@ -248,3 +248,6 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.sort
     ListNameSpace.reverse
     ListNameSpace.unique
+    ListNameSpace.get
+    ListNameSpace.first
+    ListNameSpace.last
