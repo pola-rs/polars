@@ -3395,6 +3395,20 @@ class ListNameSpace:
         df.insert_at_idx(0, s)
         return df.select(pli.concat_list(names))[s.name]  # type: ignore
 
+    def get(self, index: int) -> "Series":
+        """
+        Get the value by index in the sublists.
+        So index `0` would return the first item of every sublist
+        and index `-1` would return the last item of every sublist
+        if an index is out of bounds, it will return a `None`.
+
+        Parameters
+        ----------
+        index
+            Index to return per sublist
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.get(index)).to_series()
+
 
 class DateTimeNameSpace:
     """
