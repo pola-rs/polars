@@ -1,3 +1,4 @@
+import sys
 import typing as tp
 from datetime import date, datetime, timedelta
 from numbers import Number
@@ -60,6 +61,11 @@ try:
     _PANDAS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PANDAS_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 def match_dtype(value: Any, dtype: "Type[DataType]") -> Any:
@@ -922,6 +928,18 @@ class Series:
         s = self.clone()
         s._s.rename(name)
         return s
+
+    @tp.overload
+    def rename(self, name: str, in_place: Literal[False] = ...) -> "Series":
+        ...
+
+    @tp.overload
+    def rename(self, name: str, in_place: Literal[True]) -> None:
+        ...
+
+    @tp.overload
+    def rename(self, name: str, in_place: bool) -> Optional["Series"]:
+        ...
 
     def rename(self, name: str, in_place: bool = False) -> Optional["Series"]:
         """
@@ -3413,6 +3431,24 @@ class ListNameSpace:
         Get the last value of the sublists.
         """
         return self.get(-1)
+
+    def contains(self, item: Union[float, str, bool, int, date, datetime]) -> "Series":
+        """
+        Check if sublists contain the given item.
+
+        Parameters
+        ----------
+        item
+            Item that will be checked for membership
+
+        Returns
+        -------
+        Boolean mask
+        """
+        s = pli.Series("", [item])
+        s_list = wrap_s(self._s)
+        out = s.is_in(s_list)
+        return out.rename(s_list.name)
 
 
 class DateTimeNameSpace:

@@ -291,3 +291,4 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.get
     ExprListNameSpace.first
     ExprListNameSpace.last
+    ExprListNameSpace.contains
