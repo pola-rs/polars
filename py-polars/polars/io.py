@@ -147,7 +147,7 @@ def read_csv(
     rechunk: bool = True,
     encoding: str = "utf8",
     n_threads: Optional[int] = None,
-    dtype: Optional[Union[Dict[str, Type[DataType]], List[Type[DataType]]]] = None,
+    dtypes: Optional[Union[Dict[str, Type[DataType]], List[Type[DataType]]]] = None,
     new_columns: Optional[List[str]] = None,
     use_pyarrow: bool = False,
     low_memory: bool = False,
@@ -156,6 +156,7 @@ def read_csv(
     storage_options: Optional[Dict] = None,
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
     parse_dates: bool = False,
+    **kwargs: Any,
 ) -> DataFrame:
     """
     Read into a DataFrame from a csv file.
@@ -197,7 +198,7 @@ def read_csv(
         - "utf8-lossy"
     n_threads
         Number of threads to use in csv parsing. Defaults to the number of physical cpu's of your system.
-    dtype
+    dtypes
         Overwrite the dtypes during inference.
     new_columns
         Rename columns to these right after parsing. If the given list is shorted than the width of the DataFrame the
@@ -229,6 +230,9 @@ def read_csv(
     -------
     DataFrame
     """
+    # for backward compatibility
+    dtypes = kwargs.get("dtypes", dtypes)
+
     if isinstance(file, bytes) and len(file) == 0:
         raise ValueError("no date in bytes")
 
@@ -249,7 +253,7 @@ def read_csv(
 
     if (
         use_pyarrow
-        and dtype is None
+        and dtypes is None
         and stop_after_n_rows is None
         and n_threads is None
         and encoding == "utf8"
@@ -296,11 +300,11 @@ def read_csv(
             return update_columns(df, new_columns)  # type: ignore
         return df  # type: ignore
 
-    if new_columns and dtype and isinstance(dtype, dict):
+    if new_columns and dtypes and isinstance(dtypes, dict):
         current_columns = None
 
         # As new column names are not available yet while parsing the CSV file, rename column names in
-        # dtype to old names (if possible) so they can be used during CSV parsing.
+        # dtypes to old names (if possible) so they can be used during CSV parsing.
         if columns:
             if len(columns) < len(new_columns):
                 raise ValueError(
@@ -330,28 +334,28 @@ def read_csv(
         else:
             # When a header is present, column names are not known yet.
 
-            if len(dtype) <= len(new_columns):
-                # If dtype dictionary contains less or same amount of values than new column names
-                # a list of dtypes can be created if all listed column names in dtype dictionary
+            if len(dtypes) <= len(new_columns):
+                # If dtypes dictionary contains less or same amount of values than new column names
+                # a list of dtypes can be created if all listed column names in dtypes dictionary
                 # appear in the first consecutive new column names.
                 dtype_list = [
-                    dtype[new_column_name]
-                    for new_column_name in new_columns[0 : len(dtype)]
-                    if new_column_name in dtype
+                    dtypes[new_column_name]
+                    for new_column_name in new_columns[0 : len(dtypes)]
+                    if new_column_name in dtypes
                 ]
 
-                if len(dtype_list) == len(dtype):
-                    dtype = dtype_list
+                if len(dtype_list) == len(dtypes):
+                    dtypes = dtype_list
 
-        if current_columns and isinstance(dtype, dict):
+        if current_columns and isinstance(dtypes, dict):
             new_to_current = {
                 new_column: current_column
                 for new_column, current_column in zip(new_columns, current_columns)
             }
             # Change new column names to current column names in dtype.
-            dtype = {
+            dtypes = {
                 new_to_current.get(column_name, column_name): column_dtype
-                for column_name, column_dtype in dtype.items()
+                for column_name, column_dtype in dtypes.items()
             }
 
     with _prepare_file_arg(file, **storage_options) as data:
@@ -369,7 +373,7 @@ def read_csv(
             rechunk=rechunk,
             encoding=encoding,
             n_threads=n_threads,
-            dtype=dtype,
+            dtypes=dtypes,
             low_memory=low_memory,
             comment_char=comment_char,
             quote_char=quote_char,

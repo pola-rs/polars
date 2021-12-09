@@ -377,7 +377,7 @@ class DataFrame:
         rechunk: bool = True,
         encoding: str = "utf8",
         n_threads: Optional[int] = None,
-        dtype: Union[Dict[str, Type[DataType]], tp.List[Type[DataType]], None] = None,
+        dtypes: Union[Dict[str, Type[DataType]], tp.List[Type[DataType]], None] = None,
         low_memory: bool = False,
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
@@ -419,7 +419,7 @@ class DataFrame:
             Allowed encodings: `utf8`, `utf8-lossy`. Lossy means that invalid utf8 values are replaced with `�` character.
         n_threads
             Number of threads to use in csv parsing. Defaults to the number of physical cpu's of your system.
-        dtype
+        dtypes
             Overwrite the dtypes during inference.
         low_memory
             Reduce memory usage in expense of performance.
@@ -463,13 +463,13 @@ class DataFrame:
 
         dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
         dtype_slice: Optional[tp.List[Type[DataType]]] = None
-        if dtype is not None:
-            if isinstance(dtype, dict):
+        if dtypes is not None:
+            if isinstance(dtypes, dict):
                 dtype_list = []
-                for k, v in dtype.items():
+                for k, v in dtypes.items():
                     dtype_list.append((k, py_type_to_dtype(v)))
-            elif isinstance(dtype, list):
-                dtype_slice = dtype
+            elif isinstance(dtypes, list):
+                dtype_slice = dtypes
             else:
                 raise ValueError("dtype arg should be list or dict")
 
