@@ -2149,6 +2149,18 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_get(index))
 
+    def first(self) -> "Expr":
+        """
+        Get the first value of the sublists.
+        """
+        return self.get(0)
+
+    def last(self) -> "Expr":
+        """
+        Get the last value of the sublists.
+        """
+        return self.get(-1)
+
 
 class ExprStringNameSpace:
     """
