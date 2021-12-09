@@ -220,3 +220,13 @@ def test_rows() -> None:
     rows = df.rows()
     assert rows[0][0] == date(2308, 4, 2)
     assert rows[0][1] == datetime(1970, 1, 1, 0, 2, 3, 543000)
+
+
+def test_to_numpy() -> None:
+    s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
+    s1 = pl.Series("datetime", [123543, 283478, 1243]).cast(pl.Datetime)
+    assert str(s0.to_numpy()) == "['2308-04-02' '2746-02-20' '1973-05-28']"
+    assert (
+        str(s1.to_numpy()[:2])
+        == "['1970-01-01T00:02:03.543' '1970-01-01T00:04:43.478']"
+    )

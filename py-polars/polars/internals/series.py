@@ -714,7 +714,7 @@ class Series:
                 "null_count": self.null_count(),
                 "count": self.len(),
             }
-        elif self.is_datetime():
+        elif self.is_datelike():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
             stats = {
@@ -1867,15 +1867,15 @@ class Series:
             Float64,
         )
 
-    def is_datetime(self) -> bool:
+    def is_datelike(self) -> bool:
         """
-        Check if this Series datatype is a datetime.
+        Check if this Series datatype is datelike.
 
         Examples
         --------
         >>> from datetime import date
         >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-        >>> s.is_datetime()
+        >>> s.is_datelike()
         True
 
         """
@@ -2021,13 +2021,25 @@ class Series:
         kwargs
             kwargs will be sent to pyarrow.Array.to_numpy
         """
-        if _PYARROW_AVAILABLE:
+
+        def convert_to_date(arr):  # type: ignore
+            if self.dtype == Date:
+                tp = "datetime64[D]"
+            else:
+                tp = "datetime64[ms]"
+            return arr.astype(tp)
+
+        if _PYARROW_AVAILABLE and not self.is_datelike():
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, **kwargs
             )
         else:
             if not self.has_validity():
+                if self.is_datelike():
+                    return convert_to_date(self.view(ignore_nulls=True))
                 return self.view(ignore_nulls=True)
+            if self.is_datelike():
+                return convert_to_date(self._s.to_numpy())
             return self._s.to_numpy()
 
     def to_arrow(self) -> "pa.Array":
