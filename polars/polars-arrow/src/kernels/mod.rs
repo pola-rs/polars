@@ -2,6 +2,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitChunks;
 use std::iter::Enumerate;
 pub mod float;
+pub mod list;
 pub mod rolling;
 pub mod set;
 #[cfg(feature = "strings")]
