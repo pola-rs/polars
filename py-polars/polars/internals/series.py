@@ -3332,50 +3332,43 @@ class ListNameSpace:
         """
         Sum all the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.sum())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.sum()).to_series()
 
     def max(self) -> Series:
         """
         Compute the max value of the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.max())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.max()).to_series()
 
     def min(self) -> Series:
         """
         Compute the min value of the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.min())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.min()).to_series()
 
     def mean(self) -> Series:
         """
         Compute the mean value of the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.min())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.mean()).to_series()
 
     def sort(self, reverse: bool) -> Series:
         """
         Sort the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.sort(reverse))  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.sort(reverse)).to_series()
 
     def reverse(self) -> Series:
         """
         Reverse the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.reverse())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.reverse()).to_series()
 
     def unique(self) -> Series:
         """
         Get the unique/distinct values in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.unique())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.unique()).to_series()
 
     def concat(self, other: Union[tp.List[Series], Series]) -> "Series":
         """
