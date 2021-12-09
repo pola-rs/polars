@@ -149,6 +149,15 @@ impl GetOutput {
             f(&flds[0])
         }))
     }
+
+    pub fn map_dtype<F: 'static + Fn(&DataType) -> DataType + Send + Sync>(f: F) -> Self {
+        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+            let mut fld = flds[0].clone();
+            let new_type = f(fld.data_type());
+            fld.coerce(new_type);
+            fld
+        }))
+    }
 }
 
 impl<F> FunctionOutputField for F

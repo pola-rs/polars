@@ -191,6 +191,17 @@ class Expr:
 
         return self.map(function, return_dtype=dtype)
 
+    def to_physical(self) -> "Expr":
+        """
+        Cast to physical representation of the logical dtype.
+
+        Date -> Int32
+        Datetime -> Int64
+        Time -> Int64
+        other -> other
+        """
+        return wrap_expr(self._pyexpr.to_physical())
+
     def sqrt(self) -> "Expr":
         """
         Compute the square root of the elements
