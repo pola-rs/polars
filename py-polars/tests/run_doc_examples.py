@@ -17,18 +17,26 @@ custom output checker has been created, see below.
 instance, in the past, the printout of dataframes has changed from rounded corners to less rounded corners. To
 facilitate such a change, whilst not immediately having to add IGNORE_RESULT directives everywhere or changing all
 outputs, set `IGNORE_RESULT_ALL=True` below. Do note that this does mean no output is being checked anymore.
-* This script will always take the code from this repo (see `src_dir` below), but the module used to run the code is
-determined by the import below (see `import polars as pl`). For example, in CI, the import will import the installed
-package, not the code in the repo. This is similar to how pytest works.
 """
 import doctest
+import importlib
 import sys
+import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 import polars
 
-print(polars.__file__)
+
+def modules_in_path(p: Path) -> Generator:
+    for file in p.rglob("*.py"):
+        # Construct path as string for import, for instance "internals.frame"
+        # The -3 drops the ".py"
+        file_name_import = ".".join(file.relative_to(p).parts)[:-3]
+        temp_module = importlib.import_module(p.name + "." + file_name_import)
+        yield temp_module
+
+
 if __name__ == "__main__":
     # set to True to just run the code, and do not check any output. Will still report errors if the code is invalid
     IGNORE_RESULT_ALL = False
@@ -59,30 +67,17 @@ if __name__ == "__main__":
     # The disadvantage is that you cannot just copy the output directly into the docstring
     # doctest.REPORT_NDIFF = True
 
-    results_list = []
-    src_dir = Path(polars.__file__).parent  # __file__ returns the __init__.py
-    print(src_dir)
-    for file in src_dir.rglob("*.py"):
-        pretty_file_name = file.relative_to(src_dir)
-        print(file)
-        print(f"===== Testing {pretty_file_name} =====")
-        # The globs arg means we do not have to do `import polars as pl` on each example
-        # optionflags=1 enables the NORMALIZE_WHITESPACE and other options above
-        res = doctest.testfile(
-            str(file), module_relative=False, globs={"pl": polars}, optionflags=1
-        )
-        results_list.append(
-            {
-                "name": str(pretty_file_name),
-                "attempted": res.attempted,
-                "failed": res.failed,
-            }
-        )
+    # __file__ returns the __init__.py, so grab the parent
+    src_dir = Path(polars.__file__).parent
 
-    results = polars.DataFrame(results_list)
-    print(results.sort("attempted", reverse=True))
+    # collect all tests
+    tests = [
+        doctest.DocTestSuite(m, extraglobs={"pl": polars}, optionflags=1)
+        for m in modules_in_path(src_dir)
+    ]
+    test_suite = unittest.TestSuite(tests)
 
-    # we define success as no failures, and at least one doctest having run
-    success_flag = (results["failed"].sum() == 0) and (results["attempted"].sum() > 0)
-
+    # run doctests and report
+    result = unittest.TextTestRunner().run(test_suite)
+    success_flag = (result.testsRun > 0) & (len(result.failures) == 0)
     sys.exit(int(not success_flag))
