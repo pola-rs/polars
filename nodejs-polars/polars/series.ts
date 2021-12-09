@@ -1248,13 +1248,15 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
   const noArgWrap = <U>(method: string) => () => wrap<U>(method);
   const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
   const dtypeAccessor = (fn) => (method, args: {field, key}, _series = _s) => {
-    const dtype = unwrap<DataType>("dtype");
+    const dtype = unwrap<string>("dtype");
     if (args.field?._series) {
-
       return fn(method, { [args.key]: args.field._series }, _series);
     } else {
       const dt = (DTYPE_TO_FFINAME as any)[DataType[dtype]];
       const internalMethod = `${method}_${dt}`;
+      if(DataType[dtype] === DataType.List) {
+        return seriesWrapper(fn(internalMethod, { [args.key]: args.field }, _series));
+      }
 
       return fn(internalMethod, { [args.key]: args.field }, _series);
     }
@@ -1468,6 +1470,15 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
       "value": Object.values(stats)
     });
   };
+  const toArray = () => {
+    const series = seriesWrapper<any>(_s);
+    const dtype = series.dtype as any as string;
+    if(DataType[dtype] === DataType.List) {
+      return [...series].map(s => s.toArray());
+    }
+
+    return [...series];
+  };
 
   const propOrVal = (obj: any, key: string) => ({[key]: obj?.[key] ?? obj});
   const propOrElse = (obj: any, key: string, otherwise: boolean) => ({[key]: obj?.[key] ?? obj ?? otherwise});
@@ -1596,7 +1607,7 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     tail: (length=5) => wrap("tail", {length}),
     takeEvery: (n) => wrap("take_every", {n}),
     take: (indices) => wrap("take", {indices}),
-    toArray: (): Array<T> => [...seriesWrapper(_s)] as any,
+    toArray,
     unique: noArgWrap("unique"),
     zipWith: (mask, other) => wrap("zip_with", {mask: mask._series, other: other._series}),
     toJS: noArgUnwrap("to_js"),

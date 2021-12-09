@@ -17,10 +17,10 @@ import {
   isSeries,
   isSeriesArray,
   ColumnsOrExpr,
-  ValueOrArray
+  ValueOrArray,
+  ExprOrString
 } from "./utils";
 import {GroupBy} from "./groupby";
-import path from "path";
 import {LazyDataFrame} from "./lazy/dataframe";
 import {concat} from "./functions";
 import {Expr} from "./lazy/expr";
@@ -151,7 +151,7 @@ export interface DataFrame {
    */
   drop(name: string): DataFrame
   drop(names: string[]): DataFrame
-  drop(...names: string[]): DataFrame
+  drop(name: string, ...names: string[]): DataFrame
   /**
    * __Drop duplicate rows from this DataFrame.__
    *
@@ -187,7 +187,9 @@ export interface DataFrame {
    * └─────┴─────┴─────┘
    * ```
    */
-  dropNulls(subset?: ColumnSelection): DataFrame
+  dropNulls(column: string): DataFrame
+  dropNulls(columns: string[]): DataFrame
+  dropNulls(...columns: string[]): DataFrame
   /**
    * __Explode `DataFrame` to long format by exploding a column with Lists.__
    * ___
@@ -246,7 +248,9 @@ export interface DataFrame {
    * ╰─────────┴─────╯
    * ```
    */
-  explode(...columns: Expr[] | string[]): DataFrame
+  explode(column: ExprOrString): DataFrame
+  explode(columns: ExprOrString[]): DataFrame
+  explode(column: ExprOrString, ...columns: ExprOrString[]): DataFrame
   /**
    * Fill null/missing values by a filling strategy
    *
@@ -1423,7 +1427,13 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return dfWrapper(_df).rename({[opt]: replacement});
     }
   };
-
+  const dropNulls = (...subset) => {
+    if(subset.length) {
+      return wrap("drop_nulls", {subset: subset.flat(2)});
+    } else {
+      return wrap("drop_nulls");
+    }
+  };
   const dropDuplicates = (opts:any=true, subset?): DataFrame => {
     if(opts?.maintainOrder !== undefined) {
       return dropDuplicates(opts.maintainOrder, opts.subset);
@@ -1435,7 +1445,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     return wrap("drop_duplicates", {maintainOrder: opts.maintainOrder, subset});
   };
 
-  const explode = (...columns: Expr[] | string[]) => {
+  const explode = (...columns) => {
     return dfWrapper(_df).lazy()
       .explode(columns)
       .collectSync({noOptimization:true});
@@ -1454,7 +1464,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     describe,
     downsample: (opt, rule?, n?) => GroupBy( _df, opt?.by ?? opt, true, opt?.rule ?? rule, opt?.n ?? n),
     drop,
-    dropNulls: (subset?: any) => wrap("drop_nulls", {subset: columnOrColumns(subset)}),
+    dropNulls,
     fillNull: (strategy) => wrap("fill_null", {strategy}),
     findIdxByName: (name) => unwrap("find_idx_by_name", {name}),
     fold,
@@ -1625,9 +1635,7 @@ export function DataFrame(data?: Record<string, any[]> | Record<string, any>[] |
 }
 
 function objToDF(obj: Record<string, Array<any>>): any {
-  const data =  Object.entries(obj).map(([key, value]) => {
-    return Series(key, value)._series;
-  });
+  const columns =  Object.entries(obj).map(([key, value]) => Series(key, value)._series);
 
-  return pli.df.read_columns({columns: data});
+  return pli.df.read_columns({columns});
 }

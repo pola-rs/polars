@@ -36,6 +36,27 @@ Received:
         pass: false
       };
     }
+  },
+  toFrameEqualIgnoringOrder(actual, expected) {
+    actual = actual.sort(actual.columns.sort());
+    expected = expected.sort(expected.columns.sort());
+    const pass = actual.frameEqual(expected);
+    if(pass) {
+      return {
+        message: () => "dataframes match",
+        pass: true
+      };
+    } else {
+
+      return {
+        message: () => `
+Expected: 
+>>${expected} 
+Received:
+>>${actual}`,
+        pass: false
+      };
+    }
   }
 });
 

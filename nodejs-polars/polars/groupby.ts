@@ -10,6 +10,7 @@ import {Expr, exprToLitOrExpr} from "./lazy/expr";
 
 
 import {col} from "./lazy/lazy_functions";
+import {Series} from "./series";
 
 const inspectOpts = {colors:true, depth:null};
 
@@ -64,11 +65,7 @@ export interface GroupBy {
    * Aggregate the first values in the group.
    */
   first(): DataFrame
-  /**
-   * Select a single group as a new DataFrame.
-   * @param groupValue - Group to select.
-   */
-  getGroup(): DataFrame
+
   /**
    * Return a `DataFrame` with:
    *   - the groupby keys
@@ -273,7 +270,6 @@ export function GroupBy(
         agg,
         count: selectAll().count,
         first: selectAll().first,
-        getGroup: () => {throw todo();},
         groups: () => _wrapDataFrame(df, "groupby", {by, agg: "groups"}),
         head: (n=5) => {throw todo();},
         last: selectAll().last,

@@ -6,6 +6,7 @@ declare global {
     interface Matchers<R> {
       toSeriesEqual(b: Series<any>): R;
       toFrameEqual(b: DataFrame): R;
+      toFrameEqualIgnoringOrder(b: DataFrame): R;
     }
   }
 }

@@ -1,15 +1,13 @@
 import pl from "@polars";
 
 describe("groupby", () => {
-  let df;
+  let df: pl.DataFrame;
   beforeEach(() => {
-    df = pl.DataFrame([
-      ["a", 1, 2],
-      ["b", 3, 4],
-      ["a", 3, 4],
-      ["c", 5, 6],
-      ["b", 7, 8],
-    ], {columns: ["name", "foo", "bar"]});
+    df = pl.DataFrame({
+      "name": ["a", "b", "a", "c", "b"],
+      "foo": [1, 3, 3, 5, 7],
+      "bar": [2, 4, 4, 6, 8]
+    });
   });
 
   test("aggList", () => {
@@ -66,6 +64,25 @@ describe("groupby", () => {
     expect(actual).toFrameEqual(expected);
   });
   test("count", () => {
-
+    const actual = df.groupBy("name").count()
+      .sort("name");
+    const expected = pl.DataFrame({
+      "name": ["a", "b", "c"],
+      "foo_count": [2, 2, 1],
+      "bar_count": [2, 2, 1]
+    });
+    expect(actual).toFrameEqual(expected);
   });
+  test("first", () => {
+    const actual = df.groupBy("name").first()
+      .sort("name");
+    const expected = pl.DataFrame({
+      "name": ["a", "b", "c"],
+      "foo_first": [1, 3, 5],
+      "bar_first": [2, 4, 6]
+    });
+    expect(actual).toFrameEqual(expected);
+  });
+  test.todo("groups");
+
 });
