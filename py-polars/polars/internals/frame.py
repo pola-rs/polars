@@ -3634,9 +3634,7 @@ class GroupBy:
         Use a dict:
 
         >>> df.groupby(["foo", "bar"]).agg(
-        ...     {
-        ...         "spam": ["sum", "min"],
-        ...     }
+        ...     {"spam": ["sum", "min"],}
         ... )  # doctest: +SKIP
         shape: (3, 2)
         ┌─────┬─────┐
