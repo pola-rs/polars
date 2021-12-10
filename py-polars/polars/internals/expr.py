@@ -1640,7 +1640,7 @@ class Expr:
         quantile
             quantile to compute
         interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower']
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
         return wrap_expr(
             self._pyexpr.rolling_quantile(window_size, quantile, interpolation)

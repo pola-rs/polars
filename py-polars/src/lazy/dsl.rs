@@ -143,6 +143,8 @@ impl PyExpr {
             "nearest" => QuantileInterpolOptions::Nearest,
             "lower" => QuantileInterpolOptions::Lower,
             "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
             _ => panic!("not supported"),
         };
         self.clone().inner.quantile(quantile, interpol).into()
@@ -812,6 +814,8 @@ impl PyExpr {
             "nearest" => QuantileInterpolOptions::Nearest,
             "lower" => QuantileInterpolOptions::Lower,
             "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
             _ => panic!("not supported"),
         };
 

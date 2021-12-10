@@ -13,6 +13,8 @@ pub enum QuantileInterpolOptions {
     Nearest,
     Lower,
     Higher,
+    Midpoint,
+    Linear,
 }
 
 impl Default for QuantileInterpolOptions {
@@ -122,39 +124,94 @@ where
         interpol: QuantileInterpolOptions,
     ) -> Result<Option<T::Native>> {
         if !(0.0..=1.0).contains(&quantile) {
-            Err(PolarsError::ValueError(
+            return Err(PolarsError::ValueError(
                 "quantile should be between 0.0 and 1.0".into(),
-            ))
-        } else {
-            let null_count = self.null_count();
-            let length = self.len();
+            ));
+        }
 
-            let mut idx = match interpol {
-                QuantileInterpolOptions::Nearest => {
-                    (((length - null_count) as f64) * quantile + null_count as f64) as i64
-                }
-                QuantileInterpolOptions::Lower => {
-                    (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
-                }
-                QuantileInterpolOptions::Higher => {
-                    (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64 + 1
-                }
-            };
+        let null_count = self.null_count();
+        let length = self.len();
 
-            if idx >= length as i64 {
-                idx = (length - 1) as i64;
-            } else if idx <= 0i64 {
-                idx = 0;
+        if null_count == length {
+            return Ok(None);
+        }
+
+        let mut idx = match interpol {
+            QuantileInterpolOptions::Nearest => {
+                (((length - null_count) as f64) * quantile + null_count as f64) as i64
             }
+            QuantileInterpolOptions::Lower
+            | QuantileInterpolOptions::Midpoint
+            | QuantileInterpolOptions::Linear => {
+                (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
+            }
+            QuantileInterpolOptions::Higher => {
+                (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as i64
+            }
+        };
 
-            let opt = ChunkSort::sort(self, false)
+        if idx >= length as i64 {
+            idx = (length - 1) as i64;
+        } else if idx <= 0i64 {
+            idx = 0;
+        }
+
+        let opt = match interpol {
+            QuantileInterpolOptions::Midpoint => {
+                let top_idx = (((length - null_count) as f64 - 1.0) * quantile + null_count as f64)
+                    .ceil() as i64;
+                if top_idx == idx {
+                    ChunkSort::sort(self, false)
+                        .slice(idx, 1)
+                        .into_iter()
+                        .next()
+                        .flatten()
+                } else {
+                    let bounds: Vec<Option<T::Native>> = ChunkSort::sort(self, false)
+                        .slice(idx, 2)
+                        .into_iter()
+                        .collect();
+
+                    let length: T::Native = NumCast::from(bounds.len()).unwrap();
+
+                    Some((bounds[0].unwrap() + bounds[1].unwrap()) / length)
+                }
+            }
+            QuantileInterpolOptions::Linear => {
+                let float_idx = ((length - null_count) as f64 - 1.0) * quantile + null_count as f64;
+                let top_idx = f64::ceil(float_idx) as i64;
+
+                if top_idx == idx {
+                    ChunkSort::sort(self, false)
+                        .slice(idx, 1)
+                        .into_iter()
+                        .next()
+                        .flatten()
+                } else {
+                    let bounds: Vec<Option<T::Native>> = ChunkSort::sort(self, false)
+                        .slice(idx, 2)
+                        .into_iter()
+                        .collect();
+
+                    if bounds[0] == bounds[1] {
+                        Some(bounds[0].unwrap())
+                    } else {
+                        let proportion: T::Native = NumCast::from(float_idx - idx as f64).unwrap();
+                        Some(
+                            proportion * (bounds[1].unwrap() - bounds[0].unwrap())
+                                + bounds[0].unwrap(),
+                        )
+                    }
+                }
+            }
+            _ => ChunkSort::sort(self, false)
                 .slice(idx, 1)
                 .into_iter()
                 .next()
-                .flatten();
+                .flatten(),
+        };
 
-            Ok(opt)
-        }
+        Ok(opt)
     }
 }
 
@@ -660,12 +717,33 @@ mod test {
             QuantileInterpolOptions::Nearest,
             QuantileInterpolOptions::Lower,
             QuantileInterpolOptions::Higher,
+            QuantileInterpolOptions::Midpoint,
+            QuantileInterpolOptions::Linear,
         ];
 
         for interpol in interpol_options {
             let out = ca.quantile(0.9, interpol).unwrap();
 
             assert_eq!(out, None)
+        }
+    }
+
+    #[test]
+    fn test_quantile_single_value() {
+        let ca = Float32Chunked::new_from_opt_slice("", &[Some(1.0)]);
+
+        let interpol_options = vec![
+            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Lower,
+            QuantileInterpolOptions::Higher,
+            QuantileInterpolOptions::Midpoint,
+            QuantileInterpolOptions::Linear,
+        ];
+
+        for interpol in interpol_options {
+            let out = ca.quantile(0.5, interpol).unwrap();
+
+            assert_eq!(out, Some(1.0))
         }
     }
 
@@ -678,6 +756,8 @@ mod test {
             QuantileInterpolOptions::Nearest,
             QuantileInterpolOptions::Lower,
             QuantileInterpolOptions::Higher,
+            QuantileInterpolOptions::Midpoint,
+            QuantileInterpolOptions::Linear,
         ];
 
         for interpol in interpol_options {

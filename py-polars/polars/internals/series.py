@@ -2772,7 +2772,8 @@ class Series:
             Size of the rolling window
         quantile
             quantile to compute
-        TODO: Fill this in
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
         return self.to_frame().select(
             pli.col(self.name).rolling_quantile(window_size, quantile, interpolation)
