@@ -1632,10 +1632,10 @@ impl Expr {
 
     #[cfg(feature = "rank")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
-    pub fn rank(self, method: RankMethod) -> Expr {
+    pub fn rank(self, options: RankOptions) -> Expr {
         self.apply(
-            move |s| Ok(s.rank(method)),
-            GetOutput::map_field(move |fld| match method {
+            move |s| Ok(s.rank(options)),
+            GetOutput::map_field(move |fld| match options.method {
                 RankMethod::Average => Field::new(fld.name(), DataType::Float32),
                 _ => Field::new(fld.name(), DataType::UInt32),
             }),

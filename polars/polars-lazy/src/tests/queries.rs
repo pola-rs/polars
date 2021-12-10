@@ -1567,6 +1567,7 @@ fn test_reverse_in_groups() -> Result<()> {
     );
     Ok(())
 }
+
 #[test]
 fn test_take_in_groups() -> Result<()> {
     let df = fruits_cars();
@@ -1975,7 +1976,10 @@ fn test_groupby_rank() -> Result<()> {
     let out = df
         .lazy()
         .stable_groupby([col("cars")])
-        .agg([col("B").rank(RankMethod::Dense)])
+        .agg([col("B").rank(RankOptions {
+            method: RankMethod::Dense,
+            ..Default::default()
+        })])
         .collect()?;
 
     let out = out.column("B")?;
@@ -2371,7 +2375,12 @@ fn test_single_ranked_group() -> Result<()> {
 
     let out = df
         .lazy()
-        .with_columns([col("value").rank(RankMethod::Average).over([col("group")])])
+        .with_columns([col("value")
+            .rank(RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            })
+            .over([col("group")])])
         .collect()?;
 
     let out = out.column("value")?.explode()?;
