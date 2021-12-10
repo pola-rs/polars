@@ -41,27 +41,27 @@ class LazyFrame:
     @staticmethod
     def scan_csv(
         file: str,
-        infer_schema_length: Optional[int] = 100,
         has_header: bool = True,
-        ignore_errors: bool = False,
         sep: str = ",",
-        skip_rows: int = 0,
-        n_rows: Optional[int] = None,
-        cache: bool = True,
-        dtype: Optional[Dict[str, Type[DataType]]] = None,
-        low_memory: bool = False,
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
+        skip_rows: int = 0,
+        dtypes: Optional[Dict[str, Type[DataType]]] = None,
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
+        ignore_errors: bool = False,
+        cache: bool = True,
         with_column_names: Optional[Callable[[tp.List[str]], tp.List[str]]] = None,
+        infer_schema_length: Optional[int] = 100,
+        n_rows: Optional[int] = None,
+        low_memory: bool = False,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
         """
         dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
-        if dtype is not None:
+        if dtypes is not None:
             dtype_list = []
-            for k, v in dtype.items():
+            for k, v in dtypes.items():
                 dtype_list.append((k, py_type_to_dtype(v)))
         processed_null_values = _process_null_values(null_values)
 
