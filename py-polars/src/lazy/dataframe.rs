@@ -430,6 +430,8 @@ impl PyLazyFrame {
             "nearest" => QuantileInterpolOptions::Nearest,
             "lower" => QuantileInterpolOptions::Lower,
             "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
             _ => panic!("not supported"),
         };
 
