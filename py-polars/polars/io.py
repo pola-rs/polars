@@ -244,11 +244,13 @@ def read_csv(
     -------
     DataFrame
     """
-    # Map legacy "dtype" argument to "dtypes" and remove it from kwargs.
-    dtypes = kwargs.pop("dtype", dtypes)
 
-    if not columns:
-        # Map legacy "projection" argument to "columns" and remove it from kwargs.
+    # Map legacy arguments to current ones and remove them from kwargs.
+    has_header = kwargs.pop("has_headers", has_header)
+    dtypes = kwargs.pop("dtype", dtypes)
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
+    if columns is None:
         columns = kwargs.pop("projection", None)
 
     projection: Optional[List[int]] = None
@@ -524,8 +526,10 @@ def scan_csv(
 
     """
 
-    # Map legacy "dtype" argument to "dtypes" and remove it from kwargs.
+    # Map legacy arguments to current ones and remove them from kwargs.
+    has_header = kwargs.pop("has_headers", has_header)
     dtypes = kwargs.pop("dtype", dtypes)
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
     if isinstance(file, Path):
         file = str(file)
@@ -552,6 +556,7 @@ def scan_ipc(
     file: Union[str, Path],
     n_rows: Optional[int] = None,
     cache: bool = True,
+    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file.
@@ -568,8 +573,13 @@ def scan_ipc(
     cache
         Cache the result after reading.
     """
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
     if isinstance(file, Path):
         file = str(file)
+
     return LazyFrame.scan_ipc(file=file, n_rows=n_rows, cache=cache)
 
 
@@ -577,6 +587,7 @@ def scan_parquet(
     file: Union[str, Path],
     n_rows: Optional[int] = None,
     cache: bool = True,
+    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file.
@@ -593,8 +604,13 @@ def scan_parquet(
     cache
         Cache the result after reading.
     """
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
     if isinstance(file, Path):
         file = str(file)
+
     return LazyFrame.scan_parquet(file=file, n_rows=n_rows, cache=cache)
 
 
@@ -650,8 +666,11 @@ def read_ipc(
     -------
     DataFrame
     """
-    if not columns:
-        # Map legacy "projection" argument to "columns" and remove it from kwargs.
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
+    if columns is None:
         columns = kwargs.pop("projection", None)
 
     if use_pyarrow:
@@ -713,8 +732,11 @@ def read_parquet(
     -------
     DataFrame
     """
-    if not columns:
-        # Map legacy "projection" argument to "columns" and remove it from kwargs.
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
+    if columns is None:
         columns = kwargs.pop("projection", None)
 
     if use_pyarrow:
