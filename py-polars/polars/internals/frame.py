@@ -3814,7 +3814,7 @@ class GroupBy:
         ...     {
         ...         "spam": ["sum", "min"],
         ...     }
-        ... )  # doctest: +IGNORE_RESULT
+        ... )  # doctest: +SKIP
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
