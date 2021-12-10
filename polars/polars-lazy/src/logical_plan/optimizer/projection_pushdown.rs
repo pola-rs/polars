@@ -348,7 +348,7 @@ impl ProjectionPushDown {
                 schema,
                 predicate,
                 aggregate,
-                stop_after_n_rows,
+                n_rows,
                 cache,
                 ..
             } => {
@@ -370,7 +370,7 @@ impl ProjectionPushDown {
                     with_columns,
                     predicate,
                     aggregate,
-                    stop_after_n_rows,
+                    n_rows,
                     cache,
                 };
                 Ok(lp)

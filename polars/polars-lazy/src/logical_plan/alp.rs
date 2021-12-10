@@ -60,7 +60,7 @@ pub enum ALogicalPlan {
         with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
         cache: bool,
     },
     DataFrameScan {
@@ -382,7 +382,7 @@ impl ALogicalPlan {
                 output_schema,
                 with_columns,
                 predicate,
-                stop_after_n_rows,
+                n_rows,
                 cache,
                 ..
             } => {
@@ -398,7 +398,7 @@ impl ALogicalPlan {
                     with_columns: with_columns.clone(),
                     predicate: new_predicate,
                     aggregate: exprs,
-                    stop_after_n_rows: *stop_after_n_rows,
+                    n_rows: *n_rows,
                     cache: *cache,
                 }
             }

@@ -238,7 +238,7 @@ a,b,c
         f,
         new_columns=["A", "B", "C"],
         dtypes={"A": pl.Utf8, "C": pl.Float32},
-        has_headers=False,
+        has_header=False,
     )
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
 

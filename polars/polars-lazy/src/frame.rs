@@ -39,7 +39,7 @@ pub struct LazyCsvReader<'a> {
     has_header: bool,
     ignore_errors: bool,
     skip_rows: usize,
-    stop_after_n_rows: Option<usize>,
+    n_rows: Option<usize>,
     cache: bool,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
@@ -59,7 +59,7 @@ impl<'a> LazyCsvReader<'a> {
             has_header: true,
             ignore_errors: false,
             skip_rows: 0,
-            stop_after_n_rows: None,
+            n_rows: None,
             cache: true,
             schema: None,
             schema_overwrite: None,
@@ -73,8 +73,8 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
     /// be guaranteed.
-    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.stop_after_n_rows = num_rows;
+    pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.n_rows = num_rows;
         self
     }
 
@@ -184,7 +184,7 @@ impl<'a> LazyCsvReader<'a> {
             self.has_header,
             self.ignore_errors,
             self.skip_rows,
-            self.stop_after_n_rows,
+            self.n_rows,
             self.cache,
             self.schema,
             self.schema_overwrite,
@@ -295,12 +295,8 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg(feature = "parquet")]
-    pub fn scan_parquet(
-        path: String,
-        stop_after_n_rows: Option<usize>,
-        cache: bool,
-    ) -> Result<Self> {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, stop_after_n_rows, cache)?
+    pub fn scan_parquet(path: String, n_rows: Option<usize>, cache: bool) -> Result<Self> {
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, n_rows, cache)?
             .build()
             .into();
         lf.opt_state.agg_scan_projection = true;
@@ -309,9 +305,9 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a ipc scan.
     #[cfg(feature = "ipc")]
-    pub fn scan_ipc(path: String, stop_after_n_rows: Option<usize>, cache: bool) -> Result<Self> {
+    pub fn scan_ipc(path: String, n_rows: Option<usize>, cache: bool) -> Result<Self> {
         let options = IpcOptions {
-            stop_after_n_rows,
+            n_rows,
             cache,
             with_columns: None,
         };

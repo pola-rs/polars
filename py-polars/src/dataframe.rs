@@ -84,7 +84,7 @@ impl PyDataFrame {
         chunk_size: usize,
         has_header: bool,
         ignore_errors: bool,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
         skip_rows: usize,
         projection: Option<Vec<usize>>,
         sep: &str,
@@ -149,7 +149,7 @@ impl PyDataFrame {
         let df = CsvReader::new(mmap_bytes_r)
             .infer_schema(infer_schema_length)
             .has_header(has_header)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(n_rows)
             .with_delimiter(sep.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_parser_errors(ignore_errors)
@@ -178,7 +178,7 @@ impl PyDataFrame {
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -188,13 +188,13 @@ impl PyDataFrame {
                 ParquetReader::new(buf)
                     .with_projection(projection)
                     .with_columns(columns)
-                    .with_stop_after_n_rows(stop_after_n_rows)
+                    .with_n_rows(n_rows)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f)
                 .with_projection(projection)
                 .with_columns(columns)
-                .with_stop_after_n_rows(stop_after_n_rows)
+                .with_n_rows(n_rows)
                 .finish(),
         };
         let df = result.map_err(PyPolarsEr::from)?;
@@ -207,13 +207,13 @@ impl PyDataFrame {
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
     ) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let df = IpcReader::new(file)
             .with_projection(projection)
             .with_columns(columns)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(n_rows)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
@@ -264,10 +264,10 @@ impl PyDataFrame {
         Ok(pydf)
     }
 
-    pub fn to_csv(&self, py_f: PyObject, has_headers: bool, sep: u8) -> PyResult<()> {
+    pub fn to_csv(&self, py_f: PyObject, has_header: bool, sep: u8) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         CsvWriter::new(&mut buf)
-            .has_header(has_headers)
+            .has_header(has_header)
             .with_delimiter(sep)
             .finish(&self.df)
             .map_err(PyPolarsEr::from)?;

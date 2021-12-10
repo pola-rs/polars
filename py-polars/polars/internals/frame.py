@@ -367,9 +367,9 @@ class DataFrame:
         file: Union[str, BinaryIO, bytes],
         infer_schema_length: Optional[int] = 100,
         batch_size: int = 64,
-        has_headers: bool = True,
+        has_header: bool = True,
         ignore_errors: bool = False,
-        stop_after_n_rows: Optional[int] = None,
+        n_rows: Optional[int] = None,
         skip_rows: int = 0,
         projection: Optional[tp.List[int]] = None,
         sep: str = ",",
@@ -396,12 +396,12 @@ class DataFrame:
             If set to `None`, a full table scan will be done (slow).
         batch_size
             Number of lines to read into the buffer at once. Modify this to change performance.
-        has_headers
+        has_header
             Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`,
             `x` being an enumeration over every column in the dataset.
         ignore_errors
             Try to keep reading lines if some lines yield errors.
-        stop_after_n_rows
+        n_rows
             After n rows are read from the CSV, it stops reading.
             During multi-threaded parsing, an upper bound of `n` rows
             cannot be guaranteed.
@@ -445,7 +445,7 @@ class DataFrame:
         --------
 
         >>> df = pl.read_csv(
-        ...     "file.csv", sep=";", stop_after_n_rows=25
+        ...     "file.csv", sep=";", n_rows=25
         ... )  # doctest: +SKIP
 
         """
@@ -479,9 +479,9 @@ class DataFrame:
             file,
             infer_schema_length,
             batch_size,
-            has_headers,
+            has_header,
             ignore_errors,
-            stop_after_n_rows,
+            n_rows,
             skip_rows,
             projection,
             sep,
@@ -503,9 +503,9 @@ class DataFrame:
     @staticmethod
     def read_parquet(
         file: Union[str, BinaryIO],
-        columns: Optional[tp.List[str]] = None,
+        columns: Optional[Union[tp.List[int], tp.List[str]]] = None,
         projection: Optional[tp.List[int]] = None,
-        stop_after_n_rows: Optional[int] = None,
+        n_rows: Optional[int] = None,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -515,45 +515,45 @@ class DataFrame:
         file
             Path to a file or a file like object. Any valid filepath can be used.
         columns
-            Columns to select.
+            Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
         projection
             Indices of columns to select. Note that column indices start at zero.
-        stop_after_n_rows
-            Only read specified number of rows of the dataset. After `n` stops reading.
+        n_rows
+            Stop reading from parquet file after reading ``n_rows``.
         """
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_parquet(
-            file, columns, projection, stop_after_n_rows
+            file, columns, projection, n_rows
         )
         return self
 
     @staticmethod
     def read_ipc(
         file: Union[str, BinaryIO],
-        columns: Optional[tp.List[str]] = None,
+        columns: Optional[tp.List[int], tp.List[str]]] = None,
         projection: Optional[tp.List[int]] = None,
-        stop_after_n_rows: Optional[int] = None,
+        n_rows: Optional[int] = None,
     ) -> "DataFrame":
         """
-        Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
+        Read into a DataFrame from Arrow IPC stream format. This is also called the Feather (v2) format.
 
         Parameters
         ----------
         file
             Path to a file or a file like object.
         columns
-            Columns to select.
+            Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
         projection
             Indices of columns to select. Note that column indices start at zero.
-        stop_after_n_rows
-            Only read specified number of rows of the dataset. After `n` stops reading.
+        n_rows
+            Stop reading from IPC file after reading ``n_rows``.
 
         Returns
         -------
         DataFrame
         """
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_ipc(file, columns, projection, stop_after_n_rows)
+        self._df = PyDataFrame.read_ipc(file, columns, projection, n_rows)
         return self
 
     @staticmethod
@@ -778,7 +778,7 @@ class DataFrame:
     def to_csv(
         self,
         file: Optional[Union[TextIO, BytesIO, str, Path]] = None,
-        has_headers: bool = True,
+        has_header: bool = True,
         sep: str = ",",
     ) -> Optional[str]:
         """
@@ -788,7 +788,7 @@ class DataFrame:
         ----------
         file
             File path to which the file should be written.
-        has_headers
+        has_header
             Whether or not to include header in the CSV output.
         sep
             Separate CSV fields with this symbol.
@@ -808,13 +808,13 @@ class DataFrame:
         """
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, has_headers, ord(sep))
+            self._df.to_csv(buffer, has_header, ord(sep))
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, Path):
             file = str(file)
 
-        self._df.to_csv(file, has_headers, ord(sep))
+        self._df.to_csv(file, has_header, ord(sep))
         return None
 
     def to_ipc(

@@ -68,18 +68,18 @@ pub trait ArrowReader {
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
-    stop_after_n_rows: Option<usize>,
+    n_rows: Option<usize>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
 ) -> Result<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
     use std::convert::TryFrom;
 
-    let mut n_rows = 0;
+    let mut num_rows = 0;
     let mut parsed_dfs = Vec::with_capacity(1024);
 
     while let Some(batch) = reader.next_record_batch()? {
-        n_rows += batch.num_rows();
+        num_rows += batch.num_rows();
 
         let mut df = DataFrame::try_from(batch)?;
 
@@ -102,8 +102,8 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         }
 
         parsed_dfs.push(df);
-        if let Some(n) = stop_after_n_rows {
-            if n_rows >= n {
+        if let Some(n) = n_rows {
+            if num_rows >= n {
                 break;
             }
         }

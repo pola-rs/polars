@@ -42,11 +42,11 @@ class LazyFrame:
     def scan_csv(
         file: str,
         infer_schema_length: Optional[int] = 100,
-        has_headers: bool = True,
+        has_header: bool = True,
         ignore_errors: bool = False,
         sep: str = ",",
         skip_rows: int = 0,
-        stop_after_n_rows: Optional[int] = None,
+        n_rows: Optional[int] = None,
         cache: bool = True,
         dtype: Optional[Dict[str, Type[DataType]]] = None,
         low_memory: bool = False,
@@ -69,10 +69,10 @@ class LazyFrame:
         self._ldf = PyLazyFrame.new_from_csv(
             file,
             sep,
-            has_headers,
+            has_header,
             ignore_errors,
             skip_rows,
-            stop_after_n_rows,
+            n_rows,
             cache,
             dtype_list,
             low_memory,
@@ -86,26 +86,26 @@ class LazyFrame:
 
     @staticmethod
     def scan_parquet(
-        file: str, stop_after_n_rows: Optional[int] = None, cache: bool = True
+        file: str, n_rows: Optional[int] = None, cache: bool = True
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_parquet`
         """
 
         self = LazyFrame.__new__(LazyFrame)
-        self._ldf = PyLazyFrame.new_from_parquet(file, stop_after_n_rows, cache)
+        self._ldf = PyLazyFrame.new_from_parquet(file, n_rows, cache)
         return self
 
     @staticmethod
     def scan_ipc(
-        file: str, stop_after_n_rows: Optional[int] = None, cache: bool = True
+        file: str, n_rows: Optional[int] = None, cache: bool = True
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_ipc`
         """
 
         self = LazyFrame.__new__(LazyFrame)
-        self._ldf = PyLazyFrame.new_from_ipc(file, stop_after_n_rows, cache)
+        self._ldf = PyLazyFrame.new_from_ipc(file, n_rows, cache)
         return self
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

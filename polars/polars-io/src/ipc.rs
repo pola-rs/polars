@@ -63,7 +63,7 @@ pub struct IpcReader<R> {
     reader: R,
     /// Aggregates chunks afterwards to a single chunk.
     rechunk: bool,
-    stop_after_n_rows: Option<usize>,
+    n_rows: Option<usize>,
     projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
 }
@@ -81,8 +81,8 @@ impl<R: Read + Seek> IpcReader<R> {
         Ok(metadata.schema().clone())
     }
     /// Stop reading when `n` rows are read.
-    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.stop_after_n_rows = num_rows;
+    pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.n_rows = num_rows;
         self
     }
 
@@ -119,13 +119,7 @@ impl<R: Read + Seek> IpcReader<R> {
             }),
         );
 
-        finish_reader(
-            reader,
-            rechunk,
-            self.stop_after_n_rows,
-            predicate,
-            aggregate,
-        )
+        finish_reader(reader, rechunk, self.n_rows, predicate, aggregate)
     }
 }
 
@@ -150,7 +144,7 @@ where
         IpcReader {
             reader,
             rechunk: true,
-            stop_after_n_rows: None,
+            n_rows: None,
             columns: None,
             projection: None,
         }
@@ -199,7 +193,7 @@ where
         }
 
         let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);
-        finish_reader(ipc_reader, rechunk, self.stop_after_n_rows, None, None)
+        finish_reader(ipc_reader, rechunk, self.n_rows, None, None)
     }
 }
 

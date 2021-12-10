@@ -228,7 +228,7 @@ pub(crate) fn to_alp(
             with_columns,
             predicate,
             aggregate,
-            stop_after_n_rows,
+            n_rows,
             cache,
         } => ALogicalPlan::ParquetScan {
             path,
@@ -240,7 +240,7 @@ pub(crate) fn to_alp(
                 .into_iter()
                 .map(|expr| to_aexpr(expr, expr_arena))
                 .collect(),
-            stop_after_n_rows,
+            n_rows,
             cache,
         },
         LogicalPlan::DataFrameScan {
@@ -695,7 +695,7 @@ pub(crate) fn node_to_lp(
             with_columns,
             predicate,
             aggregate,
-            stop_after_n_rows,
+            n_rows,
             cache,
         } => LogicalPlan::ParquetScan {
             path,
@@ -703,7 +703,7 @@ pub(crate) fn node_to_lp(
             with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
             aggregate: nodes_to_exprs(&aggregate, expr_arena),
-            stop_after_n_rows,
+            n_rows,
             cache,
         },
         ALogicalPlan::DataFrameScan {

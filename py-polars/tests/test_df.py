@@ -496,7 +496,7 @@ def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
-    df = pl.DataFrame.read_csv(f, has_headers=False)
+    df = pl.DataFrame.read_csv(f, has_header=False)
     assert df.shape == (2, 6)
     f.seek(0)
 
@@ -700,7 +700,7 @@ def test_read_csv_categorical() -> None:
     f = BytesIO()
     f.write(b"col1,col2,col3,col4,col5,col6\n'foo',2,3,4,5,6\n'bar',8,9,10,11,12")
     f.seek(0)
-    df = pl.DataFrame.read_csv(f, has_headers=True, dtypes={"col1": pl.Categorical})
+    df = pl.DataFrame.read_csv(f, has_header=True, dtypes={"col1": pl.Categorical})
     assert df["col1"].dtype == pl.Categorical
 
 
