@@ -18,6 +18,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Float64,
+    Int32,
     Object,
     UInt32,
     py_type_to_dtype,
@@ -2644,8 +2645,41 @@ class ExprDateTimeNameSpace:
             lambda s: s.dt.to_python_datetime(), return_dtype=Object
         )
 
+    def epoch_days(self) -> Expr:
+        """
+        Get the number of days since the unix EPOCH.
+        If the date is before the unix EPOCH, the number of days will be negative.
+
+        Returns
+        -------
+        Days as Int32
+        """
+        return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
+
+    def epoch_milliseconds(self) -> Expr:
+        """
+        Get the number of milliseconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of milliseconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return self.timestamp()
+
+    def epoch_seconds(self) -> Expr:
+        """
+        Get the number of seconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return wrap_expr(self._pyexpr.dt_epoch_seconds())
+
     def timestamp(self) -> Expr:
-        """Return timestamp in ms as Int64 type."""
+        """Return timestamp in milliseconds as Int64 type."""
         return wrap_expr(self._pyexpr.timestamp())
 
 
