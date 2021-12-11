@@ -5,7 +5,8 @@ build-backend = "maturin"
 [project]
 name = "polars"
 dependencies = [
-  "numpy",
+  "numpy >= 1.16.0",
+  "typing_extensions; python_version < '3.8'",
 ]
 requires-python = ">=3.6"
 
