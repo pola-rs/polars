@@ -1331,10 +1331,7 @@ impl PySeries {
 
     pub fn rank(&self, method: &str, reverse: bool) -> PyResult<Self> {
         let method = str_to_rankmethod(method).unwrap();
-        let options = RankOptions {
-            method,
-            reverse,
-        };
+        let options = RankOptions { method, descending: reverse };
         Ok(self.series.rank(options).into())
     }
 

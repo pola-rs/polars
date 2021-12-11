@@ -16,7 +16,7 @@ pub mod unstable;
 
 use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]
-use crate::prelude::unique::rank::{rank};
+use crate::prelude::unique::rank::rank;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};

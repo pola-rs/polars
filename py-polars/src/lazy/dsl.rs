@@ -933,10 +933,7 @@ impl PyExpr {
 
     fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
-        let options = RankOptions {
-            method,
-            reverse,
-        };
+        let options = RankOptions { method, descending: reverse };
         self.inner.clone().rank(options).into()
     }
 
@@ -1046,7 +1043,7 @@ impl WhenThen {
             self.then.inner.clone(),
             expr.inner,
         )
-            .into()
+        .into()
     }
 }
 
@@ -1135,7 +1132,7 @@ pub fn lit(value: &PyAny) -> PyExpr {
                 .to_str()
                 .expect("could not transform Python string to Rust Unicode"),
         )
-            .into()
+        .into()
     } else if let Ok(series) = value.extract::<PySeries>() {
         dsl::lit(series.series).into()
     } else if value.is_none() {

@@ -19,14 +19,14 @@ pub enum RankMethod {
 #[derive(Copy, Clone)]
 pub struct RankOptions {
     pub method: RankMethod,
-    pub reverse: bool,
+    pub descending: bool,
 }
 
 impl Default for RankOptions {
     fn default() -> Self {
         Self {
             method: RankMethod::Dense,
-            reverse: false,
+            descending: false,
         }
     }
 }
