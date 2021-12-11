@@ -16,6 +16,7 @@ pub enum RankMethod {
     Random,
 }
 
+// We might want to add a `nulls_last` or `null_behavior` field.
 #[derive(Copy, Clone)]
 pub struct RankOptions {
     pub method: RankMethod,
@@ -32,16 +33,15 @@ impl Default for RankOptions {
 }
 
 pub(crate) fn rank(s: &Series, options: RankOptions) -> Series {
-    let method = options.method;
     match s.len() {
         1 => {
-            return match method {
+            return match options.method {
                 Average => Series::new(s.name(), &[1.0f32]),
                 _ => Series::new(s.name(), &[1u32]),
             };
         }
         0 => {
-            return match method {
+            return match options.method {
                 Average => Float32Chunked::new_from_slice(s.name(), &[]).into_series(),
                 _ => UInt32Chunked::new_from_slice(s.name(), &[]).into_series(),
             };
@@ -53,14 +53,19 @@ pub(crate) fn rank(s: &Series, options: RankOptions) -> Series {
     // todo! maybe add + 1 at the end on the null values.
     if s.has_validity() {
         if s.null_count() == s.len() {
-            return match method {
+            return match options.method {
                 Average => Float32Chunked::full_null(s.name(), s.len()).into_series(),
                 _ => UInt32Chunked::full_null(s.name(), s.len()).into_series(),
             };
         }
 
         // replace null values with the maximum value of that dtype
-        let s = s.fill_null(FillNullStrategy::MaxBound).unwrap();
+        let null_strategy = if options.descending {
+            FillNullStrategy::MaxBound
+        } else {
+            FillNullStrategy::MinBound
+        };
+        let s = s.fill_null(null_strategy).unwrap();
         return rank(&s, options);
     }
 
@@ -78,14 +83,14 @@ pub(crate) fn rank(s: &Series, options: RankOptions) -> Series {
     let inv_values = inv.as_mut_slice();
 
     #[cfg(feature = "random")]
-    let mut count = if let RankMethod::Ordinal | RankMethod::Random = method {
+    let mut count = if let RankMethod::Ordinal | RankMethod::Random = options.method {
         1u32
     } else {
         0
     };
 
     #[cfg(not(feature = "random"))]
-    let mut count = if let RankMethod::Ordinal = method {
+    let mut count = if let RankMethod::Ordinal = options.method {
         1u32
     } else {
         0
@@ -101,7 +106,7 @@ pub(crate) fn rank(s: &Series, options: RankOptions) -> Series {
     }
 
     use RankMethod::*;
-    match method {
+    match options.method {
         Ordinal => {
             let inv_ca = UInt32Chunked::new_from_aligned_vec(s.name(), inv);
             inv_ca.into_series()
@@ -177,7 +182,11 @@ pub(crate) fn rank(s: &Series, options: RankOptions) -> Series {
             //     if method == 'min':
             //         return count[dense - 1] + 1
             // ```
-            let mut cumsum: u32 = if let RankMethod::Min = method { 0 } else { 1 };
+            let mut cumsum: u32 = if let RankMethod::Min = options.method {
+                0
+            } else {
+                1
+            };
 
             dense.push(cumsum);
             obs.values_iter().for_each(|b| {
@@ -193,7 +202,7 @@ pub(crate) fn rank(s: &Series, options: RankOptions) -> Series {
             // in bounds
             let dense = unsafe { dense.take_unchecked((&inv_ca).into()) };
 
-            if let RankMethod::Dense = method {
+            if let RankMethod::Dense = options.method {
                 return dense.into_series();
             }
 
@@ -224,7 +233,7 @@ pub(crate) fn rank(s: &Series, options: RankOptions) -> Series {
             count.push((len - null_count) as u32);
             let count = UInt32Chunked::new_from_aligned_vec(s.name(), count);
 
-            match method {
+            match options.method {
                 Max => {
                     // Safety:
                     // within bounds
