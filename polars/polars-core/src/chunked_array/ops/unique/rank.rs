@@ -364,13 +364,13 @@ mod test {
         assert_eq!(
             out,
             &[
-                Some(2.0f32),
-                Some(3.5),
-                Some(5.0),
-                Some(3.5),
-                Some(6.5),
-                Some(6.5),
-                Some(1.0)
+                Some(4.0f32),
+                Some(5.5),
+                Some(7.0),
+                Some(5.5),
+                Some(1.5),
+                Some(1.5),
+                Some(3.0)
             ]
         );
         let s = Series::new(
@@ -396,7 +396,7 @@ mod test {
         .u32()?
         .into_no_null_iter()
         .collect::<Vec<_>>();
-        assert_eq!(out, &[4, 5, 3, 8, 7, 3, 1, 6]);
+        assert_eq!(out, &[5, 6, 4, 1, 8, 4, 2, 7]);
 
         Ok(())
     }
