@@ -1,7 +1,7 @@
 
 import {DataFrame, dfWrapper} from "../dataframe";
 import {Expr, exprToLitOrExpr} from "./expr";
-import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, ExprOrString, selectionToExprList, ValueOrArray} from "../utils";
+import {columnOrColumnsStrict, ColumnSelection, ColumnsOrExpr, ExpressionSelection, ExprOrString, selectionToExprList, ValueOrArray} from "../utils";
 import pli from "../internals/polars_internal";
 import {LazyGroupBy} from "./groupby";
 
@@ -9,13 +9,10 @@ type JsLazyFrame = any;
 export type Option<T> = T | undefined;
 
 type LazyJoinOptions =  {
-  leftOn?: ColumnsOrExpr;
-  rightOn?: ColumnsOrExpr;
-  on?: ColumnsOrExpr;
   how?: "left" | "inner" | "outer" | "cross";
   suffix?: string,
-  allowParallel: boolean,
-  forceParallel: boolean
+  allowParallel?: boolean,
+  forceParallel?: boolean
 };
 
 
@@ -167,7 +164,8 @@ export interface LazyDataFrame {
   /**
    * Add a join operation to the Logical Plan.
    */
-  join(df: LazyDataFrame, joinOptions: LazyJoinOptions): LazyDataFrame
+  join(df: LazyDataFrame, joinOptions: {on: ValueOrArray<string | Expr>} & LazyJoinOptions): LazyDataFrame
+  join(df: LazyDataFrame, joinOptions:  {leftOn: ValueOrArray<string | Expr>, rightOn: ValueOrArray<string | Expr>} & LazyJoinOptions): LazyDataFrame
   /**
    * Get the last row of the DataFrame.
    */
@@ -176,16 +174,16 @@ export interface LazyDataFrame {
    * @see {@link head}
    */
   limit(n?: number): LazyDataFrame
-  /**
-   * Apply a custom function. It is important that the function returns a Polars DataFrame.
-   * @param func - Lambda/ function to apply.
-   * @param opts -
-   * @param opts.predicatePushdown
-   * @param opts.projectionPushdown
-   * @param opts.noOptimizations
-   * @see {@link LazyOptions}
-   */
-  map(func: (df: DataFrame) => DataFrame, opts?: Pick<LazyOptions, "predicatePushdown"| "projectionPushdown" | "noOptimization">): LazyDataFrame
+  // /**
+  //  * Apply a custom function. It is important that the function returns a Polars DataFrame.
+  //  * @param func - Lambda/ function to apply.
+  //  * @param opts -
+  //  * @param opts.predicatePushdown
+  //  * @param opts.projectionPushdown
+  //  * @param opts.noOptimizations
+  //  * @see {@link LazyOptions}
+  //  */
+  // map(func: (df: DataFrame) => DataFrame, opts?: Pick<LazyOptions, "predicatePushdown"| "projectionPushdown" | "noOptimization">): LazyDataFrame
   /**
    * @see {@link DataFrame.max}
    */
@@ -206,7 +204,7 @@ export interface LazyDataFrame {
    * @see {@link DataFrame.min}
    */
   min(): LazyDataFrame
-  pipe()
+  // pipe() todo
   /**
    * @see {@link DataFrame.quantile}
    */
@@ -222,22 +220,24 @@ export interface LazyDataFrame {
   /**
    * @see {@link DataFrame.select}
    */
-  select(...columns: ColumnsOrExpr[]): LazyDataFrame
-  /**
-   * @see {@link DataFrame.shiftAndFill}
-   */
-  shiftAndFill(periods: number, fillValue: number | string | Expr): LazyDataFrame
-  shiftAndFill(opts: {periods: number, fillValue: number | string | Expr}): LazyDataFrame
+  select(column: ExprOrString): LazyDataFrame
+  select(columns: ExprOrString[]): LazyDataFrame
+  select(column: ExprOrString, ...columns: ExprOrString[]): LazyDataFrame
   /**
    * @see {@link DataFrame.shift}
    */
   shift(periods: number): LazyDataFrame
   shift(opts: {periods: number}): LazyDataFrame
   /**
+   * @see {@link DataFrame.shiftAndFill}
+   */
+  shiftAndFill(periods: number, fillValue: number | string | Expr): LazyDataFrame
+  shiftAndFill(opts: {periods: number, fillValue: number | string | Expr}): LazyDataFrame
+  /**
    * @see {@link DataFrame.slice}
    */
-  slice(opts: {offset: number, length: number}): LazyDataFrame
   slice(offset: number, length: number): LazyDataFrame
+  slice(opts: {offset: number, length: number}): LazyDataFrame
   /**
    * @see {@link DataFrame.sort}
    */
@@ -260,7 +260,6 @@ export interface LazyDataFrame {
    * Aggregate the columns in the DataFrame to their variance value.
    */
   var(): LazyDataFrame
-  withColumnRenamed(existing: string, replacement: string): LazyDataFrame
   /**
    * Add or overwrite column in a DataFrame.
    * @param expr - Expression that evaluates to column.
@@ -271,7 +270,9 @@ export interface LazyDataFrame {
    * @param exprs - List of Expressions that evaluate to columns.
    *
    */
-  withColumns(...exprs: ExpressionSelection[]): LazyDataFrame
+  withColumns(exprs: Expr[]): LazyDataFrame
+  withColumns(expr: Expr, ...exprs: Expr[]): LazyDataFrame
+  withColumnRenamed(existing: string, replacement: string): LazyDataFrame
   /**
    * Add a column at index 0 that counts the rows.
    * @see {@link DataFrame.withRowCount}
@@ -294,39 +295,22 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     return unwrap(method, {}, ldf);
 
   };
-  const sort = (arg, reverse=false) => {
-    if(arg?.by) {
-      return sort(arg.by, arg.reverse);
-    }
-    if(typeof arg === "string") {
-      return wrap("sort", {by: arg, reverse});
+  const dropNulls = (...subset) => {
+    if(subset.length) {
+      return wrap("dropNulls", {subset: subset.flat(2)});
     } else {
-      reverse = [reverse].flat(3) as any;
-      const by = selectionToExprList(arg, false);
-
-      return wrap("sort_by_exprs", {by, reverse});
+      return wrap("dropNulls");
     }
   };
-  const select = (...exprs) => {
-    const predicate = selectionToExprList(exprs, false);
-
-    return wrap("select", {predicate});
-  };
-  const shiftAndFill = (optOrPeriods, fillValue?) => {
-    if(optOrPeriods?.periods) {
-      return shiftAndFill(optOrPeriods.periods, optOrPeriods.fillValue);
-    } else {
-      const periods = optOrPeriods;
-      fillValue = exprToLitOrExpr(fillValue)._expr;
-
-      return wrap("shiftAndFill", {periods, fillValue});
+  const dropDuplicates = (opts:any=true, subset?): LazyDataFrame => {
+    if(opts?.maintainOrder !== undefined) {
+      return dropDuplicates(opts.maintainOrder, opts.subset);
+    }
+    if(subset) {
+      subset = [subset].flat(2);
     }
 
-  };
-  const withColumns = (...columns) => {
-    const exprs = selectionToExprList(columns, false);
-
-    return wrap("withColumns", {exprs});
+    return wrap("dropDuplicates", {maintainOrder: opts.maintainOrder, subset});
   };
   const explode = (...columns) => {
     if(!columns.length) {
@@ -353,42 +337,114 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     return dfWrapper(unwrap("fetchSync", {numRows}));
 
   };
+  const fillNull = (exprOrValue) => {
+    const fillValue = exprToLitOrExpr(exprOrValue)._expr;
+
+    return wrap("fillNull", {fillValue});
+  };
+  const filter = (exprOrValue) => {
+    const predicate = exprToLitOrExpr(exprOrValue, false)._expr;
+
+    return wrap("filter", {predicate});
+
+  };
   const groupBy = (opt, maintainOrder=true) => {
-    if(opt?.by) {
+    if(opt?.by !== undefined) {
       return groupBy(opt.by, opt.maintainOrder);
     }
 
     return LazyGroupBy(ldf, opt, maintainOrder);
   };
+  const join = (df, options: {[k:string]: any} & LazyJoinOptions ): LazyDataFrame => {
+    options =  {
+      how: "inner",
+      suffix: "right",
+      allowParallel: true,
+      forceParallel: false,
+      ...options
+    };
+    const {how, suffix, allowParallel, forceParallel} = options;
+    let leftOn;
+    let rightOn;
+    if(options.on) {
+      const on = selectionToExprList(options.on, false);
+      leftOn = on;
+      rightOn = on;
+    } else if((options.leftOn && !options.rightOn) || (options.rightOn && !options.leftOn)) {
+      throw new TypeError("You should pass the column to join on as an argument.");
+    } else {
+      leftOn = selectionToExprList(options.leftOn, false);
+      rightOn = selectionToExprList(options.rightOn, false);
+    }
+
+    return wrap("join", {
+      other: df._ldf,
+      how,
+      leftOn,
+      rightOn,
+      suffix,
+      allowParallel,
+      forceParallel
+    });
+  };
+  const rename = (mapping) => {
+    const existing = Object.keys(mapping);
+    const replacements = Object.values(mapping);
+
+    return wrap("rename", {existing, replacements});
+  };
+  const select = (...exprs) => {
+    const predicate = selectionToExprList(exprs, false);
+
+    return wrap("select", {predicate});
+  };
+  const shiftAndFill = (optOrPeriods, fillValue?) => {
+    if(optOrPeriods?.periods) {
+      return shiftAndFill(optOrPeriods.periods, optOrPeriods.fillValue);
+    } else {
+      const periods = optOrPeriods;
+      fillValue = exprToLitOrExpr(fillValue)._expr;
+
+      return wrap("shiftAndFill", {periods, fillValue});
+    }
+
+  };
   const slice = (opt, len) => {
-    if(opt?.offset) {
+    if(opt?.offset !== undefined) {
       return slice(opt.offset, opt.length);
     }
 
     return wrap("slice", {offset: opt, len});
   };
-  const dropNulls = (...subset) => {
-    if(subset.length) {
-      return wrap("dropNulls", {subset: subset.flat(2)});
+  const sort = (arg, reverse=false) => {
+    if(arg?.by  !== undefined) {
+      return sort(arg.by, arg.reverse);
+    }
+    if(typeof arg === "string") {
+      return wrap("sort", {by: arg, reverse});
     } else {
-      return wrap("dropNulls");
+      reverse = [reverse].flat(3) as any;
+      const by = selectionToExprList(arg, false);
+
+      return wrap("sort_by_exprs", {by, reverse});
     }
   };
-  const dropDuplicates = (opts:any=true, subset?): LazyDataFrame => {
-    if(opts?.maintainOrder !== undefined) {
-      return dropDuplicates(opts.maintainOrder, opts.subset);
-    }
-    if(subset) {
-      subset = [subset].flat(2);
-    }
+  const withColumn = (expr) => {
 
-    return wrap("dropDuplicates", {maintainOrder: opts.maintainOrder, subset});
+    return wrap("withColumns", {expr});
+  };
+  const withColumns = (...columns) => {
+    const exprs = selectionToExprList(columns, false);
+
+    return wrap("withColumns", {exprs});
   };
 
   return {
+    _ldf: ldf,
     get columns() { return unwrap("columns");},
     describePlan: () => unwrap("describePlan"),
     describeOptimizedPlan: withOptimizationToggle("describeOptimizedPlan"),
+    cache: wrapNullArgs("cache"),
     collectSync: () => dfWrapper(unwrap("collectSync")),
     collect: () => unwrap("collect").then(dfWrapper),
     drop: (...cols) => wrap("dropColumns", {cols: cols.flat(2)}),
@@ -396,23 +452,34 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     dropNulls,
     explode,
     fetch,
+    fillNull,
+    filter,
     groupBy,
-    min: wrapNullArgs("min"),
-    max: wrapNullArgs("max"),
-    sum: wrapNullArgs("sum"),
-    mean: wrapNullArgs("mean"),
-    std: wrapNullArgs("std"),
-    var: wrapNullArgs("var"),
-    median: wrapNullArgs("median"),
-    reverse: wrapNullArgs("reverse"),
-    cache: wrapNullArgs("cache"),
-    tail: (length=5) => wrap("tail", {length}),
     head: (len=5) => wrap("slice", {offset: 0, len}),
+    join,
+    last: () => wrap("tail", {length: 1}),
     limit: (len=5) => wrap("slice", {offset: 0, len}),
+    max: wrapNullArgs("max"),
+    mean: wrapNullArgs("mean"),
+    median: wrapNullArgs("median"),
+    melt: (ids, values) => wrap("melt", {idVars: columnOrColumnsStrict(ids), valueVars: columnOrColumnsStrict(values)}),
+    min: wrapNullArgs("min"),
+    quantile: (quantile) => wrap("quantile", {quantile}),
+    rename,
+    reverse: wrapNullArgs("reverse"),
+    select,
+    shift: (periods) => wrap("shift", {periods}),
+    shiftAndFill,
     slice,
     sort,
-    select,
-    shiftAndFill,
+    std: wrapNullArgs("std"),
+    sum: wrapNullArgs("sum"),
+    var: wrapNullArgs("var"),
+    tail: (length=5) => wrap("tail", {length}),
+    withColumn: (expr) => wrap("withColumn", {expr: expr._expr}),
     withColumns,
+    withColumnRenamed: (existing, replacement) => wrap("withColumnRenamed", {existing, replacement}),
+    withRowCount: (name="row_nr") => wrap("withRowCount", {name}),
+
   } as any;
 };

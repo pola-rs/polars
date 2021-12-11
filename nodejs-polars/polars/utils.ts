@@ -38,9 +38,9 @@ export const range = (start:number, end:number) => {
 };
 
 
-export const isDataFrame = (ty: any): ty is DataFrame => ty._df !== undefined;
-export const isDataFrameArray = (ty: any): ty is DataFrame[] => Array.isArray(ty) &&  ty[0]._df !== undefined;
+export const isDataFrame = (ty: any): ty is DataFrame => ty?._df !== undefined;
+export const isDataFrameArray = (ty: any): ty is DataFrame[] => Array.isArray(ty) &&  ty[0]?._df !== undefined;
 export const isSeries = <T>(ty: any): ty is Series<T> => ty._series !== undefined;
-export const isSeriesArray = <T>(ty: any): ty is Series<T>[] => Array.isArray(ty) &&  ty[0]._series !== undefined;
-export const isExpr = (ty: any): ty is Expr => ty._expr !== undefined;
-export const isExprArray = (ty: any): ty is Expr[] => Array.isArray(ty) && ty[0]._expr !== undefined;
+export const isSeriesArray = <T>(ty: any): ty is Series<T>[] => Array.isArray(ty) &&  ty[0]?._series !== undefined;
+export const isExpr = (ty: any): ty is Expr => ty?._expr !== undefined;
+export const isExprArray = (ty: any): ty is Expr[] => Array.isArray(ty) && ty[0]?._expr !== undefined;

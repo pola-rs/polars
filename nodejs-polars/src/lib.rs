@@ -24,15 +24,23 @@ pub fn init(mut exports: JsObject, env: napi::Env) -> Result<()> {
     let series = JsSeries::to_object(&env)?;
     let df = JsDataFrame::to_object(&env)?;
     let expr = dsl::JsExpr::to_object(&env)?;
+    
+    let when = dsl::JsWhen::to_object(&env)?;
+    let when_then = dsl::JsWhenThen::to_object(&env)?;
+    let when_then_then = dsl::JsWhenThenThen::to_object(&env)?;
 
     exports.set_named_property("series", series)?;
     exports.set_named_property("df", df)?;
     exports.set_named_property("ldf", ldf)?;
     exports.set_named_property("expr", expr)?;
+    exports.set_named_property("_when", when)?;
+    exports.set_named_property("_whenthen", when_then)?;
+    exports.set_named_property("_whenthenthen", when_then_then)?;
     exports.create_named_method("repeat", repeat)?;
     exports.create_named_method("col", dsl::col)?;
     exports.create_named_method("cols", dsl::cols)?;
     exports.create_named_method("lit", dsl::lit)?;
+    exports.create_named_method("when", dsl::when)?;
 
     Ok(())
 }

@@ -10,39 +10,15 @@ use polars::chunked_array::temporal::timedelta::TimeDeltaBuilder;
 use polars::lazy::dsl;
 use polars::prelude::*;
 
-#[derive(Clone)]
-pub struct JsExpr {
-    pub inner: dsl::Expr,
-}
-impl From<dsl::Expr> for JsExpr {
-    fn from(expr: dsl::Expr) -> Self {
-        JsExpr { inner: expr }
-    }
-}
+pub struct JsExpr {}
+pub struct JsWhen {}
+pub struct JsWhenThen {}
+pub struct JsWhenThenThen {}
+
 impl IntoJs<JsExternal> for Expr {
     fn try_into_js(self, cx: &CallContext) -> JsResult<JsExternal> {
         cx.env.create_external(self, None)
     }
-}
-fn binary_lambda(cx: &CallContext, func: &JsFunction, a: Series, b: Series) -> JsResult<Series> {
-    // let tsfn =
-    //     cx.env
-    //         .create_threadsafe_function(func, 0, |ctx: ThreadSafeCallContext<Series>| {
-    //             ctx.value.
-    //         });
-
-    todo!()
-}
-
-#[js_function(1)]
-pub fn fold(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let acc = params.get_external::<Expr>(&cx, "acc")?;
-    let exprs = params.get_external_vec::<Expr>(&cx, "exprs")?;
-    let func = params.get::<JsFunction>("func")?;
-
-    todo!()
-    // dsl::col(n).try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -823,95 +799,67 @@ pub fn date_buckets(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 
-#[derive(Clone)]
-pub struct When {
-    predicate: Expr,
-}
-
-#[derive(Clone)]
-pub struct WhenThen {
-    predicate: Expr,
-    then: Expr,
-}
-
-#[derive(Clone)]
-pub struct WhenThenThen {
-    inner: dsl::WhenThenThen,
-}
-
+// When
 #[js_function(1)]
 pub fn when(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let predicate = params.get_external::<Expr>(&cx, "predicate")?.clone();
-    cx.env.create_external(When { predicate }, None)
+    let predicate = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    cx.env.create_external(dsl::when(predicate), None)
 }
 
+// When::then
 #[js_function(1)]
 pub fn when_then(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let when = params.get_external::<When>(&cx, "_when")?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-
-    let when_then = WhenThen {
-        predicate: when.predicate.clone(),
-        then: expr.clone(),
-    };
-    cx.env.create_external(when_then, None)
+    let w = params.get_external::<dsl::When>(&cx, "_when")?.clone();
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    cx.env.create_external(w.then(expr), None)
 }
 
+//WhenThen::when
 #[js_function(1)]
 pub fn when_then_when(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let when = params.get_external::<WhenThen>(&cx, "_when")?;
-    let predicate = params.get_external::<Expr>(&cx, "predicate")?;
-    let e = dsl::when(when.predicate.clone())
-        .then(when.then.clone())
-        .when(predicate.clone());
+    let whenthen = params.get_external::<WhenThen>(&cx, "_when")?.clone();
+    let predicate = params.get_external::<Expr>(&cx, "_expr")?.clone();
 
-    cx.env.create_external(WhenThenThen { inner: e }, None)
+    cx.env.create_external(whenthen.when(predicate), None)
 }
 
+// WhenThen::otherwise
 #[js_function(1)]
 pub fn when_then_otherwise(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let when = params.get_external::<WhenThen>(&cx, "_when")?;
-    let expr = params.get_external::<Expr>(&cx, "expr")?;
-    let js_expr: JsExpr =
-        dsl::ternary_expr(when.predicate.clone(), when.then.clone(), expr.clone()).into();
+    let whenthen = params.get_external::<WhenThen>(&cx, "_when")?.clone();
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
 
-    cx.env.create_external(js_expr, None)
+    cx.env.create_external(whenthen.otherwise(expr), None)
 }
 
+// WhenThenThen::when
 #[js_function(1)]
 pub fn when_then_then_when(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let when = params.get_external::<WhenThenThen>(&cx, "_when")?;
-    let predicate = params.get_external::<Expr>(&cx, "predicate")?;
-    let w = WhenThenThen {
-        inner: when.inner.clone().when(predicate.clone()),
-    };
-
-    cx.env.create_external(w, None)
+    let whenthenthen = params.get_external::<WhenThenThen>(&cx, "_when")?.clone();
+    let predicate = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    cx.env.create_external(whenthenthen.when(predicate), None)
 }
 
+// WhenThenThen::then
 #[js_function(1)]
 pub fn when_then_then_then(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let when = params.get_external::<WhenThenThen>(&cx, "_when")?;
-    let expr = params.get_external::<Expr>(&cx, "expr")?;
-    let w = WhenThenThen {
-        inner: when.inner.clone().when(expr.clone()),
-    };
-
-    cx.env.create_external(w, None)
+    let whenthenthen = params.get_external::<WhenThenThen>(&cx, "_when")?.clone();
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    cx.env.create_external(whenthenthen.then(expr), None)
 }
 
+// WhenThenThen::otherwise
 #[js_function(1)]
 pub fn when_then_then_otherwise(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let when = params.get_external::<WhenThenThen>(&cx, "_when")?;
-    let expr = params.get_external::<Expr>(&cx, "expr")?;
-    let js_expr: Expr = when.inner.clone().otherwise(expr.clone()).into();
+    let whenthenthen = params.get_external::<WhenThenThen>(&cx, "_when")?.clone();
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
 
-    cx.env.create_external(js_expr, None)
+    cx.env.create_external(whenthenthen.otherwise(expr), None)
 }

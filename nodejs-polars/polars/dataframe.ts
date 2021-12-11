@@ -821,7 +821,7 @@ export interface DataFrame {
    * └─────┘
    * ```
    */
-  select(...columns: ColumnsOrExpr[]): DataFrame
+  select(column: ExprOrString, ...columns: ExprOrString[]): DataFrame
   /**
    * Shift the values by a given period and fill the parts that will be empty due to this operation
    * with `Nones`.
@@ -862,7 +862,7 @@ export interface DataFrame {
    * └──────┴──────┴──────┘
    * ```
    */
-  shift(periods?: number): DataFrame
+  shift(periods: number): DataFrame
   shift({periods}: {periods: number}): DataFrame
   /**
    * Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -1135,7 +1135,8 @@ export interface DataFrame {
    * @param column - Series, where the name of the Series refers to the column in the DataFrame.
    */
   withColumn(column: Series<any> | Expr): DataFrame
-  withColumns(...columns: Expr[] | Series<any>[] ): DataFrame
+  withColumn(column: Series<any> | Expr): DataFrame
+  withColumns(column: Series<any> | Expr, ...columns: Expr[] | Series<any>[] ): DataFrame
   /**
    * Return a new DataFrame with the column renamed.
    * @param existingName
@@ -1181,7 +1182,8 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const noArgWrap = (method: string) => () => wrap(method);
   const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
   const clone = noArgWrap("clone");
-  const drop = (...names) => {
+  const drop = (name, ...names) => {
+    names.unshift(name);
     if(!Array.isArray(names[0]) && names.length === 1) {
       return wrap("drop", {name: names[0]});
     }
@@ -1235,7 +1237,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
   };
   const hashRows = (obj?, k1?: any, k2?: any, k3?: any): Series<any>=> {
-    if(obj?.k0) {
+    if(obj?.k0  !== undefined ) {
       return hashRows(obj.k0, obj.k1, obj.k2, obj.k3);
     }
 
@@ -1292,7 +1294,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     return df;
   };
   const sample = (opts?, frac?, withReplacement = false): DataFrame => {
-    if(opts?.n || opts?.frac) {
+    if(opts?.n  !== undefined || opts?.frac  !== undefined) {
       return sample(opts.n, opts.frac, opts.withReplacement);
     }
     if (typeof opts === "number") {
@@ -1312,7 +1314,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     }
   };
   const sort = (arg,  reverse=false): DataFrame =>  {
-    if(arg?.by) {
+    if(arg?.by  !== undefined) {
       return sort(arg.by, arg.reverse);
     }
     if(Array.isArray(arg) || isExpr(arg)) {
@@ -1380,7 +1382,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return dfWrapper(_df).withColumns(column);
     }
   };
-  const withColumns = (...columns: Expr[] | Series<any>[]) => {
+  const withColumns = (column, ...columns: Expr[] | Series<any>[]) => {
+    columns.unshift(column);
+
     if(isSeriesArray(columns)) {
       return columns.reduce((acc, curr) => acc.withColumn(curr), dfWrapper(_df));
     } else {
@@ -1391,7 +1395,8 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     }
 
   };
-  const select = (...selection) => {
+  const select = (firstSelection, ...selection) => {
+    selection.unshift(firstSelection);
     const hasExpr = selection.some(s => isExpr(s));
     if(hasExpr) {
       return dfWrapper(_df)
@@ -1421,7 +1426,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     }
   };
   const withColumnRenamed = (opt, replacement?) => {
-    if(opt?.existing) {
+    if(opt?.existing !== undefined) {
       return withColumnRenamed(opt.existing, opt.replacement);
     } else {
       return dfWrapper(_df).rename({[opt]: replacement});

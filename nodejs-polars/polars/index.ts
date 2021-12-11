@@ -2,12 +2,22 @@ import * as series from "./series";
 import * as df from "./dataframe";
 import { DataType } from "./datatypes";
 import * as func from "./functions";
-import {funcs as lazy, Expr as lazyExpr, GroupBy as lazyGroupBy} from "./lazy";
 import * as io from "./io";
-namespace pl {
-  export type Expr = lazyExpr;
-  export type LazyGroupBy = lazyGroupBy;
 
+import {
+  funcs as lazy,
+  Expr as lazyExpr,
+  GroupBy as lazyGroupBy,
+  when as _when
+} from "./lazy";
+
+namespace pl {
+
+  export type Expr = lazyExpr
+  export type LazyGroupBy = lazyGroupBy;
+  export type When = _when.When;
+  export type WhenThen = _when.WhenThen;
+  export type WhenThenThen = _when.WhenThenThen;
   export import DataFrame = df.DataFrame
   export import Series = series.Series;
   export import Int16 = DataType.Int16
@@ -68,5 +78,7 @@ namespace pl {
   export import spearmanRankCorr = lazy.spearmanRankCorr
   export import tail = lazy.tail
   export import list = lazy.list
+  export import when = _when.when;
+
 }
 export = pl;

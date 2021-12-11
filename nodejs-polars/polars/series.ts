@@ -72,7 +72,7 @@ export interface Series<T> {
    * @see {@link rename}
    *
    */
-   alias(name: string): Series<T>
+  alias(name: string): Series<T>
   /**
    * __Append a Series to this one.__
    * ___
@@ -368,7 +368,6 @@ export interface Series<T> {
   filter({predicate}: {predicate: Series<boolean>}): Series<T>
   floor(): Series<T>
   get(index: number): T
-
   getIndex(n: number): T
   /**
    * Returns True if the Series has a validity bitmask.
@@ -578,8 +577,8 @@ export interface Series<T> {
    * - If False, Pearson's definition is used (normal ==> 3.0)
    */
   kurtosis(): Optional<number>
-  kurtosis({fisher, bias}:{fisher?:boolean, bias?:boolean}): Optional<number>
   kurtosis(fisher:boolean, bias?:boolean): Optional<number>
+  kurtosis({fisher, bias}:{fisher?:boolean, bias?:boolean}): Optional<number>
   /**
    * __Length of this Series.__
    * ___
@@ -613,7 +612,6 @@ export interface Series<T> {
    * @see {@link Series.apply}
    */
   map<U>(func: (s: T) => U): Series<U>
-
   /**
    * Get the maximum value in this Series.
    * @example
@@ -811,7 +809,7 @@ export interface Series<T> {
   rename(name: string): Series<T>;
   rename(name: string, inPlace: boolean): void
   rename({name, inPlace}: {name: string, inPlace?: boolean}): void
-  // rename(name: string, inPlace?: boolean): void | Series<T>
+  rename({name, inPlace}: {name: string, inPlace: true}): void
   /**
    * __Apply a rolling max (moving max) over the values in this Series.__
    *
@@ -971,7 +969,9 @@ export interface Series<T> {
    * */
   round<T>(decimals: number): T extends number ? Series<number> : never
   round(opt: {decimals: number}): T extends number ? Series<number> : never
-  sample(opts: {n?: number, frac?: number, withReplacement?:boolean}): Series<T>
+
+  sample(opts: {n: number, withReplacement?:boolean}): Series<T>
+  sample(opts: {frac: number, withReplacement?:boolean}): Series<T>
   sample(n?: number, frac?: number, withReplacement?:boolean): Series<T>
   /**
    * __Check if series is equal with another Series.__
@@ -1024,8 +1024,8 @@ export interface Series<T> {
    * ]
    * ```
    */
+  shift(periods:number): Series<T>
   shift(opts: {periods?:number}): Series<T>
-  shift(periods?:number): Series<T>
   /**
    * Shift the values by a given period
    *
@@ -1034,14 +1034,15 @@ export interface Series<T> {
    * @param periods - Number of places to shift (may be negative).
    * @param fillValue - Fill null & undefined values with the result of this expression.
    */
-  shiftAndFill(opt: {periods: number, fillValue: any}): Series<T>
   shiftAndFill(periods: number, fillValue: any): Series<T>
+  shiftAndFill(opt: {periods: number, fillValue: any}): Series<T>
   /**
    * __Shrink memory usage of this Series to fit the exact capacity needed to hold the data.__
    * @param inPlace - Modify the Series in-place.
    */
-  shrinkToFit(inPlace?:boolean): Series<T> | void
-  shrinkToFit(opt: {inPlace:boolean}): Series<T> | void
+  shrinkToFit(): Series<T>
+  shrinkToFit(inPlace:true): void
+  shrinkToFit({inPlace}: {inPlace:true}): void
   /**
    * __Compute the sample skewness of a data set.__
    *
@@ -1092,7 +1093,6 @@ export interface Series<T> {
   sort(): Series<T>
   sort(reverse?:boolean): Series<T>
   sort(options: {reverse:boolean}): Series<T>
-
   /**
    * Reduce this Series to the sum value.
    * @example

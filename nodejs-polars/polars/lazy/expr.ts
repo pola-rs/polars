@@ -1,7 +1,7 @@
 import {DataType} from "../datatypes";
 import pli from "../internals/polars_internal";
 import {col, lit} from "./lazy_functions";
-import {ColumnSelection, ExpressionSelection, FillNullStrategy, isExpr, RankMethod} from "../utils";
+import {ColumnSelection, ExpressionSelection, FillNullStrategy, isExpr, RankMethod, selectionToExprList} from "../utils";
 import {Series} from "../series";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -102,7 +102,7 @@ export interface Expr {
    */
   alias(name: string): Expr
   alias({name}: {name: string}): Expr
-  and(other: Expr): Expr
+  and(other: any): Expr
   /** Get the index of the maximal value. */
   argMax(): Expr
   /** Get the index of the minimal value. */
@@ -165,8 +165,8 @@ export interface Expr {
    * Compute the dot/inner product between two Expressions
    * @param other Expression to compute dot product with
    */
-  dot(other: Expr | string): Expr
-  eq(other: Expr): Expr
+  dot(other: any | string): Expr
+  eq(other: any): Expr
   /**
    * Exclude certain columns from a wildcard/regex selection.
    *
@@ -219,9 +219,9 @@ export interface Expr {
    */
   explode(): Expr
   /** Fill nan value with a fill value */
-  fillNan(other: Expr): Expr
+  fillNan(other: any): Expr
   /** Fill null value with a fill value or strategy */
-  fillNull(other: Expr | FillNullStrategy): Expr
+  fillNull(other: any | FillNullStrategy): Expr
   /**
    * Filter a single column.
    *
@@ -242,8 +242,8 @@ export interface Expr {
   floor(): Expr
   /** Fill missing values with the latest seen values */
   forwardFill(): Expr
-  gt(other: Expr): Expr
-  gtEq(other: Expr): Expr
+  gt(other: any): Expr
+  gtEq(other: any): Expr
   /** Hash the Series. */
   hash(k0?: number, k1?: number, k2?: number, k3?: number): Expr
   hash({k0, k1, k2, k3}: {k0?:number, k1?: number, k2?: number, k3?:number}): Expr
@@ -255,7 +255,7 @@ export interface Expr {
   isDuplicated(): Expr
   isFinite(): Expr
   isFirst(): Expr
-  isIn(other: Expr): Expr
+  isIn(other: any): Expr
   isInfinite(): Expr
   isNan(): Expr
   isNotNan(): Expr
@@ -323,8 +323,8 @@ export interface Expr {
   list(): Expr
   /** Returns a unit Series with the lowest value possible for the dtype of this expression. */
   lowerBound(): Expr
-  lt(other: Expr): Expr
-  ltEq(other: Expr): Expr
+  lt(other: any): Expr
+  ltEq(other: any): Expr
   /** Compute the max value of the arrays in the list */
   max(): Expr
   /** Compute the mean value of the arrays in the list */
@@ -335,11 +335,11 @@ export interface Expr {
   min(): Expr
   /** Compute the most occurring value(s). Can return multiple Values */
   mode(): Expr
-  neq(other: Expr): Expr
+  neq(other: any): Expr
   not(): Expr
   /** Count unique values. */
   nUnique(): Expr
-  or(other: Expr): Expr
+  or(other: any): Expr
   /**
    * Apply window function over a subgroup.
    *
@@ -546,7 +546,7 @@ export interface Expr {
   var(): Expr
   /** Alais for filter: @see {@link filter} */
   where(predicate: Expr): Expr
-  xor(other: Expr): Expr
+  xor(other: any): Expr
 }
 
 const ExprListFunctions = (_expr: JsExpr): ExprListFunctions => {
@@ -597,8 +597,9 @@ export const Expr = (_expr: JsExpr): Expr => {
 
     return Expr(pli.expr[method]({_expr, ...args }));
   };
+
   const wrapNullArgs = (method: string) => () => wrap(method);
-  const wrapExprArg = (method: string) => (other: Expr) => wrap(method, {other: other._expr});
+  const wrapExprArg = (method: string) => (other: any) => wrap(method, {other: exprToLitOrExpr(other)._expr});
   const wrapUnary = (method: string, key: string) => (val) => wrap(method, {[key]: val?.[key] ?? val});
   const wrapUnaryWithDefault = (method: string, key: string, otherwise) => (val=otherwise) => wrap(method, {[key]: val?.[key] ?? val});
   const wrapBinary = (method: string, key0: string, key1: string) => (val0, val1) => wrap(
@@ -624,14 +625,12 @@ export const Expr = (_expr: JsExpr): Expr => {
   };
   const over = (...exprs) => {
 
-    const partitionBy = exprs
-      .flat(3)
-      .map(e => typeof e === "string"? exprToLitOrExpr(e, false)._expr : e._expr);
+    const partitionBy = selectionToExprList(exprs);
 
     return wrap("over", {partitionBy});
   };
   const shiftAndFill = (opt, fillValue?) => {
-    if(opt?.periods) {
+    if(opt?.periods !== undefined) {
       return shiftAndFill(opt.periods, opt.fillValue);
     }
     fillValue = exprToLitOrExpr(fillValue, true)._expr;

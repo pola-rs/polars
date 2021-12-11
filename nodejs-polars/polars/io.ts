@@ -15,6 +15,12 @@ const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   parseDates: true,
 };
 
+const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
+  batchSize: 1000,
+  inline: false,
+  inferSchemaLength: 10
+};
+
 /**
  * __Read a CSV file or string into a Dataframe.__
  * ___
@@ -61,11 +67,6 @@ export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
   return dfWrapper(pli.df.read_csv(options));
 }
 
-const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
-  batchSize: 1000,
-  inline: false,
-  inferSchemaLength: 10
-};
 
 /**
  * __Read a JSON file or string into a DataFrame.__

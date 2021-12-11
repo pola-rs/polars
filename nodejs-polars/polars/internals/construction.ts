@@ -1,7 +1,7 @@
 import pli from "./polars_internal";
 import { DataType, polarsTypeToConstructor } from "../datatypes";
 import { isTypedArray } from "util/types";
-import {Series, seriesWrapper} from "../series";
+import {Series} from "../series";
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
   if (Array.isArray(value)) {
@@ -27,6 +27,7 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
 };
 
 const firstNonNull = (arr: any[]): any => arr.find(x => x !== null && x !== undefined);
+
 /**
  * Construct an internal `JsSeries` from an array
  */

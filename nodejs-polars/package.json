@@ -1,11 +1,11 @@
 {
   "name": "nodejs-polars",
   "version": "0.0.1",
-  "repository": "git@github.com/pola-rs/polars.git",
+  "repository": "https://github.com/universalmind303/polars.git",
   "license": "MIT",
-  "main": "polars/index.ts",
+  "main": "bin/index.js",
   "files": [
-    "polars/**"
+    "bin"
   ],
   "napi": {
     "name": "nodejs-polars",
@@ -23,7 +23,8 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node -r @swc-node/register benchmark/bench.ts",
-    "build": "napi build --release",
+    "build_alt": "RUSTFLAGS='-C codegen-units=16' napi build --platform --release",
+    "build": "napi build --platform --release",
     "build:debug": "napi build --platform polars/",
     "build:tsc": "rm -rf ./bin; tsc",
     "format:rs": "cargo fmt",
@@ -83,5 +84,9 @@
     "arrowParens": "always",
     "parser": "typescript"
   },
-  "packageManager": "yarn@3.1.1"
+  "optionalDependencies": {
+    "nodejs-polars-win32-x64-msvc": "0.0.1",
+    "nodejs-polars-darwin-x64": "0.0.1",
+    "nodejs-polars-linux-x64-gnu": "0.0.1"
+  }
 }

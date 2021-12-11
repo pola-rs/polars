@@ -1,6 +1,6 @@
 import {Expr, exprToLitOrExpr} from "./expr";
 import {Series} from "../series";
-import {ColumnSelection, ColumnsOrExpr, ExpressionSelection, ExprOrString, isSeries, Option, selectionToExprList} from "../utils";
+import {ColumnSelection, ColumnsOrExpr, ExprOrString, isSeries, selectionToExprList} from "../utils";
 import pli from "../internals/polars_internal";
 import pl from "../index";
 

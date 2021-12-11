@@ -105,7 +105,6 @@ describe("dataframe", () => {
       expect(df.dtypes).toEqual(["Float64", "Datetime", "Utf8"]);
     });
   });
-
   test("dtypes", () =>{
     const expected = ["Float64", "Utf8"];
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).dtypes;
@@ -718,7 +717,6 @@ describe("dataframe", () => {
       expect(actual).toFrameEqual(expected);
     });
   });
-
   test("lazy", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],

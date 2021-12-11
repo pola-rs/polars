@@ -1,5 +1,19 @@
 import pl from "../polars";
+import pli from "../polars/internals/polars_internal";
+const w = pli
+  .when(pl.col("foo"));
+console.log(w);
 
-const s = pl.Series([1, 2, 3]).map(x => x + 1);
+// function whenthen(predicate, arg) {
+// }
 
-console.log(scrollTo);
+// function when(predicate) {
+//   return {
+//     then: (expr)  => {
+//       console.log({predicate, _this: this});
+
+//       return whenthen(predicate, expr);
+//     }
+//   };
+// }
+// when("foo").then("bar");
