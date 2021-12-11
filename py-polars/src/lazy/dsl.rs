@@ -918,6 +918,19 @@ impl PyExpr {
             .into()
     }
 
+    fn lst_get(&self, index: i64) -> Self {
+        self.inner
+            .clone()
+            .map(
+                move |s| s.list()?.lst_get(index),
+                GetOutput::map_field(|field| match field.data_type() {
+                    DataType::List(inner) => Field::new(field.name(), *inner.clone()),
+                    _ => panic!("should be a list type"),
+                }),
+            )
+            .into()
+    }
+
     fn rank(&self, method: &str) -> Self {
         let method = str_to_rankmethod(method).unwrap();
         self.inner.clone().rank(method).into()
@@ -966,6 +979,16 @@ impl PyExpr {
 
     pub fn cumcount(&self, reverse: bool) -> Self {
         self.inner.clone().cumcount(reverse).into()
+    }
+
+    pub fn to_physical(&self) -> Self {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.to_physical_repr().into_owned()),
+                GetOutput::map_dtype(|dt| dt.to_physical()),
+            )
+            .into()
     }
 }
 

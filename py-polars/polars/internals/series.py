@@ -1,3 +1,4 @@
+import sys
 import typing as tp
 from datetime import date, datetime, timedelta
 from numbers import Number
@@ -60,6 +61,11 @@ try:
     _PANDAS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PANDAS_AVAILABLE = False
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 
 def match_dtype(value: Any, dtype: "Type[DataType]") -> Any:
@@ -708,7 +714,7 @@ class Series:
                 "null_count": self.null_count(),
                 "count": self.len(),
             }
-        elif self.is_datetime():
+        elif self.is_datelike():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
             stats = {
@@ -922,6 +928,18 @@ class Series:
         s = self.clone()
         s._s.rename(name)
         return s
+
+    @tp.overload
+    def rename(self, name: str, in_place: Literal[False] = ...) -> "Series":
+        ...
+
+    @tp.overload
+    def rename(self, name: str, in_place: Literal[True]) -> None:
+        ...
+
+    @tp.overload
+    def rename(self, name: str, in_place: bool) -> Optional["Series"]:
+        ...
 
     def rename(self, name: str, in_place: bool = False) -> Optional["Series"]:
         """
@@ -1558,6 +1576,34 @@ class Series:
                 false
         ]
 
+        >>> # check if some values are a member of sublists
+        >>> sets = pl.Series("sets", [[1, 2, 3], [1, 2], [9, 10]])
+        >>> optional_members = pl.Series("optional_members", [1, 2, 3])
+        >>> print(sets)
+        shape: (3,)
+        Series: 'sets' [list]
+        [
+            [1, 2, 3]
+            [1, 2]
+            [9, 10]
+        ]
+        >>> print(optional_members)
+        shape: (3,)
+        Series: 'optional_members' [i64]
+        [
+            1
+            2
+            3
+        ]
+        >>> optional_members.is_in(sets)
+        shape: (3,)
+        Series: 'optional_members' [bool]
+        [
+            true
+            true
+            false
+        ]
+
         """
         if isinstance(other, list):
             other = Series("", other)
@@ -1821,15 +1867,15 @@ class Series:
             Float64,
         )
 
-    def is_datetime(self) -> bool:
+    def is_datelike(self) -> bool:
         """
-        Check if this Series datatype is a datetime.
+        Check if this Series datatype is datelike.
 
         Examples
         --------
         >>> from datetime import date
         >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-        >>> s.is_datetime()
+        >>> s.is_datelike()
         True
 
         """
@@ -1975,13 +2021,25 @@ class Series:
         kwargs
             kwargs will be sent to pyarrow.Array.to_numpy
         """
-        if _PYARROW_AVAILABLE:
+
+        def convert_to_date(arr):  # type: ignore
+            if self.dtype == Date:
+                tp = "datetime64[D]"
+            else:
+                tp = "datetime64[ms]"
+            return arr.astype(tp)
+
+        if _PYARROW_AVAILABLE and not self.is_datelike():
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, **kwargs
             )
         else:
             if not self.has_validity():
+                if self.is_datelike():
+                    return convert_to_date(self.view(ignore_nulls=True))
                 return self.view(ignore_nulls=True)
+            if self.is_datelike():
+                return convert_to_date(self._s.to_numpy())
             return self._s.to_numpy()
 
     def to_arrow(self) -> "pa.Array":
@@ -3304,50 +3362,43 @@ class ListNameSpace:
         """
         Sum all the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.sum())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.sum()).to_series()
 
     def max(self) -> Series:
         """
         Compute the max value of the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.max())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.max()).to_series()
 
     def min(self) -> Series:
         """
         Compute the min value of the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.min())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.min()).to_series()
 
     def mean(self) -> Series:
         """
         Compute the mean value of the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.min())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.mean()).to_series()
 
     def sort(self, reverse: bool) -> Series:
         """
         Sort the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.sort(reverse))  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.sort(reverse)).to_series()
 
     def reverse(self) -> Series:
         """
         Reverse the arrays in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.reverse())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.reverse()).to_series()
 
     def unique(self) -> Series:
         """
         Get the unique/distinct values in the list
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).arr.unique())  # type: ignore
+        return pli.select(pli.lit(wrap_s(self._s)).arr.unique()).to_series()
 
     def concat(self, other: Union[tp.List[Series], Series]) -> "Series":
         """
@@ -3366,6 +3417,50 @@ class ListNameSpace:
         df = pli.DataFrame(other)
         df.insert_at_idx(0, s)
         return df.select(pli.concat_list(names))[s.name]  # type: ignore
+
+    def get(self, index: int) -> "Series":
+        """
+        Get the value by index in the sublists.
+        So index `0` would return the first item of every sublist
+        and index `-1` would return the last item of every sublist
+        if an index is out of bounds, it will return a `None`.
+
+        Parameters
+        ----------
+        index
+            Index to return per sublist
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.get(index)).to_series()
+
+    def first(self) -> "Series":
+        """
+        Get the first value of the sublists.
+        """
+        return self.get(0)
+
+    def last(self) -> "Series":
+        """
+        Get the last value of the sublists.
+        """
+        return self.get(-1)
+
+    def contains(self, item: Union[float, str, bool, int, date, datetime]) -> "Series":
+        """
+        Check if sublists contain the given item.
+
+        Parameters
+        ----------
+        item
+            Item that will be checked for membership
+
+        Returns
+        -------
+        Boolean mask
+        """
+        s = pli.Series("", [item])
+        s_list = wrap_s(self._s)
+        out = s.is_in(s_list)
+        return out.rename(s_list.name)
 
 
 class DateTimeNameSpace:

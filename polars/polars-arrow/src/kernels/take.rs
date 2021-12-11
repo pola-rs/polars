@@ -1,10 +1,38 @@
+use crate::utils::with_match_primitive_type;
 use crate::{bit_util::unset_bit_raw, prelude::*, utils::CustomIterTools};
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::{Buffer, MutableBuffer};
-use arrow::datatypes::DataType;
+use arrow::datatypes::{DataType, PhysicalType};
 use arrow::types::NativeType;
 use std::sync::Arc;
+
+/// # Safety
+/// Does not do bounds checks
+pub unsafe fn take_unchecked(arr: &dyn Array, idx: &UInt32Array) -> ArrayRef {
+    use PhysicalType::*;
+    match arr.data_type().to_physical_type() {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            let arr: &PrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
+            if arr.validity().is_some() {
+                take_primitive_unchecked::<$T>(arr, idx)
+            } else {
+                take_no_null_primitive::<$T>(arr, idx)
+            }
+        }),
+        LargeUtf8 => {
+            let arr = arr.as_any().downcast_ref().unwrap();
+            take_utf8_unchecked(arr, idx)
+        }
+        // TODO! implement proper unchecked version
+        #[cfg(feature = "compute")]
+        Boolean => {
+            use arrow::compute::take::take;
+            Arc::from(take(arr, idx).unwrap())
+        }
+        _ => unimplemented!(),
+    }
+}
 
 /// Take kernel for single chunk with nulls and arrow array as index that may have nulls.
 /// # Safety

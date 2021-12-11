@@ -146,11 +146,25 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let s = rev.get(idx);
                 s.into_py(py)
             }
-            AnyValue::Date(v) => v.into_py(py),
-            AnyValue::Datetime(v) => v.into_py(py),
+            AnyValue::Date(v) => {
+                let pl = PyModule::import(py, "polars").unwrap();
+                let pli = pl.getattr("internals").unwrap();
+                let m_series = pli.getattr("series").unwrap();
+                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let py_date_dtype = pl.getattr("Date").unwrap();
+                convert.call1((v, py_date_dtype)).unwrap().into_py(py)
+            }
+            AnyValue::Datetime(v) => {
+                let pl = PyModule::import(py, "polars").unwrap();
+                let pli = pl.getattr("internals").unwrap();
+                let m_series = pli.getattr("series").unwrap();
+                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let py_datetime_dtype = pl.getattr("Datetime").unwrap();
+                convert.call1((v, py_datetime_dtype)).unwrap().into_py(py)
+            }
             AnyValue::Time(v) => v.into_py(py),
             AnyValue::List(v) => {
-                let pypolars = PyModule::import(py, "polars").expect("polars installed");
+                let pypolars = PyModule::import(py, "polars").unwrap();
                 let pyseries = PySeries::new(v);
                 let python_series_wrapper = pypolars
                     .getattr("wrap_s")

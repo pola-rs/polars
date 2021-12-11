@@ -188,6 +188,7 @@ Manipulation/ selection
     Expr.upper_bound
     Expr.str_concat
     Expr.reshape
+    Series.to_physical
 
 Column names
 ------------
@@ -288,3 +289,7 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.sort
     ExprListNameSpace.reverse
     ExprListNameSpace.unique
+    ExprListNameSpace.get
+    ExprListNameSpace.first
+    ExprListNameSpace.last
+    ExprListNameSpace.contains

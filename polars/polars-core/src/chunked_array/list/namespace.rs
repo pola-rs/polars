@@ -1,6 +1,8 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
+use std::convert::TryFrom;
 
 impl ListChunked {
     pub fn lst_max(&self) -> Series {
@@ -53,6 +55,18 @@ impl ListChunked {
             }
         });
         UInt32Chunked::new_from_aligned_vec(self.name(), lengths)
+    }
+
+    /// Get the value by index in the sublists.
+    /// So index `0` would return the first item of every sublist
+    /// and index `-1` would return the last item of every sublist
+    /// if an index is out of bounds, it will return a `None`.
+    pub fn lst_get(&self, idx: i64) -> Result<Series> {
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| sublist_get(arr, idx))
+            .collect::<Vec<_>>();
+        Series::try_from((self.name(), chunks))
     }
 
     pub fn lst_concat(&self, other: &[Series]) -> Result<ListChunked> {

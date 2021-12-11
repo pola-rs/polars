@@ -189,7 +189,7 @@ a,b,c
 1,2,3
 """
     f = io.StringIO(csv)
-    df = pl.read_csv(f, dtype=[pl.Utf8])
+    df = pl.read_csv(f, dtypes=[pl.Utf8])
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64]
 
 
@@ -216,7 +216,7 @@ a,b,c
     df = pl.read_csv(
         f,
         new_columns=["A", "B", "C"],
-        dtype={"A": pl.Utf8, "B": pl.Int64, "C": pl.Float32},
+        dtypes={"A": pl.Utf8, "B": pl.Int64, "C": pl.Float32},
     )
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
 
@@ -225,7 +225,7 @@ a,b,c
         f,
         columns=["a", "c"],
         new_columns=["A", "C"],
-        dtype={"A": pl.Utf8, "C": pl.Float32},
+        dtypes={"A": pl.Utf8, "C": pl.Float32},
     )
     assert df.dtypes == [pl.Utf8, pl.Float32]
 
@@ -237,7 +237,7 @@ a,b,c
     df = pl.read_csv(
         f,
         new_columns=["A", "B", "C"],
-        dtype={"A": pl.Utf8, "C": pl.Float32},
+        dtypes={"A": pl.Utf8, "C": pl.Float32},
         has_headers=False,
     )
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
@@ -396,7 +396,7 @@ def test_ignore_parse_dates() -> None:
     dtypes: Dict[str, Type[DataType]] = {
         k: pl.Utf8 for k in headers
     }  # Forces Utf8 type for every column
-    df = pl.read_csv(csv, columns=headers, dtype=dtypes)
+    df = pl.read_csv(csv, columns=headers, dtypes=dtypes)
     assert df.dtypes == [pl.Utf8, pl.Utf8, pl.Utf8]
 
 

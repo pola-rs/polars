@@ -191,6 +191,17 @@ class Expr:
 
         return self.map(function, return_dtype=dtype)
 
+    def to_physical(self) -> "Expr":
+        """
+        Cast to physical representation of the logical dtype.
+
+        Date -> Int32
+        Datetime -> Int64
+        Time -> Int64
+        other -> other
+        """
+        return wrap_expr(self._pyexpr.to_physical())
+
     def sqrt(self) -> "Expr":
         """
         Compute the square root of the elements
@@ -1245,6 +1256,26 @@ class Expr:
         Returns
         -------
         Expr that evaluates to a Boolean Series.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
+        ... )
+        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
+        shape: (3, 1)
+        ┌──────────┐
+        │ contains │
+        │ ---      │
+        │ bool     │
+        ╞══════════╡
+        │ true     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ true     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ false    │
+        └──────────┘
+
         """
         if isinstance(other, list):
             other = pli.lit(pli.Series(other))
@@ -2114,6 +2145,47 @@ class ExprListNameSpace:
             other_list = copy.copy(other)
         other_list.insert(0, wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
+
+    def get(self, index: int) -> "Expr":
+        """
+        Get the value by index in the sublists.
+        So index `0` would return the first item of every sublist
+        and index `-1` would return the last item of every sublist
+        if an index is out of bounds, it will return a `None`.
+
+        Parameters
+        ----------
+        index
+            Index to return per sublist
+        """
+        return wrap_expr(self._pyexpr.lst_get(index))
+
+    def first(self) -> "Expr":
+        """
+        Get the first value of the sublists.
+        """
+        return self.get(0)
+
+    def last(self) -> "Expr":
+        """
+        Get the last value of the sublists.
+        """
+        return self.get(-1)
+
+    def contains(self, item: Union[float, str, bool, int, date, datetime]) -> "Expr":
+        """
+        Check if sublists contain the given item.
+
+        Parameters
+        ----------
+        item
+            Item that will be checked for membership
+
+        Returns
+        -------
+        Boolean mask
+        """
+        return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item))
 
 
 class ExprStringNameSpace:

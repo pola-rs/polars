@@ -76,7 +76,7 @@ Descriptive stats
     Series.is_float
     Series.is_boolean
     Series.is_utf8
-    Series.is_datetime
+    Series.is_datelike
     Series.len
     Series.n_unique
     Series.has_validity
@@ -248,3 +248,7 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.sort
     ListNameSpace.reverse
     ListNameSpace.unique
+    ListNameSpace.get
+    ListNameSpace.first
+    ListNameSpace.last
+    ListNameSpace.contains
