@@ -933,7 +933,10 @@ impl PyExpr {
 
     fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
-        let options = RankOptions { method, descending: reverse };
+        let options = RankOptions {
+            method,
+            descending: reverse,
+        };
         self.inner.clone().rank(options).into()
     }
 
