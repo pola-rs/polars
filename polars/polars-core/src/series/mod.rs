@@ -651,7 +651,7 @@ impl Series {
     #[cfg(feature = "rank")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
     pub fn rank(&self, options: RankOptions) -> Series {
-        rank(self, options)
+        rank(self, options.method, options.descending)
     }
 
     /// Cast throws an error if conversion had overflows
