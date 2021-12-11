@@ -606,7 +606,7 @@
 //!
 //! // write DataFrame to file
 //! CsvWriter::new(&mut file)
-//!     .has_headers(true)
+//!     .has_header(true)
 //!     .with_delimiter(b',')
 //!     .finish(df);
 //! # Ok(())

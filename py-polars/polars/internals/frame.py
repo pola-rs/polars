@@ -1,4 +1,4 @@
-""""
+"""
 Module containing logic related to eager DataFrames
 """
 import os
@@ -365,24 +365,25 @@ class DataFrame:
     @staticmethod
     def read_csv(
         file: Union[str, BinaryIO, bytes],
-        infer_schema_length: Optional[int] = 100,
-        batch_size: int = 64,
-        has_headers: bool = True,
-        ignore_errors: bool = False,
-        stop_after_n_rows: Optional[int] = None,
-        skip_rows: int = 0,
-        projection: Optional[tp.List[int]] = None,
+        has_header: bool = True,
+        columns: Optional[Union[tp.List[int], tp.List[str]]] = None,
         sep: str = ",",
-        columns: Optional[tp.List[str]] = None,
-        rechunk: bool = True,
-        encoding: str = "utf8",
-        n_threads: Optional[int] = None,
-        dtypes: Union[Dict[str, Type[DataType]], tp.List[Type[DataType]], None] = None,
-        low_memory: bool = False,
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
+        skip_rows: int = 0,
+        dtypes: Optional[
+            Union[Dict[str, Type[DataType]], tp.List[Type[DataType]]]
+        ] = None,
         null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
+        ignore_errors: bool = False,
         parse_dates: bool = False,
+        n_threads: Optional[int] = None,
+        infer_schema_length: Optional[int] = 100,
+        batch_size: int = 8192,
+        n_rows: Optional[int] = None,
+        encoding: str = "utf8",
+        low_memory: bool = False,
+        rechunk: bool = True,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -390,52 +391,63 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path to a file or a file like object. Any valid filepath can be used. Example: `file.csv`.
-        infer_schema_length
-            Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
-            If set to `None`, a full table scan will be done (slow).
-        batch_size
-            Number of lines to read into the buffer at once. Modify this to change performance.
-        has_headers
-            Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`,
-            `x` being an enumeration over every column in the dataset.
-        ignore_errors
-            Try to keep reading lines if some lines yield errors.
-        stop_after_n_rows
-            After n rows are read from the CSV, it stops reading.
-            During multi-threaded parsing, an upper bound of `n` rows
-            cannot be guaranteed.
-        skip_rows
-            Start reading after `skip_rows`.
-        projection
-            Indices of columns to select. Note that column indices start at zero.
+            Path to a file or file like object.
+        has_header
+            Indicate if the first row of dataset is a header or not.
+            If set to False, column names will be autogenrated in the
+            following format: ``column_x``, with ``x`` being an
+            enumeration over every column in the dataset starting at 1.
+        columns
+            Columns to select. Accepts a list of column indices (starting
+            at zero) or a list of column names.
         sep
             Character to use as delimiter in the file.
-        columns
-            Columns to select.
-        rechunk
-            Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
-        encoding
-            Allowed encodings: `utf8`, `utf8-lossy`. Lossy means that invalid utf8 values are replaced with `�` character.
-        n_threads
-            Number of threads to use in csv parsing. Defaults to the number of physical cpu's of your system.
-        dtypes
-            Overwrite the dtypes during inference.
-        low_memory
-            Reduce memory usage in expense of performance.
         comment_char
-            character that indicates the start of a comment line, for instance '#'.
+            Character that indicates the start of a comment line, for
+            instance ``#``.
         quote_char
-            single byte character that is used for csv quoting, default = ''. Set to None to turn special handling and escaping
-            of quotes off.
+            Single byte character used for csv quoting, default = ''.
+            Set to None to turn off special handling and escaping of quotes.
+        skip_rows
+            Start reading after ``skip_rows`` lines.
+        dtypes
+            Overwrite dtypes during inference.
         null_values
             Values to interpret as null values. You can provide a:
-
-            - str -> all values encountered equal to this string will be null
-            - tp.List[str] -> A null value per column.
-            - Dict[str, str] -> A dictionary that maps column name to a null value string.
+              - ``str``: All values equal to this string will be null.
+              - ``List[str]``: A null value per column.
+              - ``Dict[str, str]``: A dictionary that maps column name to a
+                                    null value string.
+        ignore_errors
+            Try to keep reading lines if some lines yield errors.
+            First try ``infer_schema_length=0`` to read all columns as
+            ``pl.Utf8`` to check which values might cause an issue.
         parse_dates
-            Whether to attempt to parse dates or not
+            Try to automatically parse dates. If this does not succeed,
+            the column remains of data type ``pl.Utf8``.
+        n_threads
+            Number of threads to use in csv parsing.
+            Defaults to the number of physical cpu's of your system.
+        infer_schema_length
+            Maximum number of lines to read to infer schema.
+            If set to 0, all columns will be read as ``pl.Utf8``.
+            If set to ``None``, a full table scan will be done (slow).
+        batch_size
+            Number of lines to read into the buffer at once.
+            Modify this to change performance.
+        n_rows
+            Stop reading from CSV file after reading ``n_rows``.
+            During multi-threaded parsing, an upper bound of ``n_rows``
+            rows cannot be guaranteed.
+        encoding
+            Allowed encodings: ``utf8`` or ``utf8-lossy``.
+            Lossy means that invalid utf8 values are replaced with ``�``
+            characters.
+        low_memory
+            Reduce memory usage at expense of performance.
+        rechunk
+            Make sure that all columns are contiguous in memory by
+            aggregating the chunks into a single array.
 
         Returns
         -------
@@ -444,9 +456,7 @@ class DataFrame:
         Examples
         --------
 
-        >>> df = pl.read_csv(
-        ...     "file.csv", sep=";", stop_after_n_rows=25
-        ... )  # doctest: +SKIP
+        >>> df = pl.read_csv("file.csv", sep=";", n_rows=25)  # doctest: +SKIP
 
         """
         self = DataFrame.__new__(DataFrame)
@@ -460,6 +470,17 @@ class DataFrame:
                 file = file.getvalue()
             if isinstance(file, StringIO):
                 file = file.getvalue().encode()
+
+        projection: Optional[tp.List[int]] = None
+        if columns:
+            if isinstance(columns, list):
+                if all(isinstance(i, int) for i in columns):
+                    projection = columns  # type: ignore
+                    columns = None
+                elif not all(isinstance(i, str) for i in columns):
+                    raise ValueError(
+                        "columns arg should contain a list of all integers or all strings values."
+                    )
 
         dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
         dtype_slice: Optional[tp.List[Type[DataType]]] = None
@@ -479,9 +500,9 @@ class DataFrame:
             file,
             infer_schema_length,
             batch_size,
-            has_headers,
+            has_header,
             ignore_errors,
-            stop_after_n_rows,
+            n_rows,
             skip_rows,
             projection,
             sep,
@@ -503,9 +524,8 @@ class DataFrame:
     @staticmethod
     def read_parquet(
         file: Union[str, BinaryIO],
-        columns: Optional[tp.List[str]] = None,
-        projection: Optional[tp.List[int]] = None,
-        stop_after_n_rows: Optional[int] = None,
+        columns: Optional[Union[tp.List[int], tp.List[str]]] = None,
+        n_rows: Optional[int] = None,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -515,45 +535,60 @@ class DataFrame:
         file
             Path to a file or a file like object. Any valid filepath can be used.
         columns
-            Columns to select.
-        projection
-            Indices of columns to select. Note that column indices start at zero.
-        stop_after_n_rows
-            Only read specified number of rows of the dataset. After `n` stops reading.
+            Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
+        n_rows
+            Stop reading from parquet file after reading ``n_rows``.
         """
+        projection: Optional[tp.List[int]] = None
+        if columns:
+            if isinstance(columns, list):
+                if all(isinstance(i, int) for i in columns):
+                    projection = columns  # type: ignore
+                    columns = None
+                elif not all(isinstance(i, str) for i in columns):
+                    raise ValueError(
+                        "columns arg should contain a list of all integers or all strings values."
+                    )
+
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_parquet(
-            file, columns, projection, stop_after_n_rows
-        )
+        self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows)
         return self
 
     @staticmethod
     def read_ipc(
         file: Union[str, BinaryIO],
-        columns: Optional[tp.List[str]] = None,
-        projection: Optional[tp.List[int]] = None,
-        stop_after_n_rows: Optional[int] = None,
+        columns: Optional[Union[tp.List[int], tp.List[str]]] = None,
+        n_rows: Optional[int] = None,
     ) -> "DataFrame":
         """
-        Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
+        Read into a DataFrame from Arrow IPC stream format. This is also called the Feather (v2) format.
 
         Parameters
         ----------
         file
             Path to a file or a file like object.
         columns
-            Columns to select.
-        projection
-            Indices of columns to select. Note that column indices start at zero.
-        stop_after_n_rows
-            Only read specified number of rows of the dataset. After `n` stops reading.
+            Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
+        n_rows
+            Stop reading from IPC file after reading ``n_rows``.
 
         Returns
         -------
         DataFrame
         """
+        projection: Optional[tp.List[int]] = None
+        if columns:
+            if isinstance(columns, list):
+                if all(isinstance(i, int) for i in columns):
+                    projection = columns  # type: ignore
+                    columns = None
+                elif not all(isinstance(i, str) for i in columns):
+                    raise ValueError(
+                        "columns arg should contain a list of all integers or all strings values."
+                    )
+
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_ipc(file, columns, projection, stop_after_n_rows)
+        self._df = PyDataFrame.read_ipc(file, columns, projection, n_rows)
         return self
 
     @staticmethod
@@ -778,7 +813,7 @@ class DataFrame:
     def to_csv(
         self,
         file: Optional[Union[TextIO, BytesIO, str, Path]] = None,
-        has_headers: bool = True,
+        has_header: bool = True,
         sep: str = ",",
     ) -> Optional[str]:
         """
@@ -788,7 +823,7 @@ class DataFrame:
         ----------
         file
             File path to which the file should be written.
-        has_headers
+        has_header
             Whether or not to include header in the CSV output.
         sep
             Separate CSV fields with this symbol.
@@ -808,13 +843,13 @@ class DataFrame:
         """
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, has_headers, ord(sep))
+            self._df.to_csv(buffer, has_header, ord(sep))
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, Path):
             file = str(file)
 
-        self._df.to_csv(file, has_headers, ord(sep))
+        self._df.to_csv(file, has_header, ord(sep))
         return None
 
     def to_ipc(

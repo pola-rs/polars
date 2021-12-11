@@ -199,7 +199,7 @@ where
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
     /// Stop reading from the csv after this number of rows is reached
-    stop_after_n_rows: Option<usize>,
+    n_rows: Option<usize>,
     // used by error ignore logic
     max_records: Option<usize>,
     skip_rows: usize,
@@ -246,8 +246,8 @@ where
 
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
     /// be guaranteed.
-    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.stop_after_n_rows = num_rows;
+    pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.n_rows = num_rows;
         self
     }
 
@@ -415,7 +415,7 @@ where
         CsvReader {
             reader,
             rechunk: true,
-            stop_after_n_rows: None,
+            n_rows: None,
             max_records: Some(128),
             skip_rows: 0,
             projection: None,
@@ -490,7 +490,7 @@ where
             let reader_bytes = get_reader_bytes(&mut self.reader)?;
             let mut csv_reader = CoreReader::new(
                 reader_bytes,
-                self.stop_after_n_rows,
+                self.n_rows,
                 self.skip_rows,
                 self.projection,
                 self.max_records,
@@ -523,7 +523,7 @@ where
             let reader_bytes = get_reader_bytes(&mut self.reader)?;
             let mut csv_reader = CoreReader::new(
                 reader_bytes,
-                self.stop_after_n_rows,
+                self.n_rows,
                 self.skip_rows,
                 self.projection,
                 self.max_records,

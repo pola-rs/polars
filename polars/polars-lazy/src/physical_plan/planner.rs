@@ -179,7 +179,7 @@ impl DefaultPlanner {
                 with_columns,
                 predicate,
                 aggregate,
-                stop_after_n_rows,
+                n_rows,
                 cache,
             } => {
                 let predicate = predicate
@@ -193,7 +193,7 @@ impl DefaultPlanner {
                     with_columns,
                     predicate,
                     aggregate,
-                    stop_after_n_rows,
+                    n_rows,
                     cache,
                 )))
             }

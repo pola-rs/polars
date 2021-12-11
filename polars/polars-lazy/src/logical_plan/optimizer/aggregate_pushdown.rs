@@ -155,7 +155,7 @@ impl OptimizationRule for AggregatePushdown {
                 with_columns,
                 predicate,
                 aggregate,
-                stop_after_n_rows,
+                n_rows,
                 cache,
             } => match self.accumulated_projections.is_empty() {
                 true => {
@@ -168,7 +168,7 @@ impl OptimizationRule for AggregatePushdown {
                             with_columns,
                             predicate,
                             aggregate,
-                            stop_after_n_rows,
+                            n_rows,
                             cache,
                         },
                     );
@@ -183,7 +183,7 @@ impl OptimizationRule for AggregatePushdown {
                         with_columns,
                         predicate,
                         aggregate,
-                        stop_after_n_rows,
+                        n_rows,
                         cache,
                     })
                 }

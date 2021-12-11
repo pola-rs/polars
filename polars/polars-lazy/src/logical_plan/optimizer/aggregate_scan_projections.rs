@@ -149,7 +149,7 @@ impl OptimizationRule for AggScanProjection {
                     predicate,
                     aggregate,
                     with_columns,
-                    stop_after_n_rows,
+                    n_rows,
                     cache,
                 } = lp
                 {
@@ -166,7 +166,7 @@ impl OptimizationRule for AggScanProjection {
                             predicate,
                             aggregate,
                             with_columns,
-                            stop_after_n_rows,
+                            n_rows,
                             cache,
                         };
                         lp_arena.replace(node, lp);
@@ -180,7 +180,7 @@ impl OptimizationRule for AggScanProjection {
                         with_columns: new_with_columns,
                         predicate,
                         aggregate,
-                        stop_after_n_rows,
+                        n_rows,
                         cache,
                     };
                     Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))

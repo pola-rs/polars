@@ -135,112 +135,143 @@ def update_columns(df: DataFrame, new_columns: List[str]) -> DataFrame:
 
 def read_csv(
     file: Union[str, TextIO, BytesIO, Path, BinaryIO, bytes],
-    infer_schema_length: Optional[int] = 100,
-    batch_size: int = 8192,
-    has_headers: bool = True,
-    ignore_errors: bool = False,
-    stop_after_n_rows: Optional[int] = None,
-    skip_rows: int = 0,
-    projection: Optional[List[int]] = None,
-    sep: str = ",",
-    columns: Optional[List[str]] = None,
-    rechunk: bool = True,
-    encoding: str = "utf8",
-    n_threads: Optional[int] = None,
-    dtypes: Optional[Union[Dict[str, Type[DataType]], List[Type[DataType]]]] = None,
+    has_header: bool = True,
+    columns: Optional[Union[List[int], List[str]]] = None,
     new_columns: Optional[List[str]] = None,
-    use_pyarrow: bool = False,
-    low_memory: bool = False,
+    sep: str = ",",
     comment_char: Optional[str] = None,
     quote_char: Optional[str] = r'"',
-    storage_options: Optional[Dict] = None,
+    skip_rows: int = 0,
+    dtypes: Optional[Union[Dict[str, Type[DataType]], List[Type[DataType]]]] = None,
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+    ignore_errors: bool = False,
     parse_dates: bool = False,
+    n_threads: Optional[int] = None,
+    infer_schema_length: Optional[int] = 100,
+    batch_size: int = 8192,
+    n_rows: Optional[int] = None,
+    encoding: str = "utf8",
+    low_memory: bool = False,
+    rechunk: bool = True,
+    use_pyarrow: bool = False,
+    storage_options: Optional[Dict] = None,
     **kwargs: Any,
 ) -> DataFrame:
     """
-    Read into a DataFrame from a csv file.
+    Read a CSV file into a Dataframe.
 
     Parameters
     ----------
     file
         Path to a file or a file like object.
-        By file-like object, we refer to objects with a ``read()`` method,
-        such as a file handler (e.g. via builtin ``open`` function)
-        or ``StringIO`` or ``BytesIO``.
-        If ``fsspec`` is installed, it will be used to open remote files
-    infer_schema_length
-        Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
-        If set to `None`, a full table scan will be done (slow).
-    batch_size
-        Number of lines to read into the buffer at once. Modify this to change performance.
-    has_headers
-        Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`,
-        `x` being an enumeration over every column in the dataset starting at 1.
-    ignore_errors
-        Try to keep reading lines if some lines yield errors.
-    stop_after_n_rows
-        After n rows are read from the CSV, it stops reading.
-        During multi-threaded parsing, an upper bound of `n` rows
-        cannot be guaranteed.
-    skip_rows
-        Start reading after `skip_rows`.
-    projection
-        Indices of columns to select. Note that column indices start at zero.
-    sep
-        Delimiter/ value separator.
+        By file-like object, we refer to objects with a ``read()``
+        method, such as a file handler (e.g. via builtin ``open``
+        function) or ``StringIO`` or ``BytesIO``.
+        If ``fsspec`` is installed, it will be used to open remote
+        files.
+    has_header
+        Indicate if the first row of dataset is a header or not.
+        If set to False, column names will be autogenrated in the
+        following format: ``column_x``, with ``x`` being an
+        enumeration over every column in the dataset starting at 1.
     columns
-        Columns to select.
-    rechunk
-        Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
-    encoding
-        - "utf8"
-        - "utf8-lossy"
-    n_threads
-        Number of threads to use in csv parsing. Defaults to the number of physical cpu's of your system.
-    dtypes
-        Overwrite the dtypes during inference.
+        Columns to select. Accepts a list of column indices (starting
+        at zero) or a list of column names.
     new_columns
-        Rename columns to these right after parsing. If the given list is shorted than the width of the DataFrame the
-        remaining columns will have their original name.
-    use_pyarrow
-        Try to use pyarrow's native CSV parser. This is not always possible. The set of arguments given to this function
-        determine if it is possible to use pyarrows native parser. Note that pyarrow and polars may have a different
-        strategy regarding type inference.
-    low_memory
-        Reduce memory usage in expense of performance.
+        Rename columns right after parsing the CSV file. If the given
+        list is shorter than the width of the DataFrame the remaining
+        columns will have their original name.
+    sep
+        Character to use as delimiter in the file.
     comment_char
-        character that indicates the start of a comment line, for instance '#'.
+        Character that indicates the start of a comment line, for
+        instance ``#``.
     quote_char
-        single byte character that is used for csv quoting, default = ''. Set to None to turn special handling and escaping
-        of quotes off.
-    storage_options
-        Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
+        Single byte character used for csv quoting, default = ''.
+        Set to None to turn off special handling and escaping of quotes.
+    skip_rows
+        Start reading after ``skip_rows`` lines.
+    dtypes
+        Overwrite dtypes during inference.
     null_values
         Values to interpret as null values. You can provide a:
-
-        - str -> all values encountered equal to this string will be null
-        - List[str] -> A null value per column.
-        - Dict[str, str] -> A dictionary that maps column name to a null value string.
+          - ``str``: All values equal to this string will be null.
+          - ``List[str]``: A null value per column.
+          - ``Dict[str, str]``: A dictionary that maps column name to a
+                                null value string.
+    ignore_errors
+        Try to keep reading lines if some lines yield errors.
+        First try ``infer_schema_length=0`` to read all columns as
+        ``pl.Utf8`` to check which values might cause an issue.
     parse_dates
-        Try to automatically parse dates. If this not succeeds, the column remains
-        of data type Utf8.
+        Try to automatically parse dates. If this does not succeed,
+        the column remains of data type ``pl.Utf8``.
+    n_threads
+        Number of threads to use in csv parsing.
+        Defaults to the number of physical cpu's of your system.
+    infer_schema_length
+        Maximum number of lines to read to infer schema.
+        If set to 0, all columns will be read as ``pl.Utf8``.
+        If set to ``None``, a full table scan will be done (slow).
+    batch_size
+        Number of lines to read into the buffer at once.
+        Modify this to change performance.
+    n_rows
+        Stop reading from CSV file after reading ``n_rows``.
+        During multi-threaded parsing, an upper bound of ``n_rows``
+        rows cannot be guaranteed.
+    encoding
+        Allowed encodings: ``utf8`` or ``utf8-lossy``.
+        Lossy means that invalid utf8 values are replaced with ``�``
+        characters.
+    low_memory
+        Reduce memory usage at expense of performance.
+    rechunk
+        Make sure that all columns are contiguous in memory by
+        aggregating the chunks into a single array.
+    use_pyarrow
+        Try to use pyarrow's native CSV parser.
+        This is not always possible. The set of arguments given to
+        this function determines if it is possible to use pyarrow's
+        native parser. Note that pyarrow and polars may have a
+        different strategy regarding type inference.
+    storage_options
+        Extra options that make sense for ``fsspec.open()`` or a
+        particular storage connection.
+        e.g. host, port, username, password, etc.
 
     Returns
     -------
     DataFrame
     """
-    # for backward compatibility
-    dtypes = kwargs.get("dtypes", dtypes)
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    has_header = kwargs.pop("has_headers", has_header)
+    dtypes = kwargs.pop("dtype", dtypes)
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
+    if columns is None:
+        columns = kwargs.pop("projection", None)
+
+    projection: Optional[List[int]] = None
+    if columns:
+        if isinstance(columns, list):
+            if all(isinstance(i, int) for i in columns):
+                projection = columns  # type: ignore
+                columns = None
+            elif not all(isinstance(i, str) for i in columns):
+                raise ValueError(
+                    "columns arg should contain a list of all integers or all strings values."
+                )
 
     if isinstance(file, bytes) and len(file) == 0:
         raise ValueError("no date in bytes")
 
     storage_options = storage_options or {}
 
-    if columns and not has_headers:
+    if columns and not has_header:
         for column in columns:
-            if not column.startswith("column_"):
+            if isinstance(column, str) and not column.startswith("column_"):
                 raise ValueError(
                     'Specified column names do not start with "column_", '
                     "but autogenerated header names were requested."
@@ -254,7 +285,7 @@ def read_csv(
     if (
         use_pyarrow
         and dtypes is None
-        and stop_after_n_rows is None
+        and n_rows is None
         and n_threads is None
         and encoding == "utf8"
         and not low_memory
@@ -264,12 +295,12 @@ def read_csv(
         include_columns = None
 
         if columns:
-            if not has_headers:
+            if not has_header:
                 # Convert 'column_1', 'column_2', ... column names to 'f0', 'f1', ... column names for pyarrow,
                 # if CSV file does not contain a header.
-                include_columns = [f"f{int(column[7:]) - 1}" for column in columns]
+                include_columns = [f"f{int(column[7:]) - 1}" for column in columns]  # type: ignore
             else:
-                include_columns = columns
+                include_columns = columns  # type: ignore
 
         if not columns and projection:
             # Convert column indices from projection to 'f0', 'f1', ... column names for pyarrow.
@@ -279,7 +310,7 @@ def read_csv(
             tbl = pa.csv.read_csv(
                 data,
                 pa.csv.ReadOptions(
-                    skip_rows=skip_rows, autogenerate_column_names=not has_headers
+                    skip_rows=skip_rows, autogenerate_column_names=not has_header
                 ),
                 pa.csv.ParseOptions(delimiter=sep),
                 pa.csv.ConvertOptions(
@@ -289,7 +320,7 @@ def read_csv(
                 ),
             )
 
-        if not has_headers:
+        if not has_header:
             # Rename 'f0', 'f1', ... columns names autogenated by pyarrow to 'column_1', 'column_2', ...
             tbl = tbl.rename_columns(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
@@ -313,13 +344,13 @@ def read_csv(
 
             # Get column names of requested columns.
             current_columns = columns[0 : len(new_columns)]
-        elif not has_headers:
+        elif not has_header:
             # When there are no header, column names are autogenerated (and known).
 
             if projection:
                 if columns and len(columns) < len(new_columns):
                     raise ValueError(
-                        "More new colum names are specified than there are projected columns."
+                        "More new colum names are specified than there are selected columns."
                     )
                 # Convert column indices from projection to 'column_1', 'column_2', ... column names.
                 current_columns = [
@@ -361,24 +392,23 @@ def read_csv(
     with _prepare_file_arg(file, **storage_options) as data:
         df = DataFrame.read_csv(
             file=data,
-            infer_schema_length=infer_schema_length,
-            batch_size=batch_size,
-            has_headers=has_headers,
-            ignore_errors=ignore_errors,
-            stop_after_n_rows=stop_after_n_rows,
-            skip_rows=skip_rows,
-            projection=projection,
+            has_header=has_header,
+            columns=columns if columns else projection,
             sep=sep,
-            columns=columns,
-            rechunk=rechunk,
-            encoding=encoding,
-            n_threads=n_threads,
-            dtypes=dtypes,
-            low_memory=low_memory,
             comment_char=comment_char,
             quote_char=quote_char,
+            skip_rows=skip_rows,
+            dtypes=dtypes,
             null_values=null_values,
+            ignore_errors=ignore_errors,
             parse_dates=parse_dates,
+            n_threads=n_threads,
+            infer_schema_length=infer_schema_length,
+            batch_size=batch_size,
+            n_rows=n_rows,
+            encoding=encoding,
+            low_memory=low_memory,
+            rechunk=rechunk,
         )
 
     if new_columns:
@@ -388,63 +418,73 @@ def read_csv(
 
 def scan_csv(
     file: Union[str, Path],
-    infer_schema_length: Optional[int] = 100,
-    has_headers: bool = True,
-    ignore_errors: bool = False,
+    has_header: bool = True,
     sep: str = ",",
-    skip_rows: int = 0,
-    stop_after_n_rows: Optional[int] = None,
-    cache: bool = True,
-    dtype: Optional[Dict[str, Type[DataType]]] = None,
-    low_memory: bool = False,
     comment_char: Optional[str] = None,
     quote_char: Optional[str] = r'"',
+    skip_rows: int = 0,
+    dtypes: Optional[Dict[str, Type[DataType]]] = None,
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
+    ignore_errors: bool = False,
+    cache: bool = True,
     with_column_names: Optional[Callable[[List[str]], List[str]]] = None,
+    infer_schema_length: Optional[int] = 100,
+    n_rows: Optional[int] = None,
+    low_memory: bool = False,
+    **kwargs: Any,
 ) -> LazyFrame:
     """
-    Lazily read from a csv file.
+    Lazily read from a CSV file.
 
-    This allows the query optimizer to push down predicates and projections to the scan level,
-    thereby potentially reducing memory overhead.
+    This allows the query optimizer to push down predicates and
+    projections to the scan level, thereby potentially reducing
+    memory overhead.
 
     Parameters
     ----------
     file
         Path to a file.
-    infer_schema_length
-        The number of rows Polars will read to try to determine the schema.
-    has_headers
-        If the CSV file has headers or not.
-    ignore_errors
-        Try to keep reading lines if some lines yield errors.
+    has_header
+        Indicate if the first row of dataset is a header or not.
+        If set to False, column names will be autogenrated in the
+        following format: ``column_x``, with ``x`` being an
+        enumeration over every column in the dataset starting at 1.
     sep
-        Delimiter/ value separator.
-    skip_rows
-        Start reading after `skip_rows`.
-    stop_after_n_rows
-        After n rows are read from the CSV, it stops reading.
-        During multi-threaded parsing, an upper bound of `n` rows cannot be guaranteed.
-    cache
-        Cache the result after reading.
-    dtype
-        Overwrite the dtypes during inference.
-    low_memory
-        Reduce memory usage in expense of performance.
+        Character to use as delimiter in the file.
     comment_char
-        character that indicates the start of a comment line, for instance '#'.
+        Character that indicates the start of a comment line, for
+        instance ``#``.
     quote_char
-        single byte character that is used for csv quoting, default = ''. Set to None to turn special handling and escaping
-        of quotes off.
+        Single byte character used for csv quoting, default = ''.
+        Set to None to turn off special handling and escaping of quotes.
+    skip_rows
+        Start reading after ``skip_rows`` lines.
+    dtypes
+        Overwrite dtypes during inference.
     null_values
         Values to interpret as null values. You can provide a:
-
-        - str -> all values encountered equal to this string will be null
-        - List[str] -> A null value per column.
-        - Dict[str, str] -> A dictionary that maps column name to a null value string.
+          - ``str``: All values equal to this string will be null.
+          - ``List[str]``: A null value per column.
+          - ``Dict[str, str]``: A dictionary that maps column name to a
+                                null value string.
+    ignore_errors
+        Try to keep reading lines if some lines yield errors.
+        First try ``infer_schema_length=0`` to read all columns as
+        ``pl.Utf8`` to check which values might cause an issue.
+    cache
+        Cache the result after reading.
     with_column_names
-        Apply a function over the column names. This can be used to update a schema just in time, thus before scanning.
-
+        Apply a function over the column names.
+        This can be used to update a schema just in time, thus before
+        scanning.
+    infer_schema_length
+        Maximum number of lines to read to infer schema.
+        If set to 0, all columns will be read as ``pl.Utf8``.
+        If set to ``None``, a full table scan will be done (slow).
+    n_rows
+        Stop reading from CSV file after reading ``n_rows``.
+    low_memory
+        Reduce memory usage in expense of performance.
 
     Examples
     --------
@@ -485,33 +525,41 @@ def scan_csv(
 
 
     """
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    has_header = kwargs.pop("has_headers", has_header)
+    dtypes = kwargs.pop("dtype", dtypes)
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
     if isinstance(file, Path):
         file = str(file)
+
     return LazyFrame.scan_csv(
         file=file,
-        has_headers=has_headers,
+        has_header=has_header,
         sep=sep,
-        ignore_errors=ignore_errors,
-        skip_rows=skip_rows,
-        stop_after_n_rows=stop_after_n_rows,
-        cache=cache,
-        dtype=dtype,
-        low_memory=low_memory,
         comment_char=comment_char,
         quote_char=quote_char,
+        skip_rows=skip_rows,
+        dtypes=dtypes,
         null_values=null_values,
-        infer_schema_length=infer_schema_length,
+        ignore_errors=ignore_errors,
+        cache=cache,
         with_column_names=with_column_names,
+        infer_schema_length=infer_schema_length,
+        n_rows=n_rows,
+        low_memory=low_memory,
     )
 
 
 def scan_ipc(
     file: Union[str, Path],
-    stop_after_n_rows: Optional[int] = None,
+    n_rows: Optional[int] = None,
     cache: bool = True,
+    **kwargs: Any,
 ) -> LazyFrame:
     """
-    Lazily read from an IPC file.
+    Lazily read from an Arrow IPC (Feather v2) file.
 
     This allows the query optimizer to push down predicates and projections to the scan level,
     thereby potentially reducing memory overhead.
@@ -519,23 +567,27 @@ def scan_ipc(
     Parameters
     ----------
     file
-        Path to a file.
-    stop_after_n_rows
-        After n rows are read from the parquet, it stops reading.
+        Path to a IPC file.
+    n_rows
+        Stop reading from IPC file after reading ``n_rows``.
     cache
         Cache the result after reading.
     """
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
     if isinstance(file, Path):
         file = str(file)
-    return LazyFrame.scan_ipc(
-        file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
-    )
+
+    return LazyFrame.scan_ipc(file=file, n_rows=n_rows, cache=cache)
 
 
 def scan_parquet(
     file: Union[str, Path],
-    stop_after_n_rows: Optional[int] = None,
+    n_rows: Optional[int] = None,
     cache: bool = True,
+    **kwargs: Any,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file.
@@ -547,16 +599,19 @@ def scan_parquet(
     ----------
     file
         Path to a file.
-    stop_after_n_rows
-        After n rows are read from the parquet, it stops reading.
+    n_rows
+        Stop reading from parquet file after reading ``n_rows``.
     cache
         Cache the result after reading.
     """
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
     if isinstance(file, Path):
         file = str(file)
-    return LazyFrame.scan_parquet(
-        file=file, stop_after_n_rows=stop_after_n_rows, cache=cache
-    )
+
+    return LazyFrame.scan_parquet(file=file, n_rows=n_rows, cache=cache)
 
 
 def read_ipc_schema(
@@ -570,7 +625,6 @@ def read_ipc_schema(
     file
         Path to a file or a file like object.
 
-
     Returns
     -------
     Dictionary mapping column names to datatypes
@@ -580,32 +634,31 @@ def read_ipc_schema(
 
 def read_ipc(
     file: Union[str, BinaryIO, BytesIO, Path, bytes],
-    columns: Optional[List[str]] = None,
-    projection: Optional[List[int]] = None,
-    stop_after_n_rows: Optional[int] = None,
+    columns: Optional[Union[List[int], List[str]]] = None,
+    n_rows: Optional[int] = None,
     use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
     storage_options: Optional[Dict] = None,
+    **kwargs: Any,
 ) -> DataFrame:
     """
-    Read into a DataFrame from Arrow IPC stream format. This is also called the feather format.
+    Read into a DataFrame from Arrow IPC (Feather v2) file.
 
     Parameters
     ----------
     file
         Path to a file or a file like object.
-        If ``fsspec`` is installed, it will be used to open remote files
+        If ``fsspec`` is installed, it will be used to open remote files.
     columns
-        Columns to select.
-    projection
-        Indices of columns to select. Note that column indices start at zero.
-    stop_after_n_rows
-        Only read specified number of rows of the dataset. After `n` stops reading.
+        Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
+    n_rows
+        Stop reading from IPC file after reading ``n_rows``.
+        Only valid when `use_pyarrow=False`.
     use_pyarrow
         Use pyarrow or the native rust reader.
     memory_map
         Memory map underlying file. This will likely increase performance.
-        Only used when 'use_pyarrow=True'
+        Only used when ``use_pyarrow=True``.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
 
@@ -613,11 +666,16 @@ def read_ipc(
     -------
     DataFrame
     """
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
+    if columns is None:
+        columns = kwargs.pop("projection", None)
+
     if use_pyarrow:
-        if stop_after_n_rows:
-            raise ValueError(
-                "'stop_after_n_rows' cannot be used with 'use_pyarrow=True'."
-            )
+        if n_rows:
+            raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
 
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
@@ -627,29 +685,20 @@ def read_ipc(
                     "'pyarrow' is required when using 'read_ipc(..., use_pyarrow=True)'."
                 )
 
-            # pyarrow accepts column names or column indices.
-            tbl = pa.feather.read_table(
-                data, memory_map=memory_map, columns=columns if columns else projection
-            )
+            tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
             return DataFrame._from_arrow(tbl)
-
-        if columns:
-            # Unset projection if column names where specified.
-            projection = None
 
         return DataFrame.read_ipc(
             data,
             columns=columns,
-            projection=projection,
-            stop_after_n_rows=stop_after_n_rows,
+            n_rows=n_rows,
         )
 
 
 def read_parquet(
     source: Union[str, List[str], Path, BinaryIO, BytesIO, bytes],
-    columns: Optional[List[str]] = None,
-    projection: Optional[List[int]] = None,
-    stop_after_n_rows: Optional[int] = None,
+    columns: Optional[Union[List[int], List[str]]] = None,
+    n_rows: Optional[int] = None,
     use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
     storage_options: Optional[Dict] = None,
@@ -663,19 +712,17 @@ def read_parquet(
     source
         Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
         as partition aware scan.
-        If ``fsspec`` is installed, it will be used to open remote files
+        If ``fsspec`` is installed, it will be used to open remote files.
     columns
-        Columns to select.
-    projection
-        Indices of columns to select. Note that column indices start at zero.
-    stop_after_n_rows
-        After n rows are read from the parquet, it stops reading.
-        Only valid when 'use_pyarrow=False'
+        Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
+    n_rows
+        Stop reading from parquet file after reading ``n_rows``.
+        Only valid when `use_pyarrow=False`.
     use_pyarrow
         Use pyarrow instead of the rust native parquet reader. The pyarrow reader is more stable.
     memory_map
         Memory map underlying file. This will likely increase performance.
-        Only used when 'use_pyarrow=True'
+        Only used when ``use_pyarrow=True``.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
     **kwargs
@@ -685,11 +732,16 @@ def read_parquet(
     -------
     DataFrame
     """
+
+    # Map legacy arguments to current ones and remove them from kwargs.
+    n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
+    if columns is None:
+        columns = kwargs.pop("projection", None)
+
     if use_pyarrow:
-        if stop_after_n_rows:
-            raise ValueError(
-                "'stop_after_n_rows' cannot be used with 'use_pyarrow=True'."
-            )
+        if n_rows:
+            raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
 
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
@@ -699,25 +751,19 @@ def read_parquet(
                     "'pyarrow' is required when using 'read_parquet(..., use_pyarrow=True)'."
                 )
 
-            # pyarrow accepts column names or column indices.
             return from_arrow(  # type: ignore[return-value]
                 pa.parquet.read_table(
                     source_prep,
                     memory_map=memory_map,
-                    columns=columns if columns else projection,
+                    columns=columns,
                     **kwargs,
                 )
             )
 
-        if columns:
-            # Unset projection if column names where specified.
-            projection = None
-
         return DataFrame.read_parquet(
             source_prep,
             columns=columns,
-            projection=projection,
-            stop_after_n_rows=stop_after_n_rows,
+            n_rows=n_rows,
         )
 
 

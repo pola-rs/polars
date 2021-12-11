@@ -207,7 +207,7 @@ impl PredicatePushDown {
                 with_columns,
                 predicate,
                 aggregate,
-                stop_after_n_rows,
+                n_rows,
                 cache,
             } => {
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
@@ -219,7 +219,7 @@ impl PredicatePushDown {
                     with_columns,
                     predicate,
                     aggregate,
-                    stop_after_n_rows,
+                    n_rows,
                     cache,
                 };
                 Ok(lp)
