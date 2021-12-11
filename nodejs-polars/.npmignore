@@ -7,4 +7,3 @@ npm
 .prettierignore
 rustfmt.toml
 yarn.lock
-*.node

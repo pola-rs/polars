@@ -558,8 +558,6 @@ pub fn fill_null(cx: CallContext) -> JsResult<JsExternal> {
     JsSeries::new(series).try_into_js(&cx)
 }
 
-use polars_core::chunked_array::iterator::*;
-
 #[js_function(1)]
 pub fn map(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -567,7 +565,7 @@ pub fn map(cx: CallContext) -> JsResult<JsExternal> {
     let func: JsFunction = params.get("func")?;
     let series: Series = (&series).series.clone();
     let len = series.len();
-    let arr = cx.env.create_array_with_length(len)?;
+    let _arr = cx.env.create_array_with_length(len)?;
 
     // for idx in 0..len {
     //     let item: AnyValue = series.get(idx);

@@ -1,7 +1,7 @@
 use crate::conversion::prelude::*;
 use crate::dataframe::JsDataFrame;
 use crate::prelude::{JsPolarsEr, JsResult};
-use napi::{CallContext, JsExternal, JsObject, JsString};
+use napi::{CallContext, JsExternal, JsObject, JsString, JsBuffer};
 use polars::lazy::frame::{LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::NullValues;
@@ -22,20 +22,19 @@ impl IntoJs<JsExternal> for LazyGroupBy {
 #[js_function(1)]
 pub fn new_from_csv(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let path: String = params.get_as("path")?;
-    let stop_after_n_rows: Option<usize> = params.get_as("stopAfterNRows")?;
-    let comment_char: Option<&str> = params.get_as("commentChar")?;
-    let null_values: Option<Wrap<NullValues>> = params.get_as("nullValues")?;
 
-    let sep: &str = params.get_or("sep", ",")?;
+    let cache: bool = params.get_or("cache", true)?;
+    let comment_char: Option<&str> = params.get_as("commentChar")?;
     let has_header: bool = params.get_or("hasHeader", true)?;
     let ignore_errors: bool = params.get_or("ignoreErrors", false)?;
-    let skip_rows: usize = params.get_or("skipRows", 0)?;
-    let cache: bool = params.get_or("cache", true)?;
-
-    let low_memory: bool = params.get_or("lowMemory", false)?;
-    let quote_char: &str = params.get_or("quoteChar", r#"""#)?;
     let infer_schema_length: usize = params.get_or("inferSchemaLength", 100 as usize)?;
+    let low_memory: bool = params.get_or("lowMemory", false)?;
+    let null_values: Option<Wrap<NullValues>> = params.get_as("nullValues")?;
+    let path: String = params.get_as("path")?;
+    let quote_char: &str = params.get_or("quoteChar", r#"""#)?;
+    let sep: &str = params.get_or("sep", ",")?;
+    let skip_rows: usize = params.get_or("startRows", 0)?;
+    let stop_after_n_rows: Option<usize> = params.get_as("endRows")?;
 
     let null_values = null_values.map(|w| w.0);
     let comment_char = comment_char.map(|s| s.as_bytes()[0]);

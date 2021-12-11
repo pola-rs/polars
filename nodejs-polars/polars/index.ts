@@ -53,6 +53,7 @@ namespace pl {
 
   // lazy
   export import col = lazy.col
+  export import cols = lazy.cols
   export import lit = lazy.lit
   export import max = lazy.max
   export import fold = lazy.fold

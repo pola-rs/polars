@@ -1455,6 +1455,12 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       .explode(columns)
       .collectSync({noOptimization:true});
   };
+  const filter = (predicate)  => {
+    return dfWrapper(_df)
+      .lazy()
+      .filter(predicate)
+      .collectSync();
+  };
 
   return {
     _df,
@@ -1529,7 +1535,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     apply: () => {throw todo();},
     dropDuplicates,
     explode,
-    filter: (predicate) => {throw todo();},
+    filter,
     pipe: (fn?) => {throw todo();},
     row: (index) => unwrap("to_row", {idx: index}),
     upsample: (index) => {throw todo();},

@@ -1,4 +1,4 @@
-import pl, {lit} from "@polars";
+import pl from "@polars";
 
 describe("lazyframe", () => {
   test("columns", () => {

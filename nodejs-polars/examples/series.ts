@@ -1,19 +1,8 @@
-import pl from "../polars";
+import pl, {col, lit} from "../polars";
 import pli from "../polars/internals/polars_internal";
-const w = pli
-  .when(pl.col("foo"));
-console.log(w);
-
-// function whenthen(predicate, arg) {
-// }
-
-// function when(predicate) {
-//   return {
-//     then: (expr)  => {
-//       console.log({predicate, _this: this});
-
-//       return whenthen(predicate, expr);
-//     }
-//   };
-// }
-// when("foo").then("bar");
+const df = pl.DataFrame({
+  "foo": [1, 2, 3],
+  "bar": [4, 5, 6],
+});
+const fn = () => df.select(col("foo"), lit(pl.Series([1, 2])));
+console.log("fn", fn());

@@ -10,7 +10,18 @@
   "napi": {
     "name": "nodejs-polars",
     "triples": {
-      "defaults": true
+      "defaults": true,
+      "additional": [
+        "i686-pc-windows-msvc",
+        "aarch64-unknown-linux-gnu",
+        "armv7-unknown-linux-gnueabihf",
+        "aarch64-apple-darwin",
+        "aarch64-linux-android",
+        "x86_64-unknown-freebsd",
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-musl",
+        "aarch64-pc-windows-msvc"
+      ]
     }
   },
   "engines": {
@@ -24,7 +35,7 @@
     "artifacts": "napi artifacts",
     "bench": "node -r @swc-node/register benchmark/bench.ts",
     "build_alt": "RUSTFLAGS='-C codegen-units=16' napi build --platform --release",
-    "build": "napi build --platform --release",
+    "build": "rm -rf ./bin; tsc; napi build --platform --release",
     "build:debug": "napi build --platform polars/",
     "build:tsc": "rm -rf ./bin; tsc",
     "format:rs": "cargo fmt",
@@ -87,6 +98,15 @@
   "optionalDependencies": {
     "nodejs-polars-win32-x64-msvc": "0.0.1",
     "nodejs-polars-darwin-x64": "0.0.1",
-    "nodejs-polars-linux-x64-gnu": "0.0.1"
+    "nodejs-polars-linux-x64-gnu": "0.0.1",
+    "nodejs-polars-win32-ia32-msvc": "0.0.1",
+    "nodejs-polars-linux-arm64-gnu": "0.0.1",
+    "nodejs-polars-linux-arm-gnueabihf": "0.0.1",
+    "nodejs-polars-darwin-arm64": "0.0.1",
+    "nodejs-polars-android-arm64": "0.0.1",
+    "nodejs-polars-freebsd-x64": "0.0.1",
+    "nodejs-polars-linux-x64-musl": "0.0.1",
+    "nodejs-polars-linux-arm64-musl": "0.0.1",
+    "nodejs-polars-win32-arm64-msvc": "0.0.1"
   }
 }

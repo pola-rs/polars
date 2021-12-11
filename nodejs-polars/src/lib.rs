@@ -11,6 +11,7 @@ pub mod series;
 pub mod series_object;
 use crate::dataframe::JsDataFrame;
 use crate::lazy::dsl;
+use crate::lazy::functions;
 use crate::lazy::lazyframe_object::JsLazyFrame;
 use crate::series::{repeat, JsSeries};
 use napi::{JsObject, Result};
@@ -24,7 +25,6 @@ pub fn init(mut exports: JsObject, env: napi::Env) -> Result<()> {
     let series = JsSeries::to_object(&env)?;
     let df = JsDataFrame::to_object(&env)?;
     let expr = dsl::JsExpr::to_object(&env)?;
-    
     let when = dsl::JsWhen::to_object(&env)?;
     let when_then = dsl::JsWhenThen::to_object(&env)?;
     let when_then_then = dsl::JsWhenThenThen::to_object(&env)?;
@@ -41,6 +41,8 @@ pub fn init(mut exports: JsObject, env: napi::Env) -> Result<()> {
     exports.create_named_method("cols", dsl::cols)?;
     exports.create_named_method("lit", dsl::lit)?;
     exports.create_named_method("when", dsl::when)?;
+    exports.create_named_method("arange", functions::arange)?;
+    exports.create_named_method("argSortBy", functions::argsort_by)?;
 
     Ok(())
 }

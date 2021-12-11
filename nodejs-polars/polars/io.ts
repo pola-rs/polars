@@ -2,6 +2,7 @@ import { DataType, JoinOptions, JsDataFrame, ReadCsvOptions, ReadJsonOptions, Wr
 import pli from "./internals/polars_internal";
 import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";
+import {LazyDataFrame} from "./lazy/dataframe";
 const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   inferSchemaLength: 10,
   batchSize: 10,
@@ -112,7 +113,20 @@ export function readJSON(arg: ReadJsonOptions | string, options?: any) {
   return dfWrapper(pli.df.read_json(options));
 }
 
-export function scanCSV() {}
+/**
+ * Read into a DataFrame from a csv file.
+ */
+export function scanCSV(options: Partial<ReadCsvOptions>): LazyDataFrame
+export function scanCSV(path: string): LazyDataFrame
+export function scanCSV(path: string, options: Partial<ReadCsvOptions>): LazyDataFrame
+export function scanCSV(arg: Partial<ReadCsvOptions> | string, options?: any): LazyDataFrame {
+  if(typeof arg === "string") {
+    return scanCSV({...options, path: arg});
+  }
+  options = {...readCsvDefaultOptions, ...arg};
+
+  return LazyDataFrame(pli.ldf.scanCSV(options));
+}
 export function readParquet() {}
 export function scanParquet() {}
 export function readIPC() {}

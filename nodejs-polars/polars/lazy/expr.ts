@@ -118,9 +118,10 @@ export interface Expr {
   argSort({reverse}: {reverse: boolean}): Expr
   /** Get index of first unique value. */
   argUnique(): Expr
+
   /** @see {@link Expr.alias} */
-  as({name}: {name: string}): Expr
   as(name: string): Expr
+  as({name}: {name: string}): Expr
   /** Fill missing values with the next to be seen values */
   backwardFill(): Expr
   /** Cast between data types. */
@@ -702,6 +703,7 @@ export const Expr = (_expr: JsExpr): Expr => {
     quantile: wrapUnary("quantile", "quantile"),
     shift: wrapUnary("shift", "periods"),
     suffix: wrapUnary("suffix", "suffix"),
+    as: wrapUnary("alias", "name"),
     alias: wrapUnary("alias", "name"),
     prefix: wrapUnary("prefix", "prefix"),
     rank: wrapUnary("rank", "method"),

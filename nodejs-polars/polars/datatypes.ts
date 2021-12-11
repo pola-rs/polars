@@ -38,24 +38,24 @@ export enum DataType {
 export type JsDataFrame = any;
 export type NullValues = string | Array<string> | Record<string, string>;
 export type ReadCsvOptions = {
+  batchSize?: number;
+  columns?: Array<string>;
+  commentChar?: string;
+  encoding?: "utf8" | "utf8-lossy";
+  endRows?: number;
   file: string;
   hasHeader: boolean;
-  inferSchemaLength?: number;
-  batchSize?: number;
   ignoreErrors?: boolean;
-  endRows?: number;
-  startRows?: number;
-  projection?: Array<number>;
-  sep?: string;
-  columns?: Array<string>;
-  rechunk?: boolean;
-  encoding?: "utf8" | "utf8-lossy";
-  numThreads?: number;
+  inferSchemaLength?: number;
   lowMemory?: boolean;
-  commentChar?: string;
-  quoteChar?: string;
   nullValues?: NullValues;
+  numThreads?: number;
   parseDates?: boolean;
+  projection?: Array<number>;
+  quoteChar?: string;
+  rechunk?: boolean;
+  sep?: string;
+  startRows?: number;
 };
 export type ReadJsonOptions = Partial<{
   file: string;

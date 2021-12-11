@@ -57,25 +57,26 @@ pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
 pub(crate) fn read_csv(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
 
-    let infer_schema_length: Option<usize> = params.get_as("inferSchemaLength")?;
     let chunk_size: usize = params.get_as("batchSize")?;
+    let columns: Option<Vec<String>> = params.get_as("columns")?;
+    let comment_char: Option<&str> = params.get_as("commentChar")?;
+    let encoding: &str = params.get_as("encoding")?;
     let has_header: bool = params.get_as("hasHeader")?;
     let ignore_errors: bool = params.get_as("ignoreErrors")?;
-    let stop_after_n_rows: Option<usize> = params.get_as("endRows")?;
-    let skip_rows: usize = params.get_as("startRows")?;
-    let projection: Option<Vec<usize>> = params.get_as("projection")?;
-    let sep: &str = params.get_as("sep")?;
-    let rechunk: bool = params.get_as("rechunk")?;
-    let columns: Option<Vec<String>> = params.get_as("columns")?;
-    let encoding: &str = params.get_as("encoding")?;
-    let n_threads: Option<usize> = params.get_as("numThreads")?;
+    let infer_schema_length: Option<usize> = params.get_as("inferSchemaLength")?;
+    let inline: Option<bool> = params.get_as("inline")?;
     let low_memory: bool = params.get_as("lowMemory")?;
-    let comment_char: Option<&str> = params.get_as("commentChar")?;
-    let quote_char: Option<&str> = params.get_as("quoteChar")?;
+    let n_threads: Option<usize> = params.get_as("numThreads")?;
     let null_values: Option<Wrap<NullValues>> = params.get_as("nullValues")?;
     let parse_dates: bool = params.get_as("parseDates")?;
-    let inline: Option<bool> = params.get_as("inline")?;
     let path = params.get_as::<String>("file")?;
+    let projection: Option<Vec<usize>> = params.get_as("projection")?;
+    let quote_char: Option<&str> = params.get_as("quoteChar")?;
+    let rechunk: bool = params.get_as("rechunk")?;
+    let sep: &str = params.get_as("sep")?;
+    let skip_rows: usize = params.get_as("startRows")?;
+    let stop_after_n_rows: Option<usize> = params.get_as("endRows")?;
+    
     let null_values = null_values.map(|w| w.0);
     let comment_char = comment_char.map(|s| s.as_bytes()[0]);
 

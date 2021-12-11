@@ -34,7 +34,7 @@ function WhenThenThen(_when): WhenThenThen {
 
 function WhenThen(_when): WhenThen {
   return {
-    when: ({_expr}: Expr) => WhenThenThen(pli._whenthen.when({_when, _expr})),
+    when: ({_expr}: Expr): WhenThenThen => WhenThenThen(pli._whenthen.when({_when, _expr})),
     otherwise: ({_expr}: Expr): Expr => Expr(pli._whenthen.otherwise({_when, _expr}))
   };
 }
@@ -46,7 +46,7 @@ function WhenThen(_when): WhenThen {
  */
 function When(_when): When {
   return {
-    then: ({_expr}: Expr) => WhenThen(pli._when.then({_when, _expr}))
+    then: ({_expr}: Expr): WhenThen => WhenThen(pli._when.then({_when, _expr}))
   };
 }
 
@@ -98,8 +98,3 @@ export function when(expr:Expr): When  {
 
   return When(pli.when(expr));
 }
-
-console.log(when(col("foo"))
-  .then(lit("a"))
-  .otherwise(lit("foo"))
-);

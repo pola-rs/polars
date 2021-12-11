@@ -58,4 +58,24 @@ describe("io", () => {
       });
     });
   });
+  describe.skip("scan", () => {
+    describe.skip("csv", () => {
+      it("can lazy load (scan) from a csv file", () => {
+        const df = pl.scanCSV(csvpath).collectSync();
+        expect(df.shape).toStrictEqual({height: 27, width: 4});
+      });
+      it("can lazy load (scan) from a csv file with options", () => {
+        const df = pl
+          .scanCSV(csvpath, {
+            hasHeader: false,
+            startRows: 1,
+            endRows: 4
+          })
+          .collectSync();
+
+        expect(df.shape).toStrictEqual({height: 4, width: 4});
+      });
+      it.todo("can read from a stream");
+    });
+  });
 });

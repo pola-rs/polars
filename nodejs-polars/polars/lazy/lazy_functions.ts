@@ -111,7 +111,17 @@ export function col(col: string | string[] | Series<string>): Expr {
     return Expr(pli.col({name: col}));
   }
 }
+export function cols(col1: string, ...cols: string[]): Expr {
+  cols.unshift(col1);
+
+  return col(cols);
+}
+
 export function lit(value: any): Expr {
+  if(isSeries(value)){
+    return Expr(pli.lit({value: value._series}));
+  }
+
   return Expr(pli.lit({value}));
 }
 
@@ -167,7 +177,7 @@ export function fold<T>(
  * @param low - Lower bound of range.
  * @param high - Upper bound of range.
  * @param step - Step size of the range
- * @param eager - If eager evaluation is `True`, a Series is returned instead of an Expr
+ * @param eager - If eager evaluation is `true`, a Series is returned instead of an Expr
  * @example
  * ```
  * >>> df.lazy()
@@ -175,9 +185,9 @@ export function fold<T>(
  * >>>   .collect()
  * ```
  */
-export function arange<T>(opts: {low: Series<T> | Expr, high: Series<T> | Expr, step:number, eager:boolean});
-export function arange<T>(low: Series<T> | Expr, high?: Series<T> | Expr, step?: number, eager?: true): Series<T>;
-export function arange<T>(low: Series<T> | Expr, high?: Series<T> | Expr, step?: number, eager?: false): Expr;
+export function arange<T>(opts: {low: Series<T> | T, high: Series<T> | T, step:number, eager:boolean});
+export function arange<T>(low: Series<T> | T, high?: Series<T> | T, step?: number, eager?: true): Series<T>;
+export function arange<T>(low: Series<T> | T, high?: Series<T> | T, step?: number, eager?: false): Expr;
 export function arange<T>(opts:any, high?, step?, eager?): Series<T> | Expr {
   if(opts?.low) {
     return arange(opts.low, opts.high, opts.step, opts.eager);
@@ -200,20 +210,15 @@ export function arange<T>(opts:any, high?, step?, eager?): Series<T> | Expr {
  * If there are duplicates in the first column, the second column will be used to determine the ordering
  * and so on.
  */
-export function argSortBy(opts: {expr: Expr | string, reverse?: boolean});
-export function argSortBy(opts: {expr: Expr[] | string[], reverse?: boolean[]});
-export function argSortBy(expr: Expr | string, reverse?: boolean);
-export function argSortBy(exprs: Expr[] | string[], reverse?: boolean[]);
-export function argSortBy(opts, reverse?: boolean | boolean[]) {
-  if(opts?.expr) {
-    return argSortBy(opts.expr, opts.reverse);
-  }
-  if(reverse && !Array.isArray(reverse)) {
-    reverse = Array.from({length: opts.length - 1}, () => reverse) as any;
-  }
-  const exprs = selectionToExprList(opts);
 
-  return Expr(pli.argSortBy({exprs, reverse}));
+export function argSortBy(exprs: Expr[] | string[], reverse: boolean | boolean[] = false): Expr {
+  if(!Array.isArray(reverse)) {
+    reverse = Array.from({length: exprs.length}, () => reverse) as any;
+  }
+  const by = selectionToExprList(exprs);
+  console.log({by, reverse});
+
+  return Expr(pli.argSortBy({by, reverse}));
 }
 /** Alias for mean. @see {@link mean} */
 export function avg(column: string): Expr;

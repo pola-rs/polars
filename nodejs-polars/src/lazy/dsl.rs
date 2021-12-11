@@ -3,7 +3,6 @@ use crate::conversion::utils;
 use crate::datatypes::JsDataType;
 use crate::prelude::JsResult;
 use crate::series::JsSeries;
-use napi::threadsafe_function::ThreadSafeCallContext;
 use napi::*;
 
 use polars::chunked_array::temporal::timedelta::TimeDeltaBuilder;
