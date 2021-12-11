@@ -536,7 +536,7 @@ def test_rank_dispatch() -> None:
 
     testing.assert_series_equal(
         s.rank("dense", reverse=True),
-        pl.Series("a", [3, 2, 1, 4, 4, 1, 2], dtype=UInt32),
+        pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=UInt32),
     )
 
 
@@ -799,7 +799,9 @@ def test_abs() -> None:
     # floats
     s = pl.Series([1.0, -2.0, 3, -4.0])
     testing.assert_series_equal(s.abs(), pl.Series([1.0, 2.0, 3.0, 4.0]))
-    testing.assert_series_equal(np.abs(s), pl.Series([1.0, 2.0, 3.0, 4.0]))  # type: ignore
+    testing.assert_series_equal(
+        np.abs(s), pl.Series([1.0, 2.0, 3.0, 4.0])  # type: ignore
+    )
     testing.assert_series_equal(
         pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0])
     )  # type: ignore
