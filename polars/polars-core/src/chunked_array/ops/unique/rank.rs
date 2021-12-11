@@ -52,13 +52,6 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
     // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
     // TODO: Need to expose nulls_last in argsort to prevent this.
     if s.has_validity() {
-        if s.null_count() == s.len() {
-            return match method {
-                Average => Float32Chunked::full_null(s.name(), s.len()).into_series(),
-                _ => UInt32Chunked::full(s.name(), 1, s.len()).into_series(),
-            };
-        }
-
         // Fill using MaxBound/MinBound to keep nulls first.
         let null_strategy = if reverse {
             FillNullStrategy::MaxBound
@@ -359,13 +352,19 @@ mod test {
     }
 
     #[test]
-    fn test_rank_all_null() {
+    fn test_rank_all_null() -> Result<()> {
         let s = UInt32Chunked::new("", &[None, None, None]).into_series();
-        let out = rank(&s, RankMethod::Average, false);
-        assert_eq!(out.null_count(), 3);
-        assert_eq!(out.dtype(), &DataType::Float32);
-        let out = rank(&s, RankMethod::Max, false);
-        assert_eq!(out.dtype(), &DataType::UInt32);
+        let out = rank(&s, RankMethod::Average, false)
+            .f32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[2.0f32, 2.0, 2.0]);
+        let out = rank(&s, RankMethod::Dense, false)
+            .u32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[1, 1, 1]);
+        Ok(())
     }
 
     #[test]
