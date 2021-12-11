@@ -443,4 +443,22 @@ mod test {
         );
         assert_eq!(out.dtype(), &DataType::UInt32);
     }
+
+    #[test]
+    fn test_rank_reverse() -> Result<()> {
+        let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
+        let out = rank(
+            &s,
+            RankOptions {
+                method: RankMethod::Dense,
+                descending: true,
+            },
+        )
+        .u32()?
+        .into_no_null_iter()
+        .collect::<Vec<_>>();
+        assert_eq!(out, &[1, 3, 3, 2, 1]);
+
+        Ok(())
+    }
 }
