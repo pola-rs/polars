@@ -1093,3 +1093,13 @@ def test_log_exp() -> None:
     out = a.exp()
     expected = pl.Series("a", np.exp(a.to_numpy()))
     testing.assert_series_equal(out, expected)
+
+
+def test_shuffle() -> None:
+    a = pl.Series("a", [1, 2, 3])
+    out = a.shuffle(2)
+    expected = pl.Series("a", [2, 3, 1])
+    testing.assert_series_equal(out, expected)
+
+    out = pl.select(pl.lit(a).shuffle(2)).to_series()
+    testing.assert_series_equal(out, expected)

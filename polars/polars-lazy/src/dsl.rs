@@ -1795,6 +1795,11 @@ impl Expr {
             GetOutput::from_type(DataType::UInt32),
         )
     }
+
+    #[cfg(feature = "random")]
+    pub fn shuffle(self, seed: u64) -> Self {
+        self.apply(move |s| Ok(s.shuffle(seed)), GetOutput::same_type())
+    }
 }
 
 /// Create a Column Expression based on a column name.

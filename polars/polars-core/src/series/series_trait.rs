@@ -1024,16 +1024,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    /// Sample n datapoints from this Series.
-    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series>;
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    /// Sample a fraction between 0.0-1.0 of this Series.
-    fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series>;
-
     #[cfg(feature = "object")]
     #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     /// Get the value at this index as a downcastable Any trait ref.

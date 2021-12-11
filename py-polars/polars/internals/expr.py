@@ -2048,6 +2048,17 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reshape(dims))
 
+    def shuffle(self, seed: int = 0) -> "Expr":
+        """
+        Shuffle the contents of this expr.
+
+        Parameters
+        ----------
+        seed
+            Seed initialization
+        """
+        return wrap_expr(self._pyexpr.shuffle(seed))
+
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
 

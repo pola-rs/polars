@@ -555,18 +555,18 @@ impl PySeries {
         Ok(ca.into_series().into())
     }
 
-    pub fn sample_n(&self, n: usize, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let s = self
             .series
-            .sample_n(n, with_replacement)
+            .sample_n(n, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let s = self
             .series
-            .sample_frac(frac, with_replacement)
+            .sample_frac(frac, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
@@ -1371,6 +1371,9 @@ impl PySeries {
     pub fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
         let out = self.series.reshape(&dims).map_err(PyPolarsEr::from)?;
         Ok(out.into())
+    }
+    pub fn shuffle(&self, seed: u64) -> Self {
+        self.series.shuffle(seed).into()
     }
 }
 
