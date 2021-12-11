@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: 3.7
+          python-version: 3.9
       - name: Install dependencies
         shell: bash
         run: |
@@ -29,7 +29,6 @@ jobs:
           python -m venv venv
           source venv/bin/activate
           pip install -r py-polars/build.requirements.txt
-          pip install --only-binary all pyarrow
           cd py-polars
           rustup override set nightly-2021-12-02 && RUSTFLAGS="-C embed-bitcode" maturin develop --rustc-extra-args="-C codegen-units=8 -C lto=thin -C target-cpu=native" --release
           cd tests/db-benchmark
