@@ -163,6 +163,7 @@ Manipulation/ selection
     Series.str_concat
     Series.reshape
     Series.to_dummies
+    Series.shuffle
 
 Various
 --------

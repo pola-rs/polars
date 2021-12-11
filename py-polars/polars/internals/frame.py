@@ -3446,6 +3446,7 @@ class DataFrame:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
+        seed: int = 0,
     ) -> "DataFrame":
         """
         Sample from this DataFrame by setting either `n` or `frac`.
@@ -3458,6 +3459,8 @@ class DataFrame:
             Fraction between 0.0 and 1.0 .
         with_replacement
             Sample with replacement.
+        seed
+            Initialization seed
 
         Examples
         --------
@@ -3482,8 +3485,8 @@ class DataFrame:
 
         """
         if n is not None:
-            return wrap_df(self._df.sample_n(n, with_replacement))
-        return wrap_df(self._df.sample_frac(frac, with_replacement))
+            return wrap_df(self._df.sample_n(n, with_replacement, seed))
+        return wrap_df(self._df.sample_frac(frac, with_replacement, seed))
 
     def fold(
         self, operation: Callable[["pli.Series", "pli.Series"], "pli.Series"]

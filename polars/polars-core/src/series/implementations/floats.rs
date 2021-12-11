@@ -551,22 +551,6 @@ macro_rules! impl_dyn_series {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
 
-            #[cfg(feature = "random")]
-            #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-            fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
-                self.0
-                    .sample_n(n, with_replacement)
-                    .map(|ca| ca.into_series())
-            }
-
-            #[cfg(feature = "random")]
-            #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-            fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
-                self.0
-                    .sample_frac(frac, with_replacement)
-                    .map(|ca| ca.into_series())
-            }
-
             fn pow(&self, exponent: f64) -> Result<Series> {
                 let f_err = || {
                     Err(PolarsError::InvalidOperation(

@@ -1,27 +1,24 @@
 use crate::prelude::*;
-use crate::utils::{CustomIterTools, NoNull};
+use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
 use num::{Float, NumCast};
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
-use rand::seq::IteratorRandom;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
 
-fn create_rand_index_with_replacement(n: usize, len: usize) -> UInt32Chunked {
-    let mut rng = rand::thread_rng();
+fn create_rand_index_with_replacement(n: usize, len: usize, seed: u64) -> UInt32Chunked {
+    let mut rng = StdRng::seed_from_u64(seed);
     (0u32..n as u32)
         .map(move |_| Uniform::new(0u32, len as u32).sample(&mut rng))
         .collect_trusted::<NoNull<UInt32Chunked>>()
         .into_inner()
 }
 
-fn create_rand_index_no_replacement(n: usize, len: usize) -> UInt32Chunked {
-    // TODO! prevent allocation.
-    let mut rng = rand::thread_rng();
-    let mut buf = AlignedVec::with_capacity(n);
-    // Safety: will be filled
-    unsafe { buf.set_len(n) };
-    (0u32..len as u32).choose_multiple_fill(&mut rng, buf.as_mut_slice());
-    UInt32Chunked::new_from_aligned_vec("", buf)
+fn create_rand_index_no_replacement(n: usize, len: usize, seed: u64) -> UInt32Chunked {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut idx = Vec::from_iter_trusted_length(0u32..len as u32);
+    idx.shuffle(&mut rng);
+    idx.truncate(n);
+    UInt32Chunked::new_vec("", idx)
 }
 
 impl<T> ChunkedArray<T>
@@ -43,12 +40,8 @@ where
     }
 }
 
-impl<T> ChunkedArray<T>
-where
-    ChunkedArray<T>: ChunkTake,
-{
-    /// Sample n datapoints from this ChunkedArray.
-    pub fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Self> {
+impl Series {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> Result<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
                 "n is larger than the number of elements in this array".into(),
@@ -58,13 +51,53 @@ where
 
         match with_replacement {
             true => {
-                let idx = create_rand_index_with_replacement(n, len);
+                let idx = create_rand_index_with_replacement(n, len, seed);
+                // Safety we know that we never go out of bounds
+                debug_assert_eq!(len, self.len());
+                unsafe { self.take_unchecked(&idx) }
+            }
+            false => {
+                let idx = create_rand_index_no_replacement(n, len, seed);
+                // Safety we know that we never go out of bounds
+                debug_assert_eq!(len, self.len());
+                unsafe { self.take_unchecked(&idx) }
+            }
+        }
+    }
+
+    /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Result<Self> {
+        let n = (self.len() as f64 * frac) as usize;
+        self.sample_n(n, with_replacement, seed)
+    }
+
+    pub fn shuffle(&self, seed: u64) -> Self {
+        self.sample_n(self.len(), false, seed).unwrap()
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkTake,
+{
+    /// Sample n datapoints from this ChunkedArray.
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> Result<Self> {
+        if !with_replacement && n > self.len() {
+            return Err(PolarsError::ShapeMisMatch(
+                "n is larger than the number of elements in this array".into(),
+            ));
+        }
+        let len = self.len();
+
+        match with_replacement {
+            true => {
+                let idx = create_rand_index_with_replacement(n, len, seed);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked((&idx).into())) }
             }
             false => {
-                let idx = create_rand_index_no_replacement(n, len);
+                let idx = create_rand_index_no_replacement(n, len, seed);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked((&idx).into())) }
@@ -73,15 +106,15 @@ where
     }
 
     /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Result<Self> {
         let n = (self.len() as f64 * frac) as usize;
-        self.sample_n(n, with_replacement)
+        self.sample_n(n, with_replacement, seed)
     }
 }
 
 impl DataFrame {
     /// Sample n datapoints from this DataFrame.
-    pub fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> Result<Self> {
         if !with_replacement && n > self.height() {
             return Err(PolarsError::ShapeMisMatch(
                 "n is larger than the number of elements in this array".into(),
@@ -89,8 +122,8 @@ impl DataFrame {
         }
         // all columns should used the same indices. So we first create the indices.
         let idx: UInt32Chunked = match with_replacement {
-            true => create_rand_index_with_replacement(n, self.height()),
-            false => create_rand_index_no_replacement(n, self.height()),
+            true => create_rand_index_with_replacement(n, self.height(), seed),
+            false => create_rand_index_no_replacement(n, self.height(), seed),
         };
         // Safety:
         // indices are within bounds
@@ -98,9 +131,9 @@ impl DataFrame {
     }
 
     /// Sample a fraction between 0.0-1.0 of this DataFrame.
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Result<Self> {
         let n = (self.height() as f64 * frac) as usize;
-        self.sample_n(n, with_replacement)
+        self.sample_n(n, with_replacement, seed)
     }
 }
 
@@ -179,13 +212,13 @@ mod test {
         ]
         .unwrap();
 
-        assert!(df.sample_n(3, false).is_ok());
-        assert!(df.sample_frac(0.4, false).is_ok());
+        assert!(df.sample_n(3, false, 0).is_ok());
+        assert!(df.sample_frac(0.4, false, 0).is_ok());
         // without replacement can not sample more than 100%
-        assert!(df.sample_frac(2.0, false).is_err());
-        assert!(df.sample_n(3, true).is_ok());
-        assert!(df.sample_frac(0.4, true).is_ok());
+        assert!(df.sample_frac(2.0, false, 0).is_err());
+        assert!(df.sample_n(3, true, 0).is_ok());
+        assert!(df.sample_frac(0.4, true, 0).is_ok());
         // with replacement can sample more than 100%
-        assert!(df.sample_frac(2.0, true).is_ok());
+        assert!(df.sample_frac(2.0, true, 0).is_ok());
     }
 }

@@ -2799,6 +2799,7 @@ class Series:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
+        seed: int = 0,
     ) -> "Series":
         """
         Sample from this Series by setting either `n` or `frac`.
@@ -2811,6 +2812,8 @@ class Series:
             Fraction between 0.0 and 1.0 .
         with_replacement
             sample with replacement.
+        seed
+            Initialization seed
 
         Examples
         --------
@@ -2825,8 +2828,8 @@ class Series:
 
         """
         if n is not None:
-            return wrap_s(self._s.sample_n(n, with_replacement))
-        return wrap_s(self._s.sample_frac(frac, with_replacement))
+            return wrap_s(self._s.sample_n(n, with_replacement, seed))
+        return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
 
     def peak_max(self) -> "Series":
         """
@@ -3114,6 +3117,17 @@ class Series:
         Series
         """
         return wrap_s(self._s.reshape(dims))
+
+    def shuffle(self, seed: int = 0) -> "Series":
+        """
+        Shuffle the contents of this Series.
+
+        Parameters
+        ----------
+        seed
+            Seed initialization
+        """
+        return wrap_s(self._s.shuffle(seed))
 
     # Below are the namespaces defined. Do not move these up in the definition of Series, as it confuses mypy between the
     # type annotation `str` and the namespace "str

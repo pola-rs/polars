@@ -990,6 +990,10 @@ impl PyExpr {
             )
             .into()
     }
+
+    pub fn shuffle(&self, seed: u64) -> Self {
+        self.inner.clone().shuffle(seed).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

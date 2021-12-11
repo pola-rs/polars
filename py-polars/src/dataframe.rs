@@ -394,18 +394,18 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn sample_n(&self, n: usize, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let df = self
             .df
-            .sample_n(n, with_replacement)
+            .sample_n(n, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let df = self
             .df
-            .sample_frac(frac, with_replacement)
+            .sample_frac(frac, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
