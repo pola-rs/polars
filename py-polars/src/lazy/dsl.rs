@@ -529,6 +529,15 @@ impl PyExpr {
             )
             .into()
     }
+    pub fn dt_epoch_seconds(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                |s| s.timestamp().map(|ca| (ca / 1000).into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
 
     pub fn rolling_apply(&self, py: Python, window_size: usize, lambda: PyObject) -> PyExpr {
         // get the pypolars module
