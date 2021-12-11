@@ -73,7 +73,7 @@ pub(crate) fn rank(s: &Series, options: RankOptions) -> Series {
 
     let len = s.len();
     let null_count = s.null_count();
-    let sort_idx_ca = s.argsort(false);
+    let sort_idx_ca = s.argsort(options.descending);
     let sort_idx = sort_idx_ca.downcast_iter().next().unwrap().values();
 
     let mut inv: AlignedVec<u32> = AlignedVec::with_capacity(len);
