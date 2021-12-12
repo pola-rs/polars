@@ -528,9 +528,11 @@ def test_regex_selection() -> None:
 
 
 def test_exclude_selection() -> None:
-    df = pl.DataFrame({"a": [1], "b": [1], "c": [1]}).lazy()
+    df = pl.DataFrame({"a": [1], "b": [1], "c": [True]}).lazy()
 
     assert df.select([pl.exclude("a")]).columns == ["b", "c"]
+    assert df.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
+    assert df.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
 
 
 def test_col_series_selection() -> None:

@@ -1,5 +1,5 @@
 use super::apply::*;
-use crate::conversion::str_to_null_behavior;
+use crate::conversion::{str_to_null_behavior, Wrap};
 use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::{parse_strategy, str_to_rankmethod};
@@ -702,6 +702,12 @@ impl PyExpr {
     }
     pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
         self.inner.clone().exclude(&columns).into()
+    }
+    pub fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> PyExpr {
+        // Safety:
+        // Wrap is transparent.
+        let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
+        self.inner.clone().exclude_dtype(&dtypes).into()
     }
     pub fn interpolate(&self) -> PyExpr {
         self.inner.clone().interpolate().into()
