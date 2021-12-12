@@ -1028,11 +1028,10 @@ impl DataFrame {
         self.columns.get_mut(idx)
     }
 
-
     /// Select column(s) from this `DataFrame` by range and return a new DataFrame
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let df = df! {
@@ -1040,7 +1039,7 @@ impl DataFrame {
     ///     "1" => &[1, 1, 1],
     ///     "2" => &[2, 2, 2]
     /// }?;
-    /// 
+    ///
     /// assert!(df.select(&["0", "1"])?.frame_equal(&df.select_by_range(0..=1)?));
     /// assert!(df.frame_equal(&df.select_by_range(..)?));
     /// # Ok::<(), PolarsError>(())
@@ -1049,7 +1048,7 @@ impl DataFrame {
     where
         R: ops::RangeBounds<usize>,
     {
-        // This function is copied from std::slice::range (https://doc.rust-lang.org/std/slice/fn.range.html) 
+        // This function is copied from std::slice::range (https://doc.rust-lang.org/std/slice/fn.range.html)
         // because it is the nightly feature. We should change here if this function were stable.
         fn get_range<R>(range: R, bounds: ops::RangeTo<usize>) -> ops::Range<usize>
         where
@@ -1090,7 +1089,6 @@ impl DataFrame {
 
         let colnames = &self.get_column_names();
         let range = get_range(range, ..colnames.len());
-
 
         self.select(&&colnames[range])
     }
