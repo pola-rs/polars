@@ -3307,6 +3307,14 @@ class DataFrame:
         """
         Aggregate the columns of this DataFrame to their quantile value.
 
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -4075,6 +4083,15 @@ class GroupBy:
     def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
         """
         Compute the quantile per group.
+
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+
         """
         return self._select_all().quantile(quantile, interpolation)
 
@@ -4254,6 +4271,15 @@ class GBSelection:
     def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
         """
         Compute the quantile per group.
+
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+
         """
         if self.downsample:
             raise ValueError("quantile operation not supported during downsample")

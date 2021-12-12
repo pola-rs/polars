@@ -1080,6 +1080,15 @@ class Expr:
     def quantile(self, quantile: float, interpolation: str = "nearest") -> "Expr":
         """
         Get quantile value.
+
+
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
         return wrap_expr(self._pyexpr.quantile(quantile, interpolation))
 

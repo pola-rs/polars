@@ -848,6 +848,14 @@ class Series:
         """
         Get the quantile value of this Series.
 
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
