@@ -52,7 +52,11 @@ def col(
     --------
 
     >>> df = pl.DataFrame(
-    ...     {"ham": [1, 2, 3], "hamburger": [11, 22, 33], "foo": [3, 2, 1],}
+    ...     {
+    ...         "ham": [1, 2, 3],
+    ...         "hamburger": [11, 22, 33],
+    ...         "foo": [3, 2, 1],
+    ...     }
     ... )
     >>> df.select(pl.col("foo"))
     shape: (3, 1)
@@ -546,7 +550,8 @@ def lit(
 
 
 def spearman_rank_corr(
-    a: Union[str, "pli.Expr"], b: Union[str, "pli.Expr"],
+    a: Union[str, "pli.Expr"],
+    b: Union[str, "pli.Expr"],
 ) -> "pli.Expr":
     """
     Compute the spearman rank correlation between two columns.
@@ -565,7 +570,10 @@ def spearman_rank_corr(
     return pli.wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr))
 
 
-def pearson_corr(a: Union[str, "pli.Expr"], b: Union[str, "pli.Expr"],) -> "pli.Expr":
+def pearson_corr(
+    a: Union[str, "pli.Expr"],
+    b: Union[str, "pli.Expr"],
+) -> "pli.Expr":
     """
     Compute the pearson's correlation between two columns.
 
@@ -583,7 +591,10 @@ def pearson_corr(a: Union[str, "pli.Expr"], b: Union[str, "pli.Expr"],) -> "pli.
     return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr))
 
 
-def cov(a: Union[str, "pli.Expr"], b: Union[str, "pli.Expr"],) -> "pli.Expr":
+def cov(
+    a: Union[str, "pli.Expr"],
+    b: Union[str, "pli.Expr"],
+) -> "pli.Expr":
     """
     Compute the covariance between two columns/ expressions.
 
@@ -745,7 +756,13 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     Examples
     --------
 
-    >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None], "c": [None, 2, 1],})
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 2, 3],
+    ...         "b": ["a", "b", None],
+    ...         "c": [None, 2, 1],
+    ...     }
+    ... )
     >>> df
     shape: (3, 3)
     ┌─────┬──────┬──────┐
@@ -1004,9 +1021,16 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     Examples
     --------
 
-    >>> df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3],})
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": ["a", "b", "c"],
+    ...         "b": [1, 2, 3],
+    ...     }
+    ... )
     >>> df.select(
-    ...     [pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt"),]
+    ...     [
+    ...         pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt"),
+    ...     ]
     ... )
     shape: (3, 1)
     ┌─────────────┐
@@ -1138,7 +1162,9 @@ def select(
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
     >>> pl.select(
-    ...     [pl.min([foo, bar]),]
+    ...     [
+    ...         pl.min([foo, bar]),
+    ...     ]
     ... )
     shape: (3, 1)
     ┌─────┐

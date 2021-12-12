@@ -46,7 +46,10 @@ else:
 ################################
 
 
-def series_to_pyseries(name: str, values: "pli.Series",) -> "PySeries":
+def series_to_pyseries(
+    name: str,
+    values: "pli.Series",
+) -> "PySeries":
     """
     Construct a PySeries from a Polars Series.
     """
@@ -236,7 +239,8 @@ def pandas_to_pyseries(
 
 
 def _handle_columns_arg(
-    data: List["PySeries"], columns: Optional[Sequence[str]] = None,
+    data: List["PySeries"],
+    columns: Optional[Sequence[str]] = None,
 ) -> List["PySeries"]:
     """
     Rename data according to columns argument.
@@ -255,7 +259,8 @@ def _handle_columns_arg(
 
 
 def dict_to_pydf(
-    data: Dict[str, Sequence[Any]], columns: Optional[Sequence[str]] = None,
+    data: Dict[str, Sequence[Any]],
+    columns: Optional[Sequence[str]] = None,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a dictionary of sequences.
@@ -398,7 +403,8 @@ def arrow_to_pydf(
 
 
 def series_to_pydf(
-    data: "pli.Series", columns: Optional[Sequence[str]] = None,
+    data: "pli.Series",
+    columns: Optional[Sequence[str]] = None,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a Polars Series.

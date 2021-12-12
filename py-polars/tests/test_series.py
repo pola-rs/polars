@@ -492,7 +492,16 @@ def test_mode() -> None:
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
     testing.assert_series_equal(
-        s.str.json_path_match("$.a"), pl.Series(["1", None, "2", "2.1", "true",]),
+        s.str.json_path_match("$.a"),
+        pl.Series(
+            [
+                "1",
+                None,
+                "2",
+                "2.1",
+                "true",
+            ]
+        ),
     )
 
 
@@ -505,7 +514,14 @@ def test_extract_regex() -> None:
         ]
     )
     testing.assert_series_equal(
-        s.str.extract(r"candidate=(\w+)", 1), pl.Series(["messi", None, "ronaldo",]),
+        s.str.extract(r"candidate=(\w+)", 1),
+        pl.Series(
+            [
+                "messi",
+                None,
+                "ronaldo",
+            ]
+        ),
     )
 
 

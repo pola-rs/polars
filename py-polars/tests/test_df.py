@@ -411,10 +411,18 @@ def test_groupby() -> None:
 
 def test_join() -> None:
     df_left = pl.DataFrame(
-        {"a": ["a", "b", "a", "z"], "b": [1, 2, 3, 4], "c": [6, 5, 4, 3],}
+        {
+            "a": ["a", "b", "a", "z"],
+            "b": [1, 2, 3, 4],
+            "c": [6, 5, 4, 3],
+        }
     )
     df_right = pl.DataFrame(
-        {"a": ["b", "c", "b", "a"], "k": [0, 3, 9, 6], "c": [1, 0, 2, 1],}
+        {
+            "a": ["b", "c", "b", "a"],
+            "k": [0, 3, 9, 6],
+            "c": [1, 0, 2, 1],
+        }
     )
 
     joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
@@ -528,7 +536,9 @@ def test_melt() -> None:
 def test_shift() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
     a = df.shift(1)
-    b = pl.DataFrame({"A": [None, "a", "b"], "B": [None, 1, 3]},)
+    b = pl.DataFrame(
+        {"A": [None, "a", "b"], "B": [None, 1, 3]},
+    )
     assert a.frame_equal(b, null_equal=True)
 
 
@@ -950,7 +960,12 @@ def test_asof_cross_join() -> None:
 
 
 def test_str_concat() -> None:
-    df = pl.DataFrame({"nrs": [1, 2, 3, 4], "name": ["ham", "spam", "foo", None],})
+    df = pl.DataFrame(
+        {
+            "nrs": [1, 2, 3, 4],
+            "name": ["ham", "spam", "foo", None],
+        }
+    )
     out = df.with_column((pl.lit("Dr. ") + pl.col("name")).alias("graduated_name"))
     assert out["graduated_name"][0] == "Dr. ham"
     assert out["graduated_name"][1] == "Dr. spam"
@@ -997,7 +1012,11 @@ def test_drop_duplicates_unit_rows() -> None:
 def test_panic() -> None:
     # may contain some tests that yielded a panic in polars or arrow
     # https://github.com/pola-rs/polars/issues/1110
-    a = pl.DataFrame({"col1": ["a"] * 500 + ["b"] * 500,})
+    a = pl.DataFrame(
+        {
+            "col1": ["a"] * 500 + ["b"] * 500,
+        }
+    )
     a.filter(pl.col("col1") != "b")
 
 
@@ -1172,7 +1191,13 @@ def test_with_row_count() -> None:
 
 
 def test_filter_with_all_expansion() -> None:
-    df = pl.DataFrame({"b": [1, 2, None], "c": [1, 2, None], "a": [None, None, None],})
+    df = pl.DataFrame(
+        {
+            "b": [1, 2, None],
+            "c": [1, 2, None],
+            "a": [None, None, None],
+        }
+    )
     out = df.filter(~pl.fold(True, lambda acc, s: acc & s.is_null(), pl.all()))  # type: ignore
     assert out.shape == (2, 3)
 
@@ -1209,13 +1234,26 @@ def test_transpose() -> None:
     assert expected.frame_equal(out)
 
     out = df.transpose(include_header=False, column_names=["a", "b", "c"])
-    expected = pl.DataFrame({"a": [1, 1], "b": [2, 2], "c": [3, 3],})
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1],
+            "b": [2, 2],
+            "c": [3, 3],
+        }
+    )
     assert expected.frame_equal(out)
 
     out = df.transpose(
         include_header=True, header_name="foo", column_names=["a", "b", "c"]
     )
-    expected = pl.DataFrame({"foo": ["a", "b"], "a": [1, 1], "b": [2, 2], "c": [3, 3],})
+    expected = pl.DataFrame(
+        {
+            "foo": ["a", "b"],
+            "a": [1, 1],
+            "b": [2, 2],
+            "c": [3, 3],
+        }
+    )
     assert expected.frame_equal(out)
 
     def name_generator() -> tp.Iterator[str]:
@@ -1227,7 +1265,11 @@ def test_transpose() -> None:
 
     out = df.transpose(include_header=False, column_names=name_generator())
     expected = pl.DataFrame(
-        {"my_column_0": [1, 1], "my_column_1": [2, 2], "my_column_2": [3, 3],}
+        {
+            "my_column_0": [1, 1],
+            "my_column_1": [2, 2],
+            "my_column_2": [3, 3],
+        }
     )
     assert expected.frame_equal(out)
 

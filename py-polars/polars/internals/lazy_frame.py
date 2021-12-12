@@ -208,7 +208,11 @@ class LazyFrame:
 
         >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]}).lazy()
         >>> (
-        ...     df.select([pl.col("foo").cumsum().alias("bar"),])
+        ...     df.select(
+        ...         [
+        ...             pl.col("foo").cumsum().alias("bar"),
+        ...         ]
+        ...     )
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
@@ -365,7 +369,11 @@ class LazyFrame:
 
         >>> df = (
         ...     pl.DataFrame(
-        ...         {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"],}
+        ...         {
+        ...             "foo": [1, 2, 3],
+        ...             "bar": [6, 7, 8],
+        ...             "ham": ["a", "b", "c"],
+        ...         }
         ...     )
         ...     .lazy()
         ...     .select(["foo", "bar"])
@@ -377,7 +385,9 @@ class LazyFrame:
         """
         return self._ldf.columns()
 
-    def cache(self,) -> "LazyFrame":
+    def cache(
+        self,
+    ) -> "LazyFrame":
         """
         Cache the result once the execution of the physical plan hits this node.
         """
@@ -396,7 +406,11 @@ class LazyFrame:
         --------
 
         >>> lf = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"],}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... ).lazy()
 
         Filter on one condition:
@@ -968,7 +982,11 @@ class LazyFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, None, 8], "ham": ["a", "b", "c"],}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, None, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
         ... )
         >>> df.lazy().drop_nulls().collect()
         shape: (2, 3)
@@ -1013,7 +1031,11 @@ class LazyFrame:
         Drop a row only if all values are null:
 
         >>> df.filter(
-        ...     ~pl.fold(acc=True, f=lambda acc, s: acc & s.is_null(), exprs=pl.all(),)
+        ...     ~pl.fold(
+        ...         acc=True,
+        ...         f=lambda acc, s: acc & s.is_null(),
+        ...         exprs=pl.all(),
+        ...     )
         ... )
         shape: (3, 3)
         ┌──────┬─────┬──────┐
@@ -1109,7 +1131,10 @@ class LazyGroupBy:
         ...     pl.scan_csv("data.csv")
         ...     .groupby("groups")
         ...     .agg(
-        ...         [pl.col("name").n_unique().alias("unique_names"), pl.max("values"),]
+        ...         [
+        ...             pl.col("name").n_unique().alias("unique_names"),
+        ...             pl.max("values"),
+        ...         ]
         ...     )
         ... )  # doctest: +SKIP
 
@@ -1130,7 +1155,10 @@ class LazyGroupBy:
         --------
 
         >>> df = pl.DataFrame(
-        ...     {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6],}
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
         ... )
         >>> df
         shape: (6, 2)
@@ -1185,7 +1213,10 @@ class LazyGroupBy:
         --------
 
         >>> df = pl.DataFrame(
-        ...     {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6],}
+        ...     {
+        ...         "letters": ["c", "c", "a", "c", "a", "b"],
+        ...         "nrs": [1, 2, 3, 4, 5, 6],
+        ...     }
         ... )
         >>> df
         shape: (6, 2)

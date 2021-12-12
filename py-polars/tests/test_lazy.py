@@ -503,13 +503,26 @@ def test_any_expr(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_lazy_columns() -> None:
-    df = pl.DataFrame({"a": [1], "b": [1], "c": [1],}).lazy()
+    df = pl.DataFrame(
+        {
+            "a": [1],
+            "b": [1],
+            "c": [1],
+        }
+    ).lazy()
 
     assert df.select(["a", "c"]).columns == ["a", "c"]
 
 
 def test_regex_selection() -> None:
-    df = pl.DataFrame({"foo": [1], "fooey": [1], "foobar": [1], "bar": [1],}).lazy()
+    df = pl.DataFrame(
+        {
+            "foo": [1],
+            "fooey": [1],
+            "foobar": [1],
+            "bar": [1],
+        }
+    ).lazy()
 
     assert df.select([col("^foo.*$")]).columns == ["foo", "fooey", "foobar"]
 
@@ -742,7 +755,10 @@ def test_clip() -> None:
 def test_argminmax() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
     out = df.select(
-        [pl.col("a").arg_min().alias("min"), pl.col("a").arg_max().alias("max"),]
+        [
+            pl.col("a").arg_min().alias("min"),
+            pl.col("a").arg_max().alias("max"),
+        ]
     )
     assert out["max"][0] == 4
     assert out["min"][0] == 0
@@ -823,10 +839,18 @@ def test_first(fruits_cars: pl.DataFrame) -> None:
 
 def test_join_suffix() -> None:
     df_left = pl.DataFrame(
-        {"a": ["a", "b", "a", "z"], "b": [1, 2, 3, 4], "c": [6, 5, 4, 3],}
+        {
+            "a": ["a", "b", "a", "z"],
+            "b": [1, 2, 3, 4],
+            "c": [6, 5, 4, 3],
+        }
     )
     df_right = pl.DataFrame(
-        {"a": ["b", "c", "b", "a"], "b": [0, 3, 9, 6], "c": [1, 0, 2, 1],}
+        {
+            "a": ["b", "c", "b", "a"],
+            "b": [0, 3, 9, 6],
+            "c": [1, 0, 2, 1],
+        }
     )
     out = df_left.join(df_right, on="a", suffix="_bar")
     assert out.columns == ["a", "b", "c", "b_bar", "c_bar"]

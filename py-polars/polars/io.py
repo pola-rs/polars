@@ -506,7 +506,9 @@ def scan_csv(
 
 
 def scan_ipc(
-    file: Union[str, Path], stop_after_n_rows: Optional[int] = None, cache: bool = True,
+    file: Union[str, Path],
+    stop_after_n_rows: Optional[int] = None,
+    cache: bool = True,
 ) -> LazyFrame:
     """
     Lazily read from an IPC file.
@@ -531,7 +533,9 @@ def scan_ipc(
 
 
 def scan_parquet(
-    file: Union[str, Path], stop_after_n_rows: Optional[int] = None, cache: bool = True,
+    file: Union[str, Path],
+    stop_after_n_rows: Optional[int] = None,
+    cache: bool = True,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file.

@@ -73,7 +73,12 @@ def assert_series_equal(
             )
 
 
-def raise_assert_detail(obj: str, message: str, left: Any, right: Any,) -> None:
+def raise_assert_detail(
+    obj: str,
+    message: str,
+    left: Any,
+    right: Any,
+) -> None:
     __tracebackhide__ = True
 
     msg = f"""{obj} are different
