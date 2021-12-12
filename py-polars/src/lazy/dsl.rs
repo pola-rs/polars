@@ -940,9 +940,13 @@ impl PyExpr {
             .into()
     }
 
-    fn rank(&self, method: &str) -> Self {
+    fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
-        self.inner.clone().rank(method).into()
+        let options = RankOptions {
+            method,
+            descending: reverse,
+        };
+        self.inner.clone().rank(options).into()
     }
 
     fn diff(&self, n: usize, null_behavior: &str) -> Self {

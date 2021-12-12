@@ -2,6 +2,7 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
+
 pub(crate) mod arithmetic;
 mod comparison;
 mod from;
@@ -15,7 +16,7 @@ pub mod unstable;
 
 use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]
-use crate::prelude::unique::rank::{rank, RankMethod};
+use crate::prelude::unique::rank::rank;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};
@@ -649,8 +650,8 @@ impl Series {
 
     #[cfg(feature = "rank")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
-    pub fn rank(&self, method: RankMethod) -> Series {
-        rank(self, method)
+    pub fn rank(&self, options: RankOptions) -> Series {
+        rank(self, options.method, options.descending)
     }
 
     /// Cast throws an error if conversion had overflows
@@ -664,7 +665,7 @@ impl Series {
                     self.dtype(),
                     data_type
                 )
-                .into(),
+                    .into(),
             ))
         } else {
             Ok(s)
@@ -746,7 +747,7 @@ impl Series {
             dt => {
                 return Err(PolarsError::InvalidOperation(
                     format!("abs not supportedd for series of type {:?}", dt).into(),
-                ))
+                ));
             }
         };
         Ok(out)
@@ -780,7 +781,7 @@ where
     fn as_ref(&self) -> &ChunkedArray<T> {
         if &T::get_dtype() == self.dtype() ||
             // needed because we want to get ref of List no matter what the inner type is.
-            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)) )
+            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
         {
             unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
         } else {
@@ -800,7 +801,7 @@ where
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
         if &T::get_dtype() == self.dtype() ||
             // needed because we want to get ref of List no matter what the inner type is.
-            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)) )
+            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
         {
             unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }
         } else {

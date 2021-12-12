@@ -1726,7 +1726,7 @@ class Expr:
         """
         return pli.argsort_by([self], [reverse])
 
-    def rank(self, method: str = "average") -> "Expr":
+    def rank(self, method: str = "average", reverse: bool = False) -> "Expr":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -1750,8 +1750,10 @@ class Expr:
                 the order that the values occur in `a`.
               * 'random': Like 'ordinal', but the rank for ties is not dependent
                 on the order that the values occur in `a`.
+        reverse
+            reverse the operation
         """
-        return wrap_expr(self._pyexpr.rank(method))
+        return wrap_expr(self._pyexpr.rank(method, reverse))
 
     def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
         """

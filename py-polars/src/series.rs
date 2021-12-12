@@ -1329,9 +1329,13 @@ impl PySeries {
         }
     }
 
-    pub fn rank(&self, method: &str) -> PyResult<Self> {
-        let method = str_to_rankmethod(method)?;
-        Ok(self.series.rank(method).into())
+    pub fn rank(&self, method: &str, reverse: bool) -> PyResult<Self> {
+        let method = str_to_rankmethod(method).unwrap();
+        let options = RankOptions {
+            method,
+            descending: reverse,
+        };
+        Ok(self.series.rank(options).into())
     }
 
     pub fn diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {

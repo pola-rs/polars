@@ -65,7 +65,17 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
 #[cfg(feature = "rank")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
 pub fn spearman_rank_corr(a: Expr, b: Expr) -> Expr {
-    pearson_corr(a.rank(RankMethod::Min), b.rank(RankMethod::Min)).alias("spearman_rank_corr")
+    pearson_corr(
+        a.rank(RankOptions {
+            method: RankMethod::Min,
+            ..Default::default()
+        }),
+        b.rank(RankOptions {
+            method: RankMethod::Min,
+            ..Default::default()
+        }),
+    )
+    .alias("spearman_rank_corr")
 }
 
 /// Find the indexes that would sort these series in order of appearance.

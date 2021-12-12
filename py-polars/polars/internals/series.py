@@ -2970,7 +2970,7 @@ class Series:
         """
         return wrap_s(self._s.abs())
 
-    def rank(self, method: str = "average") -> "Series":
+    def rank(self, method: str = "average", reverse: bool = False) -> "Series":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -2994,9 +2994,11 @@ class Series:
                 the order that the values occur in `a`.
               * 'random': Like 'ordinal', but the rank for ties is not dependent
                 on the order that the values occur in `a`.
+        reverse
+            reverse the operation
 
         """
-        return wrap_s(self._s.rank(method))
+        return wrap_s(self._s.rank(method, reverse))
 
     def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":
         """
