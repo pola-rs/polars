@@ -283,7 +283,10 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.alias(name))
 
-    def exclude(self, columns: Union[str, tp.List[str]]) -> "Expr":
+    def exclude(
+        self,
+        columns: Union[str, tp.List[str], Type[DataType], Sequence[Type[DataType]]],
+    ) -> "Expr":
         """
         Exclude certain columns from a wildcard/regex selection.
 
@@ -292,7 +295,11 @@ class Expr:
         Parameters
         ----------
         columns
-            Column(s) to exclude from selection
+            Column(s) to exclude from selection.
+            This can be:
+                - a column name, or multiple names
+                - a regular expression starting with `^` and ending with `$`
+                - a dtype or multiple dtypes
 
         Examples
         --------
@@ -335,8 +342,19 @@ class Expr:
 
         """
         if isinstance(columns, str):
-            columns = [columns]
-        return wrap_expr(self._pyexpr.exclude(columns))
+            columns = [columns]  # type: ignore
+            return wrap_expr(self._pyexpr.exclude(columns))
+        elif not isinstance(columns, list) and issubclass(columns, DataType):  # type: ignore
+            columns = [columns]  # type: ignore
+            return wrap_expr(self._pyexpr.exclude_dtype(columns))
+
+        if not all([isinstance(a, str) or issubclass(a, DataType) for a in columns]):  # type: ignore
+            raise ValueError("input should be all string or all DataType")
+
+        if isinstance(columns[0], str):  # type: ignore
+            return wrap_expr(self._pyexpr.exclude(columns))
+        else:
+            return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
     def keep_name(self) -> "Expr":
         """
@@ -2408,6 +2426,9 @@ class ExprDateTimeNameSpace:
 
     def buckets(self, interval: timedelta) -> Expr:
         """
+        .. warning::
+            This API is experimental and will likely change.
+
         Divide the date/ datetime range into buckets.
         Data will be sorted by this operation.
 

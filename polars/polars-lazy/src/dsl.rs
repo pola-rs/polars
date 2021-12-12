@@ -341,7 +341,7 @@ pub enum Expr {
         output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
     },
     /// Can be used in a select statement to exclude a column from selection
-    Exclude(Box<Expr>, Vec<Arc<str>>),
+    Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
     SufPreFix {
@@ -349,6 +349,12 @@ pub enum Expr {
         value: String,
         expr: Box<Expr>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Excluded {
+    Name(Arc<str>),
+    Dtype(DataType),
 }
 
 impl Expr {
@@ -1476,7 +1482,16 @@ impl Expr {
         let v = columns
             .to_selection_vec()
             .iter()
-            .map(|s| Arc::from(*s))
+            .map(|s| Excluded::Name(Arc::from(*s)))
+            .collect();
+        Expr::Exclude(Box::new(self), v)
+    }
+
+    pub fn exclude_dtype<D: AsRef<[DataType]>>(self, dtypes: D) -> Expr {
+        let v = dtypes
+            .as_ref()
+            .iter()
+            .map(|dt| Excluded::Dtype(dt.clone()))
             .collect();
         Expr::Exclude(Box::new(self), v)
     }

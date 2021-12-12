@@ -2259,6 +2259,10 @@ class DataFrame:
 
     def downsample(self, by: Union[str, tp.List[str]], rule: str, n: int) -> "GroupBy":
         """
+
+        .. deprecated:: 0.11.0
+            Use `buckets` expression instead
+
         Start a downsampling groupby operation.
 
         Parameters
@@ -3785,6 +3789,8 @@ class GroupBy:
     def apply(self, f: Callable[[DataFrame], DataFrame]) -> DataFrame:
         """
         Apply a function over the groups as a sub-DataFrame.
+
+        Beware, this is slow.
 
         Parameters
         ----------
