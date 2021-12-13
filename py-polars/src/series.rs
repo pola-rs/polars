@@ -1264,6 +1264,10 @@ impl PySeries {
             .into()),
         }
     }
+    pub fn dt_epoch_seconds(&self) -> PyResult<Self> {
+        let ms = self.series.timestamp().map_err(PyPolarsEr::from)?;
+        Ok((ms / 1000).into_series().into())
+    }
 
     pub fn peak_max(&self) -> Self {
         self.series.peak_max().into_series().into()
