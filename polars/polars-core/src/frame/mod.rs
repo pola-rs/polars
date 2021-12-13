@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::iter::{FromIterator, Iterator};
 use std::mem;
+use std::ops;
 use std::sync::Arc;
 
 use ahash::{AHashSet, RandomState};
@@ -1025,6 +1026,71 @@ impl DataFrame {
     /// For this reason the method is not public
     fn select_at_idx_mut(&mut self, idx: usize) -> Option<&mut Series> {
         self.columns.get_mut(idx)
+    }
+
+    /// Select column(s) from this `DataFrame` by range and return a new DataFrame
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use polars_core::prelude::*;
+    /// let df = df! {
+    ///     "0" => &[0, 0, 0],
+    ///     "1" => &[1, 1, 1],
+    ///     "2" => &[2, 2, 2]
+    /// }?;
+    ///
+    /// assert!(df.select(&["0", "1"])?.frame_equal(&df.select_by_range(0..=1)?));
+    /// assert!(df.frame_equal(&df.select_by_range(..)?));
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    pub fn select_by_range<R>(&self, range: R) -> Result<Self>
+    where
+        R: ops::RangeBounds<usize>,
+    {
+        // This function is copied from std::slice::range (https://doc.rust-lang.org/std/slice/fn.range.html)
+        // because it is the nightly feature. We should change here if this function were stable.
+        fn get_range<R>(range: R, bounds: ops::RangeTo<usize>) -> ops::Range<usize>
+        where
+            R: ops::RangeBounds<usize>,
+        {
+            let len = bounds.end;
+
+            let start: ops::Bound<&usize> = range.start_bound();
+            let start = match start {
+                ops::Bound::Included(&start) => start,
+                ops::Bound::Excluded(start) => start.checked_add(1).unwrap_or_else(|| {
+                    panic!("attempted to index slice from after maximum usize");
+                }),
+                ops::Bound::Unbounded => 0,
+            };
+
+            let end: ops::Bound<&usize> = range.end_bound();
+            let end = match end {
+                ops::Bound::Included(end) => end.checked_add(1).unwrap_or_else(|| {
+                    panic!("attempted to index slice up to maximum usize");
+                }),
+                ops::Bound::Excluded(&end) => end,
+                ops::Bound::Unbounded => len,
+            };
+
+            if start > end {
+                panic!("slice index starts at {} but ends at {}", start, end);
+            }
+            if end > len {
+                panic!(
+                    "range end index {} out of range for slice of length {}",
+                    end, len
+                );
+            }
+
+            ops::Range { start, end }
+        }
+
+        let colnames = &self.get_column_names();
+        let range = get_range(range, ..colnames.len());
+
+        self.select(&&colnames[range])
     }
 
     /// Get column index of a `Series` by name.
