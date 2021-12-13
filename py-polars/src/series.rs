@@ -1,7 +1,6 @@
 use crate::apply::series::ApplyLambda;
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
-use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::list_construction::py_seq_to_list;
 use crate::utils::{downsample_str_to_rule, reinterpret, str_to_polarstype};
@@ -360,9 +359,15 @@ impl PySeries {
         self.series.rename(name);
     }
 
-    pub fn dtype(&self) -> u8 {
-        let dt: PyDataType = self.series.dtype().into();
-        dt as u8
+    pub fn dtype(&self, py: Python) -> PyObject {
+        Wrap(self.series.dtype().clone()).to_object(py)
+    }
+
+    pub fn inner_dtype(&self, py: Python) -> Option<PyObject> {
+        self.series
+            .dtype()
+            .inner_dtype()
+            .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
     pub fn mean(&self) -> Option<f64> {

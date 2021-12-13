@@ -56,14 +56,7 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars._html import NotebookFormatter
-from polars.datatypes import (
-    DTYPES,
-    Boolean,
-    DataType,
-    Datetime,
-    UInt32,
-    py_type_to_dtype,
-)
+from polars.datatypes import Boolean, DataType, Datetime, UInt32, py_type_to_dtype
 from polars.utils import _process_null_values
 
 try:
@@ -1631,7 +1624,7 @@ class DataFrame:
         --------
         schema : Return a dict of [column name, dtype]
         """
-        return [DTYPES[idx] for idx in self._df.dtypes()]
+        return self._df.dtypes()
 
     @property
     def schema(self) -> Dict[str, Type[DataType]]:

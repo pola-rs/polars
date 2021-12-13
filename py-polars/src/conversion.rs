@@ -199,6 +199,11 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::List(_) => pl.getattr("List").unwrap().into(),
+            DataType::Date => pl.getattr("Date").unwrap().into(),
+            DataType::Datetime => pl.getattr("Datetime").unwrap().into(),
+            DataType::Object(_) => pl.getattr("Object").unwrap().into(),
+            DataType::Categorical => pl.getattr("Categorical").unwrap().into(),
+            DataType::Time => pl.getattr("Time").unwrap().into(),
             dt => panic!("{} not supported", dt),
         }
     }

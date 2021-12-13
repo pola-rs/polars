@@ -30,7 +30,6 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars.datatypes import (
-    DTYPES,
     Boolean,
     DataType,
     Date,
@@ -639,7 +638,18 @@ class Series:
         <class 'polars.datatypes.Int64'>
 
         """
-        return DTYPES[self._s.dtype()]
+        return self._s.dtype()
+
+    @property
+    def inner_dtype(self) -> Optional[Type[DataType]]:
+        """
+        Get the inner dtype in of a List typed Series
+
+        Returns
+        -------
+        DataType
+        """
+        return self._s.inner_dtype()
 
     def describe(self) -> "pli.DataFrame":
         """
