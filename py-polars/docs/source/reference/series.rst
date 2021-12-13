@@ -205,6 +205,9 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.mean
     DateTimeNameSpace.round
     DateTimeNameSpace.buckets
+    DateTimeNameSpace.epoch_days
+    DateTimeNameSpace.epoch_milliseconds
+    DateTimeNameSpace.epoch_seconds
 
 
 Strings

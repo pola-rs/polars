@@ -3782,6 +3782,39 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.round_datetime(rule, n))
 
+    def epoch_days(self) -> Series:
+        """
+        Get the number of days since the unix EPOCH.
+        If the date is before the unix EPOCH, the number of days will be negative.
+
+        Returns
+        -------
+        Days as Int32
+        """
+        return wrap_s(self._s).cast(Date).cast(Int32)
+
+    def epoch_milliseconds(self) -> Series:
+        """
+        Get the number of milliseconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of milliseconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return self.timestamp()
+
+    def epoch_seconds(self) -> Series:
+        """
+        Get the number of seconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return wrap_s(self._s.dt_epoch_seconds())
+
 
 def _to_python_datetime(
     value: Union[int, float], dtype: Type[DataType]
