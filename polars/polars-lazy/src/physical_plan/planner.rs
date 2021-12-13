@@ -836,17 +836,21 @@ impl DefaultPlanner {
                             }
                         }
                     }
-                    AAggExpr::Quantile { expr, quantile } => {
+                    AAggExpr::Quantile {
+                        expr,
+                        quantile,
+                        interpol,
+                    } => {
                         // todo! add schema to get correct output type
                         let input = self.create_physical_expr(expr, ctxt, expr_arena)?;
                         match ctxt {
                             Context::Aggregation => {
-                                Ok(Arc::new(AggQuantileExpr::new(input, quantile)))
+                                Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)))
                             }
                             Context::Default => {
                                 let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
-                                    s.quantile_as_series(quantile)
+                                    s.quantile_as_series(quantile, interpol)
                                 })
                                     as Arc<dyn SeriesUdf>);
                                 Ok(Arc::new(ApplyExpr {

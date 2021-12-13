@@ -841,11 +841,13 @@ def groups(column: str) -> "pli.Expr":
     return col(column).agg_groups()
 
 
-def quantile(column: str, quantile: float) -> "pli.Expr":
+def quantile(
+    column: str, quantile: float, interpolation: str = "nearest"
+) -> "pli.Expr":
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
     """
-    return col(column).quantile(quantile)
+    return col(column).quantile(quantile, interpolation)
 
 
 def arange(

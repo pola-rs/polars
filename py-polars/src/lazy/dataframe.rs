@@ -7,6 +7,7 @@ use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{DataFrame, Field, JoinType, Schema};
+use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -415,9 +416,18 @@ impl PyLazyFrame {
         ldf.median().into()
     }
 
-    pub fn quantile(&self, quantile: f64) -> Self {
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> Self {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+
         let ldf = self.ldf.clone();
-        ldf.quantile(quantile).into()
+        ldf.quantile(quantile, interpol).into()
     }
 
     pub fn explode(&self, column: Vec<PyExpr>) -> Self {

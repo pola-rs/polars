@@ -710,12 +710,22 @@ impl PySeries {
         }
     }
 
-    pub fn quantile(&self, quantile: f64) -> PyObject {
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyObject {
         let gil = Python::acquire_gil();
         let py = gil.python();
+
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+
         Wrap(
             self.series
-                .quantile_as_series(quantile)
+                .quantile_as_series(quantile, interpol)
                 .expect("invalid quantile")
                 .get(0),
         )

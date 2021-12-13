@@ -844,9 +844,17 @@ class Series:
         """
         return self._s.median()
 
-    def quantile(self, quantile: float) -> float:
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> float:
         """
         Get the quantile value of this Series.
+
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         Examples
         --------
@@ -855,7 +863,7 @@ class Series:
         2
 
         """
-        return self._s.quantile(quantile)
+        return self._s.quantile(quantile, interpolation)
 
     def to_dummies(self) -> "pli.DataFrame":
         """
@@ -2764,7 +2772,9 @@ class Series:
             self.name
         ]
 
-    def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
+    def rolling_quantile(
+        self, window_size: int, quantile: float, interpolation: str = "nearest"
+    ) -> "Series":
         """
         Compute a rolling quantile
 
@@ -2774,9 +2784,11 @@ class Series:
             Size of the rolling window
         quantile
             quantile to compute
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_quantile(window_size, quantile)
+            pli.col(self.name).rolling_quantile(window_size, quantile, interpolation)
         )[self.name]
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":

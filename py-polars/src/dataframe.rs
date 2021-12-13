@@ -764,10 +764,19 @@ impl PyDataFrame {
         by: Vec<&str>,
         select: Vec<String>,
         quantile: f64,
+        interpolation: &str,
     ) -> PyResult<Self> {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
         let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
         let selection = gb.select(&select);
-        let df = selection.quantile(quantile);
+        let df = selection.quantile(quantile, interpol);
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -885,8 +894,19 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn quantile(&self, quantile: f64) -> PyResult<Self> {
-        let df = self.df.quantile(quantile).map_err(PyPolarsEr::from)?;
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyResult<Self> {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+        let df = self
+            .df
+            .quantile(quantile, interpol)
+            .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 

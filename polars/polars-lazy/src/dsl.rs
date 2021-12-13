@@ -220,7 +220,11 @@ pub enum AggExpr {
     Mean(Box<Expr>),
     List(Box<Expr>),
     Count(Box<Expr>),
-    Quantile { expr: Box<Expr>, quantile: f64 },
+    Quantile {
+        expr: Box<Expr>,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    },
     Sum(Box<Expr>),
     AggGroups(Box<Expr>),
     Std(Box<Expr>),
@@ -724,10 +728,11 @@ impl Expr {
     }
 
     /// Compute the quantile per group.
-    pub fn quantile(self, quantile: f64) -> Self {
+    pub fn quantile(self, quantile: f64, interpol: QuantileInterpolOptions) -> Self {
         AggExpr::Quantile {
             expr: Box::new(self),
             quantile,
+            interpol,
         }
         .into()
     }
@@ -1902,8 +1907,8 @@ pub fn median(name: &str) -> Expr {
 }
 
 /// Find a specific quantile of all the values in this Expression.
-pub fn quantile(name: &str, quantile: f64) -> Expr {
-    col(name).quantile(quantile)
+pub fn quantile(name: &str, quantile: f64, interpol: QuantileInterpolOptions) -> Expr {
+    col(name).quantile(quantile, interpol)
 }
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.

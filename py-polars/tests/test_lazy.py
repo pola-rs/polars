@@ -957,8 +957,20 @@ def test_median(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_quantile(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().quantile(0.25).collect()["A"][0] == 2
-    assert fruits_cars.select(pl.col("A").quantile(0.25))["A"][0] == 2
+    assert fruits_cars.lazy().quantile(0.25, "nearest").collect()["A"][0] == 2
+    assert fruits_cars.select(pl.col("A").quantile(0.25, "nearest"))["A"][0] == 2
+
+    assert fruits_cars.lazy().quantile(0.24, "lower").collect()["A"][0] == 1
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "lower"))["A"][0] == 1
+
+    assert fruits_cars.lazy().quantile(0.26, "higher").collect()["A"][0] == 3
+    assert fruits_cars.select(pl.col("A").quantile(0.26, "higher"))["A"][0] == 3
+
+    assert fruits_cars.lazy().quantile(0.24, "midpoint").collect()["A"][0] == 1
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "midpoint"))["A"][0] == 1
+
+    assert fruits_cars.lazy().quantile(0.24, "linear").collect()["A"][0] == 1
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1
 
 
 def test_is_between(fruits_cars: pl.DataFrame) -> None:

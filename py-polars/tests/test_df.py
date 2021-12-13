@@ -666,7 +666,7 @@ def test_df_stats(df: pl.DataFrame) -> None:
     df.sum()
     df.mean()
     df.median()
-    df.quantile(0.4)
+    df.quantile(0.4, "nearest")
 
 
 def test_df_fold() -> None:

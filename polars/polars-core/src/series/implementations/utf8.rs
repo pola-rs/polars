@@ -387,8 +387,12 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     fn std_as_series(&self) -> Series {
         VarAggSeries::std_as_series(&self.0)
     }
-    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-        ChunkAggSeries::quantile_as_series(&self.0, quantile)
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        ChunkAggSeries::quantile_as_series(&self.0, quantile, interpol)
     }
 
     fn fmt_list(&self) -> String {

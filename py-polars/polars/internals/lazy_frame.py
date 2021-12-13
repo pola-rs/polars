@@ -888,11 +888,11 @@ class LazyFrame:
         """
         return wrap_ldf(self._ldf.median())
 
-    def quantile(self, quantile: float) -> "LazyFrame":
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> "LazyFrame":
         """
         Aggregate the columns in the DataFrame to their quantile value.
         """
-        return wrap_ldf(self._ldf.quantile(quantile))
+        return wrap_ldf(self._ldf.quantile(quantile, interpolation))
 
     def explode(
         self, columns: Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]

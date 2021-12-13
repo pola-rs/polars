@@ -188,7 +188,12 @@ pub(crate) mod private {
         fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             None
         }
-        fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
+        fn agg_quantile(
+            &self,
+            _groups: &[(u32, Vec<u32>)],
+            _quantile: f64,
+            _interpol: QuantileInterpolOptions,
+        ) -> Option<Series> {
             None
         }
         fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -814,7 +819,11 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
         invalid_operation_panic!(self)
     }
 

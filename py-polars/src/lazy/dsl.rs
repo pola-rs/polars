@@ -138,8 +138,16 @@ impl PyExpr {
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    pub fn quantile(&self, quantile: f64) -> PyExpr {
-        self.clone().inner.quantile(quantile).into()
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyExpr {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+        self.clone().inner.quantile(quantile, interpol).into()
     }
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
@@ -816,11 +824,20 @@ impl PyExpr {
             .into()
     }
 
-    pub fn rolling_quantile(&self, window_size: usize, quantile: f64) -> Self {
+    pub fn rolling_quantile(&self, window_size: usize, quantile: f64, interpolation: &str) -> Self {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+
         self.inner
             .clone()
             .rolling_apply_float(window_size, move |ca| {
-                ChunkAgg::quantile(ca, quantile).unwrap()
+                ChunkAgg::quantile(ca, quantile, interpol).unwrap()
             })
             .into()
     }

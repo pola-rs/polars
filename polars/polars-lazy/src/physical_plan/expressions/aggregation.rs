@@ -138,7 +138,7 @@ impl PhysicalAggregation for AggregationExpr {
                 let agg_s = ac.flat().into_owned().agg_var(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
-            GroupByMethod::Quantile(_) => {
+            GroupByMethod::Quantile(_, _) => {
                 // implemented explicitly in AggQuantile struct
                 unimplemented!()
             }
@@ -262,8 +262,11 @@ impl PhysicalAggregation for AggQuantileExpr {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df, state)?;
-        let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
-        let opt_agg = series.agg_quantile(groups, self.quantile);
+        let new_name = fmt_groupby_column(
+            series.name(),
+            GroupByMethod::Quantile(self.quantile, self.interpol),
+        );
+        let opt_agg = series.agg_quantile(groups, self.quantile, self.interpol);
 
         let opt_agg = opt_agg.map(|mut agg| {
             agg.rename(&new_name);
@@ -289,11 +292,20 @@ impl PhysicalAggregation for CastExpr {
 pub struct AggQuantileExpr {
     pub(crate) expr: Arc<dyn PhysicalExpr>,
     pub(crate) quantile: f64,
+    pub(crate) interpol: QuantileInterpolOptions,
 }
 
 impl AggQuantileExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, quantile: f64) -> Self {
-        Self { expr, quantile }
+    pub fn new(
+        expr: Arc<dyn PhysicalExpr>,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Self {
+        Self {
+            expr,
+            quantile,
+            interpol,
+        }
     }
 }
 
@@ -317,7 +329,10 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Quantile(self.quantile));
+        let new_name = fmt_groupby_column(
+            field.name(),
+            GroupByMethod::Quantile(self.quantile, self.interpol),
+        );
         Ok(Field::new(&new_name, field.data_type().clone()))
     }
 
