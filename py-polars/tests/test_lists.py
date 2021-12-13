@@ -34,3 +34,9 @@ def test_contains() -> None:
 
     out = pl.select(pl.lit(a).arr.contains(2)).to_series()
     testing.assert_series_equal(out, expected)
+
+
+def test_dtype() -> None:
+    a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
+    assert a.dtype == pl.List
+    assert a.inner_dtype == pl.Int64

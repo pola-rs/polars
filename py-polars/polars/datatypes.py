@@ -1,5 +1,4 @@
 import ctypes
-import typing as tp
 from typing import Any, Dict, Type
 
 try:
@@ -88,27 +87,6 @@ class Categorical(DataType):
     pass
 
 
-# Don't change the order of these!
-DTYPES: tp.List[Type[DataType]] = [
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    Float32,
-    Float64,
-    Boolean,
-    Utf8,
-    List,
-    Date,
-    Datetime,
-    Time,
-    Object,
-    Categorical,
-]
 _DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Int8: "i8",
     Int16: "i16",

@@ -13,7 +13,6 @@ use crate::apply::dataframe::{
     apply_lambda_with_utf8_out_type,
 };
 use crate::conversion::{ObjectValue, Wrap};
-use crate::datatypes::PyDataType;
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, str_to_null_strategy};
@@ -481,15 +480,12 @@ impl PyDataFrame {
     }
 
     /// Get datatypes
-    pub fn dtypes(&self) -> Vec<u8> {
-        self.df
-            .dtypes()
+    pub fn dtypes(&self, py: Python) -> PyObject {
+        let iter = self
+            .df
             .iter()
-            .map(|arrow_dtype| {
-                let dt: PyDataType = arrow_dtype.into();
-                dt as u8
-            })
-            .collect()
+            .map(|s| Wrap(s.dtype().clone()).to_object(py));
+        PyList::new(py, iter).to_object(py)
     }
 
     pub fn n_chunks(&self) -> PyResult<usize> {

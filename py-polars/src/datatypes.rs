@@ -4,7 +4,7 @@ use pyo3::{FromPyObject, PyAny, PyResult};
 
 // Don't change the order of these!
 #[repr(u8)]
-pub enum PyDataType {
+pub(crate) enum PyDataType {
     Int8,
     Int16,
     Int32,

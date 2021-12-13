@@ -17,9 +17,10 @@ Attributes
    :toctree: api/
 
    Series.dtype
+   Series.inner_dtype
    Series.name
    Series.shape
-   Series.skew
+   Series.arr
    Series.dt
    Series.str
 
