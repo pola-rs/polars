@@ -104,6 +104,30 @@ describe("dataframe", () => {
       expect(df.columns).toEqual(Object.keys(rows[0]));
       expect(df.dtypes).toEqual(["Float64", "Datetime", "Utf8"]);
     });
+    test.todo("from object array");
+    test("from nulls", () => {
+      const df = pl.DataFrame({"nulls": [null, null, null]});
+      const expected = pl.DataFrame([pl.Series("nulls", [null, null, null], pl.Float64)]);
+      expect(df).toFrameStrictEqual(expected);
+    });
+    test("from list types", () => {
+      const int8List = [
+        Int8Array.from([1, 2, 3]),
+        Int8Array.from([2]),
+        Int8Array.from([1, 1, 1])
+      ];
+      const expected: any = {
+        "num_list": [[1, 2], [], [3, null]],
+        "bool_list": [[true, null], [], [false]],
+        "str_list": [["a", null], ["b", "c"], []],
+        "bigint_list": [[1n], [2n, 3n], []],
+        "int8_list": int8List
+      };
+      expected.int8_list = int8List.map(i => [...i]);
+      const df = pl.DataFrame(expected);
+
+      expect(df.toJS()).toEqual(expected);
+    });
   });
   test("dtypes", () =>{
     const expected = ["Float64", "Utf8"];

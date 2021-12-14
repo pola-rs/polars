@@ -4,8 +4,7 @@ import * as utils from "./utils";
 import type {ColumnSelection, ExpressionSelection} from "./utils";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 import util from "util";
-import {todo} from "./internals/utils";
-import {InvalidOperationError} from "./error";
+import {InvalidOperationError, todo} from "./error";
 import {Expr, exprToLitOrExpr} from "./lazy/expr";
 
 

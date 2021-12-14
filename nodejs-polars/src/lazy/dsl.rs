@@ -386,19 +386,7 @@ pub fn strftime(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::from_type(DataType::Utf8))
         .try_into_js(&cx)
 }
-#[js_function(1)]
-pub fn arr_lengths(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
 
-    let function = |s: Series| {
-        let ca = s.list()?;
-        Ok(ca.lst_lengths().into_series())
-    };
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::UInt32))
-        .try_into_js(&cx)
-}
 #[js_function(1)]
 pub fn timestamp(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -455,6 +443,20 @@ pub fn reshape(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let dims = params.get_as::<Vec<i64>>("dims")?;
     expr.clone().reshape(&dims).try_into_js(&cx)
+}
+#[js_function(1)]
+pub fn sort_with(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let descending: bool = params.get_or("reverse", false)?;
+    let nulls_last: bool = params.get_or("nullsLast", false)?;
+
+    expr.clone()
+        .sort_with(SortOptions {
+            descending,
+            nulls_last,
+        })
+        .try_into_js(&cx)
 }
 macro_rules! impl_expr {
     ($name:ident) => {
@@ -634,6 +636,19 @@ pub fn rolling_skew(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 #[js_function(1)]
+pub fn lst_lengths(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+
+    let function = |s: Series| {
+        let ca = s.list()?;
+        Ok(ca.lst_lengths().into_series())
+    };
+    expr.clone()
+        .map(function, GetOutput::from_type(DataType::UInt32))
+        .try_into_js(&cx)
+}
+#[js_function(1)]
 pub fn lst_max(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
@@ -738,7 +753,22 @@ pub fn lst_unique(cx: CallContext) -> JsResult<JsExternal> {
         )
         .try_into_js(&cx)
 }
+#[js_function(1)]
+pub fn lst_get(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let index = params.get_as::<i64>("index")?;
 
+    expr.clone()
+        .map(
+            move |s| s.list()?.lst_get(index),
+            GetOutput::map_field(|field| match field.data_type() {
+                DataType::List(inner) => Field::new(field.name(), *inner.clone()),
+                _ => panic!("should be a list type"),
+            }),
+        )
+        .try_into_js(&cx)
+}
 #[js_function(1)]
 pub fn rank(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;

@@ -1,16 +1,24 @@
 import pli from "./internals/polars_internal";
 import { arrayToJsDataFrame } from "./internals/construction";
-import { DataType, JoinBaseOptions, JoinOptions, JsDataFrame, ReadCsvOptions, ReadJsonOptions, WriteCsvOptions} from "./datatypes";
+import {GroupBy} from "./groupby";
+import {LazyDataFrame} from "./lazy/dataframe";
+import {concat} from "./functions";
+import {Expr} from "./lazy/expr";
+import {todo} from "./error";
 import {Series, seriesWrapper} from "./series";
 import {Stream} from "stream";
-import fs from "fs";
 
 import {
-  isPath,
+  DataType,
+  JoinBaseOptions,
+  JsDataFrame,
+  WriteCsvOptions
+} from "./datatypes";
+
+import {
   columnOrColumns,
   columnOrColumnsStrict,
   ColumnSelection,
-  range,
   DownsampleRule,
   FillNullStrategy,
   isExpr,
@@ -20,12 +28,7 @@ import {
   ValueOrArray,
   ExprOrString
 } from "./utils";
-import {GroupBy} from "./groupby";
-import {LazyDataFrame} from "./lazy/dataframe";
-import {concat} from "./functions";
-import {Expr} from "./lazy/expr";
 
-const todo = () => new Error("not yet implemented");
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
 
@@ -95,7 +98,7 @@ export interface DataFrame {
    * >>>         "D": [12.0, 5.0, 9.0, 2.0, 11.0, 2.0],
    * >>>     }
    * >>> )
-   * >>> df['A'] = df['A'].str.strptime(pl.Date, "%Y-%m-%d")
+   * >>> df['A'] = df['A'].str.strftime(pl.Date, "%Y-%m-%d")
    * >>>
    * >>> df.downsample("A", rule="day", n=3).agg(
    * >>>     {
@@ -546,6 +549,8 @@ export interface DataFrame {
    * @see {@link head}
    */
   limit(length?: number): DataFrame
+  map<T>(func: (...args: any[]) => T): T[]
+
   /**
    * Aggregate the columns of this DataFrame to their maximum value.
    * ___
@@ -664,7 +669,7 @@ export interface DataFrame {
   /**
    * Apply a function on Self.
    */
-  pipe<T>(func: (df: DataFrame, ...args: any[]) => T, ...args: any[]): T
+  pipe<T>(func: (...args: any[]) => T, ...args: any[]): T
   /**
    * Aggregate the columns of this DataFrame to their quantile value.
    * @example
@@ -1149,6 +1154,8 @@ export interface DataFrame {
    * @param name - name of the column to add
    */
   withRowCount(name?: string): DataFrame
+  /** @see {@link filter} */
+  where(predicate: any): DataFrame
 
   add(other: any): DataFrame
   sub(other: any): DataFrame
@@ -1169,6 +1176,10 @@ function prepareOtherArg<T>(anyValue:T | Series<T>): Series<T> {
   } else {
     return Series([anyValue]) as Series<T>;
   }
+}
+function map<T>(df: DataFrame, fn: (...args: any[]) => T[]) {
+
+  return df.rows().map(fn);
 }
 
 export const dfWrapper = (_df: JsDataFrame): DataFrame => {
@@ -1414,7 +1425,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       .shiftAndFill(periods, fillValue)
       .collectSync();
   };
-
   const shrinkToFit = (inPlace:any=false): any => {
     if(inPlace) {
       return unwrap<void>("shrink_to_fit");
@@ -1449,7 +1459,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
     return wrap("drop_duplicates", {maintainOrder: opts.maintainOrder, subset});
   };
-
   const explode = (...columns) => {
     return dfWrapper(_df).lazy()
       .explode(columns)
@@ -1517,7 +1526,17 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     sum: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("sum") : seriesWrapper(unwrap("hsum", {nullStrategy})) as any,
     tail: (length=5) => wrap("tail", {length}),
     toCSV: toCSV as any,
-    toJS: noArgUnwrap("to_js"),
+    toJS() {
+
+      return unwrap<any[]>("get_columns").reduce((acc, curr) => {
+        const s = seriesWrapper(curr);
+
+        return {
+          ...acc,
+          [s.name]: s.toArray()
+        };
+      }, {});
+    },
     toJSON: toJSON as any,
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => unwrap<string>("as_str"),
@@ -1536,6 +1555,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     dropDuplicates,
     explode,
     filter,
+    map: (fn) => map(dfWrapper(_df), fn as any) as any,
     pipe: (fn?) => {throw todo();},
     row: (index) => unwrap("to_row", {idx: index}),
     upsample: (index) => {throw todo();},
@@ -1544,8 +1564,10 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     withColumns,
     withColumnRenamed,
     withRowCount: (name="row_nr") => wrap("with_row_count", {name}),
+    where: filter
   };
 };
+
 export const _wrapDataFrame = (df, method, args) => dfWrapper(pli.df[method]({_df: df, ...args }));
 
 

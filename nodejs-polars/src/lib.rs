@@ -43,6 +43,10 @@ pub fn init(mut exports: JsObject, env: napi::Env) -> Result<()> {
     exports.create_named_method("when", dsl::when)?;
     exports.create_named_method("arange", functions::arange)?;
     exports.create_named_method("argSortBy", functions::argsort_by)?;
-
+    exports.create_named_method("concatList", functions::concat_lst)?;
+    exports.create_named_method("concatString", functions::concat_str)?;
+    exports.create_named_method("cov", functions::cov)?;
+    exports.create_named_method("pearsonCorr", functions::pearson_corr)?;
+    exports.create_named_method("spearmanRankCorr", functions::spearman_rank_corr)?;
     Ok(())
 }

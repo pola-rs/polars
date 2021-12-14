@@ -14,7 +14,7 @@ impl JsSeries {
             napi::Property::new(env, "minute")?.with_method(minute),
             napi::Property::new(env, "month")?.with_method(month),
             napi::Property::new(env, "nanosecond")?.with_method(nanosecond),
-            napi::Property::new(env, "ordinal_day")?.with_method(ordinal_day),
+            napi::Property::new(env, "ordinalDay")?.with_method(ordinal_day),
             napi::Property::new(env, "second")?.with_method(second),
             napi::Property::new(env, "strftime")?.with_method(strftime),
             napi::Property::new(env, "timestamp")?.with_method(timestamp),
@@ -24,16 +24,17 @@ impl JsSeries {
         ])?;
 
         str_obj.define_properties(&[
-            napi::Property::new(env, "lengths")?.with_method(str_lengths),
             napi::Property::new(env, "contains")?.with_method(str_contains),
-            napi::Property::new(env, "json_path_match")?.with_method(str_json_path_match),
             napi::Property::new(env, "extract")?.with_method(str_extract),
+            napi::Property::new(env, "jsonPathMatch")?.with_method(str_json_path_match),
+            napi::Property::new(env, "lengths")?.with_method(str_lengths),
+            napi::Property::new(env, "parseDate")?.with_method(str_parse_date),
+            napi::Property::new(env, "parseDateTime")?.with_method(str_parse_datetime),
             napi::Property::new(env, "replace")?.with_method(str_replace),
-            napi::Property::new(env, "to_uppercase")?.with_method(str_to_uppercase),
-            napi::Property::new(env, "to_lowercase")?.with_method(str_to_lowercase),
-            napi::Property::new(env, "parse_date")?.with_method(str_parse_date),
-            napi::Property::new(env, "parse_datetime")?.with_method(str_parse_datetime),
+            napi::Property::new(env, "replaceAll")?.with_method(str_replace_all),
             napi::Property::new(env, "slice")?.with_method(str_slice),
+            napi::Property::new(env, "toLowerCase")?.with_method(str_to_lowercase),
+            napi::Property::new(env, "toUpperCase")?.with_method(str_to_uppercase),
         ])?;
 
         series.define_properties(&[

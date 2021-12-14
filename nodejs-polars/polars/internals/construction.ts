@@ -7,9 +7,39 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
   if (Array.isArray(value)) {
     return jsTypeToPolarsType(value[0]);
   }
+  if(isTypedArray(value)) {
+    switch (value.constructor.name) {
+    case Int8Array.name:
+      return DataType.Int8;
+    case Int16Array.name:
+      return DataType.Int16;
+    case Int32Array.name:
+      return DataType.Int32;
+    case BigInt64Array.name:
+      return DataType.Int64;
+    case Uint8Array.name:
+      return DataType.UInt8;
+    case Uint16Array.name:
+      return DataType.UInt16;
+    case Uint32Array.name:
+      return DataType.UInt32;
+    case BigUint64Array.name:
+      return DataType.UInt64;
+    case Float32Array.name:
+      return DataType.Float32;
+    case Float64Array.name:
+      return DataType.Float64;
+    default:
+      throw new Error(`unknown  typed array type: ${value.constructor.name}`);
+    }
+  }
 
   if (value instanceof Date) {
     return DataType.Datetime;
+  }
+  if(typeof value === "object" && (value as any).constructor === Object) {
+
+    return DataType.Object;
   }
 
   switch (typeof value) {
@@ -26,7 +56,30 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
   }
 };
 
-const firstNonNull = (arr: any[]): any => arr.find(x => x !== null && x !== undefined);
+/**
+ * __finds the first non null value in the inputs__
+ * ___
+ * If the first value is an array
+ * it will find the first scalar type in the array and return it wrapped into the array
+ *
+ * @example
+ * ```
+ * >>> const input = [null, [], [null, "a", "b"]]
+ * >>> firstNonNull(input)
+ * ["a"]
+ * >>> const ints = [null, 1]
+ * >>> firstNonNull(ints)
+ * 1
+ * ```
+ */
+const firstNonNull = (arr: any[]): any => {
+  const first = arr.find(x => x !== null && x !== undefined);
+  if(Array.isArray(first)) {
+    return [firstNonNull(arr.flat())];
+  }
+
+  return first;
+};
 
 /**
  * Construct an internal `JsSeries` from an array
@@ -36,12 +89,12 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
     return pli.series.new_from_typed_array({ name, values, strict });
   }
 
-  //Empty sequence defaults to Float32 type
+  //Empty sequence defaults to Float64 type
   if (!values.length && !dtype) {
-    dtype = DataType.Float32;
+    dtype = DataType.Float64;
   }
   const firstValue = firstNonNull(values);
-  if(Array.isArray(firstValue)) {
+  if(Array.isArray(firstValue) || isTypedArray(firstValue)) {
     const listDtype = jsTypeToPolarsType(firstValue);
     const constructor = polarsTypeToConstructor(DataType.List);
 

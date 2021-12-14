@@ -3,7 +3,7 @@ import * as df from "./dataframe";
 import { DataType } from "./datatypes";
 import * as func from "./functions";
 import * as io from "./io";
-
+import type { FillNullStrategy as _FillNullStrategy } from "./utils";
 import {
   funcs as lazy,
   Expr as lazyExpr,
@@ -18,6 +18,7 @@ namespace pl {
   export type When = _when.When;
   export type WhenThen = _when.WhenThen;
   export type WhenThenThen = _when.WhenThenThen;
+  export type FillNullStrategy = _FillNullStrategy;
   export import DataFrame = df.DataFrame
   export import Series = series.Series;
   export import Int16 = DataType.Int16
@@ -55,8 +56,8 @@ namespace pl {
   export import col = lazy.col
   export import cols = lazy.cols
   export import lit = lazy.lit
-  export import max = lazy.max
-  export import fold = lazy.fold
+  // export import max = lazy.max
+  // export import fold = lazy.fold
   export import arange = lazy.arange
   export import argSortBy = lazy.argSortBy
   export import avg = lazy.avg

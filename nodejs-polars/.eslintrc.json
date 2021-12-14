@@ -4,6 +4,9 @@
         "es2021": true,
         "jest/globals": true
     },
+    "globals": {
+        "Buffer": "readonly"
+    },
     "extends": [
         "eslint:recommended"
     ],
@@ -30,7 +33,14 @@
         "@typescript-eslint/comma-spacing": [
             "error"
         ],
-        "quotes": ["error", "double"],
+        "quotes": [
+            "error",
+            "double",
+            {
+                "allowTemplateLiterals": true,
+                "avoidEscape": true
+            }
+        ],
         "no-redeclare": "off",
         "no-trailing-spaces": "error",
         "semi": [

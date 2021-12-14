@@ -1,6 +1,6 @@
 use crate::conversion::prelude::*;
 use crate::prelude::*;
-use napi::{JsBoolean, JsNumber, JsObject, JsTypedArrayValue, JsUnknown};
+use napi::{JsBoolean, JsNumber, JsObject, JsString, JsTypedArrayValue, JsUnknown};
 
 pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<Series> {
     let len = obj.get_array_length()?;
@@ -10,20 +10,28 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 name,
                 len as usize,
                 (len as usize) * 5,
-                DataType::Int64,
+                DataType::Int8,
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<i8>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_uint32()? as i8)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<i8>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<JsNumber> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.get_uint32()? as i8)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -32,20 +40,28 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 name,
                 len as usize,
                 (len as usize) * 5,
-                DataType::Int64,
+                DataType::UInt8,
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<u8>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_uint32()? as u8)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<u8>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<JsNumber> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.get_uint32()? as u8)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -54,20 +70,28 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 name,
                 len as usize,
                 (len as usize) * 5,
-                DataType::Int64,
+                DataType::Int16,
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<i16>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_uint32()? as i16)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<i16>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<JsNumber> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.get_uint32()? as i16)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -76,20 +100,28 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 name,
                 len as usize,
                 (len as usize) * 5,
-                DataType::Int64,
+                DataType::UInt16,
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<u16>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_uint32()? as u16)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<u16>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<JsNumber> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.get_uint32()? as u16)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -98,20 +130,28 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 name,
                 len as usize,
                 (len as usize) * 5,
-                DataType::Int64,
+                DataType::Int32,
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<i32>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_uint32()? as i32)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<i32>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<JsNumber> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.get_uint32()? as i32)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -120,20 +160,28 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 name,
                 len as usize,
                 (len as usize) * 5,
-                DataType::Int64,
+                DataType::UInt32,
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<u32>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_uint32()?)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<u32>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<JsNumber> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.get_uint32()?)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -142,20 +190,28 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 name,
                 len as usize,
                 (len as usize) * 5,
-                DataType::Int64,
+                DataType::Float32,
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<f32>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_double()? as f32)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<f32>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<JsNumber> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.get_double()? as f32)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -168,16 +224,24 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<i64>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_int64()?)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<i64>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<napi::JsBigint> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.try_into()?)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -186,20 +250,28 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 name,
                 len as usize,
                 (len as usize) * 5,
-                DataType::Int64,
+                DataType::UInt64,
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<u64>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_int64()? as u64)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<u64>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<napi::JsBigint> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.try_into()?)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -212,16 +284,24 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
             );
             for idx in 0..len {
                 let sub_seq: JsObject = obj.get_element(idx)?;
-                let sub_seq_len = sub_seq.get_array_length()?;
-                let mut v: Vec<Option<f64>> = Vec::with_capacity(sub_seq_len as usize);
-                for idx in 0..sub_seq_len {
-                    let item: JsResult<JsNumber> = sub_seq.get_element(idx);
-                    match item {
-                        Ok(i) => v.push(Some(i.get_double()?)),
-                        _ => v.push(None),
+                if sub_seq.is_typedarray()? {
+                    let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
+                    let v = buff.into_value()?;
+                    let s = from_typed_array(&v)?;
+                    builder.append_series(&s)
+                } else {
+                    let sub_seq: JsObject = obj.get_element(idx)?;
+                    let sub_seq_len = sub_seq.get_array_length()?;
+                    let mut v: Vec<Option<f64>> = Vec::with_capacity(sub_seq_len as usize);
+                    for idx in 0..sub_seq_len {
+                        let item: JsResult<JsNumber> = sub_seq.get_element(idx);
+                        match item {
+                            Ok(i) => v.push(Some(i.get_double()?)),
+                            _ => v.push(None),
+                        }
                     }
+                    builder.append_iter(v.into_iter());
                 }
-                builder.append_iter(v.into_iter());
             }
             builder.finish().into_series()
         }
@@ -250,17 +330,53 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 let sub_seq_len = sub_seq.get_array_length()?;
                 let mut v: Vec<Option<&str>> = Vec::with_capacity(sub_seq_len as usize);
                 for idx in 0..sub_seq_len {
-                    let item: JsResult<JsUnknown> = sub_seq.get_element(idx);
+                    let item: JsResult<JsString> = sub_seq.get_element(idx);
                     match item {
                         Ok(i) => {
-                            let s: WrappedValue = i.into();
-                            let s = s.extract::<&str>()?;
+                            let s = i.into_utf8()?.into_owned()?;
+                            let s = Box::leak(s.into_boxed_str());
                             v.push(Some(s))
                         }
                         _ => v.push(None),
                     }
                 }
                 builder.append_iter(v.into_iter());
+            }
+            builder.finish().into_series()
+        }
+        DataType::Datetime => {
+            let mut builder = ListPrimitiveChunkedBuilder::<i64>::new(
+                name,
+                len as usize,
+                (len as usize) * 5,
+                DataType::Int64,
+            );
+            for idx in 0..len {
+                let sub_seq: JsObject = obj.get_element(idx)?;
+                let sub_seq_len = sub_seq.get_array_length()?;
+                let mut inner_builder =
+                    PrimitiveChunkedBuilder::<Int64Type>::new(name, sub_seq_len as usize);
+                for inner_idx in 0..sub_seq_len {
+                    let item: JsResult<JsObject> = sub_seq.get_element(inner_idx);
+                    match item {
+                        Ok(obj) => {
+                            if obj.is_date()? {
+                                let d: &napi::JsDate = unsafe { &obj.into_unknown().cast() };
+                                match d.value_of() {
+                                    Ok(v) => inner_builder.append_value(v as i64),
+                                    Err(_) => inner_builder.append_null(),
+                                }
+                            }
+                        }
+                        Err(_) => inner_builder.append_null(),
+                    }
+                }
+                let dt_series = inner_builder
+                    .finish()
+                    .into_series()
+                    .cast(&DataType::Datetime)
+                    .map_err(JsPolarsEr::from)?;
+                builder.append_series(&dt_series);
             }
             builder.finish().into_series()
         }
@@ -276,63 +392,43 @@ pub fn from_typed_array(arr: &JsTypedArrayValue) -> JsResult<Series> {
     let series = match dtype {
         JsDataType::Int8 => {
             let v: &[i8] = arr.as_ref();
-            let v: Vec<i8> = v.to_owned();
-            let v: ChunkedArray<UInt32Type> = v.into_iter().map(|v| Some(v as u32)).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::UInt8 => {
             let v: &[u8] = arr.as_ref();
-            let v: Vec<u8> = v.to_owned();
-            let v: ChunkedArray<UInt32Type> = v.into_iter().map(|v| Some(v as u32)).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::Int16 => {
             let v: &[i16] = arr.as_ref();
-            let v: Vec<i16> = v.to_owned();
-            let v: ChunkedArray<UInt32Type> = v.into_iter().map(|v| Some(v as u32)).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::UInt16 => {
             let v: &[u16] = arr.as_ref();
-            let v: Vec<u16> = v.to_owned();
-            let v: ChunkedArray<UInt32Type> = v.into_iter().map(|v| Some(v as u32)).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::Int32 => {
             let v: &[i32] = arr.as_ref();
-            let v: Vec<i32> = v.to_owned();
-            let v: ChunkedArray<Int32Type> = v.into_iter().map(Some).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::UInt32 => {
             let v: &[u32] = arr.as_ref();
-            let v: Vec<u32> = v.to_owned();
-            let v: ChunkedArray<UInt32Type> = v.into_iter().map(Some).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::Float32 => {
             let v: &[f32] = arr.as_ref();
-            let v: Vec<f32> = v.to_owned();
-            let v: ChunkedArray<Float32Type> = v.into_iter().map(Some).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::Float64 => {
             let v: &[f64] = arr.as_ref();
-            let v: Vec<f64> = v.to_owned();
-            let v: ChunkedArray<Float64Type> = v.into_iter().map(Some).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::Int64 => {
             let v: &[i64] = arr.as_ref();
-            let v: Vec<i64> = v.to_owned();
-            let v: ChunkedArray<Int64Type> = v.into_iter().map(Some).collect();
-            v.into_series()
+            Series::new("", v)
         }
         JsDataType::UInt64 => {
             let v: &[u64] = arr.as_ref();
-            let v: Vec<u64> = v.to_owned();
-            let v: ChunkedArray<UInt64Type> = v.into_iter().map(Some).collect();
-            v.into_series()
+            Series::new("", v)
         }
         _ => {
             panic!("cannot create series from");

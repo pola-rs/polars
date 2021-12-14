@@ -71,9 +71,9 @@ impl IntoJs<JsNumber> for u32 {
         cx.env.create_uint32(self)
     }
 }
-impl IntoJs<JsNumber> for i64 {
-    fn try_into_js(self, cx: &CallContext) -> Result<JsNumber> {
-        cx.env.create_int64(self)
+impl IntoJs<JsBigint> for i64 {
+    fn try_into_js(self, cx: &CallContext) -> Result<JsBigint> {
+        cx.env.create_bigint_from_i64(self)
     }
 }
 impl IntoJs<JsBigint> for u64 {
@@ -105,7 +105,7 @@ impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
             AnyValue::Int8(v) => cx.env.create_int32(v as i32).map(|v| v.into_unknown()),
             AnyValue::Int16(v) => cx.env.create_int32(v as i32).map(|v| v.into_unknown()),
             AnyValue::Int32(v) => cx.env.create_int32(v).map(|v| v.into_unknown()),
-            AnyValue::Int64(v) => cx.env.create_int64(v).map(|v| v.into_unknown()),
+            AnyValue::Int64(v) => cx.env.create_bigint_from_i64(v).map(|v| v.into_unknown())?,
             AnyValue::Float32(v) => cx.env.create_double(v as f64).map(|v| v.into_unknown()),
             AnyValue::Float64(v) => cx.env.create_double(v).map(|v| v.into_unknown()),
             AnyValue::Date(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),

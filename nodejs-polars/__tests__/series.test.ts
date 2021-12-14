@@ -3,6 +3,188 @@ import pl from "@polars";
 import {InvalidOperationError} from "../polars/error";
 import Chance from "chance";
 
+
+describe("from lists", () => {
+  test("bool", () =>{
+    const expected = [[true, false], [true], [null], []];
+    const actual = pl.Series(expected).toArray();
+    expect(actual).toEqual(expected);
+  });
+  test("number", () =>{
+    const expected = [[1, 2], [3], [null], []];
+    const actual = pl.Series(expected).toArray();
+    expect(actual).toEqual(expected);
+  });
+  test("bigint", () =>{
+    const expected = [[1n, 2n], [3n], [null], []];
+    const actual = pl.Series(expected).toArray();
+    expect(actual).toEqual(expected);
+  });
+  test("string", () => {
+    const expected = [[], ["a"], [null], ["b", "c"]];
+    const actual = pl.Series(expected).toArray();
+    expect(actual).toEqual(expected);
+  });
+});
+describe("typedArrays", () => {
+  test("int8", () => {
+    const int8Array = new Int8Array([1, 2, 3]);
+    const actual = pl.Series(int8Array).toArray();
+    const expected = [...int8Array];
+    expect(actual).toEqual(expected);
+  });
+  test("int8:list", () => {
+    const int8Arrays = [
+      new Int8Array([1, 2, 3]),
+      new Int8Array([33, 44, 55]),
+    ];
+    const expected = int8Arrays.map(i => [...i]);
+    const actual = pl.Series(int8Arrays).toArray();
+    expect(actual).toEqual(expected);
+  });
+  test("int16", () => {
+    const int16Array = new Int16Array([1, 2, 3]);
+    const actual = pl.Series(int16Array).toArray();
+    const expected = Array.from(int16Array);
+    expect(actual).toEqual(expected);
+  });
+  test("int16:list", () => {
+    const int16Arrays = [
+      new Int16Array([1, 2, 3]),
+      new Int16Array([33, 44, 55]),
+    ];
+    const actual = pl.Series(int16Arrays).toArray();
+    const expected = int16Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("int32", () => {
+    const int32Array = new Int32Array([1, 2, 3]);
+    const actual = pl.Series(int32Array).toArray();
+    expect(actual).toEqual([...int32Array]);
+  });
+  test("int32:list", () => {
+    const int32Arrays = [
+      new Int32Array([1, 2, 3]),
+      new Int32Array([33, 44, 55]),
+    ];
+    const actual = pl.Series(int32Arrays).toArray();
+    const expected = int32Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("int64", () => {
+    const int64Array = new BigInt64Array([1n, 2n, 3n]);
+    const actual = pl.Series(int64Array).toArray();
+    const expected = [...int64Array];
+    expect(actual).toEqual(expected);
+  });
+  test("int64:list", () => {
+    const int64Arrays = [
+      new BigInt64Array([1n, 2n, 3n]),
+      new BigInt64Array([33n, 44n, 55n]),
+    ];
+    const actual = pl.Series(int64Arrays).toArray();
+    const expected = int64Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("uint8", () => {
+    const uint8Array = new Uint8Array([1, 2, 3]);
+    const actual = pl.Series(uint8Array).toArray();
+    const expected = [...uint8Array];
+    expect(actual).toEqual(expected);
+  });
+  test("uint8:list", () => {
+    const uint8Arrays = [
+      new Uint8Array([1, 2, 3]),
+      new Uint8Array([33, 44, 55]),
+    ];
+    const actual = pl.Series(uint8Arrays).toArray();
+    const expected = uint8Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("uint16", () => {
+    const uint16Array = new Uint16Array([1, 2, 3]);
+    const actual = pl.Series(uint16Array).toArray();
+    const expected = [...uint16Array];
+    expect(actual).toEqual(expected);
+  });
+  test("uint16:list", () => {
+    const uint16Arrays = [
+      new Uint16Array([1, 2, 3]),
+      new Uint16Array([33, 44, 55]),
+    ];
+    const actual = pl.Series(uint16Arrays).toArray();
+    const expected = uint16Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("uint32", () => {
+    const uint32Array = new Uint32Array([1, 2, 3]);
+    const actual = pl.Series(uint32Array).toArray();
+    const expected = [...uint32Array];
+    expect(actual).toEqual(expected);
+  });
+  test("uint32:list", () => {
+    const uint32Arrays = [
+      new Uint32Array([1, 2, 3]),
+      new Uint32Array([33, 44, 55]),
+    ];
+    const actual = pl.Series(uint32Arrays).toArray();
+    const expected = uint32Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("uint64", () => {
+    const uint64Array = new BigUint64Array([1n, 2n, 3n]);
+    const actual = pl.Series(uint64Array).toArray();
+    const expected = [...uint64Array];
+    expect(actual).toEqual(expected);
+  });
+  test("uint64:list", () => {
+    const uint64Arrays = [
+      new BigUint64Array([1n, 2n, 3n]),
+      new BigUint64Array([33n, 44n, 55n]),
+    ];
+    const actual = pl.Series(uint64Arrays).toArray();
+    const expected = uint64Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("float32", () => {
+    const float32Array = new Float32Array([1, 2, 3]);
+    const actual = pl.Series(float32Array).toArray();
+    const expected = [...float32Array];
+    expect(actual).toEqual(expected);
+  });
+  test("float32:list", () => {
+    const float32Arrays = [
+      new Float32Array([1, 2, 3]),
+      new Float32Array([33, 44, 55]),
+    ];
+    const actual = pl.Series(float32Arrays).toArray();
+    const expected = float32Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("float64", () => {
+    const float64Array = new Float64Array([1, 2, 3]);
+    const actual = pl.Series(float64Array).toArray();
+    const expected = [...float64Array];
+    expect(actual).toEqual(expected);
+  });
+  test("float64:list", () => {
+    const float64Arrays = [
+      new Float64Array([1, 2, 3]),
+      new Float64Array([33, 44, 55]),
+    ];
+    const actual = pl.Series(float64Arrays).toArray();
+    const expected = float64Arrays.map(i => [...i]);
+    expect(actual).toEqual(expected);
+  });
+  test("invalid:list", () => {
+    const float64Arrays = [
+      new Float64Array([33, 44, 55]),
+      new BigUint64Array([1n, 2n, 3n]),
+    ];
+    const fn = () =>  pl.Series(float64Arrays).toArray();
+    expect(fn).toThrow();
+  });
+});
 describe("series", () => {
   const chance = new Chance();
 
@@ -26,7 +208,7 @@ describe("series", () => {
       ${[1, 2, 3]}              | ${"Float64"}  | ${"number"}
       ${[1n, 2n, 3n]}           | ${"UInt64"}   | ${"bigint"}
       ${[true, false]}          | ${"Bool"}     | ${"boolean"}
-      ${[]}                     | ${"Float32"}  | ${"empty"}
+      ${[]}                     | ${"Float64"}  | ${"empty"}
       ${[new Date(Date.now())]} | ${"Datetime"} | ${"Date"}
     `("defaults to $dtype for \"$type\"", ({ values, dtype}) => {
       const name = chance.string();
@@ -64,6 +246,8 @@ describe("series", () => {
     ${new Uint8Array([1, 2, 3, 4, 5, 6, 11])} | ${"Uint8Array"}
     ${new Uint16Array([1, 2, 3, 55, 11])} | ${"Uint16Array"}
     ${new Uint32Array([1123, 2, 3000, 12801, 99, 43242])} | ${"Uint32Array"}
+    ${new BigInt64Array([1123n, 2n, 3000n, 12801n, 99n, 43242n])} | ${"BigInt64Array"}
+    ${new BigUint64Array([1123n, 2n, 3000n, 12801n, 99n, 43242n])} | ${"BigUint64Array"}
     `("can be created from $type", ({values}) => {
       const name = chance.string();
       const s = pl.Series(name, values);
@@ -153,15 +337,15 @@ describe("series", () => {
 });
 
 describe("series", () => {
-  const numSeries = () => pl.Series("foo", [1, 2, 3], pl.Int64);
+  const numSeries = () => pl.Series("foo", [1, 2, 3], pl.Int32);
   const fltSeries = () => pl.Series("float", [1, 2, 3], pl.Float64);
   const boolSeries = () =>  pl.Series("bool", [true, false, false]);
-  const other = () => pl.Series("bar", [3, 4, 5], pl.Int64);
+  const other = () => pl.Series("bar", [3, 4, 5], pl.Int32);
 
   const chance = new Chance();
 
   it.each`
-  series        | getter  
+  series        | getter
   ${numSeries()}  | ${"dtype"}
   ${numSeries()}  | ${"name"}
   ${numSeries()}  | ${"length"}
@@ -189,7 +373,7 @@ describe("series", () => {
   ${numSeries()}  | ${"cumMin"}       | ${[]}
   ${numSeries()}  | ${"cumProd"}      | ${[]}
   ${numSeries()}  | ${"cumSum"}       | ${[]}
-  ${numSeries()}  | ${"describe"}     | ${[]}
+  ${numSeries()}  | ${"describe"}| ${[]}
   ${numSeries()}  | ${"diff"}         | ${[]}
   ${numSeries()}  | ${"diff"}         | ${[{n: 1, nullBehavior: "drop"}]}
   ${numSeries()}  | ${"diff"}         | ${[{nullBehavior: "drop"}]}
@@ -362,7 +546,7 @@ describe("series", () => {
   ${"argUnique"}     | ${pl.Series([1, 1, 2]).argUnique()}                  | ${pl.Series([0, 2])}
   ${"cast-Int16"}    | ${pl.Series("", [1, 1, 2]).cast(pl.Int16)}           | ${pl.Series("", [1, 1, 2], pl.Int16)}
   ${"cast-Int32"}    | ${pl.Series("", [1, 1, 2]).cast(pl.Int32)}           | ${pl.Series("", [1, 1, 2], pl.Int32)}
-  ${"cast-Int64"}    | ${pl.Series("", [1, 1, 2]).cast(pl.Int64)}           | ${pl.Series("", [1, 1, 2], pl.Int64)}
+  ${"cast-Int64"}    | ${pl.Series("", [1, 1, 2]).cast(pl.Int64)}           | ${pl.Series("", [1n, 1n, 2n], pl.Int64)}
   ${"cast-UInt16"}   | ${pl.Series("", [1, 1, 2]).cast(pl.UInt16)}          | ${pl.Series("", [1, 1, 2], pl.UInt16)}
   ${"cast-UInt32"}   | ${pl.Series("", [1, 1, 2]).cast(pl.UInt32)}          | ${pl.Series("", [1, 1, 2], pl.UInt32)}
   ${"cast-UInt64"}   | ${pl.Series("", [1, 1, 2]).cast(pl.UInt64)}          | ${pl.Series("", [1n, 1n, 2n])}
@@ -379,7 +563,6 @@ describe("series", () => {
   ${"dropNulls"}     | ${pl.Series([1, null, 2]).dropNulls()}               | ${pl.Series([1, 2])}
   ${"dropNulls"}     | ${pl.Series([1, undefined, 2]).dropNulls()}          | ${pl.Series([1, 2])}
   ${"dropNulls"}     | ${pl.Series(["a", null, "f"]).dropNulls()}           | ${pl.Series(["a", "f"])}
-  ${"explode"}       | ${pl.Series([[1, 2], [3, 4]]).explode()}             | ${pl.Series([1, 2, 3, 4])}
   ${"fillNull:zero"} | ${pl.Series([1, null, 2]).fillNull("zero")}          | ${pl.Series([1, 0, 2])}
   ${"fillNull:one"}  | ${pl.Series([1, null, 2]).fillNull("one")}           | ${pl.Series([1, 1, 2])}
   ${"fillNull:max"}  | ${pl.Series([1, null, 5]).fillNull("max")}           | ${pl.Series([1, 5, 5])}

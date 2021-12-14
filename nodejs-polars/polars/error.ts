@@ -11,3 +11,5 @@ export class NotImplemented extends Error {
     super(`Invalid operation: ${method} is not supported for ${dtype}`);
   }
 }
+
+export const todo = () => new Error("not yet implemented");

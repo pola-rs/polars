@@ -1,6 +1,7 @@
 import {Expr, exprToLitOrExpr} from "./expr";
 import {Series} from "../series";
-import {ColumnSelection, ColumnsOrExpr, ExprOrString, isSeries, selectionToExprList} from "../utils";
+import { DataFrame } from "../dataframe";
+import {ColumnSelection, ColumnsOrExpr, ExprOrString, isExpr, isSeries, range, selectionToExprList} from "../utils";
 import pli from "../internals/polars_internal";
 import pl from "../index";
 
@@ -118,7 +119,11 @@ export function cols(col1: string, ...cols: string[]): Expr {
 }
 
 export function lit(value: any): Expr {
+  if(Array.isArray(value)) {
+    value = Series(value);
+  }
   if(isSeries(value)){
+
     return Expr(pli.lit({value: value._series}));
   }
 
@@ -134,39 +139,22 @@ export function lit(value: any): Expr {
  * Get the maximum value. Can be used horizontally or vertically.
  * @param column
  */
-export function max(column: ColumnsOrExpr): Expr;
-export function max<T>(column: Series<T>): number | bigint;
-export function max(column): Expr | number | bigint {
-  if(isSeries(column)) {
-    return column.max();
-  } else if (Array.isArray(column)) {
-    const max = (acc:Series<any>, curr:Series<any>): Series<any> => {
-      const mask = acc.greaterThan(curr);
-
-      return acc.zipWith(mask, curr);
-    };
-
-    let first = column[0];
-    if(typeof first === "string") {
-      first = col(first);
-    }
-  }
-
-  return null as any;
-}
+// export function max(column: ColumnsOrExpr): Expr;
+// export function max<T>(column: Series<T>): number | bigint;
+// export function max(column) {}
 
 
-export function fold<T>(
-  acc: Expr,
-  func: (curr:Series<T>, next: Series<T>) => Series<T>,
-  exprs: ColumnsOrExpr
-): Expr {
-  exprs = [exprs]
-    .flat(3)
-    .map(e => exprToLitOrExpr(e, false)._expr);
+// export function fold<T>(
+//   acc: Expr,
+//   func: (curr:Series<T>, next: Series<T>) => Series<T>,
+//   exprs: ColumnsOrExpr
+// ): Expr {
+//   exprs = [exprs]
+//     .flat(3)
+//     .map(e => exprToLitOrExpr(e, false)._expr);
 
-  return null as any;
-}
+//   return null as any;
+// }
 
 /**
  * __Create a range expression.__
@@ -189,13 +177,13 @@ export function arange<T>(opts: {low: Series<T> | T, high: Series<T> | T, step:n
 export function arange<T>(low: Series<T> | T, high?: Series<T> | T, step?: number, eager?: true): Series<T>;
 export function arange<T>(low: Series<T> | T, high?: Series<T> | T, step?: number, eager?: false): Expr;
 export function arange<T>(opts:any, high?, step?, eager?): Series<T> | Expr {
-  if(opts?.low) {
+  if(typeof opts?.low === "number") {
     return arange(opts.low, opts.high, opts.step, opts.eager);
   } else {
     const low = exprToLitOrExpr(opts, false);
     high = exprToLitOrExpr(high, false);
     if(eager) {
-      const df = pl.DataFrame({"a": [1]});
+      const df = DataFrame({"a": [1]});
 
       return df.select(arange(low, high, step).alias("arange") as any).getColumn("arange") as any;
     }
@@ -216,7 +204,6 @@ export function argSortBy(exprs: Expr[] | string[], reverse: boolean | boolean[]
     reverse = Array.from({length: exprs.length}, () => reverse) as any;
   }
   const by = selectionToExprList(exprs);
-  console.log({by, reverse});
 
   return Expr(pli.argSortBy({by, reverse}));
 }
@@ -231,23 +218,25 @@ export function avg(column: Series<any> | string): number | Expr {
  * Concat the arrays in a Series dtype List in linear time.
  * @param exprs Columns to concat into a List Series
  */
-export function concatList(exprs: ColumnsOrExpr): Expr
-export function concatList(exprs: ColumnsOrExpr): Expr {
-  const cols = selectionToExprList(exprs as any);
+export function concatList(exprs: ExprOrString[]): Expr
+export function concatList(expr: ExprOrString, ...exprs: ExprOrString[]): Expr
+export function concatList(expr: ExprOrString, expr2: ExprOrString,  ...exprs: ExprOrString[]): Expr
+export function concatList(...exprs): Expr {
+  const items = selectionToExprList(exprs as any, false);
 
-  return Expr(pli.concatList({cols}));
+  return Expr(pli.concatList({items}));
 }
 
 /** Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8. */
-export function concatString(opts: {exprs: ColumnsOrExpr, sep: string});
-export function concatString(exprs: ColumnsOrExpr, sep?: string);
+export function concatString(opts: {exprs: ExprOrString[], sep: string});
+export function concatString(exprs: ExprOrString[], sep?: string);
 export function concatString(opts, sep=",") {
   if(opts?.exprs) {
     return concatString(opts.exprs, opts.sep);
   }
-  const cols = selectionToExprList(opts as any);
+  const items = selectionToExprList(opts as any, false);
 
-  return Expr(pli.concatString({cols}));
+  return Expr(pli.concatString({items, sep}));
 
 }
 
@@ -264,8 +253,8 @@ export function count(column: string | Series<any>): Expr | number {
 
 /** Compute the covariance between two columns/ expressions. */
 export function cov(a: ExprOrString, b: ExprOrString): Expr {
-  a = exprToLitOrExpr(a)._expr;
-  b = exprToLitOrExpr(b)._expr;
+  a = exprToLitOrExpr(a, false)._expr;
+  b = exprToLitOrExpr(b, false)._expr;
 
   return Expr(pli.cov({a, b}));
 }
@@ -277,8 +266,8 @@ export function cov(a: ExprOrString, b: ExprOrString): Expr {
  * >>> pl.col("*").exclude(columns)
  * ```
  */
-export function exclude(...columns: ColumnSelection[]) {
-  return col("*").exclude(columns);
+export function exclude(column: string, ...columns: string[]) {
+  return col("*").exclude(column, ...columns);
 }
 
 /** Get the first value. */
@@ -298,116 +287,170 @@ export function first<T>(column: string | Series<T>): Expr | T {
 
 /**
  * String format utility for expressions
+ * Note: strings will be interpolated as `col(<value>)`. if you want a literal string, use `lit(<value>)`
+ * @example
+ * ```
+ * >>> df = pl.DataFrame({
+ * ...   "a": ["a", "b", "c"],
+ * ...   "b": [1, 2, 3],
+ * ... })
+ * >>> df.select(
+ * ...   pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt"),
+ * ... )
+ * shape: (3, 1)
+ * ┌─────────────┐
+ * │ fmt         │
+ * │ ---         │
+ * │ str         │
+ * ╞═════════════╡
+ * │ foo_a_bar_1 │
+ * ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+ * │ foo_b_bar_2 │
+ * ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+ * │ foo_c_bar_3 │
+ * └─────────────┘
+ *
+ * // You can use format as tag function as well
+ * >>> pl.format("foo_{}_bar_{}", pl.col("a"), "b") // is the same as
+ * >>> pl.format`foo_${pl.col("a")}_bar_${"b"}`
+ * ```
  */
-export function format() {}
+export function format(fstring: string, ...expr: ExprOrString[]): Expr
+export function format(strings: TemplateStringsArray, ...expr: ExprOrString[]): Expr
+export function format(strings, ...expr): Expr {
+  if(typeof strings === "string") {
+    const s = strings.split("{}");
+    if(s.length -1 !== expr.length) {
+      throw new RangeError("number of placeholders should equal the number of arguments");
+    }
+
+    return format(s as any, ...expr);
+  }
+  const d = range(0, Math.max(strings.length, expr.length)).flatMap((i) => {
+    const sVal = strings[i] ? lit(strings[i]) : [];
+    const exprVal = expr[i] ? exprToLitOrExpr(expr[i], false) : [];
+
+    return [sVal, exprVal];
+  })
+    .flat();
+
+  return concatString(d, "");
+}
 /** Syntactic sugar for `pl.col(column).aggGroups()` */
 export function groups(column: string): Expr {
   return col(column).aggGroups();
 }
 /** Get the first n rows of an Expression. */
-export function head(column: string, n?: number):Expr;
+export function head(column: ExprOrString, n?: number):Expr;
 export function head<T>(column: Series<T>, n?: number): Series<T>;
-export function head<T>(column: Series<T> | string, n?: number): Series<T> | Expr {
+export function head<T>(column: Series<T> | ExprOrString, n?): Series<T> | Expr {
   if(isSeries(column)) {
     return column.head(n);
   } else {
-    return col(column).head(n);
+    return exprToLitOrExpr(column, false).head(n);
+
   }
 }
 
 /** Get the last value. */
-export function last(column: string): Expr
+export function last(column: ExprOrString): Expr
 export function last<T>(column: Series<T>): T
-export function last<T>(column: string | Series<T>): Expr | T {
+export function last<T>(column: ExprOrString | Series<T>): Expr | T {
   if(isSeries(column)) {
     if(column.length) {
-      return column[0];
+      return column[-1];
     } else {
       throw new RangeError("The series is empty, so no last value can be returned.");
     }
   } else {
-    return col(column).last();
+    return exprToLitOrExpr(column, false).last();
   }
 }
 
 /** Get the mean value. */
-export function mean(column: string): Expr;
+export function mean(column: ExprOrString): Expr;
 export function mean(column: Series<any>): number;
-export function mean(column: Series<any> | string): number | Expr {
+export function mean(column: Series<any> | ExprOrString): number | Expr {
   if(isSeries(column)) {
     return column.mean();
   }
 
-  return col(column).mean();
+  return exprToLitOrExpr(column, false).mean();
 }
 
 /** Get the median value. */
-export function median(column: string): Expr;
+export function median(column: ExprOrString): Expr;
 export function median(column: Series<any>): number;
-export function median(column: Series<any> | string): number | Expr {
+export function median(column: Series<any> | ExprOrString): number | Expr {
   if(isSeries(column)) {
     return column.median();
   }
 
-  return col(column).median();
+  return exprToLitOrExpr(column, false).median();
 }
 
 /** Count unique values. */
-export function nUnique(column: string): Expr;
+export function nUnique(column: ExprOrString): Expr;
 export function nUnique(column: Series<any>): number;
-export function nUnique(column: Series<any> | string): number | Expr {
+export function nUnique(column: Series<any> | ExprOrString): number | Expr {
   if(isSeries(column)) {
     return column.nUnique();
   }
 
-  return col(column).nUnique();
+  return exprToLitOrExpr(column, false).nUnique();
 }
 
 
 /** Compute the pearson's correlation between two columns. */
 export function pearsonCorr(a: ExprOrString, b: ExprOrString): Expr {
-  a = exprToLitOrExpr(a)._expr;
-  b = exprToLitOrExpr(b)._expr;
+  a = exprToLitOrExpr(a, false)._expr;
+  b = exprToLitOrExpr(b, false)._expr;
 
   return Expr(pli.pearsonCorr({a, b}));
 }
 
-/** Syntactic sugar for `pl.col(column).quantile(..)`. */
-export function quantile(column:string, quantile: number) {
-  return col(column).quantile(quantile);
+/** Get the quantile */
+export function quantile(column: ExprOrString, q: number): Expr;
+export function quantile(column: Series<any>, q: number): number;
+export function quantile(column, q) {
+  if(isSeries(column)) {
+    return column.quantile(q);
+  }
+
+  return exprToLitOrExpr(column, false).quantile(q);
 }
 /**
  * __Run polars expressions without a context.__
  *
  * This is syntactic sugar for running `df.select` on an empty DataFrame.
  */
-export function select(...exprs: ColumnsOrExpr[]) {
-  return pli.DataFrame({}).select(exprs);
+export function select(expr: ExprOrString, ...exprs: ExprOrString[]) {
+  return DataFrame({}).select(expr, ...exprs);
 }
 
 /** Compute the spearman rank correlation between two columns. */
 export function spearmanRankCorr(a: ExprOrString, b: ExprOrString): Expr {
-  a = exprToLitOrExpr(a)._expr;
-  b = exprToLitOrExpr(b)._expr;
+  a = exprToLitOrExpr(a, false)._expr;
+  b = exprToLitOrExpr(b, false)._expr;
 
   return Expr(pli.spearmanRankCorr({a, b}));
 }
 
 
 /** Get the last n rows of an Expression. */
-export function tail(column: string, n?: number):Expr;
+export function tail(column: ExprOrString, n?: number):Expr;
 export function tail<T>(column: Series<T>, n?: number): Series<T>;
-export function tail<T>(column: Series<T> | string, n?: number): Series<T> | Expr {
+export function tail<T>(column: Series<T> | ExprOrString, n?: number): Series<T> | Expr {
   if(isSeries(column)) {
     return column.tail(n);
   } else {
-    return col(column).tail(n);
+    return exprToLitOrExpr(column, false).tail(n);
   }
 }
 
 /** Syntactic sugar for `pl.col(column).list()` */
-export function list(column:string): Expr {
-  return col(column).list();
+export function list(column:ExprOrString): Expr {
+  return exprToLitOrExpr(column, false).list();
 }
 
 

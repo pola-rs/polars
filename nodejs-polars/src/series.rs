@@ -644,8 +644,6 @@ pub fn arr_lengths(cx: CallContext) -> JsResult<JsExternal> {
 pub fn to_dummies(cx: CallContext) -> JsResult<JsUnknown> {
     let params = get_params(&cx)?;
     let _series = params.get_external::<JsSeries>(&cx, "_series")?;
-    // let dummies: JsDataFrame = series.series.to_dummies().map_err(JsPolarsEr::from)?.into();
-    // Ok(dummies.into_js_box(&mut cx))
     todo!()
 }
 
@@ -856,7 +854,7 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
     let params = get_params(&cx)?;
     let series = params.get_external::<JsSeries>(&cx, "_series")?;
     let index = params.get_as::<i64>("index")?;
-    match series.series.date() {
+    match series.series.datetime() {
         Ok(ca) => {
             let index = if index < 0 {
                 (ca.len() as i64 + index) as usize
@@ -864,11 +862,22 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
                 index as usize
             };
             match ca.get(index) {
-                Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
-                None => cx.env.get_null().map(|v| v.into_unknown()),
+                Some(v) => {
+                    println!("value={:#?}", v);
+                    cx.env.create_date(v as f64).map(|v| v.into_unknown())
+                }
+                None => {
+                    println!("none at idx={:#?}", index);
+
+                    cx.env.get_null().map(|v| v.into_unknown())
+                }
             }
         }
-        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
+        Err(_) => {
+            println!("err at idx={:#?}", index);
+
+            cx.env.get_null().map(|v| v.into_unknown())
+        }
     }
 }
 
@@ -1220,7 +1229,7 @@ macro_rules! impl_str_method_with_err {
 
 impl_str_method_with_err!(str_contains, contains, &str, "pat");
 impl_str_method_with_err!(str_json_path_match, json_path_match, &str, "pat");
-impl_str_method_with_err!(str_extract, extract, &str, "pat", usize, "group_index");
+impl_str_method_with_err!(str_extract, extract, &str, "pat", usize, "groupIndex");
 impl_str_method_with_err!(str_replace, replace, &str, "pat", &str, "val");
 impl_str_method_with_err!(str_replace_all, replace_all, &str, "pat", &str, "val");
 impl_str_method_with_err!(str_slice, str_slice, i64, "start", Option<u64>, "length");
@@ -1347,7 +1356,7 @@ impl_get!(get_u32, u32);
 impl_get!(get_i8, i8);
 impl_get!(get_i16, i16);
 impl_get!(get_i32, i32);
-impl_get!(get_i64, i64);
+// impl_get!(get_i64, i64);
 
 #[js_function(1)]
 pub fn get_u64(cx: CallContext) -> JsResult<JsUnknown> {
@@ -1355,6 +1364,26 @@ pub fn get_u64(cx: CallContext) -> JsResult<JsUnknown> {
     let series = params.get_external::<JsSeries>(&cx, "_series")?;
     let index = params.get_as::<i64>("index")?;
     match series.series.u64() {
+        Ok(ca) => {
+            let index = if index < 0 {
+                (ca.len() as i64 + index) as usize
+            } else {
+                index as usize
+            };
+            match ca.get(index) {
+                Some(v) => v.try_into_js(&cx).map(|v| v.into_unknown().unwrap()),
+                None => cx.env.get_null().map(|v| v.into_unknown()),
+            }
+        }
+        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
+    }
+}
+#[js_function(1)]
+pub fn get_i64(cx: CallContext) -> JsResult<JsUnknown> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<JsSeries>(&cx, "_series")?;
+    let index = params.get_as::<i64>("index")?;
+    match series.series.i64() {
         Ok(ca) => {
             let index = if index < 0 {
                 (ca.len() as i64 + index) as usize

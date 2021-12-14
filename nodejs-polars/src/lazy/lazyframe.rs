@@ -1,7 +1,7 @@
 use crate::conversion::prelude::*;
 use crate::dataframe::JsDataFrame;
 use crate::prelude::{JsPolarsEr, JsResult};
-use napi::{CallContext, JsExternal, JsObject, JsString, JsBuffer};
+use napi::{CallContext, JsExternal, JsObject, JsString};
 use polars::lazy::frame::{LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::NullValues;
