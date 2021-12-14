@@ -1,6 +1,17 @@
 use crate::conversion::prelude::*;
 use crate::prelude::*;
 use napi::{JsBoolean, JsNumber, JsObject, JsString, JsTypedArrayValue, JsUnknown};
+use polars::chunked_array::ChunkedArray;
+use polars::prelude::AlignedVec;
+
+macro_rules! typed_to_chunked {
+    ($arr:expr, $type:ty, $pl_type:ty) => {{
+        let v: &[$type] = $arr.as_ref();
+        let mut buffer = AlignedVec::<$type>::new();
+        buffer.extend_from_slice(v);
+        ChunkedArray::<$pl_type>::new_from_aligned_vec("", buffer)
+    }};
+}
 
 pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<Series> {
     let len = obj.get_array_length()?;
@@ -17,8 +28,8 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 if sub_seq.is_typedarray()? {
                     let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
                     let v = buff.into_value()?;
-                    let s = from_typed_array(&v)?;
-                    builder.append_series(&s)
+                    let ca = typed_to_chunked!(v, i8, Int8Type);
+                    builder.append_iter(ca.into_iter())
                 } else {
                     let sub_seq: JsObject = obj.get_element(idx)?;
                     let sub_seq_len = sub_seq.get_array_length()?;
@@ -47,8 +58,8 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 if sub_seq.is_typedarray()? {
                     let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
                     let v = buff.into_value()?;
-                    let s = from_typed_array(&v)?;
-                    builder.append_series(&s)
+                    let ca = typed_to_chunked!(v, u8, UInt8Type);
+                    builder.append_iter(ca.into_iter())
                 } else {
                     let sub_seq: JsObject = obj.get_element(idx)?;
                     let sub_seq_len = sub_seq.get_array_length()?;
@@ -77,8 +88,8 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 if sub_seq.is_typedarray()? {
                     let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
                     let v = buff.into_value()?;
-                    let s = from_typed_array(&v)?;
-                    builder.append_series(&s)
+                    let ca = typed_to_chunked!(v, i16, Int16Type);
+                    builder.append_iter(ca.into_iter())
                 } else {
                     let sub_seq: JsObject = obj.get_element(idx)?;
                     let sub_seq_len = sub_seq.get_array_length()?;
@@ -107,8 +118,8 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 if sub_seq.is_typedarray()? {
                     let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
                     let v = buff.into_value()?;
-                    let s = from_typed_array(&v)?;
-                    builder.append_series(&s)
+                    let ca = typed_to_chunked!(v, u16, UInt16Type);
+                    builder.append_iter(ca.into_iter())
                 } else {
                     let sub_seq: JsObject = obj.get_element(idx)?;
                     let sub_seq_len = sub_seq.get_array_length()?;
@@ -137,8 +148,8 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 if sub_seq.is_typedarray()? {
                     let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
                     let v = buff.into_value()?;
-                    let s = from_typed_array(&v)?;
-                    builder.append_series(&s)
+                    let ca = typed_to_chunked!(v, i32, Int32Type);
+                    builder.append_iter(ca.into_iter())
                 } else {
                     let sub_seq: JsObject = obj.get_element(idx)?;
                     let sub_seq_len = sub_seq.get_array_length()?;
@@ -167,8 +178,8 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 if sub_seq.is_typedarray()? {
                     let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
                     let v = buff.into_value()?;
-                    let s = from_typed_array(&v)?;
-                    builder.append_series(&s)
+                    let ca = typed_to_chunked!(v, u32, UInt32Type);
+                    builder.append_iter(ca.into_iter())
                 } else {
                     let sub_seq: JsObject = obj.get_element(idx)?;
                     let sub_seq_len = sub_seq.get_array_length()?;
@@ -197,8 +208,8 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 if sub_seq.is_typedarray()? {
                     let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
                     let v = buff.into_value()?;
-                    let s = from_typed_array(&v)?;
-                    builder.append_series(&s)
+                    let ca = typed_to_chunked!(v, f32, Float32Type);
+                    builder.append_iter(ca.into_iter())
                 } else {
                     let sub_seq: JsObject = obj.get_element(idx)?;
                     let sub_seq_len = sub_seq.get_array_length()?;
@@ -227,8 +238,8 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                 if sub_seq.is_typedarray()? {
                     let buff: napi::JsTypedArray = unsafe { sub_seq.into_unknown().cast() };
                     let v = buff.into_value()?;
-                    let s = from_typed_array(&v)?;
-                    builder.append_series(&s)
+                    let ca = typed_to_chunked!(v, i64, Int64Type);
+                    builder.append_iter(ca.into_iter())
                 } else {
                     let sub_seq: JsObject = obj.get_element(idx)?;
                     let sub_seq_len = sub_seq.get_array_length()?;
@@ -390,49 +401,17 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
 pub fn from_typed_array(arr: &JsTypedArrayValue) -> JsResult<Series> {
     let dtype: JsDataType = arr.typedarray_type.into();
     let series = match dtype {
-        JsDataType::Int8 => {
-            let v: &[i8] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::UInt8 => {
-            let v: &[u8] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::Int16 => {
-            let v: &[i16] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::UInt16 => {
-            let v: &[u16] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::Int32 => {
-            let v: &[i32] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::UInt32 => {
-            let v: &[u32] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::Float32 => {
-            let v: &[f32] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::Float64 => {
-            let v: &[f64] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::Int64 => {
-            let v: &[i64] = arr.as_ref();
-            Series::new("", v)
-        }
-        JsDataType::UInt64 => {
-            let v: &[u64] = arr.as_ref();
-            Series::new("", v)
-        }
-        _ => {
-            panic!("cannot create series from");
-        }
+        JsDataType::Int8 => typed_to_chunked!(arr, i8, Int8Type).into(),
+        JsDataType::UInt8 => typed_to_chunked!(arr, u8, UInt8Type).into(),
+        JsDataType::Int16 => typed_to_chunked!(arr, i16, Int16Type).into(),
+        JsDataType::UInt16 => typed_to_chunked!(arr, u16, UInt16Type).into(),
+        JsDataType::Int32 => typed_to_chunked!(arr, i32, Int32Type).into(),
+        JsDataType::UInt32 => typed_to_chunked!(arr, u32, UInt32Type).into(),
+        JsDataType::Float32 => typed_to_chunked!(arr, f32, Float32Type).into(),
+        JsDataType::Float64 => typed_to_chunked!(arr, f64, Float64Type).into(),
+        JsDataType::Int64 => typed_to_chunked!(arr, i64, Int64Type).into(),
+        JsDataType::UInt64 => typed_to_chunked!(arr, u64, UInt64Type).into(),
+        _ => panic!("cannot create series from"),
     };
 
     Ok(series)

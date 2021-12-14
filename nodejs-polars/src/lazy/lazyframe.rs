@@ -47,7 +47,7 @@ pub fn new_from_csv(cx: CallContext) -> JsResult<JsExternal> {
         .has_header(has_header)
         .with_ignore_parser_errors(ignore_errors)
         .with_skip_rows(skip_rows)
-        .with_stop_after_n_rows(stop_after_n_rows)
+        .with_n_rows(stop_after_n_rows)
         .with_cache(cache)
         .low_memory(low_memory)
         .with_comment_char(comment_char)
@@ -353,7 +353,7 @@ pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let quantile = params.get_as::<f64>("quantile")?;
 
-    ldf.quantile(quantile).try_into_js(&cx)
+    ldf.quantile(quantile, QuantileInterpolOptions::default()).try_into_js(&cx)
 }
 
 #[js_function(1)]

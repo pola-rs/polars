@@ -458,6 +458,15 @@ pub fn sort_with(cx: CallContext) -> JsResult<JsExternal> {
         })
         .try_into_js(&cx)
 }
+#[js_function(1)]
+pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let quantile = params.get_as::<f64>("quantile")?;
+    expr.clone()
+        .quantile(quantile, QuantileInterpolOptions::default())
+        .try_into_js(&cx)
+}
 macro_rules! impl_expr {
     ($name:ident) => {
         #[js_function(1)]
@@ -497,7 +506,6 @@ impl_expr!(dot);
 impl_expr!(alias, &str, "name");
 impl_expr!(sort, bool, "reverse");
 impl_expr!(arg_sort, bool, "reverse");
-impl_expr!(quantile, f64, "quantile");
 impl_expr!(shift, i64, "periods");
 impl_expr!(tail, Option<usize>, "length");
 impl_expr!(head, Option<usize>, "length");
@@ -617,7 +625,7 @@ pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {
 
     expr.clone()
         .rolling_apply_float(window_size, move |ca| {
-            ChunkAgg::quantile(ca, quantile).unwrap()
+            ChunkAgg::quantile(ca, quantile, QuantileInterpolOptions::default()).unwrap()
         })
         .try_into_js(&cx)
 }
@@ -775,7 +783,10 @@ pub fn rank(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let method = params.get_as::<String>("method").map(str_to_rankmethod)??;
 
-    expr.clone().rank(method).try_into_js(&cx)
+    expr.clone().rank(RankOptions {
+        method,
+        descending: false
+    }).try_into_js(&cx)
 }
 
 #[js_function(1)]

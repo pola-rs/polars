@@ -543,7 +543,7 @@ pub fn quantile(cx: CallContext) -> JsResult<JsUnknown> {
     let quantile = params.get_as::<f64>("quantile")?;
     let q = series
         .series
-        .quantile_as_series(quantile)
+        .quantile_as_series(quantile, QuantileInterpolOptions::default())
         .map_err(JsPolarsEr::from)?;
     Wrap(q.get(0)).try_into_js(&cx)
 }
@@ -719,7 +719,13 @@ pub fn rank(cx: CallContext) -> JsResult<JsExternal> {
     let series = params.get_external::<JsSeries>(&cx, "_series")?;
     let method = params.get_as::<String>("method")?;
     let method = str_to_rankmethod(method)?;
-    let rank: JsSeries = series.series.rank(method).into();
+    let rank: JsSeries = series
+        .series
+        .rank(RankOptions {
+            method,
+            descending: false,
+        })
+        .into();
     rank.try_into_js(&cx)
 }
 
@@ -848,6 +854,7 @@ pub fn get_date(cx: CallContext) -> JsResult<JsUnknown> {
         Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
     }
 }
+
 
 #[js_function(1)]
 pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
@@ -1134,8 +1141,32 @@ impl_method_with_err!(n_unique, JsNumber);
 
 impl_method_with_err!(round, u32, "decimals");
 impl_method_with_err!(strftime, &str, "fmt");
-impl_method_with_err!(sample_n, usize, "n", bool, "with_replacement");
-impl_method_with_err!(sample_frac, f64, "frac", bool, "with_replacement");
+
+#[js_function(1)]
+pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<JsSeries>(&cx, "_series")?;
+    let n = params.get_as::<usize>("n")?;
+    let with_replacement = params.get_as::<bool>("withReplacement")?;
+    let series = series
+        .series
+        .sample_n(n, with_replacement, 0)
+        .map_err(JsPolarsEr::from)?;
+    JsSeries::new(series).try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<JsSeries>(&cx, "_series")?;
+    let frac = params.get_as::<f64>("frac")?;
+    let with_replacement = params.get_as::<bool>("withReplacement")?;
+    let series = series
+        .series
+        .sample_frac(frac, with_replacement, 0)
+        .map_err(JsPolarsEr::from)?;
+    JsSeries::new(series).try_into_js(&cx)
+}
 
 macro_rules! impl_equality {
     ($name:ident, $method:ident) => {

@@ -1308,13 +1308,13 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     if (opts?.n || typeof opts === "number") {
       return wrap("sample_n", {
         n: opts?.n ?? opts,
-        with_replacement: opts?.withReplacement ?? withReplacement
+        withReplacement: opts?.withReplacement ?? withReplacement
       });
     }
     if(opts?.frac ?? frac) {
       return wrap("sample_frac", {
         frac: opts?.frac ?? frac,
-        with_replacement: withReplacement,
+        withReplacement: withReplacement,
       });
     }
     else {

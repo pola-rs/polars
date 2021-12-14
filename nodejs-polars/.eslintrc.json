@@ -5,7 +5,8 @@
         "jest/globals": true
     },
     "globals": {
-        "Buffer": "readonly"
+        "Buffer": "readonly",
+        "process": "writable"
     },
     "extends": [
         "eslint:recommended"

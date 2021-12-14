@@ -76,7 +76,6 @@ pub(crate) fn read_csv(cx: CallContext) -> JsResult<JsExternal> {
     let sep: &str = params.get_as("sep")?;
     let skip_rows: usize = params.get_as("startRows")?;
     let stop_after_n_rows: Option<usize> = params.get_as("endRows")?;
-    
     let null_values = null_values.map(|w| w.0);
     let comment_char = comment_char.map(|s| s.as_bytes()[0]);
 
@@ -102,7 +101,7 @@ pub(crate) fn read_csv(cx: CallContext) -> JsResult<JsExternal> {
         CsvReader::new(c)
             .infer_schema(infer_schema_length)
             .has_header(has_header)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(stop_after_n_rows)
             .with_delimiter(sep.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_parser_errors(ignore_errors)
@@ -124,7 +123,7 @@ pub(crate) fn read_csv(cx: CallContext) -> JsResult<JsExternal> {
             .expect("unable to read file")
             .infer_schema(infer_schema_length)
             .has_header(has_header)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(stop_after_n_rows)
             .with_delimiter(sep.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_parser_errors(ignore_errors)
@@ -424,7 +423,7 @@ pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {
     let with_replacement = params.get_as::<bool>("withReplacement")?;
     let df = df
         .df
-        .sample_n(n, with_replacement)
+        .sample_n(n, with_replacement, 0)
         .map_err(JsPolarsEr::from)?;
     JsDataFrame::new(df).try_into_js(&cx)
 }
@@ -437,7 +436,7 @@ pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
     let with_replacement = params.get_as::<bool>("withReplacement")?;
     let df = df
         .df
-        .sample_frac(frac, with_replacement)
+        .sample_frac(frac, with_replacement, 0)
         .map_err(JsPolarsEr::from)?;
     JsDataFrame::new(df).try_into_js(&cx)
 }
@@ -1097,7 +1096,10 @@ pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
     let quantile = params.get_as::<f64>("quantile")?;
-    let df = df.df.quantile(quantile).map_err(JsPolarsEr::from)?;
+    let df = df
+        .df
+        .quantile(quantile, QuantileInterpolOptions::default())
+        .map_err(JsPolarsEr::from)?;
     JsDataFrame::new(df).try_into_js(&cx)
 }
 
@@ -1176,7 +1178,6 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> JsResult<JsDataFrame> {
 
     Ok(JsDataFrame::new(df))
 }
-
 
 pub fn resolve_homedir(path: &Path) -> PathBuf {
     // replace "~" with home directory

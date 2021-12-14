@@ -3,6 +3,8 @@ import * as df from "./dataframe";
 import { DataType } from "./datatypes";
 import * as func from "./functions";
 import * as io from "./io";
+import * as cfg from "./cfg";
+
 import type { FillNullStrategy as _FillNullStrategy } from "./utils";
 import {
   funcs as lazy,
@@ -19,6 +21,7 @@ namespace pl {
   export type WhenThen = _when.WhenThen;
   export type WhenThenThen = _when.WhenThenThen;
   export type FillNullStrategy = _FillNullStrategy;
+  export import Config = cfg.Config;
   export import DataFrame = df.DataFrame
   export import Series = series.Series;
   export import Int16 = DataType.Int16
@@ -38,7 +41,6 @@ namespace pl {
   export import Time = DataType.Time;
   export import Object = DataType.Object;
   export import Categorical = DataType.Categorical;
-
   export import repeat =  func.repeat;
   export import concat =  func.concat;
 
