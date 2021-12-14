@@ -158,7 +158,7 @@ fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &
 fn prepare_excluded(expr: &Expr, schema: &Schema) -> Vec<Arc<str>> {
     let mut exclude = vec![];
     expr.into_iter().for_each(|e| {
-        if let Expr::Exclude(_, names) = e {
+        if let Expr::Exclude(_, to_exclude) = e {
             #[cfg(feature = "regex")]
             {
                 // instead of matching the names for regex patterns
@@ -166,19 +166,42 @@ fn prepare_excluded(expr: &Expr, schema: &Schema) -> Vec<Arc<str>> {
                 // reuse the `replace_regex` function. This is a bit
                 // slower but DRY.
                 let mut buf = vec![];
-                for name in names {
-                    let e = Expr::Column(name.clone());
-                    replace_regex(&e, &mut buf, schema);
-                    for col in buf.drain(..) {
-                        if let Expr::Column(name) = col {
-                            exclude.push(name)
+                for to_exclude_single in to_exclude {
+                    match to_exclude_single {
+                        Excluded::Name(name) => {
+                            let e = Expr::Column(name.clone());
+                            replace_regex(&e, &mut buf, schema);
+                            for col in buf.drain(..) {
+                                if let Expr::Column(name) = col {
+                                    exclude.push(name)
+                                }
+                            }
+                        }
+                        Excluded::Dtype(dt) => {
+                            for fld in schema.fields() {
+                                if fld.data_type() == dt {
+                                    exclude.push(Arc::from(fld.name().as_ref()))
+                                }
+                            }
                         }
                     }
                 }
             }
+
             #[cfg(not(feature = "regex"))]
             {
-                exclude.extend_from_slice(names)
+                for to_exclude_single in to_exclude {
+                    match to_exclude_single {
+                        Excluded::Name(name) => exclude.push(name.clone()),
+                        Excluded::Dtype(dt) => {
+                            for fld in schema.fields() {
+                                if matches!(fld.data_type(), dt) {
+                                    exclude.push(Arc::from(fld.name().as_ref()))
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     });

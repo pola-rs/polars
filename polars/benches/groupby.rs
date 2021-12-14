@@ -11,7 +11,7 @@ lazy_static! {
         let mut df = CsvReader::from_path(&path)
             .expect("could not read file")
             // 1M rows
-            .with_stop_after_n_rows(Some(1000000))
+            .with_n_rows(Some(1000000))
             .finish()
             .unwrap();
         df.may_apply("id1", |s| s.cast(&DataType::Categorical))

@@ -241,18 +241,6 @@ where
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
-        ObjectChunked::sample_n(&self.0, n, with_replacement).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
-        ObjectChunked::sample_frac(&self.0, frac, with_replacement).map(|ca| ca.into_series())
-    }
-
     fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
         ObjectChunked::<T>::get_object(&self.0, index)
     }

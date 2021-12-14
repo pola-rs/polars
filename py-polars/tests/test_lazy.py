@@ -528,9 +528,11 @@ def test_regex_selection() -> None:
 
 
 def test_exclude_selection() -> None:
-    df = pl.DataFrame({"a": [1], "b": [1], "c": [1]}).lazy()
+    df = pl.DataFrame({"a": [1], "b": [1], "c": [True]}).lazy()
 
     assert df.select([pl.exclude("a")]).columns == ["b", "c"]
+    assert df.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
+    assert df.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
 
 
 def test_col_series_selection() -> None:
@@ -955,8 +957,20 @@ def test_median(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_quantile(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().quantile(0.25).collect()["A"][0] == 2
-    assert fruits_cars.select(pl.col("A").quantile(0.25))["A"][0] == 2
+    assert fruits_cars.lazy().quantile(0.25, "nearest").collect()["A"][0] == 2
+    assert fruits_cars.select(pl.col("A").quantile(0.25, "nearest"))["A"][0] == 2
+
+    assert fruits_cars.lazy().quantile(0.24, "lower").collect()["A"][0] == 1
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "lower"))["A"][0] == 1
+
+    assert fruits_cars.lazy().quantile(0.26, "higher").collect()["A"][0] == 3
+    assert fruits_cars.select(pl.col("A").quantile(0.26, "higher"))["A"][0] == 3
+
+    assert fruits_cars.lazy().quantile(0.24, "midpoint").collect()["A"][0] == 1
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "midpoint"))["A"][0] == 1
+
+    assert fruits_cars.lazy().quantile(0.24, "linear").collect()["A"][0] == 1
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1
 
 
 def test_is_between(fruits_cars: pl.DataFrame) -> None:

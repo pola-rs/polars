@@ -1,5 +1,5 @@
 use super::apply::*;
-use crate::conversion::str_to_null_behavior;
+use crate::conversion::{str_to_null_behavior, Wrap};
 use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::{parse_strategy, str_to_rankmethod};
@@ -138,8 +138,16 @@ impl PyExpr {
     pub fn list(&self) -> PyExpr {
         self.clone().inner.list().into()
     }
-    pub fn quantile(&self, quantile: f64) -> PyExpr {
-        self.clone().inner.quantile(quantile).into()
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyExpr {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+        self.clone().inner.quantile(quantile, interpol).into()
     }
     pub fn agg_groups(&self) -> PyExpr {
         self.clone().inner.agg_groups().into()
@@ -529,6 +537,15 @@ impl PyExpr {
             )
             .into()
     }
+    pub fn dt_epoch_seconds(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                |s| s.timestamp().map(|ca| (ca / 1000).into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
 
     pub fn rolling_apply(&self, py: Python, window_size: usize, lambda: PyObject) -> PyExpr {
         // get the pypolars module
@@ -694,6 +711,12 @@ impl PyExpr {
     pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
         self.inner.clone().exclude(&columns).into()
     }
+    pub fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> PyExpr {
+        // Safety:
+        // Wrap is transparent.
+        let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
+        self.inner.clone().exclude_dtype(&dtypes).into()
+    }
     pub fn interpolate(&self) -> PyExpr {
         self.inner.clone().interpolate().into()
     }
@@ -801,11 +824,20 @@ impl PyExpr {
             .into()
     }
 
-    pub fn rolling_quantile(&self, window_size: usize, quantile: f64) -> Self {
+    pub fn rolling_quantile(&self, window_size: usize, quantile: f64, interpolation: &str) -> Self {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+
         self.inner
             .clone()
             .rolling_apply_float(window_size, move |ca| {
-                ChunkAgg::quantile(ca, quantile).unwrap()
+                ChunkAgg::quantile(ca, quantile, interpol).unwrap()
             })
             .into()
     }
@@ -931,9 +963,13 @@ impl PyExpr {
             .into()
     }
 
-    fn rank(&self, method: &str) -> Self {
+    fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
-        self.inner.clone().rank(method).into()
+        let options = RankOptions {
+            method,
+            descending: reverse,
+        };
+        self.inner.clone().rank(options).into()
     }
 
     fn diff(&self, n: usize, null_behavior: &str) -> Self {
@@ -989,6 +1025,10 @@ impl PyExpr {
                 GetOutput::map_dtype(|dt| dt.to_physical()),
             )
             .into()
+    }
+
+    pub fn shuffle(&self, seed: u64) -> Self {
+        self.inner.clone().shuffle(seed).into()
     }
 }
 

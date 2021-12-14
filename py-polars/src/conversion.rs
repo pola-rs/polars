@@ -199,8 +199,42 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::List(_) => pl.getattr("List").unwrap().into(),
+            DataType::Date => pl.getattr("Date").unwrap().into(),
+            DataType::Datetime => pl.getattr("Datetime").unwrap().into(),
+            DataType::Object(_) => pl.getattr("Object").unwrap().into(),
+            DataType::Categorical => pl.getattr("Categorical").unwrap().into(),
+            DataType::Time => pl.getattr("Time").unwrap().into(),
             dt => panic!("{} not supported", dt),
         }
+    }
+}
+
+impl FromPyObject<'_> for Wrap<DataType> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let dtype = match ob.repr().unwrap().to_str().unwrap() {
+            "<class 'polars.datatypes.UInt8'>" => DataType::UInt8,
+            "<class 'polars.datatypes.UInt16'>" => DataType::UInt16,
+            "<class 'polars.datatypes.UInt32'>" => DataType::UInt32,
+            "<class 'polars.datatypes.UInt64'>" => DataType::UInt64,
+            "<class 'polars.datatypes.Int8'>" => DataType::Int8,
+            "<class 'polars.datatypes.Int16'>" => DataType::Int16,
+            "<class 'polars.datatypes.Int32'>" => DataType::Int32,
+            "<class 'polars.datatypes.Int64'>" => DataType::Int64,
+            "<class 'polars.datatypes.Utf8'>" => DataType::Utf8,
+            "<class 'polars.datatypes.List'>" => DataType::List(Box::new(DataType::Boolean)),
+            "<class 'polars.datatypes.Boolean'>" => DataType::Boolean,
+            "<class 'polars.datatypes.Categorical'>" => DataType::Categorical,
+            "<class 'polars.datatypes.Date'>" => DataType::Date,
+            "<class 'polars.datatypes.Datetime'>" => DataType::Datetime,
+            "<class 'polars.datatypes.Float32'>" => DataType::Float32,
+            "<class 'polars.datatypes.Float64'>" => DataType::Float64,
+            "<class 'polars.datatypes.Object'>" => DataType::Object("unknown"),
+            dt => panic!(
+                "{} not expected in python dtype to rust dtype conversion",
+                dt
+            ),
+        };
+        Ok(Wrap(dtype))
     }
 }
 

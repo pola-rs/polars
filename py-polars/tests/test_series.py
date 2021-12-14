@@ -332,7 +332,16 @@ def test_rolling() -> None:
         a.rolling_median(4), pl.Series("a", [None, None, None, 2, 2], dtype=Float64)
     )
     testing.assert_series_equal(
-        a.rolling_quantile(3, 0), pl.Series("a", [None, None, 1, 2, 1], dtype=Float64)
+        a.rolling_quantile(3, 0, "nearest"),
+        pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
+    )
+    testing.assert_series_equal(
+        a.rolling_quantile(3, 0, "lower"),
+        pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
+    )
+    testing.assert_series_equal(
+        a.rolling_quantile(3, 0, "higher"),
+        pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
     )
     assert a.rolling_skew(4).null_count() == 3
 
@@ -368,7 +377,9 @@ def test_median() -> None:
 
 def test_quantile() -> None:
     s = pl.Series([1, 2, 3])
-    assert s.quantile(0.5) == 2
+    assert s.quantile(0.5, "nearest") == 2
+    assert s.quantile(0.5, "lower") == 2
+    assert s.quantile(0.5, "higher") == 2
 
 
 def test_shape() -> None:
@@ -533,6 +544,11 @@ def test_rank_dispatch() -> None:
 
     df = pl.DataFrame([s])
     assert df.select(pl.col("a").rank("dense"))["a"] == [2, 3, 4, 3, 3, 4, 1]
+
+    testing.assert_series_equal(
+        s.rank("dense", reverse=True),
+        pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=UInt32),
+    )
 
 
 def test_diff_dispatch() -> None:
@@ -794,8 +810,12 @@ def test_abs() -> None:
     # floats
     s = pl.Series([1.0, -2.0, 3, -4.0])
     testing.assert_series_equal(s.abs(), pl.Series([1.0, 2.0, 3.0, 4.0]))
-    testing.assert_series_equal(np.abs(s), pl.Series([1.0, 2.0, 3.0, 4.0]))  # type: ignore
-    testing.assert_series_equal(pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0]))  # type: ignore
+    testing.assert_series_equal(
+        np.abs(s), pl.Series([1.0, 2.0, 3.0, 4.0])  # type: ignore
+    )
+    testing.assert_series_equal(
+        pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0])
+    )  # type: ignore
 
 
 def test_to_dummies() -> None:
@@ -1092,4 +1112,14 @@ def test_log_exp() -> None:
 
     out = a.exp()
     expected = pl.Series("a", np.exp(a.to_numpy()))
+    testing.assert_series_equal(out, expected)
+
+
+def test_shuffle() -> None:
+    a = pl.Series("a", [1, 2, 3])
+    out = a.shuffle(2)
+    expected = pl.Series("a", [2, 3, 1])
+    testing.assert_series_equal(out, expected)
+
+    out = pl.select(pl.lit(a).shuffle(2)).to_series()
     testing.assert_series_equal(out, expected)

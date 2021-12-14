@@ -16,7 +16,23 @@ pub enum RankMethod {
     Random,
 }
 
-pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
+// We might want to add a `nulls_last` or `null_behavior` field.
+#[derive(Copy, Clone)]
+pub struct RankOptions {
+    pub method: RankMethod,
+    pub descending: bool,
+}
+
+impl Default for RankOptions {
+    fn default() -> Self {
+        Self {
+            method: RankMethod::Dense,
+            descending: false,
+        }
+    }
+}
+
+pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
     match s.len() {
         1 => {
             return match method {
@@ -28,31 +44,29 @@ pub(crate) fn rank(s: &Series, method: RankMethod) -> Series {
             return match method {
                 Average => Float32Chunked::new_from_slice(s.name(), &[]).into_series(),
                 _ => UInt32Chunked::new_from_slice(s.name(), &[]).into_series(),
-            }
+            };
         }
         _ => {}
     }
-    // don't fully understand how to deal with nulls yet
-    // impute with the maximum value possible.
-    // todo! maybe add + 1 at the end on the null values.
-    if s.has_validity() {
-        if s.null_count() == s.len() {
-            return match method {
-                Average => Float32Chunked::full_null(s.name(), s.len()).into_series(),
-                _ => UInt32Chunked::full_null(s.name(), s.len()).into_series(),
-            };
-        }
 
-        // replace null values with the maximum value of that dtype
-        let s = s.fill_null(FillNullStrategy::MaxBound).unwrap();
-        return rank(&s, method);
+    // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
+    // TODO: Need to expose nulls_last in argsort to prevent this.
+    if s.has_validity() {
+        // Fill using MaxBound/MinBound to keep nulls first.
+        let null_strategy = if reverse {
+            FillNullStrategy::MaxBound
+        } else {
+            FillNullStrategy::MinBound
+        };
+        let s = s.fill_null(null_strategy).unwrap();
+        return rank(&s, method, reverse);
     }
 
     // See: https://github.com/scipy/scipy/blob/v1.7.1/scipy/stats/stats.py#L8631-L8737
 
     let len = s.len();
     let null_count = s.null_count();
-    let sort_idx_ca = s.argsort(false);
+    let sort_idx_ca = s.argsort(reverse);
     let sort_idx = sort_idx_ca.downcast_iter().next().unwrap().values();
 
     let mut inv: AlignedVec<u32> = AlignedVec::with_capacity(len);
@@ -248,7 +262,7 @@ mod test {
     fn test_rank() -> Result<()> {
         let s = Series::new("a", &[1, 2, 3, 2, 2, 3, 0]);
 
-        let out = rank(&s, RankMethod::Ordinal)
+        let out = rank(&s, RankMethod::Ordinal, false)
             .u32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
@@ -256,7 +270,7 @@ mod test {
 
         #[cfg(feature = "random")]
         {
-            let out = rank(&s, RankMethod::Random)
+            let out = rank(&s, RankMethod::Random, false)
                 .u32()?
                 .into_no_null_iter()
                 .collect::<Vec<_>>();
@@ -269,25 +283,25 @@ mod test {
             assert_ne!(out[3], out[4]);
         }
 
-        let out = rank(&s, RankMethod::Dense)
+        let out = rank(&s, RankMethod::Dense, false)
             .u32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 3, 4, 3, 3, 4, 1]);
 
-        let out = rank(&s, RankMethod::Max)
+        let out = rank(&s, RankMethod::Max, false)
             .u32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 5, 7, 5, 5, 7, 1]);
 
-        let out = rank(&s, RankMethod::Min)
+        let out = rank(&s, RankMethod::Min, false)
             .u32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 3, 6, 3, 3, 6, 1]);
 
-        let out = rank(&s, RankMethod::Average)
+        let out = rank(&s, RankMethod::Average, false)
             .f32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
@@ -298,7 +312,7 @@ mod test {
             &[Some(1), Some(2), Some(3), Some(2), None, None, Some(0)],
         );
 
-        let out = rank(&s, RankMethod::Average)
+        let out = rank(&s, RankMethod::Average, false)
             .f32()?
             .into_iter()
             .collect::<Vec<_>>();
@@ -306,13 +320,13 @@ mod test {
         assert_eq!(
             out,
             &[
-                Some(2.0f32),
-                Some(3.5),
-                Some(5.0),
-                Some(3.5),
-                Some(6.5),
-                Some(6.5),
-                Some(1.0)
+                Some(4.0f32),
+                Some(5.5),
+                Some(7.0),
+                Some(5.5),
+                Some(1.5),
+                Some(1.5),
+                Some(3.0)
             ]
         );
         let s = Series::new(
@@ -328,30 +342,49 @@ mod test {
                 Some(8),
             ],
         );
-        let out = rank(&s, RankMethod::Max)
+        let out = rank(&s, RankMethod::Max, false)
             .u32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[4, 5, 3, 8, 7, 3, 1, 6]);
+        assert_eq!(out, &[5, 6, 4, 1, 8, 4, 2, 7]);
 
         Ok(())
     }
 
     #[test]
-    fn test_rank_all_null() {
+    fn test_rank_all_null() -> Result<()> {
         let s = UInt32Chunked::new("", &[None, None, None]).into_series();
-        let out = rank(&s, RankMethod::Average);
-        assert_eq!(out.null_count(), 3);
-        assert_eq!(out.dtype(), &DataType::Float32);
-        let out = rank(&s, RankMethod::Max);
-        assert_eq!(out.dtype(), &DataType::UInt32);
+        let out = rank(&s, RankMethod::Average, false)
+            .f32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[2.0f32, 2.0, 2.0]);
+        let out = rank(&s, RankMethod::Dense, false)
+            .u32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[1, 1, 1]);
+        Ok(())
     }
+
     #[test]
     fn test_rank_empty() {
         let s = UInt32Chunked::new_from_slice("", &[]).into_series();
-        let out = rank(&s, RankMethod::Average);
+        let out = rank(&s, RankMethod::Average, false);
         assert_eq!(out.dtype(), &DataType::Float32);
-        let out = rank(&s, RankMethod::Max);
+        let out = rank(&s, RankMethod::Max, false);
         assert_eq!(out.dtype(), &DataType::UInt32);
+    }
+
+    #[test]
+    fn test_rank_reverse() -> Result<()> {
+        let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
+        let out = rank(&s, RankMethod::Dense, true)
+            .u32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(out, &[1, 3, 3, 2, 1]);
+
+        Ok(())
     }
 }

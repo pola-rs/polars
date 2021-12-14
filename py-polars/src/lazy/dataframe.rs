@@ -7,6 +7,7 @@ use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{DataFrame, Field, JoinType, Schema};
+use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -125,7 +126,7 @@ impl PyLazyFrame {
         has_header: bool,
         ignore_errors: bool,
         skip_rows: usize,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
         cache: bool,
         overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
         low_memory: bool,
@@ -157,7 +158,7 @@ impl PyLazyFrame {
             .has_header(has_header)
             .with_ignore_parser_errors(ignore_errors)
             .with_skip_rows(skip_rows)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.as_ref())
             .low_memory(low_memory)
@@ -195,23 +196,14 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    pub fn new_from_parquet(
-        path: String,
-        stop_after_n_rows: Option<usize>,
-        cache: bool,
-    ) -> PyResult<Self> {
-        let lf =
-            LazyFrame::scan_parquet(path, stop_after_n_rows, cache).map_err(PyPolarsEr::from)?;
+    pub fn new_from_parquet(path: String, n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
+        let lf = LazyFrame::scan_parquet(path, n_rows, cache).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 
     #[staticmethod]
-    pub fn new_from_ipc(
-        path: String,
-        stop_after_n_rows: Option<usize>,
-        cache: bool,
-    ) -> PyResult<Self> {
-        let lf = LazyFrame::scan_ipc(path, stop_after_n_rows, cache).map_err(PyPolarsEr::from)?;
+    pub fn new_from_ipc(path: String, n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
+        let lf = LazyFrame::scan_ipc(path, n_rows, cache).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 
@@ -424,9 +416,18 @@ impl PyLazyFrame {
         ldf.median().into()
     }
 
-    pub fn quantile(&self, quantile: f64) -> Self {
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> Self {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+
         let ldf = self.ldf.clone();
-        ldf.quantile(quantile).into()
+        ldf.quantile(quantile, interpol).into()
     }
 
     pub fn explode(&self, column: Vec<PyExpr>) -> Self {

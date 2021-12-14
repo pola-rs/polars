@@ -30,7 +30,6 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars.datatypes import (
-    DTYPES,
     Boolean,
     DataType,
     Date,
@@ -639,7 +638,18 @@ class Series:
         <class 'polars.datatypes.Int64'>
 
         """
-        return DTYPES[self._s.dtype()]
+        return self._s.dtype()
+
+    @property
+    def inner_dtype(self) -> Optional[Type[DataType]]:
+        """
+        Get the inner dtype in of a List typed Series
+
+        Returns
+        -------
+        DataType
+        """
+        return self._s.inner_dtype()
 
     def describe(self) -> "pli.DataFrame":
         """
@@ -844,9 +854,17 @@ class Series:
         """
         return self._s.median()
 
-    def quantile(self, quantile: float) -> float:
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> float:
         """
         Get the quantile value of this Series.
+
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         Examples
         --------
@@ -855,7 +873,7 @@ class Series:
         2
 
         """
-        return self._s.quantile(quantile)
+        return self._s.quantile(quantile, interpolation)
 
     def to_dummies(self) -> "pli.DataFrame":
         """
@@ -2764,7 +2782,9 @@ class Series:
             self.name
         ]
 
-    def rolling_quantile(self, window_size: int, quantile: float) -> "Series":
+    def rolling_quantile(
+        self, window_size: int, quantile: float, interpolation: str = "nearest"
+    ) -> "Series":
         """
         Compute a rolling quantile
 
@@ -2774,9 +2794,11 @@ class Series:
             Size of the rolling window
         quantile
             quantile to compute
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_quantile(window_size, quantile)
+            pli.col(self.name).rolling_quantile(window_size, quantile, interpolation)
         )[self.name]
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
@@ -2799,6 +2821,7 @@ class Series:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
+        seed: int = 0,
     ) -> "Series":
         """
         Sample from this Series by setting either `n` or `frac`.
@@ -2811,6 +2834,8 @@ class Series:
             Fraction between 0.0 and 1.0 .
         with_replacement
             sample with replacement.
+        seed
+            Initialization seed
 
         Examples
         --------
@@ -2825,8 +2850,8 @@ class Series:
 
         """
         if n is not None:
-            return wrap_s(self._s.sample_n(n, with_replacement))
-        return wrap_s(self._s.sample_frac(frac, with_replacement))
+            return wrap_s(self._s.sample_n(n, with_replacement, seed))
+        return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
 
     def peak_max(self) -> "Series":
         """
@@ -2967,7 +2992,7 @@ class Series:
         """
         return wrap_s(self._s.abs())
 
-    def rank(self, method: str = "average") -> "Series":
+    def rank(self, method: str = "average", reverse: bool = False) -> "Series":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -2991,9 +3016,11 @@ class Series:
                 the order that the values occur in `a`.
               * 'random': Like 'ordinal', but the rank for ties is not dependent
                 on the order that the values occur in `a`.
+        reverse
+            reverse the operation
 
         """
-        return wrap_s(self._s.rank(method))
+        return wrap_s(self._s.rank(method, reverse))
 
     def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":
         """
@@ -3114,6 +3141,17 @@ class Series:
         Series
         """
         return wrap_s(self._s.reshape(dims))
+
+    def shuffle(self, seed: int = 0) -> "Series":
+        """
+        Shuffle the contents of this Series.
+
+        Parameters
+        ----------
+        seed
+            Seed initialization
+        """
+        return wrap_s(self._s.shuffle(seed))
 
     # Below are the namespaces defined. Do not move these up in the definition of Series, as it confuses mypy between the
     # type annotation `str` and the namespace "str
@@ -3753,6 +3791,39 @@ class DateTimeNameSpace:
             Number of units (e.g. 5 "day", 15 "minute".
         """
         return wrap_s(self._s.round_datetime(rule, n))
+
+    def epoch_days(self) -> Series:
+        """
+        Get the number of days since the unix EPOCH.
+        If the date is before the unix EPOCH, the number of days will be negative.
+
+        Returns
+        -------
+        Days as Int32
+        """
+        return wrap_s(self._s).cast(Date).cast(Int32)
+
+    def epoch_milliseconds(self) -> Series:
+        """
+        Get the number of milliseconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of milliseconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return self.timestamp()
+
+    def epoch_seconds(self) -> Series:
+        """
+        Get the number of seconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return wrap_s(self._s.dt_epoch_seconds())
 
 
 def _to_python_datetime(

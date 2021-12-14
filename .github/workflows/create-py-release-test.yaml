@@ -6,35 +6,6 @@ on:
     tags:
       - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
 jobs:
-  test:
-    name: Test Python bindings
-    runs-on: "ubuntu-latest"
-    strategy:
-      matrix:
-        python-version: [ "3.6", "3.7" ]
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2021-12-02
-          override: true
-          components: rustfmt, clippy
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install maturin==0.12.1 pytest pandas pyarrow
-      - name: Run tests
-        run: |
-          cd py-polars
-          rustup override set nightly-2021-12-02
-          make build-and-test
-          rm wheels/*
-
   build:
     needs: build_manylinux
     name: Create Release
@@ -77,7 +48,6 @@ jobs:
             --username ritchie46 \
 
   build_manylinux:
-    needs: test
     name: Create Release
     runs-on: ubuntu-latest
     steps:

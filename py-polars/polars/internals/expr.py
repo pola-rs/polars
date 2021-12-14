@@ -18,6 +18,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Float64,
+    Int32,
     Object,
     UInt32,
     py_type_to_dtype,
@@ -282,7 +283,10 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.alias(name))
 
-    def exclude(self, columns: Union[str, tp.List[str]]) -> "Expr":
+    def exclude(
+        self,
+        columns: Union[str, tp.List[str], Type[DataType], Sequence[Type[DataType]]],
+    ) -> "Expr":
         """
         Exclude certain columns from a wildcard/regex selection.
 
@@ -291,7 +295,11 @@ class Expr:
         Parameters
         ----------
         columns
-            Column(s) to exclude from selection
+            Column(s) to exclude from selection.
+            This can be:
+                - a column name, or multiple names
+                - a regular expression starting with `^` and ending with `$`
+                - a dtype or multiple dtypes
 
         Examples
         --------
@@ -334,8 +342,19 @@ class Expr:
 
         """
         if isinstance(columns, str):
-            columns = [columns]
-        return wrap_expr(self._pyexpr.exclude(columns))
+            columns = [columns]  # type: ignore
+            return wrap_expr(self._pyexpr.exclude(columns))
+        elif not isinstance(columns, list) and issubclass(columns, DataType):  # type: ignore
+            columns = [columns]  # type: ignore
+            return wrap_expr(self._pyexpr.exclude_dtype(columns))
+
+        if not all([isinstance(a, str) or issubclass(a, DataType) for a in columns]):  # type: ignore
+            raise ValueError("input should be all string or all DataType")
+
+        if isinstance(columns[0], str):  # type: ignore
+            return wrap_expr(self._pyexpr.exclude(columns))
+        else:
+            return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
     def keep_name(self) -> "Expr":
         """
@@ -1077,11 +1096,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
-    def quantile(self, quantile: float) -> "Expr":
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> "Expr":
         """
         Get quantile value.
+
+
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
-        return wrap_expr(self._pyexpr.quantile(quantile))
+        return wrap_expr(self._pyexpr.quantile(quantile, interpolation))
 
     def filter(self, predicate: "Expr") -> "Expr":
         """
@@ -1682,7 +1710,9 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rolling_median(window_size))
 
-    def rolling_quantile(self, window_size: int, quantile: float) -> "Expr":
+    def rolling_quantile(
+        self, window_size: int, quantile: float, interpolation: str = "nearest"
+    ) -> "Expr":
         """
         Compute a rolling quantile
 
@@ -1692,8 +1722,12 @@ class Expr:
             Size of the rolling window
         quantile
             quantile to compute
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
-        return wrap_expr(self._pyexpr.rolling_quantile(window_size, quantile))
+        return wrap_expr(
+            self._pyexpr.rolling_quantile(window_size, quantile, interpolation)
+        )
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Expr":
         """
@@ -1725,7 +1759,7 @@ class Expr:
         """
         return pli.argsort_by([self], [reverse])
 
-    def rank(self, method: str = "average") -> "Expr":
+    def rank(self, method: str = "average", reverse: bool = False) -> "Expr":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -1749,8 +1783,10 @@ class Expr:
                 the order that the values occur in `a`.
               * 'random': Like 'ordinal', but the rank for ties is not dependent
                 on the order that the values occur in `a`.
+        reverse
+            reverse the operation
         """
-        return wrap_expr(self._pyexpr.rank(method))
+        return wrap_expr(self._pyexpr.rank(method, reverse))
 
     def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
         """
@@ -2047,6 +2083,17 @@ class Expr:
         Expr
         """
         return wrap_expr(self._pyexpr.reshape(dims))
+
+    def shuffle(self, seed: int = 0) -> "Expr":
+        """
+        Shuffle the contents of this expr.
+
+        Parameters
+        ----------
+        seed
+            Seed initialization
+        """
+        return wrap_expr(self._pyexpr.shuffle(seed))
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
@@ -2394,6 +2441,9 @@ class ExprDateTimeNameSpace:
 
     def buckets(self, interval: timedelta) -> Expr:
         """
+        .. warning::
+            This API is experimental and will likely change.
+
         Divide the date/ datetime range into buckets.
         Data will be sorted by this operation.
 
@@ -2633,8 +2683,41 @@ class ExprDateTimeNameSpace:
             lambda s: s.dt.to_python_datetime(), return_dtype=Object
         )
 
+    def epoch_days(self) -> Expr:
+        """
+        Get the number of days since the unix EPOCH.
+        If the date is before the unix EPOCH, the number of days will be negative.
+
+        Returns
+        -------
+        Days as Int32
+        """
+        return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
+
+    def epoch_milliseconds(self) -> Expr:
+        """
+        Get the number of milliseconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of milliseconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return self.timestamp()
+
+    def epoch_seconds(self) -> Expr:
+        """
+        Get the number of seconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return wrap_expr(self._pyexpr.dt_epoch_seconds())
+
     def timestamp(self) -> Expr:
-        """Return timestamp in ms as Int64 type."""
+        """Return timestamp in milliseconds as Int64 type."""
         return wrap_expr(self._pyexpr.timestamp())
 
 

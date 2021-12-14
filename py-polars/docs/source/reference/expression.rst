@@ -188,7 +188,8 @@ Manipulation/ selection
     Expr.upper_bound
     Expr.str_concat
     Expr.reshape
-    Series.to_physical
+    Expr.to_physical
+    Expr.shuffle
 
 Column names
 ------------
@@ -249,6 +250,9 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.timestamp
     ExprDateTimeNameSpace.buckets
+    ExprDateTimeNameSpace.epoch_days
+    ExprDateTimeNameSpace.epoch_milliseconds
+    ExprDateTimeNameSpace.epoch_seconds
 
 Strings
 -------

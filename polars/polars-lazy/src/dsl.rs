@@ -220,7 +220,11 @@ pub enum AggExpr {
     Mean(Box<Expr>),
     List(Box<Expr>),
     Count(Box<Expr>),
-    Quantile { expr: Box<Expr>, quantile: f64 },
+    Quantile {
+        expr: Box<Expr>,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    },
     Sum(Box<Expr>),
     AggGroups(Box<Expr>),
     Std(Box<Expr>),
@@ -341,7 +345,7 @@ pub enum Expr {
         output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
     },
     /// Can be used in a select statement to exclude a column from selection
-    Exclude(Box<Expr>, Vec<Arc<str>>),
+    Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
     SufPreFix {
@@ -349,6 +353,12 @@ pub enum Expr {
         value: String,
         expr: Box<Expr>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Excluded {
+    Name(Arc<str>),
+    Dtype(DataType),
 }
 
 impl Expr {
@@ -720,10 +730,11 @@ impl Expr {
     }
 
     /// Compute the quantile per group.
-    pub fn quantile(self, quantile: f64) -> Self {
+    pub fn quantile(self, quantile: f64, interpol: QuantileInterpolOptions) -> Self {
         AggExpr::Quantile {
             expr: Box::new(self),
             quantile,
+            interpol,
         }
         .into()
     }
@@ -1478,7 +1489,16 @@ impl Expr {
         let v = columns
             .to_selection_vec()
             .iter()
-            .map(|s| Arc::from(*s))
+            .map(|s| Excluded::Name(Arc::from(*s)))
+            .collect();
+        Expr::Exclude(Box::new(self), v)
+    }
+
+    pub fn exclude_dtype<D: AsRef<[DataType]>>(self, dtypes: D) -> Expr {
+        let v = dtypes
+            .as_ref()
+            .iter()
+            .map(|dt| Excluded::Dtype(dt.clone()))
             .collect();
         Expr::Exclude(Box::new(self), v)
     }
@@ -1634,10 +1654,10 @@ impl Expr {
 
     #[cfg(feature = "rank")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
-    pub fn rank(self, method: RankMethod) -> Expr {
+    pub fn rank(self, options: RankOptions) -> Expr {
         self.apply(
-            move |s| Ok(s.rank(method)),
-            GetOutput::map_field(move |fld| match method {
+            move |s| Ok(s.rank(options)),
+            GetOutput::map_field(move |fld| match options.method {
                 RankMethod::Average => Field::new(fld.name(), DataType::Float32),
                 _ => Field::new(fld.name(), DataType::UInt32),
             }),
@@ -1797,6 +1817,11 @@ impl Expr {
             GetOutput::from_type(DataType::UInt32),
         )
     }
+
+    #[cfg(feature = "random")]
+    pub fn shuffle(self, seed: u64) -> Self {
+        self.apply(move |s| Ok(s.shuffle(seed)), GetOutput::same_type())
+    }
 }
 
 /// Create a Column Expression based on a column name.
@@ -1884,8 +1909,8 @@ pub fn median(name: &str) -> Expr {
 }
 
 /// Find a specific quantile of all the values in this Expression.
-pub fn quantile(name: &str, quantile: f64) -> Expr {
-    col(name).quantile(quantile)
+pub fn quantile(name: &str, quantile: f64, interpol: QuantileInterpolOptions) -> Expr {
+    col(name).quantile(quantile, interpol)
 }
 
 /// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.

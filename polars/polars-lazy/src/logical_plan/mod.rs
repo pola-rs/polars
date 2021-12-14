@@ -141,7 +141,7 @@ impl LiteralValue {
 #[derive(Clone, Debug)]
 #[cfg(feature = "ipc")]
 pub struct IpcOptions {
-    pub(crate) stop_after_n_rows: Option<usize>,
+    pub(crate) n_rows: Option<usize>,
     pub(crate) with_columns: Option<Vec<String>>,
     pub(crate) cache: bool,
 }
@@ -153,7 +153,7 @@ pub struct CsvParserOptions {
     pub(crate) quote_char: Option<u8>,
     pub(crate) has_header: bool,
     pub(crate) skip_rows: usize,
-    pub(crate) stop_after_n_rows: Option<usize>,
+    pub(crate) n_rows: Option<usize>,
     pub(crate) with_columns: Option<Vec<String>>,
     pub(crate) low_memory: bool,
     pub(crate) ignore_errors: bool,
@@ -193,7 +193,7 @@ pub enum LogicalPlan {
         with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
         aggregate: Vec<Expr>,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
         cache: bool,
     },
     #[cfg(feature = "ipc")]
@@ -819,7 +819,7 @@ impl LogicalPlanBuilder {
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet<P: Into<PathBuf>>(
         path: P,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
         cache: bool,
     ) -> Result<Self> {
         let path = path.into();
@@ -829,7 +829,7 @@ impl LogicalPlanBuilder {
         Ok(LogicalPlan::ParquetScan {
             path,
             schema,
-            stop_after_n_rows,
+            n_rows,
             with_columns: None,
             predicate: None,
             aggregate: vec![],
@@ -863,7 +863,7 @@ impl LogicalPlanBuilder {
         has_header: bool,
         ignore_errors: bool,
         mut skip_rows: usize,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
         cache: bool,
         schema: Option<Arc<Schema>>,
         schema_overwrite: Option<&Schema>,
@@ -907,7 +907,7 @@ impl LogicalPlanBuilder {
                 delimiter,
                 ignore_errors,
                 skip_rows,
-                stop_after_n_rows,
+                n_rows,
                 with_columns: None,
                 low_memory,
                 cache,

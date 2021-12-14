@@ -192,7 +192,9 @@ fn test_lazy_agg() {
         .agg([
             col("rain").min(),
             col("rain").sum(),
-            col("rain").quantile(0.5).alias("median_rain"),
+            col("rain")
+                .quantile(0.5, QuantileInterpolOptions::default())
+                .alias("median_rain"),
         ])
         .sort("date", false);
 
@@ -651,10 +653,13 @@ fn test_lazy_df_aggregations() {
     assert!(df
         .clone()
         .lazy()
-        .quantile(0.5)
+        .quantile(0.5, QuantileInterpolOptions::default())
         .collect()
         .unwrap()
-        .frame_equal_missing(&df.quantile(0.5).unwrap()));
+        .frame_equal_missing(
+            &df.quantile(0.5, QuantileInterpolOptions::default())
+                .unwrap()
+        ));
 }
 
 #[test]
@@ -1567,6 +1572,7 @@ fn test_reverse_in_groups() -> Result<()> {
     );
     Ok(())
 }
+
 #[test]
 fn test_take_in_groups() -> Result<()> {
     let df = fruits_cars();
@@ -1975,7 +1981,10 @@ fn test_groupby_rank() -> Result<()> {
     let out = df
         .lazy()
         .stable_groupby([col("cars")])
-        .agg([col("B").rank(RankMethod::Dense)])
+        .agg([col("B").rank(RankOptions {
+            method: RankMethod::Dense,
+            ..Default::default()
+        })])
         .collect()?;
 
     let out = out.column("B")?;
@@ -2371,7 +2380,12 @@ fn test_single_ranked_group() -> Result<()> {
 
     let out = df
         .lazy()
-        .with_columns([col("value").rank(RankMethod::Average).over([col("group")])])
+        .with_columns([col("value")
+            .rank(RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            })
+            .over([col("group")])])
         .collect()?;
 
     let out = out.column("value")?.explode()?;

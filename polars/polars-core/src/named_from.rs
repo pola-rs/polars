@@ -1,12 +1,13 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use arrow::buffer::MutableBuffer;
 use std::borrow::Cow;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
     /// Initialize by name and values.
     fn new(name: &str, _: T) -> Self;
 }
-//
+
 macro_rules! impl_named_from {
     ($type:ty, $polars_type:ident, $method:ident) => {
         impl<T: AsRef<$type>> NamedFrom<T, $type> for Series {
@@ -155,5 +156,14 @@ impl<T: PolarsObject> NamedFrom<&[T], &[T]> for ObjectChunked<T> {
 impl<T: PolarsObject, S: AsRef<[Option<T>]>> NamedFrom<S, [Option<T>]> for ObjectChunked<T> {
     fn new(name: &str, v: S) -> Self {
         ObjectChunked::new_from_opt_slice(name, v.as_ref())
+    }
+}
+
+impl<T: PolarsNumericType> ChunkedArray<T> {
+    /// Specialization that prevents an allocation
+    /// prefer this over ChunkedArray::new when you have a `Vec<T::Native>` and no null values.
+    pub fn new_vec(name: &str, v: Vec<T::Native>) -> Self {
+        let buf = MutableBuffer::from_vec(v);
+        ChunkedArray::new_from_aligned_vec(name, buf)
     }
 }

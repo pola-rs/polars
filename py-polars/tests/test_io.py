@@ -48,7 +48,7 @@ def test_select_columns_and_projection_from_buffer() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
     for to_fn, from_fn in zip(
-        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
+        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]  # type: ignore
     ):
         f = io.BytesIO()
         to_fn(f)  # type: ignore
@@ -58,13 +58,13 @@ def test_select_columns_and_projection_from_buffer() -> None:
         assert df_1.frame_equal(expected)
 
     for to_fn, from_fn in zip(
-        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
+        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]  # type: ignore
     ):
         f = io.BytesIO()
         to_fn(f)  # type: ignore
         f.seek(0)
 
-        df_2 = from_fn(f, projection=[1, 2], use_pyarrow=False)  # type: ignore
+        df_2 = from_fn(f, columns=[1, 2], use_pyarrow=False)  # type: ignore
         assert df_2.frame_equal(expected)
 
 
@@ -238,7 +238,7 @@ a,b,c
         f,
         new_columns=["A", "B", "C"],
         dtypes={"A": pl.Utf8, "C": pl.Float32},
-        has_headers=False,
+        has_header=False,
     )
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float32]
 

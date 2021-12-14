@@ -14,7 +14,7 @@ simd = ["polars-core/simd"]
 avx512 = ["polars-core/avx512"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal"]
-random = ["polars-core/random"]
+random = ["polars-core/random", "polars-lazy/random"]
 default = [
   "docs",
   "zip_with",

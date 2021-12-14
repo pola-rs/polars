@@ -17,9 +17,10 @@ Attributes
    :toctree: api/
 
    Series.dtype
+   Series.inner_dtype
    Series.name
    Series.shape
-   Series.skew
+   Series.arr
    Series.dt
    Series.str
 
@@ -163,6 +164,7 @@ Manipulation/ selection
     Series.str_concat
     Series.reshape
     Series.to_dummies
+    Series.shuffle
 
 Various
 --------
@@ -204,6 +206,9 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.mean
     DateTimeNameSpace.round
     DateTimeNameSpace.buckets
+    DateTimeNameSpace.epoch_days
+    DateTimeNameSpace.epoch_milliseconds
+    DateTimeNameSpace.epoch_seconds
 
 
 Strings

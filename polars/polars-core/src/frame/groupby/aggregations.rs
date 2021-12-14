@@ -681,7 +681,12 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 }
 
 pub(crate) trait AggQuantile {
-    fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
+    fn agg_quantile(
+        &self,
+        _groups: &[(u32, Vec<u32>)],
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Option<Series> {
         None
     }
 
@@ -699,14 +704,19 @@ where
         + arrow::compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
-    fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
+    fn agg_quantile(
+        &self,
+        groups: &[(u32, Vec<u32>)],
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Option<Series> {
         agg_helper::<T, _>(groups, |(_first, idx)| {
             if idx.is_empty() {
                 return None;
             }
 
             let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            group_vals.quantile(quantile).unwrap()
+            group_vals.quantile(quantile, interpol).unwrap()
         })
     }
 

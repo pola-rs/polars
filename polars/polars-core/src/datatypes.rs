@@ -14,6 +14,7 @@ use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::sort::PlIsNan;
 use crate::prelude::*;
 use ahash::RandomState;
+use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
@@ -146,6 +147,7 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + PlIsNan
+    + NativeArithmetics
 {
 }
 impl NumericNative for i8 {}

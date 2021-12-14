@@ -21,10 +21,10 @@ use std::path::PathBuf;
 
 const POLARS_VERBOSE: &str = "POLARS_VERBOSE";
 
-fn set_n_rows(stop_after_n_rows: Option<usize>) -> Option<usize> {
+fn set_n_rows(n_rows: Option<usize>) -> Option<usize> {
     let fetch_rows = FETCH_ROWS.with(|fetch_rows| fetch_rows.get());
     match fetch_rows {
-        None => stop_after_n_rows,
+        None => n_rows,
         Some(n) => Some(n),
     }
 }

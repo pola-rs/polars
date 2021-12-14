@@ -34,7 +34,7 @@ use std::sync::Arc;
 pub struct ParquetReader<R: Read + Seek> {
     reader: R,
     rechunk: bool,
-    stop_after_n_rows: Option<usize>,
+    n_rows: Option<usize>,
     columns: Option<Vec<String>>,
     projection: Option<Vec<usize>>,
 }
@@ -56,24 +56,18 @@ where
         let reader = read::RecordReader::try_new(
             &mut self.reader,
             projection.map(|x| x.to_vec()),
-            self.stop_after_n_rows,
+            self.n_rows,
             None,
             None,
         )?;
 
-        finish_reader(
-            reader,
-            rechunk,
-            self.stop_after_n_rows,
-            predicate,
-            aggregate,
-        )
+        finish_reader(reader, rechunk, self.n_rows, predicate, aggregate)
     }
 
     /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
     /// sequentially.
-    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.stop_after_n_rows = num_rows;
+    pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.n_rows = num_rows;
         self
     }
 
@@ -116,7 +110,7 @@ where
         ParquetReader {
             reader,
             rechunk: false,
-            stop_after_n_rows: None,
+            n_rows: None,
             columns: None,
             projection: None,
         }
@@ -145,11 +139,11 @@ where
         let reader = read::RecordReader::try_new(
             &mut self.reader,
             self.projection,
-            self.stop_after_n_rows,
+            self.n_rows,
             None,
             None,
         )?;
-        finish_reader(reader, rechunk, self.stop_after_n_rows, None, None)
+        finish_reader(reader, rechunk, self.n_rows, None, None)
     }
 }
 

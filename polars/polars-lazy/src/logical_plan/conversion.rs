@@ -65,9 +65,14 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr(*expr, arena)),
                 AggExpr::List(expr) => AAggExpr::List(to_aexpr(*expr, arena)),
                 AggExpr::Count(expr) => AAggExpr::Count(to_aexpr(*expr, arena)),
-                AggExpr::Quantile { expr, quantile } => AAggExpr::Quantile {
+                AggExpr::Quantile {
+                    expr,
+                    quantile,
+                    interpol,
+                } => AAggExpr::Quantile {
                     expr: to_aexpr(*expr, arena),
                     quantile,
+                    interpol,
                 },
                 AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr(*expr, arena)),
                 AggExpr::Std(expr) => AAggExpr::Std(to_aexpr(*expr, arena)),
@@ -228,7 +233,7 @@ pub(crate) fn to_alp(
             with_columns,
             predicate,
             aggregate,
-            stop_after_n_rows,
+            n_rows,
             cache,
         } => ALogicalPlan::ParquetScan {
             path,
@@ -240,7 +245,7 @@ pub(crate) fn to_alp(
                 .into_iter()
                 .map(|expr| to_aexpr(expr, expr_arena))
                 .collect(),
-            stop_after_n_rows,
+            n_rows,
             cache,
         },
         LogicalPlan::DataFrameScan {
@@ -519,11 +524,16 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_exp(expr, expr_arena);
                 AggExpr::List(Box::new(exp)).into()
             }
-            AAggExpr::Quantile { expr, quantile } => {
+            AAggExpr::Quantile {
+                expr,
+                quantile,
+                interpol,
+            } => {
                 let exp = node_to_exp(expr, expr_arena);
                 AggExpr::Quantile {
                     expr: Box::new(exp),
                     quantile,
+                    interpol,
                 }
                 .into()
             }
@@ -695,7 +705,7 @@ pub(crate) fn node_to_lp(
             with_columns,
             predicate,
             aggregate,
-            stop_after_n_rows,
+            n_rows,
             cache,
         } => LogicalPlan::ParquetScan {
             path,
@@ -703,7 +713,7 @@ pub(crate) fn node_to_lp(
             with_columns,
             predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
             aggregate: nodes_to_exprs(&aggregate, expr_arena),
-            stop_after_n_rows,
+            n_rows,
             cache,
         },
         ALogicalPlan::DataFrameScan {

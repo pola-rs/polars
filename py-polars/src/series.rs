@@ -1,7 +1,6 @@
 use crate::apply::series::ApplyLambda;
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
-use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::list_construction::py_seq_to_list;
 use crate::utils::{downsample_str_to_rule, reinterpret, str_to_polarstype};
@@ -360,9 +359,15 @@ impl PySeries {
         self.series.rename(name);
     }
 
-    pub fn dtype(&self) -> u8 {
-        let dt: PyDataType = self.series.dtype().into();
-        dt as u8
+    pub fn dtype(&self, py: Python) -> PyObject {
+        Wrap(self.series.dtype().clone()).to_object(py)
+    }
+
+    pub fn inner_dtype(&self, py: Python) -> Option<PyObject> {
+        self.series
+            .dtype()
+            .inner_dtype()
+            .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
     pub fn mean(&self) -> Option<f64> {
@@ -555,18 +560,18 @@ impl PySeries {
         Ok(ca.into_series().into())
     }
 
-    pub fn sample_n(&self, n: usize, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let s = self
             .series
-            .sample_n(n, with_replacement)
+            .sample_n(n, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let s = self
             .series
-            .sample_frac(frac, with_replacement)
+            .sample_frac(frac, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
@@ -710,12 +715,22 @@ impl PySeries {
         }
     }
 
-    pub fn quantile(&self, quantile: f64) -> PyObject {
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyObject {
         let gil = Python::acquire_gil();
         let py = gil.python();
+
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+
         Wrap(
             self.series
-                .quantile_as_series(quantile)
+                .quantile_as_series(quantile, interpol)
                 .expect("invalid quantile")
                 .get(0),
         )
@@ -1254,6 +1269,10 @@ impl PySeries {
             .into()),
         }
     }
+    pub fn dt_epoch_seconds(&self) -> PyResult<Self> {
+        let ms = self.series.timestamp().map_err(PyPolarsEr::from)?;
+        Ok((ms / 1000).into_series().into())
+    }
 
     pub fn peak_max(&self) -> Self {
         self.series.peak_max().into_series().into()
@@ -1329,9 +1348,13 @@ impl PySeries {
         }
     }
 
-    pub fn rank(&self, method: &str) -> PyResult<Self> {
-        let method = str_to_rankmethod(method)?;
-        Ok(self.series.rank(method).into())
+    pub fn rank(&self, method: &str, reverse: bool) -> PyResult<Self> {
+        let method = str_to_rankmethod(method).unwrap();
+        let options = RankOptions {
+            method,
+            descending: reverse,
+        };
+        Ok(self.series.rank(options).into())
     }
 
     pub fn diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
@@ -1371,6 +1394,9 @@ impl PySeries {
     pub fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
         let out = self.series.reshape(&dims).map_err(PyPolarsEr::from)?;
         Ok(out.into())
+    }
+    pub fn shuffle(&self, seed: u64) -> Self {
+        self.series.shuffle(seed).into()
     }
 }
 

@@ -293,8 +293,12 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     fn std_as_series(&self) -> Series {
         VarAggSeries::std_as_series(&self.0)
     }
-    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-        ChunkAggSeries::quantile_as_series(&self.0, quantile)
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        ChunkAggSeries::quantile_as_series(&self.0, quantile, interpol)
     }
 
     fn fmt_list(&self) -> String {
@@ -302,22 +306,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
-    }
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
-        self.0
-            .sample_n(n, with_replacement)
-            .map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
-        self.0
-            .sample_frac(frac, with_replacement)
-            .map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "object")]
