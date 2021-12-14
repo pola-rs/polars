@@ -11,8 +11,6 @@ use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 /// # Safety
 /// only may produce true, for f32/f64::NaN
@@ -629,15 +627,58 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
 #[cfg(feature = "dtype-categorical")]
 impl ChunkSort<CategoricalType> for CategoricalChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<CategoricalType> {
-        self.deref().sort_with(options).into()
+        assert!(
+            !options.nulls_last,
+            "null last not yet supported for categorical dtype"
+        );
+        let mut vals = self
+            .into_iter()
+            .zip(self.iter_str())
+            .trust_my_length(self.len())
+            .collect_trusted::<Vec<_>>();
+
+        argsort_branch(
+            vals.as_mut_slice(),
+            options.descending,
+            |(_, a), (_, b)| order_default_null(a, b),
+            |(_, a), (_, b)| order_reverse_null(a, b),
+        );
+        let arr: UInt32Array = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+        let mut ca = self.clone();
+        ca.chunks = vec![Arc::new(arr)];
+
+        ca
     }
 
     fn sort(&self, reverse: bool) -> Self {
-        self.deref().sort(reverse).into()
+        self.sort_with(SortOptions {
+            nulls_last: false,
+            descending: reverse,
+        })
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        self.deref().argsort(reverse)
+        let mut count: u32 = 0;
+        let mut vals = self
+            .iter_str()
+            .map(|s| {
+                let i = count;
+                count += 1;
+                (i, s)
+            })
+            .trust_my_length(self.len())
+            .collect_trusted::<Vec<_>>();
+
+        argsort_branch(
+            vals.as_mut_slice(),
+            reverse,
+            |(_, a), (_, b)| order_default_null(a, b),
+            |(_, a), (_, b)| order_reverse_null(a, b),
+        );
+        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+        let mut ca = ca.into_inner();
+        ca.rename(self.name());
+        ca
     }
 }
 
@@ -882,5 +923,20 @@ mod test {
         let out = ca.sort(true);
         let expected = &[Some("c"), Some("b"), Some("a")];
         assert_eq!(Vec::from(&out), expected);
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-categorical")]
+    fn test_sort_categorical() {
+        let ca = Utf8Chunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
+        let ca = ca.cast(&DataType::Categorical).unwrap();
+        let ca = ca.categorical().unwrap();
+        let out = ca.sort_with(SortOptions {
+            descending: false,
+            nulls_last: false,
+        });
+        let out = out.iter_str().collect::<Vec<_>>();
+        let expected = &[None, None, Some("a"), Some("b"), Some("c")];
+        assert_eq!(out, expected);
     }
 }
