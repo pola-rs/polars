@@ -49,6 +49,7 @@ pub enum RevMapping {
 
 #[allow(clippy::len_without_is_empty)]
 impl RevMapping {
+    /// Get the length of the [`RevMapping`]
     pub fn len(&self) -> usize {
         match self {
             Self::Global(_, a, _) => a.len(),
@@ -64,6 +65,20 @@ impl RevMapping {
                 a.value(idx as usize)
             }
             Self::Local(a) => a.value(idx as usize),
+        }
+    }
+
+    /// Categorical to str
+    ///
+    /// # Safety:
+    /// This doesn't do any bound checking
+    pub unsafe fn get_unchecked(&self, idx: u32) -> &str {
+        match self {
+            Self::Global(map, a, _) => {
+                let idx = *map.get(&idx).unwrap();
+                a.value_unchecked(idx as usize)
+            }
+            Self::Local(a) => a.value_unchecked(idx as usize),
         }
     }
     /// Check if the categoricals are created under the same global string cache.

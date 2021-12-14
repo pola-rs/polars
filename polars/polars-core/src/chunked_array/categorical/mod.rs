@@ -100,9 +100,13 @@ impl<'a> Iterator for CatIter<'a> {
     type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|item| item.map(|idx| self.rev.get(idx)))
+        self.iter.next().map(|item| {
+            item.map(|idx| {
+                // Safety:
+                // all categories are in bound
+                unsafe { self.rev.get_unchecked(idx) }
+            })
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
