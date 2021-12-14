@@ -813,13 +813,30 @@ impl DataFrame {
             .zip(df.columns.iter())
             .try_for_each(|(left, right)| {
                 if left.dtype() != right.dtype() || left.name() != right.name() {
-                    return Err(PolarsError::SchemaMisMatch(
-                        format!(
-                            "cannot vstack: schemas don't match of {:?} {:?}",
-                            left, right
-                        )
-                        .into(),
-                    ));
+                    if left.dtype() != right.dtype() {
+                        return Err(PolarsError::SchemaMisMatch(
+                            format!(
+                                "cannot vstack: because column datatypes (dtypes) in the two DataFrames do not match for \
+                                left.name='{}' with left.dtype={} != right.dtype={} with right.name='{}'",
+                                left.name(),
+                                left.dtype(),
+                                right.dtype(),
+                                right.name()
+                            )
+                            .into(),
+                        ));
+                    }
+                    else {
+                        return Err(PolarsError::SchemaMisMatch(
+                            format!(
+                                "cannot vstack: because column names in the two DataFrames do not match for \
+                                left.name='{}' != right.name='{}'",
+                                left.name(),
+                                right.name()
+                            )
+                            .into(),
+                        ));
+                    }
                 }
 
                 left.append(right).expect("should not fail");
