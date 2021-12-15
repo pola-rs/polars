@@ -821,7 +821,7 @@ impl LazyFrame {
     }
 
     /// Similar to groupby, but order of the DataFrame is maintained.
-    pub fn stable_groupby<E: AsRef<[Expr]>>(self, by: E) -> LazyGroupBy {
+    pub fn groupby_stable<E: AsRef<[Expr]>>(self, by: E) -> LazyGroupBy {
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,

@@ -289,7 +289,7 @@ impl PyLazyFrame {
         let ldf = self.ldf.clone();
         let by = py_exprs_to_exprs(by);
         let lazy_gb = if maintain_order {
-            ldf.stable_groupby(by)
+            ldf.groupby_stable(by)
         } else {
             ldf.groupby(by)
         };
