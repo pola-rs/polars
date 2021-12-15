@@ -36,7 +36,10 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: "16"
-
+      - name: "Debug"
+        run: |
+          pwd
+          ls -lah
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -73,11 +76,16 @@ jobs:
         run: ${{ matrix.settings.build }}
         shell: bash
 
+      - name: "Debug Out"
+        run: |
+          pwd
+          ls -lah
+          ls -lah ../
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: polars/*.node
+          path: "**.node"
 
   publish:
     name: Publish
