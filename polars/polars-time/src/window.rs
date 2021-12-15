@@ -24,7 +24,7 @@ impl Window {
     }
 
     pub fn truncate(&self, t: TimeNanoseconds) -> TimeNanoseconds {
-        self.every.truncate_nanoseconds(*t).into()
+        self.every.truncate_nanoseconds(t)
     }
 
     /// returns the bounds for the earliest window bounds
@@ -41,8 +41,8 @@ impl Window {
     }
 
     pub(crate) fn estimate_overlapping_bounds(&self, boundary: Bounds) -> usize {
-        (*boundary.duration() / *self.every.duration()
-            + *self.period.duration() / *self.every.duration()) as usize
+        (boundary.duration() / self.every.duration()
+            + self.period.duration() / self.every.duration()) as usize
     }
 
     pub fn get_overlapping_bounds(&self, boundary: Bounds) -> Vec<Bounds> {
@@ -87,7 +87,7 @@ impl Iterator for BoundsIter {
     type Item = Bounds;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if *self.bi.start < *self.boundary.stop {
+        if self.bi.start < self.boundary.stop {
             let out = self.bi;
             self.bi.start = self.bi.start + self.window.every;
             self.bi.stop = self.bi.stop + self.window.every;
