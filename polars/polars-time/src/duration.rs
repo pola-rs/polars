@@ -1,7 +1,7 @@
 use crate::calendar::{
     is_leap_year, last_day_of_month, timestamp_ns_to_datetime, NS_MINUTE, NS_SECONDS,
 };
-use crate::unit::{TimeMilliseconds, TimeNanoseconds};
+use crate::unit::TimeNanoseconds;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use std::ops::{Add, Mul};
 
@@ -123,7 +123,7 @@ impl Add<Duration> for TimeNanoseconds {
     /// Adds a duration to a nanosecond timestamp
 
     fn add(self, rhs: Duration) -> Self {
-        let t = *self;
+        let t = self;
         let d = rhs;
         let mut new_t = t;
 
@@ -180,16 +180,6 @@ impl Add<Duration> for TimeNanoseconds {
 
         // We keep the panic for now until we better understand the issue
         (new_t + nsecs).into()
-    }
-}
-
-impl Add<Duration> for TimeMilliseconds {
-    type Output = Self;
-
-    /// Adds a duration to a nanosecond timestamp
-
-    fn add(self, rhs: Duration) -> Self {
-        self.to_nsecs().add(rhs).to_millisecs()
     }
 }
 
