@@ -24,8 +24,7 @@ jobs:
             build: |
               export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
               export CARGO_PROFILE_RELEASE_LTO=false
-              npm run build --target i686-pc-windows-msvc
-              npm run test
+              npm run build -- --target i686-pc-windows-msvc
           - host: ubuntu-latest
             target: "x86_64-unknown-linux-gnu"
             build: npm run build
