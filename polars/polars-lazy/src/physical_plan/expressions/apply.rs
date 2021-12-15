@@ -79,7 +79,9 @@ impl PhysicalExpr for ApplyExpr {
                 }
                 ApplyOptions::ApplyFlat => {
                     let s = self.function.call_udf(&mut [ac.flat().into_owned()])?;
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    if ac.is_aggregated() {
+                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    }
                     ac.with_series(s, false);
                     Ok(ac)
                 }
