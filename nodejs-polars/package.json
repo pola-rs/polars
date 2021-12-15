@@ -43,7 +43,6 @@
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
     "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
     "lint": "eslint . -c ./.eslintrc.json './**/*.{ts,tsx,js}'",
-    "prepublishOnly": "napi prepublish -t npm",
     "test": "jest",
     "version": "napi version"
   },
