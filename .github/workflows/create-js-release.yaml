@@ -4,7 +4,10 @@ on:
   - pull_request
 jobs:
   test-js:
-    name: Build and test Rust
+    name: Build and test JS
+    defaults:
+      run:
+        working-directory: nodejs-polars
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
