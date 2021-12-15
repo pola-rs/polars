@@ -140,17 +140,17 @@ jobs:
       - name: "Install dependencies"
         run: npm install  --ignore-scripts
 
-      # - name: Download all artifacts
-      #   uses: actions/download-artifact@v2
-      #   with:
-      #     path: nodejs-polars/artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: nodejs-polars/artifacts
 
-      # - name: List artifacts
-      #   run: ls -R artifacts
-      #   shell: bash
+      - name: List artifacts
+        run: ls -R artifacts
+        shell: bash
 
-      # - name: Move artifacts
-      #   run: npm run artifacts
+      - name: Move artifacts
+        run: npm run artifacts
 
       - name: Build TypeScript
         run: npm run build:ts
