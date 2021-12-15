@@ -1,0 +1,26 @@
+name: Build and test
+
+on:
+  - pull_request
+jobs:
+  test-js:
+    name: Build and test Rust
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ["macos-latest", "windows-latest"]  
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2021-12-02
+          override: true
+          components: rustfmt, clippy
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+      - name: "Install dependencies"
+        run: yarn install
+ 
