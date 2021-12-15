@@ -1,4 +1,5 @@
 use crate::bounds::Bounds;
+use crate::calendar::timestamp_ns_to_datetime;
 use crate::duration::Duration;
 use crate::unit::TimeNanoseconds;
 
@@ -26,15 +27,22 @@ impl Window {
         self.every.truncate_nanoseconds(*t).into()
     }
 
-    /// GetEarliestBounds returns the bounds for the earliest window bounds
+    /// returns the bounds for the earliest window bounds
     /// that contains the given time t.  For underlapping windows that
     /// do not contain time t, the window directly after time t will be returned.
     pub fn get_earliest_bounds(&self, t: TimeNanoseconds) -> Bounds {
+        // translate offset
         let t = t + (self.offset * -1);
+        //
         let stop = self.truncate(t) + self.every + self.offset;
         let start = stop + self.period * -1;
 
         Bounds::new(start, stop)
+    }
+
+    pub(crate) fn estimate_overlapping_bounds(&self, boundary: Bounds) -> usize {
+        (*boundary.duration() / *self.every.duration()
+            + *self.period.duration() / *self.every.duration()) as usize
     }
 
     pub fn get_overlapping_bounds(&self, boundary: Bounds) -> Vec<Bounds> {
@@ -42,8 +50,7 @@ impl Window {
             return vec![];
         } else {
             // estimate size
-            let size = (*boundary.duration() / *self.every.duration()
-                + *self.period.duration() / *self.every.duration()) as usize;
+            let size = self.estimate_overlapping_bounds(boundary);
             let mut out_bounds = Vec::with_capacity(size);
 
             for bi in self.get_overlapping_bounds_iter(boundary) {
@@ -81,9 +88,10 @@ impl Iterator for BoundsIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         if *self.bi.start < *self.boundary.stop {
+            let out = self.bi;
             self.bi.start = self.bi.start + self.window.every;
             self.bi.stop = self.bi.stop + self.window.every;
-            Some(self.bi)
+            Some(out)
         } else {
             None
         }
