@@ -36,7 +36,7 @@
     "bench": "node -r @swc-node/register benchmark/bench.ts",
     "build_alt": "RUSTFLAGS='-C codegen-units=16' napi build --platform --release",
     "build:native": "napi build --platform --release",
-    "build": "napi build --platform",
+    "build": "napi build --platform artifacts/",
     "build:debug": "napi build --platform polars/",
     "build:tsc": "tsc -p tsconfig.build.json",
     "format:rs": "cargo fmt",
