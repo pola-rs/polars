@@ -69,6 +69,7 @@ test = [
   "regex",
   "polars-core/plain_fmt",
   "diff",
+  "abs",
 ]
 
 [dependencies]

@@ -2418,3 +2418,23 @@ fn empty_df() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_apply_flatten() -> Result<()> {
+    let df = df![
+         "A"=> [1.1435, 2.223456, 3.44732, -1.5234, -2.1238, -3.2923],
+        "B"=> ["a", "b", "a", "b", "a", "b"]
+    ]?;
+
+    let out = df
+        .lazy()
+        .stable_groupby([col("B")])
+        .agg([col("A").abs().sum()])
+        .collect()?;
+
+    let out = out.column("A_sum")?;
+    assert_eq!(out.get(0), AnyValue::Float64(6.71462));
+    assert_eq!(out.get(1), AnyValue::Float64(7.039156));
+
+    Ok(())
+}
