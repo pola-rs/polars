@@ -3,7 +3,7 @@ name: JS Build and Test
 on:
   - pull_request
 jobs:
-  test-js:
+  build:
     defaults:
       run:
         working-directory: nodejs-polars
@@ -72,4 +72,52 @@ jobs:
   
       - name: "Build"
         run: ${{ matrix.settings.build }}
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: polars/*.node
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup node
+        uses: actions/setup-node@v2-beta
+        with:
+          node-version: 14
+          check-latest: true
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: npm-cache-ubuntu-latest-publish-${{ hashFiles('yarn.lock') }}
+
+      - name: 'Install dependencies'
+        run: npm install
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: ls -R artifacts
+        shell: bash
+
+      - name: Move artifacts
+        run: npm run artifacts
+
+      - name: Build TypeScript
+        run: npm run build:ts
+
+      - name: List packages
+        run: ls -R packages
         shell: bash
