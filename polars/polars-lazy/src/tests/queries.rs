@@ -1643,7 +1643,7 @@ fn test_sort_by() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .stable_groupby([col("b")])
+        .groupby_stable([col("b")])
         .agg([col("a").sort_by([col("b"), col("c")], [false])])
         .collect()?;
     let a = out.column("a")?.explode()?;
@@ -1655,7 +1655,7 @@ fn test_sort_by() -> Result<()> {
     // evaluate_on_groups
     let out = df
         .lazy()
-        .stable_groupby([col("b")])
+        .groupby_stable([col("b")])
         .agg([col("a").sort_by([col("b"), col("c")], [false]).list()])
         .collect()?;
 
@@ -1950,7 +1950,7 @@ fn test_agg_exprs() -> Result<()> {
     // a binary expression followed by a function and an aggregation. See if it runs
     let out = df
         .lazy()
-        .stable_groupby([col("cars")])
+        .groupby_stable([col("cars")])
         .agg([(lit(1) - col("A"))
             .map(|s| Ok(&s * 2), GetOutput::same_type())
             .list()
@@ -1980,7 +1980,7 @@ fn test_groupby_rank() -> Result<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .stable_groupby([col("cars")])
+        .groupby_stable([col("cars")])
         .agg([col("B").rank(RankOptions {
             method: RankMethod::Dense,
             ..Default::default()
@@ -2019,7 +2019,7 @@ fn test_apply_multiple_columns() -> Result<()> {
 
     let out = df
         .lazy()
-        .stable_groupby([col("cars")])
+        .groupby_stable([col("cars")])
         .agg([apply_mul(
             multiply,
             [col("A"), col("B")],
@@ -2117,7 +2117,7 @@ fn test_take_consistency() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .stable_groupby([col("cars")])
+        .groupby_stable([col("cars")])
         .agg([col("A").arg_sort(true).take(lit(0))])
         .collect()?;
 
@@ -2128,7 +2128,7 @@ fn test_take_consistency() -> Result<()> {
     let out_df = df
         .clone()
         .lazy()
-        .stable_groupby([col("cars")])
+        .groupby_stable([col("cars")])
         .agg([
             col("A"),
             col("A").arg_sort(true).take(lit(0)).alias("1"),
@@ -2239,7 +2239,7 @@ fn test_binary_agg_context_0() -> Result<()> {
 
     let out = df
         .lazy()
-        .stable_groupby([col("groups")])
+        .groupby_stable([col("groups")])
         .agg([when(col("vals").first().neq(lit(1)))
             .then(lit("a"))
             .otherwise(lit("b"))
@@ -2280,7 +2280,7 @@ fn test_binary_agg_context_1() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .stable_groupby([col("groups")])
+        .groupby_stable([col("groups")])
         .agg([when(col("vals").eq(lit(1)))
             .then(col("vals").sum())
             .otherwise(lit(90))
@@ -2301,7 +2301,7 @@ fn test_binary_agg_context_1() -> Result<()> {
 
     let out = df
         .lazy()
-        .stable_groupby([col("groups")])
+        .groupby_stable([col("groups")])
         .agg([when(col("vals").eq(lit(1)))
             .then(lit(90))
             .otherwise(col("vals").sum())
@@ -2335,7 +2335,7 @@ fn test_binary_agg_context_2() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .stable_groupby([col("groups")])
+        .groupby_stable([col("groups")])
         .agg([((col("vals").first() - col("vals")).list()).alias("vals")])
         .collect()?;
 
@@ -2353,7 +2353,7 @@ fn test_binary_agg_context_2() -> Result<()> {
     // Same, but now we reverse the lhs / rhs.
     let out = df
         .lazy()
-        .stable_groupby([col("groups")])
+        .groupby_stable([col("groups")])
         .agg([((col("vals")) - col("vals").first()).list().alias("vals")])
         .collect()?;
 
@@ -2428,7 +2428,7 @@ fn test_apply_flatten() -> Result<()> {
 
     let out = df
         .lazy()
-        .stable_groupby([col("B")])
+        .groupby_stable([col("B")])
         .agg([col("A").abs().sum()])
         .collect()?;
 
