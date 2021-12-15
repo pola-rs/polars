@@ -74,8 +74,7 @@ jobs:
               export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
               export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
               npm run build -- --target aarch64-linux-android
-
-          -
+              
     name: ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     steps:
@@ -166,7 +165,7 @@ jobs:
 
       - name: Build TypeScript
         run: npm run build:ts
-        
+
       - name: Publish to npm
         run: npm publish
         env:
