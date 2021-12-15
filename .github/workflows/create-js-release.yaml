@@ -26,6 +26,12 @@ jobs:
           node-version: '16'
       - name: "Install dependencies"
         run: npm install
-      - name: "Build"
+      - name: "Build:Debug"
         run: npm run build:debug
- 
+      - name: "Run Tests"
+        run: npm test
+      - name: "Debug"
+        run: |
+          ls && ls polars
+      - name: "Build"
+        run: npm run build
