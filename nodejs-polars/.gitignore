@@ -1,9 +1,9 @@
 /target
 **/*.rs.bk
 Cargo.lock
-bin/libpolars.node
 node_modules/
-.yarn/
+.yarn/cache
+.yarn/install-state*
 .pnp.*
 
 coverage/
