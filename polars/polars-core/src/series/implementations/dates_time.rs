@@ -436,18 +436,18 @@ macro_rules! impl_dyn_series {
             }
 
             fn cast(&self, data_type: &DataType) -> Result<Series> {
-                const MS_IN_DAY: i64 = 86400000;
+                const NS_IN_DAY: i64 = 86400000_000_000;
                 use DataType::*;
                 let ca = match (self.dtype(), data_type) {
                     #[cfg(feature = "dtype-datetime")]
                     (Date, Datetime) => {
                         let casted = self.0.cast(data_type)?;
                         let casted = casted.datetime().unwrap();
-                        return Ok((casted.deref() * MS_IN_DAY).into_date().into_series());
+                        return Ok((casted.deref() * NS_IN_DAY).into_date().into_series());
                     }
                     #[cfg(feature = "dtype-date")]
                     (Datetime, Date) => {
-                        let ca = self.0.deref() / MS_IN_DAY;
+                        let ca = self.0.deref() / NS_IN_DAY;
                         Cow::Owned(ca)
                     }
                     _ => Cow::Borrowed(self.0.deref()),

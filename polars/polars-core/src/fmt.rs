@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-use arrow::temporal_conversions::{date32_to_date, timestamp_ms_to_datetime};
+use arrow::temporal_conversions::{date32_to_date, timestamp_ns_to_datetime};
 use num::{Num, NumCast};
 use std::{
     fmt,
@@ -505,7 +505,7 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v) => write!(f, "{}", timestamp_ms_to_datetime(*v)),
+            AnyValue::Datetime(v) => write!(f, "{}", timestamp_ns_to_datetime(*v)),
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: chrono::NaiveTime = self.into();

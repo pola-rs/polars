@@ -5,7 +5,7 @@ use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
-use arrow::temporal_conversions::{date32_to_datetime, timestamp_ms_to_datetime};
+use arrow::temporal_conversions::{date32_to_datetime, timestamp_ns_to_datetime};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use std::sync::Arc;
 
@@ -98,7 +98,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_week,
     week,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );
@@ -106,7 +106,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_weekday,
     p_weekday,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );
@@ -114,7 +114,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_year,
     year,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::Int32
 );
@@ -122,7 +122,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_month,
     month,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );
@@ -130,7 +130,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_day,
     day,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );
@@ -138,7 +138,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_hour,
     hour,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );
@@ -146,7 +146,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_minute,
     minute,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );
@@ -154,7 +154,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_second,
     second,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );
@@ -162,7 +162,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_nanosecond,
     nanosecond,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );
@@ -170,7 +170,7 @@ to_temporal_unit!(
 to_temporal_unit!(
     datetime_to_ordinal,
     ordinal,
-    timestamp_ms_to_datetime,
+    timestamp_ns_to_datetime,
     i64,
     ArrowDataType::UInt32
 );

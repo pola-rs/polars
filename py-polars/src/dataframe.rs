@@ -16,7 +16,7 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, str_to_null_strategy};
-use crate::utils::{downsample_str_to_rule, str_to_polarstype};
+use crate::utils::{str_to_polarstype};
 use crate::{
     arrow_interop,
     error::PyPolarsEr,
@@ -664,38 +664,6 @@ impl PyDataFrame {
     pub fn with_row_count(&self, name: &str) -> PyResult<Self> {
         let df = self.df.with_row_count(name).map_err(PyPolarsEr::from)?;
         Ok(df.into())
-    }
-
-    #[cfg(feature = "downsample")]
-    pub fn downsample_agg(
-        &self,
-        by: &str,
-        rule: &str,
-        n: u32,
-        column_to_agg: Vec<(&str, Vec<&str>)>,
-    ) -> PyResult<Self> {
-        let rule = downsample_str_to_rule(rule, n)?;
-        let gb = self.df.downsample(by, rule).map_err(PyPolarsEr::from)?;
-        let df = gb.agg(&column_to_agg).map_err(PyPolarsEr::from)?;
-        let out = df.sort(by, false).map_err(PyPolarsEr::from)?;
-        Ok(out.into())
-    }
-
-    #[cfg(feature = "downsample")]
-    pub fn downsample(&self, by: &str, rule: &str, n: u32, agg: &str) -> PyResult<Self> {
-        let rule = match rule {
-            "second" => SampleRule::Second(n),
-            "minute" => SampleRule::Minute(n),
-            "day" => SampleRule::Day(n),
-            "hour" => SampleRule::Hour(n),
-            a => {
-                return Err(PyPolarsEr::Other(format!("rule {} not supported", a)).into());
-            }
-        };
-        let gb = self.df.downsample(by, rule).map_err(PyPolarsEr::from)?;
-        let df = finish_groupby(gb, agg)?;
-        let out = df.df.sort(by, false).map_err(PyPolarsEr::from)?;
-        Ok(out.into())
     }
 
     pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {

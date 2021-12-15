@@ -2250,78 +2250,6 @@ class DataFrame:
             self._df, by, maintain_order=maintain_order, downsample=False  # type: ignore
         )
 
-    def downsample(self, by: Union[str, tp.List[str]], rule: str, n: int) -> "GroupBy":
-        """
-
-        .. deprecated:: 0.11.0
-            Use `buckets` expression instead
-
-        Start a downsampling groupby operation.
-
-        Parameters
-        ----------
-        by
-            Column that will be used as key in the groupby operation.
-            This should be a datetime/date column.
-        rule
-            Units of the downscaling operation.
-
-            Any of:
-                - "month"
-                - "week"
-                - "day"
-                - "hour"
-                - "minute"
-                - "second"
-
-        n
-            Number of units (e.g. 5 "day", 15 "minute".
-
-        Examples
-        --------
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [
-        ...             "2020-01-01",
-        ...             "2020-01-02",
-        ...             "2020-01-03",
-        ...             "2020-01-04",
-        ...             "2020-01-05",
-        ...             "2020-01-06",
-        ...         ],
-        ...         "B": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0],
-        ...         "C": [3.0, 6.0, 9.0, 2.0, 13.0, 8.0],
-        ...         "D": [12.0, 5.0, 9.0, 2.0, 11.0, 2.0],
-        ...     }
-        ... )
-        >>> df["A"] = df["A"].str.strptime(pl.Date, "%Y-%m-%d")
-        >>> df.downsample("A", rule="day", n=3).agg(
-        ...     {"B": "max", "C": "min", "D": "last"}
-        ... )
-        shape: (3, 4)
-        ┌────────────┬───────┬───────┬────────┐
-        │ A          ┆ B_max ┆ C_min ┆ D_last │
-        │ ---        ┆ ---   ┆ ---   ┆ ---    │
-        │ date       ┆ f64   ┆ f64   ┆ f64    │
-        ╞════════════╪═══════╪═══════╪════════╡
-        │ 2019-12-31 ┆ 8     ┆ 3     ┆ 5      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2020-01-03 ┆ 16    ┆ 2     ┆ 11     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2020-01-06 ┆ 10    ┆ 8     ┆ 2      │
-        └────────────┴───────┴───────┴────────┘
-
-        """
-        return GroupBy(
-            self._df,
-            by,
-            maintain_order=False,
-            downsample=True,
-            rule=rule,
-            downsample_n=n,
-        )
-
     def upsample(self, by: str, interval: timedelta) -> "DataFrame":
         """
         Upsample a DataFrame at a regular frequency.
@@ -4050,9 +3978,7 @@ class GroupBy:
         """
         Select all columns for aggregation.
         """
-        return GBSelection(
-            self._df, self.by, None, self.downsample, self.rule, self.downsample_n
-        )
+        return GBSelection(self._df, self.by, None)
 
     def pivot(self, pivot_column: str, values_column: str) -> "PivotOps":
         """
@@ -4229,80 +4155,57 @@ class GBSelection:
         df: "PyDataFrame",
         by: Union[str, tp.List[str]],
         selection: Optional[tp.List[str]],
-        downsample: bool = False,
-        rule: Optional[str] = None,
-        downsample_n: int = 0,
     ):
         self._df = df
         self.by = by
         self.selection = selection
-        self.downsample = downsample
-        self.rule = rule
-        self.n = downsample_n
 
     def first(self) -> DataFrame:
         """
         Aggregate the first values in the group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "first"))
-
         return wrap_df(self._df.groupby(self.by, self.selection, "first"))
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "last"))
         return wrap_df(self._df.groupby(self.by, self.selection, "last"))
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "sum"))
         return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "min"))
         return wrap_df(self._df.groupby(self.by, self.selection, "min"))
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "max"))
         return wrap_df(self._df.groupby(self.by, self.selection, "max"))
 
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "count"))
         return wrap_df(self._df.groupby(self.by, self.selection, "count"))
 
     def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "mean"))
         return wrap_df(self._df.groupby(self.by, self.selection, "mean"))
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "n_unique"))
         return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))
 
     def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
@@ -4318,8 +4221,6 @@ class GBSelection:
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         """
-        if self.downsample:
-            raise ValueError("quantile operation not supported during downsample")
         return wrap_df(
             self._df.groupby_quantile(self.by, self.selection, quantile, interpolation)
         )
@@ -4328,16 +4229,12 @@ class GBSelection:
         """
         Return the median per group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "median"))
         return wrap_df(self._df.groupby(self.by, self.selection, "median"))
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "agg_list"))
         return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))
 
     def apply(
