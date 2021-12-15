@@ -18,9 +18,6 @@ random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "performant", "private"]
 lazy = ["sort_multiple"]
 
-# commented out until UB is fixed
-# parallel = []
-
 # ~40% faster collect, needed until trustedlength iter stabilizes
 performant = []
 
@@ -37,8 +34,6 @@ plain_fmt = ["prettytable-rs"]
 # opt-in features
 # pivot operation on DataFrame
 pivot = []
-# resample operation on DataFrame
-downsample = ["temporal", "dtype-datetime"]
 # sort by multiple columns
 sort_multiple = []
 # create from row values
@@ -78,6 +73,8 @@ moment = []
 diagonal_concat = []
 abs = []
 
+dynamic_groupby = []
+
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
@@ -93,7 +90,6 @@ parquet = ["arrow/io_parquet"]
 docs-selection = [
   "ndarray",
   "pivot",
-  "downsample",
   "is_in",
   "sort_multiple",
   "rows",
@@ -145,6 +141,7 @@ ndarray = { version = "0.15", optional = true, default_features = false }
 num = "^0.4"
 num_cpus = "1.1"
 polars-arrow = { version = "0.18.0", path = "../polars-arrow", features = ["compute"] }
+polars-time = { version = "0.18.0", path = "../polars-time", optional = true }
 prettytable-rs = { version = "0.8.0", optional = true }
 rand = { version = "0.8", optional = true }
 rand_distr = { version = "0.4", optional = true }

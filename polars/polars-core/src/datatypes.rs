@@ -241,7 +241,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-date")]
     Date(i32),
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
-    /// in milliseconds (64 bits).
+    /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
     Datetime(i64),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
@@ -532,7 +532,7 @@ impl DataType {
             Float64 => ArrowDataType::Float64,
             Utf8 => ArrowDataType::LargeUtf8,
             Date => ArrowDataType::Date32,
-            Datetime => ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
+            Datetime => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
             Time => ArrowDataType::Time64(TimeUnit::Nanosecond),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",

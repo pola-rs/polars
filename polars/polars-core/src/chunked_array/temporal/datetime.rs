@@ -135,7 +135,11 @@ mod test {
         // NOTE: the values are checked and correct.
         let dt = DatetimeChunked::new_from_naive_datetime("name", &datetimes);
         assert_eq!(
-            [588470416000, 1441497364000, 1356048000000],
+            [
+                588470416000_000_000,
+                1441497364000_000_000,
+                1356048000000_000_000
+            ],
             dt.cont_slice().unwrap()
         );
     }

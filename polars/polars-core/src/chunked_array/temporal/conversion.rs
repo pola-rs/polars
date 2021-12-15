@@ -2,13 +2,11 @@ use super::*;
 use crate::prelude::AnyValue;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
-use arrow::temporal_conversions::timestamp_ms_to_datetime;
+use arrow::temporal_conversions::{timestamp_ms_to_datetime, NANOSECONDS};
 use chrono::{NaiveDateTime, NaiveTime};
 
 /// Number of seconds in a day
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
-/// Number of milliseconds in a second
-const MILLISECONDS_IN_SECOND: i64 = 1_000;
 
 impl From<&AnyValue<'_>> for NaiveDateTime {
     fn from(v: &AnyValue) -> Self {
@@ -36,11 +34,11 @@ impl From<&AnyValue<'_>> for NaiveTime {
 // Used by lazy for literal conversion
 #[cfg(feature = "private")]
 pub fn naive_datetime_to_datetime(v: &NaiveDateTime) -> i64 {
-    v.timestamp_millis()
+    v.timestamp_nanos()
 }
 
 pub(crate) fn naive_datetime_to_date(v: &NaiveDateTime) -> i32 {
-    (naive_datetime_to_datetime(v) / (MILLISECONDS_IN_SECOND * SECONDS_IN_DAY)) as i32
+    (naive_datetime_to_datetime(v) / (NANOSECONDS * SECONDS_IN_DAY)) as i32
 }
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {

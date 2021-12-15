@@ -116,7 +116,6 @@
 //!     - `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
-//!     - `downsample` - [downsample operation](crate::frame::DataFrame::downsample) on `DataFrame`s
 //!     - `asof_join` - Join as of, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the cartesian product of two DataFrames.
 //!     - `groupby_list` - Allow groupby operation on keys of type List.
