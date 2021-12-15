@@ -36,6 +36,9 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: "16"
+          cache: 'yarn'
+          cache-dependency-path: nodejs-polars/yarn.lock
+
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -48,7 +51,7 @@ jobs:
         run: ${{ matrix.settings.setup }}
 
       - name: "Install dependencies"
-        run: npm install
+        run: yarn install
 
       - name: "Build"
         run: ${{ matrix.settings.build }}
@@ -71,14 +74,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-
-      - name: Setup node
-        uses: actions/setup-node@v2
+      - uses: actions/setup-node@v2
         with:
-          node-version: 16
+          node-version: "16"
+          cache: 'yarn'
+          cache-dependency-path: nodejs-polars/yarn.lock
 
       - name: "Install dependencies"
-        run: npm install
+        run: yarn install
 
       - name: Download all artifacts
         uses: actions/download-artifact@v2
@@ -90,8 +93,10 @@ jobs:
         shell: bash
 
       - name: Move artifacts
-        run: npm run artifacts
+        run: yarn artifacts
 
       - name: Build TypeScript
-        run: npm run build:ts
+        run: yarn build:ts
+      - name: Publish to npm
+        run: yarn publish
 
