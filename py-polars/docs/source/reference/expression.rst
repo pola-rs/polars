@@ -246,7 +246,6 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.minute
     ExprDateTimeNameSpace.second
     ExprDateTimeNameSpace.nanosecond
-    ExprDateTimeNameSpace.round
     ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.timestamp
     ExprDateTimeNameSpace.buckets

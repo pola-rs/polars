@@ -5,7 +5,6 @@ use arrow::array::ArrayRef;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ChunkIdIter;
-use arrow::temporal_conversions::MILLISECONDS;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
@@ -1022,7 +1021,7 @@ pub trait SeriesTrait:
                 .unwrap()
                 .datetime()
                 .map(|ca| (ca.deref() * 1000)),
-            DataType::Datetime => self.datetime().map(|ca| ca.deref().clone() / MILLISECONDS),
+            DataType::Datetime => self.datetime().map(|ca| ca.deref().clone() / 1_000_000),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),

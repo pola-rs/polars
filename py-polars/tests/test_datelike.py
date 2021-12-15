@@ -32,48 +32,6 @@ def test_fill_null() -> None:
         assert out.dt[-1] == dt_2
 
 
-def test_downsample() -> None:
-    s = pl.Series(
-        "datetime",
-        [
-            946684800000,
-            946684860000,
-            946684920000,
-            946684980000,
-            946685040000,
-            946685100000,
-            946685160000,
-            946685220000,
-            946685280000,
-            946685340000,
-            946685400000,
-            946685460000,
-            946685520000,
-            946685580000,
-            946685640000,
-            946685700000,
-            946685760000,
-            946685820000,
-            946685880000,
-            946685940000,
-        ],
-    ).cast(pl.Datetime)
-    s2 = s.clone()
-    df = pl.DataFrame({"a": s, "b": s2})
-    out = df.downsample("a", rule="minute", n=5).first()
-    assert out.shape == (4, 2)
-
-    # OLHC
-    out = df.downsample("a", rule="minute", n=5).agg(
-        {"b": ["first", "min", "max", "last"]}
-    )
-    assert out.shape == (4, 5)
-
-    # test to_pandas as well.
-    out = df.to_pandas()
-    assert out["a"].dtype == "datetime64[ns]"
-
-
 def test_filter_date() -> None:
     dataset = pl.DataFrame(
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
@@ -109,9 +67,11 @@ def test_diff_datetime() -> None:
 
 
 def test_timestamp() -> None:
-    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Datetime)
+    a = pl.Series("a", [a * 1000_000 for a in [10000, 20000, 30000]], dtype=pl.Datetime)
     assert a.dt.timestamp() == [10000, 20000, 30000]
     out = a.dt.to_python_datetime()
+    print(a.cast(int))
+    print(out)
     assert isinstance(out[0], datetime)
     assert a.dt.min() == out[0]
     assert a.dt.max() == out[2]
@@ -207,14 +167,18 @@ def test_to_list() -> None:
     out = s.to_list()
     assert out[0] == date(2308, 4, 2)
 
-    s = pl.Series("datetime", [123543, 283478, 1243]).cast(pl.Datetime)
+    s = pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]]).cast(
+        pl.Datetime
+    )
     out = s.to_list()
     assert out[0] == datetime(1970, 1, 1, 0, 2, 3, 543000)
 
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = pl.Series("datetime", [123543, 283478, 1243]).cast(pl.Datetime)
+    s1 = pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]]).cast(
+        pl.Datetime
+    )
     df = pl.DataFrame([s0, s1])
 
     rows = df.rows()

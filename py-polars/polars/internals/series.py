@@ -3770,28 +3770,6 @@ class DateTimeNameSpace:
         out = int(s.mean())
         return _to_python_datetime(out, s.dtype)
 
-    def round(self, rule: str, n: int) -> Series:
-        """
-        Round the datetime.
-
-        Parameters
-        ----------
-        rule
-            Units of the downscaling operation.
-
-            Any of:
-                - "month"
-                - "week"
-                - "day"
-                - "hour"
-                - "minute"
-                - "second"
-
-        n
-            Number of units (e.g. 5 "day", 15 "minute".
-        """
-        return wrap_s(self._s.round_datetime(rule, n))
-
     def epoch_days(self) -> Series:
         """
         Get the number of days since the unix EPOCH.
@@ -3835,8 +3813,8 @@ def _to_python_datetime(
         # to inconsistencies dependent on the timezone you are in.
         return datetime.utcfromtimestamp(value * 3600 * 24).date()
     elif dtype == Datetime:
-        # ms to seconds
-        return datetime.utcfromtimestamp(value / 1000)
+        # nanoseconds to seconds
+        return datetime.utcfromtimestamp(value / 1_000_000_000)
     else:
         raise NotImplementedError
 

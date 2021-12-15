@@ -196,9 +196,9 @@ def date_range(
     ]
 
     """
-    values = np.arange(low, high, interval, dtype="datetime64[ms]")
+    values = np.arange(low, high, interval, dtype="datetime64[ns]")
     if closed in (None, "right") and (high - low) % interval == timedelta(0):
-        values = np.append(values, np.array(high, dtype="datetime64[ms]"))
+        values = np.append(values, np.array(high, dtype="datetime64[ns]"))
     if closed == "right":
         values = values[1:]
     return pli.Series(name=name, values=values.astype(np.int64)).cast(Datetime)

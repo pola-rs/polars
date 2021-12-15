@@ -2653,28 +2653,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.nanosecond())
 
-    def round(self, rule: str, n: int) -> Expr:
-        """
-        Round the datetime.
-
-        Parameters
-        ----------
-        rule
-            Units of the downscaling operation.
-
-            Any of:
-                - "month"
-                - "week"
-                - "day"
-                - "hour"
-                - "minute"
-                - "second"
-
-        n
-            Number of units (e.g. 5 "day", 15 "minute".
-        """
-        return wrap_expr(self._pyexpr).map(lambda s: s.dt.round(rule, n), None)
-
     def to_python_datetime(self) -> Expr:
         """
         Go from Date/Datetime to python DateTime objects

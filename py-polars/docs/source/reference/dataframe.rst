@@ -105,7 +105,6 @@ Manipulation/ selection
     DataFrame.hstack
     DataFrame.vstack
     DataFrame.groupby
-    DataFrame.downsample
     DataFrame.select
     DataFrame.with_columns
     DataFrame.with_column_renamed

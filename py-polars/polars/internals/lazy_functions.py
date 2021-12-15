@@ -530,7 +530,7 @@ def lit(
 
     """
     if isinstance(value, datetime):
-        return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
+        return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e9)).cast(
             Datetime
         )
     if isinstance(value, date):
