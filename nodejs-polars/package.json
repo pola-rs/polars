@@ -38,7 +38,7 @@
     "build:native": "napi build --platform --release",
     "build": "napi build --platform artifacts/",
     "build:debug": "napi build --platform polars/",
-    "build:tsc": "tsc -p tsconfig.build.json",
+    "build:ts": "tsc -p tsconfig.build.json",
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
     "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
