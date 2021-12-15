@@ -1,4 +1,4 @@
-name: Build and test
+name: JS Build and Test
 
 on:
   - pull_request
