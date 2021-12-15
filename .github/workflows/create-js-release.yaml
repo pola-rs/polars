@@ -56,7 +56,10 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
-          path: nodejs-polars/artifacts/*
+          path: nodejs-polars/artifacts
+      - name: List artifacts
+        run: ls -R artifacts
+        shell: bash
 
   publish:
     name: Publish
@@ -70,16 +73,9 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Setup node
-        uses: actions/setup-node@v2-beta
+        uses: actions/setup-node@v2
         with:
-          node-version: 14
-          check-latest: true
-
-      - name: Cache NPM dependencies
-        uses: actions/cache@v2
-        with:
-          path: node_modules
-          key: npm-cache-ubuntu-latest-publish-${{ hashFiles('yarn.lock') }}
+          node-version: 16
 
       - name: "Install dependencies"
         run: npm install
@@ -87,7 +83,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v2
         with:
-          path: artifacts
+          path: nodejs-polars/artifacts
 
       - name: List artifacts
         run: ls -R artifacts
@@ -99,6 +95,3 @@ jobs:
       - name: Build TypeScript
         run: npm run build:ts
 
-      - name: List packages
-        run: ls -R packages
-        shell: bash
