@@ -1,24 +1,23 @@
 name: JS Build and Test
-  defaults:
-    run:
-      working-directory: nodejs-polars
+
 on:
   - pull_request
 jobs:
   test-js:
-    name: Build and test JS ${{ matrix.settings.host }} - ${{ matrix.settings.target }}
-
+    defaults:
+      run:
+        working-directory: nodejs-polars
     strategy:
       matrix:
         settings:
           - host: macos-latest
-            target: 'x86_64-apple-darwin'
+            target: "x86_64-apple-darwin"
             build: npm run build
           - host: windows-latest
-            target: 'x86_64-pc-windows-msvc'
+            target: "x86_64-pc-windows-msvc"
             build: npm run build
           - host: windows-latest
-            target: 'i686-pc-windows-msvc'
+            target: "i686-pc-windows-msvc"
             setup: |
               choco install nodejs-lts --x86 -y --force
               echo "C:\\Program Files (x86)\\nodejs" >> $GITHUB_PATH
@@ -26,26 +25,51 @@ jobs:
               export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
               export CARGO_PROFILE_RELEASE_LTO=false
               npm run build --target i686-pc-windows-msvc
-              npm run test 
+              npm run test
           - host: ubuntu-latest
-            target: 'x86_64-unknown-linux-gnu'
+            target: "x86_64-unknown-linux-gnu"
             build: npm run build
+    name: Build and test JS ${{ matrix.settings.host }} - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v2
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly-2021-12-02
           override: true
-          components: rustfmt, clippy
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
+          target: ${{ matrix.settings.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v2
         with:
-          node-version: "16"
+          path: ~/.cargo/registry
+          key: ${{ matrix.settings.target }}-node@16-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v2
+        with:
+          path: ~/.cargo/git
+          key: ${{ matrix.settings.target }}-node@16-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: npm-cache-${{ matrix.settings.target }}-node@16-${{ hashFiles('yarn.lock') }}
+
       - name: "Setup toolchain"
-        run: ${{ matrix.settings.setup }}
         if: ${{ matrix.settings.setup }}
-      - name: 'Build'
+        run: ${{ matrix.settings.setup }}
+
+      - name: "Install dependencies"
+        run: npm install
+  
+      - name: "Build"
         run: ${{ matrix.settings.build }}
         shell: bash
