@@ -1,13 +1,13 @@
 name: JS Build and Test
-
+  defaults:
+    run:
+      working-directory: nodejs-polars
 on:
   - pull_request
 jobs:
   test-js:
     name: Build and test JS ${{ matrix.settings.host }} - ${{ matrix.settings.target }}
-    defaults:
-      run:
-        working-directory: nodejs-polars
+
     strategy:
       matrix:
         settings:
