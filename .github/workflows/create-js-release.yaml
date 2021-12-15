@@ -4,14 +4,33 @@ on:
   - pull_request
 jobs:
   test-js:
-    name: Build and test JS
+    name: Build and test JS ${{ matrix.settings.host }} - ${{ matrix.settings.target }}
     defaults:
       run:
         working-directory: nodejs-polars
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: ["macos-latest", "windows-latest"]  
+        settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            build: npm run build
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+            build: npm run build
+          - host: windows-latest
+            target: 'i686-pc-windows-msvc'
+            setup: |
+              choco install nodejs-lts --x86 -y --force
+              echo "C:\\Program Files (x86)\\nodejs" >> $GITHUB_PATH
+            build: |
+              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
+              export CARGO_PROFILE_RELEASE_LTO=false
+              npm run build --target i686-pc-windows-msvc
+              npm run test 
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-gnu'
+            build: npm run build
+    runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v2
       - name: Install latest Rust nightly
@@ -23,15 +42,10 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-node@v2
         with:
-          node-version: '16'
-      - name: "Install dependencies"
-        run: npm install
-      - name: "Build:Debug"
-        run: npm run build:debug
-      - name: "Run Tests"
-        run: npm test
-      - name: "Debug"
-        run: |
-          ls && ls polars
-      - name: "Build"
-        run: npm run build
+          node-version: "16"
+      - name: "Setup toolchain"
+        run: ${{ matrix.settings.setup }}
+        if: ${{ matrix.settings.setup }}
+      - name: 'Build'
+        run: ${{ matrix.settings.build }}
+        shell: bash
