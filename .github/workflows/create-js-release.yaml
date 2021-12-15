@@ -8,23 +8,24 @@ jobs:
       run:
         working-directory: nodejs-polars
     strategy:
+      fail-fast: false
       matrix:
         settings:
           - host: macos-latest
             target: "x86_64-apple-darwin"
             build: npm run build
-          - host: windows-latest
-            target: "x86_64-pc-windows-msvc"
-            build: npm run build
-          - host: windows-latest
-            target: "i686-pc-windows-msvc"
-            setup: |
-              choco install nodejs-lts --x86 -y --force
-              echo "C:\\Program Files (x86)\\nodejs" >> $GITHUB_PATH
-            build: |
-              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
-              export CARGO_PROFILE_RELEASE_LTO=false
-              npm run build -- --target i686-pc-windows-msvc
+          # - host: windows-latest
+          #   target: "x86_64-pc-windows-msvc"
+          #   build: npm run build
+          # - host: windows-latest
+          #   target: "i686-pc-windows-msvc"
+          #   setup: |
+          #     choco install nodejs-lts --x86 -y --force
+          #     echo "C:\\Program Files (x86)\\nodejs" >> $GITHUB_PATH
+          #   build: |
+          #     export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
+          #     export CARGO_PROFILE_RELEASE_LTO=false
+          #     npm run build -- --target i686-pc-windows-msvc
           - host: ubuntu-latest
             target: "x86_64-unknown-linux-gnu"
             build: npm run build
@@ -35,10 +36,6 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: "16"
-      - name: "Debug"
-        run: |
-          pwd
-          ls
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -76,17 +73,18 @@ jobs:
         shell: bash
 
       - name: "Debug Out"
-        run: |
-          pwd
-          ls 
-          ls ../
+        run: ls
+        
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: "**.node"
+          path: artifacts/*.node
 
   publish:
+    defaults:
+      run:
+        working-directory: nodejs-polars
     name: Publish
     runs-on: ubuntu-latest
     needs:
