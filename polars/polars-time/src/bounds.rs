@@ -11,8 +11,8 @@ pub struct Bounds {
 impl Display for Bounds {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let start = timestamp_ns_to_datetime(*self.start);
-        let end = timestamp_ns_to_datetime(*self.stop);
-        write!(f, "Bounds: {} -> {}", start, end)
+        let stop = timestamp_ns_to_datetime(*self.stop);
+        write!(f, "Bounds: {} -> {}", start, stop)
     }
 }
 
@@ -39,5 +39,10 @@ impl Bounds {
 
     pub fn is_empty(&self) -> bool {
         *self.stop == *self.start
+    }
+
+    // check if nanoseconds is within bounds
+    pub fn is_member(&self, t: i64) -> bool {
+        t >= *self.start && t < *self.stop
     }
 }
