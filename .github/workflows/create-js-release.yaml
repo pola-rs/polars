@@ -32,14 +32,13 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v2
-
       - uses: actions/setup-node@v2
         with:
           node-version: "16"
       - name: "Debug"
         run: |
           pwd
-          ls -lah
+          ls
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -79,8 +78,8 @@ jobs:
       - name: "Debug Out"
         run: |
           pwd
-          ls -lah
-          ls -lah ../
+          ls 
+          ls ../
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
