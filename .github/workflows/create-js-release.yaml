@@ -3,7 +3,7 @@ name: JS Build and Test
 on:
   - pull_request
 jobs:
-  build:
+  build-js:
     defaults:
       run:
         working-directory: nodejs-polars
@@ -11,9 +11,9 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
-            target: "x86_64-apple-darwin"
-            build: npm run build
+          # - host: macos-latest
+          #   target: "x86_64-apple-darwin"
+          #   build: npm run build
           # - host: windows-latest
           #   target: "x86_64-pc-windows-msvc"
           #   build: npm run build
@@ -43,43 +43,20 @@ jobs:
           override: true
           target: ${{ matrix.settings.target }}
 
-      - name: Cache cargo registry
-        uses: actions/cache@v2
-        with:
-          path: ~/.cargo/registry
-          key: ${{ matrix.settings.target }}-node@16-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v2
-        with:
-          path: ~/.cargo/git
-          key: ${{ matrix.settings.target }}-node@16-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache NPM dependencies
-        uses: actions/cache@v2
-        with:
-          path: node_modules
-          key: npm-cache-${{ matrix.settings.target }}-node@16-${{ hashFiles('yarn.lock') }}
-
       - name: "Setup toolchain"
         if: ${{ matrix.settings.setup }}
         run: ${{ matrix.settings.setup }}
 
       - name: "Install dependencies"
         run: npm install
-  
+
       - name: "Build"
         run: ${{ matrix.settings.build }}
         shell: bash
-
-      - name: "Debug Out"
-        run: ls
-        
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
-          name: bindings-${{ matrix.settings.target }}
-          path: artifacts/*.node
+          path: nodejs-polars/bin/*
 
   publish:
     defaults:
@@ -104,7 +81,7 @@ jobs:
           path: node_modules
           key: npm-cache-ubuntu-latest-publish-${{ hashFiles('yarn.lock') }}
 
-      - name: 'Install dependencies'
+      - name: "Install dependencies"
         run: npm install
 
       - name: Download all artifacts
