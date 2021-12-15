@@ -59,13 +59,13 @@ jobs:
           path: nodejs-polars/bin/*
 
   publish:
+    name: Publish
+    needs:
+      - build-js
     defaults:
       run:
         working-directory: nodejs-polars
-    name: Publish
     runs-on: ubuntu-latest
-    needs:
-      - build
     steps:
       - uses: actions/checkout@v2
 
