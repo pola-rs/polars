@@ -22,8 +22,6 @@ pub mod aggregations;
 pub(crate) mod hashing;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
-#[cfg(feature = "downsample")]
-pub mod resample;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;

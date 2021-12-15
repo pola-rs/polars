@@ -7,8 +7,8 @@
 mod bounds;
 mod calendar;
 mod duration;
+mod groupby;
 #[cfg(test)]
 mod test;
 mod unit;
 mod window;
-mod groupby;

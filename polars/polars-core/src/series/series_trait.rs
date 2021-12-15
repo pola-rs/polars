@@ -5,6 +5,7 @@ use arrow::array::ArrayRef;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ChunkIdIter;
+use arrow::temporal_conversions::MILLISECONDS;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
@@ -1017,11 +1018,11 @@ pub trait SeriesTrait:
     fn timestamp(&self) -> Result<Int64Chunked> {
         match self.dtype() {
             DataType::Date => self
-                .cast(&DataType::Int64)
+                .cast(&DataType::Datetime)
                 .unwrap()
                 .datetime()
                 .map(|ca| (ca.deref() * 1000)),
-            DataType::Datetime => self.datetime().map(|ca| ca.deref().clone()),
+            DataType::Datetime => self.datetime().map(|ca| ca.deref().clone() / MILLISECONDS),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),

@@ -102,9 +102,9 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Date64 => {
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
-                Ok(Int64Chunked::new_from_chunks(name, chunks)
-                    .into_date()
-                    .into_series())
+                let ca = Int64Chunked::new_from_chunks(name, chunks);
+                let ca = ca * 1_000_000;
+                Ok(ca.into_date().into_series())
             }
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
@@ -119,10 +119,10 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     ));
                 };
                 Ok(match tu {
-                    TimeUnit::Second => &s * 1000,
-                    TimeUnit::Millisecond => s,
-                    TimeUnit::Microsecond => &s / 1000,
-                    TimeUnit::Nanosecond => &s / 1000000,
+                    TimeUnit::Second => &s * NANOSECONDS,
+                    TimeUnit::Millisecond => &s * 1_000_000,
+                    TimeUnit::Microsecond => &s * 1_000,
+                    TimeUnit::Nanosecond => s,
                 })
             }
             #[cfg(feature = "dtype-time")]
@@ -132,9 +132,9 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .into_time()
                     .into_series();
                 Ok(match tu {
-                    TimeUnit::Second => &s * 1000000000,
-                    TimeUnit::Millisecond => &s * 1000000,
-                    TimeUnit::Microsecond => &s * 1000,
+                    TimeUnit::Second => &s * NANOSECONDS,
+                    TimeUnit::Millisecond => &s * 1_000_000,
+                    TimeUnit::Microsecond => &s * 1_000,
                     TimeUnit::Nanosecond => s,
                 })
             }
