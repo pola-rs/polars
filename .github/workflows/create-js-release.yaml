@@ -11,44 +11,44 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          # # MAC
-          # ######
+          # MAC
+          ######
 
-          # - host: macos-latest
-          #   target: "x86_64-apple-darwin"
-          #   build: npm run build
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            build: |
+              npm run build
 
-          # - host: macos-latest
-          #   target: "aarch64-apple-darwin"
-          #   build: |
-          #     sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-          #     export CC=$(xcrun -f clang);
-          #     export CXX=$(xcrun -f clang++);
-          #     SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-          #     export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-          #     npm run build -- --target aarch64-apple-darwin
-          #     strip -x packages/*/*.node
+          - host: macos-latest
+            target: "aarch64-apple-darwin"
+            build: |
+              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+              export CC=$(xcrun -f clang);
+              export CXX=$(xcrun -f clang++);
+              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              npm run build -- --target aarch64-apple-darwin
 
-          #   # Windows
-          #   ##########
+            # Windows
+            ##########
 
-          # - host: windows-latest
-          #   target: "x86_64-pc-windows-msvc"
-          #   build: npm run build
+          - host: windows-latest
+            target: "x86_64-pc-windows-msvc"
+            build: npm run build
 
-          # - host: windows-latest
-          #   target: "i686-pc-windows-msvc"
-          #   setup: |
-          #     choco install nodejs-lts --x86 -y --force
-          #     echo "C:\\Program Files (x86)\\nodejs" >> $GITHUB_PATH
-          #   build: |
-          #     export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
-          #     export CARGO_PROFILE_RELEASE_LTO=false
-          #     npm run build -- --target i686-pc-windows-msvc
+          - host: windows-latest
+            target: "i686-pc-windows-msvc"
+            setup: |
+              choco install nodejs-lts --x86 -y --force
+              echo "C:\\Program Files (x86)\\nodejs" >> $GITHUB_PATH
+            build: |
+              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
+              export CARGO_PROFILE_RELEASE_LTO=false
+              npm run build -- --target i686-pc-windows-msvc
 
-          # - host: windows-latest
-          #   target: "aarch64-pc-windows-msvc"
-          #   build: npm run build -- --target aarch64-pc-windows-msvc
+          - host: windows-latest
+            target: "aarch64-pc-windows-msvc"
+            build: npm run build -- --target aarch64-pc-windows-msvc
 
             # Linux
             ########
