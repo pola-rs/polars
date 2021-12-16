@@ -18,6 +18,7 @@ pub(crate) mod take;
 pub(crate) mod ternary;
 pub(crate) mod utils;
 pub(crate) mod window;
+// pub(crate) mod unique;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -27,6 +28,7 @@ use polars_io::PhysicalIoExpr;
 use std::borrow::Cow;
 
 #[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone)]
 pub(crate) enum AggState {
     /// Already aggregated: `.agg_list(group_tuples` is called
     /// and produced a `Series` of dtype `List`
@@ -231,22 +233,25 @@ impl<'a> AggregationContext<'a> {
         // In case of new groups, a series always needs to be flattened
         self.with_series(self.flat().into_owned(), false);
         self.groups = Cow::Owned(groups);
+        // make sure that previous setting is not used
+        self.update_groups = UpdateGroups::No;
         self
     }
 
     pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
-        // we do this here instead of the pattern match because of mutable borrow overlaps.
-        //
-        // The groups are determined lazily and in case of a flat/non-aggregated
-        // series we use the groups to aggregate the list
-        // because this is lazy, we first must to update the groups
-        // by calling .groups()
-        self.groups();
-        match &self.series {
-            AggState::NotAggregated(s) => {
+        // we clone, because we only want to call `self.groups()` if needed.
+        // self groups may instantiate new groups and thus can be expensive.
+        match self.series.clone() {
+            AggState::NotAggregated(mut s) => {
+                // The groups are determined lazily and in case of a flat/non-aggregated
+                // series we use the groups to aggregate the list
+                // because this is lazy, we first must to update the groups
+                // by calling .groups()
+                self.groups();
+
                 // literal series
                 // the literal series needs to be expanded to the number of indices in the groups
-                let s = if s.len() == 1
+                if s.len() == 1
                     // or more then one group
                     && (self.groups.len() > 1
                     // or single groups with more than on index
@@ -254,9 +259,7 @@ impl<'a> AggregationContext<'a> {
                     && self.groups[0].1.len() > 1)
                 {
                     // todo! optimize this, we don't have to call agg_list, create the list directly.
-                    Cow::Owned(s.expand_at_index(0, self.groups.iter().map(|g| g.1.len()).sum()))
-                } else {
-                    Cow::Borrowed(s)
+                    s = s.expand_at_index(0, self.groups.iter().map(|g| g.1.len()).sum())
                 };
 
                 let out = Cow::Owned(
@@ -270,7 +273,7 @@ impl<'a> AggregationContext<'a> {
                 };
                 out
             }
-            AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => Cow::Borrowed(s),
+            AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => Cow::Owned(s),
             AggState::None => unreachable!(),
         }
     }

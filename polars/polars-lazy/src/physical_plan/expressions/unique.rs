@@ -4,30 +4,19 @@ use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use std::sync::Arc;
 
-pub struct SortExpr {
+pub struct UniqueExpr {
     pub(crate) physical_expr: Arc<dyn PhysicalExpr>,
-    pub(crate) options: SortOptions,
     expr: Expr,
 }
 
-impl SortExpr {
-    pub fn new(physical_expr: Arc<dyn PhysicalExpr>, options: SortOptions, expr: Expr) -> Self {
-        Self {
-            physical_expr,
-            options,
-            expr,
-        }
-    }
-}
-
-impl PhysicalExpr for SortExpr {
+impl PhysicalExpr for UniqueExpr {
     fn as_expression(&self) -> &Expr {
         &self.expr
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
-        Ok(series.sort_with(self.options))
+        series.unique()
     }
 
     #[allow(clippy::ptr_arg)]
@@ -41,7 +30,7 @@ impl PhysicalExpr for SortExpr {
         let series = ac.flat().into_owned();
 
         let groups = ac
-            .groups()
+            .groups
             .iter()
             .map(|(_first, idx)| {
                 // Safety:
@@ -49,9 +38,9 @@ impl PhysicalExpr for SortExpr {
                 let group =
                     unsafe { series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
 
-                let sorted_idx = group.argsort(self.options.descending);
+                let unique_idx = group.arg_unique()?;
 
-                let new_idx: Vec<_> = sorted_idx
+                let new_idx: Vec<_> = unique_idx
                     .cont_slice()
                     .unwrap()
                     .iter()
@@ -77,8 +66,8 @@ impl PhysicalExpr for SortExpr {
         Ok(self)
     }
 }
-impl PhysicalAggregation for SortExpr {
-    // As a final aggregation a Sort returns a list array.
+impl PhysicalAggregation for UniqueExpr {
+    // As a final aggregation a Unique returns a list array.
     fn aggregate(
         &self,
         df: &DataFrame,
@@ -90,7 +79,7 @@ impl PhysicalAggregation for SortExpr {
         let agg_s = agg_s
             .list()
             .unwrap()
-            .apply_amortized(|s| s.as_ref().sort_with(self.options))
+            .apply_amortized(|s| s.as_ref().unique())
             .into_series();
         Ok(Some(agg_s))
     }
