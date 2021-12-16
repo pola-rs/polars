@@ -317,7 +317,7 @@ pub(crate) fn to_alp(
             schema,
             apply,
             maintain_order,
-            dynamic_options
+            dynamic_options,
         } => {
             let i = to_alp(*input, expr_arena, lp_arena);
             let aggs_new = aggs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
@@ -333,7 +333,7 @@ pub(crate) fn to_alp(
                 schema,
                 apply,
                 maintain_order,
-                dynamic_options
+                dynamic_options,
             }
         }
         LogicalPlan::Join {
@@ -784,7 +784,7 @@ pub(crate) fn node_to_lp(
             schema,
             apply,
             maintain_order,
-            dynamic_options
+            dynamic_options,
         } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
 
@@ -795,7 +795,7 @@ pub(crate) fn node_to_lp(
                 schema,
                 apply,
                 maintain_order,
-                dynamic_options
+                dynamic_options,
             }
         }
         ALogicalPlan::Join {

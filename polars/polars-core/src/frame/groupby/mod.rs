@@ -19,17 +19,16 @@ use std::hash::Hash;
 use std::ops::Deref;
 
 pub mod aggregations;
+#[cfg(feature = "dynamic_groupby")]
+mod dynamic;
 pub(crate) mod hashing;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
-#[cfg(feature = "dynamic_groupby")]
-mod dynamic;
 #[cfg(not(feature = "dynamic_groupby"))]
 #[derive(Clone, Debug)]
 pub struct DynamicGroupOptions {
-    pub time_column: String
+    pub time_column: String,
 }
-
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;

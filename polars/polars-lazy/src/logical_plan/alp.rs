@@ -4,13 +4,13 @@ use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 use ahash::RandomState;
+use polars_core::frame::groupby::DynamicGroupOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{Arena, Node};
 use std::collections::HashSet;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
-use polars_core::frame::groupby::DynamicGroupOptions;
 
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
@@ -99,7 +99,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        dynamic_options: Option<DynamicGroupOptions>
+        dynamic_options: Option<DynamicGroupOptions>,
     },
     Join {
         input_left: Node,
@@ -314,7 +314,7 @@ impl ALogicalPlan {
                 schema: schema.clone(),
                 apply: apply.clone(),
                 maintain_order: *maintain_order,
-                dynamic_options: dynamic_options.clone()
+                dynamic_options: dynamic_options.clone(),
             },
             Join {
                 schema,
@@ -716,7 +716,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         aggs: Vec<Node>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        dynamic_options: Option<DynamicGroupOptions>
+        dynamic_options: Option<DynamicGroupOptions>,
     ) -> Self {
         debug_assert!(!(keys.is_empty() && dynamic_options.is_none()));
         let current_schema = self.schema();

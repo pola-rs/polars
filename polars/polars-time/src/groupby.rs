@@ -1,12 +1,10 @@
 use crate::bounds::Bounds;
-use crate::calendar::timestamp_ns_to_datetime;
-use crate::duration::Duration;
 use crate::window::Window;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 
 pub fn groupby(window: Window, time: &[i64]) -> GroupTuples {
-    let mut boundary = Bounds::from(time);
+    let boundary = Bounds::from(time);
 
     let mut group_tuples = Vec::with_capacity(window.estimate_overlapping_bounds(boundary));
     let mut latest_start = 0;

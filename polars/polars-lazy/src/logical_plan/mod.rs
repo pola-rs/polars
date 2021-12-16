@@ -34,11 +34,11 @@ pub(crate) mod conversion;
 pub(crate) mod iterator;
 pub(crate) mod optimizer;
 mod projection;
+use polars_core::frame::groupby::DynamicGroupOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 use projection::*;
 use std::io::{Read, Seek, SeekFrom};
-use polars_core::frame::groupby::DynamicGroupOptions;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -235,7 +235,7 @@ pub enum LogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        dynamic_options: Option<DynamicGroupOptions>
+        dynamic_options: Option<DynamicGroupOptions>,
     },
     /// Join operation
     Join {
@@ -1039,7 +1039,7 @@ impl LogicalPlanBuilder {
         aggs: E,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        dynamic_options: Option<DynamicGroupOptions>
+        dynamic_options: Option<DynamicGroupOptions>,
     ) -> Self {
         debug_assert!(!(keys.is_empty() && dynamic_options.is_none()));
         let current_schema = self.0.schema();
@@ -1056,7 +1056,7 @@ impl LogicalPlanBuilder {
             schema: Arc::new(schema),
             apply,
             maintain_order,
-            dynamic_options
+            dynamic_options,
         }
         .into()
     }

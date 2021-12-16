@@ -1,5 +1,6 @@
 use super::expressions as phys_expr;
 use crate::logical_plan::Context;
+use crate::physical_plan::executors::groupby_dynamic::GroupByDynamicExec;
 #[cfg(feature = "ipc")]
 use crate::physical_plan::executors::scan::IpcExec;
 use crate::physical_plan::executors::union::UnionExec;
@@ -18,7 +19,6 @@ use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
 use polars_io::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;
-use crate::physical_plan::executors::groupby_dynamic::GroupByDynamicExec;
 
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 fn aggregate_expr_to_scan_agg(
@@ -299,7 +299,7 @@ impl DefaultPlanner {
                 apply,
                 schema: _,
                 maintain_order,
-                dynamic_options
+                dynamic_options,
             } => {
                 #[cfg(feature = "object")]
                 let input_schema = lp_arena.get(input).schema(lp_arena).clone();
@@ -316,8 +316,8 @@ impl DefaultPlanner {
                         input,
                         keys: phys_keys,
                         aggs: phys_aggs,
-                        options
-                    }) )
+                        options,
+                    }));
                 }
 
                 // We first check if we can partition the groupby on the latest moment.
