@@ -24,6 +24,24 @@ def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
     return LazyFrame._from_pyldf(ldf)
 
 
+def _prepare_groupby_inputs(
+    by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]],
+) -> tp.List[PyExpr]:
+    if isinstance(by, list):
+        new_by = []
+        for e in by:
+            if isinstance(e, str):
+                e = pli.col(e)
+            new_by.append(e._pyexpr)
+    elif isinstance(by, str):
+        new_by = [pli.col(by)._pyexpr]
+    elif isinstance(by, pli.Expr):
+        new_by = [by._pyexpr]
+    elif by is None:
+        return []
+    return new_by
+
+
 class LazyFrame:
     """
     Representation of a Lazy computation graph/ query.
@@ -476,32 +494,27 @@ class LazyFrame:
         maintain_order
             Make sure that the order of the groups remain consistent. This is more expensive than a default groupby.
         """
-        new_by: tp.List[PyExpr]
-        if isinstance(by, list):
-            new_by = []
-            for e in by:
-                if isinstance(e, str):
-                    e = pli.col(e)
-                new_by.append(e._pyexpr)
-        elif isinstance(by, str):
-            new_by = [pli.col(by)._pyexpr]
-        elif isinstance(by, pli.Expr):
-            new_by = [by._pyexpr]
+        new_by = _prepare_groupby_inputs(by)
         lgb = self._ldf.groupby(new_by, maintain_order)
         return LazyGroupBy(lgb)
 
-    def groupby_dynamic(self,
-                        time_column: str,
-                        every: str,
-                        period: Optional[str] = None,
-                        offset: Optional[str] = None,
-                        truncate: bool = True
-                        ) -> "LazyGroupBy":
+    def groupby_dynamic(
+        self,
+        time_column: str,
+        every: str,
+        period: Optional[str] = None,
+        offset: Optional[str] = None,
+        truncate: bool = True,
+        by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
+    ) -> "LazyGroupBy":
         if period is None:
             period = every
         if offset is None:
             offset = "0ns"
-        lgb = self._ldf.groupby_dynamic(time_column, every, period, offset, truncate)
+        by = _prepare_groupby_inputs(by)
+        lgb = self._ldf.groupby_dynamic(
+            time_column, every, period, offset, truncate, by
+        )
         return LazyGroupBy(lgb)
 
     def join(

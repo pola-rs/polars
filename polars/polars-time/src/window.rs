@@ -23,17 +23,16 @@ impl Window {
     }
 
     pub fn truncate(&self, t: TimeNanoseconds) -> TimeNanoseconds {
-        self.every.truncate_nanoseconds(t)
+        self.every.truncate_nanoseconds(t) + self.offset
     }
 
     /// returns the bounds for the earliest window bounds
     /// that contains the given time t.  For underlapping windows that
     /// do not contain time t, the window directly after time t will be returned.
     pub fn get_earliest_bounds(&self, t: TimeNanoseconds) -> Bounds {
-        // translate offset
-        let t = t + (self.offset * -1);
-        //
-        let stop = self.truncate(t) + self.every + self.offset;
+        // original code translates offset here
+        // we don't. Seems unintuitive to me.
+        let stop = self.truncate(t) + self.every;
         let start = stop + self.period * -1;
 
         Bounds::new(start, stop)

@@ -18,8 +18,13 @@ impl Executor for GroupByDynamicExec {
         #[cfg(feature = "dynamic_groupby")]
         {
             let df = self.input.execute(state)?;
+            let keys = self
+                .keys
+                .iter()
+                .map(|e| e.evaluate(&df, state))
+                .collect::<Result<Vec<_>>>()?;
 
-            let (key, groups) = df.groupby_dynamic(&self.options)?;
+            let (time_key, keys, groups) = df.groupby_dynamic(keys, &self.options)?;
 
             let agg_columns = POOL.install(|| {
                 self.aggs
@@ -40,8 +45,9 @@ impl Executor for GroupByDynamicExec {
                     .collect::<Result<Vec<_>>>()
             })?;
 
-            let mut columns = Vec::with_capacity(agg_columns.len() + 1);
-            columns.push(key);
+            let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
+            columns.extend(keys);
+            columns.push(time_key);
             columns.extend(agg_columns.into_iter().flatten());
 
             DataFrame::new(columns)

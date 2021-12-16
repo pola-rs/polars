@@ -64,6 +64,9 @@ impl Duration {
                         }
                     }
                 }
+                if unit.is_empty() {
+                    panic!("expected a unit in the duration string")
+                }
 
                 match &*unit {
                     "ns" => nsecs += n,
@@ -82,8 +85,8 @@ impl Duration {
             }
         }
         Duration {
-            nsecs,
-            months,
+            nsecs: nsecs.abs(),
+            months: months.abs(),
             negative,
         }
     }
@@ -93,6 +96,35 @@ impl Duration {
             (true, -v)
         } else {
             (false, v)
+        }
+    }
+
+    /// Normalize the duration within the interval.
+    /// It will ensure that the output duration is the smallest positive
+    /// duration that is the equivalent of the current duration.
+    #[allow(dead_code)]
+    pub(crate) fn normalize(&self, interval: &Duration) -> Self {
+        if self.months_only() && interval.months_only() {
+            let mut months = self.months() % interval.months();
+
+            match (self.negative, interval.negative) {
+                (true, true) | (true, false) => months = -months + interval.months(),
+                _ => {}
+            }
+            Duration::from_months(months)
+        } else {
+            let mut offset = self.duration();
+            if offset == 0 {
+                return *self;
+            }
+            let every = interval.duration();
+
+            if offset < 0 {
+                offset += every * ((offset / -every) + 1)
+            } else {
+                offset -= every * (offset / every)
+            }
+            Duration::from_nsecs(offset)
         }
     }
 
@@ -129,6 +161,10 @@ impl Duration {
         self.months == 0 && self.nsecs == 0
     }
 
+    fn months_only(&self) -> bool {
+        self.months != 0 && self.nsecs == 0
+    }
+
     pub fn months(&self) -> i64 {
         self.months
     }
@@ -138,7 +174,7 @@ impl Duration {
     }
 
     /// Estimated duration of the window duration. Not a very good one if months != 0.
-    pub fn duration(&self) -> TimeNanoseconds {
+    pub const fn duration(&self) -> TimeNanoseconds {
         self.months * 30 * 24 * 3600 * NS_SECOND + self.nsecs
     }
 
@@ -292,5 +328,7 @@ mod test {
         assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123);
         let out = Duration::parse("123ns40ms1w");
         assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123 + NS_WEEK);
+        let out = Duration::parse("-123ns40ms1w");
+        assert!(out.negative);
     }
 }

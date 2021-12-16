@@ -12,18 +12,22 @@ pub fn groupby(window: Window, time: &[i64]) -> GroupTuples {
     for bi in window.get_overlapping_bounds_iter(boundary) {
         let mut group = vec![];
 
+        let mut skip_window = false;
         // find starting point of window
-        loop {
-            latest_start += 1;
-
-            match time.get(latest_start - 1) {
-                Some(ts) => {
-                    if bi.is_member(*ts) {
-                        break;
-                    }
-                }
-                None => break,
+        while latest_start < time.len() {
+            let t = time[latest_start];
+            if bi.is_future(t) {
+                skip_window = true;
+                break;
             }
+            if bi.is_member(t) {
+                break;
+            }
+            latest_start += 1;
+        }
+        if skip_window {
+            latest_start = latest_start.saturating_sub(1);
+            continue;
         }
 
         // subtract 1 because the next window could also start from the same point
@@ -31,13 +35,20 @@ pub fn groupby(window: Window, time: &[i64]) -> GroupTuples {
 
         // find members of this window
         let mut i = latest_start;
-        loop {
-            group.push(i as u32);
-            if i >= time.len() || !bi.is_member(time[i]) {
+        if i >= time.len() {
+            break;
+        }
+
+        while i < time.len() {
+            let t = time[i];
+            if bi.is_member(t) {
+                group.push(i as u32);
+            } else if bi.is_future(t) {
                 break;
             }
             i += 1
         }
+
         if !group.is_empty() {
             group_tuples.push((group[0], group))
         }
