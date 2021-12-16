@@ -1541,7 +1541,7 @@ impl Expr {
             GetOutput::same_type(),
         )
     }
-    
+
     /// Apply a rolling median See:
     /// [ChunkedArray::rolling_median](polars::prelude::ChunkWindow::rolling_median).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
