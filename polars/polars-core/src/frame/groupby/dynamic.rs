@@ -12,17 +12,17 @@ use crate::frame::groupby::{
 pub struct DynamicGroupOptions {
     pub time_column: String,
     /// start a window at this interval
-    every: Duration,
+    pub every: Duration,
     /// window duration
-    period: Duration,
+    pub period: Duration,
     /// offset window boundaries
-    offset: Duration,
+    pub offset: Duration,
     /// truncate the time column values to the window
-    truncate: bool
+    pub truncate: bool
 }
 
 impl DataFrame {
-    pub fn groupby_dynamic(&self, options: &DynamicGroupOptions) -> Result<(Self, GroupTuples)> {
+    pub fn groupby_dynamic(&self, options: &DynamicGroupOptions) -> Result<(Series, GroupTuples)> {
         let w = Window::new(options.every, options.period, options.offset);
 
 
@@ -39,14 +39,17 @@ impl DataFrame {
             polars_time::groupby::groupby(w, ts)
         }).flatten().collect::<Vec<_>>();
 
-        let mut df = self.clone();
+        // Safety:
+        // within bounds
+        let mut dt = unsafe {
+            dt.take_unchecked(gt.iter().map(|g| g.0 as usize).into())
+        };
+
         if options.truncate {
-            let out = dt.apply(|v| w.truncate(v));
-            let out = out.cast(&DataType::Datetime).unwrap();
-            df.with_column(out)?;
+            dt = dt.apply(|v| w.truncate(v));
         }
 
 
-        Ok((df, gt))
+        Ok((dt.into_date().into_series(), gt))
     }
 }

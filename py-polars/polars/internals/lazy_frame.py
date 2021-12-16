@@ -490,6 +490,20 @@ class LazyFrame:
         lgb = self._ldf.groupby(new_by, maintain_order)
         return LazyGroupBy(lgb)
 
+    def groupby_dynamic(self,
+                        time_column: str,
+                        every: str,
+                        period: Optional[str] = None,
+                        offset: Optional[str] = None,
+                        truncate: bool = True
+                        ) -> "LazyGroupBy":
+        if period is None:
+            period = every
+        if offset is None:
+            offset = "0ns"
+        lgb = self._ldf.groupby_dynamic(time_column, every, period, offset, truncate)
+        return LazyGroupBy(lgb)
+
     def join(
         self,
         ldf: "LazyFrame",

@@ -12,7 +12,7 @@ pub(crate) mod sort;
 pub(crate) mod stack;
 pub(crate) mod udf;
 pub(crate) mod union;
-mod groupby_dynamic;
+pub(crate) mod groupby_dynamic;
 
 use super::*;
 use crate::logical_plan::FETCH_ROWS;

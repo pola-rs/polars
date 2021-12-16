@@ -621,6 +621,7 @@ impl ProjectionPushDown {
                         aggs,
                         apply,
                         maintain_order,
+                        dynamic_options
                     );
                     Ok(builder.build())
                 }

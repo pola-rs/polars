@@ -2247,8 +2247,17 @@ class DataFrame:
         if isinstance(by, str):
             by = [by]
         return GroupBy(
-            self._df, by, maintain_order=maintain_order, downsample=False  # type: ignore
+            self._df, by, maintain_order=maintain_order
         )
+
+    def groupby_dynamic(self,
+                        time_column: str,
+                        every: str,
+                        period: Optional[str] = None,
+                        offset: Optional[str] = None,
+                        truncate: bool = True
+                        ) -> "DynamicGroupBy":
+        return DynamicGroupBy(self, time_column, every, period, offset, truncate)
 
     def upsample(self, by: str, interval: timedelta) -> "DataFrame":
         """
@@ -3594,6 +3603,38 @@ class DataFrame:
         return self.height == 0
 
 
+class DynamicGroupBy:
+    def __init__(self,
+            df: "DateFrame",
+            time_column: str,
+            every: str,
+            period: Optional[str],
+            offset: Optional[str],
+            truncate: bool = True
+        ):
+        self.df = df
+        self.time_column = time_column
+        self.every = every
+        self.period = period
+        self.offset = offset
+        self.truncate = truncate
+
+    def agg(
+            self,
+            column_to_agg: Union[
+                tp.List[Tuple[str, tp.List[str]]],
+                Dict[str, Union[str, tp.List[str]]],
+                tp.List["pli.Expr"],
+                "pli.Expr",
+            ],
+    ) -> DataFrame:
+        return (self.df.lazy()
+        .groupby_dynamic(self.time_column, self.every, self.period, self.offset, self.truncate)
+        .agg(column_to_agg)  # type: ignore[arg-type]
+        .collect(no_optimization=True, string_cache=False))
+
+
+
 class GroupBy:
     """
     Starts a new GroupBy operation.
@@ -3634,16 +3675,10 @@ class GroupBy:
         df: "PyDataFrame",
         by: Union[str, tp.List[str]],
         maintain_order: bool = False,
-        downsample: bool = False,
-        rule: Optional[str] = None,
-        downsample_n: int = 0,
     ):
         self._df = df
         self.by = by
         self.maintain_order = maintain_order
-        self.downsample = downsample
-        self.rule = rule
-        self.downsample_n = downsample_n
 
     def __getitem__(self, item: Any) -> "GBSelection":
         return self._select(item)
@@ -3657,8 +3692,6 @@ class GroupBy:
         columns
             One or multiple columns.
         """
-        if self.downsample:
-            raise ValueError("select not supported in downsample operation")
         if isinstance(columns, str):
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
@@ -3754,7 +3787,12 @@ class GroupBy:
 
         >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
 
-        Column name to aggregation with tuples:
+        Column name to aggregation with tuples        time_column: str,
+        every: str,
+        period: str,
+        offset: str,
+        truncate: bool = True
+:
 
         >>> [
         ...     ("foo", ["sum", "n_unique", "min"]),
@@ -3834,13 +3872,6 @@ class GroupBy:
         else:
             raise ValueError(
                 f"argument: {column_to_agg} not understood, have you passed a list of expressions?"
-            )
-
-        if self.downsample:
-            return wrap_df(
-                self._df.downsample_agg(
-                    self.by, self.rule, self.downsample_n, column_to_agg
-                )
             )
 
         return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
@@ -3991,8 +4022,6 @@ class GroupBy:
         values_column
             Column that will be aggregated.
         """
-        if self.downsample:
-            raise ValueError("Pivot not supported in downsample operation.")
         return PivotOps(self._df, self.by, pivot_column, values_column)
 
     def first(self) -> DataFrame:

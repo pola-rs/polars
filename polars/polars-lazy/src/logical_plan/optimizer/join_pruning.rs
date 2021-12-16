@@ -92,7 +92,7 @@ fn combine_lp_nodes(
                     .map(|input| {
                         let node = lp_arena.add(input);
                         ALogicalPlanBuilder::new(node, expr_arena, lp_arena)
-                            .groupby(keys, aggs, None, maintain_order)
+                            .groupby(keys, aggs, None, maintain_order, None)
                             .build()
 
                     })

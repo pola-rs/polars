@@ -44,6 +44,7 @@ default = ["pivot", "json", "parquet", "ipc", "is_in", "json", "polars/repeat_by
 path = "../polars"
 default-features = false
 features = [
+  "dynamic_groupby",
   "zip_with",
   "simd",
   "lazy",

@@ -95,6 +95,7 @@ arange = ["polars-lazy/arange"]
 true_div = ["polars-lazy/true_div"]
 diagonal_concat = ["polars-core/diagonal_concat"]
 abs = ["polars-core/abs", "polars-lazy/abs"]
+dynamic_groupby = ["polars-core/dynamic_groupby", "polars-lazy/dynamic_groupby"]
 
 # don't use this
 private = ["polars-lazy/private"]
