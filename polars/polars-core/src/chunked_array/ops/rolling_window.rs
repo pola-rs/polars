@@ -78,6 +78,41 @@ mod inner_mod {
     where
         T: PolarsNumericType,
     {
+        /// Apply a rolling median (moving median) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+        /// values will be aggregated to their sum. TODO: fix this
+
+        pub fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
+            check_input(options.window_size, options.min_periods)?;
+            let ca = self.rechunk();
+
+            let arr = ca.downcast_iter().next().unwrap();
+            let arr = match self.has_validity() {
+                false => rolling::no_nulls::rolling_median(
+                    arr.values(),
+                    options.window_size,
+                    options.min_periods,
+                    options.center,
+                    options.weights.as_deref(),
+                ),
+                _ => rolling::nulls::rolling_sum(
+                    arr,
+                    options.window_size,
+                    options.min_periods,
+                    options.center,
+                    options.weights.as_deref(),
+                ),
+            };
+
+            Series::try_from((self.name(), arr))
+        }
+    }
+
+    impl<T> ChunkedArray<T>
+    where
+        T: PolarsNumericType,
+    {
         /// Apply a rolling sum (moving sum) over the values in this array.
         /// A window of length `window_size` will traverse the array. The values that fill this window
         /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting

@@ -103,7 +103,11 @@ macro_rules! impl_dyn_series {
                 let s = self.cast(&DataType::Float64).unwrap();
                 s.f64().unwrap().rolling_mean(options)
             }
-
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_median(&self, options: RollingOptions) -> Result<Series> {
+                let s = self.cast(&DataType::Float64).unwrap();
+                s.f64().unwrap().rolling_median(options)
+            }
             #[cfg(feature = "rolling_window")]
             fn _rolling_var(&self, options: RollingOptions) -> Result<Series> {
                 let s = self.cast(&DataType::Float64).unwrap();

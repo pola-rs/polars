@@ -44,6 +44,45 @@ where
     ))
 }
 
+fn rolling_apply_pairs<T, K, Fo, Fa>(
+    values: &[T],
+    window_size: usize,
+    min_periods: usize,
+    det_offsets_fn: Fo,
+    aggregator: Fa,
+    weights: &[f64],
+) -> ArrayRef
+where
+    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
+    Fa: Fn(&[(T, f64)]) -> K,
+    K: NativeType,
+    T: Debug + Copy,
+{
+    assert_eq!(weights.len(), window_size);
+    let mut buf: Vec<(T, f64)> = Vec::with_capacity(window_size);
+    let len = values.len();
+    let out = (0..len)
+        .map(|idx| {
+            let (start, end) = det_offsets_fn(idx, window_size, len);
+            let vals = unsafe { values.get_unchecked(start..end) };
+            buf = vals
+                .iter()
+                .zip(weights.iter())
+                .map(|(&x, &y)| (x, y))
+                .collect();
+
+            aggregator(&buf)
+        })
+        .collect_trusted::<MutableBuffer<K>>();
+
+    let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
+    Arc::new(PrimitiveArray::from_data(
+        DataType::Float64,
+        out.into(),
+        validity.map(|b| b.into()),
+    ))
+}
+
 fn rolling_apply<T, K, Fo, Fa>(
     values: &[T],
     window_size: usize,
@@ -94,6 +133,35 @@ where
     T: Float + std::iter::Sum<T>,
 {
     values.iter().copied().sum::<T>() / T::from(values.len()).unwrap()
+}
+
+pub(crate) fn compute_median<T>(values: &[T]) -> T
+where
+    T: std::iter::Sum<T> + Copy + std::cmp::PartialOrd,
+{
+    let mut vals: Vec<T> = values.iter().copied().collect();
+    vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    vals[(vals.len() / 2) as usize]
+}
+
+pub(crate) fn compute_weighted_median<T>(values: &[(T, f64)]) -> T
+where
+    T: std::iter::Sum<T> + Copy + std::cmp::PartialOrd,
+{
+    let mut vals: Vec<(T, f64)> = values.iter().copied().collect();
+    vals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    let mid_weight = vals.iter().map(|x| x.1).sum::<f64>() / 2.0;
+
+    // find position where cumulative sum of weights reaches the mid weight
+    let idx = vals
+        .iter()
+        .scan(0.0, |acc, x| {
+            *acc += x.1;
+            Some(*acc)
+        })
+        .position(|x| x >= mid_weight)
+        .unwrap();
+    vals[idx].0
 }
 
 pub(crate) fn compute_sum<T>(values: &[T]) -> T
@@ -176,6 +244,56 @@ where
                 min_periods,
                 det_offsets,
                 compute_mean,
+                weights,
+            )
+        }
+    }
+}
+
+pub fn rolling_median<T>(
+    values: &[T],
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    weights: Option<&[f64]>,
+) -> ArrayRef
+where
+    T: NativeType + std::iter::Sum<T> + std::cmp::PartialOrd,
+{
+    match (center, weights) {
+        (true, None) => rolling_apply(
+            values,
+            window_size,
+            min_periods,
+            det_offsets_center,
+            compute_median,
+        ),
+        (false, None) => rolling_apply(
+            values,
+            window_size,
+            min_periods,
+            det_offsets,
+            compute_median,
+        ),
+        (true, Some(weights)) => {
+            let values = as_floats(values);
+            rolling_apply_pairs(
+                values,
+                window_size,
+                min_periods,
+                det_offsets_center,
+                compute_weighted_median,
+                weights,
+            )
+        }
+        (false, Some(weights)) => {
+            let values = as_floats(values);
+            rolling_apply_pairs(
+                values,
+                window_size,
+                min_periods,
+                det_offsets,
+                compute_weighted_median,
                 weights,
             )
         }

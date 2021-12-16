@@ -817,11 +817,18 @@ impl PyExpr {
         self.inner.clone().rolling_var(options).into()
     }
 
-    pub fn rolling_median(&self, window_size: usize) -> Self {
-        self.inner
-            .clone()
-            .rolling_apply_float(window_size, |ca| ChunkAgg::median(ca))
-            .into()
+    pub fn rolling_median(&self, window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,) -> Self {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
+
+        self.inner.clone().rolling_median(options).into()
     }
 
     pub fn rolling_quantile(&self, window_size: usize, quantile: f64, interpolation: &str) -> Self {

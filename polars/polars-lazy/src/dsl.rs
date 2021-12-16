@@ -1540,6 +1540,17 @@ impl Expr {
             GetOutput::same_type(),
         )
     }
+    
+    /// Apply a rolling median See:
+    /// [ChunkedArray::rolling_median](polars::prelude::ChunkWindow::rolling_median).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_median(self, options: RollingOptions) -> Expr {
+        self.apply(
+            move |s| s.rolling_median(options.clone()),
+            GetOutput::same_type(),
+        )
+    }
 
     /// Apply a rolling sum See:
     /// [ChunkedArray::rolling_sum](polars::prelude::ChunkWindow::rolling_sum).

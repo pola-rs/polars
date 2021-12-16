@@ -608,6 +608,21 @@ impl Series {
             panic!("activate 'rolling_window' feature")
         }
     }
+
+    /// Apply a rolling median to a Series. See:
+    /// [ChunkedArray::rolling_median](crate::prelude::ChunkWindow::rolling_median).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_median(&self, _options: RollingOptions) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_median(_options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
+
     /// Apply a rolling sum to a Series. See:
     /// [ChunkedArray::rolling_sum](crate::prelude::ChunkWindow::rolling_sum).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
