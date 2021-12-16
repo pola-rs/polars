@@ -1,4 +1,5 @@
 use crate::calendar::timestamp_ns_to_datetime;
+use crate::groupby::ClosedWindow;
 use crate::unit::TimeNanoseconds;
 use std::fmt::{Display, Formatter};
 
@@ -42,8 +43,12 @@ impl Bounds {
     }
 
     // check if nanoseconds is within bounds
-    pub fn is_member(&self, t: i64) -> bool {
-        t >= self.start && t <= self.stop
+    pub fn is_member(&self, t: i64, closed: ClosedWindow) -> bool {
+        match closed {
+            ClosedWindow::None => t >= self.start && t <= self.stop,
+            ClosedWindow::Left => t > self.start && t <= self.stop,
+            ClosedWindow::Right => t >= self.start && t < self.stop,
+        }
     }
 
     pub fn is_future(&self, t: i64) -> bool {

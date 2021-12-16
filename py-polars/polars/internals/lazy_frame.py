@@ -505,6 +505,8 @@ class LazyFrame:
         period: Optional[str] = None,
         offset: Optional[str] = None,
         truncate: bool = True,
+        include_boundaries: bool = True,
+        closed: str = "none",
         by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
     ) -> "LazyGroupBy":
         if period is None:
@@ -513,7 +515,7 @@ class LazyFrame:
             offset = "0ns"
         by = _prepare_groupby_inputs(by)
         lgb = self._ldf.groupby_dynamic(
-            time_column, every, period, offset, truncate, by
+            time_column, every, period, offset, truncate, include_boundaries, closed, by
         )
         return LazyGroupBy(lgb)
 

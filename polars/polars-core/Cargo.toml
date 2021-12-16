@@ -73,7 +73,7 @@ moment = []
 diagonal_concat = []
 abs = []
 
-dynamic_groupby = ["polars-time"]
+dynamic_groupby = ["polars-time", "dtype-datetime", "dtype-date"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]

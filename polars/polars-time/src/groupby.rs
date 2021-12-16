@@ -1,10 +1,30 @@
 use crate::bounds::Bounds;
+use crate::unit::TimeNanoseconds;
 use crate::window::Window;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 
-pub fn groupby(window: Window, time: &[i64]) -> GroupTuples {
+#[derive(Clone, Copy, Debug)]
+pub enum ClosedWindow {
+    Left,
+    Right,
+    None,
+}
+
+pub fn groupby(
+    window: Window,
+    time: &[i64],
+    include_boundaries: bool,
+    closed_window: ClosedWindow,
+) -> (GroupTuples, Vec<TimeNanoseconds>, Vec<TimeNanoseconds>) {
     let boundary = Bounds::from(time);
+    let size = if include_boundaries {
+        window.estimate_overlapping_bounds(boundary)
+    } else {
+        0
+    };
+    let mut lower_bound = Vec::with_capacity(size);
+    let mut upper_bound = Vec::with_capacity(size);
 
     let mut group_tuples = Vec::with_capacity(window.estimate_overlapping_bounds(boundary));
     let mut latest_start = 0;
@@ -20,7 +40,7 @@ pub fn groupby(window: Window, time: &[i64]) -> GroupTuples {
                 skip_window = true;
                 break;
             }
-            if bi.is_member(t) {
+            if bi.is_member(t, closed_window) {
                 break;
             }
             latest_start += 1;
@@ -41,7 +61,7 @@ pub fn groupby(window: Window, time: &[i64]) -> GroupTuples {
 
         while i < time.len() {
             let t = time[i];
-            if bi.is_member(t) {
+            if bi.is_member(t, closed_window) {
                 group.push(i as u32);
             } else if bi.is_future(t) {
                 break;
@@ -50,62 +70,12 @@ pub fn groupby(window: Window, time: &[i64]) -> GroupTuples {
         }
 
         if !group.is_empty() {
+            if include_boundaries {
+                lower_bound.push(bi.start);
+                upper_bound.push(bi.stop);
+            }
             group_tuples.push((group[0], group))
         }
     }
-    group_tuples
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-
-    #[test]
-    fn test_group_tuples() {
-        let dt = &[
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2001, 1, 1),
-                NaiveTime::from_hms(1, 0, 0),
-            ),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2001, 1, 1),
-                NaiveTime::from_hms(1, 0, 15),
-            ),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2001, 1, 1),
-                NaiveTime::from_hms(1, 0, 30),
-            ),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2001, 1, 1),
-                NaiveTime::from_hms(1, 0, 45),
-            ),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2001, 1, 1),
-                NaiveTime::from_hms(1, 1, 0),
-            ),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2001, 1, 1),
-                NaiveTime::from_hms(1, 1, 15),
-            ),
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(2001, 1, 1),
-                NaiveTime::from_hms(1, 1, 30),
-            ),
-        ];
-
-        let ts = dt.iter().map(|dt| dt.timestamp_nanos()).collect::<Vec<_>>();
-        let window = Window::new(
-            Duration::from_seconds(30),
-            Duration::from_seconds(30),
-            Duration::from_seconds(0),
-        );
-        let gt = groupby(window, &ts)
-            .into_iter()
-            .map(|g| g.1)
-            .collect::<Vec<_>>();
-
-        let expected = &[[0, 1, 2], [2, 3, 4], [4, 5, 6]];
-        assert_eq!(gt, expected);
-    }
+    (group_tuples, lower_bound, upper_bound)
 }

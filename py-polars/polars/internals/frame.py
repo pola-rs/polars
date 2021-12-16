@@ -2255,9 +2255,21 @@ class DataFrame:
         period: Optional[str] = None,
         offset: Optional[str] = None,
         truncate: bool = True,
+        include_boundaries: bool = True,
+        closed: str = "none",
         by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
     ) -> "DynamicGroupBy":
-        return DynamicGroupBy(self, time_column, every, period, offset, truncate, by)
+        return DynamicGroupBy(
+            self,
+            time_column,
+            every,
+            period,
+            offset,
+            truncate,
+            include_boundaries,
+            closed,
+            by,
+        )
 
     def upsample(self, by: str, interval: timedelta) -> "DataFrame":
         """
@@ -3612,6 +3624,8 @@ class DynamicGroupBy:
         period: Optional[str],
         offset: Optional[str],
         truncate: bool = True,
+        include_boundaries: bool = True,
+        closed: str = "none",
         by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
     ):
         self.df = df
@@ -3620,6 +3634,8 @@ class DynamicGroupBy:
         self.period = period
         self.offset = offset
         self.truncate = truncate
+        self.include_boundaries = include_boundaries
+        self.closed = closed
         self.by = by
 
     def agg(
@@ -3639,6 +3655,8 @@ class DynamicGroupBy:
                 self.period,
                 self.offset,
                 self.truncate,
+                self.include_boundaries,
+                self.closed,
                 self.by,
             )
             .agg(column_to_agg)  # type: ignore[arg-type]

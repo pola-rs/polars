@@ -6,7 +6,7 @@ use crate::prelude::NullValues;
 use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
-use polars::prelude::{DataFrame, Field, JoinType, Schema};
+use polars::prelude::{ClosedWindow, DataFrame, Field, JoinType, Schema};
 use polars_core::frame::groupby::DynamicGroupOptions;
 use polars_core::prelude::{Duration, QuantileInterpolOptions};
 use pyo3::prelude::*;
@@ -305,9 +305,20 @@ impl PyLazyFrame {
         period: &str,
         offset: &str,
         truncate: bool,
+        include_boundaries: bool,
+        closed: &str,
         by: Vec<PyExpr>,
     ) -> PyLazyGroupBy {
-        let by = by.into_iter().map(|pyexpr| pyexpr.inner).collect::<Vec<_>>();
+        let closed_window = match closed {
+            "none" => ClosedWindow::None,
+            "left" => ClosedWindow::Left,
+            "right" => ClosedWindow::Right,
+            _ => panic!("{}", "closed should be any of {'none', 'left', 'right'}"),
+        };
+        let by = by
+            .into_iter()
+            .map(|pyexpr| pyexpr.inner)
+            .collect::<Vec<_>>();
         let ldf = self.ldf.clone();
         let lazy_gb = ldf.groupby_dynamic(
             by,
@@ -317,6 +328,8 @@ impl PyLazyFrame {
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
                 truncate,
+                include_boundaries,
+                closed_window,
             },
         );
 
