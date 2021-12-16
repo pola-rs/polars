@@ -73,29 +73,34 @@ pub(crate) mod private {
         fn _rolling_mean(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
-        /// Apply a rolling sum to a Series. See:
+        /// Apply a rolling median to a Series.
+        #[cfg(feature = "rolling_window")]
+        fn _rolling_median(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
+        }
+        /// Apply a rolling sum to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_sum(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
-        /// Apply a rolling min to a Series. See:
+        /// Apply a rolling min to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_min(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
-        /// Apply a rolling max to a Series. See:
+        /// Apply a rolling max to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_max(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
 
-        /// Apply a rolling variance to a Series. See:
+        /// Apply a rolling variance to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_var(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
 
-        /// Apply a rolling std_dev to a Series. See:
+        /// Apply a rolling std_dev to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_std(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)

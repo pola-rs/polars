@@ -85,6 +85,35 @@ where
     }
 }
 
+fn compute_median<T>(
+    values: &[T],
+    validity_bytes: &[u8],
+    offset: usize,
+    min_periods: usize,
+) -> Option<T>
+where
+    T: NativeType + std::iter::Sum<T> + Zero + AddAssign + std::cmp::PartialOrd,
+{
+    let null_count = count_zeros(validity_bytes, offset, values.len());
+    if null_count == 0 {
+        Some(no_nulls::compute_median(values))
+    } else if (values.len() - null_count) < min_periods {
+        None
+    } else {
+        let mut vals: Vec<T> = Vec::new();
+        for (i, val) in values.iter().enumerate() {
+            // Safety:
+            // in bounds
+            if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
+                vals.push(*val);
+            }
+        }
+        vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        Some(vals[(vals.len() / 2) as usize])
+    }
+}
+
 fn compute_mean<T>(
     values: &[T],
     validity_bytes: &[u8],
@@ -285,6 +314,40 @@ where
             min_periods,
             det_offsets,
             compute_sum,
+        )
+    }
+}
+
+pub fn rolling_median<T>(
+    arr: &PrimitiveArray<T>,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    weights: Option<&[f64]>,
+) -> ArrayRef
+where
+    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + std::cmp::PartialOrd,
+{
+    if weights.is_some() {
+        panic!("weights not yet supported on array with null values")
+    }
+    if center {
+        rolling_apply(
+            arr.values().as_slice(),
+            arr.validity().as_ref().unwrap(),
+            window_size,
+            min_periods,
+            det_offsets_center,
+            compute_median,
+        )
+    } else {
+        rolling_apply(
+            arr.values().as_slice(),
+            arr.validity().as_ref().unwrap(),
+            window_size,
+            min_periods,
+            det_offsets,
+            compute_median,
         )
     }
 }

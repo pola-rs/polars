@@ -1615,7 +1615,7 @@ class Expr:
         Compute a rolling variance.
 
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1692,16 +1692,35 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rolling_apply(window_size, function))
 
-    def rolling_median(self, window_size: int) -> "Expr":
+    def rolling_median(self, window_size: int,
+            weights: Optional[tp.List[float]] = None,
+            min_periods: Optional[int] = None,
+            center: bool = False,
+) -> "Expr":
         """
-        Compute a rolling median
+        Apply a rolling median (moving median) over the values in this array.
+        A window of length `window_size` will traverse the array. The values that fill this window
+        will (optionally) be weighted according to the `weight` vector.
 
         Parameters
         ----------
         window_size
-            Size of the rolling window
+            The length of the window.
+        weights
+            An optional slice with the same length of the window that will be used to weight the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
         """
-        return wrap_expr(self._pyexpr.rolling_median(window_size))
+        
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_expr(
+            self._pyexpr.rolling_median(window_size, weights, min_periods, center)
+        )
 
     def rolling_quantile(
         self, window_size: int, quantile: float, interpolation: str = "nearest"

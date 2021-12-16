@@ -54,6 +54,10 @@ macro_rules! impl_dyn_series {
                 self.0.rolling_mean(options)
             }
             #[cfg(feature = "rolling_window")]
+            fn _rolling_median(&self, options: RollingOptions) -> Result<Series> {
+                self.0.rolling_median(options)
+            }
+            #[cfg(feature = "rolling_window")]
             fn _rolling_sum(&self, options: RollingOptions) -> Result<Series> {
                 self.0.rolling_sum(options).map(|ca| ca.into())
             }
