@@ -2438,3 +2438,33 @@ fn test_apply_flatten() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_agg_unique_first() -> Result<()> {
+    let df = df![
+        "g"=> [1, 1, 2, 2, 3, 4, 1],
+        "v"=> [1, 2, 2, 2, 3, 4, 1],
+    ]?;
+
+    let out = df
+        .lazy()
+        .groupby_stable([col("g")])
+        .agg([
+            col("v").unique().first(),
+            col("v").unique().sort(false).first().alias("true_first"),
+            col("v").unique().list(),
+        ])
+        .collect()?;
+
+    let a = out.column("v_first").unwrap();
+    let a = a.sum::<i32>().unwrap();
+    // can be both because unique does not guarantee order
+    assert!(a == 10 || a == 11);
+
+    let a = out.column("true_first").unwrap();
+    let a = a.sum::<i32>().unwrap();
+    // can be both because unique does not guarantee order
+    assert_eq!(a, 10);
+
+    Ok(())
+}
