@@ -305,10 +305,12 @@ impl PyLazyFrame {
         period: &str,
         offset: &str,
         truncate: bool,
+        by: Vec<PyExpr>,
     ) -> PyLazyGroupBy {
+        let by = by.into_iter().map(|pyexpr| pyexpr.inner).collect::<Vec<_>>();
         let ldf = self.ldf.clone();
         let lazy_gb = ldf.groupby_dynamic(
-            vec![],
+            by,
             DynamicGroupOptions {
                 time_column,
                 every: Duration::parse(every),

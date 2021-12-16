@@ -43,6 +43,10 @@ impl Bounds {
 
     // check if nanoseconds is within bounds
     pub fn is_member(&self, t: i64) -> bool {
-        t >= self.start && t < self.stop
+        t >= self.start && t <= self.stop
+    }
+
+    pub fn is_future(&self, t: i64) -> bool {
+        t > self.stop
     }
 }

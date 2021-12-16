@@ -2246,18 +2246,18 @@ class DataFrame:
         """
         if isinstance(by, str):
             by = [by]
-        return GroupBy(
-            self._df, by, maintain_order=maintain_order
-        )
+        return GroupBy(self._df, by, maintain_order=maintain_order)  # type: ignore
 
-    def groupby_dynamic(self,
-                        time_column: str,
-                        every: str,
-                        period: Optional[str] = None,
-                        offset: Optional[str] = None,
-                        truncate: bool = True
-                        ) -> "DynamicGroupBy":
-        return DynamicGroupBy(self, time_column, every, period, offset, truncate)
+    def groupby_dynamic(
+        self,
+        time_column: str,
+        every: str,
+        period: Optional[str] = None,
+        offset: Optional[str] = None,
+        truncate: bool = True,
+        by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
+    ) -> "DynamicGroupBy":
+        return DynamicGroupBy(self, time_column, every, period, offset, truncate, by)
 
     def upsample(self, by: str, interval: timedelta) -> "DataFrame":
         """
@@ -3604,35 +3604,46 @@ class DataFrame:
 
 
 class DynamicGroupBy:
-    def __init__(self,
-            df: "DateFrame",
-            time_column: str,
-            every: str,
-            period: Optional[str],
-            offset: Optional[str],
-            truncate: bool = True
-        ):
+    def __init__(
+        self,
+        df: "DataFrame",
+        time_column: str,
+        every: str,
+        period: Optional[str],
+        offset: Optional[str],
+        truncate: bool = True,
+        by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
+    ):
         self.df = df
         self.time_column = time_column
         self.every = every
         self.period = period
         self.offset = offset
         self.truncate = truncate
+        self.by = by
 
     def agg(
-            self,
-            column_to_agg: Union[
-                tp.List[Tuple[str, tp.List[str]]],
-                Dict[str, Union[str, tp.List[str]]],
-                tp.List["pli.Expr"],
-                "pli.Expr",
-            ],
+        self,
+        column_to_agg: Union[
+            tp.List[Tuple[str, tp.List[str]]],
+            Dict[str, Union[str, tp.List[str]]],
+            tp.List["pli.Expr"],
+            "pli.Expr",
+        ],
     ) -> DataFrame:
-        return (self.df.lazy()
-        .groupby_dynamic(self.time_column, self.every, self.period, self.offset, self.truncate)
-        .agg(column_to_agg)  # type: ignore[arg-type]
-        .collect(no_optimization=True, string_cache=False))
-
+        return (
+            self.df.lazy()
+            .groupby_dynamic(
+                self.time_column,
+                self.every,
+                self.period,
+                self.offset,
+                self.truncate,
+                self.by,
+            )
+            .agg(column_to_agg)  # type: ignore[arg-type]
+            .collect(no_optimization=True, string_cache=False)
+        )
 
 
 class GroupBy:
@@ -3775,69 +3786,69 @@ class GroupBy:
         ],
     ) -> DataFrame:
         """
-        Use multiple aggregations on columns. This can be combined with complete lazy API
-        and is considered idiomatic polars.
+                Use multiple aggregations on columns. This can be combined with complete lazy API
+                and is considered idiomatic polars.
 
-        Parameters
-        ----------
-        column_to_agg
-            map column to aggregation functions.
+                Parameters
+                ----------
+                column_to_agg
+                    map column to aggregation functions.
 
-        Use lazy API syntax (recommended)
+                Use lazy API syntax (recommended)
 
-        >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
+                >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
 
-        Column name to aggregation with tuples        time_column: str,
-        every: str,
-        period: str,
-        offset: str,
-        truncate: bool = True
-:
+                Column name to aggregation with tuples        time_column: str,
+                every: str,
+                period: str,
+                offset: str,
+                truncate: bool = True
+        :
 
-        >>> [
-        ...     ("foo", ["sum", "n_unique", "min"]),
-        ...     ("bar", ["max"]),
-        ... ]  # doctest: +SKIP
+                >>> [
+                ...     ("foo", ["sum", "n_unique", "min"]),
+                ...     ("bar", ["max"]),
+                ... ]  # doctest: +SKIP
 
-        Column name to aggregation with dict:
-        >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}  # doctest: +SKIP
+                Column name to aggregation with dict:
+                >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}  # doctest: +SKIP
 
-        Returns
-        -------
-        Result of groupby split apply operations.
+                Returns
+                -------
+                Result of groupby split apply operations.
 
 
-        Examples
-        --------
+                Examples
+                --------
 
-        Use lazy API:
+                Use lazy API:
 
-        >>> df.groupby(["foo", "bar"]).agg(
-        ...     [
-        ...         pl.sum("ham"),
-        ...         pl.col("spam").tail(4).sum(),
-        ...     ]
-        ... )  # doctest: +SKIP
+                >>> df.groupby(["foo", "bar"]).agg(
+                ...     [
+                ...         pl.sum("ham"),
+                ...         pl.col("spam").tail(4).sum(),
+                ...     ]
+                ... )  # doctest: +SKIP
 
-        Use a dict:
+                Use a dict:
 
-        >>> df.groupby(["foo", "bar"]).agg(
-        ...     {
-        ...         "spam": ["sum", "min"],
-        ...     }
-        ... )  # doctest: +SKIP
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ foo ┆ bar │
-        │ --- ┆ --- │
-        │ str ┆ i64 │
-        ╞═════╪═════╡
-        │ a   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 3   │
-        └─────┴─────┘
+                >>> df.groupby(["foo", "bar"]).agg(
+                ...     {
+                ...         "spam": ["sum", "min"],
+                ...     }
+                ... )  # doctest: +SKIP
+                shape: (3, 2)
+                ┌─────┬─────┐
+                │ foo ┆ bar │
+                │ --- ┆ --- │
+                │ str ┆ i64 │
+                ╞═════╪═════╡
+                │ a   ┆ 1   │
+                ├╌╌╌╌╌┼╌╌╌╌╌┤
+                │ a   ┆ 2   │
+                ├╌╌╌╌╌┼╌╌╌╌╌┤
+                │ b   ┆ 3   │
+                └─────┴─────┘
 
         """
         if isinstance(column_to_agg, pli.Expr):

@@ -1,6 +1,7 @@
 use crate::bounds::Bounds;
 use crate::calendar::timestamp_ns_to_datetime;
 use crate::duration::Duration;
+use crate::groupby::groupby;
 use crate::window::Window;
 use chrono::prelude::*;
 
@@ -29,35 +30,41 @@ fn print_ns(ts: &[i64]) {
 }
 
 #[test]
-fn test_window_boundaries() {
-    let range_ns = date_range(10);
+fn test_groups_large_interval() {
+    let dates = &[
+        NaiveDate::from_ymd(2020, 1, 1),
+        NaiveDate::from_ymd(2020, 1, 11),
+        NaiveDate::from_ymd(2020, 1, 12),
+        NaiveDate::from_ymd(2020, 1, 13),
+    ];
+    let ts = dates
+        .iter()
+        .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+        .collect::<Vec<_>>();
 
+    let dur = Duration::parse("2d");
+    let w = Window::new(Duration::parse("2d"), dur.clone(), Duration::from_nsecs(0));
+    let groups = groupby(w, &ts);
+    assert_eq!(groups.len(), 3);
+    assert_eq!(groups[0], (0, vec![0]));
+    assert_eq!(groups[1], (1, vec![1]));
+    assert_eq!(groups[2], (1, vec![1, 2, 3]));
+}
+
+#[test]
+fn test_offset() {
+    let t = NaiveDate::from_ymd(2020, 1, 2)
+        .and_hms(0, 0, 0)
+        .timestamp_nanos();
     let w = Window::new(
-        Duration::from_minutes(20),
-        Duration::from_minutes(40),
-        Duration::from_seconds(0),
+        Duration::parse("5m"),
+        Duration::parse("5m"),
+        Duration::parse("-2m"),
     );
-    // wrapping_boundary (
-    let boundary = Bounds::from(&range_ns);
-    let overlapping_bounds = w.get_overlapping_bounds(boundary);
 
-    let hm_start = overlapping_bounds
-        .iter()
-        .map(|b| {
-            let dt = timestamp_ns_to_datetime(b.start);
-            (dt.hour(), dt.minute())
-        })
-        .collect::<Vec<_>>();
-    let expected = &[(0, 0), (0, 20), (0, 40), (1, 0), (1, 20), (1, 40)];
-    assert_eq!(hm_start, expected);
-
-    let hm_stop = overlapping_bounds
-        .iter()
-        .map(|b| {
-            let dt = timestamp_ns_to_datetime(b.stop);
-            (dt.hour(), dt.minute())
-        })
-        .collect::<Vec<_>>();
-    let expected = &[(0, 40), (1, 0), (1, 20), (1, 40), (2, 0), (2, 20)];
-    assert_eq!(hm_stop, expected);
+    let b = w.get_earliest_bounds(t);
+    let start = NaiveDate::from_ymd(2020, 1, 1)
+        .and_hms(23, 58, 0)
+        .timestamp_nanos();
+    assert_eq!(b.start, start);
 }
