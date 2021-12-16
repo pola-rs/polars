@@ -817,10 +817,13 @@ impl PyExpr {
         self.inner.clone().rolling_var(options).into()
     }
 
-    pub fn rolling_median(&self, window_size: usize,
+    pub fn rolling_median(
+        &self,
+        window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
-        center: bool,) -> Self {
+        center: bool,
+    ) -> Self {
         let options = RollingOptions {
             window_size,
             weights,
