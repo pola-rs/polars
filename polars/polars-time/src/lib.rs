@@ -13,7 +13,4 @@ mod test;
 mod unit;
 mod window;
 
-pub use {
-    duration::Duration,
-    window::Window
-};
+pub use {duration::Duration, window::Window};

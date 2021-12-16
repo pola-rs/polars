@@ -44,7 +44,7 @@ fn test_window_boundaries() {
     let hm_start = overlapping_bounds
         .iter()
         .map(|b| {
-            let dt = timestamp_ns_to_datetime(*b.start);
+            let dt = timestamp_ns_to_datetime(b.start);
             (dt.hour(), dt.minute())
         })
         .collect::<Vec<_>>();
@@ -54,7 +54,7 @@ fn test_window_boundaries() {
     let hm_stop = overlapping_bounds
         .iter()
         .map(|b| {
-            let dt = timestamp_ns_to_datetime(*b.stop);
+            let dt = timestamp_ns_to_datetime(b.stop);
             (dt.hour(), dt.minute())
         })
         .collect::<Vec<_>>();
