@@ -10,6 +10,7 @@ use std::collections::HashSet;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
+use polars_core::frame::groupby::DynamicGroupOptions;
 
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
@@ -98,6 +99,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
+        dynamic_options: Option<DynamicGroupOptions>
     },
     Join {
         input_left: Node,
@@ -303,6 +305,7 @@ impl ALogicalPlan {
                 schema,
                 apply,
                 maintain_order,
+                dynamic_options,
                 ..
             } => Aggregate {
                 input: inputs[0],
@@ -311,6 +314,7 @@ impl ALogicalPlan {
                 schema: schema.clone(),
                 apply: apply.clone(),
                 maintain_order: *maintain_order,
+                dynamic_options: dynamic_options.clone()
             },
             Join {
                 schema,
@@ -731,6 +735,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             schema: Arc::new(schema),
             apply,
             maintain_order,
+            dynamic_options: None
         };
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)

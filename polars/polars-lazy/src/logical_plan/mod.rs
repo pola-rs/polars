@@ -38,6 +38,7 @@ mod projection;
 use polars_io::ipc::IpcReader;
 use projection::*;
 use std::io::{Read, Seek, SeekFrom};
+use polars_core::frame::groupby::DynamicGroupOptions;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -234,6 +235,7 @@ pub enum LogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
+        dynamic_options: Option<DynamicGroupOptions>
     },
     /// Join operation
     Join {
@@ -1053,6 +1055,7 @@ impl LogicalPlanBuilder {
             schema: Arc::new(schema),
             apply,
             maintain_order,
+            dynamic_options: None
         }
         .into()
     }

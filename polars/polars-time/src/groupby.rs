@@ -3,7 +3,9 @@ use crate::calendar::timestamp_ns_to_datetime;
 use crate::duration::Duration;
 use crate::window::Window;
 
-pub fn groupby(window: Window, time: &[i64]) -> Vec<Vec<u32>> {
+pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+
+pub fn groupby(window: Window, time: &[i64]) -> GroupTuples {
     let mut boundary = Bounds::from(time);
 
     let mut group_tuples = Vec::with_capacity(window.estimate_overlapping_bounds(boundary));
@@ -38,7 +40,9 @@ pub fn groupby(window: Window, time: &[i64]) -> Vec<Vec<u32>> {
             }
             i += 1
         }
-        group_tuples.push(group)
+        if !group.is_empty() {
+            group_tuples.push((group[0], group))
+        }
     }
     group_tuples
 }
@@ -87,7 +91,7 @@ mod test {
             Duration::from_seconds(30),
             Duration::from_seconds(0),
         );
-        let gt = groupby(window, &ts);
+        let gt = groupby(window, &ts).into_iter().map(|g| g.1).collect::<Vec<_>>();
 
         let expected = &[[0, 1, 2], [2, 3, 4], [4, 5, 6]];
         assert_eq!(gt, expected);

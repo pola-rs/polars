@@ -22,9 +22,11 @@ pub mod aggregations;
 pub(crate) mod hashing;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
+mod dynamic;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
+pub use dynamic::*;
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupTuples {

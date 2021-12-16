@@ -298,6 +298,7 @@ impl DefaultPlanner {
                 apply,
                 schema: _,
                 maintain_order,
+                dynamic_options
             } => {
                 #[cfg(feature = "object")]
                 let input_schema = lp_arena.get(input).schema(lp_arena).clone();

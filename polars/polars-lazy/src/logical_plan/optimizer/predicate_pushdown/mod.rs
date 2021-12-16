@@ -293,6 +293,7 @@ impl PredicatePushDown {
                 schema,
                 apply,
                 maintain_order,
+                dynamic_options
             } => {
                 self.pushdown_and_assign(input, optimizer::init_hashmap(), lp_arena, expr_arena)?;
 
@@ -304,6 +305,7 @@ impl PredicatePushDown {
                     schema,
                     apply,
                     maintain_order,
+                    dynamic_options
                 };
                 Ok(self.finish_at_leaf(lp, acc_predicates, lp_arena, expr_arena))
             }
