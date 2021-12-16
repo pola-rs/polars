@@ -23,17 +23,20 @@ pub(crate) const fn last_day_of_month(month: i32) -> u32 {
 pub(crate) const fn is_leap_year(year: i32) -> bool {
     year % 400 == 0 || (year % 4 == 0 && year % 100 != 0)
 }
-/// nanoseconds per second
-pub const NS_SECONDS: i64 = 1_000_000_000;
-
-/// nanosecs per minute
-pub const NS_MINUTE: i64 = 60 * NS_SECONDS;
+/// nanoseconds per unit
+pub const NS_MICROSECOND: i64 = 1_000;
+pub const NS_MILLISECOND: i64 = 1_000_000;
+pub const NS_SECOND: i64 = 1_000_000_000;
+pub const NS_MINUTE: i64 = 60 * NS_SECOND;
+pub const NS_HOUR: i64 = 60 * NS_MINUTE;
+pub const NS_DAY: i64 = 24 * NS_HOUR;
+pub const NS_WEEK: i64 = 7 * NS_DAY;
 
 pub fn timestamp_ns_to_datetime(v: i64) -> NaiveDateTime {
     NaiveDateTime::from_timestamp(
         // extract seconds from nanoseconds
-        v / NS_SECONDS,
+        v / NS_SECOND,
         // discard extracted seconds
-        (v % NS_SECONDS) as u32,
+        (v % NS_SECOND) as u32,
     )
 }

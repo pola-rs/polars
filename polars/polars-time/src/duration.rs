@@ -1,5 +1,6 @@
 use crate::calendar::{
-    is_leap_year, last_day_of_month, timestamp_ns_to_datetime, NS_MINUTE, NS_SECONDS,
+    is_leap_year, last_day_of_month, timestamp_ns_to_datetime, NS_DAY, NS_HOUR, NS_MICROSECOND,
+    NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
 };
 use crate::unit::TimeNanoseconds;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
@@ -16,6 +17,73 @@ pub struct Duration {
 }
 
 impl Duration {
+    /// 1ns // 1 nanosecond
+    /// 1us // 1 microsecond
+    /// 1ms // 1 millisecond
+    /// 1s  // 1 second
+    /// 1m  // 1 minute
+    /// 1h  // 1 hour
+    /// 1d  // 1 day
+    /// 1w  // 1 week
+    /// 1mo // 1 calendar month
+    /// 1y  // 1 calendar year
+    ///
+    /// 3d12h4m25s // 3 days, 12 hours, 4 minutes, and 25 seconds
+    /// 
+    /// # Panics if given str is incorrect
+    pub fn parse(duration: &str) -> Self {
+        let mut nsecs = 0;
+        let mut months = 0;
+        let negative = duration.chars().next().unwrap() == '-';
+
+        let mut iter = duration.char_indices();
+        let mut start = 0;
+
+        let mut unit = String::with_capacity(2);
+        while let Some((i, mut ch)) = iter.next() {
+            if !ch.is_ascii_digit() {
+                let n = duration[start..i].parse::<i64>().unwrap();
+
+                loop {
+                    if ch.is_ascii_alphabetic() {
+                        unit.push(ch)
+                    } else {
+                        break;
+                    }
+                    match iter.next() {
+                        Some((i, ch_)) => {
+                            ch = ch_;
+                            start = i
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+
+                match &*unit {
+                    "ns" => nsecs += n,
+                    "us" => nsecs += n * NS_MICROSECOND,
+                    "ms" => nsecs += n * NS_MILLISECOND,
+                    "s" => nsecs += n * NS_SECOND,
+                    "m" => nsecs += n * NS_MINUTE,
+                    "h" => nsecs += n * NS_HOUR,
+                    "d" => nsecs += n * NS_DAY,
+                    "w" => nsecs += n * NS_WEEK,
+                    "mo" => months += n,
+                    "y" => months += n * 12,
+                    unit => panic!("unit: '{}' not supported", unit),
+                }
+                unit.clear();
+            }
+        }
+        Duration {
+            nsecs,
+            months,
+            negative,
+        }
+    }
+
     fn to_positive(v: i64) -> (bool, i64) {
         if v < 0 {
             (true, -v)
@@ -35,7 +103,7 @@ impl Duration {
     }
 
     pub fn from_seconds(v: i64) -> Self {
-        Self::from_nsecs(v * NS_SECONDS)
+        Self::from_nsecs(v * NS_SECOND)
     }
 
     pub fn from_minutes(v: i64) -> Self {
@@ -67,7 +135,7 @@ impl Duration {
 
     /// Estimated duration of the window duration. Not a very good one if months != 0.
     pub fn duration(&self) -> TimeNanoseconds {
-        (self.months * 30 * 24 * 3600 * NS_SECONDS + self.nsecs).into()
+        (self.months * 30 * 24 * 3600 * NS_SECOND + self.nsecs).into()
     }
 
     // Truncate the given nanoseconds timestamp by the window boundary.
@@ -204,4 +272,21 @@ fn new_datetime(
     let time = NaiveTime::from_hms_nano(hour, min, sec, nano);
 
     NaiveDateTime::new(date, time)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_parse() {
+        let out = Duration::parse("1ns");
+        assert_eq!(out.nsecs, 1);
+        let out = Duration::parse("1ns1ms");
+        assert_eq!(out.nsecs, NS_MILLISECOND + 1);
+        let out = Duration::parse("123ns40ms");
+        assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123);
+        let out = Duration::parse("123ns40ms1w");
+        assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123 + NS_WEEK);
+    }
 }

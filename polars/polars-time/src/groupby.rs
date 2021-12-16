@@ -91,7 +91,10 @@ mod test {
             Duration::from_seconds(30),
             Duration::from_seconds(0),
         );
-        let gt = groupby(window, &ts).into_iter().map(|g| g.1).collect::<Vec<_>>();
+        let gt = groupby(window, &ts)
+            .into_iter()
+            .map(|g| g.1)
+            .collect::<Vec<_>>();
 
         let expected = &[[0, 1, 2], [2, 3, 4], [4, 5, 6]];
         assert_eq!(gt, expected);
