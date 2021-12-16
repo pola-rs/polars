@@ -1699,11 +1699,13 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.rolling_apply(window_size, function))
 
-    def rolling_median(self, window_size: int,
-            weights: Optional[tp.List[float]] = None,
-            min_periods: Optional[int] = None,
-            center: bool = False,
-) -> "Expr":
+    def rolling_median(
+        self,
+        window_size: int,
+        weights: Optional[tp.List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+    ) -> "Expr":
         """
         Apply a rolling median (moving median) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
@@ -1722,7 +1724,7 @@ class Expr:
             Set the labels at the center of the window
 
         """
-        
+
         if min_periods is None:
             min_periods = window_size
         return wrap_expr(
