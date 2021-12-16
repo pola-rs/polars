@@ -509,9 +509,9 @@ export interface Expr {
    * ... })
    *
    * >>> df
-   * ...   .groupby("a")
+   * ...   .groupBy("a")
    * ...   .agg(pl.col("b").list())
-   * ...   .sort(by="a")
+   * ...   .sort({by:"a"})
    *
    * shape: (3, 2)
    * ╭─────┬────────────╮
