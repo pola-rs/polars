@@ -59,6 +59,7 @@ impl JsDataFrame {
             napi::Property::new(env, "replace")?.with_method(replace),
             napi::Property::new(env, "sample_frac")?.with_method(sample_frac),
             napi::Property::new(env, "sample_n")?.with_method(sample_n),
+            napi::Property::new(env, "schema")?.with_method(schema),
             napi::Property::new(env, "select_at_idx")?.with_method(select_at_idx),
             napi::Property::new(env, "select")?.with_method(select),
             napi::Property::new(env, "set_column_names")?.with_method(set_column_names),

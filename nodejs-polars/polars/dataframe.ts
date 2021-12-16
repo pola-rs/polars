@@ -800,6 +800,7 @@ export interface DataFrame {
   sample(opts: {n: number, withReplacement?:boolean}): DataFrame
   sample(opts: {frac: number, withReplacement?:boolean}): DataFrame
   sample(n?: number, frac?: number, withReplacement?:boolean): DataFrame
+  schema(): Record<string, string>
   /**
    * Select columns from this DataFrame.
    * ___
@@ -1069,6 +1070,7 @@ export interface DataFrame {
   toCSV(dest: string | Stream): void;
   toCSV(dest: string | Stream, options: WriteCsvOptions): void;
   toJS(): object
+  toJS(options: {orient: "row" | "col" | "literal"}): object
   toJSON(): string
   toJSON(dest: string | Stream): void
   toJSON(dest?: string | Stream): void | string
@@ -1368,7 +1370,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       unwrap("write_json_stream", {writeStream: dest});
 
     } else if (typeof dest === "string") {
-      // eslint-disable-next-line no-undef
       unwrap("write_json", {path: dest});
     } else if (!dest) {
       let body = "";
@@ -1516,6 +1517,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     replaceAtIdx: (index, newColumn) => unwrap("replace_at_idx", {index, newColumn: newColumn._series}),
     rows: noArgUnwrap("to_rows"),
     sample,
+    schema() {
+      return unwrap("schema");
+    },
     select,
     shift: (opt) => wrap("shift", {periods: opt?.periods ?? opt }),
     shiftAndFill,
@@ -1526,7 +1530,21 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     sum: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("sum") : seriesWrapper(unwrap("hsum", {nullStrategy})) as any,
     tail: (length=5) => wrap("tail", {length}),
     toCSV: toCSV as any,
-    toJS() {
+    toJS(options?) {
+      if(options?.orient === "row") {
+        const columns = this.columns;
+        const rows = this.rows();
+
+        return rows.map(row => {
+          return row.reduce((acc, curr, currIdx) => ({
+            [columns[currIdx]]: curr,
+            ...acc
+          }));
+        });
+      }
+      if(options?.orient === "literal") {
+        return unwrap("to_js");
+      }
 
       return unwrap<any[]>("get_columns").reduce((acc, curr) => {
         const s = seriesWrapper(curr);

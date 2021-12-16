@@ -1224,7 +1224,7 @@ export interface Series<T> extends ArrayLike<T> {
    * }
    * ```
    */
-  toJS(): object
+  toJS(): {name: string, datatype: string, values: any[]}
   toFrame(): DataFrame
 }
 

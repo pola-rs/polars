@@ -1,7 +1,10 @@
 name: nodejs-polars
 
 on:
-  - pull_request
+  push:
+     # Sequence of patterns matched against refs/tags
+    tags:
+      - 'nodejs-polars-v*' # Push events to matching nodejs-polars-v*, i.e. nodejs-polars-v1.0, nodejs-polars-v20.15.10
 jobs:
   build-js:
     defaults:

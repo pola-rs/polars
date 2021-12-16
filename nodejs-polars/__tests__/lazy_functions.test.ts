@@ -123,7 +123,6 @@ describe("lazy functions", () => {
   test.skip("argSortBy", () => {
     const actual = _df().select(pl.argSortBy(["int_nulls", "floats"], [false, true]))
       .getColumn("int_nulls");
-    console.log(actual);
   });
   test("avg", () => {
     const df = pl.DataFrame({"foo": [4, 5, 6, 4, 5, 6]});

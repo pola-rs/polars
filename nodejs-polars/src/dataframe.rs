@@ -535,6 +535,21 @@ pub fn set_column_names(cx: CallContext) -> JsResult<JsUndefined> {
 }
 
 #[js_function(1)]
+pub fn schema(cx: CallContext) -> JsResult<JsObject> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
+    let mut obj = cx.env.create_object()?;
+
+    for field in df.df.schema().fields() {
+        let field_name = format!("{}", field.name()).try_into_js(&cx)?;
+        let dtype: JsDataType = field.data_type().clone().into();
+        let js_string = dtype.to_string().try_into_js(&cx)?;
+        obj.set_property(field_name, js_string).unwrap();
+    }
+    Ok(obj)
+}
+
+#[js_function(1)]
 pub fn with_column(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
