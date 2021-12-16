@@ -1,7 +1,7 @@
 use crate::bounds::Bounds;
 use crate::calendar::timestamp_ns_to_datetime;
 use crate::duration::Duration;
-use crate::groupby::groupby;
+use crate::groupby::{groupby, ClosedWindow};
 use crate::window::Window;
 use chrono::prelude::*;
 
@@ -44,7 +44,7 @@ fn test_groups_large_interval() {
 
     let dur = Duration::parse("2d");
     let w = Window::new(Duration::parse("2d"), dur.clone(), Duration::from_nsecs(0));
-    let groups = groupby(w, &ts);
+    let (groups, _, _) = groupby(w, &ts, false, ClosedWindow::None);
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[0], (0, vec![0]));
     assert_eq!(groups[1], (1, vec![1]));

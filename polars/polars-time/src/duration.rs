@@ -4,7 +4,7 @@ use crate::calendar::{
 };
 use crate::unit::TimeNanoseconds;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use std::ops::{Add, Mul};
+use std::ops::{Add, Mul, Sub};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Duration {
@@ -288,6 +288,14 @@ impl Add<Duration> for TimeNanoseconds {
 
         // We keep the panic for now until we better understand the issue
         new_t + nsecs
+    }
+}
+
+impl Sub<Duration> for TimeNanoseconds {
+    type Output = Self;
+
+    fn sub(self, rhs: Duration) -> Self::Output {
+        self + rhs * -1
     }
 }
 
