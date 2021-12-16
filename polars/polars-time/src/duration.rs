@@ -5,7 +5,7 @@ use crate::unit::TimeNanoseconds;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use std::ops::{Add, Mul};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Duration {
     // the number of months for the duration
     months: i64,
