@@ -56,6 +56,9 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
+            // a unique or a sort
+            let mut update_group_tuples = false;
+
             match self.collect_groups {
                 ApplyOptions::ApplyGroups => {
                     let mut container = [Default::default()];
@@ -68,13 +71,21 @@ impl PhysicalExpr for ApplyExpr {
                         .into_iter()
                         .map(|opt_s| {
                             opt_s.and_then(|s| {
+                                let in_len = s.len();
                                 container[0] = s;
-                                self.function.call_udf(&mut container).ok()
+                                self.function.call_udf(&mut container).ok().map(|s| {
+                                    if s.len() != in_len {
+                                        update_group_tuples = true;
+                                    }
+                                    s
+                                })
                             })
                         })
                         .collect();
+
                     ca.rename(&name);
                     ac.with_series(ca.into_series(), true);
+                    ac.with_update_groups(UpdateGroups::WithSeriesLen);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
