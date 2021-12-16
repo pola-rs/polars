@@ -915,18 +915,7 @@ pub fn with_row_count(cx: CallContext) -> JsResult<JsExternal> {
     let df = df.df.with_row_count(name).map_err(JsPolarsEr::from)?;
     JsDataFrame::new(df).try_into_js(&cx)
 }
-// #[js_function(1)]
-// pub fn downsample_agg(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-//   todo!()
-// }
-// #[js_function(1)]
-// pub fn downsample(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-//   todo!()
-// }
+
 #[js_function(1)]
 pub fn groupby(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -942,30 +931,7 @@ pub fn groupby(cx: CallContext) -> JsResult<JsExternal> {
     };
     finish_groupby(selection, agg)?.try_into_js(&cx)
 }
-// #[js_function(1)]
-// pub fn groupby_agg(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-//   todo!()
-// }
-// #[js_function(1)]
-// pub fn groupby_apply(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-//   todo!()
-// }
-// #[js_function(1)]
-// pub fn groupby_quantile(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-//   todo!()
-// }
-// #[js_function(1)]
-// pub fn pivot(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-//   let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
-//   todo!()
-// }
+
 #[js_function(1)]
 pub fn clone(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;

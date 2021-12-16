@@ -58,29 +58,6 @@ pub fn new_from_csv(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 
-// #[js_function(1)]
-// pub fn new_from_parquet(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-
-//   let path: String = params.get_as("path")?;
-//   let stop_after_n_rows: Option<usize> = params.get_as("stop_after_n_rows")?;
-//   let cache: bool = params.get_as("cache")?;
-//   LazyFrame::scan_parquet(path, stop_after_n_rows, cache)
-//     .map_err(JsPolarsEr::from)?
-//     .try_into_js(&cx)
-// }
-// #[js_function(1)]
-// pub fn new_from_ipc(cx: CallContext) -> JsResult<JsExternal> {
-//   let params = get_params(&cx)?;
-
-//   let path: String = params.get_as("path")?;
-//   let stop_after_n_rows: Option<usize> = params.get_as("stop_after_n_rows")?;
-//   let cache: bool = params.get_as("cache")?;
-//   LazyFrame::scan_ipc(path, stop_after_n_rows, cache)
-//     .map_err(JsPolarsEr::from)?
-//     .try_into_js(&cx)
-// }
-
 #[js_function(1)]
 pub fn describe_plan(cx: CallContext) -> JsResult<JsString> {
     get_params(&cx)?
@@ -166,7 +143,6 @@ impl napi::Task for Collect {
     }
 }
 
-// find out if this should be done via a promise/async
 #[js_function(1)]
 pub fn collect(cx: CallContext) -> JsResult<JsObject> {
     let ldf = get_params(&cx)?
@@ -225,7 +201,7 @@ pub fn groupby(cx: CallContext) -> JsResult<JsExternal> {
     let n = params.get_as::<Option<usize>>("n")?;
     let maintain_order: bool = params.get_or("maintainOrder", false)?;
     let lazy_gb = if maintain_order {
-        ldf.stable_groupby(by)
+        ldf.groupby_stable(by)
     } else {
         ldf.groupby(by)
     };

@@ -9,7 +9,6 @@ export type ColumnSelection = ValueOrArray<string>
 export type ExpressionSelection = ValueOrArray<Expr>
 export type ColumnsOrExpr = ColumnSelection | ExpressionSelection
 export type ExprOrString = Expr | string
-export type Option<T> = T | undefined;
 export type DownsampleRule =  "month" | "week" | "day" | "hour" | "minute" | "second"
 export type FillNullStrategy = "backward" |  "forward" | "mean" | "min" | "max" | "zero" | "one"
 export type RankMethod = "average" | "min" | "max" | "dense" | "ordinal" | "random";

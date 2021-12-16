@@ -3,7 +3,7 @@ import path from "path";
 // eslint-disable-next-line no-undef
 const csvpath = path.resolve(__dirname, "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
 // eslint-disable-next-line no-undef
-const jsonpath = path.resolve(__dirname, "../examples/datasets/foods1.json");
+const jsonpath = path.resolve(__dirname, "./examples/foods.json");
 
 describe("io", () => {
   describe("read", () => {

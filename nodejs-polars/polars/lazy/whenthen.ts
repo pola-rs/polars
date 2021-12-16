@@ -1,4 +1,3 @@
-import {col, lit} from "./lazy_functions";
 import {Expr} from "./expr";
 import pli from "../internals/polars_internal";
 

@@ -13,7 +13,6 @@ import pli from "../internals/polars_internal";
 import {LazyGroupBy} from "./groupby";
 
 type JsLazyFrame = any;
-export type Option<T> = T | undefined;
 
 type LazyJoinOptions =  {
   how?: "left" | "inner" | "outer" | "cross";
@@ -37,6 +36,7 @@ type LazyOptions = {
  */
 
 export interface LazyDataFrame {
+  _ldf: any;
   get columns(): string[]
   /**
    * Cache the result once the execution of the physical plan hits this node.
@@ -147,7 +147,7 @@ export interface LazyDataFrame {
   /**
    * Get the first row of the DataFrame.
    */
-  first(): LazyDataFrame
+  first(): DataFrame
   /**
    * Start a groupby operation.
    */
@@ -161,14 +161,6 @@ export interface LazyDataFrame {
    */
   head(length?: number): LazyDataFrame
   /**
-   * Prints the value that this node in the computation graph evaluates to and passes on the value.
-   */
-  inspect(): LazyDataFrame
-  /**
-   * Interpolate intermediate values. The interpolation method is linear.
-   */
-  interpolate()
-  /**
    * Add a join operation to the Logical Plan.
    */
   join(df: LazyDataFrame, joinOptions: {on: ValueOrArray<string | Expr>} & LazyJoinOptions): LazyDataFrame
@@ -181,16 +173,6 @@ export interface LazyDataFrame {
    * @see {@link head}
    */
   limit(n?: number): LazyDataFrame
-  // /**
-  //  * Apply a custom function. It is important that the function returns a Polars DataFrame.
-  //  * @param func - Lambda/ function to apply.
-  //  * @param opts -
-  //  * @param opts.predicatePushdown
-  //  * @param opts.projectionPushdown
-  //  * @param opts.noOptimizations
-  //  * @see {@link LazyOptions}
-  //  */
-  // map(func: (df: DataFrame) => DataFrame, opts?: Pick<LazyOptions, "predicatePushdown"| "projectionPushdown" | "noOptimization">): LazyDataFrame
   /**
    * @see {@link DataFrame.max}
    */
@@ -289,7 +271,7 @@ export interface LazyDataFrame {
 
 
 export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
-  const unwrap = <U>(method: string, args?: object, _ldf=ldf): any => {
+  const unwrap = (method: string, args?: object, _ldf=ldf): any => {
     return pli.ldf[method]({_ldf, ...args });
   };
   const wrap = (method, args?, _ldf=ldf): LazyDataFrame => {
@@ -302,191 +284,185 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     return unwrap(method, {}, ldf);
 
   };
-  const dropNulls = (...subset) => {
-    if(subset.length) {
-      return wrap("dropNulls", {subset: subset.flat(2)});
-    } else {
-      return wrap("dropNulls");
-    }
-  };
-  const dropDuplicates = (opts:any=true, subset?): LazyDataFrame => {
-    if(opts?.maintainOrder !== undefined) {
-      return dropDuplicates(opts.maintainOrder, opts.subset);
-    }
-    if(subset) {
-      subset = [subset].flat(2);
-    }
-
-    return wrap("dropDuplicates", {maintainOrder: opts.maintainOrder, subset});
-  };
-  const explode = (...columns) => {
-    if(!columns.length) {
-      const cols = selectionToExprList(LazyDataFrame(ldf).columns, false);
-
-      return wrap("explode", {column: cols});
-    }
-    const column = selectionToExprList(columns, false);
-
-    return wrap("explode", {column});
-  };
-  const fetch = (numRows, opts: LazyOptions) => {
-    if(opts?.noOptimization) {
-      opts.predicatePushdown = false;
-      opts.projectionPushdown = false;
-    }
-    if(opts) {
-      const _ldf = unwrap("optimizationToggle", opts);
-
-      return dfWrapper(unwrap("fetchSync", {numRows}, _ldf));
-
-    }
-
-    return dfWrapper(unwrap("fetchSync", {numRows}));
-
-  };
-  const fillNull = (exprOrValue) => {
-    const fillValue = exprToLitOrExpr(exprOrValue)._expr;
-
-    return wrap("fillNull", {fillValue});
-  };
-  const filter = (exprOrValue) => {
-    const predicate = exprToLitOrExpr(exprOrValue, false)._expr;
-
-    return wrap("filter", {predicate});
-
-  };
-  const groupBy = (opt, maintainOrder=true) => {
-    if(opt?.by !== undefined) {
-      return groupBy(opt.by, opt.maintainOrder);
-    }
-
-    return LazyGroupBy(ldf, opt, maintainOrder);
-  };
-  const join = (df, options: {[k:string]: any} & LazyJoinOptions ): LazyDataFrame => {
-    options =  {
-      how: "inner",
-      suffix: "right",
-      allowParallel: true,
-      forceParallel: false,
-      ...options
-    };
-    const {how, suffix, allowParallel, forceParallel} = options;
-    let leftOn;
-    let rightOn;
-    if(options.on) {
-      const on = selectionToExprList(options.on, false);
-      leftOn = on;
-      rightOn = on;
-    } else if((options.leftOn && !options.rightOn) || (options.rightOn && !options.leftOn)) {
-      throw new TypeError("You should pass the column to join on as an argument.");
-    } else {
-      leftOn = selectionToExprList(options.leftOn, false);
-      rightOn = selectionToExprList(options.rightOn, false);
-    }
-
-    return wrap("join", {
-      other: df._ldf,
-      how,
-      leftOn,
-      rightOn,
-      suffix,
-      allowParallel,
-      forceParallel
-    });
-  };
-  const rename = (mapping) => {
-    const existing = Object.keys(mapping);
-    const replacements = Object.values(mapping);
-
-    return wrap("rename", {existing, replacements});
-  };
-  const select = (...exprs) => {
-    const predicate = selectionToExprList(exprs, false);
-
-    return wrap("select", {predicate});
-  };
-  const shiftAndFill = (optOrPeriods, fillValue?) => {
-    if(optOrPeriods?.periods) {
-      return shiftAndFill(optOrPeriods.periods, optOrPeriods.fillValue);
-    } else {
-      const periods = optOrPeriods;
-      fillValue = exprToLitOrExpr(fillValue)._expr;
-
-      return wrap("shiftAndFill", {periods, fillValue});
-    }
-
-  };
-  const slice = (opt, len) => {
-    if(opt?.offset !== undefined) {
-      return slice(opt.offset, opt.length);
-    }
-
-    return wrap("slice", {offset: opt, len});
-  };
-  const sort = (arg, reverse=false) => {
-    if(arg?.by  !== undefined) {
-      return sort(arg.by, arg.reverse);
-    }
-    if(typeof arg === "string") {
-      return wrap("sort", {by: arg, reverse});
-    } else {
-      reverse = [reverse].flat(3) as any;
-      const by = selectionToExprList(arg, false);
-
-      return wrap("sort_by_exprs", {by, reverse});
-    }
-  };
-  const withColumn = (expr) => {
-
-    return wrap("withColumns", {expr});
-  };
-  const withColumns = (...columns) => {
-    const exprs = selectionToExprList(columns, false);
-
-    return wrap("withColumns", {exprs});
-  };
 
   return {
     _ldf: ldf,
-    get columns() { return unwrap("columns");},
+    get columns() {
+      return unwrap("columns");
+    },
     describePlan: () => unwrap("describePlan"),
     describeOptimizedPlan: withOptimizationToggle("describeOptimizedPlan"),
     cache: wrapNullArgs("cache"),
     collectSync: () => dfWrapper(unwrap("collectSync")),
     collect: () => unwrap("collect").then(dfWrapper),
     drop: (...cols) => wrap("dropColumns", {cols: cols.flat(2)}),
-    dropDuplicates,
-    dropNulls,
-    explode,
-    fetch,
-    fillNull,
-    filter,
-    groupBy,
+    dropDuplicates(opts:any=true, subset?){
+      if(opts?.maintainOrder !== undefined) {
+        return this.dropDuplicates(opts.maintainOrder, opts.subset);
+      }
+      if(subset) {
+        subset = [subset].flat(2);
+      }
+
+      return wrap("dropDuplicates", {maintainOrder: opts.maintainOrder, subset});
+    },
+    dropNulls(...subset) {
+      if(subset.length) {
+        return wrap("dropNulls", {subset: subset.flat(2)});
+      } else {
+        return wrap("dropNulls");
+      }
+    },
+    explode(...columns) {
+      if(!columns.length) {
+        const cols = selectionToExprList(LazyDataFrame(ldf).columns, false);
+
+        return wrap("explode", {column: cols});
+      }
+      const column = selectionToExprList(columns, false);
+
+      return wrap("explode", {column});
+    },
+    fetch(numRows, opts?: LazyOptions) {
+      if(opts?.noOptimization) {
+        opts.predicatePushdown = false;
+        opts.projectionPushdown = false;
+      }
+      if(opts) {
+        const _ldf = unwrap("optimizationToggle", opts);
+
+        return dfWrapper(unwrap("fetchSync", {numRows}, _ldf));
+
+      }
+
+      return dfWrapper(unwrap("fetchSync", {numRows}));
+
+    },
+    first() {
+      return this.fetch(1);
+    },
+    fillNull(exprOrValue) {
+      const fillValue = exprToLitOrExpr(exprOrValue)._expr;
+
+      return wrap("fillNull", {fillValue});
+    },
+    filter(exprOrValue) {
+      const predicate = exprToLitOrExpr(exprOrValue, false)._expr;
+
+      return wrap("filter", {predicate});
+
+    },
+    groupBy(opt, maintainOrder:any=true) {
+      if(opt?.by !== undefined) {
+        return LazyGroupBy(ldf, opt.by, opt.maintainOrder);
+      }
+
+      return LazyGroupBy(ldf, opt, maintainOrder);
+    },
     head: (len=5) => wrap("slice", {offset: 0, len}),
-    join,
+    join(df, options: {[k:string]: any} & LazyJoinOptions ) {
+      options =  {
+        how: "inner",
+        suffix: "right",
+        allowParallel: true,
+        forceParallel: false,
+        ...options
+      };
+      const {how, suffix, allowParallel, forceParallel} = options;
+      let leftOn;
+      let rightOn;
+      if(options.on) {
+        const on = selectionToExprList(options.on, false);
+        leftOn = on;
+        rightOn = on;
+      } else if((options.leftOn && !options.rightOn) || (options.rightOn && !options.leftOn)) {
+        throw new TypeError("You should pass the column to join on as an argument.");
+      } else {
+        leftOn = selectionToExprList(options.leftOn, false);
+        rightOn = selectionToExprList(options.rightOn, false);
+      }
+
+      return wrap("join", {
+        other: df._ldf,
+        how,
+        leftOn,
+        rightOn,
+        suffix,
+        allowParallel,
+        forceParallel
+      });
+    },
     last: () => wrap("tail", {length: 1}),
     limit: (len=5) => wrap("slice", {offset: 0, len}),
     max: wrapNullArgs("max"),
     mean: wrapNullArgs("mean"),
     median: wrapNullArgs("median"),
-    melt: (ids, values) => wrap("melt", {idVars: columnOrColumnsStrict(ids), valueVars: columnOrColumnsStrict(values)}),
+    melt(ids, values) {
+      return wrap("melt", {
+        idVars: columnOrColumnsStrict(ids),
+        valueVars: columnOrColumnsStrict(values)
+      });
+    },
     min: wrapNullArgs("min"),
     quantile: (quantile) => wrap("quantile", {quantile}),
-    rename,
+    rename(mapping) {
+      const existing = Object.keys(mapping);
+      const replacements = Object.values(mapping);
+
+      return wrap("rename", {existing, replacements});
+    },
     reverse: wrapNullArgs("reverse"),
-    select,
+    select(...exprs) {
+      const predicate = selectionToExprList(exprs, false);
+
+      return wrap("select", {predicate});
+    },
     shift: (periods) => wrap("shift", {periods}),
-    shiftAndFill,
-    slice,
-    sort,
+    shiftAndFill(optOrPeriods, fillValue?) {
+      if(typeof optOrPeriods === "number") {
+        fillValue = exprToLitOrExpr(fillValue)._expr;
+
+        return wrap("shiftAndFill", {periods: optOrPeriods, fillValue});
+
+      }
+      else {
+        fillValue = exprToLitOrExpr(optOrPeriods.fillValue)._expr;
+        const periods = optOrPeriods.periods;
+
+        return wrap("shiftAndFill", {periods, fillValue});
+      }
+    },
+    slice(opt, len?) {
+      if(opt?.offset !== undefined) {
+        return wrap("slice", {offset: opt.offset, len: opt.length});
+      }
+
+      return wrap("slice", {offset: opt, len});
+    },
+    sort(arg, reverse=false)  {
+      if(arg?.by  !== undefined) {
+        return this.sort(arg.by, arg.reverse);
+      }
+      if(typeof arg === "string") {
+        return wrap("sort", {by: arg, reverse});
+      } else {
+        reverse = [reverse].flat(3) as any;
+        const by = selectionToExprList(arg, false);
+
+        return wrap("sort_by_exprs", {by, reverse});
+      }
+    },
     std: wrapNullArgs("std"),
     sum: wrapNullArgs("sum"),
     var: wrapNullArgs("var"),
     tail: (length=5) => wrap("tail", {length}),
     withColumn: (expr) => wrap("withColumn", {expr: expr._expr}),
-    withColumns,
+    withColumns(...columns){
+      const exprs = selectionToExprList(columns, false);
+
+      return wrap("withColumns", {exprs});
+    },
     withColumnRenamed: (existing, replacement) => wrap("withColumnRenamed", {existing, replacement}),
     withRowCount: (name="row_nr") => wrap("withRowCount", {name}),
-
-  } as any;
+  };
 };

@@ -1,5 +1,3 @@
-import pli from "../internals/polars_internal";
-import {ValueOrArray} from "../utils";
 import {JsSeries, Series, seriesWrapper} from "../series";
 import {col} from "../lazy/lazy_functions";
 

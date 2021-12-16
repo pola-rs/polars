@@ -856,7 +856,7 @@ pub fn when_then(cx: CallContext) -> JsResult<JsExternal> {
     cx.env.create_external(w.then(expr), None)
 }
 
-//WhenThen::when
+// WhenThen::when
 #[js_function(1)]
 pub fn when_then_when(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;

@@ -507,7 +507,7 @@ describe("series", () => {
   ${numSeries()}  | ${"skew"}         | ${[{bias: true}]}
   ${numSeries()}  | ${"skew"}         | ${[{bias: false}]}
   ${numSeries()}  | ${"slice"}        | ${[1, 2]}
-  ${numSeries()}  | ${"slice"}        | ${[{start: 1, length: 2}]}
+  ${numSeries()}  | ${"slice"}        | ${[{offset: 1, length: 2}]}
   ${numSeries()}  | ${"sort"}         | ${[]}
   ${numSeries()}  | ${"sort"}         | ${[false]}
   ${numSeries()}  | ${"sort"}         | ${[true]}

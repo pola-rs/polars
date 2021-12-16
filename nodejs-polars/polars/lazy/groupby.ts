@@ -19,27 +19,30 @@ export const LazyGroupBy = (
 
   const baseArgs = {by, _ldf, maintainOrder};
   const unwrap = (args) => LazyDataFrame(pli.ldf.groupby(args));
-  const agg = (...aggs: Expr[]) => unwrap({
-    aggs: aggs.map(a => a._expr),
-    aggMethod: "agg",
-    ...baseArgs
-  });
-  const head = (n=5) => unwrap({
-    n,
-    aggs: [],
-    aggMethod: "head",
-    ...baseArgs
-  });
-  const tail = (n=5) => unwrap({
-    n,
-    aggs: [],
-    aggMethod: "tail",
-    ...baseArgs
-  });
 
   return {
-    agg,
-    head,
-    tail
+    agg(...aggs: Expr[])  {
+      return unwrap({
+        aggs: aggs.map(a => a._expr),
+        aggMethod: "agg",
+        ...baseArgs
+      });
+    },
+    head(n=5) {
+      return unwrap({
+        n,
+        aggs: [],
+        aggMethod: "head",
+        ...baseArgs
+      });
+    },
+    tail(n=5) {
+      return  unwrap({
+        n,
+        aggs: [],
+        aggMethod: "tail",
+        ...baseArgs
+      });
+    }
   };
 };

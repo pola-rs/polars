@@ -1073,7 +1073,6 @@ export interface DataFrame {
   toJS(options: {orient: "row" | "col" | "literal"}): object
   toJSON(): string
   toJSON(dest: string | Stream): void
-  toJSON(dest?: string | Stream): void | string
   toSeries(index:number): Series<any>
   toString(): string
   /**
@@ -1194,342 +1193,326 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   };
   const noArgWrap = (method: string) => () => wrap(method);
   const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
-  const clone = noArgWrap("clone");
-  const drop = (name, ...names) => {
-    names.unshift(name);
-    if(!Array.isArray(names[0]) && names.length === 1) {
-      return wrap("drop", {name: names[0]});
-    }
 
-    const df = clone();
-
-    names.flat(2).forEach((name) => {
-      unwrap("drop_in_place", {name}, df._df);
-    });
-
-    return df;
-
-
-  };
-  const describe = () => {
-    const df = dfWrapper(_df);
-    const describeCast = (df:DataFrame) => {
-      return DataFrame(df.getColumns().map(s => {
-        if(s.isNumeric() || s.isBoolean()) {
-
-          return s.cast(DataType.Float64);
-        } else {
-          return s;
-        }
-      }));
-    };
-    const summary = concat([
-      describeCast(df.mean()),
-      describeCast(df.std()),
-      describeCast(df.min()),
-      describeCast(df.max()),
-      describeCast(df.median())
-    ]);
-    summary.insertAtIdx(
-      0,
-      Series(
-        "describe",
-        ["mean", "std", "min", "max", "median"]
-      )
-    );
-
-    return summary;
-  };
-  const fold = (fn: (s1, s2) => Series<any>): Series<any> => {
-    const df = dfWrapper(_df);
-    if(df.width === 1) {
-      return df.toSeries(0);
-    }
-
-    return df.getColumns().reduce((acc, curr) => fn(acc, curr));
-
-  };
-  const hashRows = (obj?, k1?: any, k2?: any, k3?: any): Series<any>=> {
-    if(obj?.k0  !== undefined ) {
-      return hashRows(obj.k0, obj.k1, obj.k2, obj.k3);
-    }
-
-    return seriesWrapper(unwrap("hash_rows", {
-      k0: obj ?? 0,
-      k1: k1 ?? 1,
-      k2: k2 ?? 2,
-      k3: k3 ?? 3
-    }));
-  };
-  const hstack = (columns) => {
-    if(!Array.isArray(columns)) {
-      columns = columns.getColumns();
-    }
-
-    return wrap("hstack", {
-      columns: columns.map(col => col._series),
-      in_place: false
-    });
-  };
-  const join = (df: DataFrame, options): DataFrame  => {
-    options =  {how: "inner", suffix: "right", ...options};
-    const on = columnOrColumns(options.on);
-    const how = options.how;
-    const suffix = options.suffix;
-
-    let leftOn = columnOrColumns(options.leftOn);
-    let rightOn = columnOrColumns(options.rightOn);
-
-    if(on) {
-      leftOn = on;
-      rightOn = on;
-    }
-    if((leftOn && !rightOn) || (rightOn && !leftOn)) {
-      throw new TypeError("You should pass the column to join on as an argument.");
-    }
-
-    return wrap("join", {
-      other: df._df,
-      on,
-      how,
-      left_on: leftOn,
-      right_on: rightOn,
-      suffix,
-    });
-  };
-  const rename = (mapping) => {
-    const df = dfWrapper(_df).clone();
-
-    Object.entries(mapping).forEach(([key, value]) => {
-      unwrap("rename", {column: key, new_col: value}, df._df);
-    });
-
-    return df;
-  };
-  const sample = (opts?, frac?, withReplacement = false): DataFrame => {
-    if(opts?.n  !== undefined || opts?.frac  !== undefined) {
-      return sample(opts.n, opts.frac, opts.withReplacement);
-    }
-    if (typeof opts === "number") {
-      return wrap("sample_n", {
-        n: opts,
-        withReplacement
-      });
-    }
-    if(typeof frac === "number") {
-      return wrap("sample_frac", {
-        frac,
-        withReplacement,
-      });
-    }
-    else {
-      throw new TypeError("must specify either 'frac' or 'n'");
-    }
-  };
-  const sort = (arg,  reverse=false): DataFrame =>  {
-    if(arg?.by  !== undefined) {
-      return sort(arg.by, arg.reverse);
-    }
-    if(Array.isArray(arg) || isExpr(arg)) {
-      return dfWrapper(_df).lazy()
-        .sort(arg, reverse)
-        .collectSync({noOptimization: true, stringCache: false});
-
-    }
-
-    return wrap("sort", {by: arg, reverse});
-
-  };
-  const toCSV = (dest?: string | Stream | WriteCsvOptions, options?: WriteCsvOptions) =>  {
-    options = { hasHeader:true, sep: ",", ...options};
-
-    if(dest instanceof Stream.Writable) {
-      unwrap("write_csv_stream", {writeStream: dest, ...options});
-
-    } else if (typeof dest === "string") {
-      unwrap("write_csv", {path: dest, ...options});
-
-    } else if (!dest || (dest.constructor.name === "Object" && !dest["dest"])) {
-      let body = "";
-      const writeStream = new Stream.Writable({
-        write(chunk, _encoding, callback) {
-          body += chunk;
-          callback(null);
-        }
-      });
-      unwrap("write_csv_stream", {writeStream, ...options, ...dest});
-
-      return body;
-    } else {
-      throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
-    }
-
-  };
-  const toJSON = (dest?: string | Stream) => {
-    if(dest instanceof Stream.Writable) {
-      unwrap("write_json_stream", {writeStream: dest});
-
-    } else if (typeof dest === "string") {
-      unwrap("write_json", {path: dest});
-    } else if (!dest) {
-      let body = "";
-      const writeStream = new Stream.Writable({
-        write(chunk, _encoding, callback) {
-          body += chunk;
-          callback(null);
-        }
-      });
-      unwrap("write_json_stream", {writeStream});
-
-      return body;
-    } else {
-
-      throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
-    }
-  };
-  const withColumn = (column: Series<any> | Expr) => {
-    if(isSeries(column)) {
-      return wrap("with_column", {_series: column._series});
-    } else {
-      return dfWrapper(_df).withColumns(column);
-    }
-  };
-  const withColumns = (column, ...columns: Expr[] | Series<any>[]) => {
-    columns.unshift(column);
-
-    if(isSeriesArray(columns)) {
-      return columns.reduce((acc, curr) => acc.withColumn(curr), dfWrapper(_df));
-    } else {
-      return dfWrapper(_df)
-        .lazy()
-        .withColumns(columns)
-        .collectSync({noOptimization: true, stringCache: false});
-    }
-
-  };
-  const select = (firstSelection, ...selection) => {
-    selection.unshift(firstSelection);
-    const hasExpr = selection.some(s => isExpr(s));
-    if(hasExpr) {
-      return dfWrapper(_df)
-        .lazy()
-        .select(selection)
-        .collectSync();
-    } else {
-
-      return wrap("select", {selection: columnOrColumnsStrict(selection)});
-    }
-  };
-  const shiftAndFill = (periods:any, fillValue?)  => {
-    return dfWrapper(_df)
-      .lazy()
-      .shiftAndFill(periods, fillValue)
-      .collectSync();
-  };
-  const shrinkToFit = (inPlace:any=false): any => {
-    if(inPlace) {
-      return unwrap<void>("shrink_to_fit");
-    } else {
-      const d = dfWrapper(_df).clone();
-      unwrap("shrink_to_fit", {}, d._df);
-
-      return d;
-    }
-  };
-  const withColumnRenamed = (opt, replacement?) => {
-    if(opt?.existing !== undefined) {
-      return withColumnRenamed(opt.existing, opt.replacement);
-    } else {
-      return dfWrapper(_df).rename({[opt]: replacement});
-    }
-  };
-  const dropNulls = (...subset) => {
-    if(subset.length) {
-      return wrap("drop_nulls", {subset: subset.flat(2)});
-    } else {
-      return wrap("drop_nulls");
-    }
-  };
-  const dropDuplicates = (opts:any=true, subset?): DataFrame => {
-    if(opts?.maintainOrder !== undefined) {
-      return dropDuplicates(opts.maintainOrder, opts.subset);
-    }
-    if(subset) {
-      subset = [subset].flat(2);
-    }
-
-    return wrap("drop_duplicates", {maintainOrder: opts.maintainOrder, subset});
-  };
-  const explode = (...columns) => {
-    return dfWrapper(_df).lazy()
-      .explode(columns)
-      .collectSync({noOptimization:true});
-  };
-  const filter = (predicate)  => {
-    return dfWrapper(_df)
-      .lazy()
-      .filter(predicate)
-      .collectSync();
-  };
 
   return {
     _df,
-    [inspect](): string { return unwrap<string>("as_str");},
-    get dtypes() { return unwrap<DataType[]>("dtypes");},
-    get height() {return unwrap<number>("height");},
-    get width() {return unwrap<number>("width");},
-    get shape() {return {height: unwrap<number>("height"), width: unwrap<number>("width")};},
-    get columns() {return unwrap<string[]>("columns");},
+    [inspect]() {
+      return unwrap<string>("as_str");
+    },
+    get dtypes() {
+      return unwrap<DataType[]>("dtypes");
+    },
+    get height() {
+      return unwrap<number>("height");
+    },
+    get width() {
+      return unwrap<number>("width");
+    },
+    get shape() {
+      return {height: this.height, width: this.width};
+    },
+    get columns() {
+      return unwrap<string[]>("columns");
+    },
     inner: () => _df,
-    clone,
-    describe,
+    clone: noArgWrap("clone"),
+    describe() {
+      const describeCast = (df:DataFrame) => {
+        return DataFrame(df.getColumns().map(s => {
+          if(s.isNumeric() || s.isBoolean()) {
+
+            return s.cast(DataType.Float64);
+          } else {
+            return s;
+          }
+        }));
+      };
+      const summary = concat([
+        describeCast(this.mean()),
+        describeCast(this.std()),
+        describeCast(this.min()),
+        describeCast(this.max()),
+        describeCast(this.median())
+      ]);
+      summary.insertAtIdx(
+        0,
+        Series(
+          "describe",
+          ["mean", "std", "min", "max", "median"]
+        )
+      );
+
+      return summary;
+    },
     downsample: (opt, rule?, n?) => GroupBy( _df, opt?.by ?? opt, true, opt?.rule ?? rule, opt?.n ?? n),
-    drop,
-    dropNulls,
+    drop(name, ...names) {
+      names.unshift(name);
+      if(!Array.isArray(names[0]) && names.length === 1) {
+        return wrap("drop", {name: names[0]});
+      }
+
+      const df = this.clone();
+
+      names.flat(2).forEach((name) => {
+        unwrap("drop_in_place", {name}, df._df);
+      });
+
+      return df;
+
+
+    },
+    dropNulls(...subset) {
+      if(subset.length) {
+        return wrap("drop_nulls", {subset: subset.flat(2)});
+      } else {
+        return wrap("drop_nulls");
+      }
+    },
+    dropDuplicates(opts:any=true, subset?) {
+      if(opts?.maintainOrder !== undefined) {
+        return this.dropDuplicates(opts.maintainOrder, opts.subset);
+      }
+      if(subset) {
+        subset = [subset].flat(2);
+      }
+
+      return wrap("drop_duplicates", {maintainOrder: opts.maintainOrder, subset});
+    },
+    explode(...columns)  {
+      return dfWrapper(_df).lazy()
+        .explode(columns)
+        .collectSync({noOptimization:true});
+    },
+    filter(predicate)  {
+      return this
+        .lazy()
+        .filter(predicate)
+        .collectSync();
+    },
     fillNull: (strategy) => wrap("fill_null", {strategy}),
     findIdxByName: (name) => unwrap("find_idx_by_name", {name}),
-    fold,
-    frameEqual: (other, nullEqual=true) => unwrap<boolean>("frame_equal", {other: other._df, nullEqual}),
-    getColumn: (name) => seriesWrapper(unwrap<any[]>("column", {name})),
-    getColumns: () => unwrap<any[]>("get_columns").map(s => seriesWrapper(s)),
+    fold(fn: (s1, s2) => Series<any>) {
+      if(this.width === 1) {
+        return this.toSeries(0);
+      }
+
+      return this.getColumns().reduce((acc, curr) => fn(acc, curr));
+
+    },
+    frameEqual(other, nullEqual=true) {
+      return unwrap<boolean>("frame_equal", {other: other._df, nullEqual});
+    },
+    getColumn(name) {
+      return seriesWrapper(unwrap<any[]>("column", {name}));
+    },
+    getColumns() {
+      return unwrap<any[]>("get_columns").map(s => seriesWrapper(s));
+    },
     groupBy: (...by) => GroupBy(_df, columnOrColumnsStrict(by)),
-    hashRows,
+    hashRows(obj: any = 0, k1=1, k2=2, k3=3) {
+      if(typeof obj === "number" || typeof obj === "bigint") {
+        return seriesWrapper(unwrap("hash_rows", { k0: obj, k1: k1, k2: k2, k3: k3 })) as any;
+      }
+
+      return seriesWrapper(unwrap("hash_rows", { k0: 0, k1, k2, k3, ...obj })) as any;
+    },
     head: (length=5) => wrap("head", {length}),
-    hstack,
+    hstack(columns) {
+      if(!Array.isArray(columns)) {
+        columns = columns.getColumns();
+      }
+
+      return wrap("hstack", {
+        columns: columns.map(col => col._series),
+        in_place: false
+      });
+    },
     insertAtIdx: (index, s) => unwrap("insert_at_idx", {index, new_col: s._series}),
     interpolate: noArgWrap("interpolate"),
     isDuplicated: () => seriesWrapper(unwrap("is_duplicated")),
     isEmpty: () => unwrap("height") === 0,
     isUnique: () => seriesWrapper(unwrap("is_unique")),
-    join,
+    join(df: DataFrame, options): DataFrame  {
+      options =  {how: "inner", suffix: "right", ...options};
+      const on = columnOrColumns(options.on);
+      const how = options.how;
+      const suffix = options.suffix;
+
+      let leftOn = columnOrColumns(options.leftOn);
+      let rightOn = columnOrColumns(options.rightOn);
+
+      if(on) {
+        leftOn = on;
+        rightOn = on;
+      }
+      if((leftOn && !rightOn) || (rightOn && !leftOn)) {
+        throw new TypeError("You should pass the column to join on as an argument.");
+      }
+
+      return wrap("join", {
+        other: df._df,
+        on,
+        how,
+        left_on: leftOn,
+        right_on: rightOn,
+        suffix,
+      });
+    },
     lazy: () => LazyDataFrame(unwrap("lazy")),
     limit: (length=5) => wrap("head", {length}),
-    max: (axis=0) => axis === 0 ? wrap("max") : seriesWrapper<any>(unwrap<any>("hmax")) as any,
-    mean: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("mean") : seriesWrapper(unwrap("hmean", {nullStrategy})) as any,
+    max(axis=0){
+      if(axis === 1) {
+        return seriesWrapper(unwrap("hmax")) as any;
+      } else {
+        return wrap("max");
+      }
+    },
+    mean(axis=0, nullStrategy="ignore") {
+      if(axis === 1) {
+        return seriesWrapper(unwrap("hmean", {nullStrategy})) as any;
+      }
+
+      return wrap("mean");
+    },
     median: noArgWrap("median"),
-    melt: (ids, values) => wrap("melt", {idVars: columnOrColumns(ids), valueVars: columnOrColumns(values)}),
-    min: (axis=0) => axis === 0 ? wrap("min") : seriesWrapper<any>(unwrap("hmin")) as any,
+    melt(ids, values) {
+      return wrap("melt", {
+        idVars: columnOrColumns(ids),
+        valueVars: columnOrColumns(values)
+      });
+    },
+    min(axis=0) {
+      if(axis === 1) {
+        return seriesWrapper(unwrap("hmin")) as any;
+      } else {
+        return wrap("min");
+      }
+    },
     nChunks: noArgUnwrap("n_chunks"),
     nullCount: noArgWrap("null_count"),
     quantile: (quantile) => wrap("quantile", {quantile}),
     rechunk: noArgWrap("rechunk"),
-    rename,
-    replaceAtIdx: (index, newColumn) => unwrap("replace_at_idx", {index, newColumn: newColumn._series}),
-    rows: noArgUnwrap("to_rows"),
-    sample,
-    schema() {
-      return unwrap("schema");
+    rename(mapping)  {
+      const df = this.clone();
+
+      Object.entries(mapping).forEach(([column, new_col]) => {
+        unwrap("rename", {column, new_col}, df._df);
+      });
+
+      return df;
     },
-    select,
+    replaceAtIdx(index, newColumn) {
+      return unwrap("replace_at_idx", {
+        index,
+        newColumn: newColumn._series
+      });
+    },
+    rows: noArgUnwrap("to_rows"),
+    sample(opts?, frac?, withReplacement = false) {
+      if(opts?.n  !== undefined || opts?.frac  !== undefined) {
+        return this.sample(opts.n, opts.frac, opts.withReplacement);
+      }
+      if (typeof opts === "number") {
+        return wrap("sample_n", {
+          n: opts,
+          withReplacement
+        });
+      }
+      if(typeof frac === "number") {
+        return wrap("sample_frac", {
+          frac,
+          withReplacement,
+        });
+      }
+      else {
+        throw new TypeError("must specify either 'frac' or 'n'");
+      }
+    },
+    schema: noArgUnwrap("schema"),
+    select(...selection) {
+      const hasExpr = selection.flat().some(s => isExpr(s));
+      if(hasExpr) {
+        return dfWrapper(_df)
+          .lazy()
+          .select(selection)
+          .collectSync();
+      } else {
+
+        return wrap("select", {selection: columnOrColumnsStrict(selection as any)});
+      }
+    },
     shift: (opt) => wrap("shift", {periods: opt?.periods ?? opt }),
-    shiftAndFill,
-    shrinkToFit,
-    slice: (opts, length?) => wrap("slice", {offset: opts?.offset ?? opts, length: opts?.length ?? length}),
-    sort,
+    shiftAndFill(periods:any, fillValue?)  {
+      return dfWrapper(_df)
+        .lazy()
+        .shiftAndFill(periods, fillValue)
+        .collectSync();
+    },
+    shrinkToFit(inPlace:any=false): any {
+      if(inPlace) {
+        unwrap("shrink_to_fit");
+      } else {
+        const d = this.clone();
+        unwrap("shrink_to_fit", {}, d._df);
+
+        return d;
+      }
+    },
+    slice(opts, length?) {
+      if(typeof opts === "number") {
+        return wrap("slice", {offset: opts, length});
+      }
+
+      return wrap("slice", opts);
+    },
+    sort(arg,  reverse=false)  {
+      if(arg?.by  !== undefined) {
+        return this.sort(arg.by, arg.reverse);
+      }
+      if(Array.isArray(arg) || isExpr(arg)) {
+        return dfWrapper(_df).lazy()
+          .sort(arg, reverse)
+          .collectSync({noOptimization: true, stringCache: false});
+
+      }
+
+      return wrap("sort", {by: arg, reverse});
+
+    },
     std: noArgWrap("std"),
-    sum: (axis=0, nullStrategy="ignore") => axis === 0 ? wrap("sum") : seriesWrapper(unwrap("hsum", {nullStrategy})) as any,
+    sum(axis=0, nullStrategy="ignore") {
+      if(axis === 1) {
+        return seriesWrapper(unwrap("hsum", {nullStrategy})) as any;
+      }
+
+      return wrap("sum");
+    },
     tail: (length=5) => wrap("tail", {length}),
-    toCSV: toCSV as any,
+    toCSV(dest?: string | Stream | WriteCsvOptions, options?: WriteCsvOptions): any {
+      options = { hasHeader:true, sep: ",", ...options};
+
+      if(dest instanceof Stream.Writable) {
+        unwrap("write_csv_stream", {writeStream: dest, ...options});
+
+      } else if (typeof dest === "string") {
+        unwrap("write_csv", {path: dest, ...options});
+
+      } else if (!dest || (dest.constructor.name === "Object" && !dest["dest"])) {
+        let body = "";
+        const writeStream = new Stream.Writable({
+          write(chunk, _encoding, callback) {
+            body += chunk;
+            callback(null);
+          }
+        });
+        unwrap("write_csv_stream", {writeStream, ...options, ...dest});
+
+        return body;
+      } else {
+        throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
+      }
+    },
     toJS(options?) {
       if(options?.orient === "row") {
         const columns = this.columns;
@@ -1555,9 +1538,29 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         };
       }, {});
     },
-    toJSON: toJSON as any,
+    toJSON(dest?): any  {
+      if(dest instanceof Stream.Writable) {
+        unwrap("write_json_stream", {writeStream: dest});
+      } else if (typeof dest === "string") {
+        unwrap("write_json", {path: dest});
+      } else if (!dest) {
+        let body = "";
+        const writeStream = new Stream.Writable({
+          write(chunk, _encoding, callback) {
+            body += chunk;
+            callback(null);
+          }
+        });
+        unwrap("write_json_stream", {writeStream});
+
+        return body;
+      } else {
+
+        throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
+      }
+    },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
-    toString: () => unwrap<string>("as_str"),
+    toString: noArgUnwrap("as_str"),
     add: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
     sub: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
     div: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
@@ -1570,19 +1573,42 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     modulo: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
     var: noArgWrap("var"),
     apply: () => {throw todo();},
-    dropDuplicates,
-    explode,
-    filter,
     map: (fn) => map(dfWrapper(_df), fn as any) as any,
     pipe: (fn?) => {throw todo();},
     row: (index) => unwrap("to_row", {idx: index}),
     upsample: (index) => {throw todo();},
     vstack: (other) => wrap("vstack", {other: other._df}),
-    withColumn,
-    withColumns,
-    withColumnRenamed,
+    withColumn(column: Series<any> | Expr) {
+      if(isSeries(column)) {
+        return wrap("with_column", {_series: column._series});
+      } else {
+        return this.withColumns(column);
+      }
+    },
+    withColumns(column, ...columns: Expr[] | Series<any>[])  {
+      columns.unshift(column as any);
+
+      if(isSeriesArray(columns)) {
+        return columns.reduce((acc, curr) => acc.withColumn(curr), dfWrapper(_df));
+      } else {
+        return this
+          .lazy()
+          .withColumns(columns)
+          .collectSync({noOptimization: true, stringCache: false});
+      }
+
+    },
+    withColumnRenamed(opt, replacement?) {
+      if(typeof opt === "string") {
+        return this.rename({[opt]: replacement});
+      } else {
+        return this.rename({[opt.existing]: opt.replacement});
+      }
+    },
     withRowCount: (name="row_nr") => wrap("with_row_count", {name}),
-    where: filter
+    where(predicate) {
+      return this.filter(predicate);
+    }
   };
 };
 

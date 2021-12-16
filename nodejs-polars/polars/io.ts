@@ -1,4 +1,4 @@
-import { DataType, JoinOptions, JsDataFrame, ReadCsvOptions, ReadJsonOptions, WriteCsvOptions} from "./datatypes";
+import { ReadCsvOptions, ReadJsonOptions } from "./datatypes";
 import pli from "./internals/polars_internal";
 import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";

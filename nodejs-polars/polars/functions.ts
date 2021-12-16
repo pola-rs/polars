@@ -5,10 +5,7 @@ import {DataFrame} from "./dataframe";
 import pli from "./internals/polars_internal";
 import {isDataFrameArray, isSeriesArray} from "./utils";
 
-
-type ConcatItems = Array<DataFrame> | Array<Series<any>>
 type ConcatOptions = {rechunk: boolean, how?: "vertical"}
-
 
 /**
  * _Repeat a single value n times and collect into a Series._

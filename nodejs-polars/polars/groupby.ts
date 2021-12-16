@@ -1,15 +1,14 @@
 /* eslint-disable no-redeclare */
 import {DataFrame, dfWrapper, _wrapDataFrame} from "./dataframe";
 import * as utils from "./utils";
-import type {ColumnSelection, ExpressionSelection} from "./utils";
+import type {ColumnSelection} from "./utils";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 import util from "util";
 import {InvalidOperationError, todo} from "./error";
-import {Expr, exprToLitOrExpr} from "./lazy/expr";
+import {Expr} from "./lazy/expr";
 
 
 import {col} from "./lazy/lazy_functions";
-import {Series} from "./series";
 
 const inspectOpts = {colors:true, depth:null};
 

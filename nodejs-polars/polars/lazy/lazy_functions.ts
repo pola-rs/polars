@@ -1,10 +1,8 @@
 import {Expr, exprToLitOrExpr} from "./expr";
 import {Series} from "../series";
 import { DataFrame } from "../dataframe";
-import {ColumnSelection, ColumnsOrExpr, ExprOrString, isExpr, isSeries, range, selectionToExprList} from "../utils";
+import { ExprOrString, isSeries, range, selectionToExprList} from "../utils";
 import pli from "../internals/polars_internal";
-import pl from "../index";
-
 
 /**
  * __A column in a DataFrame.__

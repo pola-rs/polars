@@ -1,7 +1,15 @@
 import {DataType} from "../datatypes";
 import pli from "../internals/polars_internal";
 import {col, lit} from "./lazy_functions";
-import {ExprOrString, FillNullStrategy, isExpr, RankMethod, regexToString, RollingOptions, selectionToExprList} from "../utils";
+import {
+  ExprOrString,
+  FillNullStrategy,
+  isExpr,
+  RankMethod,
+  regexToString,
+  RollingOptions,
+  selectionToExprList
+} from "../utils";
 import {Series} from "../series";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -926,7 +934,7 @@ const ExprDateTimeFunctions = (_expr: JsExpr): ExprDateTimeFunctions => {
 };
 
 const ExprStringFunctions = (_expr: JsExpr): ExprStringFunctions => {
-  const wrap = <U>(method, args?): Expr => {
+  const wrap = (method, args?): Expr => {
 
     return Expr(pli.expr.str[method]({_expr, ...args }));
   };
@@ -982,7 +990,7 @@ const ExprStringFunctions = (_expr: JsExpr): ExprStringFunctions => {
 
 export const Expr = (_expr: JsExpr): Expr => {
 
-  const wrap = <U>(method, args?): Expr => {
+  const wrap = (method, args?): Expr => {
 
     return Expr(pli.expr[method]({_expr, ...args }));
   };
@@ -1048,13 +1056,12 @@ export const Expr = (_expr: JsExpr): Expr => {
   };
   const hash = (obj:any=0, k1=1, k2=2, k3=3) => {
     if(typeof obj === "number" || typeof obj === "bigint") {
-      return wrap<bigint>("hash", {
+      return wrap("hash", {
         k0: obj,
         k1: k1,
         k2: k2,
         k3: k3
       });
-
     }
 
     return wrap("hash", obj);
