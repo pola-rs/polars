@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::toggle_string_cache;
 use std::sync::Arc;
+use polars_core::frame::groupby::DynamicGroupOptions;
 
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
@@ -817,7 +818,20 @@ impl LazyFrame {
             opt_state,
             keys: by.as_ref().to_vec(),
             maintain_order: false,
+            dynamic_options: None
         }
+    }
+
+    pub fn groupby_dynamic<E: AsRef<[Expr]>>(self, by: E, options: DynamicGroupOptions) -> LazyGroupBy {
+        let opt_state = self.get_opt_state();
+        LazyGroupBy {
+            logical_plan: self.logical_plan,
+            opt_state,
+            keys: by.as_ref().to_vec(),
+            maintain_order: true,
+            dynamic_options: Some(options)
+        }
+
     }
 
     /// Similar to groupby, but order of the DataFrame is maintained.
@@ -828,6 +842,7 @@ impl LazyFrame {
             opt_state,
             keys: by.as_ref().to_vec(),
             maintain_order: true,
+            dynamic_options: None
         }
     }
 
@@ -1126,6 +1141,7 @@ pub struct LazyGroupBy {
     opt_state: OptState,
     keys: Vec<Expr>,
     maintain_order: bool,
+    dynamic_options: Option<DynamicGroupOptions>,
 }
 
 impl LazyGroupBy {
@@ -1153,7 +1169,7 @@ impl LazyGroupBy {
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(Arc::new(self.keys), aggs, None, self.maintain_order)
+            .groupby(Arc::new(self.keys), aggs, None, self.maintain_order, self.dynamic_options)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -1196,6 +1212,7 @@ impl LazyGroupBy {
                 vec![],
                 Some(Arc::new(f)),
                 self.maintain_order,
+                None
             )
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)

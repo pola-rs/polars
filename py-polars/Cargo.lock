@@ -1194,6 +1194,7 @@ dependencies = [
  "num",
  "num_cpus",
  "polars-arrow",
+ "polars-time",
  "rand",
  "rand_distr",
  "rayon",
@@ -1238,6 +1239,14 @@ dependencies = [
  "polars-io",
  "rayon",
  "regex",
+]
+
+[[package]]
+name = "polars-time"
+version = "0.18.0"
+dependencies = [
+ "chrono",
+ "polars-arrow",
 ]
 
 [[package]]

@@ -7,9 +7,10 @@ use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{DataFrame, Field, JoinType, Schema};
-use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::prelude::{Duration, QuantileInterpolOptions};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use polars_core::frame::groupby::DynamicGroupOptions;
 
 #[pyclass]
 #[repr(transparent)]
@@ -293,6 +294,19 @@ impl PyLazyFrame {
         } else {
             ldf.groupby(by)
         };
+
+        PyLazyGroupBy { lgb: Some(lazy_gb) }
+    }
+
+    pub fn groupby_dynamic(&mut self, time_column: String, every: &str, period: &str, offset: &str, truncate: bool) -> PyLazyGroupBy {
+        let ldf = self.ldf.clone();
+        let lazy_gb = ldf.groupby_dynamic(vec![], DynamicGroupOptions {
+            time_column,
+            every: Duration::parse(every),
+            period: Duration::parse(period),
+            offset: Duration::parse(offset),
+            truncate
+        });
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }

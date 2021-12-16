@@ -2258,12 +2258,14 @@ class ExprStringNameSpace:
         fmt
             "yyyy-mm-dd".
         """
+        if not issubclass(datatype, DataType):
+            raise ValueError(f"expected: {DataType} got: {datatype}")
         if datatype == Date:
             return wrap_expr(self._pyexpr.str_parse_date(fmt))
         elif datatype == Datetime:
             return wrap_expr(self._pyexpr.str_parse_datetime(fmt))
         else:
-            raise NotImplementedError
+            raise ValueError("dtype should be of type {Date, Datetime}")
 
     def lengths(self) -> Expr:
         """

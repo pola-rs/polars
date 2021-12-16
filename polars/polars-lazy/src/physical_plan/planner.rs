@@ -18,6 +18,7 @@ use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
 use polars_io::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;
+use crate::physical_plan::executors::groupby_dynamic::GroupByDynamicExec;
 
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 fn aggregate_expr_to_scan_agg(
@@ -304,6 +305,21 @@ impl DefaultPlanner {
                 let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
+                let mut phys_keys =
+                    self.create_physical_expressions(&keys, Context::Default, expr_arena)?;
+
+                let phys_aggs =
+                    self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
+
+                if let Some(options) = dynamic_options {
+                    return Ok(Box::new(GroupByDynamicExec {
+                        input,
+                        keys: phys_keys,
+                        aggs: phys_aggs,
+                        options
+                    }) )
+                }
+
                 // We first check if we can partition the groupby on the latest moment.
                 // TODO: fix this brittle/ buggy state and implement partitioned groupby's in eager
                 let mut partitionable = true;
@@ -372,11 +388,6 @@ impl DefaultPlanner {
                 } else {
                     partitionable = false;
                 }
-                let mut phys_keys =
-                    self.create_physical_expressions(&keys, Context::Default, expr_arena)?;
-
-                let phys_aggs =
-                    self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
                 if partitionable {
                     Ok(Box::new(PartitionGroupByExec::new(
                         input,
