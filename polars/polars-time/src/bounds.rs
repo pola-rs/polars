@@ -23,7 +23,7 @@ impl<S: AsRef<[i64]>> From<S> for Bounds {
         let slice = s.as_ref();
         let start = slice[0];
         let stop = slice[slice.len() - 1];
-        Self::new(start.into(), stop.into())
+        Self::new(start, stop)
     }
 }
 

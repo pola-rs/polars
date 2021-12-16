@@ -29,14 +29,18 @@ impl Duration {
     /// 1y  // 1 calendar year
     ///
     /// 3d12h4m25s // 3 days, 12 hours, 4 minutes, and 25 seconds
-    /// 
+    ///
     /// # Panics if given str is incorrect
     pub fn parse(duration: &str) -> Self {
         let mut nsecs = 0;
         let mut months = 0;
-        let negative = duration.chars().next().unwrap() == '-';
-
         let mut iter = duration.char_indices();
+        let negative = duration.starts_with('-');
+        // skip the '-' char
+        if negative {
+            iter.next().unwrap();
+        }
+
         let mut start = 0;
 
         let mut unit = String::with_capacity(2);
@@ -121,7 +125,7 @@ impl Duration {
     }
 
     /// `true` if zero duration.
-    fn is_zero(&self) -> bool {
+    pub fn is_zero(&self) -> bool {
         self.months == 0 && self.nsecs == 0
     }
 
@@ -135,7 +139,7 @@ impl Duration {
 
     /// Estimated duration of the window duration. Not a very good one if months != 0.
     pub fn duration(&self) -> TimeNanoseconds {
-        (self.months * 30 * 24 * 3600 * NS_SECOND + self.nsecs).into()
+        self.months * 30 * 24 * 3600 * NS_SECOND + self.nsecs
     }
 
     // Truncate the given nanoseconds timestamp by the window boundary.
@@ -247,7 +251,7 @@ impl Add<Duration> for TimeNanoseconds {
         // see https://github.com/influxdata/influxdb_iox/issues/2890
 
         // We keep the panic for now until we better understand the issue
-        (new_t + nsecs).into()
+        new_t + nsecs
     }
 }
 

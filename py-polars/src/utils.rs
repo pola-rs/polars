@@ -1,6 +1,4 @@
-use crate::error::PyPolarsEr;
 use polars::prelude::*;
-use pyo3::PyResult;
 
 pub fn str_to_polarstype(s: &str) -> DataType {
     match s {
