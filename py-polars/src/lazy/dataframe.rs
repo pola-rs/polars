@@ -311,6 +311,7 @@ impl PyLazyFrame {
     ) -> PyLazyGroupBy {
         let closed_window = match closed {
             "none" => ClosedWindow::None,
+            "both" => ClosedWindow::Both,
             "left" => ClosedWindow::Left,
             "right" => ClosedWindow::Right,
             _ => panic!("{}", "closed should be any of {'none', 'left', 'right'}"),

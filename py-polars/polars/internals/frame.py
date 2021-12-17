@@ -2255,8 +2255,8 @@ class DataFrame:
         period: Optional[str] = None,
         offset: Optional[str] = None,
         truncate: bool = True,
-        include_boundaries: bool = True,
-        closed: str = "none",
+        include_boundaries: bool = False,
+        closed: str = "left",
         by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
     ) -> "DynamicGroupBy":
         return DynamicGroupBy(

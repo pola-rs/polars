@@ -8,6 +8,7 @@ pub type GroupTuples = Vec<(u32, Vec<u32>)>;
 pub enum ClosedWindow {
     Left,
     Right,
+    Both,
     None,
 }
 
