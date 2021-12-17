@@ -1,3 +1,6 @@
+use crate::groupby::ClosedWindow;
+use crate::unit::TimeNanoseconds;
+use crate::Duration;
 use chrono::NaiveDateTime;
 
 const LAST_DAYS_MONTH: [u32; 12] = [
@@ -39,4 +42,32 @@ pub fn timestamp_ns_to_datetime(v: i64) -> NaiveDateTime {
         // discard extracted seconds
         (v % NS_SECOND) as u32,
     )
+}
+
+pub fn date_range(
+    start: TimeNanoseconds,
+    stop: TimeNanoseconds,
+    every: Duration,
+    closed: ClosedWindow,
+) -> Vec<TimeNanoseconds> {
+    let size = ((stop - start) / every.duration() + 1) as usize;
+    let mut ts = Vec::with_capacity(size);
+
+    let mut t = start;
+    match closed {
+        ClosedWindow::Both => {
+            while t <= stop {
+                ts.push(t);
+                t += every.duration()
+            }
+        }
+        ClosedWindow::Left => {
+            while t < stop {
+                ts.push(t);
+                t += every.duration()
+            }
+        }
+        _ => unimplemented!(),
+    }
+    ts
 }

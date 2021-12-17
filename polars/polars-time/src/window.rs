@@ -32,8 +32,8 @@ impl Window {
     pub fn get_earliest_bounds(&self, t: TimeNanoseconds) -> Bounds {
         // original code translates offset here
         // we don't. Seems unintuitive to me.
-        let stop = self.truncate(t) + self.every;
-        let start = stop + self.period * -1;
+        let start = self.truncate(t);
+        let stop = self.truncate(t) + self.period;
 
         Bounds::new(start, stop)
     }
