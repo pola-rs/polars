@@ -895,16 +895,18 @@ impl LazyFrame {
     ///
     /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .join(other, vec![col("foo"), col("bar")], vec![col("foo"), col("bar")], JoinType::Inner)
+    ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinType::Inner)
     /// }
     /// ```
-    pub fn join(
+    pub fn join<E: AsRef<[Expr]>>(
         self,
         other: LazyFrame,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
+        left_on: E,
+        right_on: E,
         how: JoinType,
     ) -> LazyFrame {
+        let left_on = left_on.as_ref().to_vec();
+        let right_on = right_on.as_ref().to_vec();
         self.join_builder()
             .with(other)
             .left_on(left_on)

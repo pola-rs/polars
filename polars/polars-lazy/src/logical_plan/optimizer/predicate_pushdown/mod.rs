@@ -330,6 +330,7 @@ impl PredicatePushDown {
                         local_predicates.push(predicate);
                         continue;
                     }
+                    // these indicate to which tables we are going to push down the predicate
                     let mut filter_left = false;
                     let mut filter_right = false;
 
@@ -354,10 +355,20 @@ impl PredicatePushDown {
                         );
                         filter_right = true;
                     }
-                    // if not pushed down on of the tables we have to do it locally.
-                    if !(filter_left | filter_right) {
-                        local_predicates.push(predicate);
-                        continue;
+                    match (filter_left, filter_right, options.how) {
+                        // if not pushed down on of the tables we have to do it locally.
+                        (false, false, _) |
+                        // if left join and predicate only available in right table,
+                        // 'we should not filter right, because that would lead to
+                        // invalid results.
+                        // see: #2057
+                        (false, true, JoinType::Left)
+                        => {
+                            local_predicates.push(predicate);
+                            continue;
+                        },
+                        // business as usual
+                        _ => {}
                     }
                     // An outer join or left join may create null values.
                     // we also do it local
