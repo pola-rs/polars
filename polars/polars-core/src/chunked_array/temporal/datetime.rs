@@ -119,7 +119,7 @@ impl DatetimeChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use chrono::NaiveDateTime;
+    use polars_time::export::chrono::NaiveDateTime;
 
     #[test]
     fn from_datetime() {

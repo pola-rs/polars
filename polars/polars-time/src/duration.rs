@@ -179,6 +179,7 @@ impl Duration {
     }
 
     // Truncate the given nanoseconds timestamp by the window boundary.
+    #[inline]
     pub fn truncate_nanoseconds(&self, t: i64) -> i64 {
         match (self.months, self.nsecs) {
             (0, 0) => panic!("duration may not be zero"),

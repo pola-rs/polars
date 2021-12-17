@@ -22,6 +22,7 @@ impl Window {
         }
     }
 
+    #[inline]
     pub fn truncate(&self, t: TimeNanoseconds) -> TimeNanoseconds {
         self.every.truncate_nanoseconds(t) + self.offset
     }
