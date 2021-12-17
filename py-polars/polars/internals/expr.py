@@ -1,6 +1,6 @@
 import copy
 import typing as tp
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any, Callable, Optional, Sequence, Type, Union
 
 import numpy as np
@@ -2441,7 +2441,7 @@ class ExprDateTimeNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def buckets(self, interval: timedelta) -> Expr:
+    def buckets(self, every: str, offset: Optional[str] = None) -> Expr:
         """
         .. warning::
             This API is experimental and will likely change.
@@ -2449,70 +2449,37 @@ class ExprDateTimeNameSpace:
         Divide the date/ datetime range into buckets.
         Data will be sorted by this operation.
 
+        The `every` and `offset` argument are created with the
+        the following string language:
+
+        1ns # 1 nanosecond
+        1us # 1 microsecond
+        1ms # 1 millisecond
+        1s  # 1 second
+        1m  # 1 minute
+        1h  # 1 hour
+        1d  # 1 day
+        1w  # 1 week
+        1mo # 1 calendar month
+        1y  # 1 calendar year
+
+        3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
+
         Parameters
         ----------
-        interval
-            python timedelta to indicate bucket size
+        every
+            Every interval start and period length
+        offset
+            Offset the window
 
         Returns
         -------
         Date/Datetime series
 
-        Examples
-        --------
-        >>> from datetime import datetime, timedelta
-        >>> date_range = pl.date_range(
-        ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
-        ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
-        ...     interval=timedelta(minutes=8),
-        ...     name="date_range",
-        ... )
-        >>> date_range.dt.buckets(timedelta(minutes=8))
-        shape: (8,)
-        Series: 'date_range' [datetime]
-        [
-            2000-10-01 23:30:00
-            2000-10-01 23:30:00
-            2000-10-01 23:38:00
-            2000-10-01 23:46:00
-            2000-10-01 23:54:00
-            2000-10-02 00:02:00
-            2000-10-02 00:10:00
-            2000-10-02 00:18:00
-        ]
-
-        Can be used to perform a downsample operation:
-
-        >>> (
-        ...     date_range.to_frame()
-        ...     .groupby(
-        ...         pl.col("date_range").dt.buckets(timedelta(minutes=16)),
-        ...         maintain_order=True,
-        ...     )
-        ...     .agg(pl.col("date_range").count())
-        ... )
-        shape: (4, 2)
-        ┌─────────────────────┬──────────────────┐
-        │ date_range          ┆ date_range_count │
-        │ ---                 ┆ ---              │
-        │ datetime            ┆ u32              │
-        ╞═════════════════════╪══════════════════╡
-        │ 2000-10-01 23:30:00 ┆ 3                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-01 23:46:00 ┆ 2                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-02 00:02:00 ┆ 2                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-02 00:18:00 ┆ 1                │
-        └─────────────────────┴──────────────────┘
-
         """
-
-        return wrap_expr(
-            self._pyexpr.date_buckets(
-                interval.days, interval.seconds, interval.microseconds
-            )
-        )
+        if offset is None:
+            offset = "0ns"
+        return wrap_expr(self._pyexpr.date_buckets(every, offset))
 
     def strftime(self, fmt: str) -> Expr:
         """
