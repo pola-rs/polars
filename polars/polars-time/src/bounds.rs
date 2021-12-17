@@ -45,8 +45,8 @@ impl Bounds {
     // check if nanoseconds is within bounds
     pub fn is_member(&self, t: i64, closed: ClosedWindow) -> bool {
         match closed {
-            ClosedWindow::Left => t > self.start && t <= self.stop,
-            ClosedWindow::Right => t >= self.start && t < self.stop,
+            ClosedWindow::Right => t > self.start && t <= self.stop,
+            ClosedWindow::Left => t >= self.start && t < self.stop,
             ClosedWindow::None => t > self.start && t < self.stop,
             ClosedWindow::Both => t >= self.start && t <= self.stop,
         }
