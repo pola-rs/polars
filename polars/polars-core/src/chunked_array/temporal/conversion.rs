@@ -3,7 +3,7 @@ use crate::prelude::AnyValue;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
 use arrow::temporal_conversions::{timestamp_ms_to_datetime, NANOSECONDS};
-use chrono::{NaiveDateTime, NaiveTime};
+use polars_time::export::chrono::{NaiveDateTime, NaiveTime};
 
 /// Number of seconds in a day
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;

@@ -2,6 +2,7 @@ use super::*;
 #[cfg(feature = "dtype-time")]
 use crate::chunked_array::temporal::time::time_to_time64ns;
 use crate::prelude::*;
+use polars_time::export::chrono;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>

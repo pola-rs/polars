@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use arrow::temporal_conversions::NANOSECONDS;
-use polars_time::Window;
+use polars_time::{Duration, Window};
 
 #[cfg(feature = "dtype-datetime")]
 impl DatetimeChunked {

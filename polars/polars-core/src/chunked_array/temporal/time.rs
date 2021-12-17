@@ -3,9 +3,9 @@ use crate::chunked_array::kernels::temporal::{
     time_to_hour, time_to_minute, time_to_nanosecond, time_to_second,
 };
 use crate::prelude::*;
-use crate::utils::chrono::Timelike;
 use crate::utils::NoNull;
 use arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
+use polars_time::export::chrono::Timelike;
 
 pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
     time.second() as i64 * NANOSECONDS + time.nanosecond() as i64

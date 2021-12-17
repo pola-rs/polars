@@ -1,9 +1,9 @@
 use crate::frame::groupby::GroupTuples;
 use crate::prelude::*;
+use crate::POOL;
 use polars_time::groupby::ClosedWindow;
 use polars_time::{Duration, Window};
 use rayon::prelude::*;
-use crate::POOL;
 
 #[derive(Clone, Debug)]
 pub struct DynamicGroupOptions {
@@ -75,7 +75,8 @@ impl DataFrame {
                     .iter()
                     .map(|g| {
                         let offset = g.0;
-                        let dt = unsafe { dt.take_unchecked((g.1.iter().map(|i| *i as usize)).into()) };
+                        let dt =
+                            unsafe { dt.take_unchecked((g.1.iter().map(|i| *i as usize)).into()) };
                         let vals = dt.downcast_iter().next().unwrap();
                         let ts = vals.values().as_slice();
                         let (mut sub_groups, lower, upper) = polars_time::groupby::groupby(
@@ -113,7 +114,9 @@ impl DataFrame {
                         .par_iter()
                         .map(|g| {
                             let offset = g.0;
-                            let dt = unsafe { dt.take_unchecked((g.1.iter().map(|i| *i as usize)).into()) };
+                            let dt = unsafe {
+                                dt.take_unchecked((g.1.iter().map(|i| *i as usize)).into())
+                            };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
                             let (mut sub_groups, _, _) = polars_time::groupby::groupby(
@@ -134,9 +137,7 @@ impl DataFrame {
                         .flatten()
                         .collect::<Vec<_>>()
                 })
-
             }
-
         };
 
         // Safety:

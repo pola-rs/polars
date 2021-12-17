@@ -8,7 +8,7 @@ use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
 #[cfg(feature = "temporal")]
-use polars_core::utils::chrono::{NaiveDate, NaiveDateTime};
+use polars_core::export::chrono::{NaiveDate, NaiveDateTime};
 use std::fmt::{Debug, Formatter};
 use std::ops::{BitAnd, BitOr, Deref};
 use std::{

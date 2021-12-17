@@ -10,10 +10,10 @@ use std::{
 use ahash::RandomState;
 use itertools::Itertools;
 
-use polars_core::prelude::*;
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 #[cfg(feature = "temporal")]
-use polars_core::utils::chrono::NaiveDateTime;
+use polars_core::export::chrono::NaiveDateTime;
+use polars_core::prelude::*;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "parquet")]
