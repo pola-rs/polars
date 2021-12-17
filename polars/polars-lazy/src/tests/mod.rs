@@ -11,7 +11,7 @@ use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer
 use crate::prelude::*;
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "temporal")]
-use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::{df, prelude::*};
 use std::iter::FromIterator;
 
