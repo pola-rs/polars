@@ -19,9 +19,9 @@ pre-commit:
 	$(PYTHON_BIN)/black .
 	$(PYTHON_BIN)/blackdoc .
 	$(PYTHON_BIN)/mypy
-	$(PYTHON_BIN) flake8
+	$(PYTHON_BIN)/flake8
 	make -C .. fmt_toml
-	$(PYTHON) -m cargo fmt --all
+	cargo fmt --all
 
 test: venv
 	$(PYTHON_BIN)/maturin develop

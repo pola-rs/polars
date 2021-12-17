@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import numpy as np
 import pyarrow as pa
@@ -128,22 +128,6 @@ def test_datetime_consistency() -> None:
     df = pl.DataFrame({"date": [dt]})
     assert df["date"].dt[0] == dt
     assert df.select(pl.lit(dt))["literal"].dt[0] == dt
-
-
-def downsample_with_buckets() -> None:
-    assert (
-        pl.date_range(
-            low=datetime(2000, 10, 1, 23, 30),
-            high=datetime(2000, 10, 2, 0, 30),
-            interval=timedelta(minutes=7),
-            name="date_range",
-        )
-        .to_frame()
-        .groupby(
-            pl.col("date_range").dt.buckets(timedelta(minutes=17)), maintain_order=True
-        )
-        .agg(pl.col("date_range").count().alias("bucket_count"))
-    ).to_series(1).to_list() == [3, 2, 3, 1]
 
 
 def test_timezone() -> None:
