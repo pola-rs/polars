@@ -6,7 +6,7 @@ use arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
 use arrow::temporal_conversions::{date32_to_datetime, timestamp_ns_to_datetime};
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
+use polars_time::export::chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use std::sync::Arc;
 
 trait PolarsWeekDay {

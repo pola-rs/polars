@@ -1185,7 +1185,6 @@ dependencies = [
  "ahash",
  "anyhow",
  "arrow2",
- "chrono",
  "comfy-table",
  "hashbrown",
  "itertools",

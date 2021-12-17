@@ -7,6 +7,7 @@
 mod bounds;
 mod calendar;
 mod duration;
+pub mod export;
 pub mod groupby;
 #[cfg(test)]
 mod test;
