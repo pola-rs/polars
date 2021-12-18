@@ -26,7 +26,7 @@ def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
 
 def _prepare_groupby_inputs(
     by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]],
-) -> tp.List[PyExpr]:
+) -> tp.List["PyExpr"]:
     if isinstance(by, list):
         new_by = []
         for e in by:

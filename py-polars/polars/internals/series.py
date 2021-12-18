@@ -1340,19 +1340,6 @@ class Series:
         """
         return wrap_s(self._s.argsort(reverse))
 
-    def arg_sort(self, reverse: bool = False) -> "Series":
-        """
-        .. deprecated::
-
-        Index location of the sorted variant of this Series.
-
-        Returns
-        -------
-        indexes
-            Indexes that can be used to sort this array.
-        """
-        return wrap_s(self._s.argsort(reverse))
-
     def arg_unique(self) -> "Series":
         """
         Get unique index as Series.
@@ -3002,23 +2989,22 @@ class Series:
             {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
-              * 'average': The average of the ranks that would have been assigned to
-                all the tied values is assigned to each value.
-              * 'min': The minimum of the ranks that would have been assigned to all
-                the tied values is assigned to each value.  (This is also
-                referred to as "competition" ranking.)
-              * 'max': The maximum of the ranks that would have been assigned to all
-                the tied values is assigned to each value.
-              * 'dense': Like 'min', but the rank of the next highest element is
-                assigned the rank immediately after those assigned to the tied
-                elements.
-              * 'ordinal': All values are given a distinct rank, corresponding to
-                the order that the values occur in `a`.
-              * 'random': Like 'ordinal', but the rank for ties is not dependent
-                on the order that the values occur in `a`.
+            - 'average': The average of the ranks that would have been assigned to
+            all the tied values is assigned to each value.
+            - 'min': The minimum of the ranks that would have been assigned to all
+            the tied values is assigned to each value.  (This is also
+            referred to as "competition" ranking.)
+            - 'max': The maximum of the ranks that would have been assigned to all
+            the tied values is assigned to each value.
+            - 'dense': Like 'min', but the rank of the next highest element is
+            assigned the rank immediately after those assigned to the tied
+            elements.
+            - 'ordinal': All values are given a distinct rank, corresponding to
+            the order that the values occur in `a`.
+            - 'random': Like 'ordinal', but the rank for ties is not dependent
+            on the order that the values occur in `a`.
         reverse
             reverse the operation
-
         """
         return wrap_s(self._s.rank(method, reverse))
 

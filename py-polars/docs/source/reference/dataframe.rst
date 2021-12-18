@@ -5,8 +5,6 @@ DataFrame
 
 Constructor
 -----------
-.. autosummary::
-   :toctree: api/
 
    DataFrame
 
@@ -105,6 +103,7 @@ Manipulation/ selection
     DataFrame.hstack
     DataFrame.vstack
     DataFrame.groupby
+    DataFrame.groupby_dynamic
     DataFrame.select
     DataFrame.with_columns
     DataFrame.with_column_renamed

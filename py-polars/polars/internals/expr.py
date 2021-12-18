@@ -297,9 +297,9 @@ class Expr:
         columns
             Column(s) to exclude from selection.
             This can be:
-                - a column name, or multiple names
-                - a regular expression starting with `^` and ending with `$`
-                - a dtype or multiple dtypes
+            - a column name, or multiple names
+            - a regular expression starting with `^` and ending with `$`
+            - a dtype or multiple dtypes
 
         Examples
         --------
@@ -1769,20 +1769,20 @@ class Expr:
             {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
-              * 'average': The average of the ranks that would have been assigned to
-                all the tied values is assigned to each value.
-              * 'min': The minimum of the ranks that would have been assigned to all
-                the tied values is assigned to each value.  (This is also
-                referred to as "competition" ranking.)
-              * 'max': The maximum of the ranks that would have been assigned to all
-                the tied values is assigned to each value.
-              * 'dense': Like 'min', but the rank of the next highest element is
-                assigned the rank immediately after those assigned to the tied
-                elements.
-              * 'ordinal': All values are given a distinct rank, corresponding to
-                the order that the values occur in `a`.
-              * 'random': Like 'ordinal', but the rank for ties is not dependent
-                on the order that the values occur in `a`.
+            - 'average': The average of the ranks that would have been assigned to
+            all the tied values is assigned to each value.
+            - 'min': The minimum of the ranks that would have been assigned to all
+            the tied values is assigned to each value.  (This is also
+            referred to as "competition" ranking.)
+            - 'max': The maximum of the ranks that would have been assigned to all
+            the tied values is assigned to each value.
+            - 'dense': Like 'min', but the rank of the next highest element is
+            assigned the rank immediately after those assigned to the tied
+            elements.
+            - 'ordinal': All values are given a distinct rank, corresponding to
+            the order that the values occur in `a`.
+            - 'random': Like 'ordinal', but the rank for ties is not dependent
+            on the order that the values occur in `a`.
         reverse
             reverse the operation
         """
@@ -2444,12 +2444,12 @@ class ExprDateTimeNameSpace:
     def buckets(self, every: str, offset: Optional[str] = None) -> Expr:
         """
         .. warning::
-            This API is experimental and will likely change.
+            This API is experimental and may change without it being considered a breaking change.
 
         Divide the date/ datetime range into buckets.
         Data will be sorted by this operation.
 
-        The `every` and `offset` argument are created with the
+        The `every` and `offset` arguments are created with
         the following string language:
 
         1ns # 1 nanosecond
