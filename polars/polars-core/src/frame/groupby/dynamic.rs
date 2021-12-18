@@ -73,10 +73,12 @@ impl DataFrame {
             if options.include_boundaries {
                 groups
                     .iter()
-                    .map(|g| {
-                        let offset = g.0;
-                        let dt =
-                            unsafe { dt.take_unchecked((g.1.iter().map(|i| *i as usize)).into()) };
+                    .map(|base_g| {
+                        let offset = base_g.0;
+                        let dt = unsafe {
+                            dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
+                        };
+
                         let vals = dt.downcast_iter().next().unwrap();
                         let ts = vals.values().as_slice();
                         let (mut sub_groups, lower, upper) = polars_time::groupby::groupby(
@@ -85,6 +87,12 @@ impl DataFrame {
                             options.include_boundaries,
                             options.closed_window,
                         );
+                        let _lower = Int64Chunked::new_vec("lower", lower.clone())
+                            .into_date()
+                            .into_series();
+                        let _higher = Int64Chunked::new_vec("upper", upper.clone())
+                            .into_date()
+                            .into_series();
 
                         match (&mut lower_bound, &mut upper_bound) {
                             (None, None) => {
@@ -99,9 +107,10 @@ impl DataFrame {
                         }
 
                         sub_groups.iter_mut().for_each(|g| {
-                            g.0 += offset;
+                            g.0 = offset;
                             for x in g.1.iter_mut() {
-                                *x += offset
+                                debug_assert!((*x as usize) < base_g.1.len());
+                                unsafe { *x = *base_g.1.get_unchecked(*x as usize) }
                             }
                         });
                         sub_groups
@@ -112,10 +121,10 @@ impl DataFrame {
                 POOL.install(|| {
                     groups
                         .par_iter()
-                        .map(|g| {
-                            let offset = g.0;
+                        .map(|base_g| {
+                            let offset = base_g.0;
                             let dt = unsafe {
-                                dt.take_unchecked((g.1.iter().map(|i| *i as usize)).into())
+                                dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
                             };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
@@ -127,9 +136,10 @@ impl DataFrame {
                             );
 
                             sub_groups.iter_mut().for_each(|g| {
-                                g.0 += offset;
+                                g.0 = offset;
                                 for x in g.1.iter_mut() {
-                                    *x += offset
+                                    debug_assert!((*x as usize) < base_g.1.len());
+                                    unsafe { *x = *base_g.1.get_unchecked(*x as usize) }
                                 }
                             });
                             sub_groups
@@ -168,5 +178,97 @@ impl DataFrame {
             .into_series()
             .cast(time_type)
             .map(|s| (s, by, groups))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::time::date_range;
+    use polars_time::export::chrono::prelude::*;
+
+    #[test]
+    fn test_dynamic_groupby_window() {
+        let start = NaiveDate::from_ymd(2021, 12, 16)
+            .and_hms(0, 0, 0)
+            .timestamp_nanos();
+        let stop = NaiveDate::from_ymd(2021, 12, 16)
+            .and_hms(3, 0, 0)
+            .timestamp_nanos();
+        let range = date_range(
+            start,
+            stop,
+            Duration::parse("30m"),
+            ClosedWindow::Both,
+            "date",
+        )
+        .into_series();
+
+        let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
+        let df = DataFrame::new(vec![range, groups.clone()]).unwrap();
+
+        let (time_key, mut keys, groups) = df
+            .groupby_dynamic(
+                vec![groups],
+                &DynamicGroupOptions {
+                    time_column: "date".into(),
+                    every: Duration::parse("1h"),
+                    period: Duration::parse("1h"),
+                    offset: Duration::parse("0h"),
+                    truncate: true,
+                    include_boundaries: true,
+                    closed_window: ClosedWindow::Both,
+                },
+            )
+            .unwrap();
+
+        keys.push(time_key);
+        let out = DataFrame::new(keys).unwrap();
+        let g = out.column("groups").unwrap();
+        let g = g.utf8().unwrap();
+        let g = g.into_no_null_iter().collect::<Vec<_>>();
+        assert_eq!(g, &["a", "a", "a", "b"]);
+
+        let upper = out.column("_upper_boundary").unwrap().slice(0, 3);
+        let start = NaiveDate::from_ymd(2021, 12, 16)
+            .and_hms(1, 0, 0)
+            .timestamp_nanos();
+        let stop = NaiveDate::from_ymd(2021, 12, 16)
+            .and_hms(3, 0, 0)
+            .timestamp_nanos();
+        let range = date_range(
+            start,
+            stop,
+            Duration::parse("1h"),
+            ClosedWindow::Both,
+            "_upper_boundary",
+        )
+        .into_series();
+        assert_eq!(&upper, &range);
+
+        let upper = out.column("_lower_boundary").unwrap().slice(0, 3);
+        let start = NaiveDate::from_ymd(2021, 12, 16)
+            .and_hms(0, 0, 0)
+            .timestamp_nanos();
+        let stop = NaiveDate::from_ymd(2021, 12, 16)
+            .and_hms(2, 0, 0)
+            .timestamp_nanos();
+        let range = date_range(
+            start,
+            stop,
+            Duration::parse("1h"),
+            ClosedWindow::Both,
+            "_lower_boundary",
+        )
+        .into_series();
+        assert_eq!(&upper, &range);
+
+        let expected = vec![
+            (0u32, vec![0u32, 1, 2]),
+            (0u32, vec![2]),
+            (0u32, vec![5, 6]),
+            (3u32, vec![3, 4]),
+        ];
+        assert_eq!(expected, groups);
     }
 }
