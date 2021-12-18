@@ -1,6 +1,4 @@
 //! Traits and utilities for temporal data.
-#[cfg(feature = "temporal")]
-pub mod buckets;
 pub mod conversion;
 #[cfg(feature = "dtype-date")]
 mod date;
@@ -8,6 +6,8 @@ mod date;
 mod datetime;
 #[cfg(feature = "dtype-time")]
 mod time;
+#[cfg(feature = "temporal")]
+pub mod truncate;
 mod utf8;
 
 pub use self::conversion::*;

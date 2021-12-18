@@ -1,5 +1,6 @@
 import ctypes
 import typing as tp
+from datetime import timedelta
 from typing import Any, Dict, Tuple, Union
 
 import numpy as np
@@ -35,3 +36,7 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
     """
     ptr_ctype = ctypes.cast(ptr, ctypes.POINTER(ptr_type))
     return np.ctypeslib.as_array(ptr_ctype, (len,))
+
+
+def _timedelta_to_pl_duration(td: timedelta) -> str:
+    return f"{td.days}d{td.seconds}s{td.microseconds}us"

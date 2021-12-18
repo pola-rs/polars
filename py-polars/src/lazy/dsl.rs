@@ -986,7 +986,7 @@ impl PyExpr {
         self.inner.clone().str_concat(delimiter).into()
     }
 
-    fn date_buckets(&self, every: &str, offset: &str) -> Self {
+    fn date_truncate(&self, every: &str, offset: &str) -> Self {
         let every = Duration::parse(every);
         let offset = Duration::parse(offset);
         self.inner
@@ -994,9 +994,9 @@ impl PyExpr {
             .apply(
                 move |s| match s.dtype() {
                     DataType::Datetime => {
-                        Ok(s.datetime().unwrap().buckets(every, offset).into_series())
+                        Ok(s.datetime().unwrap().truncate(every, offset).into_series())
                     }
-                    DataType::Date => Ok(s.date().unwrap().buckets(every, offset).into_series()),
+                    DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
                     dt => Err(PolarsError::ComputeError(
                         format!("expected date/datetime got {:?}", dt).into(),
                     )),
