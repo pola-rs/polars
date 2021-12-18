@@ -33,10 +33,11 @@ pub mod utils;
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::error::PyPolarsEr;
 use crate::file::get_either_file;
-use crate::prelude::{DataType, PyDataType};
+use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
 use mimalloc::MiMalloc;
 use polars::functions::diag_concat_df;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
+use polars_core::prelude::IntoSeries;
 use pyo3::types::PyDict;
 
 #[global_allocator]
@@ -286,6 +287,19 @@ pub fn map_mul(
     lazy::map_mul(&pyexpr, py, lambda, output_type, apply_groups)
 }
 
+#[pyfunction]
+fn py_date_range(
+    start: i64,
+    stop: i64,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    name: &str,
+) -> PySeries {
+    polars_core::time::date_range(start, stop, Duration::parse(every), closed.0, name)
+        .into_series()
+        .into()
+}
+
 #[pymodule]
 fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -319,5 +333,6 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
     Ok(())
 }

@@ -1,6 +1,6 @@
 import ctypes
 import typing as tp
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Tuple, Union
 
 import numpy as np
@@ -40,3 +40,10 @@ def _ptr_to_numpy(ptr: int, len: int, ptr_type: Any) -> np.ndarray:
 
 def _timedelta_to_pl_duration(td: timedelta) -> str:
     return f"{td.days}d{td.seconds}s{td.microseconds}us"
+
+
+def _datetime_to_pl_timestamp(dt: datetime) -> int:
+    """
+    Converts a python datetime to a timestamp in nanoseconds
+    """
+    return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)

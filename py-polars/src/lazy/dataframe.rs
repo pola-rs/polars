@@ -306,16 +306,10 @@ impl PyLazyFrame {
         offset: &str,
         truncate: bool,
         include_boundaries: bool,
-        closed: &str,
+        closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
     ) -> PyLazyGroupBy {
-        let closed_window = match closed {
-            "none" => ClosedWindow::None,
-            "both" => ClosedWindow::Both,
-            "left" => ClosedWindow::Left,
-            "right" => ClosedWindow::Right,
-            _ => panic!("{}", "closed should be any of {'none', 'left', 'right'}"),
-        };
+        let closed_window = closed.0;
         let by = by
             .into_iter()
             .map(|pyexpr| pyexpr.inner)

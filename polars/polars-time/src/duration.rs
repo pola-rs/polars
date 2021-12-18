@@ -174,6 +174,7 @@ impl Duration {
     }
 
     /// Estimated duration of the window duration. Not a very good one if months != 0.
+    #[inline]
     pub const fn duration(&self) -> TimeNanoseconds {
         self.months * 30 * 24 * 3600 * NS_SECOND + self.nsecs
     }
