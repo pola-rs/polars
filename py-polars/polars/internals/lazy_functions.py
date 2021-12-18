@@ -40,11 +40,12 @@ def col(
     A column in a DataFrame.
     Can be used to select:
 
-     * a single column by name
-     * all columns by using a wildcard `"*"`
-     * column by regular expression if the regex starts with `^` and ends with `$`
+    - a single column by name
+    - all columns by using a wildcard `"*"`
+    - column by regular expression if the regex starts with `^` and ends with `$`
 
     Parameters
+    ----------
     col
         A string that holds the name of the column
 
@@ -228,8 +229,8 @@ def max(
     column
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
-            - Union[str, Series] -> aggregate the maximum value of that column.
-            - tp.List[Expr] -> aggregate the maximum value horizontally.
+        - Union[str, Series] -> aggregate the maximum value of that column.
+        - tp.List[Expr] -> aggregate the maximum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.max()
@@ -266,8 +267,8 @@ def min(
     column
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
-            - Union[str, Series] -> aggregate the sum value of that column.
-            - tp.List[Expr] -> aggregate the sum value horizontally.
+        - Union[str, Series] -> aggregate the sum value of that column.
+        - tp.List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.min()
@@ -304,8 +305,8 @@ def sum(
     column
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
-            - Union[str, Series] -> aggregate the sum value of that column.
-            - tp.List[Expr] -> aggregate the sum value horizontally.
+        - Union[str, Series] -> aggregate the sum value of that column.
+        - tp.List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.sum()

@@ -92,7 +92,6 @@ Computations
     Series.cummin
     Series.cummax
     Series.cumprod
-    Series.arg_sort
     Series.arg_true
     Series.arg_unique
     Series.unique

@@ -2259,6 +2259,58 @@ class DataFrame:
         closed: str = "left",
         by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
     ) -> "DynamicGroupBy":
+        """
+        Groups based on a time value. Time windows are calculated and rows are assigned to windows.
+        Different from a normal groupby is that a row can be member of multiple groups. The time window could
+        be seen as a rolling window, with a window size determined by dates/times instead of slots in the DataFrame.
+
+        A window is defined by:
+        - every: interval of the window
+        - period: length of the window
+        - offset: offset of the window
+
+        The `every`, `period` and `offset` arguments are created with
+        the following string language:
+
+        1ns # 1 nanosecond
+        1us # 1 microsecond
+        1ms # 1 millisecond
+        1s  # 1 second
+        1m  # 1 minute
+        1h  # 1 hour
+        1d  # 1 day
+        1w  # 1 week
+        1mo # 1 calendar month
+        1y  # 1 calendar year
+
+        3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        .. warning::
+            This API is experimental and may change without it being considered a breaking change.
+
+        Parameters
+        ----------
+        time_column
+            Column used to group based on the time window.
+            Often to type Date/Datetime
+            This column must be sorted. If not the output will not make sense.
+        every
+            interval of the window
+        period
+            length of the window
+        offset
+            offset of the window
+        truncate
+            truncate the time value to the window lower bound
+        include_boundaries
+            add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns
+        closed
+            Defines if the window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+        by
+            Also group by these column(s)
+        """
+
         return DynamicGroupBy(
             self,
             time_column,
@@ -3616,6 +3668,11 @@ class DataFrame:
 
 
 class DynamicGroupBy:
+    """
+    A dynamic grouper. This has an `.agg` method which will allow you to run all polars expressions
+    in a groupby context.
+    """
+
     def __init__(
         self,
         df: "DataFrame",

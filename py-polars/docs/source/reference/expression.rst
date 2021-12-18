@@ -177,6 +177,7 @@ Manipulation/ selection
     Expr.backward_fill
     Expr.reverse
     Expr.filter
+    Expr.where
     Expr.head
     Expr.tail
     Expr.reinterpret
@@ -195,10 +196,7 @@ Column names
 ------------
    Expressions that help renaming/ selecting columns by name.
 
-   A wildcard `col("*")` selects all columns in a DataFrame.
-
-   Examples
-   --------
+   A wildcard `col("*")`/`pl.all()` selects all columns in a DataFrame.
 
    >>> df.select(col("*"))
 
