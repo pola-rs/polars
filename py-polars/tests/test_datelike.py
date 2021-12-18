@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pyarrow as pa
@@ -178,3 +178,20 @@ def test_to_numpy() -> None:
         str(s1.to_numpy()[:2])
         == "['1970-01-01T00:02:03.543' '1970-01-01T00:04:43.478']"
     )
+
+
+def test_truncate() -> None:
+    start = datetime(2001, 1, 1)
+    stop = datetime(2001, 1, 2)
+    s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
+
+    # we can pass strings and timedeltas
+    for out in [s.dt.truncate("1h"), s.dt.truncate(timedelta(hours=1))]:
+        assert out.dt[0] == start
+        assert out.dt[1] == start
+        assert out.dt[2] == start + timedelta(hours=1)
+        assert out.dt[3] == start + timedelta(hours=1)
+        # ...
+        assert out.dt[-3] == stop - timedelta(hours=1)
+        assert out.dt[-2] == stop - timedelta(hours=1)
+        assert out.dt[-1] == stop

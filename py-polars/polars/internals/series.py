@@ -1,6 +1,6 @@
 import sys
 import typing as tp
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from numbers import Number
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
@@ -3495,13 +3495,17 @@ class DateTimeNameSpace:
     def __init__(self, series: Series):
         self._s = series._s
 
-    def buckets(self, every: str, offset: Optional[str] = None) -> Series:
+    def truncate(
+        self,
+        every: Union[str, timedelta],
+        offset: Optional[Union[str, timedelta]] = None,
+    ) -> Series:
         """
         .. warning::
-            This API is experimental and will likely change.
+            This API is experimental and may change without it being considered a breaking change.
 
         Divide the date/ datetime range into buckets.
-        Data will be sorted by this operation.
+        Data must be sorted, if not the output does not make sense.
 
         The `every` and `offset` argument are created with the
         the following string language:
@@ -3529,9 +3533,79 @@ class DateTimeNameSpace:
         Returns
         -------
         Date/Datetime series
+
+        Examples
+        --------
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
+        >>> s
+        shape: (49,)
+        Series: 'dates' [datetime]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 00:30:00
+            2001-01-01 01:00:00
+            2001-01-01 01:30:00
+            2001-01-01 02:00:00
+            2001-01-01 02:30:00
+            2001-01-01 03:00:00
+            2001-01-01 03:30:00
+            2001-01-01 04:00:00
+            2001-01-01 04:30:00
+            2001-01-01 05:00:00
+            2001-01-01 05:30:00
+            ...
+            2001-01-01 18:30:00
+            2001-01-01 19:00:00
+            2001-01-01 19:30:00
+            2001-01-01 20:00:00
+            2001-01-01 20:30:00
+            2001-01-01 21:00:00
+            2001-01-01 21:30:00
+            2001-01-01 22:00:00
+            2001-01-01 22:30:00
+            2001-01-01 23:00:00
+            2001-01-01 23:30:00
+            2001-01-02 00:00:00
+        ]
+        >>> s.dt.truncate("1h")
+        shape: (49,)
+        Series: 'dates' [datetime]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            2001-01-01 04:00:00
+            2001-01-01 05:00:00
+            2001-01-01 05:00:00
+            ...
+            2001-01-01 18:00:00
+            2001-01-01 19:00:00
+            2001-01-01 19:00:00
+            2001-01-01 20:00:00
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+        >>> assert s.dt.truncate("1h") == s.dt.truncate(timedelta(hours=1))
+
         """
         return pli.select(
-            pli.lit(wrap_s(self._s)).dt.buckets(every, offset)
+            pli.lit(wrap_s(self._s)).dt.truncate(every, offset)
         ).to_series()
 
     def __getitem__(self, item: int) -> Union[date, datetime]:

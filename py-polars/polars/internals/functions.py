@@ -142,6 +142,9 @@ def date_range(
     """
     Create a date range of type `Datetime`.
 
+    .. warning::
+        This API is experimental and may change without it being considered a breaking change.
+
     Parameters
     ----------
     low

@@ -4,7 +4,7 @@ use polars_time::{Duration, Window};
 
 #[cfg(feature = "dtype-datetime")]
 impl DatetimeChunked {
-    pub fn buckets(&self, every: Duration, offset: Duration) -> Self {
+    pub fn truncate(&self, every: Duration, offset: Duration) -> Self {
         let w = Window::new(every, every, offset);
         self.apply(|t| w.truncate(t)).into_date()
     }
@@ -12,7 +12,7 @@ impl DatetimeChunked {
 
 #[cfg(feature = "dtype-date")]
 impl DateChunked {
-    pub fn buckets(&self, every: Duration, offset: Duration) -> Self {
+    pub fn truncate(&self, every: Duration, offset: Duration) -> Self {
         let w = Window::new(every, every, offset);
         self.apply(|t| {
             const NSECS_IN_DAY: i64 = NANOSECONDS * SECONDS_IN_DAY;
