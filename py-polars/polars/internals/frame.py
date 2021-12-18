@@ -2265,6 +2265,7 @@ class DataFrame:
         be seen as a rolling window, with a window size determined by dates/times instead of slots in the DataFrame.
 
         A window is defined by:
+
         - every: interval of the window
         - period: length of the window
         - offset: offset of the window
@@ -2272,18 +2273,19 @@ class DataFrame:
         The `every`, `period` and `offset` arguments are created with
         the following string language:
 
-        1ns # 1 nanosecond
-        1us # 1 microsecond
-        1ms # 1 millisecond
-        1s  # 1 second
-        1m  # 1 minute
-        1h  # 1 hour
-        1d  # 1 day
-        1w  # 1 week
-        1mo # 1 calendar month
-        1y  # 1 calendar year
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 day)
+        - 1w    (1 week)
+        - 1mo   (1 calendar month)
+        - 1y    (1 calendar year)
 
-        3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
+        Or combine them:
+        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         .. warning::
             This API is experimental and may change without it being considered a breaking change.
@@ -2346,7 +2348,8 @@ class DataFrame:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ 2021-12-16 03:00:00 ┆ 6   │
         └─────────────────────┴─────┘
-        >>> # group by windows of 1 hour starting at 2021-12-16 00:00:00
+
+        Group by windows of 1 hour starting at 2021-12-16 00:00:00.
         >>> (
         ...     df.groupby_dynamic("time", every="1h").agg(
         ...         [pl.col("time").min(), pl.col("time").max()]
@@ -2364,7 +2367,8 @@ class DataFrame:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 02:00:00 ┆ 2021-12-16 02:30:00 ┆ 2021-12-16 03:00:00 │
         └─────────────────────┴─────────────────────┴─────────────────────┘
-        >>> # the window boundaries can also be added to the aggregation result
+
+        The window boundaries can also be added to the aggregation result
         >>> (
         ...     df.groupby_dynamic("time", every="1h", include_boundaries=True).agg(
         ...         [pl.col("time").count()]
@@ -2382,7 +2386,8 @@ class DataFrame:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 2          │
         └─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
-        >>> # when closed="left", should not include right end of interval [lower_bound, upper_bound)
+
+        When closed="left", should not include right end of interval [lower_bound, upper_bound)
         >>> (
         ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
         ...         [pl.col("time").count(), pl.col("time").list()]
@@ -2400,7 +2405,8 @@ class DataFrame:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 02:00:00 ┆ 2          ┆ [2021-12-16 02:00:00, 2021-12-16... │
         └─────────────────────┴────────────┴─────────────────────────────────────┘
-        >>> # when closed="both" the time values at the window boundaries belong to 2 groups
+
+        When closed="both" the time values at the window boundaries belong to 2 groups.
         >>> (
         ...     df.groupby_dynamic("time", every="1h", closed="both").agg(
         ...         [pl.col("time").count()]
@@ -2418,6 +2424,62 @@ class DataFrame:
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2021-12-16 02:00:00 ┆ 3          │
         └─────────────────────┴────────────┘
+
+        Dynamic groupbys can also be combined with grouping on normal keys
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "time": pl.date_range(
+        ...             low=datetime(2021, 12, 16),
+        ...             high=datetime(2021, 12, 16, 3),
+        ...             interval="30m",
+        ...         ),
+        ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
+        ...     }
+        ... )
+        >>> df
+        shape: (7, 2)
+        ┌─────────────────────┬────────┐
+        │ time                ┆ groups │
+        │ ---                 ┆ ---    │
+        │ datetime            ┆ str    │
+        ╞═════════════════════╪════════╡
+        │ 2021-12-16 00:00:00 ┆ a      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 00:30:00 ┆ a      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ a      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:30:00 ┆ b      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ b      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:30:00 ┆ a      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 03:00:00 ┆ a      │
+        └─────────────────────┴────────┘
+        >>> (
+        ...     df.groupby_dynamic(
+        ...         "time",
+        ...         every="1h",
+        ...         closed="both",
+        ...         by="groups",
+        ...         include_boundaries=True,
+        ...     ).agg([pl.col("time").count()])
+        ... )
+        shape: (4, 5)
+        ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
+        │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
+        │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
+        │ str    ┆ datetime            ┆ datetime            ┆ datetime            ┆ u32        │
+        ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
+        │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 3          │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 00:00:00 ┆ 1          │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 00:00:00 ┆ 2          │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
+        └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
         """
 
