@@ -67,7 +67,21 @@ pub fn date_range(
                 t += every.duration()
             }
         }
-        _ => unimplemented!(),
+        ClosedWindow::Right => {
+            t += every.duration();
+            while t <= stop {
+                ts.push(t);
+                t += every.duration()
+            }
+        }
+        ClosedWindow::None => {
+            t += every.duration();
+            while t < stop {
+                ts.push(t);
+                t += every.duration()
+            }
+        }
     }
+    debug_assert!(size >= ts.len());
     ts
 }

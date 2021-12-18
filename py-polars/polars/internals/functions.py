@@ -1,15 +1,15 @@
 from datetime import datetime, timedelta
 from typing import Optional, Sequence, Union, overload
 
-import numpy as np
-
 from polars import internals as pli
-from polars.datatypes import Datetime, py_type_to_dtype
+from polars.datatypes import py_type_to_dtype
+from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
 
 try:
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_lf as _concat_lf
     from polars.polars import concat_series as _concat_series
+    from polars.polars import py_date_range as _py_date_range
     from polars.polars import py_diag_concat_df as _diag_concat_df
 
     _DOCUMENTING = False
@@ -135,15 +135,12 @@ def arg_where(mask: "pli.Series") -> "pli.Series":
 def date_range(
     low: datetime,
     high: datetime,
-    interval: timedelta,
-    closed: Optional[str] = None,
+    interval: Union[str, timedelta],
+    closed: Optional[str] = "both",
     name: Optional[str] = None,
 ) -> "pli.Series":
     """
     Create a date range of type `Datetime`.
-
-    .. warning::
-        This API is experimental and may change without it being considered a breaking change.
 
     Parameters
     ----------
@@ -153,8 +150,10 @@ def date_range(
         Upper bound of the date range
     interval
         Interval periods
-    closed {None, 'left', 'right'}
-        Make the interval closed to the 'left', 'right', or both sides (None, the default).
+        A python timedelta object or a polars duration `str`
+        e.g.: "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    closed {None, 'left', 'right', 'both', 'none'}
+        Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
     name
         Name of the output Series
 
@@ -164,10 +163,8 @@ def date_range(
 
     Examples
     --------
-    >>> from datetime import datetime, timedelta
-    >>> pl.date_range(
-    ...     datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
-    ... )
+    >>> from datetime import datetime
+    >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), "1d12h")
     shape: (7426,)
     Series: '' [datetime]
     [
@@ -199,9 +196,11 @@ def date_range(
     ]
 
     """
-    values = np.arange(low, high, interval, dtype="datetime64[ns]")
-    if closed in (None, "right") and (high - low) % interval == timedelta(0):
-        values = np.append(values, np.array(high, dtype="datetime64[ns]"))
-    if closed == "right":
-        values = values[1:]
-    return pli.Series(name=name, values=values.astype(np.int64)).cast(Datetime)
+    if isinstance(interval, timedelta):
+        interval = _timedelta_to_pl_duration(interval)
+    start = _datetime_to_pl_timestamp(low)
+    stop = _datetime_to_pl_timestamp(high)
+    if name is None:
+        name = ""
+
+    return pli.wrap_s(_py_date_range(start, stop, interval, closed, name))

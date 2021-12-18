@@ -195,3 +195,14 @@ def test_truncate() -> None:
         assert out.dt[-3] == stop - timedelta(hours=1)
         assert out.dt[-2] == stop - timedelta(hours=1)
         assert out.dt[-1] == stop
+
+
+def test_date_range() -> None:
+    result = pl.date_range(
+        datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
+    )
+    assert len(result) == 7426
+    assert result.dt[0] == datetime(1985, 1, 1)
+    assert result.dt[1] == datetime(1985, 1, 2, 12, 0)
+    assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
+    assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)

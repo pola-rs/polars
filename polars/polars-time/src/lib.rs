@@ -14,4 +14,7 @@ mod test;
 mod unit;
 mod window;
 
-pub use {calendar::date_range, duration::Duration, window::Window};
+pub use {
+    calendar::date_range as date_range_vec, duration::Duration, groupby::ClosedWindow,
+    unit::TimeNanoseconds, window::Window,
+};
