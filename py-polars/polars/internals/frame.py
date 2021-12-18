@@ -2256,7 +2256,7 @@ class DataFrame:
         offset: Optional[str] = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: str = "left",
+        closed: str = "right",
         by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
     ) -> "DynamicGroupBy":
         """
@@ -2297,7 +2297,7 @@ class DataFrame:
         every
             interval of the window
         period
-            length of the window
+            length of the window, if None it is equal to 'every'
         offset
             offset of the window
         truncate
@@ -2308,7 +2308,117 @@ class DataFrame:
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
         by
-            Also group by these column(s)
+            Also group by this column/these columns
+
+        Examples
+        --------
+
+        >>> from datetime import datetime
+        >>> # create an example dataframe
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "time": pl.date_range(
+        ...             low=datetime(2021, 12, 16),
+        ...             high=datetime(2021, 12, 16, 3),
+        ...             interval="30m",
+        ...         ),
+        ...         "n": range(7),
+        ...     }
+        ... )
+        >>> df
+        shape: (7, 2)
+        ┌─────────────────────┬─────┐
+        │ time                ┆ n   │
+        │ ---                 ┆ --- │
+        │ datetime            ┆ i64 │
+        ╞═════════════════════╪═════╡
+        │ 2021-12-16 00:00:00 ┆ 0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 00:30:00 ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 01:30:00 ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 4   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 02:30:00 ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 03:00:00 ┆ 6   │
+        └─────────────────────┴─────┘
+        >>> # group by windows of 1 hour starting at 2021-12-16 00:00:00
+        >>> (
+        ...     df.groupby_dynamic("time", every="1h").agg(
+        ...         [pl.col("time").min(), pl.col("time").max()]
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬─────────────────────┬─────────────────────┐
+        │ time                ┆ time_min            ┆ time_max            │
+        │ ---                 ┆ ---                 ┆ ---                 │
+        │ datetime            ┆ datetime            ┆ datetime            │
+        ╞═════════════════════╪═════════════════════╪═════════════════════╡
+        │ 2021-12-16 00:00:00 ┆ 2021-12-16 00:30:00 ┆ 2021-12-16 01:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 2021-12-16 01:30:00 ┆ 2021-12-16 02:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 2021-12-16 02:30:00 ┆ 2021-12-16 03:00:00 │
+        └─────────────────────┴─────────────────────┴─────────────────────┘
+        >>> # the window boundaries can also be added to the aggregation result
+        >>> (
+        ...     df.groupby_dynamic("time", every="1h", include_boundaries=True).agg(
+        ...         [pl.col("time").count()]
+        ...     )
+        ... )
+        shape: (3, 4)
+        ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
+        │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
+        │ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
+        │ datetime            ┆ datetime            ┆ datetime            ┆ u32        │
+        ╞═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
+        │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 2          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 2          │
+        └─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
+        >>> # when closed="left", should not include right end of interval [lower_bound, upper_bound)
+        >>> (
+        ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
+        ...         [pl.col("time").count(), pl.col("time").list()]
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬────────────┬─────────────────────────────────────┐
+        │ time                ┆ time_count ┆ time_agg_list                       │
+        │ ---                 ┆ ---        ┆ ---                                 │
+        │ datetime            ┆ u32        ┆ list [datetime]                     │
+        ╞═════════════════════╪════════════╪═════════════════════════════════════╡
+        │ 2021-12-16 00:00:00 ┆ 2          ┆ [2021-12-16 00:00:00, 2021-12-16... │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 2          ┆ [2021-12-16 01:00:00, 2021-12-16... │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 2          ┆ [2021-12-16 02:00:00, 2021-12-16... │
+        └─────────────────────┴────────────┴─────────────────────────────────────┘
+        >>> # when closed="both" the time values at the window boundaries belong to 2 groups
+        >>> (
+        ...     df.groupby_dynamic("time", every="1h", closed="both").agg(
+        ...         [pl.col("time").count()]
+        ...     )
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────┬────────────┐
+        │ time                ┆ time_count │
+        │ ---                 ┆ ---        │
+        │ datetime            ┆ u32        │
+        ╞═════════════════════╪════════════╡
+        │ 2021-12-16 00:00:00 ┆ 3          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 3          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 3          │
+        └─────────────────────┴────────────┘
+
         """
 
         return DynamicGroupBy(
@@ -2323,9 +2433,12 @@ class DataFrame:
             by,
         )
 
-    def upsample(self, by: str, interval: timedelta) -> "DataFrame":
+    def upsample(self, by: str, interval: Union[str, timedelta]) -> "DataFrame":
         """
         Upsample a DataFrame at a regular frequency.
+
+        .. warning::
+            This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------

@@ -506,7 +506,7 @@ class LazyFrame:
         offset: Optional[str] = None,
         truncate: bool = True,
         include_boundaries: bool = False,
-        closed: str = "left",
+        closed: str = "right",
         by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
     ) -> "LazyGroupBy":
         if period is None:
