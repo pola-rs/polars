@@ -2350,6 +2350,7 @@ class DataFrame:
         └─────────────────────┴─────┘
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
+
         >>> (
         ...     df.groupby_dynamic("time", every="1h").agg(
         ...         [pl.col("time").min(), pl.col("time").max()]
@@ -2369,6 +2370,7 @@ class DataFrame:
         └─────────────────────┴─────────────────────┴─────────────────────┘
 
         The window boundaries can also be added to the aggregation result
+
         >>> (
         ...     df.groupby_dynamic("time", every="1h", include_boundaries=True).agg(
         ...         [pl.col("time").count()]
@@ -2388,6 +2390,7 @@ class DataFrame:
         └─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
         When closed="left", should not include right end of interval [lower_bound, upper_bound)
+
         >>> (
         ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
         ...         [pl.col("time").count(), pl.col("time").list()]
@@ -2407,6 +2410,7 @@ class DataFrame:
         └─────────────────────┴────────────┴─────────────────────────────────────┘
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
+
         >>> (
         ...     df.groupby_dynamic("time", every="1h", closed="both").agg(
         ...         [pl.col("time").count()]
@@ -2426,6 +2430,7 @@ class DataFrame:
         └─────────────────────┴────────────┘
 
         Dynamic groupbys can also be combined with grouping on normal keys
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "time": pl.date_range(
