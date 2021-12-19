@@ -70,10 +70,18 @@ impl ListChunked {
     }
 
     pub fn lst_concat(&self, other: &[Series]) -> Result<ListChunked> {
+        let mut other = other.to_vec();
+        let other_len = other.len();
         let mut iters = Vec::with_capacity(other.len() + 1);
         let dtype = self.dtype();
+        let inner_type = self.inner_dtype();
         let length = self.len();
-        for s in other {
+
+        for s in other.iter_mut() {
+            if !matches!(s.dtype(), DataType::List(_)) && s.dtype() == &inner_type {
+                // coerce to list JIT
+                *s = s.reshape(&[-1, 1]).unwrap();
+            }
             if s.dtype() != dtype {
                 return Err(PolarsError::SchemaMisMatch(
                     format!("cannot concat {:?} into a list of {:?}", s.dtype(), dtype).into(),
@@ -89,7 +97,7 @@ impl ListChunked {
         let mut first_iter = self.into_iter();
         let mut builder = get_list_builder(
             &self.inner_dtype(),
-            self.get_values_size() * (other.len() + 1),
+            self.get_values_size() * (other_len + 1),
             self.len(),
             self.name(),
         );

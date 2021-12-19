@@ -907,6 +907,7 @@ class DataFrame:
 
         Examples
         --------
+
         >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
         >>> df.transpose(include_header=True)
         shape: (2, 4)
@@ -921,6 +922,7 @@ class DataFrame:
         └────────┴──────────┴──────────┴──────────┘
 
         # replace the auto generated column names with a list
+
         >>> df.transpose(include_header=False, column_names=["a", "b", "c"])
         shape: (2, 3)
         ┌─────┬─────┬─────┐

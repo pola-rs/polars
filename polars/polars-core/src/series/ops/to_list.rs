@@ -1,5 +1,6 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use polars_arrow::kernels::list::array_to_unit_list;
 use std::borrow::Cow;
 
 impl Series {
@@ -66,6 +67,19 @@ impl Series {
                 }
                 if cols == -1 {
                     cols = rows / s_ref.len() as i64
+                }
+
+                // fast path, we can create a unit list so we only allocate offsets
+                if rows as usize == s_ref.len() && cols == 1 {
+                    let chunks = s_ref
+                        .chunks()
+                        .iter()
+                        .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
+                        .collect::<Vec<_>>();
+
+                    let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
+                    ca.set_fast_explode();
+                    return Ok(ca.into_series());
                 }
 
                 let mut builder =

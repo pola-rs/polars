@@ -123,10 +123,16 @@ pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
 #[cfg_attr(docsrs, doc(cfg(feature = "list")))]
 pub fn concat_lst(s: Vec<Expr>) -> Expr {
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
-        let first = std::mem::take(&mut s[0]);
+        let mut first = std::mem::take(&mut s[0]);
         let other = &s[1..];
 
-        let first_ca = first.list()?;
+        let first_ca = match first.list().ok() {
+            Some(ca) => ca,
+            None => {
+                first = first.reshape(&[-1, 1]).unwrap();
+                first.list().unwrap()
+            }
+        };
         first_ca.lst_concat(other).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
     Expr::Function {
