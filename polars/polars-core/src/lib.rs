@@ -19,6 +19,8 @@ pub mod series;
 pub mod testing;
 #[cfg(test)]
 mod tests;
+#[cfg(feature = "temporal")]
+pub mod time;
 pub(crate) mod vector_hasher;
 
 #[cfg(any(feature = "dtype-categorical", feature = "object"))]

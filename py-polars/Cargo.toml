@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.11.0"
+version = "0.12.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2018"
@@ -35,16 +35,16 @@ pyo3 = { git = "https://github.com/ghuls/pyo3", branch = "polars_pypy_hasattr" }
 parquet = ["polars/parquet"]
 pivot = ["polars/pivot"]
 ipc = ["polars/ipc"]
-downsample = ["polars/downsample"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
 
-default = ["pivot", "json", "parquet", "downsample", "ipc", "is_in", "json", "polars/repeat_by"]
+default = ["pivot", "json", "parquet", "ipc", "is_in", "json", "polars/repeat_by"]
 
 [dependencies.polars]
 path = "../polars"
 default-features = false
 features = [
+  "dynamic_groupby",
   "zip_with",
   "simd",
   "lazy",

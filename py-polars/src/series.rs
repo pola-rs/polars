@@ -3,7 +3,7 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::list_construction::py_seq_to_list;
-use crate::utils::{downsample_str_to_rule, reinterpret, str_to_polarstype};
+use crate::utils::{reinterpret, str_to_polarstype};
 use crate::{
     arrow_interop,
     npy::{aligned_array, get_refcnt},
@@ -1251,24 +1251,6 @@ impl PySeries {
         Ok(s.into_series().into())
     }
 
-    pub fn round_datetime(&self, rule: &str, n: u32) -> PyResult<Self> {
-        let rule = downsample_str_to_rule(rule, n)?;
-        match self.series.dtype() {
-            DataType::Date => Ok(self.series.date().unwrap().round(rule).into_series().into()),
-            DataType::Datetime => Ok(self
-                .series
-                .datetime()
-                .unwrap()
-                .round(rule)
-                .into_series()
-                .into()),
-            dt => Err(PyPolarsEr::Other(format!(
-                "type: {:?} is not a date. Please use Date or Datetime",
-                dt
-            ))
-            .into()),
-        }
-    }
     pub fn dt_epoch_seconds(&self) -> PyResult<Self> {
         let ms = self.series.timestamp().map_err(PyPolarsEr::from)?;
         Ok((ms / 1000).into_series().into())

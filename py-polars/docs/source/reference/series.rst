@@ -92,7 +92,6 @@ Computations
     Series.cummin
     Series.cummax
     Series.cumprod
-    Series.arg_sort
     Series.arg_true
     Series.arg_unique
     Series.unique
@@ -204,8 +203,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.max
     DateTimeNameSpace.median
     DateTimeNameSpace.mean
-    DateTimeNameSpace.round
-    DateTimeNameSpace.buckets
+    DateTimeNameSpace.truncate
     DateTimeNameSpace.epoch_days
     DateTimeNameSpace.epoch_milliseconds
     DateTimeNameSpace.epoch_seconds

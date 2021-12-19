@@ -273,7 +273,7 @@ pub fn datetime(
                     Some(
                         NaiveDate::from_ymd(y, m, d)
                             .and_hms_milli(h, mnt, s, ms)
-                            .timestamp_millis(),
+                            .timestamp_nanos(),
                     )
                 } else {
                     None

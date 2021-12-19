@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-use arrow::temporal_conversions::{date32_to_date, timestamp_ms_to_datetime};
+use arrow::temporal_conversions::{date32_to_date, timestamp_ns_to_datetime};
 use num::{Num, NumCast};
 use std::{
     fmt,
@@ -505,10 +505,10 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v) => write!(f, "{}", timestamp_ms_to_datetime(*v)),
+            AnyValue::Datetime(v) => write!(f, "{}", timestamp_ns_to_datetime(*v)),
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
-                let nt: chrono::NaiveTime = self.into();
+                let nt: polars_time::export::chrono::NaiveTime = self.into();
                 write!(f, "{}", nt)
             }
             #[cfg(feature = "dtype-categorical")]
@@ -659,9 +659,9 @@ Series: 'Date' [date]
             r#"shape: (3,)
 Series: '' [datetime]
 [
-	1970-01-01 00:00:00.001
+	1970-01-01 00:00:00.000000001
 	null
-	2001-09-09 01:46:40
+	1970-01-01 00:16:40
 ]"#,
             format!("{:?}", s.into_series())
         );

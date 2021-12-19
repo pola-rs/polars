@@ -19,5 +19,6 @@ def test_date_datetime() -> None:
         ]
     )
 
+    print(out)
     assert out["date"].series_equal(df["day"].rename("date"))
     assert out["h2"].series_equal(df["hour"].rename("h2"))

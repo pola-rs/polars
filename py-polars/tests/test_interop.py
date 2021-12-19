@@ -20,14 +20,8 @@ def test_from_pandas_datetime() -> None:
         "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", closed="left"
     )
     s = pl.from_pandas(date_times)
-    assert s[0] == 1624492800000
-    assert s[-1] == 1624525200000
-    # checks dispatch
-    s.dt.round("hour", 2)
-    s.dt.round("day", 5)
-
-    # checks lazy dispatch
-    pl.DataFrame([s.rename("foo")])[pl.col("foo").dt.round("hour", 2)]
+    assert s[0] // 1000_000 == 1624492800000
+    assert s[-1] // 1000_000 == 1624525200000
 
     df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
     df["datetime"] = pd.to_datetime(df["datetime"])

@@ -1340,19 +1340,6 @@ class Series:
         """
         return wrap_s(self._s.argsort(reverse))
 
-    def arg_sort(self, reverse: bool = False) -> "Series":
-        """
-        .. deprecated::
-
-        Index location of the sorted variant of this Series.
-
-        Returns
-        -------
-        indexes
-            Indexes that can be used to sort this array.
-        """
-        return wrap_s(self._s.argsort(reverse))
-
     def arg_unique(self) -> "Series":
         """
         Get unique index as Series.
@@ -3002,23 +2989,22 @@ class Series:
             {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
-              * 'average': The average of the ranks that would have been assigned to
-                all the tied values is assigned to each value.
-              * 'min': The minimum of the ranks that would have been assigned to all
-                the tied values is assigned to each value.  (This is also
-                referred to as "competition" ranking.)
-              * 'max': The maximum of the ranks that would have been assigned to all
-                the tied values is assigned to each value.
-              * 'dense': Like 'min', but the rank of the next highest element is
-                assigned the rank immediately after those assigned to the tied
-                elements.
-              * 'ordinal': All values are given a distinct rank, corresponding to
-                the order that the values occur in `a`.
-              * 'random': Like 'ordinal', but the rank for ties is not dependent
-                on the order that the values occur in `a`.
+            - 'average': The average of the ranks that would have been assigned to
+            all the tied values is assigned to each value.
+            - 'min': The minimum of the ranks that would have been assigned to all
+            the tied values is assigned to each value.  (This is also
+            referred to as "competition" ranking.)
+            - 'max': The maximum of the ranks that would have been assigned to all
+            the tied values is assigned to each value.
+            - 'dense': Like 'min', but the rank of the next highest element is
+            assigned the rank immediately after those assigned to the tied
+            elements.
+            - 'ordinal': All values are given a distinct rank, corresponding to
+            the order that the values occur in `a`.
+            - 'random': Like 'ordinal', but the rank for ties is not dependent
+            on the order that the values occur in `a`.
         reverse
             reverse the operation
-
         """
         return wrap_s(self._s.rank(method, reverse))
 
@@ -3509,15 +3495,40 @@ class DateTimeNameSpace:
     def __init__(self, series: Series):
         self._s = series._s
 
-    def buckets(self, interval: timedelta) -> Series:
+    def truncate(
+        self,
+        every: Union[str, timedelta],
+        offset: Optional[Union[str, timedelta]] = None,
+    ) -> Series:
         """
+        .. warning::
+            This API is experimental and may change without it being considered a breaking change.
+
         Divide the date/ datetime range into buckets.
-        Data will be sorted by this operation.
+        Data must be sorted, if not the output does not make sense.
+
+        The `every` and `offset` argument are created with the
+        the following string language:
+
+        1ns # 1 nanosecond
+        1us # 1 microsecond
+        1ms # 1 millisecond
+        1s  # 1 second
+        1m  # 1 minute
+        1h  # 1 hour
+        1d  # 1 day
+        1w  # 1 week
+        1mo # 1 calendar month
+        1y  # 1 calendar year
+
+        3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         Parameters
         ----------
-        interval
-            python timedelta to indicate bucket size
+        every
+            Every interval start and period length
+        offset
+            Offset the window
 
         Returns
         -------
@@ -3525,54 +3536,77 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime, timedelta
-        >>> date_range = pl.date_range(
-        ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
-        ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
-        ...     interval=timedelta(minutes=8),
-        ...     name="date_range",
-        ... )
-        >>> date_range.dt.buckets(timedelta(minutes=8))
-        shape: (8,)
-        Series: 'date_range' [datetime]
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
+        >>> s
+        shape: (49,)
+        Series: 'dates' [datetime]
         [
-            2000-10-01 23:30:00
-            2000-10-01 23:30:00
-            2000-10-01 23:38:00
-            2000-10-01 23:46:00
-            2000-10-01 23:54:00
-            2000-10-02 00:02:00
-            2000-10-02 00:10:00
-            2000-10-02 00:18:00
+            2001-01-01 00:00:00
+            2001-01-01 00:30:00
+            2001-01-01 01:00:00
+            2001-01-01 01:30:00
+            2001-01-01 02:00:00
+            2001-01-01 02:30:00
+            2001-01-01 03:00:00
+            2001-01-01 03:30:00
+            2001-01-01 04:00:00
+            2001-01-01 04:30:00
+            2001-01-01 05:00:00
+            2001-01-01 05:30:00
+            ...
+            2001-01-01 18:30:00
+            2001-01-01 19:00:00
+            2001-01-01 19:30:00
+            2001-01-01 20:00:00
+            2001-01-01 20:30:00
+            2001-01-01 21:00:00
+            2001-01-01 21:30:00
+            2001-01-01 22:00:00
+            2001-01-01 22:30:00
+            2001-01-01 23:00:00
+            2001-01-01 23:30:00
+            2001-01-02 00:00:00
         ]
-
-        Can be used to perform a downsample operation:
-
-        >>> (
-        ...     date_range.to_frame()
-        ...     .groupby(
-        ...         pl.col("date_range").dt.buckets(timedelta(minutes=16)),
-        ...         maintain_order=True,
-        ...     )
-        ...     .agg(pl.col("date_range").count())
-        ... )
-        shape: (4, 2)
-        ┌─────────────────────┬──────────────────┐
-        │ date_range          ┆ date_range_count │
-        │ ---                 ┆ ---              │
-        │ datetime            ┆ u32              │
-        ╞═════════════════════╪══════════════════╡
-        │ 2000-10-01 23:30:00 ┆ 3                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-01 23:46:00 ┆ 2                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-02 00:02:00 ┆ 2                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-02 00:18:00 ┆ 1                │
-        └─────────────────────┴──────────────────┘
+        >>> s.dt.truncate("1h")
+        shape: (49,)
+        Series: 'dates' [datetime]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            2001-01-01 04:00:00
+            2001-01-01 05:00:00
+            2001-01-01 05:00:00
+            ...
+            2001-01-01 18:00:00
+            2001-01-01 19:00:00
+            2001-01-01 19:00:00
+            2001-01-01 20:00:00
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+        >>> assert s.dt.truncate("1h") == s.dt.truncate(timedelta(hours=1))
 
         """
-        return pli.select(pli.lit(wrap_s(self._s)).dt.buckets(interval)).to_series()
+        return pli.select(
+            pli.lit(wrap_s(self._s)).dt.truncate(every, offset)
+        ).to_series()
 
     def __getitem__(self, item: int) -> Union[date, datetime]:
         s = wrap_s(self._s)
@@ -3770,28 +3804,6 @@ class DateTimeNameSpace:
         out = int(s.mean())
         return _to_python_datetime(out, s.dtype)
 
-    def round(self, rule: str, n: int) -> Series:
-        """
-        Round the datetime.
-
-        Parameters
-        ----------
-        rule
-            Units of the downscaling operation.
-
-            Any of:
-                - "month"
-                - "week"
-                - "day"
-                - "hour"
-                - "minute"
-                - "second"
-
-        n
-            Number of units (e.g. 5 "day", 15 "minute".
-        """
-        return wrap_s(self._s.round_datetime(rule, n))
-
     def epoch_days(self) -> Series:
         """
         Get the number of days since the unix EPOCH.
@@ -3835,8 +3847,8 @@ def _to_python_datetime(
         # to inconsistencies dependent on the timezone you are in.
         return datetime.utcfromtimestamp(value * 3600 * 24).date()
     elif dtype == Datetime:
-        # ms to seconds
-        return datetime.utcfromtimestamp(value / 1000)
+        # nanoseconds to seconds
+        return datetime.utcfromtimestamp(value / 1_000_000_000)
     else:
         raise NotImplementedError
 

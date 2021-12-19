@@ -9,14 +9,16 @@ check:
 	    -p polars-core \
 	    -p polars-io \
 	    -p polars-lazy \
-	    -p polars-arrow
+	    -p polars-arrow \
+	    -p polars-time
 
 clippy:
 	cargo clippy -Z unstable-options --all-features \
 	    -p polars-core \
 	    -p polars-io \
 	    -p polars-lazy \
-	    -p polars-arrow
+	    -p polars-arrow \
+	    -p polars-time
 
 clippy-default:
 	cargo clippy -Z unstable-options
@@ -27,6 +29,7 @@ test:
 	    -p polars-io \
 	    -p polars-core \
 	    -p polars-arrow \
+	    -p polars-time \
 	    -- \
 	    --test-threads=2
 

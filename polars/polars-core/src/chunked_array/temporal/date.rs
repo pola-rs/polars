@@ -94,28 +94,3 @@ impl DateChunked {
         .into()
     }
 }
-
-#[cfg(test)]
-mod test {
-    use crate::prelude::*;
-    use chrono::NaiveDateTime;
-
-    #[test]
-    fn from_datetime() {
-        let datetimes: Vec<_> = [
-            "1988-08-25 00:00:16",
-            "2015-09-05 23:56:04",
-            "2012-12-21 00:00:00",
-        ]
-        .iter()
-        .map(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap())
-        .collect();
-
-        // NOTE: the values are checked and correct.
-        let dt = DatetimeChunked::new_from_naive_datetime("name", &datetimes);
-        assert_eq!(
-            [588470416000, 1441497364000, 1356048000000],
-            dt.cont_slice().unwrap()
-        );
-    }
-}

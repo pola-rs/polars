@@ -54,6 +54,7 @@ moment = ["polars-core/moment"]
 list = ["polars-core/list"]
 abs = ["polars-core/abs"]
 random = ["polars-core/random"]
+dynamic_groupby = ["polars-core/dynamic_groupby"]
 
 # no guarantees whatsoever
 private = []

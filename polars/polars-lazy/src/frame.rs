@@ -1,6 +1,7 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_core::datatypes::PlHashMap;
+use polars_core::frame::groupby::DynamicGroupOptions;
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
@@ -817,6 +818,22 @@ impl LazyFrame {
             opt_state,
             keys: by.as_ref().to_vec(),
             maintain_order: false,
+            dynamic_options: None,
+        }
+    }
+
+    pub fn groupby_dynamic<E: AsRef<[Expr]>>(
+        self,
+        by: E,
+        options: DynamicGroupOptions,
+    ) -> LazyGroupBy {
+        let opt_state = self.get_opt_state();
+        LazyGroupBy {
+            logical_plan: self.logical_plan,
+            opt_state,
+            keys: by.as_ref().to_vec(),
+            maintain_order: true,
+            dynamic_options: Some(options),
         }
     }
 
@@ -828,6 +845,7 @@ impl LazyFrame {
             opt_state,
             keys: by.as_ref().to_vec(),
             maintain_order: true,
+            dynamic_options: None,
         }
     }
 
@@ -895,16 +913,18 @@ impl LazyFrame {
     ///
     /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .join(other, vec![col("foo"), col("bar")], vec![col("foo"), col("bar")], JoinType::Inner)
+    ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinType::Inner)
     /// }
     /// ```
-    pub fn join(
+    pub fn join<E: AsRef<[Expr]>>(
         self,
         other: LazyFrame,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
+        left_on: E,
+        right_on: E,
         how: JoinType,
     ) -> LazyFrame {
+        let left_on = left_on.as_ref().to_vec();
+        let right_on = right_on.as_ref().to_vec();
         self.join_builder()
             .with(other)
             .left_on(left_on)
@@ -1124,6 +1144,7 @@ pub struct LazyGroupBy {
     opt_state: OptState,
     keys: Vec<Expr>,
     maintain_order: bool,
+    dynamic_options: Option<DynamicGroupOptions>,
 }
 
 impl LazyGroupBy {
@@ -1151,7 +1172,13 @@ impl LazyGroupBy {
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(Arc::new(self.keys), aggs, None, self.maintain_order)
+            .groupby(
+                Arc::new(self.keys),
+                aggs,
+                None,
+                self.maintain_order,
+                self.dynamic_options,
+            )
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -1194,6 +1221,7 @@ impl LazyGroupBy {
                 vec![],
                 Some(Arc::new(f)),
                 self.maintain_order,
+                None,
             )
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)

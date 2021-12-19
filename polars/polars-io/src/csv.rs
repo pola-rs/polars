@@ -70,13 +70,10 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
-        // 6f because our precision is milliseconds
-        // no need for 3 traling zeros
+        // 9f: all nanoseconds
         let options = write::SerializeOptions {
-            // 9f: all nanoseconds
             time64_format: Some("%T%.9f".to_string()),
-            // 6f: all milliseconds
-            timestamp_format: Some("%FT%H:%M:%S.%6f".to_string()),
+            timestamp_format: Some("%FT%H:%M:%S.%9f".to_string()),
             ..Default::default()
         };
 

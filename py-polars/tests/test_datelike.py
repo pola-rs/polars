@@ -32,48 +32,6 @@ def test_fill_null() -> None:
         assert out.dt[-1] == dt_2
 
 
-def test_downsample() -> None:
-    s = pl.Series(
-        "datetime",
-        [
-            946684800000,
-            946684860000,
-            946684920000,
-            946684980000,
-            946685040000,
-            946685100000,
-            946685160000,
-            946685220000,
-            946685280000,
-            946685340000,
-            946685400000,
-            946685460000,
-            946685520000,
-            946685580000,
-            946685640000,
-            946685700000,
-            946685760000,
-            946685820000,
-            946685880000,
-            946685940000,
-        ],
-    ).cast(pl.Datetime)
-    s2 = s.clone()
-    df = pl.DataFrame({"a": s, "b": s2})
-    out = df.downsample("a", rule="minute", n=5).first()
-    assert out.shape == (4, 2)
-
-    # OLHC
-    out = df.downsample("a", rule="minute", n=5).agg(
-        {"b": ["first", "min", "max", "last"]}
-    )
-    assert out.shape == (4, 5)
-
-    # test to_pandas as well.
-    out = df.to_pandas()
-    assert out["a"].dtype == "datetime64[ns]"
-
-
 def test_filter_date() -> None:
     dataset = pl.DataFrame(
         {"date": ["2020-01-02", "2020-01-03", "2020-01-04"], "index": [1, 2, 3]}
@@ -109,9 +67,11 @@ def test_diff_datetime() -> None:
 
 
 def test_timestamp() -> None:
-    a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Datetime)
+    a = pl.Series("a", [a * 1000_000 for a in [10000, 20000, 30000]], dtype=pl.Datetime)
     assert a.dt.timestamp() == [10000, 20000, 30000]
     out = a.dt.to_python_datetime()
+    print(a.cast(int))
+    print(out)
     assert isinstance(out[0], datetime)
     assert a.dt.min() == out[0]
     assert a.dt.max() == out[2]
@@ -170,22 +130,6 @@ def test_datetime_consistency() -> None:
     assert df.select(pl.lit(dt))["literal"].dt[0] == dt
 
 
-def downsample_with_buckets() -> None:
-    assert (
-        pl.date_range(
-            low=datetime(2000, 10, 1, 23, 30),
-            high=datetime(2000, 10, 2, 0, 30),
-            interval=timedelta(minutes=7),
-            name="date_range",
-        )
-        .to_frame()
-        .groupby(
-            pl.col("date_range").dt.buckets(timedelta(minutes=17)), maintain_order=True
-        )
-        .agg(pl.col("date_range").count().alias("bucket_count"))
-    ).to_series(1).to_list() == [3, 2, 3, 1]
-
-
 def test_timezone() -> None:
     ts = pa.timestamp("s")
     data = pa.array([1000, 2000], type=ts)
@@ -207,14 +151,18 @@ def test_to_list() -> None:
     out = s.to_list()
     assert out[0] == date(2308, 4, 2)
 
-    s = pl.Series("datetime", [123543, 283478, 1243]).cast(pl.Datetime)
+    s = pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]]).cast(
+        pl.Datetime
+    )
     out = s.to_list()
     assert out[0] == datetime(1970, 1, 1, 0, 2, 3, 543000)
 
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = pl.Series("datetime", [123543, 283478, 1243]).cast(pl.Datetime)
+    s1 = pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]]).cast(
+        pl.Datetime
+    )
     df = pl.DataFrame([s0, s1])
 
     rows = df.rows()
@@ -230,3 +178,31 @@ def test_to_numpy() -> None:
         str(s1.to_numpy()[:2])
         == "['1970-01-01T00:02:03.543' '1970-01-01T00:04:43.478']"
     )
+
+
+def test_truncate() -> None:
+    start = datetime(2001, 1, 1)
+    stop = datetime(2001, 1, 2)
+    s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
+
+    # we can pass strings and timedeltas
+    for out in [s.dt.truncate("1h"), s.dt.truncate(timedelta(hours=1))]:
+        assert out.dt[0] == start
+        assert out.dt[1] == start
+        assert out.dt[2] == start + timedelta(hours=1)
+        assert out.dt[3] == start + timedelta(hours=1)
+        # ...
+        assert out.dt[-3] == stop - timedelta(hours=1)
+        assert out.dt[-2] == stop - timedelta(hours=1)
+        assert out.dt[-1] == stop
+
+
+def test_date_range() -> None:
+    result = pl.date_range(
+        datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
+    )
+    assert len(result) == 7426
+    assert result.dt[0] == datetime(1985, 1, 1)
+    assert result.dt[1] == datetime(1985, 1, 2, 12, 0)
+    assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
+    assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)

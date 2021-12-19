@@ -10,10 +10,10 @@ use std::{
 use ahash::RandomState;
 use itertools::Itertools;
 
-use polars_core::prelude::*;
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 #[cfg(feature = "temporal")]
-use polars_core::utils::chrono::NaiveDateTime;
+use polars_core::export::chrono::NaiveDateTime;
+use polars_core::prelude::*;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "parquet")]
@@ -34,6 +34,7 @@ pub(crate) mod conversion;
 pub(crate) mod iterator;
 pub(crate) mod optimizer;
 mod projection;
+use polars_core::frame::groupby::DynamicGroupOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 use projection::*;
@@ -234,6 +235,7 @@ pub enum LogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
+        dynamic_options: Option<DynamicGroupOptions>,
     },
     /// Join operation
     Join {
@@ -1037,8 +1039,9 @@ impl LogicalPlanBuilder {
         aggs: E,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
+        dynamic_options: Option<DynamicGroupOptions>,
     ) -> Self {
-        debug_assert!(!keys.is_empty());
+        debug_assert!(!(keys.is_empty() && dynamic_options.is_none()));
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema);
 
@@ -1053,6 +1056,7 @@ impl LogicalPlanBuilder {
             schema: Arc::new(schema),
             apply,
             maintain_order,
+            dynamic_options,
         }
         .into()
     }

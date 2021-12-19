@@ -36,3 +36,24 @@ fn test_pred_pd_1() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_no_left_join_pass() -> Result<()> {
+    let df1 = df![
+        "foo" => ["abc", "def", "ghi"],
+        "idx1" => [0, 0, 1],
+    ]?;
+    let df2 = df![
+        "bar" => [5, 6],
+        "idx2" => [0, 1],
+    ]?;
+
+    let out = df1
+        .lazy()
+        .join(df2.lazy(), [col("idx1")], [col("idx2")], JoinType::Left)
+        .filter(col("bar").eq(lit(5i32)))
+        .collect()?;
+
+    dbg!(out);
+    Ok(())
+}

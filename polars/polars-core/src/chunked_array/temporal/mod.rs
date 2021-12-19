@@ -6,12 +6,13 @@ mod date;
 mod datetime;
 #[cfg(feature = "dtype-time")]
 mod time;
-pub mod timedelta;
+#[cfg(feature = "temporal")]
+pub mod truncate;
 mod utf8;
 
 pub use self::conversion::*;
 use crate::chunked_array::kernels::temporal::*;
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use polars_time::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 pub fn unix_time() -> NaiveDateTime {
     NaiveDateTime::from_timestamp(0, 0)

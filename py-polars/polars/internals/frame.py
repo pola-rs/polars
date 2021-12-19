@@ -2246,85 +2246,266 @@ class DataFrame:
         """
         if isinstance(by, str):
             by = [by]
-        return GroupBy(
-            self._df, by, maintain_order=maintain_order, downsample=False  # type: ignore
-        )
+        return GroupBy(self._df, by, maintain_order=maintain_order)  # type: ignore
 
-    def downsample(self, by: Union[str, tp.List[str]], rule: str, n: int) -> "GroupBy":
+    def groupby_dynamic(
+        self,
+        time_column: str,
+        every: str,
+        period: Optional[str] = None,
+        offset: Optional[str] = None,
+        truncate: bool = True,
+        include_boundaries: bool = False,
+        closed: str = "right",
+        by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
+    ) -> "DynamicGroupBy":
         """
+        Groups based on a time value. Time windows are calculated and rows are assigned to windows.
+        Different from a normal groupby is that a row can be member of multiple groups. The time window could
+        be seen as a rolling window, with a window size determined by dates/times instead of slots in the DataFrame.
 
-        .. deprecated:: 0.11.0
-            Use `buckets` expression instead
+        A window is defined by:
 
-        Start a downsampling groupby operation.
+        - every: interval of the window
+        - period: length of the window
+        - offset: offset of the window
+
+        The `every`, `period` and `offset` arguments are created with
+        the following string language:
+
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 day)
+        - 1w    (1 week)
+        - 1mo   (1 calendar month)
+        - 1y    (1 calendar year)
+
+        Or combine them:
+        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        .. warning::
+            This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------
+        time_column
+            Column used to group based on the time window.
+            Often to type Date/Datetime
+            This column must be sorted. If not the output will not make sense.
+        every
+            interval of the window
+        period
+            length of the window, if None it is equal to 'every'
+        offset
+            offset of the window
+        truncate
+            truncate the time value to the window lower bound
+        include_boundaries
+            add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns
+        closed
+            Defines if the window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
         by
-            Column that will be used as key in the groupby operation.
-            This should be a datetime/date column.
-        rule
-            Units of the downscaling operation.
-
-            Any of:
-                - "month"
-                - "week"
-                - "day"
-                - "hour"
-                - "minute"
-                - "second"
-
-        n
-            Number of units (e.g. 5 "day", 15 "minute".
+            Also group by this column/these columns
 
         Examples
         --------
 
+        >>> from datetime import datetime
+        >>> # create an example dataframe
         >>> df = pl.DataFrame(
         ...     {
-        ...         "A": [
-        ...             "2020-01-01",
-        ...             "2020-01-02",
-        ...             "2020-01-03",
-        ...             "2020-01-04",
-        ...             "2020-01-05",
-        ...             "2020-01-06",
-        ...         ],
-        ...         "B": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0],
-        ...         "C": [3.0, 6.0, 9.0, 2.0, 13.0, 8.0],
-        ...         "D": [12.0, 5.0, 9.0, 2.0, 11.0, 2.0],
+        ...         "time": pl.date_range(
+        ...             low=datetime(2021, 12, 16),
+        ...             high=datetime(2021, 12, 16, 3),
+        ...             interval="30m",
+        ...         ),
+        ...         "n": range(7),
         ...     }
         ... )
-        >>> df["A"] = df["A"].str.strptime(pl.Date, "%Y-%m-%d")
-        >>> df.downsample("A", rule="day", n=3).agg(
-        ...     {"B": "max", "C": "min", "D": "last"}
+        >>> df
+        shape: (7, 2)
+        ┌─────────────────────┬─────┐
+        │ time                ┆ n   │
+        │ ---                 ┆ --- │
+        │ datetime            ┆ i64 │
+        ╞═════════════════════╪═════╡
+        │ 2021-12-16 00:00:00 ┆ 0   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 00:30:00 ┆ 1   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 2   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 01:30:00 ┆ 3   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 4   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 02:30:00 ┆ 5   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2021-12-16 03:00:00 ┆ 6   │
+        └─────────────────────┴─────┘
+
+        Group by windows of 1 hour starting at 2021-12-16 00:00:00.
+
+        >>> (
+        ...     df.groupby_dynamic("time", every="1h").agg(
+        ...         [pl.col("time").min(), pl.col("time").max()]
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬─────────────────────┬─────────────────────┐
+        │ time                ┆ time_min            ┆ time_max            │
+        │ ---                 ┆ ---                 ┆ ---                 │
+        │ datetime            ┆ datetime            ┆ datetime            │
+        ╞═════════════════════╪═════════════════════╪═════════════════════╡
+        │ 2021-12-16 00:00:00 ┆ 2021-12-16 00:30:00 ┆ 2021-12-16 01:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 2021-12-16 01:30:00 ┆ 2021-12-16 02:00:00 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 2021-12-16 02:30:00 ┆ 2021-12-16 03:00:00 │
+        └─────────────────────┴─────────────────────┴─────────────────────┘
+
+        The window boundaries can also be added to the aggregation result
+
+        >>> (
+        ...     df.groupby_dynamic("time", every="1h", include_boundaries=True).agg(
+        ...         [pl.col("time").count()]
+        ...     )
         ... )
         shape: (3, 4)
-        ┌────────────┬───────┬───────┬────────┐
-        │ A          ┆ B_max ┆ C_min ┆ D_last │
-        │ ---        ┆ ---   ┆ ---   ┆ ---    │
-        │ date       ┆ f64   ┆ f64   ┆ f64    │
-        ╞════════════╪═══════╪═══════╪════════╡
-        │ 2019-12-31 ┆ 8     ┆ 3     ┆ 5      │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2020-01-03 ┆ 16    ┆ 2     ┆ 11     │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-        │ 2020-01-06 ┆ 10    ┆ 8     ┆ 2      │
-        └────────────┴───────┴───────┴────────┘
+        ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
+        │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
+        │ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
+        │ datetime            ┆ datetime            ┆ datetime            ┆ u32        │
+        ╞═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
+        │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 2          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 2          │
+        └─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
+
+        When closed="left", should not include right end of interval [lower_bound, upper_bound)
+
+        >>> (
+        ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
+        ...         [pl.col("time").count(), pl.col("time").list()]
+        ...     )
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬────────────┬─────────────────────────────────────┐
+        │ time                ┆ time_count ┆ time_agg_list                       │
+        │ ---                 ┆ ---        ┆ ---                                 │
+        │ datetime            ┆ u32        ┆ list [datetime]                     │
+        ╞═════════════════════╪════════════╪═════════════════════════════════════╡
+        │ 2021-12-16 00:00:00 ┆ 2          ┆ [2021-12-16 00:00:00, 2021-12-16... │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 2          ┆ [2021-12-16 01:00:00, 2021-12-16... │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 2          ┆ [2021-12-16 02:00:00, 2021-12-16... │
+        └─────────────────────┴────────────┴─────────────────────────────────────┘
+
+        When closed="both" the time values at the window boundaries belong to 2 groups.
+
+        >>> (
+        ...     df.groupby_dynamic("time", every="1h", closed="both").agg(
+        ...         [pl.col("time").count()]
+        ...     )
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────┬────────────┐
+        │ time                ┆ time_count │
+        │ ---                 ┆ ---        │
+        │ datetime            ┆ u32        │
+        ╞═════════════════════╪════════════╡
+        │ 2021-12-16 00:00:00 ┆ 3          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ 3          │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ 3          │
+        └─────────────────────┴────────────┘
+
+        Dynamic groupbys can also be combined with grouping on normal keys
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "time": pl.date_range(
+        ...             low=datetime(2021, 12, 16),
+        ...             high=datetime(2021, 12, 16, 3),
+        ...             interval="30m",
+        ...         ),
+        ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
+        ...     }
+        ... )
+        >>> df
+        shape: (7, 2)
+        ┌─────────────────────┬────────┐
+        │ time                ┆ groups │
+        │ ---                 ┆ ---    │
+        │ datetime            ┆ str    │
+        ╞═════════════════════╪════════╡
+        │ 2021-12-16 00:00:00 ┆ a      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 00:30:00 ┆ a      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:00:00 ┆ a      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 01:30:00 ┆ b      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:00:00 ┆ b      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 02:30:00 ┆ a      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2021-12-16 03:00:00 ┆ a      │
+        └─────────────────────┴────────┘
+        >>> (
+        ...     df.groupby_dynamic(
+        ...         "time",
+        ...         every="1h",
+        ...         closed="both",
+        ...         by="groups",
+        ...         include_boundaries=True,
+        ...     ).agg([pl.col("time").count()])
+        ... )
+        shape: (4, 5)
+        ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
+        │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
+        │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
+        │ str    ┆ datetime            ┆ datetime            ┆ datetime            ┆ u32        │
+        ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
+        │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 3          │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 00:00:00 ┆ 1          │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 00:00:00 ┆ 2          │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ b      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
+        └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
         """
-        return GroupBy(
-            self._df,
+
+        return DynamicGroupBy(
+            self,
+            time_column,
+            every,
+            period,
+            offset,
+            truncate,
+            include_boundaries,
+            closed,
             by,
-            maintain_order=False,
-            downsample=True,
-            rule=rule,
-            downsample_n=n,
         )
 
-    def upsample(self, by: str, interval: timedelta) -> "DataFrame":
+    def upsample(self, by: str, interval: Union[str, timedelta]) -> "DataFrame":
         """
         Upsample a DataFrame at a regular frequency.
+
+        .. warning::
+            This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------
@@ -3666,6 +3847,60 @@ class DataFrame:
         return self.height == 0
 
 
+class DynamicGroupBy:
+    """
+    A dynamic grouper. This has an `.agg` method which will allow you to run all polars expressions
+    in a groupby context.
+    """
+
+    def __init__(
+        self,
+        df: "DataFrame",
+        time_column: str,
+        every: str,
+        period: Optional[str],
+        offset: Optional[str],
+        truncate: bool = True,
+        include_boundaries: bool = True,
+        closed: str = "none",
+        by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
+    ):
+        self.df = df
+        self.time_column = time_column
+        self.every = every
+        self.period = period
+        self.offset = offset
+        self.truncate = truncate
+        self.include_boundaries = include_boundaries
+        self.closed = closed
+        self.by = by
+
+    def agg(
+        self,
+        column_to_agg: Union[
+            tp.List[Tuple[str, tp.List[str]]],
+            Dict[str, Union[str, tp.List[str]]],
+            tp.List["pli.Expr"],
+            "pli.Expr",
+        ],
+    ) -> DataFrame:
+        return (
+            self.df.lazy()
+            .groupby_dynamic(
+                self.time_column,
+                self.every,
+                self.period,
+                self.offset,
+                self.truncate,
+                self.include_boundaries,
+                self.closed,
+                self.by,
+            )
+            .agg(column_to_agg)  # type: ignore[arg-type]
+            .collect(no_optimization=True, string_cache=False)
+        )
+
+
 class GroupBy:
     """
     Starts a new GroupBy operation.
@@ -3706,16 +3941,10 @@ class GroupBy:
         df: "PyDataFrame",
         by: Union[str, tp.List[str]],
         maintain_order: bool = False,
-        downsample: bool = False,
-        rule: Optional[str] = None,
-        downsample_n: int = 0,
     ):
         self._df = df
         self.by = by
         self.maintain_order = maintain_order
-        self.downsample = downsample
-        self.rule = rule
-        self.downsample_n = downsample_n
 
     def __getitem__(self, item: Any) -> "GBSelection":
         return self._select(item)
@@ -3729,8 +3958,6 @@ class GroupBy:
         columns
             One or multiple columns.
         """
-        if self.downsample:
-            raise ValueError("select not supported in downsample operation")
         if isinstance(columns, str):
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
@@ -3814,64 +4041,69 @@ class GroupBy:
         ],
     ) -> DataFrame:
         """
-        Use multiple aggregations on columns. This can be combined with complete lazy API
-        and is considered idiomatic polars.
+                Use multiple aggregations on columns. This can be combined with complete lazy API
+                and is considered idiomatic polars.
 
-        Parameters
-        ----------
-        column_to_agg
-            map column to aggregation functions.
+                Parameters
+                ----------
+                column_to_agg
+                    map column to aggregation functions.
 
-        Use lazy API syntax (recommended)
+                Use lazy API syntax (recommended)
 
-        >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
+                >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
 
-        Column name to aggregation with tuples:
+                Column name to aggregation with tuples        time_column: str,
+                every: str,
+                period: str,
+                offset: str,
+                truncate: bool = True
+        :
 
-        >>> [
-        ...     ("foo", ["sum", "n_unique", "min"]),
-        ...     ("bar", ["max"]),
-        ... ]  # doctest: +SKIP
+                >>> [
+                ...     ("foo", ["sum", "n_unique", "min"]),
+                ...     ("bar", ["max"]),
+                ... ]  # doctest: +SKIP
 
-        Column name to aggregation with dict:
-        >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}  # doctest: +SKIP
+                Column name to aggregation with dict:
+                >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}  # doctest: +SKIP
 
-        Returns
-        -------
-        Result of groupby split apply operations.
+                Returns
+                -------
+                Result of groupby split apply operations.
 
 
-        Examples
-        --------
+                Examples
+                --------
 
-        Use lazy API:
+                Use lazy API:
 
-        >>> df.groupby(["foo", "bar"]).agg(
-        ...     [
-        ...         pl.sum("ham"),
-        ...         pl.col("spam").tail(4).sum(),
-        ...     ]
-        ... )  # doctest: +SKIP
+                >>> df.groupby(["foo", "bar"]).agg(
+                ...     [
+                ...         pl.sum("ham"),
+                ...         pl.col("spam").tail(4).sum(),
+                ...     ]
+                ... )  # doctest: +SKIP
 
-        Use a dict:
+                Use a dict:
 
-        >>> df.groupby(["foo", "bar"]).agg(
-        ...     {
-        ...         "spam": ["sum", "min"],
-        ...     }
-        ... )  # doctest: +SKIP
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ foo ┆ bar │
-        │ --- ┆ --- │
-        │ str ┆ i64 │
-        ╞═════╪═════╡
-        │ a   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 3   │
-        └─────┴─────┘
+                >>> df.groupby(["foo", "bar"]).agg(
+                ...     {
+                ...         "spam": ["sum", "min"],
+                ...     }
+                ... )  # doctest: +SKIP
+                shape: (3, 2)
+                ┌─────┬─────┐
+                │ foo ┆ bar │
+                │ --- ┆ --- │
+                │ str ┆ i64 │
+                ╞═════╪═════╡
+                │ a   ┆ 1   │
+                ├╌╌╌╌╌┼╌╌╌╌╌┤
+                │ a   ┆ 2   │
+                ├╌╌╌╌╌┼╌╌╌╌╌┤
+                │ b   ┆ 3   │
+                └─────┴─────┘
 
         """
         if isinstance(column_to_agg, pli.Expr):
@@ -3906,13 +4138,6 @@ class GroupBy:
         else:
             raise ValueError(
                 f"argument: {column_to_agg} not understood, have you passed a list of expressions?"
-            )
-
-        if self.downsample:
-            return wrap_df(
-                self._df.downsample_agg(
-                    self.by, self.rule, self.downsample_n, column_to_agg
-                )
             )
 
         return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
@@ -4050,9 +4275,7 @@ class GroupBy:
         """
         Select all columns for aggregation.
         """
-        return GBSelection(
-            self._df, self.by, None, self.downsample, self.rule, self.downsample_n
-        )
+        return GBSelection(self._df, self.by, None)
 
     def pivot(self, pivot_column: str, values_column: str) -> "PivotOps":
         """
@@ -4065,8 +4288,6 @@ class GroupBy:
         values_column
             Column that will be aggregated.
         """
-        if self.downsample:
-            raise ValueError("Pivot not supported in downsample operation.")
         return PivotOps(self._df, self.by, pivot_column, values_column)
 
     def first(self) -> DataFrame:
@@ -4229,80 +4450,57 @@ class GBSelection:
         df: "PyDataFrame",
         by: Union[str, tp.List[str]],
         selection: Optional[tp.List[str]],
-        downsample: bool = False,
-        rule: Optional[str] = None,
-        downsample_n: int = 0,
     ):
         self._df = df
         self.by = by
         self.selection = selection
-        self.downsample = downsample
-        self.rule = rule
-        self.n = downsample_n
 
     def first(self) -> DataFrame:
         """
         Aggregate the first values in the group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "first"))
-
         return wrap_df(self._df.groupby(self.by, self.selection, "first"))
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "last"))
         return wrap_df(self._df.groupby(self.by, self.selection, "last"))
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "sum"))
         return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "min"))
         return wrap_df(self._df.groupby(self.by, self.selection, "min"))
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "max"))
         return wrap_df(self._df.groupby(self.by, self.selection, "max"))
 
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "count"))
         return wrap_df(self._df.groupby(self.by, self.selection, "count"))
 
     def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "mean"))
         return wrap_df(self._df.groupby(self.by, self.selection, "mean"))
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "n_unique"))
         return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))
 
     def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
@@ -4318,8 +4516,6 @@ class GBSelection:
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         """
-        if self.downsample:
-            raise ValueError("quantile operation not supported during downsample")
         return wrap_df(
             self._df.groupby_quantile(self.by, self.selection, quantile, interpolation)
         )
@@ -4328,16 +4524,12 @@ class GBSelection:
         """
         Return the median per group.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "median"))
         return wrap_df(self._df.groupby(self.by, self.selection, "median"))
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
-        if self.downsample:
-            return wrap_df(self._df.downsample(self.by, self.rule, self.n, "agg_list"))
         return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))
 
     def apply(

@@ -46,7 +46,8 @@
 //!
 //! ```rust
 //! use polars_core::prelude::*;
-//! use chrono::NaiveDateTime;
+//! // don't use this in your code, use chrono directly!
+//! use polars_core::export::chrono::NaiveDateTime;
 //!
 //! // String values to parse, Note that the 2nd value is not a correct time value.
 //! let datetime_values = &[

@@ -1,6 +1,6 @@
 use super::*;
 use crate::prelude::*;
-use arrow::temporal_conversions::timestamp_ms_to_datetime;
+use arrow::temporal_conversions::timestamp_ns_to_datetime;
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(
@@ -9,7 +9,7 @@ impl DatetimeChunked {
         self.downcast_iter()
             .map(|iter| {
                 iter.into_iter()
-                    .map(|opt_v| opt_v.copied().map(timestamp_ms_to_datetime))
+                    .map(|opt_v| opt_v.copied().map(timestamp_ns_to_datetime))
             })
             .flatten()
             .trust_my_length(self.len())
@@ -86,7 +86,7 @@ impl DatetimeChunked {
         let mut ca: Utf8Chunked = self.apply_kernel_cast(|arr| {
             let arr: Utf8Array<i64> = arr
                 .into_iter()
-                .map(|opt| opt.map(|v| format!("{}", timestamp_ms_to_datetime(*v).format(fmt))))
+                .map(|opt| opt.map(|v| format!("{}", timestamp_ns_to_datetime(*v).format(fmt))))
                 .collect();
             Arc::new(arr)
         });
@@ -119,7 +119,7 @@ impl DatetimeChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use chrono::NaiveDateTime;
+    use polars_time::export::chrono::NaiveDateTime;
 
     #[test]
     fn from_datetime() {
@@ -135,7 +135,11 @@ mod test {
         // NOTE: the values are checked and correct.
         let dt = DatetimeChunked::new_from_naive_datetime("name", &datetimes);
         assert_eq!(
-            [588470416000, 1441497364000, 1356048000000],
+            [
+                588470416000_000_000,
+                1441497364000_000_000,
+                1356048000000_000_000
+            ],
             dt.cont_slice().unwrap()
         );
     }

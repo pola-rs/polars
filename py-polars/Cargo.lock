@@ -1185,7 +1185,6 @@ dependencies = [
  "ahash",
  "anyhow",
  "arrow2",
- "chrono",
  "comfy-table",
  "hashbrown",
  "itertools",
@@ -1194,6 +1193,7 @@ dependencies = [
  "num",
  "num_cpus",
  "polars-arrow",
+ "polars-time",
  "rand",
  "rand_distr",
  "rayon",
@@ -1241,6 +1241,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-time"
+version = "0.18.0"
+dependencies = [
+ "chrono",
+ "polars-arrow",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1263,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "ahash",
  "bincode",
