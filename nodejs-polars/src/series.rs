@@ -66,7 +66,7 @@ pub fn new_opt_date(cx: CallContext) -> JsResult<JsExternal> {
         if obj.is_date()? {
             let d: &napi::JsDate = unsafe { &item.0.cast() };
             match d.value_of() {
-                Ok(v) => builder.append_value(v as i64),
+                Ok(v) => builder.append_value(v as i64 * 1000000),
                 Err(e) => {
                     if strict.unwrap_or(false) {
                         return Err(e);

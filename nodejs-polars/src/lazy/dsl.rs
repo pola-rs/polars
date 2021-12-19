@@ -58,7 +58,7 @@ pub fn lit(cx: CallContext) -> JsResult<JsExternal> {
             if obj.is_date()? {
                 let d: JsDate = unsafe { value.cast() };
                 let d = d.value_of()?;
-                dsl::lit(d).cast(DataType::Datetime)
+                dsl::lit(d as i64 * 1000000).cast(DataType::Datetime)
             } else {
                 panic!(
                     "could not convert value {:?} as a Literal",
@@ -811,7 +811,6 @@ pub fn kurtosis(cx: CallContext) -> JsResult<JsExternal> {
 
     expr.clone().kurtosis(fisher, bias).try_into_js(&cx)
 }
-
 
 // When
 #[js_function(1)]
