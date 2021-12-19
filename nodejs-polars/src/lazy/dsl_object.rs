@@ -66,7 +66,6 @@ impl dsl::JsExpr {
             napi::Property::new(env, "toUpperCase")?.with_method(dsl::str_to_uppercase),
         ])?;
         date_obj.define_properties(&[
-            napi::Property::new(env, "buckets")?.with_method(dsl::date_buckets),
             napi::Property::new(env, "day")?.with_method(dsl::day),
             napi::Property::new(env, "hour")?.with_method(dsl::hour),
             napi::Property::new(env, "minute")?.with_method(dsl::minute),

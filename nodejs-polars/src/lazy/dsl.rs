@@ -5,7 +5,6 @@ use crate::prelude::JsResult;
 use crate::series::JsSeries;
 use napi::*;
 
-use polars::chunked_array::temporal::timedelta::TimeDeltaBuilder;
 use polars::lazy::dsl;
 use polars::prelude::*;
 
@@ -813,33 +812,6 @@ pub fn kurtosis(cx: CallContext) -> JsResult<JsExternal> {
     expr.clone().kurtosis(fisher, bias).try_into_js(&cx)
 }
 
-#[js_function(1)]
-pub fn date_buckets(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let days = params.get_as::<i64>("days")?;
-    let seconds = params.get_as::<u32>("seconds")?;
-    let microseconds = params.get_as::<u32>("microseconds")?;
-
-    let td = TimeDeltaBuilder::new()
-        .days(days)
-        .seconds(seconds)
-        .microseconds(microseconds)
-        .finish();
-
-    expr.clone()
-        .apply(
-            move |s| match s.dtype() {
-                DataType::Datetime => Ok(s.datetime().unwrap().buckets(td).into_series()),
-                DataType::Date => Ok(s.date().unwrap().buckets(td).into_series()),
-                dt => Err(PolarsError::ComputeError(
-                    format!("expected date/datetime got {:?}", dt).into(),
-                )),
-            },
-            GetOutput::same_type(),
-        )
-        .try_into_js(&cx)
-}
 
 // When
 #[js_function(1)]
