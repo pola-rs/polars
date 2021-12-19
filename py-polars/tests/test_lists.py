@@ -66,3 +66,22 @@ def test_categorical() -> None:
     )
 
     assert out.inner_dtype == pl.Categorical
+
+
+def test_list_concat_rolling_window() -> None:
+    # inspired by: https://stackoverflow.com/questions/70377100/use-the-rolling-function-of-polars-to-get-a-list-of-all-values-in-the-rolling-wi
+    # this tests if it works without specifically creating list dtype upfront.
+    # note that the given answer is prefered over this snippet as that reuses the list array when shifting
+    out = (
+        pl.DataFrame(
+            {
+                "A": [1.0, 2.0, 9.0, 2.0, 13.0],
+            }
+        )
+        .with_columns([pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)])
+        .select(
+            [pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")]
+        )
+    )
+    assert out.shape == (5, 1)
+    assert out.to_series().dtype == pl.List

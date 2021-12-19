@@ -1,7 +1,9 @@
 use crate::index::IndexToUsize;
 use crate::kernels::take::take_unchecked;
+use crate::trusted_len::PushUnchecked;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, ListArray, PrimitiveArray};
+use arrow::buffer::{Buffer, MutableBuffer};
 
 /// Get the indices that would result in a get operation on the lists values.
 /// for example, consider this list:
@@ -58,6 +60,24 @@ pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
     // Safety:
     // the indices we generate are in bounds
     unsafe { take_unchecked(&**values, &take_by) }
+}
+
+/// Convert a list `[1, 2, 3]` to a list type of `[[1], [2], [3]]`
+pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
+    let len = array.len();
+    let mut offsets = Vec::with_capacity(len + 1);
+    // Safety: we allocated enough
+    unsafe {
+        offsets.push_unchecked(0i64);
+
+        for _ in 0..len {
+            offsets.push_unchecked(offsets.len() as i64)
+        }
+    };
+
+    let offsets: Buffer<i64> = MutableBuffer::from_vec(offsets).into();
+    let dtype = ListArray::<i64>::default_datatype(array.data_type().clone());
+    ListArray::<i64>::from_data(dtype, offsets, array, None)
 }
 
 #[cfg(test)]

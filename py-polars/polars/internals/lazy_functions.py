@@ -1064,7 +1064,7 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     return concat_str(exprs, sep="")
 
 
-def concat_list(exprs: tp.List[Union[str, "pli.Expr"]]) -> "pli.Expr":
+def concat_list(exprs: Sequence[Union[str, "pli.Expr"]]) -> "pli.Expr":
     """
     Concat the arrays in a Series dtype List in linear time.
 
@@ -1072,6 +1072,46 @@ def concat_list(exprs: tp.List[Union[str, "pli.Expr"]]) -> "pli.Expr":
     ----------
     exprs
         Columns to concat into a List Series
+
+    Examples
+    --------
+
+    Create lagged columns and collect them into a list. This mimics a rolling window.
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
+    ...     }
+    ... )
+    >>> (
+    ...     df.with_columns(
+    ...         [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
+    ...     ).select(
+    ...         [
+    ...             pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias(
+    ...                 "A_rolling"
+    ...             )
+    ...         ]
+    ...     )
+    ... )
+
+    shape: (5, 1)
+    ┌─────────────────┐
+    │ A_rolling       │
+    │ ---             │
+    │ list [f64]      │
+    ╞═════════════════╡
+    │ [null, null, 1] │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [null, 1, 2]    │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [1, 2, 9]       │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [2, 9, 2]       │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [9, 2, 13]      │
+    └─────────────────┘
+
     """
     exprs = pli._selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_lst(exprs))
