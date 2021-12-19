@@ -1650,12 +1650,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     }
   };
 
-  const wrappedDF = Object.seal(
-    Object.assign(
-      wrapper,
-      df
-    )
-  );
 
   return new Proxy(df, {
     get: function(target: DataFrame, prop, receiver) {
