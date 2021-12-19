@@ -199,7 +199,6 @@ pub fn str_parse_date(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let fmt = params.get_as::<Option<String>>("fmt")?;
     let function = move |s: Series| {
-        
         let ca = s.utf8()?;
         ca.as_date(fmt.as_deref()).map(|ca| ca.into_series())
     };
