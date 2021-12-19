@@ -1094,7 +1094,6 @@ def concat_list(exprs: Sequence[Union[str, "pli.Expr"]]) -> "pli.Expr":
     ...         ]
     ...     )
     ... )
-
     shape: (5, 1)
     ┌─────────────────┐
     │ A_rolling       │

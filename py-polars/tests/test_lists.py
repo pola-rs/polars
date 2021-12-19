@@ -72,16 +72,37 @@ def test_list_concat_rolling_window() -> None:
     # inspired by: https://stackoverflow.com/questions/70377100/use-the-rolling-function-of-polars-to-get-a-list-of-all-values-in-the-rolling-wi
     # this tests if it works without specifically creating list dtype upfront.
     # note that the given answer is prefered over this snippet as that reuses the list array when shifting
-    out = (
-        pl.DataFrame(
-            {
-                "A": [1.0, 2.0, 9.0, 2.0, 13.0],
-            }
-        )
-        .with_columns([pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)])
-        .select(
-            [pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")]
-        )
+    df = pl.DataFrame(
+        {
+            "A": [1.0, 2.0, 9.0, 2.0, 13.0],
+        }
+    )
+
+    out = df.with_columns(
+        [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
+    ).select(
+        [pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")]
     )
     assert out.shape == (5, 1)
     assert out.to_series().dtype == pl.List
+
+    # this test proper null behavior of concat list
+    out = (
+        df.with_column(pl.col("A").reshape((-1, 1)))  # first turn into a list
+        .with_columns(
+            [
+                pl.col("A").shift(i).alias(f"A_lag_{i}")
+                for i in range(3)  # slice the lists to a lag
+            ]
+        )
+        .select(
+            [
+                pl.all(),
+                pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias(
+                    "A_rolling"
+                ),
+            ]
+        )
+    )
+    assert out.shape == (5, 5)
+    assert out["A_rolling"].dtype == pl.List

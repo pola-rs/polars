@@ -107,16 +107,25 @@ impl ListChunked {
                 Some(s) => s,
                 None => {
                     builder.append_null();
+                    // make sure that the iterators advance before we continue
+                    for it in &mut iters {
+                        it.next().unwrap();
+                    }
                     continue;
                 }
             };
+            let mut already_null = false;
             for it in &mut iters {
                 match it.next().unwrap() {
                     Some(s) => {
                         acc.append(s.as_ref())?;
                     }
                     None => {
-                        builder.append_null();
+                        if !already_null {
+                            builder.append_null();
+                            already_null = true;
+                        }
+
                         continue;
                     }
                 }
