@@ -33,6 +33,9 @@ const inspect = Symbol.for("nodejs.util.inspect.custom");
 
 
 export interface DataFrame {
+  (column: string): Series<any>,
+  (column: string, ...columns: string[]): DataFrame,
+  (row: number): any[]
   _df: JsDataFrame
   dtypes: DataType[]
   height: number
@@ -40,7 +43,7 @@ export interface DataFrame {
   width: number
   columns: string[]
   [inspect](): string;
-  // [Symbol.iterator](): Generator<Series<any>, void, any>;
+  [Symbol.iterator](): Generator<any, void, any>;
   inner(): JsDataFrame
   /**
    * TODO
@@ -1072,7 +1075,8 @@ export interface DataFrame {
   toJS(): object
   toJS(options: {orient: "row" | "col" | "literal"}): object
   toJSON(): string
-  toJSON(dest: string | Stream): void
+  toJSON(options: {orient: "row" | "col" | "literal"}): string
+  toJSON(dest: string | Stream, options?: {orient: "row" | "col" | "literal"}): void
   toSeries(index:number): Series<any>
   toString(): string
   /**
@@ -1195,10 +1199,21 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
 
 
-  return {
+  const df = {
     _df,
     [inspect]() {
       return unwrap<string>("as_str");
+    },
+    *[Symbol.iterator]() {
+
+      let start = 0;
+      let len = this.height;
+
+      while (start < len) {
+        const s = this.toSeries(start);
+        start++;
+        yield s;
+      }
     },
     get dtypes() {
       return unwrap<DataType[]>("dtypes");
@@ -1403,10 +1418,12 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return df;
     },
     replaceAtIdx(index, newColumn) {
-      return unwrap("replace_at_idx", {
+      unwrap("replace_at_idx", {
         index,
         newColumn: newColumn._series
       });
+
+      return this;
     },
     rows: noArgUnwrap("to_rows"),
     sample(opts?, frac?, withReplacement = false) {
@@ -1538,10 +1555,17 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         };
       }, {});
     },
-    toJSON(dest?): any  {
+    toJSON(arg0?, options?): any {
+      if(arg0 === "") {
+        return this.toJS({orient: "literal", ...options});
+      }
+
+      return this.__toJSON(arg0);
+    },
+    __toJSON(dest?): any  {
       if(dest instanceof Stream.Writable) {
         unwrap("write_json_stream", {writeStream: dest});
-      } else if (typeof dest === "string") {
+      } else if (typeof dest === "string" && dest.length) {
         unwrap("write_json", {path: dest});
       } else if (!dest) {
         let body = "";
@@ -1609,7 +1633,69 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     where(predicate) {
       return this.filter(predicate);
     }
+  } as any as DataFrame;
+
+  const wrapper = (arg0, ...args: any[]) => {
+    if(typeof arg0 === "string" && df.columns.includes(arg0)) {
+      if(args.length) {
+        return df.select(arg0, ...args);
+      } else {
+        return df.getColumn(arg0);
+      }
+    }
+    if(typeof arg0 === "number") {
+      return df.row(arg0);
+    } else {
+      throw todo();
+    }
   };
+
+  const wrappedDF = Object.seal(
+    Object.assign(
+      wrapper,
+      df
+    )
+  );
+
+  return new Proxy(df, {
+    get: function(target: DataFrame, prop, receiver) {
+      if(typeof prop === "string" && target.columns.includes(prop)) {
+        return target.getColumn(prop);
+      }
+      if(Array.isArray(prop) && target.columns.includes(prop[0])) {
+        return target.select(prop as any);
+      }
+      if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
+        return target.row(Number(prop));
+      } else {
+        return Reflect.get(target, prop, receiver);
+      }
+    },
+
+    set: function(target: DataFrame, prop, receiver) {
+      console.log({prop, receiver});
+      if(isSeries(receiver)) {
+        if(typeof prop === "string" && target.columns.includes(prop)) {
+          const idx = target.columns.indexOf(prop);
+          target.replaceAtIdx(idx, receiver.alias(prop));
+          console.log({target, receiver});
+
+          return true;
+        }
+        if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
+          target.replaceAtIdx(Number(prop), receiver);
+
+          return true;
+        }
+      }
+
+      return Reflect.set(target, prop, receiver);
+    },
+    has: function(target, p) {
+      return target.columns.includes(p as any);
+    }
+  });
+
 };
 
 export const _wrapDataFrame = (df, method, args) => dfWrapper(pli.df[method]({_df: df, ...args }));
@@ -1693,7 +1779,7 @@ export const _wrapDataFrame = (df, method, args) => dfWrapper(pli.df[method]({_d
   ```
  */
 export function DataFrame(): DataFrame
-export function DataFrame(data: Record<string, any[]>): DataFrame
+export function DataFrame(data: Record<string, any>): DataFrame
 export function DataFrame(data: Record<string, any>[]): DataFrame
 export function DataFrame(data: Series<any>[]): DataFrame
 export function DataFrame(data: any[][]): DataFrame

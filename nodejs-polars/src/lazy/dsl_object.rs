@@ -23,7 +23,6 @@ impl dsl::JsWhenThen {
 
 impl dsl::JsWhenThenThen {
     pub fn to_object(env: &napi::Env) -> JsResult<JsObject> {
-    
         let mut when_then_then = env.create_object()?;
         when_then_then.define_properties(&[
             napi::Property::new(env, "then")?.with_method(dsl::when_then_then_then),

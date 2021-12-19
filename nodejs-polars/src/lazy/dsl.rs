@@ -199,6 +199,7 @@ pub fn str_parse_date(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let fmt = params.get_as::<Option<String>>("fmt")?;
     let function = move |s: Series| {
+        
         let ca = s.utf8()?;
         ca.as_date(fmt.as_deref()).map(|ca| ca.into_series())
     };
@@ -783,10 +784,12 @@ pub fn rank(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let method = params.get_as::<String>("method").map(str_to_rankmethod)??;
 
-    expr.clone().rank(RankOptions {
-        method,
-        descending: false
-    }).try_into_js(&cx)
+    expr.clone()
+        .rank(RankOptions {
+            method,
+            descending: false,
+        })
+        .try_into_js(&cx)
 }
 
 #[js_function(1)]

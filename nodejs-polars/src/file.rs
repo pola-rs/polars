@@ -30,4 +30,3 @@ impl Write for JsFileLike<'_> {
         Ok(())
     }
 }
-

@@ -329,7 +329,8 @@ pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let quantile = params.get_as::<f64>("quantile")?;
 
-    ldf.quantile(quantile, QuantileInterpolOptions::default()).try_into_js(&cx)
+    ldf.quantile(quantile, QuantileInterpolOptions::default())
+        .try_into_js(&cx)
 }
 
 #[js_function(1)]

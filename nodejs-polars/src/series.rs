@@ -855,7 +855,6 @@ pub fn get_date(cx: CallContext) -> JsResult<JsUnknown> {
     }
 }
 
-
 #[js_function(1)]
 pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
     let params = get_params(&cx)?;
@@ -1328,16 +1327,17 @@ impl_set_with_mask!(set_with_mask_bool, bool, bool, Boolean);
 macro_rules! impl_set_at_idx {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
         #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
+        pub fn $name(cx: CallContext) -> JsResult<JsUndefined> {
             let params = get_params(&cx)?;
-            let series = params.get_external::<JsSeries>(&cx, "_series")?;
+            let mut series = params.get_external_mut::<JsSeries>(&cx, "_series")?;
             let indices = params.get_as::<Vec<u32>>("indices")?;
             let value = params.get_as::<Option<$native>>("value")?;
             let ca = series.series.$cast().map_err(JsPolarsEr::from)?;
             let new = ca
                 .set_at_idx(indices.iter().map(|idx| *idx as usize), value)
                 .map_err(JsPolarsEr::from)?;
-            JsSeries::new(new.into_series()).try_into_js(&cx)
+            series.series = new.into_series();
+            cx.env.get_undefined()
         }
     };
 }

@@ -1283,7 +1283,7 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     return wrap(method, callOpts);
   };
 
-  const out = {
+  const seriesObject = {
     _series: _s,
     [inspect]() {
       return unwrap<string>("get_fmt");
@@ -1681,8 +1681,10 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
         throw todo();
       }
       indices = isSeries(indices) ? indices.cast(DataType.UInt32).toArray() : indices;
+      unwrap(`set_at_idx_${dt}`, {indices, value});
 
-      return wrap(`set_at_idx_${dt}`, {indices, value});
+      return this;
+
     },
     shift(opt: any = 1) {
       if(typeof opt === "number") {
@@ -1750,13 +1752,23 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     },
   } as Series<T>;
 
-  return new Proxy(out, {
+  return new Proxy(seriesObject, {
     get: function(target, prop, receiver) {
-
       if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
         return target.get(Number(prop));
       } else {
         return Reflect.get(target, prop, receiver);
+      }
+    },
+    set: function(series, prop, input) {
+      if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
+        series.setAtIdx([Number(prop)], input);
+
+        return true;
+      } else {
+        console.log({prop});
+
+        return Reflect.set(series, prop, input);
       }
     }
   });

@@ -42,7 +42,7 @@
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
     "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
-    "lint": "eslint . -c ./.eslintrc.json './**/*.{ts,tsx,js}'",
+    "lint:ts": "eslint -c ./.eslintrc.json 'polars/**/*.{ts,tsx,js}'",
     "prepublishOnly": "napi prepublish -t npm",
     "test": "jest",
     "version": "napi version"
@@ -95,19 +95,5 @@
     "singleQuote": true,
     "arrowParens": "always",
     "parser": "typescript"
-  },
-  "optionalDependencies": {
-    "nodejs-polars-win32-x64-msvc": "0.0.2",
-    "nodejs-polars-darwin-x64": "0.0.2",
-    "nodejs-polars-linux-x64-gnu": "0.0.2",
-    "nodejs-polars-win32-ia32-msvc": "0.0.2",
-    "nodejs-polars-linux-arm64-gnu": "0.0.2",
-    "nodejs-polars-linux-arm-gnueabihf": "0.0.2",
-    "nodejs-polars-darwin-arm64": "0.0.2",
-    "nodejs-polars-android-arm64": "0.0.2",
-    "nodejs-polars-freebsd-x64": "0.0.2",
-    "nodejs-polars-linux-x64-musl": "0.0.2",
-    "nodejs-polars-linux-arm64-musl": "0.0.2",
-    "nodejs-polars-win32-arm64-msvc": "0.0.2"
   }
 }
