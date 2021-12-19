@@ -2,6 +2,7 @@ use crate::prelude::*;
 use crate::series::unstable::{ArrayBox, UnstableSeries};
 use crate::utils::CustomIterTools;
 use arrow::array::ArrayRef;
+use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::ptr::NonNull;
@@ -56,12 +57,11 @@ impl ListChunked {
     /// that Series.
     #[cfg(feature = "private")]
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
-        let series_container = if self.is_empty() {
-            // in case of no data, the actual Series does not matter
-            Box::pin(Series::new("", &[true]))
-        } else {
-            Box::pin(self.get(0).unwrap())
-        };
+        // we create the series container from the inner array
+        // so that the container has the proper dtype.
+        let arr = self.downcast_iter().next().unwrap();
+        let inner_values = arr.values();
+        let series_container = Box::pin(Series::try_from(("", inner_values.clone())).unwrap());
 
         let ptr = &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef;
 

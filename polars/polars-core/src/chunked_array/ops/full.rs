@@ -94,7 +94,7 @@ impl ListChunked {
         inner_dtype: &DataType,
     ) -> ListChunked {
         let arr = new_null_array(
-            ArrowDataType::List(Box::new(ArrowField::new(
+            ArrowDataType::LargeList(Box::new(ArrowField::new(
                 "item",
                 inner_dtype.to_arrow(),
                 true,
