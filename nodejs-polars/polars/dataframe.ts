@@ -1635,22 +1635,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     }
   } as any as DataFrame;
 
-  const wrapper = (arg0, ...args: any[]) => {
-    if(typeof arg0 === "string" && df.columns.includes(arg0)) {
-      if(args.length) {
-        return df.select(arg0, ...args);
-      } else {
-        return df.getColumn(arg0);
-      }
-    }
-    if(typeof arg0 === "number") {
-      return df.row(arg0);
-    } else {
-      throw todo();
-    }
-  };
-
-
   return new Proxy(df, {
     get: function(target: DataFrame, prop, receiver) {
       if(typeof prop === "string" && target.columns.includes(prop)) {
