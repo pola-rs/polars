@@ -1760,17 +1760,6 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
         return Reflect.get(target, prop, receiver);
       }
     },
-    // set: function(series, prop, input) {
-    //   if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
-    //     series.setAtIdx([Number(prop)], input);
-
-    //     return true;
-    //   } else {
-    //     console.log({prop});
-
-    //     return Reflect.set(series, prop, input);
-    //   }
-    // }
   });
 };
 

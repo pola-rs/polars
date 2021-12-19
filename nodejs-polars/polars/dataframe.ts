@@ -1672,25 +1672,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       }
     },
 
-    // set: function(target: DataFrame, prop, receiver) {
-    //   console.log({prop, receiver});
-    //   if(isSeries(receiver)) {
-    //     if(typeof prop === "string" && target.columns.includes(prop)) {
-    //       const idx = target.columns.indexOf(prop);
-    //       target.replaceAtIdx(idx, receiver.alias(prop));
-    //       console.log({target, receiver});
-
-    //       return true;
-    //     }
-    //     if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
-    //       target.replaceAtIdx(Number(prop), receiver);
-
-    //       return true;
-    //     }
-    //   }
-
-    //   return Reflect.set(target, prop, receiver);
-    // },
     has: function(target, p) {
       return target.columns.includes(p as any);
     }
