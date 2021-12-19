@@ -237,11 +237,9 @@ impl DataFrame {
             series_cols
         };
 
-        let mut df = DataFrame {
+        Ok(DataFrame {
             columns: series_cols,
-        };
-        df.rechunk();
-        Ok(df)
+        })
     }
 
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
@@ -639,7 +637,6 @@ impl DataFrame {
         for col in columns {
             self.columns.push(col.clone());
         }
-        self.rechunk();
         self
     }
 
@@ -952,7 +949,6 @@ impl DataFrame {
     fn insert_at_idx_no_name_check(&mut self, index: usize, series: Series) -> Result<&mut Self> {
         if series.len() == self.height() {
             self.columns.insert(index, series);
-            self.rechunk();
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -981,7 +977,6 @@ impl DataFrame {
                 self.replace_at_idx(idx, series)?;
             } else {
                 self.columns.push(series);
-                self.rechunk();
             }
             Ok(self)
         } else {
@@ -1806,7 +1801,6 @@ impl DataFrame {
             let col = self.columns.get_unchecked_mut(idx);
             col.rename(&name);
         }
-        self.rechunk();
         Ok(self)
     }
 
@@ -1874,7 +1868,6 @@ impl DataFrame {
             let col = self.columns.get_unchecked_mut(idx);
             col.rename(&name);
         }
-        self.rechunk();
         Ok(self)
     }
 
