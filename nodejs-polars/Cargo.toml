@@ -2,39 +2,35 @@
 name = "nodejs-polars"
 version = "0.0.1"
 authors = ["Cory Grinstead"]
-edition = "2021"
-repository = "https://github.com/pola-rs/polars"
-license = "MIT"
 documentation = "https://pola-rs.github.io/polars-book/"
-homepage = "https://github.com/pola-rs/polars"
+edition = "2021"
 exclude = ["libpolars.node"]
+homepage = "https://github.com/pola-rs/polars"
+license = "MIT"
+repository = "https://github.com/pola-rs/polars"
 
 [lib]
-name="nodejs_polars"
+name = "nodejs_polars"
 crate-type = ["cdylib"]
 
-
 [dependencies]
-thiserror = "1.0.20"
-polars-core = { path = "../polars/polars-core", default-features = false }
-napi-derive = "1"
 ahash = "0.7"
 dirs = "4.0"
-serde_json = { version = "1"}
-
-
+napi-derive = "1"
+polars-core = { path = "../polars/polars-core", default-features = false }
+serde_json = { version = "1" }
+thiserror = "1.0.20"
 
 [dependencies.napi]
 version = "1"
 features = [
-  "serde-json", 
-  "napi5", 
-  "napi6"
+  "serde-json",
+  "napi5",
+  "napi6",
 ]
 
 [build-dependencies]
 napi-build = "1"
-
 
 [dependencies.polars]
 path = "../polars"
@@ -81,10 +77,8 @@ features = [
   "repeat_by",
 ]
 
-
 [profile.release]
 lto = "fat"
 codegen-units = 1
-
 
 [workspace]
