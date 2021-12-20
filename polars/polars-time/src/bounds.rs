@@ -30,6 +30,10 @@ impl<S: AsRef<[i64]>> From<S> for Bounds {
 
 impl Bounds {
     pub fn new(start: TimeNanoseconds, stop: TimeNanoseconds) -> Self {
+        assert!(
+            start < stop,
+            "boundary start must be smaller than stop; is your time column sorted in ascending order?"
+        );
         Bounds { start, stop }
     }
 

@@ -2297,7 +2297,7 @@ class DataFrame:
         time_column
             Column used to group based on the time window.
             Often to type Date/Datetime
-            This column must be sorted. If not the output will not make sense.
+            This column must be sorted in ascending order. If not the output will not make sense.
         every
             interval of the window
         period
