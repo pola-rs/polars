@@ -1,6 +1,6 @@
 {
   "name": "nodejs-polars-android-arm64",
-  "version": "0.0.2",
+  "version": "0.0.5",
   "os": [
     "android"
   ],
