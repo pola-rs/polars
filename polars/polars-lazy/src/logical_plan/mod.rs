@@ -933,16 +933,19 @@ impl LogicalPlanBuilder {
     pub fn project(self, exprs: Vec<Expr>) -> Self {
         let (exprs, schema) = prepare_projection(exprs, self.0.schema());
 
-        // if len == 0, no projection has to be done. This is a select all operation.
-        if !exprs.is_empty() {
+        if exprs.is_empty() {
+            self.map(
+                |_| Ok(DataFrame::new_no_checks(vec![])),
+                AllowedOptimizations::default(),
+                Some(Arc::new(Schema::default())),
+            )
+        } else {
             LogicalPlan::Projection {
                 expr: exprs,
                 input: Box::new(self.0),
                 schema: Arc::new(schema),
             }
             .into()
-        } else {
-            self
         }
     }
 
