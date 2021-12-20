@@ -1,11 +1,17 @@
 {
   "name": "nodejs-polars",
-  "version": "0.0.4",
-  "repository": "https://github.com/universalmind303/polars.git",
-  "license": "MIT",
+  "version": "0.0.5",
+  "repository": "https://github.com/pola-rs/polars.git",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "bin/index.js",
   "files": [
     "bin"
+  ],
+  "keywords": [
+    "polars",
+    "dataframe",
+    "data-processing",
+    "rust"
   ],
   "napi": {
     "name": "nodejs-polars",
@@ -95,5 +101,19 @@
     "singleQuote": true,
     "arrowParens": "always",
     "parser": "typescript"
+  },
+  "optionalDependencies": {
+    "nodejs-polars-win32-x64-msvc": "0.0.5",
+    "nodejs-polars-darwin-x64": "0.0.5",
+    "nodejs-polars-linux-x64-gnu": "0.0.5",
+    "nodejs-polars-win32-ia32-msvc": "0.0.5",
+    "nodejs-polars-linux-arm64-gnu": "0.0.5",
+    "nodejs-polars-linux-arm-gnueabihf": "0.0.5",
+    "nodejs-polars-darwin-arm64": "0.0.5",
+    "nodejs-polars-android-arm64": "0.0.5",
+    "nodejs-polars-freebsd-x64": "0.0.5",
+    "nodejs-polars-linux-x64-musl": "0.0.5",
+    "nodejs-polars-linux-arm64-musl": "0.0.5",
+    "nodejs-polars-win32-arm64-msvc": "0.0.5"
   }
 }
