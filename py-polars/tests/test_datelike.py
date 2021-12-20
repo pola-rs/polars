@@ -242,3 +242,33 @@ def test_date_comp() -> None:
     a = pl.Series("a", [one, two])
     assert (a == one).to_list() == [True, False]
     assert (a == two).to_list() == [False, True]
+
+
+def test_truncate_negative_offset() -> None:
+    df = pl.DataFrame(
+        {
+            "event_date": [
+                datetime(2021, 4, 11),
+                datetime(2021, 4, 29),
+                datetime(2021, 5, 29),
+            ],
+            "adm1_code": [1, 2, 1],
+        }
+    )
+    out = df.groupby_dynamic(
+        time_column="event_date",
+        every="1mo",
+        period="2mo",
+        offset="-1mo",
+        include_boundaries=True,
+    ).agg(
+        [
+            pl.col("adm1_code"),
+        ]
+    )
+
+    assert out["event_date"].to_list() == [
+        datetime(2021, 4, 1),
+        datetime(2021, 4, 1),
+        datetime(2021, 5, 1),
+    ]
