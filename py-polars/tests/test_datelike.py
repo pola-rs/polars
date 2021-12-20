@@ -206,3 +206,39 @@ def test_date_range() -> None:
     assert result.dt[1] == datetime(1985, 1, 2, 12, 0)
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
+
+
+def test_date_comp() -> None:
+    one = datetime(2001, 1, 1)
+    two = datetime(2001, 1, 2)
+    a = pl.Series("a", [one, two])
+
+    assert (a == one).to_list() == [True, False]
+    assert (a != one).to_list() == [False, True]
+    assert (a > one).to_list() == [False, True]
+    assert (a >= one).to_list() == [True, True]
+    assert (a < one).to_list() == [False, False]
+    assert (a <= one).to_list() == [True, False]
+
+    one = date(2001, 1, 1)  # type: ignore
+    two = date(2001, 1, 2)  # type: ignore
+    a = pl.Series("a", [one, two])
+    assert (a == one).to_list() == [True, False]
+    assert (a == two).to_list() == [False, True]
+    assert (a > one).to_list() == [False, True]
+    assert (a >= one).to_list() == [True, True]
+    assert (a < one).to_list() == [False, False]
+    assert (a <= one).to_list() == [True, False]
+
+    # also test if the conversion stays correct with wide date ranges
+    one = date(201, 1, 1)  # type: ignore
+    two = date(201, 1, 2)  # type: ignore
+    a = pl.Series("a", [one, two])
+    assert (a == one).to_list() == [True, False]
+    assert (a == two).to_list() == [False, True]
+
+    one = date(5001, 1, 1)  # type: ignore
+    two = date(5001, 1, 2)  # type: ignore
+    a = pl.Series("a", [one, two])
+    assert (a == one).to_list() == [True, False]
+    assert (a == two).to_list() == [False, True]

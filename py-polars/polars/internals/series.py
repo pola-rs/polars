@@ -52,7 +52,7 @@ from polars.datatypes import (
     maybe_cast,
     py_type_to_dtype,
 )
-from polars.utils import _ptr_to_numpy
+from polars.utils import _date_to_pl_date, _datetime_to_pl_timestamp, _ptr_to_numpy
 
 try:
     import pandas as pd
@@ -290,6 +290,15 @@ class Series:
         return self.__xor__(other)
 
     def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
+        if isinstance(other, datetime) and self.dtype == Datetime:
+            ts = _datetime_to_pl_timestamp(other)
+            f = get_ffi_func("eq_<>", Int64, self._s)
+            return wrap_s(f(ts))  # type: ignore
+        if isinstance(other, date) and self.dtype == Date:
+            d = _date_to_pl_date(other)
+            f = get_ffi_func("eq_<>", Int32, self._s)
+            return wrap_s(f(d))  # type: ignore
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
@@ -301,6 +310,15 @@ class Series:
         return wrap_s(f(other))
 
     def __ne__(self, other: Any) -> "Series":  # type: ignore[override]
+        if isinstance(other, datetime) and self.dtype == Datetime:
+            ts = _datetime_to_pl_timestamp(other)
+            f = get_ffi_func("neq_<>", Int64, self._s)
+            return wrap_s(f(ts))  # type: ignore
+        if isinstance(other, date) and self.dtype == Date:
+            d = _date_to_pl_date(other)
+            f = get_ffi_func("neq_<>", Int32, self._s)
+            return wrap_s(f(d))  # type: ignore
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
@@ -312,6 +330,15 @@ class Series:
         return wrap_s(f(other))
 
     def __gt__(self, other: Any) -> "Series":
+        if isinstance(other, datetime) and self.dtype == Datetime:
+            ts = _datetime_to_pl_timestamp(other)
+            f = get_ffi_func("gt_<>", Int64, self._s)
+            return wrap_s(f(ts))  # type: ignore
+        if isinstance(other, date) and self.dtype == Date:
+            d = _date_to_pl_date(other)
+            f = get_ffi_func("gt_<>", Int32, self._s)
+            return wrap_s(f(d))  # type: ignore
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
@@ -323,6 +350,15 @@ class Series:
         return wrap_s(f(other))
 
     def __lt__(self, other: Any) -> "Series":
+        if isinstance(other, datetime) and self.dtype == Datetime:
+            ts = _datetime_to_pl_timestamp(other)
+            f = get_ffi_func("lt_<>", Int64, self._s)
+            return wrap_s(f(ts))  # type: ignore
+        if isinstance(other, date) and self.dtype == Date:
+            d = _date_to_pl_date(other)
+            f = get_ffi_func("lt_<>", Int32, self._s)
+            return wrap_s(f(d))  # type: ignore
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
@@ -335,6 +371,15 @@ class Series:
         return wrap_s(f(other))
 
     def __ge__(self, other: Any) -> "Series":
+        if isinstance(other, datetime) and self.dtype == Datetime:
+            ts = _datetime_to_pl_timestamp(other)
+            f = get_ffi_func("gt_eq_<>", Int64, self._s)
+            return wrap_s(f(ts))  # type: ignore
+        if isinstance(other, date) and self.dtype == Date:
+            d = _date_to_pl_date(other)
+            f = get_ffi_func("gt_eq_<>", Int32, self._s)
+            return wrap_s(f(d))  # type: ignore
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
@@ -346,6 +391,15 @@ class Series:
         return wrap_s(f(other))
 
     def __le__(self, other: Any) -> "Series":
+        if isinstance(other, datetime) and self.dtype == Datetime:
+            ts = _datetime_to_pl_timestamp(other)
+            f = get_ffi_func("lt_eq_<>", Int64, self._s)
+            return wrap_s(f(ts))  # type: ignore
+        if isinstance(other, date) and self.dtype == Date:
+            d = _date_to_pl_date(other)
+            f = get_ffi_func("lt_eq_<>", Int32, self._s)
+            return wrap_s(f(d))  # type: ignore
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
