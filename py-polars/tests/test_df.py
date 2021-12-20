@@ -1325,3 +1325,7 @@ def test_df_schema_unique() -> None:
 
     with pytest.raises(Exception):
         df.rename({"b": "a"})
+
+
+def test_empty_projection() -> None:
+    assert pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([]).shape == (0, 0)
