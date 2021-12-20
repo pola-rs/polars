@@ -1,0 +1,84 @@
+[package]
+name = "nodejs-polars"
+version = "0.0.1"
+authors = ["Cory Grinstead"]
+documentation = "https://pola-rs.github.io/polars-book/"
+edition = "2021"
+exclude = ["libpolars.node"]
+homepage = "https://github.com/pola-rs/polars"
+license = "MIT"
+repository = "https://github.com/pola-rs/polars"
+
+[lib]
+name = "nodejs_polars"
+crate-type = ["cdylib"]
+
+[dependencies]
+ahash = "0.7"
+dirs = "4.0"
+napi-derive = "1"
+polars-core = { path = "../polars/polars-core", default-features = false }
+serde_json = { version = "1" }
+thiserror = "1.0.20"
+
+[dependencies.napi]
+version = "1"
+features = [
+  "serde-json",
+  "napi5",
+  "napi6",
+]
+
+[build-dependencies]
+napi-build = "1"
+
+[dependencies.polars]
+path = "../polars"
+features = [
+  "abs",
+  "zip_with",
+  "simd",
+  "strings",
+  "is_in",
+  "temporal",
+  "random",
+  "object",
+  "csv-file",
+  "pretty_fmt",
+  "performant",
+  "dtype-full",
+  "rows",
+  "private",
+  "round_series",
+  "is_first",
+  "dot_product",
+  "concat_str",
+  "row_hash",
+  "reinterpret",
+  # "decompress-fast",
+  "mode",
+  "extract_jsonpath",
+  "json",
+  "lazy_regex",
+  "cum_agg",
+  "rolling_window",
+  "interpolate",
+  "list",
+  "rank",
+  "diff",
+  "moment",
+  "arange",
+  # "true_div",
+  "diagonal_concat",
+  "serde",
+  # "asof_join",
+  # "cross_join",
+  "lazy",
+  "repeat_by",
+]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[workspace]

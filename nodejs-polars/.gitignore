@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+Cargo.lock
+node_modules/
+.yarn/cache
+.yarn/install-state*
+.pnp.*
+
+coverage/
+bin/
+.vscode
+.cargo
+*.node
+docs/

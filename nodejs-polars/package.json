@@ -1,0 +1,99 @@
+{
+  "name": "nodejs-polars",
+  "version": "0.0.4",
+  "repository": "https://github.com/universalmind303/polars.git",
+  "license": "MIT",
+  "main": "bin/index.js",
+  "files": [
+    "bin"
+  ],
+  "napi": {
+    "name": "nodejs-polars",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "i686-pc-windows-msvc",
+        "aarch64-unknown-linux-gnu",
+        "armv7-unknown-linux-gnueabihf",
+        "aarch64-apple-darwin",
+        "aarch64-linux-android",
+        "x86_64-unknown-freebsd",
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-musl",
+        "aarch64-pc-windows-msvc"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">= 10"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "scripts": {
+    "artifacts": "napi artifacts",
+    "bench": "node -r @swc-node/register benchmark/bench.ts",
+    "build": "napi build --platform --release artifacts/",
+    "build:debug": "napi build --platform polars/",
+    "build:all": "tsc -p tsconfig.build.json && napi build --platform --release bin/",
+    "build:all:slim": "tsc -p tsconfig.build.json && RUSTFLAGS='-C codegen-units=16' napi build --platform --release bin/",
+    "build:ts": "tsc -p tsconfig.build.json",
+    "format:rs": "cargo fmt",
+    "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
+    "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
+    "lint:ts": "eslint -c ./.eslintrc.json 'polars/**/*.{ts,tsx,js}'",
+    "prepublishOnly": "napi prepublish -t npm",
+    "test": "jest",
+    "version": "napi version"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^1.3.4",
+    "@types/chance": "^1.1.3",
+    "@types/jest": "^27.0.3",
+    "@types/node": "^16.11.9",
+    "@typescript-eslint/eslint-plugin": "^5.4.0",
+    "@typescript-eslint/parser": "^5.4.0",
+    "chance": "^1.1.8",
+    "eslint": "^8.1.0",
+    "eslint-config-prettier": "^8.3.0",
+    "eslint-plugin-import": "^2.25.3",
+    "eslint-plugin-jest": "^25.2.4",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-prettier": "^4.0.0",
+    "husky": "^7.0.4",
+    "jest": "^27.3.1",
+    "lint-staged": "^11.2.6",
+    "prettier": "^2.4.1",
+    "ts-jest": "^27.1.0",
+    "ts-node": "^10.4.0",
+    "typedoc": "^0.22.9",
+    "typescript": "4.4.3"
+  },
+  "dependencies": {
+    "@node-rs/helper": "^1.2.1"
+  },
+  "lint-staged": {
+    "*.@(js|ts|tsx)": [
+      "prettier --write",
+      "eslint -c .eslintrc.yml --fix"
+    ],
+    "*.@(yml|yaml)": [
+      "prettier --parser yaml --write"
+    ],
+    "*.md": [
+      "prettier --parser markdown --write"
+    ],
+    "*.json": [
+      "prettier --parser json --write"
+    ]
+  },
+  "prettier": {
+    "printWidth": 80,
+    "semi": true,
+    "trailingComma": "none",
+    "singleQuote": true,
+    "arrowParens": "always",
+    "parser": "typescript"
+  }
+}

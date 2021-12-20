@@ -1,0 +1,164 @@
+name: nodejs-polars
+
+on:
+  push:
+     # Sequence of patterns matched against refs/tags
+    tags:
+      - 'nodejs-polars-v*' # Push events to matching nodejs-polars-v*, i.e. nodejs-polars-v1.0, nodejs-polars-v20.15.10
+jobs:
+  build-js:
+    defaults:
+      run:
+        working-directory: nodejs-polars
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          # MAC
+          ######
+
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            build: |
+              npm run build
+
+          - host: macos-latest
+            target: "aarch64-apple-darwin"
+            build: |
+              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+              export CC=$(xcrun -f clang);
+              export CXX=$(xcrun -f clang++);
+              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              npm run build -- --target aarch64-apple-darwin
+
+            # Windows
+            ##########
+
+          - host: windows-latest
+            target: "x86_64-pc-windows-msvc"
+            build: npm run build
+
+          - host: windows-latest
+            target: "i686-pc-windows-msvc"
+            setup: |
+              choco install nodejs-lts --x86 -y --force
+              echo "C:\\Program Files (x86)\\nodejs" >> $GITHUB_PATH
+            build: |
+              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
+              export CARGO_PROFILE_RELEASE_LTO=false
+              npm run build -- --target i686-pc-windows-msvc
+
+          - host: windows-latest
+            target: "aarch64-pc-windows-msvc"
+            build: npm run build -- --target aarch64-pc-windows-msvc
+
+            # Linux
+            ########
+
+          - host: ubuntu-latest
+            target: "x86_64-unknown-linux-gnu"
+            build: npm run build
+
+          - host: ubuntu-latest
+            target: "aarch64-linux-android"
+            build: |
+              export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+              export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
+              npm run build -- --target aarch64-linux-android
+
+    name: ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 16
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2021-12-02
+          override: true
+          target: ${{ matrix.settings.target }}
+
+      - name: Generate Cargo.lock
+        uses: actions-rs/cargo@v1
+        with:
+          command: generate-lockfile
+
+      - name: Cache cargo registry
+        uses: actions/cache@v2
+        with:
+          path: ~/.cargo/registry
+          key: ${{ matrix.settings.target }}-node@16-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v2
+        with:
+          path: ~/.cargo/git
+          key: ${{ matrix.settings.target }}-node@16-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Pull latest image
+        run: ${{ matrix.settings.docker }}
+        env:
+          DOCKER_REGISTRY_URL: ghcr.io
+          DOCKER_USERNAME: ${{ github.actor }}
+          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+        if: ${{ matrix.settings.docker }}
+
+      - name: "Setup toolchain"
+        if: ${{ matrix.settings.setup }}
+        run: ${{ matrix.settings.setup }}
+
+      - name: "Install dependencies"
+        run: npm install --ignore-scripts
+
+      - name: "Build"
+        run: ${{ matrix.settings.build }}
+        shell: bash
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          path: nodejs-polars/artifacts
+      - name: List artifacts
+        run: ls -R artifacts
+        shell: bash
+
+  publish:
+    name: Publish
+    needs:
+      - build-js
+    defaults:
+      run:
+        working-directory: nodejs-polars
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: "Install dependencies"
+        run: npm install  --ignore-scripts
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: nodejs-polars/artifacts
+
+      - name: List artifacts
+        run: ls -R artifacts
+        shell: bash
+
+      - name: Move artifacts
+        run: npm run artifacts
+
+      - name: Build TypeScript
+        run: npm run build:ts
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

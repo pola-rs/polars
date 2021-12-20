@@ -503,11 +503,13 @@ pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
 }
 
 /// Intermediate state of `when(..).then(..).otherwise(..)` expr.
+#[derive(Clone)]
 pub struct When {
     predicate: Expr,
 }
 
 /// Intermediate state of `when(..).then(..).otherwise(..)` expr.
+#[derive(Clone)]
 pub struct WhenThen {
     predicate: Expr,
     then: Expr,
