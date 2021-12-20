@@ -74,7 +74,6 @@ impl DataFrame {
                 groups
                     .iter()
                     .map(|base_g| {
-                        let offset = base_g.0;
                         let dt = unsafe {
                             dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
                         };
@@ -107,7 +106,7 @@ impl DataFrame {
                         }
 
                         sub_groups.iter_mut().for_each(|g| {
-                            g.0 = offset;
+                            g.0 = unsafe { *base_g.1.get_unchecked(g.0 as usize) };
                             for x in g.1.iter_mut() {
                                 debug_assert!((*x as usize) < base_g.1.len());
                                 unsafe { *x = *base_g.1.get_unchecked(*x as usize) }
@@ -122,7 +121,6 @@ impl DataFrame {
                     groups
                         .par_iter()
                         .map(|base_g| {
-                            let offset = base_g.0;
                             let dt = unsafe {
                                 dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
                             };
@@ -136,7 +134,7 @@ impl DataFrame {
                             );
 
                             sub_groups.iter_mut().for_each(|g| {
-                                g.0 = offset;
+                                g.0 = unsafe { *base_g.1.get_unchecked(g.0 as usize) };
                                 for x in g.1.iter_mut() {
                                     debug_assert!((*x as usize) < base_g.1.len());
                                     unsafe { *x = *base_g.1.get_unchecked(*x as usize) }
@@ -265,8 +263,8 @@ mod test {
 
         let expected = vec![
             (0u32, vec![0u32, 1, 2]),
-            (0u32, vec![2]),
-            (0u32, vec![5, 6]),
+            (2u32, vec![2]),
+            (5u32, vec![5, 6]),
             (3u32, vec![3, 4]),
         ];
         assert_eq!(expected, groups);
