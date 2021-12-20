@@ -56,8 +56,8 @@ shape: (5, 8)
 Install the latest polars version with:
 
 ```sh
-$ yarn add polars # yarn
-$ npm i -s polars # npm
+$ yarn add nodejs-polars # yarn
+$ npm i -s nodejs-polars # npm
 ```
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
