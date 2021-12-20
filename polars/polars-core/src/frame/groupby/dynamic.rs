@@ -156,7 +156,8 @@ impl DataFrame {
         }
 
         if options.truncate {
-            dt = dt.apply(|v| w.truncate(v));
+            let w = Window::new(options.every, options.period, options.offset);
+            dt = dt.apply(|v| w.truncate_no_offset(v));
         }
 
         if let (true, Some(lower), Some(higher)) =

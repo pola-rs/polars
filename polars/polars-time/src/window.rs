@@ -27,6 +27,11 @@ impl Window {
         self.every.truncate_nanoseconds(t) + self.offset
     }
 
+    #[inline]
+    pub fn truncate_no_offset(&self, t: TimeNanoseconds) -> TimeNanoseconds {
+        self.every.truncate_nanoseconds(t)
+    }
+
     /// returns the bounds for the earliest window bounds
     /// that contains the given time t.  For underlapping windows that
     /// do not contain time t, the window directly after time t will be returned.
