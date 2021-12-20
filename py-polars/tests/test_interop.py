@@ -156,3 +156,11 @@ def test_upcast_pyarrow_dicts() -> None:
     tbl = pa.concat_tables(tbls, promote=True)
     out = pl.from_arrow(tbl)
     assert out.shape == (128, 1)
+
+
+def test_no_rechunk() -> None:
+    table = pa.Table.from_pydict({"x": pa.chunked_array([list("ab"), list("cd")])})
+    # table
+    assert pl.from_arrow(table, rechunk=False).n_chunks() == 2
+    # chunked array
+    assert pl.from_arrow(table["x"], rechunk=False).n_chunks() == 2

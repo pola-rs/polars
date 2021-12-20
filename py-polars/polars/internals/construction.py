@@ -57,11 +57,21 @@ def series_to_pyseries(
     return values.inner()
 
 
-def arrow_to_pyseries(name: str, values: "pa.Array") -> "PySeries":
+def arrow_to_pyseries(
+    name: str, values: "pa.Array", rechunk: bool = True
+) -> "PySeries":
     """
     Construct a PySeries from an Arrow array.
     """
-    array = coerce_arrow(values)
+    array = coerce_arrow(values, rechunk)
+    if hasattr(array, "num_chunks") and array.num_chunks > 1:
+        it = array.iterchunks()
+        pys = PySeries.from_arrow(name, next(it))
+        for a in it:
+            pys.append(PySeries.from_arrow(name, a))
+
+        return pys
+
     return PySeries.from_arrow(name, array)
 
 
@@ -392,7 +402,7 @@ def arrow_to_pydf(
         else:
             name = column._name
 
-        column = coerce_arrow(column)
+        column = coerce_arrow(column, rechunk=rechunk)
         data_dict[name] = column
 
     batches = pa.table(data_dict).to_batches()
@@ -438,7 +448,7 @@ def pandas_to_pydf(
     return arrow_to_pydf(arrow_table, columns=columns, rechunk=rechunk)
 
 
-def coerce_arrow(array: "pa.Array") -> "pa.Array":
+def coerce_arrow(array: "pa.Array", rechunk: bool = True) -> "pa.Array":
     # also coerces timezone to naive representation
     # units are accounted for by pyarrow
     if isinstance(array, pa.TimestampArray):
@@ -455,7 +465,7 @@ def coerce_arrow(array: "pa.Array") -> "pa.Array":
     elif isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())
 
-    if hasattr(array, "num_chunks") and array.num_chunks > 1:
+    if hasattr(array, "num_chunks") and array.num_chunks > 1 and rechunk:
         # we have to coerce before combining chunks, because pyarrow panics if
         # offsets overflow
         if pa.types.is_string(array.type):
