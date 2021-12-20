@@ -229,11 +229,13 @@ class Series:
         return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
 
     @classmethod
-    def _from_arrow(cls, name: str, values: "pa.Array") -> "Series":
+    def _from_arrow(
+        cls, name: str, values: "pa.Array", rechunk: bool = True
+    ) -> "Series":
         """
         Construct a Series from an Arrow Array.
         """
-        return cls._from_pyseries(arrow_to_pyseries(name, values))
+        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
 
     @classmethod
     def _from_pandas(
