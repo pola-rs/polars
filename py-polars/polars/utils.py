@@ -1,6 +1,6 @@
 import ctypes
 import typing as tp
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Tuple, Union
 
 import numpy as np
@@ -47,3 +47,8 @@ def _datetime_to_pl_timestamp(dt: datetime) -> int:
     Converts a python datetime to a timestamp in nanoseconds
     """
     return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+
+
+def _date_to_pl_date(d: date) -> int:
+    dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
+    return int(dt.timestamp()) // (3600 * 24)
