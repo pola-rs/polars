@@ -245,7 +245,7 @@ describe("dataframe", () => {
     });
     expect(actual).toFrameEqual(expected);
   });
-  test("dropDuplicates:maintainOrder", () => {
+  test.skip("dropDuplicates:maintainOrder", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 2],
       "bar": [1, 2, 2, 2],

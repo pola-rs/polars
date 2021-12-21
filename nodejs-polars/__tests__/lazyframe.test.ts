@@ -125,7 +125,7 @@ describe("lazyframe", () => {
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
 
-  test("dropDuplicates:maintainOrder", () => {
+  test.skip("dropDuplicates:maintainOrder", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 2],
       "bar": [1, 2, 2, 2],
