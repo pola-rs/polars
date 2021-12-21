@@ -18,3 +18,4 @@ thiserror = "^1.0"
 [features]
 strings = []
 compute = ["arrow/compute_cast"]
+parquet = ["arrow/io_parquet", "arrow/io_parquet_compression"]
