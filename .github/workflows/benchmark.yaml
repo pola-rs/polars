@@ -1,7 +1,9 @@
 name: Benchmark
 
 on:
-  - pull_request
+  pull_request:
+    paths:
+      - 'polars/**'
 jobs:
   test:
     runs-on: ubuntu-latest

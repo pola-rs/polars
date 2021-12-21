@@ -1,7 +1,9 @@
 name: Docs check
 
 on:
-  - pull_request
+  pull_request:
+    paths:
+    - 'py-polars/**'
 jobs:
   test:
     name: Docs check
