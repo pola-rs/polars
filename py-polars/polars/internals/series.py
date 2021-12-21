@@ -1,8 +1,18 @@
 import sys
-import typing as tp
 from datetime import date, datetime, timedelta
 from numbers import Number
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    overload,
+)
 
 import numpy as np
 
@@ -40,7 +50,9 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
-    List,
+)
+from polars.datatypes import List as PlList
+from polars.datatypes import (
     Object,
     UInt8,
     UInt16,
@@ -549,12 +561,12 @@ class Series:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            if self.dtype in (List, Date, Datetime, Object):
+            if self.dtype in (PlList, Date, Datetime, Object):
                 f = get_ffi_func("get_<>", self.dtype, self._s)
                 if f is None:
                     return NotImplemented
                 out = f(item)
-                if self.dtype == List:
+                if self.dtype == PlList:
                     if out is None:
                         return None
                     return wrap_s(out)
@@ -587,7 +599,7 @@ class Series:
         if f is None:
             return NotImplemented
         out = f(item)
-        if self.dtype == List:
+        if self.dtype == PlList:
             return wrap_s(out)
         return out
 
@@ -1003,15 +1015,15 @@ class Series:
         s._s.rename(name)
         return s
 
-    @tp.overload
+    @overload
     def rename(self, name: str, in_place: Literal[False] = ...) -> "Series":
         ...
 
-    @tp.overload
+    @overload
     def rename(self, name: str, in_place: Literal[True]) -> None:
         ...
 
-    @tp.overload
+    @overload
     def rename(self, name: str, in_place: bool) -> Optional["Series"]:
         ...
 
@@ -1045,7 +1057,7 @@ class Series:
         else:
             return self.alias(name)
 
-    def chunk_lengths(self) -> tp.List[int]:
+    def chunk_lengths(self) -> List[int]:
         """
         Get the length of each individual chunk.
         """
@@ -1433,7 +1445,7 @@ class Series:
         """
         return wrap_s(self._s.unique())
 
-    def take(self, indices: Union[np.ndarray, tp.List[int]]) -> "Series":
+    def take(self, indices: Union[np.ndarray, List[int]]) -> "Series":
         """
         Take values by index.
 
@@ -1617,7 +1629,7 @@ class Series:
         """
         return Series._from_pyseries(self._s.is_not_nan())
 
-    def is_in(self, other: Union["Series", tp.List]) -> "Series":
+    def is_in(self, other: Union["Series", List]) -> "Series":
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -1864,7 +1876,7 @@ class Series:
         """
         return wrap_s(self._s.to_physical)
 
-    def to_list(self, use_pyarrow: bool = False) -> tp.List[Optional[Any]]:
+    def to_list(self, use_pyarrow: bool = False) -> List[Optional[Any]]:
         """
         Convert this Series to a Python List. This operation clones data.
 
@@ -2021,7 +2033,7 @@ class Series:
             self._s.rechunk(in_place=True)
 
         if method == "__call__":
-            args: tp.List[Union[Number, np.ndarray]] = []
+            args: List[Union[Number, np.ndarray]] = []
             for arg in inputs:
                 if isinstance(arg, Number):
                     args.append(arg)
@@ -2532,7 +2544,7 @@ class Series:
     def rolling_min(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Series":
@@ -2577,7 +2589,7 @@ class Series:
     def rolling_max(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Series":
@@ -2622,7 +2634,7 @@ class Series:
     def rolling_mean(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Series":
@@ -2667,7 +2679,7 @@ class Series:
     def rolling_sum(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Series":
@@ -2712,7 +2724,7 @@ class Series:
     def rolling_std(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Series":
@@ -2744,7 +2756,7 @@ class Series:
     def rolling_var(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Series":
@@ -3166,7 +3178,7 @@ class Series:
             self.name
         ]
 
-    def reshape(self, dims: tp.Tuple[int, ...]) -> "Series":
+    def reshape(self, dims: Tuple[int, ...]) -> "Series":
         """
         Reshape this Series to a flat series, shape: (len,)
         or a List series, shape: (rows, cols)
@@ -3480,7 +3492,7 @@ class ListNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.unique()).to_series()
 
-    def concat(self, other: Union[tp.List[Series], Series]) -> "Series":
+    def concat(self, other: Union[List[Series], Series]) -> "Series":
         """
         Concat the arrays in a Series dtype List in linear time.
 

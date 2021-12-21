@@ -1,14 +1,13 @@
 import ctypes
-import typing as tp
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 
 
 def _process_null_values(
-    null_values: Union[None, str, tp.List[str], Dict[str, str]] = None,
-) -> Union[None, str, tp.List[str], tp.List[Tuple[str, str]]]:
+    null_values: Union[None, str, List[str], Dict[str, str]] = None,
+) -> Union[None, str, List[str], List[Tuple[str, str]]]:
     if isinstance(null_values, dict):
         return list(null_values.items())
     else:

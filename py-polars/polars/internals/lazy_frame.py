@@ -5,8 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-import typing as tp
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 try:
     from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
@@ -25,8 +24,8 @@ def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
 
 
 def _prepare_groupby_inputs(
-    by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]],
-) -> tp.List["PyExpr"]:
+    by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]],
+) -> List["PyExpr"]:
     if isinstance(by, list):
         new_by = []
         for e in by:
@@ -65,10 +64,10 @@ class LazyFrame:
         quote_char: Optional[str] = r'"',
         skip_rows: int = 0,
         dtypes: Optional[Dict[str, Type[DataType]]] = None,
-        null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
+        null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
         ignore_errors: bool = False,
         cache: bool = True,
-        with_column_names: Optional[Callable[[tp.List[str]], tp.List[str]]] = None,
+        with_column_names: Optional[Callable[[List[str]], List[str]]] = None,
         infer_schema_length: Optional[int] = 100,
         n_rows: Optional[int] = None,
         low_memory: bool = False,
@@ -76,7 +75,7 @@ class LazyFrame:
         """
         See Also: `pl.scan_csv`
         """
-        dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
+        dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
         if dtypes is not None:
             dtype_list = []
             for k, v in dtypes.items():
@@ -246,8 +245,8 @@ class LazyFrame:
 
     def sort(
         self,
-        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
-        reverse: Union[bool, tp.List[bool]] = False,
+        by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
+        reverse: Union[bool, List[bool]] = False,
     ) -> "LazyFrame":
         """
         Sort the DataFrame by:
@@ -378,7 +377,7 @@ class LazyFrame:
         return pli.wrap_df(ldf.fetch(n_rows))
 
     @property
-    def columns(self) -> tp.List[str]:
+    def columns(self) -> List[str]:
         """
         Get or set column names.
 
@@ -481,7 +480,7 @@ class LazyFrame:
 
     def groupby(
         self,
-        by: Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]],
+        by: Union[str, List[str], "pli.Expr", List["pli.Expr"]],
         maintain_order: bool = False,
     ) -> "LazyGroupBy":
         """
@@ -507,7 +506,7 @@ class LazyFrame:
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: str = "right",
-        by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "LazyGroupBy":
         """
         Groups based on a time value. Time windows are calculated and rows are assigned to windows.
@@ -577,20 +576,16 @@ class LazyFrame:
     def join(
         self,
         ldf: "LazyFrame",
-        left_on: Optional[
-            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
-        ] = None,
-        right_on: Optional[
-            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
-        ] = None,
-        on: Optional[Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]] = None,
+        left_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
+        right_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
+        on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
         how: str = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
         force_parallel: bool = False,
-        asof_by: Optional[Union[str, tp.List[str]]] = None,
-        asof_by_left: Optional[Union[str, tp.List[str]]] = None,
-        asof_by_right: Optional[Union[str, tp.List[str]]] = None,
+        asof_by: Optional[Union[str, List[str]]] = None,
+        asof_by_left: Optional[Union[str, List[str]]] = None,
+        asof_by_right: Optional[Union[str, List[str]]] = None,
     ) -> "LazyFrame":
         """
         Add a join operation to the Logical Plan.
@@ -645,13 +640,13 @@ class LazyFrame:
                 )
             )
 
-        left_on_: Optional[tp.List[Union[str, pli.Expr]]]
+        left_on_: Optional[List[Union[str, pli.Expr]]]
         if isinstance(left_on, (str, pli.Expr)):
             left_on_ = [left_on]
         else:
             left_on_ = left_on
 
-        right_on_: Optional[tp.List[Union[str, pli.Expr]]]
+        right_on_: Optional[List[Union[str, pli.Expr]]]
         if isinstance(right_on, (str, pli.Expr)):
             right_on_ = [right_on]
         else:
@@ -680,13 +675,13 @@ class LazyFrame:
 
         # set asof_by
 
-        left_asof_by_: Union[tp.List[str], None]
+        left_asof_by_: Union[List[str], None]
         if isinstance(asof_by_left, str):
             left_asof_by_ = [asof_by_left]
         else:
             left_asof_by_ = asof_by_left
 
-        right_asof_by_: Union[tp.List[str], None]
+        right_asof_by_: Union[List[str], None]
         if isinstance(asof_by_right, (str, pli.Expr)):
             right_asof_by_ = [asof_by_right]
         else:
@@ -718,9 +713,7 @@ class LazyFrame:
             )
         )
 
-    def with_columns(
-        self, exprs: Union[tp.List["pli.Expr"], "pli.Expr"]
-    ) -> "LazyFrame":
+    def with_columns(self, exprs: Union[List["pli.Expr"], "pli.Expr"]) -> "LazyFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -753,7 +746,7 @@ class LazyFrame:
         """
         return self.with_columns([expr])
 
-    def drop(self, columns: Union[str, tp.List[str]]) -> "LazyFrame":
+    def drop(self, columns: Union[str, List[str]]) -> "LazyFrame":
         """
         Remove one or multiple columns from a DataFrame.
 
@@ -979,7 +972,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.quantile(quantile, interpolation))
 
     def explode(
-        self, columns: Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]
+        self, columns: Union[str, List[str], "pli.Expr", List["pli.Expr"]]
     ) -> "LazyFrame":
         """
         Explode lists to long format.
@@ -1047,7 +1040,7 @@ class LazyFrame:
     def drop_duplicates(
         self,
         maintain_order: bool = False,
-        subset: Optional[Union[tp.List[str], str]] = None,
+        subset: Optional[Union[List[str], str]] = None,
     ) -> "LazyFrame":
         """
         Drop duplicate rows from this DataFrame.
@@ -1057,9 +1050,7 @@ class LazyFrame:
             subset = [subset]
         return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
 
-    def drop_nulls(
-        self, subset: Optional[Union[tp.List[str], str]] = None
-    ) -> "LazyFrame":
+    def drop_nulls(self, subset: Optional[Union[List[str], str]] = None) -> "LazyFrame":
         """
         Drop rows with null values from this DataFrame.
 
@@ -1140,7 +1131,7 @@ class LazyFrame:
         return wrap_ldf(self._ldf.drop_nulls(subset))
 
     def melt(
-        self, id_vars: Union[str, tp.List[str]], value_vars: Union[str, tp.List[str]]
+        self, id_vars: Union[str, List[str]], value_vars: Union[str, List[str]]
     ) -> "LazyFrame":
         """
         Unpivot DataFrame to long format.
@@ -1199,7 +1190,7 @@ class LazyGroupBy:
     def __init__(self, lgb: "PyLazyGroupBy"):
         self.lgb = lgb
 
-    def agg(self, aggs: Union[tp.List["pli.Expr"], "pli.Expr"]) -> "LazyFrame":
+    def agg(self, aggs: Union[List["pli.Expr"], "pli.Expr"]) -> "LazyFrame":
         """
         Describe the aggregation that need to be done on a group.
 

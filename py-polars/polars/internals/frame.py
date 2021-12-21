@@ -3,7 +3,6 @@ Module containing logic related to eager DataFrames
 """
 import os
 import sys
-import typing as tp
 from datetime import timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -14,12 +13,14 @@ from typing import (
     Dict,
     Iterable,
     Iterator,
+    List,
     Optional,
     Sequence,
     TextIO,
     Tuple,
     Type,
     Union,
+    overload,
 )
 
 if sys.version_info >= (3, 8):
@@ -359,15 +360,13 @@ class DataFrame:
     def read_csv(
         file: Union[str, BinaryIO, bytes],
         has_header: bool = True,
-        columns: Optional[Union[tp.List[int], tp.List[str]]] = None,
+        columns: Optional[Union[List[int], List[str]]] = None,
         sep: str = ",",
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
         skip_rows: int = 0,
-        dtypes: Optional[
-            Union[Dict[str, Type[DataType]], tp.List[Type[DataType]]]
-        ] = None,
-        null_values: Optional[Union[str, tp.List[str], Dict[str, str]]] = None,
+        dtypes: Optional[Union[Dict[str, Type[DataType]], List[Type[DataType]]]] = None,
+        null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
         ignore_errors: bool = False,
         parse_dates: bool = False,
         n_threads: Optional[int] = None,
@@ -464,7 +463,7 @@ class DataFrame:
             if isinstance(file, StringIO):
                 file = file.getvalue().encode()
 
-        projection: Optional[tp.List[int]] = None
+        projection: Optional[List[int]] = None
         if columns:
             if isinstance(columns, list):
                 if all(isinstance(i, int) for i in columns):
@@ -475,8 +474,8 @@ class DataFrame:
                         "columns arg should contain a list of all integers or all strings values."
                     )
 
-        dtype_list: Optional[tp.List[Tuple[str, Type[DataType]]]] = None
-        dtype_slice: Optional[tp.List[Type[DataType]]] = None
+        dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
+        dtype_slice: Optional[List[Type[DataType]]] = None
         if dtypes is not None:
             if isinstance(dtypes, dict):
                 dtype_list = []
@@ -517,7 +516,7 @@ class DataFrame:
     @staticmethod
     def read_parquet(
         file: Union[str, BinaryIO],
-        columns: Optional[Union[tp.List[int], tp.List[str]]] = None,
+        columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
     ) -> "DataFrame":
         """
@@ -532,7 +531,7 @@ class DataFrame:
         n_rows
             Stop reading from parquet file after reading ``n_rows``.
         """
-        projection: Optional[tp.List[int]] = None
+        projection: Optional[List[int]] = None
         if columns:
             if isinstance(columns, list):
                 if all(isinstance(i, int) for i in columns):
@@ -550,7 +549,7 @@ class DataFrame:
     @staticmethod
     def read_ipc(
         file: Union[str, BinaryIO],
-        columns: Optional[Union[tp.List[int], tp.List[str]]] = None,
+        columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
     ) -> "DataFrame":
         """
@@ -569,7 +568,7 @@ class DataFrame:
         -------
         DataFrame
         """
-        projection: Optional[tp.List[int]] = None
+        projection: Optional[List[int]] = None
         if columns:
             if isinstance(columns, list):
                 if all(isinstance(i, int) for i in columns):
@@ -617,7 +616,7 @@ class DataFrame:
 
     def to_dict(
         self, as_series: bool = True
-    ) -> Union[Dict[str, "pli.Series"], Dict[str, tp.List[Any]]]:
+    ) -> Union[Dict[str, "pli.Series"], Dict[str, List[Any]]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
 
@@ -711,7 +710,7 @@ class DataFrame:
         else:
             return {s.name: s.to_list() for s in self}
 
-    @tp.overload
+    @overload
     def to_json(
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
@@ -721,7 +720,7 @@ class DataFrame:
     ) -> str:
         ...
 
-    @tp.overload
+    @overload
     def to_json(
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
@@ -731,7 +730,7 @@ class DataFrame:
     ) -> None:
         ...
 
-    @tp.overload
+    @overload
     def to_json(
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
@@ -870,7 +869,7 @@ class DataFrame:
 
         self._df.to_ipc(file, compression)
 
-    def to_dicts(self) -> tp.List[Dict[str, Any]]:
+    def to_dicts(self) -> List[Dict[str, Any]]:
         pydf = self._df
         names = self.columns
 
@@ -883,7 +882,7 @@ class DataFrame:
         self,
         include_header: bool = False,
         header_name: str = "column",
-        column_names: Optional[Union[tp.Iterator[str], tp.Sequence[str]]] = None,
+        column_names: Optional[Union[Iterator[str], Sequence[str]]] = None,
     ) -> "pli.DataFrame":
         """
         Transpose a DataFrame over the diagonal.
@@ -1542,7 +1541,7 @@ class DataFrame:
         return self._df.width()
 
     @property
-    def columns(self) -> tp.List[str]:
+    def columns(self) -> List[str]:
         """
         Get or set column names.
 
@@ -1593,7 +1592,7 @@ class DataFrame:
         self._df.set_column_names(columns)
 
     @property
-    def dtypes(self) -> tp.List[Type[DataType]]:
+    def dtypes(self) -> List[Type[DataType]]:
         """
         Get dtypes of columns in DataFrame. Dtypes can also be found in column headers when printing the DataFrame.
 
@@ -1743,31 +1742,31 @@ class DataFrame:
         """
         self._df.replace_at_idx(index, series._s)
 
-    @tp.overload
+    @overload
     def sort(
         self,
-        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
-        reverse: Union[bool, tp.List[bool]] = ...,
+        by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
+        reverse: Union[bool, List[bool]] = ...,
         *,
         in_place: Literal[False] = ...,
     ) -> "DataFrame":
         ...
 
-    @tp.overload
+    @overload
     def sort(
         self,
-        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
-        reverse: Union[bool, tp.List[bool]] = ...,
+        by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
+        reverse: Union[bool, List[bool]] = ...,
         *,
         in_place: Literal[True],
     ) -> None:
         ...
 
-    @tp.overload
+    @overload
     def sort(
         self,
-        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
-        reverse: Union[bool, tp.List[bool]] = ...,
+        by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
+        reverse: Union[bool, List[bool]] = ...,
         *,
         in_place: bool,
     ) -> Optional["DataFrame"]:
@@ -1775,8 +1774,8 @@ class DataFrame:
 
     def sort(
         self,
-        by: Union[str, "pli.Expr", tp.List[str], tp.List["pli.Expr"]],
-        reverse: Union[bool, tp.List[bool]] = False,
+        by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
+        reverse: Union[bool, List[bool]] = False,
         *,
         in_place: bool = False,
     ) -> Optional["DataFrame"]:
@@ -2044,7 +2043,7 @@ class DataFrame:
         """
         return wrap_df(self._df.tail(length))
 
-    def drop_nulls(self, subset: Optional[tp.List[str]] = None) -> "DataFrame":
+    def drop_nulls(self, subset: Optional[List[str]] = None) -> "DataFrame":
         """
         Return a new DataFrame where the null values are dropped.
 
@@ -2259,7 +2258,7 @@ class DataFrame:
         truncate: bool = True,
         include_boundaries: bool = False,
         closed: str = "right",
-        by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "DynamicGroupBy":
         """
         Groups based on a time value. Time windows are calculated and rows are assigned to windows.
@@ -2532,18 +2531,14 @@ class DataFrame:
     def join(
         self,
         df: "DataFrame",
-        left_on: Optional[
-            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
-        ] = None,
-        right_on: Optional[
-            Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]
-        ] = None,
-        on: Optional[Union[str, "pli.Expr", tp.List[Union[str, "pli.Expr"]]]] = None,
+        left_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
+        right_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
+        on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
         how: str = "inner",
         suffix: str = "_right",
-        asof_by: Optional[Union[str, tp.List[str]]] = None,
-        asof_by_left: Optional[Union[str, tp.List[str]]] = None,
-        asof_by_right: Optional[Union[str, tp.List[str]]] = None,
+        asof_by: Optional[Union[str, List[str]]] = None,
+        asof_by_left: Optional[Union[str, List[str]]] = None,
+        asof_by_right: Optional[Union[str, List[str]]] = None,
     ) -> "DataFrame":
         """
         SQL like joins.
@@ -2629,13 +2624,13 @@ class DataFrame:
         if how == "cross":
             return wrap_df(self._df.join(df._df, [], [], how, suffix))
 
-        left_on_: Optional[tp.List[Union[str, pli.Expr]]]
+        left_on_: Optional[List[Union[str, pli.Expr]]]
         if isinstance(left_on, (str, pli.Expr)):
             left_on_ = [left_on]
         else:
             left_on_ = left_on
 
-        right_on_: Optional[tp.List[Union[str, pli.Expr]]]
+        right_on_: Optional[List[Union[str, pli.Expr]]]
         if isinstance(right_on, (str, pli.Expr)):
             right_on_ = [right_on]
         else:
@@ -2725,7 +2720,7 @@ class DataFrame:
         )
 
     def hstack(
-        self, columns: Union[tp.List["pli.Series"], "DataFrame"], in_place: bool = False
+        self, columns: Union[List["pli.Series"], "DataFrame"], in_place: bool = False
     ) -> Optional["DataFrame"]:
         """
         Return a new DataFrame grown horizontally by stacking multiple Series to it.
@@ -2770,15 +2765,15 @@ class DataFrame:
         else:
             return wrap_df(self._df.hstack([s.inner() for s in columns]))
 
-    @tp.overload
+    @overload
     def vstack(self, df: "DataFrame", in_place: Literal[True]) -> None:
         ...
 
-    @tp.overload
+    @overload
     def vstack(self, df: "DataFrame", in_place: Literal[False] = ...) -> "DataFrame":
         ...
 
-    @tp.overload
+    @overload
     def vstack(self, df: "DataFrame", in_place: bool) -> Optional["DataFrame"]:
         ...
 
@@ -2833,7 +2828,7 @@ class DataFrame:
         else:
             return wrap_df(self._df.vstack(df._df))
 
-    def drop(self, name: Union[str, tp.List[str]]) -> "DataFrame":
+    def drop(self, name: Union[str, List[str]]) -> "DataFrame":
         """
         Remove column from DataFrame and return as new.
 
@@ -2950,7 +2945,7 @@ class DataFrame:
     def __deepcopy__(self, memodict={}) -> "DataFrame":  # type: ignore
         return self.clone()
 
-    def get_columns(self) -> tp.List["pli.Series"]:
+    def get_columns(self) -> List["pli.Series"]:
         """
         Get the DataFrame as a List of Series.
         """
@@ -3010,7 +3005,7 @@ class DataFrame:
         return self.lazy().fill_nan(fill_value).collect(no_optimization=True)
 
     def explode(
-        self, columns: Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]
+        self, columns: Union[str, List[str], "pli.Expr", List["pli.Expr"]]
     ) -> "DataFrame":
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
@@ -3083,7 +3078,7 @@ class DataFrame:
         return self.lazy().explode(columns).collect(no_optimization=True)
 
     def melt(
-        self, id_vars: Union[tp.List[str], str], value_vars: Union[tp.List[str], str]
+        self, id_vars: Union[List[str], str], value_vars: Union[List[str], str]
     ) -> "DataFrame":
         """
         Unpivot DataFrame to long format.
@@ -3275,9 +3270,7 @@ class DataFrame:
             self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)  # type: ignore
         )
 
-    def with_columns(
-        self, exprs: Union["pli.Expr", tp.List["pli.Expr"]]
-    ) -> "DataFrame":
+    def with_columns(self, exprs: Union["pli.Expr", List["pli.Expr"]]) -> "DataFrame":
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -3585,7 +3578,7 @@ class DataFrame:
     def drop_duplicates(
         self,
         maintain_order: bool = True,
-        subset: Optional[Union[str, tp.List[str]]] = None,
+        subset: Optional[Union[str, List[str]]] = None,
     ) -> "DataFrame":
         """
         Drop duplicate rows from this DataFrame.
@@ -3779,7 +3772,7 @@ class DataFrame:
         """
         return self._df.row_tuple(index)
 
-    def rows(self) -> tp.List[Tuple]:
+    def rows(self) -> List[Tuple]:
         """
         Convert columnar data to rows as python tuples.
         """
@@ -3865,7 +3858,7 @@ class DynamicGroupBy:
         truncate: bool = True,
         include_boundaries: bool = True,
         closed: str = "none",
-        by: Optional[Union[str, tp.List[str], "pli.Expr", tp.List["pli.Expr"]]] = None,
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ):
         self.df = df
         self.time_column = time_column
@@ -3880,9 +3873,9 @@ class DynamicGroupBy:
     def agg(
         self,
         column_to_agg: Union[
-            tp.List[Tuple[str, tp.List[str]]],
-            Dict[str, Union[str, tp.List[str]]],
-            tp.List["pli.Expr"],
+            List[Tuple[str, List[str]]],
+            Dict[str, Union[str, List[str]]],
+            List["pli.Expr"],
             "pli.Expr",
         ],
     ) -> DataFrame:
@@ -3941,7 +3934,7 @@ class GroupBy:
     def __init__(
         self,
         df: "PyDataFrame",
-        by: Union[str, tp.List[str]],
+        by: Union[str, List[str]],
         maintain_order: bool = False,
     ):
         self._df = df
@@ -3951,7 +3944,7 @@ class GroupBy:
     def __getitem__(self, item: Any) -> "GBSelection":
         return self._select(item)
 
-    def _select(self, columns: Union[str, tp.List[str]]) -> "GBSelection":
+    def _select(self, columns: Union[str, List[str]]) -> "GBSelection":
         """
         Select the columns that will be aggregated.
 
@@ -4036,9 +4029,9 @@ class GroupBy:
     def agg(
         self,
         column_to_agg: Union[
-            tp.List[Tuple[str, tp.List[str]]],
-            Dict[str, Union[str, tp.List[str]]],
-            tp.List["pli.Expr"],
+            List[Tuple[str, List[str]]],
+            Dict[str, Union[str, List[str]]],
+            List["pli.Expr"],
             "pli.Expr",
         ],
     ) -> DataFrame:
@@ -4376,7 +4369,7 @@ class PivotOps:
     def __init__(
         self,
         df: DataFrame,
-        by: Union[str, tp.List[str]],
+        by: Union[str, List[str]],
         pivot_column: str,
         values_column: str,
     ):
@@ -4450,8 +4443,8 @@ class GBSelection:
     def __init__(
         self,
         df: "PyDataFrame",
-        by: Union[str, tp.List[str]],
-        selection: Optional[tp.List[str]],
+        by: Union[str, List[str]],
+        selection: Optional[List[str]],
     ):
         self._df = df
         self.by = by
