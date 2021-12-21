@@ -272,3 +272,28 @@ def test_truncate_negative_offset() -> None:
         datetime(2021, 4, 1),
         datetime(2021, 5, 1),
     ]
+    df = pl.DataFrame(
+        {
+            "event_date": [
+                datetime(2021, 4, 11),
+                datetime(2021, 4, 29),
+                datetime(2021, 5, 29),
+            ],
+            "adm1_code": [1, 2, 1],
+            "five_type": ["a", "b", "a"],
+            "actor": ["a", "a", "a"],
+            "admin": ["a", "a", "a"],
+            "fatalities": [10, 20, 30],
+        }
+    )
+
+    out = df.groupby_dynamic(
+        time_column="event_date",
+        every="1mo",
+        by=["admin", "five_type", "actor"],
+    ).agg([pl.col("adm1_code").unique(), (pl.col("fatalities") > 0).sum()])
+    assert out["event_date"].to_list() == [
+        datetime(2021, 4, 1),
+        datetime(2021, 5, 1),
+        datetime(2021, 4, 1),
+    ]

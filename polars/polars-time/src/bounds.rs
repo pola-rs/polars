@@ -17,21 +17,10 @@ impl Display for Bounds {
     }
 }
 
-// Get a wrapping boundary form a slice of nanoseconds.
-// E.g. the first and last value are the start and stop of the boundary
-impl<S: AsRef<[i64]>> From<S> for Bounds {
-    fn from(s: S) -> Self {
-        let slice = s.as_ref();
-        let start = slice[0];
-        let stop = slice[slice.len() - 1];
-        Self::new(start, stop)
-    }
-}
-
 impl Bounds {
     pub fn new(start: TimeNanoseconds, stop: TimeNanoseconds) -> Self {
         assert!(
-            start < stop,
+            start <= stop,
             "boundary start must be smaller than stop; is your time column sorted in ascending order?"
         );
         Bounds { start, stop }
