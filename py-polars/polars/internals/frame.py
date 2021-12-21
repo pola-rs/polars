@@ -517,6 +517,7 @@ class DataFrame:
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
+        parallel: bool = True,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -529,6 +530,8 @@ class DataFrame:
             Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
         n_rows
             Stop reading from parquet file after reading ``n_rows``.
+        parallel
+            Read the parquet file in parallel. The single threaded reader consumes less memory.
         """
         projection: Optional[Sequence[int]] = None
         if columns:
@@ -541,7 +544,7 @@ class DataFrame:
                 )
 
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows)
+        self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows, parallel)
         return self
 
     @staticmethod
