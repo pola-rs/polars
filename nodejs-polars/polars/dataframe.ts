@@ -1284,15 +1284,14 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return wrap("drop_nulls");
       }
     },
-    dropDuplicates(opts: any=true, subset?) {
-      if(opts?.maintainOrder !== undefined) {
-        return this.dropDuplicates(opts.maintainOrder, opts.subset);
-      }
-      if(subset) {
-        subset = [subset].flat(2);
+    dropDuplicates(opts: any=false, subset?) {
+      const maintainOrder = opts?.maintainOrder ?? opts;
+      subset = opts?.subset ?? subset;
+      if(typeof subset! === "string") {
+        subset = [subset];
       }
 
-      return wrap("drop_duplicates", {maintainOrder: opts.maintainOrder, subset});
+      return wrap("drop_duplicates", {maintainOrder, subset});
     },
     explode(...columns)  {
       return dfWrapper(_df).lazy()
