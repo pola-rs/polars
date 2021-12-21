@@ -4,6 +4,7 @@ pub mod bit_util;
 pub mod compute;
 pub mod error;
 pub mod index;
+pub mod io;
 pub mod is_valid;
 pub mod kernels;
 pub mod prelude;

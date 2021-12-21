@@ -24,9 +24,11 @@ use arrow::io::parquet::{
     read,
     write::{self, *},
 };
+use polars_arrow::io::read_parquet;
 use polars_core::prelude::*;
 use rayon::prelude::*;
 use std::collections::VecDeque;
+use std::convert::TryFrom;
 use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
@@ -122,7 +124,6 @@ where
     }
 
     fn finish(mut self) -> Result<DataFrame> {
-        let rechunk = self.rechunk;
         let metadata = read::read_metadata(&mut self.reader)?;
         let schema = read::schema::get_schema(&metadata)?;
 
@@ -136,14 +137,28 @@ where
             self.projection = Some(prj);
         }
 
-        let reader = read::RecordReader::try_new(
+        let chunks = read_parquet(
             &mut self.reader,
-            self.projection,
-            self.n_rows,
-            None,
-            None,
+            self.n_rows.unwrap_or(usize::MAX),
+            self.projection.as_deref(),
+            &schema,
+            Some(metadata),
         )?;
-        finish_reader(reader, rechunk, self.n_rows, None, None)
+        let mut df = accumulate_dataframes_vertical(chunks.into_iter().map(|cols| {
+            DataFrame::new_no_checks(
+                cols.into_iter()
+                    .enumerate()
+                    .map(|(i, arr)| {
+                        Series::try_from((schema.field(i).name().as_str(), arr)).unwrap()
+                    })
+                    .collect(),
+            )
+        }))?;
+        if self.rechunk {
+            df.rechunk();
+        }
+
+        Ok(df)
     }
 }
 
@@ -185,6 +200,7 @@ pub struct ParquetWriter<W> {
     compression: write::Compression,
 }
 
+use polars_core::utils::accumulate_dataframes_vertical;
 pub use write::Compression as ParquetCompression;
 
 impl<W> ParquetWriter<W>
