@@ -1,5 +1,8 @@
 name: Test JS
-on: [push]
+on:
+  pull_request:
+    paths:
+      - 'nodejs-polars/**'
 jobs: 
   test-js: 
     runs-on: ubuntu-latest
