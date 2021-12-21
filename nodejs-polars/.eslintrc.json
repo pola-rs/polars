@@ -21,20 +21,12 @@
         "jest"
     ],
     "rules": {
+        "arrow-spacing": "error",
         "eol-last": "error",
         "no-inner-declarations": "off",
         "func-call-spacing": "off",
-        "@typescript-eslint/func-call-spacing": [
-            "error"
-        ],
         "no-duplicate-imports": "off",
-        "@typescript-eslint/no-duplicate-imports": [
-            "error"
-        ],
         "comma-spacing": "off",
-        "@typescript-eslint/comma-spacing": [
-            "error"
-        ],
         "quotes": [
             "error",
             "double",
@@ -64,7 +56,6 @@
                 "ignoreChainWithDepth": 2
             }
         ],
-        "@typescript-eslint/member-ordering": "error",
         "no-multiple-empty-lines": [
             "error",
             {
@@ -79,6 +70,11 @@
                 "prev": "*",
                 "next": "return"
             }
-        ]
+        ],
+        "@typescript-eslint/func-call-spacing": "error",
+        "@typescript-eslint/no-duplicate-imports": "error",
+        "@typescript-eslint/comma-spacing": "error",
+        "@typescript-eslint/member-ordering": "error",
+        "@typescript-eslint/type-annotation-spacing": "error"
     }
 }

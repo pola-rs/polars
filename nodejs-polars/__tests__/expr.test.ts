@@ -1366,7 +1366,7 @@ describe("expr.str", () => {
 
 });
 describe("expr.lst", () => {
-  test("get", () =>{
+  test("get", () => {
     const df = pl.DataFrame({"a": [[1, 10, 11], [2, 10, 12], [1]]});
     const expected = pl.DataFrame({"get": [11, 12, null]});
     const actual = df.select(
@@ -1384,7 +1384,7 @@ describe("expr.lst", () => {
     expect(actual).toFrameEqual(expected);
     expect(actualFromSeries).toFrameEqual(expected);
   });
-  test("first", () =>{
+  test("first", () => {
     const df = pl.DataFrame({"a": [[1, 10], [2, 10]]});
     const expected = pl.DataFrame({"first": [1, 2]});
     const actual = df.select(

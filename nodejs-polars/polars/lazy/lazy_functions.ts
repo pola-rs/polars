@@ -171,10 +171,10 @@ export function lit(value: any): Expr {
  * >>>   .collect()
  * ```
  */
-export function arange<T>(opts: {low: Series<T> | T, high: Series<T> | T, step:number, eager:boolean});
+export function arange<T>(opts: {low: Series<T> | T, high: Series<T> | T, step: number, eager: boolean});
 export function arange<T>(low: Series<T> | T, high?: Series<T> | T, step?: number, eager?: true): Series<T>;
 export function arange<T>(low: Series<T> | T, high?: Series<T> | T, step?: number, eager?: false): Expr;
-export function arange<T>(opts:any, high?, step?, eager?): Series<T> | Expr {
+export function arange<T>(opts: any, high?, step?, eager?): Series<T> | Expr {
   if(typeof opts?.low === "number") {
     return arange(opts.low, opts.high, opts.step, opts.eager);
   } else {
@@ -318,7 +318,7 @@ export function format(strings: TemplateStringsArray, ...expr: ExprOrString[]): 
 export function format(strings, ...expr): Expr {
   if(typeof strings === "string") {
     const s = strings.split("{}");
-    if(s.length -1 !== expr.length) {
+    if(s.length - 1 !== expr.length) {
       throw new RangeError("number of placeholders should equal the number of arguments");
     }
 
@@ -339,7 +339,7 @@ export function groups(column: string): Expr {
   return col(column).aggGroups();
 }
 /** Get the first n rows of an Expression. */
-export function head(column: ExprOrString, n?: number):Expr;
+export function head(column: ExprOrString, n?: number): Expr;
 export function head<T>(column: Series<T>, n?: number): Series<T>;
 export function head<T>(column: Series<T> | ExprOrString, n?): Series<T> | Expr {
   if(isSeries(column)) {
@@ -436,7 +436,7 @@ export function spearmanRankCorr(a: ExprOrString, b: ExprOrString): Expr {
 
 
 /** Get the last n rows of an Expression. */
-export function tail(column: ExprOrString, n?: number):Expr;
+export function tail(column: ExprOrString, n?: number): Expr;
 export function tail<T>(column: Series<T>, n?: number): Series<T>;
 export function tail<T>(column: Series<T> | ExprOrString, n?: number): Series<T> | Expr {
   if(isSeries(column)) {
@@ -447,7 +447,7 @@ export function tail<T>(column: Series<T> | ExprOrString, n?: number): Series<T>
 }
 
 /** Syntactic sugar for `pl.col(column).list()` */
-export function list(column:ExprOrString): Expr {
+export function list(column: ExprOrString): Expr {
   return exprToLitOrExpr(column, false).list();
 }
 

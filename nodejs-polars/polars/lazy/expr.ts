@@ -25,7 +25,7 @@ export interface ExprListFunctions {
    * and index `-1` would return the last item of every sublist
    * if an index is out of bounds, it will return a `null`.
    */
-  get(index:number): Expr
+  get(index: number): Expr
   /** Get the first value of the sublists. */
   first(): Expr
   /** Get the last value of the sublists. */
@@ -130,7 +130,7 @@ export interface ExprStringFunctions {
   /**  Get length of the string values in the Series. */
   lengths(): Expr;
   /** Remove leading whitespace. */
-  lstrip() : Expr
+  lstrip(): Expr
   /** Replace first regex match with a string value. */
   replace(pat: string | RegExp, val: string): Expr;
   /** Replace all regex matches with a string value. */
@@ -140,7 +140,7 @@ export interface ExprStringFunctions {
   /** Modify the strings to their uppercase equivalent. */
   toUpperCase(): Expr;
   /** Remove trailing whitespace. */
-  rstrip() : Expr
+  rstrip(): Expr
   /**
    * Create subslices of the string values of a Utf8 Series.
    * @param start - Start of the slice (negative indexing may be used).
@@ -322,7 +322,7 @@ export interface Expr {
   /** Fill missing values with the next to be seen values */
   backwardFill(): Expr
   /** Cast between data types. */
-  cast(dtype:DataType, strict?: boolean): Expr
+  cast(dtype: DataType, strict?: boolean): Expr
   /** Count the number of values in this expression */
   count(): Expr
   /** Get an array with the cumulative count computed at every element. */
@@ -357,8 +357,8 @@ export interface Expr {
    * @param n number of slots to shift
    * @param nullBehavior ignore or drop
    */
-  diff(n:number, nullBehavior: "ignore" | "drop"): Expr
-  diff(o: {n:number, nullBehavior: "ignore" | "drop"}): Expr
+  diff(n: number, nullBehavior: "ignore" | "drop"): Expr
+  diff(o: {n: number, nullBehavior: "ignore" | "drop"}): Expr
   /**
    * Compute the dot/inner product between two Expressions
    * @param other Expression to compute dot product with
@@ -443,7 +443,7 @@ export interface Expr {
   gtEq(other: any): Expr
   /** Hash the Series. */
   hash(k0?: number, k1?: number, k2?: number, k3?: number): Expr
-  hash({k0, k1, k2, k3}: {k0?:number, k1?: number, k2?: number, k3?:number}): Expr
+  hash({k0, k1, k2, k3}: {k0?: number, k1?: number, k2?: number, k3?: number}): Expr
   /** Take the first n values.  */
   head(length?: number): Expr
   head({length}: {length: number}): Expr
@@ -549,8 +549,8 @@ export interface Expr {
    */
   keepName(): Expr
   kurtosis(): Expr
-  kurtosis(fisher:boolean, bias?:boolean): Expr
-  kurtosis({fisher, bias}:{fisher?:boolean, bias?:boolean}): Expr
+  kurtosis(fisher: boolean, bias?: boolean): Expr
+  kurtosis({fisher, bias}: {fisher?: boolean, bias?: boolean}): Expr
   /** Get the last value.  */
   last(): Expr
   /** Aggregate to list. */
@@ -704,7 +704,7 @@ export interface Expr {
    * @see {@link rollingMean}, {@link rollingMin}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMax(options: RollingOptions): Expr
-  rollingMax(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Expr
+  rollingMax(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Expr
   /**
    * __Apply a rolling mean (moving mean) over the values in this Series.__
    *
@@ -722,7 +722,7 @@ export interface Expr {
    * @see {@link rollingMax}, {@link rollingMin}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMean(options: RollingOptions): Expr
-  rollingMean(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Expr
+  rollingMean(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Expr
   /**
    * __Apply a rolling min (moving min) over the values in this Series.__
    *
@@ -740,7 +740,7 @@ export interface Expr {
    * @see {@link rollingMax}, {@link rollingMean}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMin(options: RollingOptions): Expr
-  rollingMin(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Expr
+  rollingMin(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Expr
   /**
    * __Apply a rolling sum (moving sum) over the values in this Series.__
    *
@@ -757,7 +757,7 @@ export interface Expr {
    * @param center - Set the labels at the center of the window
    */
   rollingSum(options: RollingOptions): Expr
-  rollingSum(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Expr
+  rollingSum(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Expr
   /**
    * __Compute a rolling variance.__
    *
@@ -775,7 +775,7 @@ export interface Expr {
    * @see {@link rollingMax}, {@link rollingMin}, {@link rollingMean}, {@link rollingSum}
    */
   rollingVar(options: RollingOptions): Expr
-  rollingVar(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Expr
+  rollingVar(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Expr
   /** Compute a rolling median */
   rollingMedian(windowSize: number): Expr
   rollingMedian({windowSize}: {windowSize: number}): Expr
@@ -823,8 +823,8 @@ export interface Expr {
   skew(bias?: boolean): Expr
   skew({bias}: {bias: boolean}): Expr
   /** Slice the Series. */
-  slice(offset:number, length:number): Expr
-  slice({offset, length}: {offset:number, length:number}): Expr
+  slice(offset: number, length: number): Expr
+  slice({offset, length}: {offset: number, length: number}): Expr
   /**
    * Sort this column. In projection/ selection context the whole column is sorted.
    * @param reverse
@@ -896,7 +896,7 @@ const ExprListFunctions = (_expr: JsExpr): ExprListFunctions => {
     reverse() {
       return wrap("reverse");
     },
-    sort(reverse:any = false) {
+    sort(reverse: any = false) {
       return typeof reverse === "boolean" ?
         wrap("sort", {reverse}) :
         wrap("sort", reverse);
@@ -1054,7 +1054,7 @@ export const Expr = (_expr: JsExpr): Expr => {
       bias : obj?.["bias"] ?? bias,
     });
   };
-  const hash = (obj:any=0, k1=1, k2=2, k3=3) => {
+  const hash = (obj: any=0, k1=1, k2=2, k3=3) => {
     if(typeof obj === "number" || typeof obj === "bigint") {
       return wrap("hash", {
         k0: obj,
@@ -1087,7 +1087,7 @@ export const Expr = (_expr: JsExpr): Expr => {
 
     return rollingSkew(val.windowSize, val.bias);
   };
-  const sort = (reverse:any = false, nullsLast=false) => {
+  const sort = (reverse: any = false, nullsLast=false) => {
     if(typeof reverse === "boolean") {
       return wrap("sortWith", {reverse, nullsLast});
     }

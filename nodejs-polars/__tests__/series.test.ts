@@ -5,17 +5,17 @@ import Chance from "chance";
 
 
 describe("from lists", () => {
-  test("bool", () =>{
+  test("bool", () => {
     const expected = [[true, false], [true], [null], []];
     const actual = pl.Series(expected).toArray();
     expect(actual).toEqual(expected);
   });
-  test("number", () =>{
+  test("number", () => {
     const expected = [[1, 2], [3], [null], []];
     const actual = pl.Series(expected).toArray();
     expect(actual).toEqual(expected);
   });
-  test("bigint", () =>{
+  test("bigint", () => {
     const expected = [[1n, 2n], [3n], [null], []];
     const actual = pl.Series(expected).toArray();
     expect(actual).toEqual(expected);
@@ -680,7 +680,7 @@ describe("StringFunctions", () => {
   ${"contains"}      | ${pl.Series(["f1", "f0"]).str.contains(/[0]/)}   | ${pl.Series([false, true])}
   ${"lengths"}       | ${pl.Series(["apple", "ham"]).str.lengths()}     | ${pl.Series([5, 3])}
   ${"slice"}         | ${pl.Series(["apple", "ham"]).str.slice(1)}      | ${pl.Series(["pple", "am"])}
-  `("$# $name expected matches actual", ({expected, actual}) =>{
+  `("$# $name expected matches actual", ({expected, actual}) => {
 
     expect(expected).toStrictEqual(actual);
   });

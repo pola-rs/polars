@@ -48,7 +48,7 @@
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
     "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
-    "lint:ts": "eslint -c ./.eslintrc.json 'polars/**/*.{ts,tsx,js}'",
+    "lint:ts": "eslint -c ./.eslintrc.json 'polars/**/*.{ts,tsx,js}' '__tests__/*.ts'",
     "prepublishOnly": "napi prepublish -t npm",
     "test": "jest",
     "version": "napi version"

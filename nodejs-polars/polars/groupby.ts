@@ -305,7 +305,7 @@ function GroupBySelection(
     }
   };
 
-  const quantile = (quantile:number) => {
+  const quantile = (quantile: number) => {
     if(downsample) {
       throw new InvalidOperationError("quantile", "downsample");
     } else {

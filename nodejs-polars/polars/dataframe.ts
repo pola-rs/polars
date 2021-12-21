@@ -430,8 +430,8 @@ export interface DataFrame {
    * @param k2 - seed parameter
    * @param k3 - seed parameter
    */
-  hashRows(k0?:number, k1?: number, k2?: number, k3?:number): Series<bigint>
-  hashRows(options: {k0?:number, k1?: number, k2?: number, k3?:number}): Series<bigint>
+  hashRows(k0?: number, k1?: number, k2?: number, k3?: number): Series<bigint>
+  hashRows(options: {k0?: number, k1?: number, k2?: number, k3?: number}): Series<bigint>
   /**
    * Get first N rows as DataFrame.
    * ___
@@ -458,7 +458,7 @@ export interface DataFrame {
    * ╰─────┴─────┴─────╯
    * ```
    */
-  head(length?:number): DataFrame
+  head(length?: number): DataFrame
   /**
    * Return a new DataFrame grown horizontally by stacking multiple Series to it.
    * @param columns - array of Series or DataFrame to stack
@@ -800,9 +800,9 @@ export interface DataFrame {
    * ╰─────┴─────┴─────╯
    * ```
    */
-  sample(opts: {n: number, withReplacement?:boolean}): DataFrame
-  sample(opts: {frac: number, withReplacement?:boolean}): DataFrame
-  sample(n?: number, frac?: number, withReplacement?:boolean): DataFrame
+  sample(opts: {n: number, withReplacement?: boolean}): DataFrame
+  sample(opts: {frac: number, withReplacement?: boolean}): DataFrame
+  sample(n?: number, frac?: number, withReplacement?: boolean): DataFrame
   schema(): Record<string, string>
   /**
    * Select columns from this DataFrame.
@@ -908,8 +908,8 @@ export interface DataFrame {
    * Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
    */
   shrinkToFit(): DataFrame
-  shrinkToFit(inPlace:true): void
-  shrinkToFit({inPlace}: {inPlace:true}): void
+  shrinkToFit(inPlace: true): void
+  shrinkToFit({inPlace}: {inPlace: true}): void
   /**
    * Slice this DataFrame over the rows direction.
    * ___
@@ -1077,7 +1077,7 @@ export interface DataFrame {
   toJSON(): string
   toJSON(options: {orient: "row" | "col" | "literal"}): string
   toJSON(dest: string | Stream, options?: {orient: "row" | "col" | "literal"}): void
-  toSeries(index:number): Series<any>
+  toSeries(index: number): Series<any>
   toString(): string
   /**
    * Upsample a DataFrame at a regular frequency.
@@ -1174,7 +1174,7 @@ export interface DataFrame {
   modulo(other: any): DataFrame
 }
 
-function prepareOtherArg<T>(anyValue:T | Series<T>): Series<T> {
+function prepareOtherArg<T>(anyValue: T | Series<T>): Series<T> {
   if(isSeries(anyValue)) {
 
     return anyValue;
@@ -1233,7 +1233,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     inner: () => _df,
     clone: noArgWrap("clone"),
     describe() {
-      const describeCast = (df:DataFrame) => {
+      const describeCast = (df: DataFrame) => {
         return DataFrame(df.getColumns().map(s => {
           if(s.isNumeric() || s.isBoolean()) {
 
@@ -1284,7 +1284,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return wrap("drop_nulls");
       }
     },
-    dropDuplicates(opts:any=true, subset?) {
+    dropDuplicates(opts: any=true, subset?) {
       if(opts?.maintainOrder !== undefined) {
         return this.dropDuplicates(opts.maintainOrder, opts.subset);
       }
@@ -1460,13 +1460,13 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       }
     },
     shift: (opt) => wrap("shift", {periods: opt?.periods ?? opt }),
-    shiftAndFill(periods:any, fillValue?)  {
+    shiftAndFill(periods: any, fillValue?)  {
       return dfWrapper(_df)
         .lazy()
         .shiftAndFill(periods, fillValue)
         .collectSync();
     },
-    shrinkToFit(inPlace:any=false): any {
+    shrinkToFit(inPlace: any=false): any {
       if(inPlace) {
         unwrap("shrink_to_fit");
       } else {

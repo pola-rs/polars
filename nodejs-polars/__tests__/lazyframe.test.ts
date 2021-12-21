@@ -45,7 +45,7 @@ describe("lazyframe", () => {
       `TABLE: ["foo", "bar"]; PROJECT */2 COLUMNS; SELECTION: None\\n
                     PROJECTION: None`);
   });
-  test("drop", () =>{
+  test("drop", () => {
     const df = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6.0, 7.0, 8.0],
@@ -62,7 +62,7 @@ describe("lazyframe", () => {
       .collectSync();
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("drop:array", () =>{
+  test("drop:array", () => {
     const df = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6.0, 7.0, 8.0],
@@ -78,7 +78,7 @@ describe("lazyframe", () => {
       .collectSync();
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("drop:rest", () =>{
+  test("drop:rest", () => {
     const df = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6.0, 7.0, 8.0],
@@ -109,7 +109,7 @@ describe("lazyframe", () => {
     });
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("dropDuplicates:subset", () =>{
+  test("dropDuplicates:subset", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 2],
       "bar": [1, 2, 2, 2],
@@ -124,7 +124,7 @@ describe("lazyframe", () => {
     });
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("dropDuplicates:maintainOrder", () =>{
+  test("dropDuplicates:maintainOrder", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 2],
       "bar": [1, 2, 2, 2],
@@ -169,7 +169,7 @@ describe("lazyframe", () => {
     });
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("dropNulls:rest", () =>{
+  test("dropNulls:rest", () => {
     const actual = pl.DataFrame({
       "foo": [1, null, 2, 3],
       "bar": [6.0, .5, null, 8.0],
@@ -199,7 +199,7 @@ describe("lazyframe", () => {
 
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("fetch", () =>{
+  test("fetch", () => {
     const df = pl.DataFrame({
       "foo": [1, 2],
       "bar": ["a", "b"]
@@ -214,7 +214,7 @@ describe("lazyframe", () => {
       .fetch(1);
     expect(actual).toFrameEqual(expected);
   });
-  test("fillNull:zero", () =>{
+  test("fillNull:zero", () => {
     const actual = pl.DataFrame({
       "foo": [1, null, 2, 3],
       "bar": [6.0, .5, 7.0, 8.0],
@@ -229,7 +229,7 @@ describe("lazyframe", () => {
     });
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("fillNull:expr", () =>{
+  test("fillNull:expr", () => {
     const actual = pl.DataFrame({
       "foo": [1, null, 2, 3],
       "bar": [6.0, .5, 7.0, 8.0],
@@ -270,7 +270,7 @@ describe("lazyframe", () => {
     });
     expect(actual).toFrameEqual(expected);
   });
-  describe("groupby", () =>{});
+  describe("groupby", () => {});
   test("head", () => {
     const actual  = pl.DataFrame({
       "foo": [1, 2, 3],
@@ -605,7 +605,7 @@ describe("lazyframe", () => {
     });
     expect(actual).toFrameEqual(expected);
   });
-  test("quantile", ()=>{
+  test("quantile", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
@@ -615,7 +615,7 @@ describe("lazyframe", () => {
       .collectSync();
     expect(actual.row(0)).toEqual([2, 7, null]);
   });
-  test("rename", ()=>{
+  test("rename", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
