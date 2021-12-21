@@ -18,7 +18,15 @@ pub fn groupby(
     include_boundaries: bool,
     closed_window: ClosedWindow,
 ) -> (GroupTuples, Vec<TimeNanoseconds>, Vec<TimeNanoseconds>) {
-    let boundary = Bounds::from(time);
+    let start = time[0];
+    let boundary = if time.len() > 1 {
+        let stop = time[time.len() - 1];
+        Bounds::new(start, stop)
+    } else {
+        let stop = start + 1;
+        Bounds::new(start, stop)
+    };
+
     let size = if include_boundaries {
         window.estimate_overlapping_bounds(boundary)
     } else {

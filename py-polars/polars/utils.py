@@ -1,8 +1,14 @@
 import ctypes
+import sys
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, Iterable, List, Sequence, Tuple, Type, Union
 
 import numpy as np
+
+if sys.version_info >= (3, 10):
+    from typing import TypeGuard
+else:
+    from typing_extensions import TypeGuard
 
 
 def _process_null_values(
@@ -51,3 +57,23 @@ def _datetime_to_pl_timestamp(dt: datetime) -> int:
 def _date_to_pl_date(d: date) -> int:
     dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
     return int(dt.timestamp()) // (3600 * 24)
+
+
+def is_str_sequence(
+    val: Sequence[object], allow_str: bool = False
+) -> TypeGuard[Sequence[str]]:
+    """
+    Checks that `val` is a sequence of strings. Note that a single string is a sequence of strings
+    by definition, use `allow_str=False` to return False on a single string
+    """
+    if (not allow_str) and isinstance(val, str):
+        return False
+    return _is_iterable_of(val, Sequence, str)
+
+
+def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
+    return _is_iterable_of(val, Sequence, int)
+
+
+def _is_iterable_of(val: Iterable, itertype: Type, eltype: Type) -> bool:
+    return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
