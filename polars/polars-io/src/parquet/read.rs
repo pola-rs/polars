@@ -1,4 +1,6 @@
 use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
+use crate::mmap::MmapBytesReader;
+use crate::parquet::read_par::parallel_read;
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::io::parquet::read;
@@ -16,12 +18,10 @@ pub struct ParquetReader<R: Read + Seek> {
     n_rows: Option<usize>,
     columns: Option<Vec<String>>,
     projection: Option<Vec<usize>>,
+    parallel: bool,
 }
 
-impl<R> ParquetReader<R>
-where
-    R: Read + Seek,
-{
+impl<R: MmapBytesReader> ParquetReader<R> {
     #[cfg(feature = "lazy")]
     // todo! hoist to lazy crate
     pub fn finish_with_scan_ops(
@@ -30,17 +30,27 @@ where
         aggregate: Option<&[ScanAggregation]>,
         projection: Option<&[usize]>,
     ) -> Result<DataFrame> {
-        let rechunk = self.rechunk;
+        if aggregate.is_none() {
+            self.finish()
+        } else {
+            let rechunk = self.rechunk;
 
-        let reader = read::RecordReader::try_new(
-            &mut self.reader,
-            projection.map(|x| x.to_vec()),
-            self.n_rows,
-            None,
-            None,
-        )?;
+            let reader = read::RecordReader::try_new(
+                &mut self.reader,
+                projection.map(|x| x.to_vec()),
+                self.n_rows,
+                None,
+                None,
+            )?;
 
-        finish_reader(reader, rechunk, self.n_rows, predicate, aggregate)
+            finish_reader(reader, rechunk, self.n_rows, predicate, aggregate)
+        }
+    }
+
+    /// Read the parquet file in parallel (default). The single threaded reader consumes less memory.
+    pub fn read_parallel(mut self, parallel: bool) -> Self {
+        self.parallel = parallel;
+        self
     }
 
     /// Stop parsing when `n` rows are parsed. By settings this parameter the csv will be parsed
@@ -81,10 +91,7 @@ impl<R: Read + Seek> ArrowReader for read::RecordReader<R> {
     }
 }
 
-impl<R> SerReader<R> for ParquetReader<R>
-where
-    R: Read + Seek,
-{
+impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
     fn new(reader: R) -> Self {
         ParquetReader {
             reader,
@@ -92,6 +99,7 @@ where
             n_rows: None,
             columns: None,
             projection: None,
+            parallel: true,
         }
     }
 
@@ -114,6 +122,23 @@ where
             self.projection = Some(prj);
         }
 
+        if self.parallel {
+            let rechunk = self.rechunk;
+            return parallel_read(
+                self.reader,
+                self.n_rows.unwrap_or(usize::MAX),
+                self.projection.as_deref(),
+                &schema,
+                Some(metadata),
+            )
+            .map(|mut df| {
+                if rechunk {
+                    df.rechunk();
+                };
+                df
+            });
+        }
+
         let chunks = read_parquet(
             &mut self.reader,
             self.n_rows.unwrap_or(usize::MAX),
@@ -121,11 +146,15 @@ where
             &schema,
             Some(metadata),
         )?;
+        let projection = self.projection.take();
         let mut df = accumulate_dataframes_vertical(chunks.into_iter().map(|cols| {
             DataFrame::new_no_checks(
                 cols.into_iter()
                     .enumerate()
-                    .map(|(i, arr)| {
+                    .map(|(mut i, arr)| {
+                        if let Some(projection) = &projection {
+                            i = projection[i]
+                        }
                         Series::try_from((schema.field(i).name().as_str(), arr)).unwrap()
                     })
                     .collect(),

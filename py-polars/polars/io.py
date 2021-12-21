@@ -702,6 +702,7 @@ def read_parquet(
     use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
     storage_options: Optional[Dict] = None,
+    parallel: bool = True,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -725,6 +726,8 @@ def read_parquet(
         Only used when ``use_pyarrow=True``.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
+    parallel
+        Read the parquet file in parallel. The single threaded reader consumes less memory.
     **kwargs
         kwargs for [pyarrow.parquet.read_table](https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html)
 
@@ -761,9 +764,7 @@ def read_parquet(
             )
 
         return DataFrame.read_parquet(
-            source_prep,
-            columns=columns,
-            n_rows=n_rows,
+            source_prep, columns=columns, n_rows=n_rows, parallel=parallel
         )
 
 

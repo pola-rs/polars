@@ -55,3 +55,16 @@ impl std::ops::Deref for ReaderBytes<'_> {
         }
     }
 }
+
+impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
+    fn from(m: &'a T) -> Self {
+        match m.to_bytes() {
+            Some(s) => ReaderBytes::Borrowed(s),
+            None => {
+                let f = m.to_file().unwrap();
+                let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
+                ReaderBytes::Mapped(mmap)
+            }
+        }
+    }
+}
