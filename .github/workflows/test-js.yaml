@@ -3,7 +3,7 @@ on: [push]
 jobs: 
   test-js: 
     runs-on: ubuntu-latest
-    name: "Run lint & tests node v-${{ matrix.node }}"
+    name:  "${{ matrix.os }} node:${{ matrix.node }}"
     defaults:
       run:
         working-directory: nodejs-polars
