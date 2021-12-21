@@ -536,7 +536,7 @@ class DataFrame:
         if columns:
             if isinstance(columns, list):
                 if all(isinstance(i, int) for i in columns):
-                    projection = columns  # type: ignore
+                    projection: tp.List[int] = columns
                     columns = None
                 elif not all(isinstance(i, str) for i in columns):
                     raise ValueError(
