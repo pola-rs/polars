@@ -58,7 +58,7 @@ except ImportError:  # pragma: no cover
 
 from polars._html import NotebookFormatter
 from polars.datatypes import Boolean, DataType, Datetime, UInt32, py_type_to_dtype
-from polars.utils import _process_null_values
+from polars.utils import _process_null_values, is_int_sequence, is_str_sequence
 
 try:
     import pandas as pd
@@ -463,16 +463,15 @@ class DataFrame:
             if isinstance(file, StringIO):
                 file = file.getvalue().encode()
 
-        projection: Optional[List[int]] = None
+        projection: Optional[Sequence[int]] = None
         if columns:
-            if isinstance(columns, list):
-                if all(isinstance(i, int) for i in columns):
-                    projection = columns  # type: ignore
-                    columns = None
-                elif not all(isinstance(i, str) for i in columns):
-                    raise ValueError(
-                        "columns arg should contain a list of all integers or all strings values."
-                    )
+            if is_int_sequence(columns):
+                projection = columns
+                columns = None
+            elif not is_str_sequence(columns):
+                raise ValueError(
+                    "columns arg should contain a list of all integers or all strings values."
+                )
 
         dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
         dtype_slice: Optional[List[Type[DataType]]] = None
@@ -531,16 +530,15 @@ class DataFrame:
         n_rows
             Stop reading from parquet file after reading ``n_rows``.
         """
-        projection: Optional[List[int]] = None
+        projection: Optional[Sequence[int]] = None
         if columns:
-            if isinstance(columns, list):
-                if all(isinstance(i, int) for i in columns):
-                    projection = columns  # type: ignore
-                    columns = None
-                elif not all(isinstance(i, str) for i in columns):
-                    raise ValueError(
-                        "columns arg should contain a list of all integers or all strings values."
-                    )
+            if is_int_sequence(columns):
+                projection = columns
+                columns = None
+            elif not is_str_sequence(columns):
+                raise ValueError(
+                    "columns arg should contain a list of all integers or all strings values."
+                )
 
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows)
@@ -568,16 +566,15 @@ class DataFrame:
         -------
         DataFrame
         """
-        projection: Optional[List[int]] = None
+        projection: Optional[Sequence[int]] = None
         if columns:
-            if isinstance(columns, list):
-                if all(isinstance(i, int) for i in columns):
-                    projection = columns  # type: ignore
-                    columns = None
-                elif not all(isinstance(i, str) for i in columns):
-                    raise ValueError(
-                        "columns arg should contain a list of all integers or all strings values."
-                    )
+            if is_int_sequence(columns):
+                projection = columns
+                columns = None
+            elif not is_str_sequence(columns):
+                raise ValueError(
+                    "columns arg should contain a list of all integers or all strings values."
+                )
 
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_ipc(file, columns, projection, n_rows)
