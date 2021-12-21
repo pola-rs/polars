@@ -23,7 +23,6 @@
         "armv7-unknown-linux-gnueabihf",
         "aarch64-apple-darwin",
         "aarch64-linux-android",
-        "x86_64-unknown-freebsd",
         "x86_64-unknown-linux-musl",
         "aarch64-unknown-linux-musl",
         "aarch64-pc-windows-msvc"
@@ -31,7 +30,7 @@
     }
   },
   "engines": {
-    "node": ">= 10"
+    "node": ">= 10.20"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -40,10 +39,10 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node -r @swc-node/register benchmark/bench.ts",
-    "build": "napi build --platform --release artifacts/",
-    "build:debug": "napi build --platform polars/",
-    "build:all": "tsc -p tsconfig.build.json && napi build --platform --release bin/",
-    "build:all:slim": "tsc -p tsconfig.build.json && RUSTFLAGS='-C codegen-units=16' napi build --platform --release bin/",
+    "build": "napi build --platform --release polars",
+    "build:debug": "napi build --platform polars",
+    "build:all": "tsc -p tsconfig.build.json && napi build --platform --release polars",
+    "build:all:slim": "tsc -p tsconfig.build.json && RUSTFLAGS='-C codegen-units=16' napi build --platform --release polars",
     "build:ts": "tsc -p tsconfig.build.json",
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
@@ -81,17 +80,10 @@
   },
   "lint-staged": {
     "*.@(js|ts|tsx)": [
-      "prettier --write",
       "eslint -c .eslintrc.yml --fix"
     ],
-    "*.@(yml|yaml)": [
+    "*.@(js|ts|tsx|yml|yaml|md|json)": [
       "prettier --parser yaml --write"
-    ],
-    "*.md": [
-      "prettier --parser markdown --write"
-    ],
-    "*.json": [
-      "prettier --parser json --write"
     ]
   },
   "prettier": {
@@ -99,21 +91,6 @@
     "semi": true,
     "trailingComma": "none",
     "singleQuote": true,
-    "arrowParens": "always",
-    "parser": "typescript"
-  },
-  "optionalDependencies": {
-    "nodejs-polars-win32-x64-msvc": "0.0.5",
-    "nodejs-polars-darwin-x64": "0.0.5",
-    "nodejs-polars-linux-x64-gnu": "0.0.5",
-    "nodejs-polars-win32-ia32-msvc": "0.0.5",
-    "nodejs-polars-linux-arm64-gnu": "0.0.5",
-    "nodejs-polars-linux-arm-gnueabihf": "0.0.5",
-    "nodejs-polars-darwin-arm64": "0.0.5",
-    "nodejs-polars-android-arm64": "0.0.5",
-    "nodejs-polars-freebsd-x64": "0.0.5",
-    "nodejs-polars-linux-x64-musl": "0.0.5",
-    "nodejs-polars-linux-arm64-musl": "0.0.5",
-    "nodejs-polars-win32-arm64-msvc": "0.0.5"
+    "arrowParens": "always"
   }
 }

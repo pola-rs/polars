@@ -10,8 +10,8 @@ license = "MIT"
 repository = "https://github.com/pola-rs/polars"
 
 [lib]
-name = "nodejs_polars"
 crate-type = ["cdylib"]
+name = "nodejs_polars"
 
 [dependencies]
 ahash = "0.7"
@@ -22,18 +22,16 @@ serde_json = { version = "1" }
 thiserror = "1.0.20"
 
 [dependencies.napi]
-version = "1"
 features = [
   "serde-json",
-  "napi5",
   "napi6",
 ]
+version = "1"
 
 [build-dependencies]
 napi-build = "1"
 
 [dependencies.polars]
-path = "../polars"
 features = [
   "abs",
   "zip_with",
@@ -54,8 +52,7 @@ features = [
   "dot_product",
   "concat_str",
   "row_hash",
-  "reinterpret",
-  # "decompress-fast",
+  "reinterpret", # "decompress-fast",
   "mode",
   "extract_jsonpath",
   "json",
@@ -67,18 +64,16 @@ features = [
   "rank",
   "diff",
   "moment",
-  "arange",
-  # "true_div",
+  "arange", # "true_div",
   "diagonal_concat",
-  "serde",
-  # "asof_join",
-  # "cross_join",
+  "serde", # "asof_join",  # "cross_join",
   "lazy",
   "repeat_by",
 ]
+path = "../polars"
 
 [profile.release]
-lto = "fat"
 codegen-units = 1
+lto = "fat"
 
 [workspace]

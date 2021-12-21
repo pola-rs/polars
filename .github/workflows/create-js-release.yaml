@@ -19,53 +19,102 @@ jobs:
 
           - host: macos-latest
             target: 'x86_64-apple-darwin'
+            architecture: x64
             build: |
-              npm run build
+              yarn build
+              strip -x polars/*.node
 
           - host: macos-latest
             target: "aarch64-apple-darwin"
+            architecture: x64
             build: |
               sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
               export CC=$(xcrun -f clang);
               export CXX=$(xcrun -f clang++);
               SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-              npm run build -- --target aarch64-apple-darwin
+              yarn build --target aarch64-apple-darwin
+              strip -x polars/*.node
 
             # Windows
             ##########
 
           - host: windows-latest
+            architecture: x64
             target: "x86_64-pc-windows-msvc"
-            build: npm run build
+            build: yarn build
 
           - host: windows-latest
             target: "i686-pc-windows-msvc"
-            setup: |
-              choco install nodejs-lts --x86 -y --force
-              echo "C:\\Program Files (x86)\\nodejs" >> $GITHUB_PATH
+            architecture: x86
             build: |
-              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=32;
+              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
               export CARGO_PROFILE_RELEASE_LTO=false
               npm run build -- --target i686-pc-windows-msvc
 
           - host: windows-latest
+            architecture: x64
             target: "aarch64-pc-windows-msvc"
-            build: npm run build -- --target aarch64-pc-windows-msvc
+            build: yarn build --target aarch64-pc-windows-msvc
 
             # Linux
             ########
 
           - host: ubuntu-latest
-            target: "x86_64-unknown-linux-gnu"
-            build: npm run build
+            target: x86_64-unknown-linux-gnu
+            architecture: x64
+            docker: |
+              docker pull ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
+              docker tag ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian builder
+            build: |
+              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v "$GITHUB_WORKSPACE:/build" -w /build/nodejs-polars builder yarn build && strip polars/*.node
+
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            architecture: x64
+            docker: |
+              docker pull ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+              docker tag ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine builder
+            build: |
+              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v "$GITHUB_WORKSPACE:/build" -w /build/nodejs-polars builder yarn build && strip polars/*.node
+
+          - host: ubuntu-latest
+            architecture: x64
+            target: aarch64-unknown-linux-gnu
+            setup: |
+              sudo apt-get update
+              sudo apt-get install g++-aarch64-linux-gnu gcc-aarch64-linux-gnu -y
+            build: |
+              yarn build --target=aarch64-unknown-linux-gnu
+              aarch64-linux-gnu-strip polars/*.node
+          - host: ubuntu-latest
+            architecture: x64
+            target: armv7-unknown-linux-gnueabihf
+            setup: |
+              sudo apt-get update
+              sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
+            build: |
+              yarn build --target=armv7-unknown-linux-gnueabihf
+              arm-linux-gnueabihf-strip polars/*.node
 
           - host: ubuntu-latest
             target: "aarch64-linux-android"
+            architecture: x64
             build: |
               export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
               export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
-              npm run build -- --target aarch64-linux-android
+              yarn build --target aarch64-linux-android
+              ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-strip polars/*.node
+
+          - host: ubuntu-latest
+            architecture: x64
+            target: aarch64-unknown-linux-musl
+            downloadTarget: aarch64-unknown-linux-musl
+            docker: |
+              docker pull ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+              docker tag ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine builder
+            build: |
+              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v "$GITHUB_WORKSPACE:/build" -w /build/nodejs-polars builder sh -c "rustup toolchain install $(cat ./rust-toolchain) && rustup target add aarch64-unknown-linux-musl && yarn build --target=aarch64-unknown-linux-musl && /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip polars/*.node"
 
     name: ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
@@ -74,10 +123,14 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: 16
+          architecture: ${{ matrix.settings.architecture }}
+          cache: yarn
+          cache-dependency-path: nodejs-polars/yarn.lock
+      - name: Copy rust-toolchain to root
+        run: cp rust-toolchain ..
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2021-12-02
           override: true
           target: ${{ matrix.settings.target }}
 
@@ -104,7 +157,6 @@ jobs:
           DOCKER_REGISTRY_URL: ghcr.io
           DOCKER_USERNAME: ${{ github.actor }}
           DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-
         if: ${{ matrix.settings.docker }}
 
       - name: "Setup toolchain"
@@ -112,7 +164,12 @@ jobs:
         run: ${{ matrix.settings.setup }}
 
       - name: "Install dependencies"
-        run: npm install --ignore-scripts
+        run: yarn install
+        if: ${{ matrix.settings.target != 'i686-pc-windows-msvc' }}
+
+      - name: "Install dependencies"
+        run: npm install
+        if: ${{ matrix.settings.target == 'i686-pc-windows-msvc' }}
 
       - name: "Build"
         run: ${{ matrix.settings.build }}
@@ -120,15 +177,33 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
-          path: nodejs-polars/artifacts
-      - name: List artifacts
-        run: ls -R artifacts
-        shell: bash
+          path: nodejs-polars/polars/*.node
+          name: bindings-${{ matrix.settings.target }}
+          if-no-files-found: error
+
+  test-macos:
+    defaults:
+      run:
+        working-directory: nodejs-polars
+    needs:
+      - build-js
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: yarn install
+      - name: Download all artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: bindings-x86_64-apple-darwin
+          path: nodejs-polars/polars
+      - name: Run test
+        run: yarn test
 
   publish:
     name: Publish
     needs:
-      - build-js
+      - test-macos
     defaults:
       run:
         working-directory: nodejs-polars
@@ -139,24 +214,26 @@ jobs:
         with:
           node-version: "16"
           registry-url: "https://registry.npmjs.org"
+          cache: yarn
+          cache-dependency-path: nodejs-polars/yarn.lock
 
       - name: "Install dependencies"
-        run: npm install  --ignore-scripts
+        run: yarn install
 
       - name: Download all artifacts
         uses: actions/download-artifact@v2
         with:
           path: nodejs-polars/artifacts
 
-      - name: List artifacts
-        run: ls -R artifacts
-        shell: bash
-
       - name: Move artifacts
-        run: npm run artifacts
+        run: yarn artifacts
 
       - name: Build TypeScript
-        run: npm run build:ts
+        run: yarn build:ts
+
+      - name: List artifacts
+        run: ls -R npm
+        shell: bash
 
       - name: Publish to npm
         run: npm publish
