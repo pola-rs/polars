@@ -1,7 +1,6 @@
-import typing as tp
 from datetime import date, datetime, timezone
 from inspect import isclass
-from typing import Any, Callable, Optional, Sequence, Type, Union
+from typing import Any, Callable, List, Optional, Sequence, Type, Union, overload
 
 import numpy as np
 
@@ -32,9 +31,7 @@ except ImportError:  # pragma: no cover
 
 
 def col(
-    name: Union[
-        str, tp.List[str], tp.List[Type[DataType]], "pli.Series", Type[DataType]
-    ]
+    name: Union[str, List[str], List[Type[DataType]], "pli.Series", Type[DataType]]
 ) -> "pli.Expr":
     """
     A column in a DataFrame.
@@ -142,12 +139,12 @@ def col(
     return pli.wrap_expr(pycol(name))
 
 
-@tp.overload
+@overload
 def count(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def count(column: "pli.Series") -> int:
     ...
 
@@ -170,12 +167,12 @@ def to_list(name: str) -> "pli.Expr":
     return col(name).list()
 
 
-@tp.overload
+@overload
 def std(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def std(column: "pli.Series") -> Optional[float]:
     ...
 
@@ -189,12 +186,12 @@ def std(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Optional[float]]:
     return col(column).std()
 
 
-@tp.overload
+@overload
 def var(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def var(column: "pli.Series") -> Optional[float]:
     ...
 
@@ -208,18 +205,18 @@ def var(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Optional[float]]:
     return col(column).var()
 
 
-@tp.overload
-def max(column: Union[str, tp.List[Union["pli.Expr", str]]]) -> "pli.Expr":
+@overload
+def max(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def max(column: "pli.Series") -> Union[int, float]:
     ...
 
 
 def max(
-    column: Union[str, tp.List[Union["pli.Expr", str]], "pli.Series"]
+    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
 ) -> Union["pli.Expr", Any]:
     """
     Get the maximum value. Can be used horizontally or vertically.
@@ -230,7 +227,7 @@ def max(
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
         - Union[str, Series] -> aggregate the maximum value of that column.
-        - tp.List[Expr] -> aggregate the maximum value horizontally.
+        - List[Expr] -> aggregate the maximum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.max()
@@ -248,18 +245,18 @@ def max(
         return col(column).max()
 
 
-@tp.overload
-def min(column: Union[str, tp.List[Union["pli.Expr", str]]]) -> "pli.Expr":
+@overload
+def min(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def min(column: "pli.Series") -> Union[int, float]:
     ...
 
 
 def min(
-    column: Union[str, tp.List[Union["pli.Expr", str]], "pli.Series"]
+    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
 ) -> Union["pli.Expr", Any]:
     """
     Get the minimum value.
@@ -268,7 +265,7 @@ def min(
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
         - Union[str, Series] -> aggregate the sum value of that column.
-        - tp.List[Expr] -> aggregate the sum value horizontally.
+        - List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.min()
@@ -286,18 +283,18 @@ def min(
         return col(column).min()
 
 
-@tp.overload
-def sum(column: Union[str, tp.List[Union["pli.Expr", str]]]) -> "pli.Expr":
+@overload
+def sum(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def sum(column: "pli.Series") -> Union[int, float]:
     ...
 
 
 def sum(
-    column: Union[str, tp.List[Union["pli.Expr", str]], "pli.Series"]
+    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
 ) -> Union["pli.Expr", Any]:
     """
     Get the sum value.
@@ -306,7 +303,7 @@ def sum(
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
         - Union[str, Series] -> aggregate the sum value of that column.
-        - tp.List[Expr] -> aggregate the sum value horizontally.
+        - List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.sum()
@@ -319,12 +316,12 @@ def sum(
         return col(column).sum()
 
 
-@tp.overload
+@overload
 def mean(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def mean(column: "pli.Series") -> float:
     ...
 
@@ -338,12 +335,12 @@ def mean(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float]:
     return col(column).mean()
 
 
-@tp.overload
+@overload
 def avg(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def avg(column: "pli.Series") -> float:
     ...
 
@@ -355,12 +352,12 @@ def avg(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float]:
     return mean(column)
 
 
-@tp.overload
+@overload
 def median(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def median(column: "pli.Series") -> Union[float, int]:
     ...
 
@@ -374,12 +371,12 @@ def median(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float, int]:
     return col(column).median()
 
 
-@tp.overload
+@overload
 def n_unique(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def n_unique(column: "pli.Series") -> int:
     ...
 
@@ -391,12 +388,12 @@ def n_unique(column: Union[str, "pli.Series"]) -> Union["pli.Expr", int]:
     return col(column).n_unique()
 
 
-@tp.overload
+@overload
 def first(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def first(column: "pli.Series") -> Any:
     ...
 
@@ -413,12 +410,12 @@ def first(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Any]:
     return col(column).first()
 
 
-@tp.overload
+@overload
 def last(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def last(column: "pli.Series") -> Any:
     ...
 
@@ -435,12 +432,12 @@ def last(column: Union[str, "pli.Series"]) -> "pli.Expr":
     return col(column).last()
 
 
-@tp.overload
+@overload
 def head(column: str, n: Optional[int]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def head(column: "pli.Series", n: Optional[int]) -> "pli.Series":
     ...
 
@@ -463,12 +460,12 @@ def head(
     return col(column).head(n)
 
 
-@tp.overload
+@overload
 def tail(column: str, n: Optional[int]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def tail(column: "pli.Series", n: Optional[int]) -> "pli.Series":
     ...
 
@@ -614,8 +611,8 @@ def cov(
 
 
 def map(
-    exprs: Union[tp.List[str], tp.List["pli.Expr"]],
-    f: Callable[[tp.List["pli.Series"]], "pli.Series"],
+    exprs: Union[List[str], List["pli.Expr"]],
+    f: Callable[[List["pli.Series"]], "pli.Series"],
     return_dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
     """
@@ -639,8 +636,8 @@ def map(
 
 
 def apply(
-    exprs: tp.List[Union[str, "pli.Expr"]],
-    f: Callable[[tp.List["pli.Series"]], "pli.Series"],
+    exprs: List[Union[str, "pli.Expr"]],
+    f: Callable[[List["pli.Series"]], "pli.Series"],
     return_dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
     """
@@ -705,7 +702,7 @@ def map_binary(
 def fold(
     acc: "pli.Expr",
     f: Callable[["pli.Series", "pli.Series"], "pli.Series"],
-    exprs: Union[tp.Sequence[Union["pli.Expr", str]], "pli.Expr"],
+    exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"],
 ) -> "pli.Expr":
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -731,7 +728,7 @@ def fold(
     return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
 
 
-def any(name: Union[str, tp.List["pli.Expr"]]) -> "pli.Expr":
+def any(name: Union[str, List["pli.Expr"]]) -> "pli.Expr":
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
     """
@@ -740,7 +737,7 @@ def any(name: Union[str, tp.List["pli.Expr"]]) -> "pli.Expr":
     return col(name).sum() > 0
 
 
-def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
+def exclude(columns: Union[str, List[str]]) -> "pli.Expr":
     """
     Exclude certain columns from a wildcard expression.
 
@@ -796,7 +793,7 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     return col("*").exclude(columns)
 
 
-def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
+def all(name: Optional[Union[str, List["pli.Expr"]]] = None) -> "pli.Expr":
     """
     This function is two things
 
@@ -887,7 +884,7 @@ def arange(
 
 
 def argsort_by(
-    exprs: tp.List[Union["pli.Expr", str]], reverse: Union[tp.List[bool], bool] = False
+    exprs: List[Union["pli.Expr", str]], reverse: Union[List[bool], bool] = False
 ) -> "pli.Expr":
     """
     Find the indexes that would sort the columns.
@@ -992,7 +989,7 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
-def concat_str(exprs: tp.Sequence[Union["pli.Expr", str]], sep: str = "") -> "pli.Expr":
+def concat_str(exprs: Sequence[Union["pli.Expr", str]], sep: str = "") -> "pli.Expr":
     """
     Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 
@@ -1117,14 +1114,14 @@ def concat_list(exprs: Sequence[Union[str, "pli.Expr"]]) -> "pli.Expr":
 
 
 def collect_all(
-    lazy_frames: "tp.List[pli.LazyFrame]",
+    lazy_frames: "List[pli.LazyFrame]",
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
     string_cache: bool = False,
     no_optimization: bool = False,
-) -> "tp.List[pli.DataFrame]":
+) -> "List[pli.DataFrame]":
     """
     Collect multiple LazyFrames at the same time. This runs all the computation graphs in parallel on
     Polars threadpool.

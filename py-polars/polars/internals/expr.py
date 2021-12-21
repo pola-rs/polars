@@ -1,7 +1,6 @@
 import copy
-import typing as tp
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Optional, Sequence, Type, Union
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
@@ -29,8 +28,8 @@ from polars.datatypes import (
 
 def _selection_to_pyexpr_list(
     exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]], "pli.Series"]
-) -> tp.List["PyExpr"]:
-    pyexpr_list: tp.List[PyExpr]
+) -> List["PyExpr"]:
+    pyexpr_list: List[PyExpr]
     if isinstance(exprs, Sequence) and not isinstance(exprs, str):
         pyexpr_list = []
         for expr in exprs:
@@ -287,7 +286,7 @@ class Expr:
 
     def exclude(
         self,
-        columns: Union[str, tp.List[str], Type[DataType], Sequence[Type[DataType]]],
+        columns: Union[str, List[str], Type[DataType], Sequence[Type[DataType]]],
     ) -> "Expr":
         """
         Exclude certain columns from a wildcard/regex selection.
@@ -806,8 +805,8 @@ class Expr:
 
     def sort_by(
         self,
-        by: Union["Expr", str, tp.List[Union["Expr", str]]],
-        reverse: Union[bool, tp.List[bool]] = False,
+        by: Union["Expr", str, List[Union["Expr", str]]],
+        reverse: Union[bool, List[bool]] = False,
     ) -> "Expr":
         """
         Sort this column by the ordering of another column, or multiple other columns.
@@ -830,9 +829,7 @@ class Expr:
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(
-        self, index: Union[tp.List[int], "Expr", "pli.Series", np.ndarray]
-    ) -> "Expr":
+    def take(self, index: Union[List[int], "Expr", "pli.Series", np.ndarray]) -> "Expr":
         """
         Take values by index.
 
@@ -1014,7 +1011,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: Union[str, "Expr", tp.List[Union["Expr", str]]]) -> "Expr":
+    def over(self, expr: Union[str, "Expr", List[Union["Expr", str]]]) -> "Expr":
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -1274,7 +1271,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pow(exponent))
 
-    def is_in(self, other: Union["Expr", tp.List[Any]]) -> "Expr":
+    def is_in(self, other: Union["Expr", List[Any]]) -> "Expr":
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -1426,7 +1423,7 @@ class Expr:
     def rolling_min(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
@@ -1458,7 +1455,7 @@ class Expr:
     def rolling_max(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
@@ -1490,7 +1487,7 @@ class Expr:
     def rolling_mean(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
@@ -1551,7 +1548,7 @@ class Expr:
     def rolling_sum(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
@@ -1583,7 +1580,7 @@ class Expr:
     def rolling_std(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
@@ -1616,7 +1613,7 @@ class Expr:
     def rolling_var(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
@@ -2068,7 +2065,7 @@ class Expr:
         """
         return np.arctan(self)  # type: ignore
 
-    def reshape(self, dims: tp.Tuple[int, ...]) -> "Expr":
+    def reshape(self, dims: Tuple[int, ...]) -> "Expr":
         """
         Reshape this Expr to a flat series, shape: (len,)
         or a List series, shape: (rows, cols)
@@ -2178,7 +2175,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_unique())
 
-    def concat(self, other: Union[tp.List[Union[Expr, str]], Expr, str]) -> "Expr":
+    def concat(self, other: Union[List[Union[Expr, str]], Expr, str]) -> "Expr":
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -2187,7 +2184,7 @@ class ExprListNameSpace:
         other
             Columns to concat into a List Series
         """
-        other_list: tp.List[Union[Expr, str]]
+        other_list: List[Union[Expr, str]]
         if not isinstance(other, list):
             other_list = [other]
         else:
@@ -2748,7 +2745,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, bool, int, float, str, tp.List[Expr], tp.List[str], "pli.Series"],
+    expr: Union[Expr, bool, int, float, str, List[Expr], List[str], "pli.Series"],
     str_to_lit: bool = True,
 ) -> Expr:
     """
