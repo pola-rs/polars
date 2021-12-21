@@ -58,7 +58,7 @@ except ImportError:  # pragma: no cover
 
 from polars._html import NotebookFormatter
 from polars.datatypes import Boolean, DataType, Datetime, UInt32, py_type_to_dtype
-from polars.utils import _process_null_values
+from polars.utils import _process_null_values, is_int_list, is_str_list
 
 try:
     import pandas as pd
@@ -465,14 +465,13 @@ class DataFrame:
 
         projection: Optional[List[int]] = None
         if columns:
-            if isinstance(columns, list):
-                if all(isinstance(i, int) for i in columns):
-                    projection = columns  # type: ignore
-                    columns = None
-                elif not all(isinstance(i, str) for i in columns):
-                    raise ValueError(
-                        "columns arg should contain a list of all integers or all strings values."
-                    )
+            if is_int_list(columns):
+                projection = columns
+                columns = None
+            elif not is_str_list(columns):
+                raise ValueError(
+                    "columns arg should contain a list of all integers or all strings values."
+                )
 
         dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
         dtype_slice: Optional[List[Type[DataType]]] = None
@@ -533,14 +532,13 @@ class DataFrame:
         """
         projection: Optional[List[int]] = None
         if columns:
-            if isinstance(columns, list):
-                if all(isinstance(i, int) for i in columns):
-                    projection = tp.cast(tp.List[int], columns)
-                    columns = None
-                elif not all(isinstance(i, str) for i in columns):
-                    raise ValueError(
-                        "columns arg should contain a list of all integers or all strings values."
-                    )
+            if is_int_list(columns):
+                projection = columns
+                columns = None
+            elif not is_str_list(columns):
+                raise ValueError(
+                    "columns arg should contain a list of all integers or all strings values."
+                )
 
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows)
@@ -570,14 +568,13 @@ class DataFrame:
         """
         projection: Optional[List[int]] = None
         if columns:
-            if isinstance(columns, list):
-                if all(isinstance(i, int) for i in columns):
-                    projection = columns  # type: ignore
-                    columns = None
-                elif not all(isinstance(i, str) for i in columns):
-                    raise ValueError(
-                        "columns arg should contain a list of all integers or all strings values."
-                    )
+            if is_int_list(columns):
+                projection = columns
+                columns = None
+            elif not is_str_list(columns):
+                raise ValueError(
+                    "columns arg should contain a list of all integers or all strings values."
+                )
 
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_ipc(file, columns, projection, n_rows)

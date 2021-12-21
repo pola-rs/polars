@@ -1,8 +1,14 @@
 import ctypes
+import sys
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, Iterable, List, Tuple, Type, Union
 
 import numpy as np
+
+if sys.version_info >= (3, 10):
+    from typing import TypeGuard
+else:
+    from typing_extensions import TypeGuard
 
 
 def _process_null_values(
@@ -51,3 +57,15 @@ def _datetime_to_pl_timestamp(dt: datetime) -> int:
 def _date_to_pl_date(d: date) -> int:
     dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
     return int(dt.timestamp()) // (3600 * 24)
+
+
+def is_str_list(val: List) -> TypeGuard[List[str]]:
+    return _is_iterable_of(val, list, str)
+
+
+def is_int_list(val: List) -> TypeGuard[List[int]]:
+    return _is_iterable_of(val, list, int)
+
+
+def _is_iterable_of(val: Iterable, itertype: Type, eltype: Type) -> bool:
+    return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
