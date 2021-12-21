@@ -58,7 +58,7 @@ except ImportError:  # pragma: no cover
 
 from polars._html import NotebookFormatter
 from polars.datatypes import Boolean, DataType, Datetime, UInt32, py_type_to_dtype
-from polars.utils import _process_null_values, is_int_list, is_str_list
+from polars.utils import _process_null_values, is_int_sequence, is_str_sequence
 
 try:
     import pandas as pd
@@ -463,12 +463,12 @@ class DataFrame:
             if isinstance(file, StringIO):
                 file = file.getvalue().encode()
 
-        projection: Optional[List[int]] = None
+        projection: Optional[Sequence[int]] = None
         if columns:
-            if is_int_list(columns):
+            if is_int_sequence(columns):
                 projection = columns
                 columns = None
-            elif not is_str_list(columns):
+            elif not is_str_sequence(columns):
                 raise ValueError(
                     "columns arg should contain a list of all integers or all strings values."
                 )
@@ -530,12 +530,12 @@ class DataFrame:
         n_rows
             Stop reading from parquet file after reading ``n_rows``.
         """
-        projection: Optional[List[int]] = None
+        projection: Optional[Sequence[int]] = None
         if columns:
-            if is_int_list(columns):
+            if is_int_sequence(columns):
                 projection = columns
                 columns = None
-            elif not is_str_list(columns):
+            elif not is_str_sequence(columns):
                 raise ValueError(
                     "columns arg should contain a list of all integers or all strings values."
                 )
@@ -566,12 +566,12 @@ class DataFrame:
         -------
         DataFrame
         """
-        projection: Optional[List[int]] = None
+        projection: Optional[Sequence[int]] = None
         if columns:
-            if is_int_list(columns):
+            if is_int_sequence(columns):
                 projection = columns
                 columns = None
-            elif not is_str_list(columns):
+            elif not is_str_sequence(columns):
                 raise ValueError(
                     "columns arg should contain a list of all integers or all strings values."
                 )

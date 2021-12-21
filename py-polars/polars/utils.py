@@ -1,7 +1,7 @@
 import ctypes
 import sys
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Tuple, Type, Union
+from typing import Any, Dict, Iterable, List, Sequence, Tuple, Type, Union
 
 import numpy as np
 
@@ -59,12 +59,20 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def is_str_list(val: List) -> TypeGuard[List[str]]:
-    return _is_iterable_of(val, list, str)
+def is_str_sequence(
+    val: Sequence[object], allow_str: bool = False
+) -> TypeGuard[Sequence[str]]:
+    """
+    Checks that `val` is a sequence of strings. Note that a single string is a sequence of strings
+    by definition, use `allow_str=False` to return False on a single string
+    """
+    if (not allow_str) and isinstance(val, str):
+        return False
+    return _is_iterable_of(val, Sequence, str)
 
 
-def is_int_list(val: List) -> TypeGuard[List[int]]:
-    return _is_iterable_of(val, list, int)
+def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
+    return _is_iterable_of(val, Sequence, int)
 
 
 def _is_iterable_of(val: Iterable, itertype: Type, eltype: Type) -> bool:
