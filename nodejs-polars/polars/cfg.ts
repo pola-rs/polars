@@ -6,7 +6,7 @@ export interface Config {
   /** Set the number of character used to draw the table */
   setTblWidthChars(width: number): Config
   /** Set the number of rows used to print tables */
-  setTblRows(n:number): Config
+  setTblRows(n: number): Config
   /** Set the number of columns used to print tables */
   setTblCols(n: number): Config
   /** Turn on the global string cache */

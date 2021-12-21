@@ -112,7 +112,7 @@ export interface StringFunctions {
    * @param start - Start of the slice (negative indexing may be used).
    * @param length - Optional length of the slice.
    */
-  slice(start: number, length?:number): Series<string>
+  slice(start: number, length?: number): Series<string>
   /**
    * Parse a Series of dtype Utf8 to a Date/Datetime Series.
    * @param datatype Date or Datetime.

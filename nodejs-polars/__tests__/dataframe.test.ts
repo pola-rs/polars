@@ -129,32 +129,32 @@ describe("dataframe", () => {
       expect(df.toJS()).toEqual(expected);
     });
   });
-  test("dtypes", () =>{
+  test("dtypes", () => {
     const expected = ["Float64", "Utf8"];
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).dtypes;
     expect(actual).toEqual(expected);
   });
-  test("height", () =>{
+  test("height", () => {
     const expected = 3;
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).height;
     expect(actual).toEqual(expected);
   });
-  test("width", () =>{
+  test("width", () => {
     const expected = 2;
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).width;
     expect(actual).toEqual(expected);
   });
-  test("shape", () =>{
+  test("shape", () => {
     const expected = {height: 3, width: 2};
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).shape;
     expect(actual).toEqual(expected);
   });
-  test("columns", () =>{
+  test("columns", () => {
     const expected = ["a", "b"];
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).columns;
     expect(actual).toEqual(expected);
   });
-  test("clone", () =>{
+  test("clone", () => {
     const expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]});
     const actual = expected.clone();
     expect(actual).toFrameEqual(expected);
@@ -176,7 +176,7 @@ describe("dataframe", () => {
     expect(actual).toFrameEqual(expected);
   });
   test.todo("downsample");
-  test("drop", () =>{
+  test("drop", () => {
     const df = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6.0, 7.0, 8.0],
@@ -191,7 +191,7 @@ describe("dataframe", () => {
     const actual = df.drop("apple");
     expect(actual).toFrameEqual(expected);
   });
-  test("drop: array", () =>{
+  test("drop: array", () => {
     const df = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6.0, 7.0, 8.0],
@@ -205,7 +205,7 @@ describe("dataframe", () => {
     const actual = df.drop(["apple", "ham"]);
     expect(actual).toFrameEqual(expected);
   });
-  test("drop: ...rest", () =>{
+  test("drop: ...rest", () => {
     const df = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6.0, 7.0, 8.0],
@@ -219,7 +219,7 @@ describe("dataframe", () => {
     const actual = df.drop("apple", "ham");
     expect(actual).toFrameEqual(expected);
   });
-  test("dropDuplicates", () =>{
+  test("dropDuplicates", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 3],
       "bar": [1, 2, 2, 4],
@@ -232,7 +232,7 @@ describe("dataframe", () => {
     });
     expect(actual).toFrameEqual(expected);
   });
-  test("dropDuplicates:subset", () =>{
+  test("dropDuplicates:subset", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 2],
       "bar": [1, 2, 2, 2],
@@ -245,7 +245,7 @@ describe("dataframe", () => {
     });
     expect(actual).toFrameEqual(expected);
   });
-  test("dropDuplicates:maintainOrder", () =>{
+  test("dropDuplicates:maintainOrder", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 2],
       "bar": [1, 2, 2, 2],
@@ -258,7 +258,7 @@ describe("dataframe", () => {
     });
     expect(actual).toFrameEqual(expected);
   });
-  test("dropNulls", () =>{
+  test("dropNulls", () => {
     const actual = pl.DataFrame({
       "foo": [1, null, 2, 3],
       "bar": [6.0, .5, 7.0, 8.0],
@@ -284,7 +284,7 @@ describe("dataframe", () => {
 
     expect(actual).toFrameEqual(expected);
   });
-  test("fillNull:zero", () =>{
+  test("fillNull:zero", () => {
     const actual = pl.DataFrame({
       "foo": [1, null, 2, 3],
       "bar": [6.0, .5, 7.0, 8.0],
@@ -297,7 +297,7 @@ describe("dataframe", () => {
     });
     expect(actual).toFrameEqual(expected);
   });
-  test("fillNull:one", () =>{
+  test("fillNull:one", () => {
     const actual = pl.DataFrame({
       "foo": [1, null, 2, 3],
       "bar": [6.0, .5, 7.0, 8.0],
@@ -841,7 +841,7 @@ describe("dataframe", () => {
     expect(actual.row(0)).toEqual([1, 0, 0, 2]);
   });
   test.todo("pipe");
-  test("quantile", ()=>{
+  test("quantile", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
@@ -849,7 +849,7 @@ describe("dataframe", () => {
     }).quantile(0.5);
     expect(actual.row(0)).toEqual([2, 7, null]);
   });
-  test("rename", ()=>{
+  test("rename", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
@@ -861,7 +861,7 @@ describe("dataframe", () => {
     });
     expect(actual.columns).toEqual(["foo_new", "bar_new", "ham_new"]);
   });
-  test("replaceAtIdx", ()=>{
+  test("replaceAtIdx", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
@@ -872,7 +872,7 @@ describe("dataframe", () => {
     expect(actual.getColumn("new_foo")).toSeriesEqual(s);
     expect(actual.findIdxByName("new_foo")).toEqual(0);
   });
-  test("row", ()=>{
+  test("row", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
@@ -880,7 +880,7 @@ describe("dataframe", () => {
     }).row(1);
     expect(actual).toEqual([2, 7, "b"]);
   });
-  test("rows", ()=>{
+  test("rows", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
@@ -1166,7 +1166,7 @@ describe("dataframe", () => {
     const readStream = new Stream.Readable();
     expect(() => df.toCSV(readStream)).toThrow();
   });
-  test("toJSON:string", () =>{
+  test("toJSON:string", () => {
     const rows = [
       {foo: 1.1, bar: 6.2, ham: "a"},
       {foo: 3.1, bar: 9.2, ham: "b"},
@@ -1214,7 +1214,7 @@ describe("dataframe", () => {
     const readStream = new Stream.Readable();
     expect(() => df.toJSON(readStream)).toThrow();
   });
-  test("toSeries", () =>{
+  test("toSeries", () => {
     const s = pl.Series([1, 2, 3]);
     const actual = s.clone().toFrame().toSeries(0);
     expect(actual).toSeriesEqual(s);

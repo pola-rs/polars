@@ -146,7 +146,7 @@ export interface Series<T> extends ArrayLike<T> {
    * Cast between data types.
    */
   cast<D extends DataType>(dtype: D): Series<DtypeToPrimitive<D>>
-  cast<D extends DataType>(dtype: D, strict:boolean): Series<DtypeToPrimitive<D>>
+  cast<D extends DataType>(dtype: D, strict: boolean): Series<DtypeToPrimitive<D>>
   cast<D extends DataType>(dtype: D, opt: {strict: boolean}): Series<DtypeToPrimitive<D>>
   /**
    * Get the length of each individual chunk
@@ -175,7 +175,7 @@ export interface Series<T> extends ArrayLike<T> {
    * ```
    */
   cumMax(): Series<T>
-  cumMax(reverse:boolean): Series<T>
+  cumMax(reverse: boolean): Series<T>
   cumMax({reverse}: {reverse: boolean}): Series<T>
    /**
    * __Get an array with the cumulative min computed at every element.__
@@ -195,7 +195,7 @@ export interface Series<T> extends ArrayLike<T> {
    * ```
    */
   cumMin(): Series<T>
-  cumMin(reverse:boolean): Series<T>
+  cumMin(reverse: boolean): Series<T>
   cumMin({reverse}: {reverse: boolean}): Series<T>
   /**
   * __Get an array with the cumulative product computed at every element.__
@@ -215,7 +215,7 @@ export interface Series<T> extends ArrayLike<T> {
   * ```
   */
   cumProd(): Series<T>
-  cumProd(reverse:boolean): Series<T>
+  cumProd(reverse: boolean): Series<T>
   cumProd({reverse}: {reverse: boolean}): Series<T>
   /**
    * __Get an array with the cumulative sum computed at every element.__
@@ -235,7 +235,7 @@ export interface Series<T> extends ArrayLike<T> {
    * ```
    */
   cumSum(): Series<T>
-  cumSum(reverse:boolean): Series<T>
+  cumSum(reverse: boolean): Series<T>
   cumSum({reverse}: {reverse: boolean}): Series<T>
    /**
    * __Quick summary statistics of a series. __
@@ -394,8 +394,8 @@ export interface Series<T> extends ArrayLike<T> {
    * ]
    * ```
    */
-  hash(k0?:number, k1?: number, k2?: number, k3?:number): Series<bigint>
-  hash({k0, k1, k2, k3}: {k0?:number, k1?: number, k2?: number, k3?:number}): Series<bigint>
+  hash(k0?: number, k1?: number, k2?: number, k3?: number): Series<bigint>
+  hash({k0, k1, k2, k3}: {k0?: number, k1?: number, k2?: number, k3?: number}): Series<bigint>
   /**
    * __Get first N elements as Series.__
    * ___
@@ -576,8 +576,8 @@ export interface Series<T> extends ArrayLike<T> {
    * - If False, Pearson's definition is used (normal ==> 3.0)
    */
   kurtosis(): Optional<number>
-  kurtosis(fisher:boolean, bias?:boolean): Optional<number>
-  kurtosis({fisher, bias}:{fisher?:boolean, bias?:boolean}): Optional<number>
+  kurtosis(fisher: boolean, bias?: boolean): Optional<number>
+  kurtosis({fisher, bias}: {fisher?: boolean, bias?: boolean}): Optional<number>
   /**
    * __Length of this Series.__
    * ___
@@ -606,7 +606,7 @@ export interface Series<T> extends ArrayLike<T> {
    * ]
    * ```
    */
-  limit(n?:number): Series<T>
+  limit(n?: number): Series<T>
   /**
    * @see {@link Series.apply}
    */
@@ -785,7 +785,7 @@ export interface Series<T> extends ArrayLike<T> {
    * @see {@link cast}
    *
    */
-  reinterpret(signed?:boolean): T extends number ? Series<boolean> : never
+  reinterpret(signed?: boolean): T extends number ? Series<boolean> : never
   /**
    * __Rename this Series.__
    *
@@ -841,7 +841,7 @@ export interface Series<T> extends ArrayLike<T> {
    * @see {@link rollingMean}, {@link rollingMin}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMax(options: RollingOptions): Series<T>
-  rollingMax(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Series<T>
+  rollingMax(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
    /**
    * __Apply a rolling mean (moving mean) over the values in this Series.__
    *
@@ -874,7 +874,7 @@ export interface Series<T> extends ArrayLike<T> {
    * @see {@link rollingMax}, {@link rollingMin}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMean(options: RollingOptions): Series<T>
-  rollingMean(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Series<T>
+  rollingMean(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
   /**
    * __Apply a rolling min (moving min) over the values in this Series.__
    *
@@ -907,7 +907,7 @@ export interface Series<T> extends ArrayLike<T> {
    * @see {@link rollingMax}, {@link rollingMean}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMin(options: RollingOptions): Series<T>
-  rollingMin(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Series<T>
+  rollingMin(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
   /**
    * __Apply a rolling sum (moving sum) over the values in this Series.__
    *
@@ -940,7 +940,7 @@ export interface Series<T> extends ArrayLike<T> {
    * @see {@link rollingMax}, {@link rollingMin}, {@link rollingMean}, {@link rollingVar}
    */
   rollingSum(options: RollingOptions): Series<T>
-  rollingSum(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Series<T>
+  rollingSum(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
   /**
    * __Compute a rolling variance.__
    *
@@ -958,7 +958,7 @@ export interface Series<T> extends ArrayLike<T> {
    * @see {@link rollingMax}, {@link rollingMin}, {@link rollingMean}, {@link rollingSum}
    */
   rollingVar(options: RollingOptions): Series<T>
-  rollingVar(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?:boolean): Series<T>
+  rollingVar(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
   /**
    * Round underlying floating point data by `decimals` digits.
    *
@@ -969,9 +969,9 @@ export interface Series<T> extends ArrayLike<T> {
   round<T>(decimals: number): T extends number ? Series<number> : never
   round(opt: {decimals: number}): T extends number ? Series<number> : never
 
-  sample(opts: {n: number, withReplacement?:boolean}): Series<T>
-  sample(opts: {frac: number, withReplacement?:boolean}): Series<T>
-  sample(n?: number, frac?: number, withReplacement?:boolean): Series<T>
+  sample(opts: {n: number, withReplacement?: boolean}): Series<T>
+  sample(opts: {frac: number, withReplacement?: boolean}): Series<T>
+  sample(n?: number, frac?: number, withReplacement?: boolean): Series<T>
   /**
    * __Check if series is equal with another Series.__
    * @param other - Series to compare with.
@@ -987,15 +987,15 @@ export interface Series<T> extends ArrayLike<T> {
    * false
    * ```
    */
-  seriesEqual<U>(other: Series<U>, nullEqual?:boolean): boolean
-  seriesEqual<U>(other: Series<U>, opt: {nullEqual?:boolean}): boolean
+  seriesEqual<U>(other: Series<U>, nullEqual?: boolean): boolean
+  seriesEqual<U>(other: Series<U>, opt: {nullEqual?: boolean}): boolean
   /**
    * __Set masked values__
    * @param filter Boolean mask
    * @param value value to replace masked values with
    */
   set(filter: Series<boolean>, value: T): Series<T>
-  setAtIdx(indices: number[] | Series<number>,  value:T): Series<T>
+  setAtIdx(indices: number[] | Series<number>,  value: T): Series<T>
   /**
    * __Shift the values by a given period__
    *
@@ -1023,8 +1023,8 @@ export interface Series<T> extends ArrayLike<T> {
    * ]
    * ```
    */
-  shift(periods:number): Series<T>
-  shift(opts: {periods?:number}): Series<T>
+  shift(periods: number): Series<T>
+  shift(opts: {periods?: number}): Series<T>
   /**
    * Shift the values by a given period
    *
@@ -1040,8 +1040,8 @@ export interface Series<T> extends ArrayLike<T> {
    * @param inPlace - Modify the Series in-place.
    */
   shrinkToFit(): Series<T>
-  shrinkToFit(inPlace:true): void
-  shrinkToFit({inPlace}: {inPlace:true}): void
+  shrinkToFit(inPlace: true): void
+  shrinkToFit({inPlace}: {inPlace: true}): void
   /**
    * __Compute the sample skewness of a data set.__
    *
@@ -1053,8 +1053,8 @@ export interface Series<T> extends ArrayLike<T> {
    * ___
    * @param bias - If false, then the calculations are corrected for statistical bias.
    */
-  skew(bias?:boolean): number | undefined
-  skew(opt: {bias?:boolean}): number | undefined
+  skew(bias?: boolean): number | undefined
+  skew(opt: {bias?: boolean}): number | undefined
   /**
    * Create subslices of the Series.
    *
@@ -1090,8 +1090,8 @@ export interface Series<T> extends ArrayLike<T> {
    * ```
    */
   sort(): Series<T>
-  sort(reverse?:boolean): Series<T>
-  sort(options: {reverse:boolean}): Series<T>
+  sort(reverse?: boolean): Series<T>
+  sort(options: {reverse: boolean}): Series<T>
   /**
    * Reduce this Series to the sum value.
    * @example
@@ -1236,7 +1236,7 @@ export interface Series<T> extends ArrayLike<T> {
   toFrame(): DataFrame
 }
 
-export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
+export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
 
     return pli.series[method]({_series, ...args });
@@ -1260,7 +1260,7 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
       return fn(internalMethod, { [args.key]: args.field }, _series);
     }
   };
-  const inPlaceOptional = (method: string) =>  (obj?: {inPlace:boolean} | boolean): any  => {
+  const inPlaceOptional = (method: string) =>  (obj?: {inPlace: boolean} | boolean): any  => {
     if(obj === true || obj?.["inPlace"] === true) {
       unwrap(method, {inPlace: true});
     } else {
@@ -1339,7 +1339,7 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
     },
     argMax: noArgUnwrap("arg_max"),
     argMin: noArgUnwrap("arg_min"),
-    argSort(reverse:any = false) {
+    argSort(reverse: any = false) {
       return typeof reverse === "boolean" ?
         wrap("argsort", {reverse}) :
         wrap("argsort", reverse);
@@ -1568,7 +1568,7 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
 
       return DataType[dtype] === DataType.Utf8;
     },
-    kurtosis(fisher:any = true, bias=true) {
+    kurtosis(fisher: any = true, bias=true) {
       if(typeof fisher === "boolean") {
         return unwrap("kurtosis", {fisher, bias});
       }
@@ -1702,7 +1702,7 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
         .getColumn(this.name);
     },
     shrinkToFit: inPlaceOptional("shrink_to_fit"),
-    skew(opt:any = true) {
+    skew(opt: any = true) {
       if(typeof opt === "boolean") {
         return unwrap("skew", {bias: opt});
       }
@@ -1716,7 +1716,7 @@ export const seriesWrapper = <T>(_s:JsSeries): Series<T> => {
 
       return wrap("slice", opts);
     },
-    sort(opt:any = false)  {
+    sort(opt: any = false)  {
       if(typeof opt === "boolean") {
         return wrap("sort", {reverse: opt});
       }

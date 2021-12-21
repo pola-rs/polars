@@ -2,7 +2,7 @@ import {JsSeries, Series, seriesWrapper} from "../series";
 import {col} from "../lazy/lazy_functions";
 
 export interface ListFunctions<T> {
-  get(index:number): Series<T>
+  get(index: number): Series<T>
   first(): Series<T>
   last(): Series<T>
   /** Get the length of the arrays as UInt32. */

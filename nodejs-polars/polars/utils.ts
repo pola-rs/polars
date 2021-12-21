@@ -16,7 +16,7 @@ export type RollingOptions = {
   windowSize: number,
   weights?: Array<number>,
   minPeriods?: number,
-  center?:boolean
+  center?: boolean
 };
 
 export function columnOrColumns(columns: ColumnSelection |  string | Array<string> | undefined): Array<string> | undefined {
@@ -37,7 +37,7 @@ export function isPath(s: string, expectedExtensions?: string[]): boolean {
   return Boolean(base && ext && name) && !!(expectedExtensions?.includes(ext));
 }
 
-export const range = (start:number, end:number) => {
+export const range = (start: number, end: number) => {
   const length = end - start;
 
   return Array.from({ length }, (_, i) => start + i);

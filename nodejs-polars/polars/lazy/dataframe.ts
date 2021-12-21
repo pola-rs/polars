@@ -296,7 +296,7 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     collectSync: () => dfWrapper(unwrap("collectSync")),
     collect: () => unwrap("collect").then(dfWrapper),
     drop: (...cols) => wrap("dropColumns", {cols: cols.flat(2)}),
-    dropDuplicates(opts:any=true, subset?){
+    dropDuplicates(opts: any=true, subset?){
       if(opts?.maintainOrder !== undefined) {
         return this.dropDuplicates(opts.maintainOrder, opts.subset);
       }
@@ -352,7 +352,7 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
       return wrap("filter", {predicate});
 
     },
-    groupBy(opt, maintainOrder:any=true) {
+    groupBy(opt, maintainOrder: any=true) {
       if(opt?.by !== undefined) {
         return LazyGroupBy(ldf, opt.by, opt.maintainOrder);
       }
@@ -360,7 +360,7 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
       return LazyGroupBy(ldf, opt, maintainOrder);
     },
     head: (len=5) => wrap("slice", {offset: 0, len}),
-    join(df, options: {[k:string]: any} & LazyJoinOptions ) {
+    join(df, options: {[k: string]: any} & LazyJoinOptions ) {
       options =  {
         how: "inner",
         suffix: "right",

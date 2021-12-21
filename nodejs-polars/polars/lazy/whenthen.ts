@@ -4,23 +4,23 @@ import pli from "../internals/polars_internal";
 
 export interface When {
   /** Values to return in case of the predicate being `true`.*/
-  then(expr:Expr): WhenThen
+  then(expr: Expr): WhenThen
 }
 
 export interface WhenThen {
   /** Start another when, then, otherwise layer. */
-  when(predicate:Expr): WhenThenThen
+  when(predicate: Expr): WhenThenThen
   /** Values to return in case of the predicate being `false`. */
-  otherwise(expr:Expr): Expr
+  otherwise(expr: Expr): Expr
 }
 
 export interface WhenThenThen {
   /** Start another when, then, otherwise layer. */
-  when(predicate:Expr): WhenThenThen
+  when(predicate: Expr): WhenThenThen
   /** Values to return in case of the predicate being `true`. */
   then(expr: Expr): WhenThenThen
   /** Values to return in case of the predicate being `false`. */
-  otherwise(expr:Expr): Expr
+  otherwise(expr: Expr): Expr
 }
 
 function WhenThenThen(_when): WhenThenThen {
@@ -93,7 +93,7 @@ function When(_when): When {
  * └─────┴─────┴─────────┘
  * ```
  */
-export function when(expr:Expr): When  {
+export function when(expr: Expr): When  {
 
   return When(pli.when(expr));
 }
