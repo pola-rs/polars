@@ -17,7 +17,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "parquet")]
-use polars_io::{parquet::ParquetReader, SerReader};
+use polars_io::parquet::ParquetReader;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::utils::{
@@ -824,6 +824,8 @@ impl LogicalPlanBuilder {
         n_rows: Option<usize>,
         cache: bool,
     ) -> Result<Self> {
+        use polars_io::SerReader as _;
+
         let path = path.into();
         let file = std::fs::File::open(&path)?;
         let schema = Arc::new(ParquetReader::new(file).schema()?);
@@ -843,6 +845,8 @@ impl LogicalPlanBuilder {
     #[cfg(feature = "ipc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcOptions) -> Result<Self> {
+        use polars_io::SerReader as _;
+
         let path = path.into();
         let file = std::fs::File::open(&path)?;
         let schema = Arc::new(IpcReader::new(file).schema()?);
