@@ -513,7 +513,18 @@ where
 
             // cast to the original dtypes in the schema
             for fld in to_cast {
-                df.may_apply(fld.name(), |s| s.cast(fld.data_type()))?;
+                use DataType::*;
+                df.may_apply(fld.name(), |s| match (s.dtype(), fld.data_type()) {
+                    #[cfg(feature = "temporal")]
+                    (Utf8, Date) => s.utf8().unwrap().as_date(None).map(|ca| ca.into_series()),
+                    #[cfg(feature = "temporal")]
+                    (Utf8, Datetime) => s
+                        .utf8()
+                        .unwrap()
+                        .as_datetime(None)
+                        .map(|ca| ca.into_series()),
+                    (_, dt) => s.cast(dt),
+                })?;
             }
             df
         } else {
@@ -592,10 +603,9 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                 *s = ca.into_series();
                 continue;
             }
-            // the order is important. A datetime can always be parsed as date.
-            if let Ok(ca) = ca.as_datetime(None) {
+            if let Ok(ca) = ca.as_date(None) {
                 *s = ca.into_series()
-            } else if let Ok(ca) = ca.as_date(None) {
+            } else if let Ok(ca) = ca.as_datetime(None) {
                 *s = ca.into_series()
             }
         }

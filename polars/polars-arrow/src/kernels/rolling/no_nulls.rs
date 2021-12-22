@@ -1,7 +1,6 @@
 use super::*;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
-use arrow::buffer::MutableBuffer;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 use num::Float;
@@ -34,7 +33,7 @@ where
 
             aggregator(&buf)
         })
-        .collect_trusted::<MutableBuffer<f64>>();
+        .collect_trusted::<Vec<f64>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
     Arc::new(PrimitiveArray::from_data(
@@ -64,7 +63,7 @@ where
             let vals = unsafe { values.get_unchecked(start..end) };
             aggregator(vals)
         })
-        .collect_trusted::<MutableBuffer<K>>();
+        .collect_trusted::<Vec<K>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
     Arc::new(PrimitiveArray::from_data(

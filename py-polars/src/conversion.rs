@@ -440,10 +440,10 @@ impl Default for ObjectValue {
     }
 }
 
-impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<AlignedVec<T>> {
+impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
         let seq = <PySequence as PyTryFrom>::try_from(obj)?;
-        let mut v = AlignedVec::with_capacity(seq.len().unwrap_or(0) as usize);
+        let mut v = Vec::with_capacity(seq.len().unwrap_or(0) as usize);
         for item in seq.iter()? {
             v.push(item?.extract::<T>()?);
         }

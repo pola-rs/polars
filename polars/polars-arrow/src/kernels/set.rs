@@ -2,8 +2,8 @@ use crate::array::default_arrays::FromData;
 use crate::error::{PolarsError, Result};
 use crate::kernels::BinaryMaskedSliceIterator;
 use crate::prelude::PolarsArray;
+use crate::trusted_len::PushUnchecked;
 use arrow::array::*;
-use arrow::buffer::MutableBuffer;
 use arrow::{datatypes::DataType, types::NativeType};
 use std::ops::BitOr;
 
@@ -21,14 +21,14 @@ where
     let validity = array.validity().unwrap();
     let validity = BooleanArray::from_data_default(validity.clone(), None);
 
-    let mut av = MutableBuffer::with_capacity(array.len());
+    let mut av = Vec::with_capacity(array.len());
     BinaryMaskedSliceIterator::new(&validity)
         .into_iter()
         .for_each(|(lower, upper, truthy)| {
             if truthy {
                 av.extend_from_slice(&values[lower..upper])
             } else {
-                av.extend_from_trusted_len_iter(std::iter::repeat(value).take(upper - lower))
+                av.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
             }
         });
 
@@ -44,12 +44,12 @@ pub fn set_with_mask<T: NativeType>(
 ) -> PrimitiveArray<T> {
     let values = array.values();
 
-    let mut buf = MutableBuffer::with_capacity(array.len());
+    let mut buf = Vec::with_capacity(array.len());
     BinaryMaskedSliceIterator::new(mask)
         .into_iter()
         .for_each(|(lower, upper, truthy)| {
             if truthy {
-                buf.extend_from_trusted_len_iter(std::iter::repeat(value).take(upper - lower))
+                buf.extend_trusted_len(std::iter::repeat(value).take(upper - lower))
             } else {
                 buf.extend_from_slice(&values[lower..upper])
             }
@@ -76,7 +76,7 @@ where
     T: NativeType,
     I: IntoIterator<Item = usize>,
 {
-    let mut buf = MutableBuffer::with_capacity(array.len());
+    let mut buf = Vec::with_capacity(array.len());
     buf.extend_from_slice(array.values().as_slice());
     let mut_slice = buf.as_mut_slice();
 

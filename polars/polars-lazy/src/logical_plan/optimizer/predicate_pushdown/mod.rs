@@ -204,11 +204,9 @@ impl PredicatePushDown {
                 path,
                 schema,
                 output_schema,
-                with_columns,
                 predicate,
                 aggregate,
-                n_rows,
-                cache,
+                options,
             } => {
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
@@ -216,11 +214,9 @@ impl PredicatePushDown {
                     path,
                     schema,
                     output_schema,
-                    with_columns,
                     predicate,
                     aggregate,
-                    n_rows,
-                    cache,
+                    options,
                 };
                 Ok(lp)
             }

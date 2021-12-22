@@ -30,7 +30,7 @@ pub use crate::{
 };
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
-pub use polars_arrow::prelude::{AlignedVec, LargeListArray, LargeStringArray};
+pub use polars_arrow::prelude::{LargeListArray, LargeStringArray};
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 pub use std::sync::Arc;
 

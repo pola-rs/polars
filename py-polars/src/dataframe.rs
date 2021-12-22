@@ -178,6 +178,7 @@ impl PyDataFrame {
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
+        parallel: bool,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -187,12 +188,14 @@ impl PyDataFrame {
                 ParquetReader::new(buf)
                     .with_projection(projection)
                     .with_columns(columns)
+                    .read_parallel(parallel)
                     .with_n_rows(n_rows)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f)
                 .with_projection(projection)
                 .with_columns(columns)
+                .read_parallel(parallel)
                 .with_n_rows(n_rows)
                 .finish(),
         };
@@ -577,7 +580,7 @@ impl PyDataFrame {
         }
     }
 
-    pub fn take(&self, indices: Wrap<AlignedVec<u32>>) -> PyResult<Self> {
+    pub fn take(&self, indices: Wrap<Vec<u32>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = UInt32Chunked::new_from_aligned_vec("", indices);
         let df = self.df.take(&indices).map_err(PyPolarsEr::from)?;

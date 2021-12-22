@@ -79,16 +79,6 @@ else:
     from typing_extensions import Literal
 
 
-def match_dtype(value: Any, dtype: "Type[DataType]") -> Any:
-    """
-    In right hand side operation, make sure that the operand is coerced to the Series dtype
-    """
-    if dtype == Float32 or dtype == Float64:
-        return float(value)
-    else:
-        return int(value)
-
-
 def get_ffi_func(
     name: str,
     dtype: Type["DataType"],
@@ -303,123 +293,49 @@ class Series:
     def __rxor__(self, other: "Series") -> "Series":
         return self.__xor__(other)
 
-    def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
+    def _comp(self, other: Any, op: str) -> "Series":
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("eq_<>", Int64, self._s)
+            f = get_ffi_func(op + "_<>", Int64, self._s)
             return wrap_s(f(ts))  # type: ignore
         if isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
-            f = get_ffi_func("eq_<>", Int32, self._s)
+            f = get_ffi_func(op + "_<>", Int32, self._s)
             return wrap_s(f(d))  # type: ignore
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
-            return Series._from_pyseries(self._s.eq(other._s))
+            return wrap_s(getattr(self._s, op)(other._s))
         other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("eq_<>", self.dtype, self._s)
+        f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
+
+    def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
+        return self._comp(other, "eq")
 
     def __ne__(self, other: Any) -> "Series":  # type: ignore[override]
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("neq_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("neq_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.neq(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("neq_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "neq")
 
     def __gt__(self, other: Any) -> "Series":
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("gt_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("gt_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.gt(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("gt_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "gt")
 
     def __lt__(self, other: Any) -> "Series":
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("lt_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("lt_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.lt(other._s))
-        # cast other if it doesn't match
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("lt_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "lt")
 
     def __ge__(self, other: Any) -> "Series":
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("gt_eq_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("gt_eq_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.gt_eq(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "gt_eq")
 
     def __le__(self, other: Any) -> "Series":
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("lt_eq_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("lt_eq_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
+        return self._comp(other, "lt_eq")
 
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
+    def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> "Series":
         if isinstance(other, Series):
-            return Series._from_pyseries(self._s.lt_eq(other._s))
+            return wrap_s(getattr(self._s, op_s)(other._s))
         other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
+        f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
@@ -427,97 +343,38 @@ class Series:
     def __add__(self, other: Any) -> "Series":
         if isinstance(other, str):
             other = Series("", [other])
-        if isinstance(other, Series):
-            return wrap_s(self._s.add(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("add_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "add", "add_<>")
 
     def __sub__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.sub(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("sub_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "sub", "sub_<>")
 
     def __truediv__(self, other: Any) -> "Series":
         # this branch is exactly the floordiv function without rounding the floats
         if self.is_float():
-            if isinstance(other, Series):
-                return Series._from_pyseries(self._s.div(other._s))
-
-            other = maybe_cast(other, self.dtype)
-            f = get_ffi_func("div_<>", self.dtype, self._s)
-            if f is None:
-                return NotImplemented
-            return wrap_s(f(other))
+            return self._arithmetic(other, "div", "div_<>")
 
         return self.cast(Float64) / other
 
     def __floordiv__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            if self.is_float():
-                return Series._from_pyseries(self._s.div(other._s)).floor()
-            return Series._from_pyseries(self._s.div(other._s))
-
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("div_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
+        result = self._arithmetic(other, "div", "div_<>")
         if self.is_float():
-            return wrap_s(f(other)).floor()
-        return wrap_s(f(other))
+            result = result.floor()
+        return result
 
     def __mul__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.mul(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("mul_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "mul", "mul_<>")
 
     def __mod__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.rem(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("rem_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            return Series._from_pyseries(other._s.rem(self._s))
-        other = maybe_cast(other, self.dtype)
-        other = match_dtype(other, self.dtype)
-        f = get_ffi_func("rem_<>_rhs", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "rem", "rem_<>_rhs")
 
     def __radd__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.add(other._s))
-        other = maybe_cast(other, self.dtype)
-        other = match_dtype(other, self.dtype)
-        f = get_ffi_func("add_<>_rhs", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "add", "add_<>_rhs")
 
     def __rsub__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            return Series._from_pyseries(other._s.sub(self._s))
-        other = match_dtype(other, self.dtype)
-        f = get_ffi_func("sub_<>_rhs", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __invert__(self) -> "Series":
         if self.dtype == Boolean:
@@ -534,22 +391,10 @@ class Series:
         return self.cast(Float64).__rfloordiv__(other)  # type: ignore
 
     def __rfloordiv__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            return Series._from_pyseries(other._s.div(self._s))
-        other = match_dtype(other, self.dtype)
-        f = get_ffi_func("div_<>_rhs", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> "Series":
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.mul(other._s))
-        other = match_dtype(other, self.dtype)
-        f = get_ffi_func("mul_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._arithmetic(other, "mul", "mul_<>")
 
     def __pow__(self, power: float, modulo: None = None) -> "Series":
         return np.power(self, power)  # type: ignore
@@ -575,7 +420,7 @@ class Series:
             return self._s.get_idx(item)
         # assume it is boolean mask
         if isinstance(item, Series):
-            return Series._from_pyseries(self._s.filter(item._s))
+            return wrap_s(self._s.filter(item._s))
 
         if isinstance(item, range):
             step: Optional[int]
@@ -614,6 +459,9 @@ class Series:
             elif key.dtype == UInt32:
                 self._s = self.set_at_idx(key, value)._s
         # TODO: implement for these types without casting to series
+        elif isinstance(key, np.ndarray) and key.dtype == np.bool_:
+            # boolean numpy mask
+            self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
         elif isinstance(key, (np.ndarray, list, tuple)):
             s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
             self.__setitem__(s, value)
@@ -1468,7 +1316,7 @@ class Series:
         """
         if isinstance(indices, list):
             indices = np.array(indices)
-        return Series._from_pyseries(self._s.take(indices))
+        return wrap_s(self._s.take(indices))
 
     def null_count(self) -> int:
         """
@@ -1505,7 +1353,7 @@ class Series:
         ]
 
         """
-        return Series._from_pyseries(self._s.is_null())
+        return wrap_s(self._s.is_null())
 
     def is_not_null(self) -> "Series":
         """
@@ -1529,7 +1377,7 @@ class Series:
         ]
 
         """
-        return Series._from_pyseries(self._s.is_not_null())
+        return wrap_s(self._s.is_not_null())
 
     def is_finite(self) -> "Series":
         """
@@ -1553,7 +1401,7 @@ class Series:
         ]
 
         """
-        return Series._from_pyseries(self._s.is_finite())
+        return wrap_s(self._s.is_finite())
 
     def is_infinite(self) -> "Series":
         """
@@ -1577,7 +1425,7 @@ class Series:
         ]
 
         """
-        return Series._from_pyseries(self._s.is_infinite())
+        return wrap_s(self._s.is_infinite())
 
     def is_nan(self) -> "Series":
         """
@@ -1602,7 +1450,7 @@ class Series:
         ]
 
         """
-        return Series._from_pyseries(self._s.is_nan())
+        return wrap_s(self._s.is_nan())
 
     def is_not_nan(self) -> "Series":
         """
@@ -1627,7 +1475,7 @@ class Series:
         ]
 
         """
-        return Series._from_pyseries(self._s.is_not_nan())
+        return wrap_s(self._s.is_not_nan())
 
     def is_in(self, other: Union["Series", List]) -> "Series":
         """
@@ -1690,7 +1538,7 @@ class Series:
         -------
         UInt32 Series
         """
-        return Series._from_pyseries(self._s.arg_true())
+        return wrap_s(self._s.arg_true())
 
     def is_unique(self) -> "Series":
         """
@@ -1874,7 +1722,7 @@ class Series:
         Time -> Int64
         other -> other
         """
-        return wrap_s(self._s.to_physical)
+        return wrap_s(self._s.to_physical())
 
     def to_list(self, use_pyarrow: bool = False) -> List[Optional[Any]]:
         """

@@ -4,7 +4,7 @@ pub(crate) mod polars_extension;
 use crate::{prelude::*, PROCESS_ID};
 use arrow::array::{Array, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::{Buffer, MutableBuffer};
+use arrow::buffer::Buffer;
 use polars_extension::PolarsExtension;
 use std::mem;
 
@@ -58,13 +58,13 @@ pub(crate) fn create_extension<
     let t_alignment = std::mem::align_of::<T>();
     let n_t_vals = iter.size_hint().1.unwrap();
 
-    let mut buf = MutableBuffer::with_capacity(n_t_vals * t_size);
+    let mut buf = Vec::with_capacity(n_t_vals * t_size);
     let mut validity = MutableBitmap::with_capacity(n_t_vals);
 
     // when we transmute from &[u8] to T, T must be aligned correctly,
     // so we pad with bytes until the alignment matches
     let n_padding = (buf.as_ptr() as usize) % t_alignment;
-    buf.extend_constant(n_padding, 0);
+    buf.extend(std::iter::repeat(0).take(n_padding));
 
     // transmute T as bytes and copy in buffer
     for opt_t in iter.into_iter() {

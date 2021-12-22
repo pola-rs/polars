@@ -73,7 +73,7 @@ where
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy
                 else {
-                    let mut av = self.into_no_null_iter().collect::<AlignedVec<_>>();
+                    let mut av = self.into_no_null_iter().collect::<Vec<_>>();
                     let data = av.as_mut_slice();
 
                     idx.into_iter().try_for_each::<_, Result<_>>(|idx| {

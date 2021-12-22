@@ -296,7 +296,7 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     collectSync: () => dfWrapper(unwrap("collectSync")),
     collect: () => unwrap("collect").then(dfWrapper),
     drop: (...cols) => wrap("dropColumns", {cols: cols.flat(2)}),
-    dropDuplicates(opts: any=true, subset?) {
+    dropDuplicates(opts: any=false, subset?) {
       const maintainOrder = opts?.maintainOrder ?? opts;
       subset = opts?.subset ?? subset;
       if(typeof subset! === "string") {

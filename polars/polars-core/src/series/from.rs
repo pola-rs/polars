@@ -109,16 +109,13 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
             }
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
-                let s = if tz.is_none() || tz == &Some("".to_string()) {
-                    let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
-                    Int64Chunked::new_from_chunks(name, chunks)
-                        .into_date()
-                        .into_series()
-                } else {
-                    return Err(PolarsError::InvalidOperation(
-                        "Cannot create polars series timestamp with timezone".into(),
-                    ));
-                };
+                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                let s = Int64Chunked::new_from_chunks(name, chunks)
+                    .into_date()
+                    .into_series();
+                if !(tz.is_none() || tz == &Some("".to_string())) {
+                    println!("Conversion of timezone aware to naive datetimes. TZ information may be lost.")
+                }
                 Ok(match tu {
                     TimeUnit::Second => &s * NANOSECONDS,
                     TimeUnit::Millisecond => &s * 1_000_000,

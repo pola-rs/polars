@@ -61,7 +61,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.8.1"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=f64339cca9379c17a93dfa9714e1dab04e7a0ee0#f64339cca9379c17a93dfa9714e1dab04e7a0ee0"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=4bbbe62c7fb36d24d2ccdb3bf3130d97aac4c069#4bbbe62c7fb36d24d2ccdb3bf3130d97aac4c069"
 dependencies = [
  "arrow-format",
  "base64",

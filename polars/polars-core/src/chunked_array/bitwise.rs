@@ -2,7 +2,7 @@ use super::*;
 use crate::utils::{align_chunks_binary, combine_validities, CustomIterTools};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute;
-use std::ops::{BitAnd, BitOr, BitXor};
+use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -25,7 +25,7 @@ where
                     .iter()
                     .zip(r_vals)
                     .map(|(l, r)| *l & *r)
-                    .collect_trusted::<AlignedVec<_>>();
+                    .collect_trusted::<Vec<_>>();
 
                 let arr =
                     PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
@@ -58,7 +58,7 @@ where
                     .iter()
                     .zip(r_vals)
                     .map(|(l, r)| *l | *r)
-                    .collect_trusted::<AlignedVec<_>>();
+                    .collect_trusted::<Vec<_>>();
 
                 let arr =
                     PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
@@ -91,7 +91,7 @@ where
                     .iter()
                     .zip(r_vals)
                     .map(|(l, r)| l.bitxor(*r))
-                    .collect_trusted::<AlignedVec<_>>();
+                    .collect_trusted::<Vec<_>>();
 
                 let arr =
                     PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
@@ -150,6 +150,28 @@ impl BitXor for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
+        if self.len() == 1 {
+            return match self.get(0) {
+                Some(true) => {
+                    let mut rhs = rhs.not();
+                    rhs.rename(self.name());
+                    rhs
+                }
+                Some(false) => {
+                    let mut rhs = rhs.clone();
+                    rhs.rename(self.name());
+                    rhs
+                }
+                None => &self.expand_at_index(0, rhs.len()) | rhs,
+            };
+        } else if rhs.len() == 1 {
+            return match rhs.get(0) {
+                Some(true) => self.not(),
+                Some(false) => self.clone(),
+                None => &rhs.expand_at_index(0, self.len()) | self,
+            };
+        }
+
         let (l, r) = align_chunks_binary(self, rhs);
         let chunks = l
             .downcast_iter()

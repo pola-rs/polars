@@ -42,7 +42,7 @@ where
         }
 
         // fill av with first
-        let mut av = AlignedVec::with_capacity(self.len());
+        let mut av = Vec::with_capacity(self.len());
         let mut iter = self.into_iter();
         for _ in 0..first {
             av.push(Zero::zero())

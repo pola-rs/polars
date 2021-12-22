@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
@@ -8,10 +9,6 @@ import pytest
 import polars as pl
 from polars import testing
 from polars.datatypes import Float64, Int32, Int64, UInt32
-
-
-def series() -> pl.Series:
-    return pl.Series("a", [1, 2])
 
 
 def test_cum_agg() -> None:
@@ -73,9 +70,17 @@ def test_to_frame(series: pl.Series) -> None:
 def test_bitwise_ops() -> None:
     a = pl.Series([True, False, True])
     b = pl.Series([False, True, True])
-    assert a & b == [False, False, True]
-    assert a | b == [True, True, True]
-    assert ~a == [False, True, False]
+    assert (a & b).series_equal(pl.Series([False, False, True]))
+    assert (a | b).series_equal(pl.Series([True, True, True]))
+    assert (a ^ b).series_equal(pl.Series([True, True, False]))
+    assert (~a).series_equal(pl.Series([False, True, False]))
+
+    # rand/rxor/ror we trigger by casting the left hand to a list here in the test
+    # Note that the type annotations only allow Series to be passed in, but there is
+    # specific code to deal with non-Series inputs.
+    assert (True & a).series_equal(pl.Series([True, False, True]))  # type: ignore
+    assert (True | a).series_equal(pl.Series([True, True, True]))  # type: ignore
+    assert (True ^ a).series_equal(pl.Series([False, True, False]))  # type: ignore
 
 
 def test_equality(series: pl.Series) -> None:
@@ -278,6 +283,29 @@ def test_set() -> None:
     a = pl.Series("a", [True, False, True])
     mask = pl.Series("msk", [True, False, True])
     a[mask] = False
+    testing.assert_series_equal(a, pl.Series("", [False] * 3))
+
+
+def test_set_np_array_boolean_mask() -> None:
+    a = pl.Series("a", [1, 2, 3])
+    mask = np.array([True, False, True])
+    a[mask] = 4
+    testing.assert_series_equal(a, pl.Series("a", [4, 2, 4]))
+
+
+@pytest.mark.parametrize("dtype", [np.int32, np.int64, np.uint32, np.uint64])
+def test_set_np_array(dtype: Any) -> None:
+    a = pl.Series("a", [1, 2, 3])
+    idx = np.array([0, 2], dtype=dtype)
+    a[idx] = 4
+    testing.assert_series_equal(a, pl.Series("a", [4, 2, 4]))
+
+
+@pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
+def test_set_list_and_tuple(idx: Sequence) -> None:
+    a = pl.Series("a", [1, 2, 3])
+    a[idx] = 4
+    testing.assert_series_equal(a, pl.Series("a", [4, 2, 4]))
 
 
 def test_fill_null() -> None:
@@ -1112,3 +1140,14 @@ def test_shuffle() -> None:
 
     out = pl.select(pl.lit(a).shuffle(2)).to_series()
     testing.assert_series_equal(out, expected)
+
+
+def test_to_physical() -> None:
+    # casting an int result in an int
+    a = pl.Series("a", [1, 2, 3])
+    testing.assert_series_equal(a.to_physical(), a)
+
+    # casting a date results in an Int32
+    a = pl.Series("a", [date(2020, 1, 1)] * 3)
+    expected = pl.Series("a", [18262] * 3, dtype=Int32)
+    testing.assert_series_equal(a.to_physical(), expected)

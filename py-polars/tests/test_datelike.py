@@ -224,7 +224,7 @@ def test_date_comp() -> None:
     two = date(2001, 1, 2)  # type: ignore
     a = pl.Series("a", [one, two])
     assert (a == one).to_list() == [True, False]
-    assert (a == two).to_list() == [False, True]
+    assert (a != one).to_list() == [False, True]
     assert (a > one).to_list() == [False, True]
     assert (a >= one).to_list() == [True, True]
     assert (a < one).to_list() == [False, False]

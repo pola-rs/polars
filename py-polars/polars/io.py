@@ -9,6 +9,7 @@ from typing import (
     Dict,
     Iterator,
     List,
+    Mapping,
     Optional,
     TextIO,
     Tuple,
@@ -142,7 +143,7 @@ def read_csv(
     comment_char: Optional[str] = None,
     quote_char: Optional[str] = r'"',
     skip_rows: int = 0,
-    dtypes: Optional[Union[Dict[str, Type[DataType]], List[Type[DataType]]]] = None,
+    dtypes: Optional[Union[Mapping[str, Type[DataType]], List[Type[DataType]]]] = None,
     null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
     ignore_errors: bool = False,
     parse_dates: bool = False,
@@ -587,6 +588,7 @@ def scan_parquet(
     file: Union[str, Path],
     n_rows: Optional[int] = None,
     cache: bool = True,
+    parallel: bool = True,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -603,6 +605,8 @@ def scan_parquet(
         Stop reading from parquet file after reading ``n_rows``.
     cache
         Cache the result after reading.
+    parallel
+        Read the parquet file in parallel. The single threaded reader consumes less memory.
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -611,7 +615,9 @@ def scan_parquet(
     if isinstance(file, Path):
         file = str(file)
 
-    return LazyFrame.scan_parquet(file=file, n_rows=n_rows, cache=cache)
+    return LazyFrame.scan_parquet(
+        file=file, n_rows=n_rows, cache=cache, parallel=parallel
+    )
 
 
 def read_ipc_schema(
@@ -702,6 +708,7 @@ def read_parquet(
     use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
     storage_options: Optional[Dict] = None,
+    parallel: bool = True,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -725,6 +732,8 @@ def read_parquet(
         Only used when ``use_pyarrow=True``.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
+    parallel
+        Read the parquet file in parallel. The single threaded reader consumes less memory.
     **kwargs
         kwargs for [pyarrow.parquet.read_table](https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html)
 
@@ -761,9 +770,7 @@ def read_parquet(
             )
 
         return DataFrame.read_parquet(
-            source_prep,
-            columns=columns,
-            n_rows=n_rows,
+            source_prep, columns=columns, n_rows=n_rows, parallel=parallel
         )
 
 

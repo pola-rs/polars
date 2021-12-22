@@ -15,7 +15,7 @@ export default {
   coveragePathIgnorePatterns: ["/node_modules/"],
   coverageProvider: "v8",
   moduleDirectories: ["node_modules", "./polars"],
-  moduleFileExtensions: ["js", "ts", "node"],
+  moduleFileExtensions: ["js", "ts"],
   setupFilesAfterEnv : ["<rootDir>/__tests__/setup.ts"],
   moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths, { prefix: "<rootDir>/polars" }),
   testPathIgnorePatterns: ["<rootDir>/__tests__/setup.ts"]
