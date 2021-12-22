@@ -4039,69 +4039,62 @@ class GroupBy:
         ],
     ) -> DataFrame:
         """
-                Use multiple aggregations on columns. This can be combined with complete lazy API
-                and is considered idiomatic polars.
+        Use multiple aggregations on columns. This can be combined with complete lazy API
+        and is considered idiomatic polars.
 
-                Parameters
-                ----------
-                column_to_agg
-                    map column to aggregation functions.
+        Parameters
+        ----------
+        column_to_agg
+            map column to aggregation functions.
 
-                Use lazy API syntax (recommended)
+        Use lazy API syntax (recommended)
 
-                >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
+        >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
 
-                Column name to aggregation with tuples        time_column: str,
-                every: str,
-                period: str,
-                offset: str,
-                truncate: bool = True
-        :
+        >>> [
+        ...     ("foo", ["sum", "n_unique", "min"]),
+        ...     ("bar", ["max"]),
+        ... ]  # doctest: +SKIP
 
-                >>> [
-                ...     ("foo", ["sum", "n_unique", "min"]),
-                ...     ("bar", ["max"]),
-                ... ]  # doctest: +SKIP
+        Column name to aggregation with dict:
+        >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}  # doctest: +SKIP
 
-                Column name to aggregation with dict:
-                >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}  # doctest: +SKIP
-
-                Returns
-                -------
-                Result of groupby split apply operations.
+        Returns
+        -------
+        Result of groupby split apply operations.
 
 
-                Examples
-                --------
+        Examples
+        --------
 
-                Use lazy API:
+        Use lazy API:
 
-                >>> df.groupby(["foo", "bar"]).agg(
-                ...     [
-                ...         pl.sum("ham"),
-                ...         pl.col("spam").tail(4).sum(),
-                ...     ]
-                ... )  # doctest: +SKIP
+        >>> df.groupby(["foo", "bar"]).agg(
+        ...     [
+        ...         pl.sum("ham"),
+        ...         pl.col("spam").tail(4).sum(),
+        ...     ]
+        ... )  # doctest: +SKIP
 
-                Use a dict:
+        Use a dict:
 
-                >>> df.groupby(["foo", "bar"]).agg(
-                ...     {
-                ...         "spam": ["sum", "min"],
-                ...     }
-                ... )  # doctest: +SKIP
-                shape: (3, 2)
-                ┌─────┬─────┐
-                │ foo ┆ bar │
-                │ --- ┆ --- │
-                │ str ┆ i64 │
-                ╞═════╪═════╡
-                │ a   ┆ 1   │
-                ├╌╌╌╌╌┼╌╌╌╌╌┤
-                │ a   ┆ 2   │
-                ├╌╌╌╌╌┼╌╌╌╌╌┤
-                │ b   ┆ 3   │
-                └─────┴─────┘
+        >>> df.groupby(["foo", "bar"]).agg(
+        ...     {
+        ...         "spam": ["sum", "min"],
+        ...     }
+        ... )  # doctest: +SKIP
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ a   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 3   │
+        └─────┴─────┘
 
         """
         if isinstance(column_to_agg, pli.Expr):
