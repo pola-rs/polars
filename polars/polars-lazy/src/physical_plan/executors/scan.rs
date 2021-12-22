@@ -2,6 +2,8 @@ use super::*;
 use crate::logical_plan::CsvParserOptions;
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcOptions;
+#[cfg(feature = "parquet")]
+use crate::logical_plan::ParquetOptions;
 use crate::utils::try_path_to_str;
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
@@ -114,11 +116,9 @@ impl Executor for IpcExec {
 pub struct ParquetExec {
     path: PathBuf,
     schema: SchemaRef,
-    with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     aggregate: Vec<ScanAggregation>,
-    n_rows: Option<usize>,
-    cache: bool,
+    options: ParquetOptions,
 }
 
 #[cfg(feature = "parquet")]
@@ -126,20 +126,16 @@ impl ParquetExec {
     pub(crate) fn new(
         path: PathBuf,
         schema: SchemaRef,
-        with_columns: Option<Vec<String>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         aggregate: Vec<ScanAggregation>,
-        n_rows: Option<usize>,
-        cache: bool,
+        options: ParquetOptions,
     ) -> Self {
         ParquetExec {
             path,
             schema,
-            with_columns,
             predicate,
             aggregate,
-            n_rows,
-            cache,
+            options,
         }
     }
 }
@@ -154,21 +150,22 @@ impl Executor for ParquetExec {
         let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
-            &mut self.with_columns,
+            &mut self.options.with_columns,
             &mut self.schema,
-            self.n_rows,
+            self.options.n_rows,
             &self.aggregate,
         );
 
         let df = ParquetReader::new(file)
             .with_n_rows(n_rows)
+            .read_parallel(self.options.parallel)
             .finish_with_scan_ops(
                 predicate,
                 aggregate,
                 projection.as_ref().map(|v| v.as_ref()),
             )?;
 
-        if self.cache {
+        if self.options.cache {
             state.store_cache(cache_key, df.clone())
         }
         if state.verbose {

@@ -296,8 +296,13 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg(feature = "parquet")]
-    pub fn scan_parquet(path: String, n_rows: Option<usize>, cache: bool) -> Result<Self> {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, n_rows, cache)?
+    pub fn scan_parquet(
+        path: String,
+        n_rows: Option<usize>,
+        cache: bool,
+        parallel: bool,
+    ) -> Result<Self> {
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, n_rows, cache, parallel)?
             .build()
             .into();
         lf.opt_state.agg_scan_projection = true;

@@ -177,11 +177,9 @@ impl DefaultPlanner {
                 path,
                 schema,
                 output_schema: _,
-                with_columns,
                 predicate,
                 aggregate,
-                n_rows,
-                cache,
+                options,
             } => {
                 let predicate = predicate
                     .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
@@ -189,13 +187,7 @@ impl DefaultPlanner {
 
                 let aggregate = aggregate_expr_to_scan_agg(aggregate, expr_arena);
                 Ok(Box::new(ParquetExec::new(
-                    path,
-                    schema,
-                    with_columns,
-                    predicate,
-                    aggregate,
-                    n_rows,
-                    cache,
+                    path, schema, predicate, aggregate, options,
                 )))
             }
             Projection {

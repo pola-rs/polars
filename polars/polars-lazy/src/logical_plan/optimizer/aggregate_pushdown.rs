@@ -152,11 +152,9 @@ impl OptimizationRule for AggregatePushdown {
                 path,
                 schema,
                 output_schema,
-                with_columns,
                 predicate,
                 aggregate,
-                n_rows,
-                cache,
+                options,
             } => match self.accumulated_projections.is_empty() {
                 true => {
                     lp_arena.replace(
@@ -165,11 +163,9 @@ impl OptimizationRule for AggregatePushdown {
                             path,
                             schema,
                             output_schema,
-                            with_columns,
                             predicate,
                             aggregate,
-                            n_rows,
-                            cache,
+                            options,
                         },
                     );
                     None
@@ -180,11 +176,9 @@ impl OptimizationRule for AggregatePushdown {
                         path,
                         schema,
                         output_schema,
-                        with_columns,
                         predicate,
                         aggregate,
-                        n_rows,
-                        cache,
+                        options,
                     })
                 }
             },

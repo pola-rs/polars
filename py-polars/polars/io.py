@@ -587,6 +587,7 @@ def scan_parquet(
     file: Union[str, Path],
     n_rows: Optional[int] = None,
     cache: bool = True,
+    parallel: bool = True,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -603,6 +604,8 @@ def scan_parquet(
         Stop reading from parquet file after reading ``n_rows``.
     cache
         Cache the result after reading.
+    parallel
+        Read the parquet file in parallel. The single threaded reader consumes less memory.
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -611,7 +614,9 @@ def scan_parquet(
     if isinstance(file, Path):
         file = str(file)
 
-    return LazyFrame.scan_parquet(file=file, n_rows=n_rows, cache=cache)
+    return LazyFrame.scan_parquet(
+        file=file, n_rows=n_rows, cache=cache, parallel=parallel
+    )
 
 
 def read_ipc_schema(
