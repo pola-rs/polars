@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
@@ -282,6 +283,29 @@ def test_set() -> None:
     a = pl.Series("a", [True, False, True])
     mask = pl.Series("msk", [True, False, True])
     a[mask] = False
+    testing.assert_series_equal(a, pl.Series("", [False] * 3))
+
+
+def test_set_np_array_boolean_mask() -> None:
+    a = pl.Series("a", [1, 2, 3])
+    mask = np.array([True, False, True])
+    a[mask] = 4
+    testing.assert_series_equal(a, pl.Series("a", [4, 2, 4]))
+
+
+@pytest.mark.parametrize("dtype", [np.int32, np.int64, np.uint32, np.uint64])
+def test_set_np_array(dtype: Any) -> None:
+    a = pl.Series("a", [1, 2, 3])
+    idx = np.array([0, 2], dtype=dtype)
+    a[idx] = 4
+    testing.assert_series_equal(a, pl.Series("a", [4, 2, 4]))
+
+
+@pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
+def test_set_list_and_tuple(idx: Sequence) -> None:
+    a = pl.Series("a", [1, 2, 3])
+    a[idx] = 4
+    testing.assert_series_equal(a, pl.Series("a", [4, 2, 4]))
 
 
 def test_fill_null() -> None:
