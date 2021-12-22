@@ -12,6 +12,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars import testing
 
 
 def test_version() -> None:
@@ -374,7 +375,7 @@ def test_groupby() -> None:
     # df.groupby(by="a", select="b", agg="count").frame_equal(
     #     pl.DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
     # )
-    assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
+    assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1  # type: ignore
 
     assert (
         df.groupby("a")
@@ -742,10 +743,10 @@ def test_lazy_functions() -> None:
     ]
     expected = 1.0
     assert np.isclose(out.select_at_idx(0), expected)
-    assert np.isclose(pl.var(df["b"]), expected)
+    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore
     expected = 1.0
     assert np.isclose(out.select_at_idx(1), expected)
-    assert np.isclose(pl.std(df["b"]), expected)
+    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore
     expected = 3
     assert np.isclose(out.select_at_idx(2), expected)
     assert np.isclose(pl.max(df["b"]), expected)
@@ -1329,3 +1330,80 @@ def test_df_schema_unique() -> None:
 
 def test_empty_projection() -> None:
     assert pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([]).shape == (0, 0)
+
+
+def test_arithmetic() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
+
+    df_mul = df * 2
+    expected = pl.DataFrame({"a": [2, 4], "b": [6, 8]})
+    assert df_mul.frame_equal(expected)
+
+    df_div = df / 2
+    expected = pl.DataFrame({"a": [0.5, 1.0], "b": [1.5, 2.0]})
+    assert df_div.frame_equal(expected)
+
+    df_plus = df + 2
+    expected = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
+    assert df_plus.frame_equal(expected)
+
+    df_minus = df - 2
+    expected = pl.DataFrame({"a": [-1, 0], "b": [1, 2]})
+    assert df_minus.frame_equal(expected)
+
+
+def test_getattr() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0]})
+    testing.assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
+
+    with pytest.raises(AttributeError):
+        _ = df.b
+
+
+def test_get_item() -> None:
+    """test all the methods to use [] on a dataframe"""
+    df = pl.DataFrame({"a": [1.0, 2.0], "b": [3, 4]})
+
+    # expression
+    assert df[pl.col("a")].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
+
+    # numpy array
+    assert df[np.array([True, False])].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+
+    # tuple. The first element refers to the rows, the second element to columns
+    assert df[:, :].frame_equal(df)
+
+    # str, always refers to a column name
+    assert df["a"].series_equal(pl.Series("a", [1.0, 2.0]))
+
+    # int, always refers to a row index (zero-based): index=1 => second row
+    assert df[1].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
+
+    # range, refers to rows
+    assert df[range(1)].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+
+    # slice. Below an example of taking every second row
+    assert df[::2].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+
+    # numpy array; assumed to be row indices if integers, or columns if strings
+    # TODO: add boolean mask support
+    df[np.array([1])].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
+    df[np.array(["a"])].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
+    # note that we cannot use floats (even if they could be casted to integer without loss)
+    with pytest.raises(IndexError):
+        _ = df[np.array([1.0])]
+
+    # sequences (lists or tuples; tuple only if length != 2)
+    # if strings or list of expressions, assumed to be column names
+    # if bools, assumed to be a row mask
+    # if integers, assumed to be row indices
+    assert df[["a", "b"]].frame_equal(df)
+    assert df[[pl.col("a"), pl.col("b")]].frame_equal(df)
+    df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+
+    # pl.Series: like sequences, but only for rows
+    df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    with pytest.raises(IndexError):
+        _ = df[pl.Series("", ["hello Im a string"])]
