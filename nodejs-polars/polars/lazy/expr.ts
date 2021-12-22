@@ -4,12 +4,13 @@ import {col, lit} from "./lazy_functions";
 import {
   ExprOrString,
   FillNullStrategy,
-  isExpr,
   RankMethod,
   regexToString,
   RollingOptions,
   selectionToExprList
 } from "../utils";
+import {isExternal} from "util/types";
+
 import {Series} from "../series";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -988,7 +989,7 @@ const ExprStringFunctions = (_expr: JsExpr): ExprStringFunctions => {
   };
 };
 
-export const Expr = (_expr: JsExpr): Expr => {
+const _Expr = (_expr: JsExpr): Expr => {
 
   const wrap = (method, args?): Expr => {
 
@@ -1201,10 +1202,13 @@ export const Expr = (_expr: JsExpr): Expr => {
   } as any;
 };
 
+const isExpr = (anyVal: any): anyVal is Expr => isExternal(anyVal?._expr);
+export const Expr = Object.assign(_Expr, {isExpr});
+
 export const exprToLitOrExpr = (expr: any, stringToLit = true): Expr  => {
   if(typeof expr === "string" && !stringToLit) {
     return col(expr);
-  } else if (isExpr(expr)) {
+  } else if (Expr.isExpr(expr)) {
     return expr;
   } else if (Array.isArray(expr)) {
     return expr.map(e => exprToLitOrExpr(e, stringToLit)) as any;

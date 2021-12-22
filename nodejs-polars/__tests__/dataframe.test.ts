@@ -185,6 +185,66 @@ describe("dataframe", () => {
       expect(df.toJS()).toEqual(expected);
     });
   });
+  describe("df proxy", () => {
+    test("array destructuring", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+      const [col0] = df;
+      expect(col0).toSeriesEqual(df.getColumn("os"));
+      const [,version] = df;
+      expect(version).toSeriesEqual(df.getColumn("version"));
+      const [[row0Index0], [,row1Index1]] = df;
+      expect(row0Index0).toStrictEqual("apple");
+      expect(row1Index1).toStrictEqual(18.04);
+    });
+    test("object destructuring", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+      const {os, version} = <any>df;
+      expect(os).toSeriesEqual(df.getColumn("os"));
+      expect(version).toSeriesEqual(df.getColumn("version"));
+      const df2 = pl.DataFrame({
+        fruits: ["apple", "orange"],
+        cars: ["ford", "honda"]
+      });
+      const df3 = pl.DataFrame({...df, ...df2});
+      const expected = df.hstack(df2);
+      expect(df3).toFrameEqual(expected);
+    });
+    test("object bracket notation", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+
+      expect(df["os"]).toSeriesEqual(df.getColumn("os"));
+      expect(df["os"][1]).toStrictEqual("linux");
+
+      df["os"] = pl.Series(["mac", "ubuntu"]);
+      expect(df["os"][0]).toStrictEqual("mac");
+    });
+    test("object.keys shows column names", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+      const keys = Object.keys(df);
+      expect(keys).toEqual(df.columns);
+    });
+    test("object.values shows column values", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+      const values = Object.values(df);
+      expect(values[0]).toSeriesEqual(df["os"]);
+      expect(values[1]).toSeriesEqual(df["version"]);
+    });
+  });
   test("dtypes", () => {
     const expected = ["Float64", "Utf8"];
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).dtypes;

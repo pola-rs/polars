@@ -2,7 +2,6 @@ use crate::conversion::prelude::*;
 use crate::conversion::utils;
 use crate::datatypes::JsDataType;
 use crate::prelude::JsResult;
-use crate::series::JsSeries;
 use napi::*;
 
 use polars::lazy::dsl;
@@ -70,9 +69,9 @@ pub fn lit(cx: CallContext) -> JsResult<JsExternal> {
         ValueType::Null | ValueType::Undefined => dsl::lit(Null {}),
         ValueType::External => {
             let val = unsafe { value.cast::<JsExternal>() };
-            if let Ok(series) = cx.env.get_value_external::<JsSeries>(&val) {
-                let n = (&series).series.name();
-                let series = (&series).series.clone();
+            if let Ok(series) = cx.env.get_value_external::<Series>(&val) {
+                let n = series.name();
+                let series = series.clone();
                 dsl::lit(series).alias(n)
             } else {
                 panic!(
@@ -198,6 +197,7 @@ pub fn str_parse_date(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let fmt = params.get_as::<Option<String>>("fmt")?;
     let function = move |s: Series| {
+        
         let ca = s.utf8()?;
         ca.as_date(fmt.as_deref()).map(|ca| ca.into_series())
     };

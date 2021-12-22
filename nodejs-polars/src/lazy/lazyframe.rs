@@ -1,5 +1,4 @@
 use crate::conversion::prelude::*;
-use crate::dataframe::JsDataFrame;
 use crate::prelude::{JsPolarsEr, JsResult};
 use napi::{CallContext, JsExternal, JsObject, JsString};
 use polars::lazy::frame::{LazyCsvReader, LazyFrame, LazyGroupBy};
@@ -127,14 +126,13 @@ pub fn sort_by_exprs(cx: CallContext) -> JsResult<JsExternal> {
 pub struct Collect(LazyFrame);
 
 impl napi::Task for Collect {
-    type Output = JsDataFrame;
+    type Output = DataFrame;
     type JsValue = JsExternal;
 
     fn compute(&mut self) -> JsResult<Self::Output> {
         self.0
             .clone()
             .collect()
-            .map(JsDataFrame::from)
             .map_err(|err| JsPolarsEr::from(err).into())
     }
 
@@ -158,7 +156,6 @@ pub fn collect_sync(cx: CallContext) -> JsResult<JsExternal> {
         .get_external::<LazyFrame>(&cx, "_ldf")?
         .clone()
         .collect()
-        .map(JsDataFrame::from)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
@@ -170,7 +167,6 @@ pub fn fetch_sync(cx: CallContext) -> JsResult<JsExternal> {
     let n_rows: usize = params.get_or("numRows", 500 as usize)?;
     ldf.clone()
         .fetch(n_rows)
-        .map(JsDataFrame::from)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
