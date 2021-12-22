@@ -76,7 +76,7 @@ The Python bindings of `polars` have their own changelog.
 * performance
   - improve csv-parser performance by ~25%
 * bug fix
-  - fix ub of alignedvec dealloc
+  - fix ub of AlignedVec dealloc
   - various minor
 
 ### Polars 0.14.6

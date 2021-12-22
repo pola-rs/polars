@@ -1,6 +1,5 @@
 use super::*;
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::MutableBuffer;
 use std::sync::Arc;
 
 impl CategoricalChunked {
@@ -18,10 +17,10 @@ impl CategoricalChunked {
                 }
                 let mut new_map = (*l_map).clone();
 
-                let mut offset_buf = MutableBuffer::new();
+                let mut offset_buf = vec![];
                 offset_buf.extend_from_slice(l_slots.offsets().as_slice());
 
-                let mut values_buf = MutableBuffer::new();
+                let mut values_buf = vec![];
                 values_buf.extend_from_slice(l_slots.values().as_slice());
 
                 let validity_buf = if let Some(validity) = l_slots.validity() {

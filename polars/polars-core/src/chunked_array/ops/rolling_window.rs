@@ -261,8 +261,8 @@ mod inner_mod {
             validity.extend_constant(ca.len() - (window_size - 1), true);
             let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
 
-            let mut values = AlignedVec::with_capacity(ca.len());
-            values.extend_constant(window_size - 1, Default::default());
+            let mut values = Vec::with_capacity(ca.len());
+            values.extend(std::iter::repeat(T::Native::default()).take(window_size - 1));
 
             for offset in 0..self.len() + 1 - window_size {
                 let arr_window = arr.slice(offset, window_size);

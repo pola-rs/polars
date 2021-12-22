@@ -455,8 +455,8 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    /// Create a new ChunkedArray by taking ownership of the AlignedVec. This operation is zero copy.
-    pub fn new_from_aligned_vec(name: &str, v: AlignedVec<T::Native>) -> Self {
+    /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
+    pub fn new_from_aligned_vec(name: &str, v: Vec<T::Native>) -> Self {
         let arr = to_array::<T>(v, None);
         Self::new_from_chunks(name, vec![arr])
     }
@@ -464,7 +464,7 @@ where
     /// Nullify values in slice with an existing null bitmap
     pub fn new_from_owned_with_null_bitmap(
         name: &str,
-        values: AlignedVec<T::Native>,
+        values: Vec<T::Native>,
         buffer: Option<Bitmap>,
     ) -> Self {
         let arr = to_array::<T>(values, buffer);
@@ -591,14 +591,14 @@ impl ListChunked {
 }
 
 pub(crate) fn to_primitive<T: PolarsNumericType>(
-    values: AlignedVec<T::Native>,
+    values: Vec<T::Native>,
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
     PrimitiveArray::from_data(T::get_dtype().to_arrow(), values.into(), validity)
 }
 
 pub(crate) fn to_array<T: PolarsNumericType>(
-    values: AlignedVec<T::Native>,
+    values: Vec<T::Native>,
     validity: Option<Bitmap>,
 ) -> ArrayRef {
     Arc::new(to_primitive::<T>(values, validity))

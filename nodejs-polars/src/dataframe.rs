@@ -749,7 +749,7 @@ pub fn take(cx: CallContext) -> JsResult<JsExternal> {
     let df = params.get_external::<JsDataFrame>(&cx, "_df")?;
     let indices = params.get::<JsObject>("indices")?;
     let len = indices.get_array_length()?;
-    let indices: AlignedVec<u32> = (0..len)
+    let indices: Vec<u32> = (0..len)
         .map(|v| {
             let wv: WrappedValue = indices
                 .get_element_unchecked::<JsUnknown>(v)

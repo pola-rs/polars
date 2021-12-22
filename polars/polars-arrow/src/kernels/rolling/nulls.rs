@@ -2,7 +2,6 @@ use super::*;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
-use arrow::buffer::MutableBuffer;
 use arrow::types::NativeType;
 use num::{Float, One, Zero};
 use std::ops::AddAssign;
@@ -50,7 +49,7 @@ where
                 }
             }
         })
-        .collect_trusted::<MutableBuffer<K>>();
+        .collect_trusted::<Vec<K>>();
 
     Arc::new(PrimitiveArray::from_data(
         K::DATA_TYPE,
@@ -400,7 +399,7 @@ mod test {
 
     #[test]
     fn test_rolling_sum_nulls() {
-        let buf = Buffer::from([1.0, 2.0, 3.0, 4.0]);
+        let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
         let arr = &PrimitiveArray::from_data(
             DataType::Float64,
             buf,
@@ -435,7 +434,7 @@ mod test {
 
     #[test]
     fn test_rolling_max_no_nulls() {
-        let buf = Buffer::from([1.0, 2.0, 3.0, 4.0]);
+        let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
         let arr = &PrimitiveArray::from_data(
             DataType::Float64,
             buf,

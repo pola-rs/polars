@@ -18,7 +18,7 @@ pub trait VecHash {
     /// Compute the hash for all values in the array.
     ///
     /// This currently only works with the AHash RandomState hasher builder.
-    fn vec_hash(&self, _random_state: RandomState) -> AlignedVec<u64> {
+    fn vec_hash(&self, _random_state: RandomState) -> Vec<u64> {
         unimplemented!()
     }
 
@@ -43,14 +43,14 @@ where
     T: PolarsIntegerType,
     T::Native: Hash + CallHasher,
 {
-    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         // Note that we don't use the no null branch! This can break in unexpected ways.
         // for instance with threading we split an array in n_threads, this may lead to
         // splits that have no nulls and splits that have nulls. Then one array is hashed with
         // Option<T> and the other array with T.
         // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
         // the only deterministic seed.
-        let mut av = AlignedVec::with_capacity(self.len());
+        let mut av = Vec::with_capacity(self.len());
 
         self.downcast_iter().for_each(|arr| {
             av.extend(
@@ -117,9 +117,9 @@ where
 }
 
 impl VecHash for Utf8Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         let null_h = get_null_hash_value(random_state.clone());
-        let mut av = AlignedVec::with_capacity(self.len());
+        let mut av = Vec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {
             av.extend(arr.into_iter().map(|opt_v| match opt_v {
                 Some(v) => str::get_hash(v, &random_state),
@@ -145,8 +145,8 @@ impl VecHash for Utf8Chunked {
 }
 
 impl VecHash for BooleanChunked {
-    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
-        let mut av = AlignedVec::with_capacity(self.len());
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
+        let mut av = Vec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {
             av.extend(arr.into_iter().map(|opt_v| {
                 let mut hasher = random_state.build_hasher();
@@ -170,7 +170,7 @@ impl VecHash for BooleanChunked {
 }
 
 impl VecHash for Float32Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         self.bit_repr_small().vec_hash(random_state)
     }
 
@@ -179,7 +179,7 @@ impl VecHash for Float32Chunked {
     }
 }
 impl VecHash for Float64Chunked {
-    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         self.bit_repr_large().vec_hash(random_state)
     }
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) {
@@ -194,14 +194,14 @@ impl<T> VecHash for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         // Note that we don't use the no null branch! This can break in unexpected ways.
         // for instance with threading we split an array in n_threads, this may lead to
         // splits that have no nulls and splits that have nulls. Then one array is hashed with
         // Option<T> and the other array with T.
         // Meaning that they cannot be compared. By always hashing on Option<T> the random_state is
         // the only deterministic seed.
-        let mut av = AlignedVec::with_capacity(self.len());
+        let mut av = Vec::with_capacity(self.len());
 
         self.downcast_iter().for_each(|arr| {
             av.extend(arr.into_iter().map(|opt_v| {

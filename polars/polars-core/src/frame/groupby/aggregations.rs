@@ -12,7 +12,6 @@ use crate::chunked_array::object::extension::create_extension;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use arrow::buffer::MutableBuffer;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::trusted_len::PushUnchecked;
 use std::ops::Deref;
@@ -474,11 +473,11 @@ where
         let mut can_fast_explode = true;
         let arr = match self.cont_slice() {
             Ok(values) => {
-                let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
+                let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
 
-                let mut list_values = MutableBuffer::<T::Native>::with_capacity(self.len());
+                let mut list_values = Vec::<T::Native>::with_capacity(self.len());
                 groups.iter().for_each(|(_, idx)| {
                     let idx_len = idx.len();
                     if idx_len == 0 {
@@ -489,9 +488,8 @@ where
                     // Safety:
                     // group tuples are in bounds
                     unsafe {
-                        list_values.extend_from_trusted_len_iter(
-                            idx.iter().map(|idx| *values.get_unchecked(*idx as usize)),
-                        );
+                        list_values
+                            .extend(idx.iter().map(|idx| *values.get_unchecked(*idx as usize)));
                         // Safety:
                         // we know that offsets has allocated enough slots
                         offsets.push_unchecked(length_so_far);
@@ -558,7 +556,7 @@ impl AggList for Utf8Chunked {
 impl AggList for ListChunked {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         let mut can_fast_explode = true;
-        let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
+        let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
 
@@ -625,7 +623,7 @@ impl AggList for CategoricalChunked {
 impl<T: PolarsObject> AggList for ObjectChunked<T> {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         let mut can_fast_explode = true;
-        let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
+        let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
 

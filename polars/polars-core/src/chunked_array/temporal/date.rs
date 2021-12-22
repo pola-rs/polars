@@ -74,10 +74,7 @@ impl DateChunked {
     }
 
     pub fn new_from_naive_date(name: &str, v: &[NaiveDate]) -> Self {
-        let unit = v
-            .iter()
-            .map(|v| naive_date_to_date(*v))
-            .collect::<AlignedVec<_>>();
+        let unit = v.iter().map(|v| naive_date_to_date(*v)).collect::<Vec<_>>();
         Int32Chunked::new_from_aligned_vec(name, unit).into()
     }
 

@@ -3,7 +3,7 @@ use crate::kernels::take::take_unchecked;
 use crate::trusted_len::PushUnchecked;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, ListArray, PrimitiveArray};
-use arrow::buffer::{Buffer, MutableBuffer};
+use arrow::buffer::Buffer;
 
 /// Get the indices that would result in a get operation on the lists values.
 /// for example, consider this list:
@@ -75,7 +75,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
         }
     };
 
-    let offsets: Buffer<i64> = MutableBuffer::from_vec(offsets).into();
+    let offsets: Buffer<i64> = offsets.into();
     let dtype = ListArray::<i64>::default_datatype(array.data_type().clone());
     ListArray::<i64>::from_data(dtype, offsets, array, None)
 }
@@ -90,7 +90,7 @@ mod test {
 
     fn get_array() -> ListArray<i64> {
         let values = Int32Array::from_slice(&[1, 2, 3, 4, 5, 6]);
-        let offsets = Buffer::from(&[0i64, 3, 5, 6]);
+        let offsets = Buffer::from(vec![0i64, 3, 5, 6]);
 
         let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
         ListArray::<i64>::from_data(dtype, offsets, Arc::new(values), None)

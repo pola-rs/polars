@@ -45,7 +45,7 @@ impl ListChunked {
     }
 
     pub fn lst_lengths(&self) -> UInt32Chunked {
-        let mut lengths = AlignedVec::with_capacity(self.len());
+        let mut lengths = Vec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {
             let offsets = arr.offsets().as_slice();
             let mut last = offsets[0];

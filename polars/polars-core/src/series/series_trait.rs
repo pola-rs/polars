@@ -150,7 +150,7 @@ pub(crate) mod private {
         fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
             invalid_operation_panic!(self)
         }
-        fn vec_hash(&self, _build_hasher: RandomState) -> AlignedVec<u64> {
+        fn vec_hash(&self, _build_hasher: RandomState) -> Vec<u64> {
             invalid_operation_panic!(self)
         }
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
