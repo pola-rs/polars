@@ -3107,7 +3107,7 @@ class StringNameSpace:
             return wrap_s(self._s.str_parse_date(fmt))
         if datatype == Datetime:
             return wrap_s(self._s.str_parse_datetime(fmt))
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def lengths(self) -> Series:
         """
@@ -3322,7 +3322,7 @@ class ListNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.mean()).to_series()
 
-    def sort(self, reverse: bool) -> Series:
+    def sort(self, reverse: bool = False) -> Series:
         """
         Sort the arrays in the list
         """
@@ -3766,7 +3766,7 @@ def _to_python_datetime(
         # nanoseconds to seconds
         return datetime.utcfromtimestamp(value / 1_000_000_000)
     else:
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 class SeriesIter:
