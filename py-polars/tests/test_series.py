@@ -10,10 +10,6 @@ from polars import testing
 from polars.datatypes import Float64, Int32, Int64, UInt32
 
 
-def series() -> pl.Series:
-    return pl.Series("a", [1, 2])
-
-
 def test_cum_agg() -> None:
     s = pl.Series("a", [1, 2, 3, 2])
     assert s.cumsum().series_equal(pl.Series("a", [1, 3, 6, 8]))
@@ -73,9 +69,17 @@ def test_to_frame(series: pl.Series) -> None:
 def test_bitwise_ops() -> None:
     a = pl.Series([True, False, True])
     b = pl.Series([False, True, True])
-    assert a & b == [False, False, True]
-    assert a | b == [True, True, True]
-    assert ~a == [False, True, False]
+    assert (a & b).series_equal(pl.Series([False, False, True]))
+    assert (a | b).series_equal(pl.Series([True, True, True]))
+    assert (a ^ b).series_equal(pl.Series([True, True, False]))
+    assert (~a).series_equal(pl.Series([False, True, False]))
+
+    # rand/rxor/ror we trigger by casting the left hand to a list here in the test
+    # Note that the type annotations only allow Series to be passed in, but there is
+    # specific code to deal with non-Series inputs.
+    assert (True & a).series_equal(pl.Series([True, False, True]))  # type: ignore
+    assert (True | a).series_equal(pl.Series([True, True, True]))  # type: ignore
+    assert (True ^ a).series_equal(pl.Series([False, True, False]))  # type: ignore
 
 
 def test_equality(series: pl.Series) -> None:
