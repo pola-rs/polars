@@ -297,15 +297,11 @@ class Series:
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
-            if f is None:
-                return NotImplemented
-            return wrap_s(f(ts))
+            return wrap_s(f(ts))  # type: ignore
         if isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
-            if f is None:
-                return NotImplemented
-            return wrap_s(f(d))
+            return wrap_s(f(d))  # type: ignore
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
