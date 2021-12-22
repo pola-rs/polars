@@ -533,7 +533,7 @@ class Series:
         # TODO: implement for these types without casting to series
         elif isinstance(key, np.ndarray) and key.dtype == np.bool_:
             # boolean numpy mask
-            self._s = self.set_at_idx(np.argwhere(key), value)._s
+            self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
         elif isinstance(key, (np.ndarray, list, tuple)):
             s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
             self.__setitem__(s, value)
