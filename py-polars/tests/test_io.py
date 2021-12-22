@@ -459,3 +459,31 @@ def test_read_sql() -> None:
 
     except ImportError:
         pass  # if connectorx not installed on test machine
+
+
+def test_csv_date_handling() -> None:
+    csv = """date
+1745-04-02
+1742-03-21
+1743-06-16
+1730-07-22
+""
+1739-03-16
+"""
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(1745, 4, 2),
+                date(1742, 3, 21),
+                date(1743, 6, 16),
+                date(1730, 7, 22),
+                None,
+                date(1739, 3, 16),
+            ]
+        }
+    )
+    out = pl.read_csv(csv.encode(), parse_dates=True)
+    assert out.frame_equal(expected, null_equal=True)
+    dtypes = {"date": pl.Date}
+    out = pl.read_csv(csv.encode(), dtypes=dtypes)
+    assert out.frame_equal(expected, null_equal=True)

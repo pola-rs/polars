@@ -14,6 +14,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Mapping,
     Optional,
     Sequence,
     TextIO,
@@ -365,7 +366,9 @@ class DataFrame:
         comment_char: Optional[str] = None,
         quote_char: Optional[str] = r'"',
         skip_rows: int = 0,
-        dtypes: Optional[Union[Dict[str, Type[DataType]], List[Type[DataType]]]] = None,
+        dtypes: Optional[
+            Union[Mapping[str, Type[DataType]], List[Type[DataType]]]
+        ] = None,
         null_values: Optional[Union[str, List[str], Dict[str, str]]] = None,
         ignore_errors: bool = False,
         parse_dates: bool = False,
