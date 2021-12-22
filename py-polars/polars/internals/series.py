@@ -303,126 +303,43 @@ class Series:
     def __rxor__(self, other: "Series") -> "Series":
         return self.__xor__(other)
 
-    def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
+    def _comp(self, other: Any, op: str) -> "Series":
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("eq_<>", Int64, self._s)
+            f = get_ffi_func(op + "_<>", Int64, self._s)
             return wrap_s(f(ts))  # type: ignore
         if isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
-            f = get_ffi_func("eq_<>", Int32, self._s)
+            f = get_ffi_func(op + "_<>", Int32, self._s)
             return wrap_s(f(d))  # type: ignore
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
         if isinstance(other, Series):
-            return Series._from_pyseries(self._s.eq(other._s))
+            return Series._from_pyseries(getattr(self._s, op)(other._s))
         other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("eq_<>", self.dtype, self._s)
+        f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
         return wrap_s(f(other))
+
+    def __eq__(self, other: Any) -> "Series":  # type: ignore[override]
+        return self._comp(other, "eq")
 
     def __ne__(self, other: Any) -> "Series":  # type: ignore[override]
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("neq_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("neq_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.neq(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("neq_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "neq")
 
     def __gt__(self, other: Any) -> "Series":
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("gt_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("gt_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.gt(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("gt_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "gt")
 
     def __lt__(self, other: Any) -> "Series":
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("lt_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("lt_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.lt(other._s))
-        # cast other if it doesn't match
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("lt_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "lt")
 
     def __ge__(self, other: Any) -> "Series":
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("gt_eq_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("gt_eq_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.gt_eq(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("gt_eq_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "gt_eq")
 
     def __le__(self, other: Any) -> "Series":
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
-            f = get_ffi_func("lt_eq_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
-        if isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func("lt_eq_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
-
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other)
-        if isinstance(other, Series):
-            return Series._from_pyseries(self._s.lt_eq(other._s))
-        other = maybe_cast(other, self.dtype)
-        f = get_ffi_func("lt_eq_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        return wrap_s(f(other))
+        return self._comp(other, "lt_eq")
 
     def __add__(self, other: Any) -> "Series":
         if isinstance(other, str):
