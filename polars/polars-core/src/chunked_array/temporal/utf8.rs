@@ -18,16 +18,12 @@ where
     None
 }
 
-fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
+fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> result
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
     for fmt in [
-        // 2021-12-31
-        "%Y-%m-%d",
-        // 31-12-2021
-        "%d-%m-%Y",
         // 21/12/31 12:54:98
         "%y/%m/%d %H:%M:%S",
         // 2021-12-31 24:58:01
@@ -45,8 +41,6 @@ where
         "%Y/%m/%d %H:%M:%S",
         // 20210319 23:58:50
         "%Y%m%d %H:%M:%S",
-        // 2021319 (2021-03-19)
-        "%Y%m%d",
         // 2019-04-18T02:45:55
         "%FT%H:%M:%S",
         // 2019-04-18T02:45:55.555000000
@@ -54,6 +48,24 @@ where
         "%FT%H:%M:%S.%6f",
         // nanoseconds
         "%FT%H:%M:%S.%9f",
+    ] {
+        if convert(val, fmt).is_ok() {
+            return Some(fmt);
+        }
+    }
+    None
+}
+
+fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
+// (string, fmt) -> result
+where
+    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+{
+    for fmt in [
+        // 2021-12-31
+        "%Y-%m-%d", // 31-12-2021
+        "%d-%m-%Y", // 2021319 (2021-03-19)
+        "%Y%m%d",
     ] {
         if convert(val, fmt).is_ok() {
             return Some(fmt);
@@ -79,7 +91,7 @@ impl Utf8Chunked {
     #[cfg(feature = "dtype-datetime")]
     fn sniff_fmt_datetime(&self) -> Result<&'static str> {
         let val = self.get_first_val()?;
-        if let Some(pattern) = date_pattern(val, NaiveDateTime::parse_from_str) {
+        if let Some(pattern) = datetime_pattern(val, NaiveDateTime::parse_from_str) {
             return Ok(pattern);
         }
         Err(PolarsError::ComputeError(
