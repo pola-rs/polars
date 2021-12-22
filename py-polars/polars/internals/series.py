@@ -1791,7 +1791,7 @@ class Series:
         Time -> Int64
         other -> other
         """
-        return wrap_s(self._s.to_physical)
+        return wrap_s(self._s.to_physical())
 
     def to_list(self, use_pyarrow: bool = False) -> List[Optional[Any]]:
         """
