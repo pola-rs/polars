@@ -3,7 +3,6 @@ name: Windows tests rust
 on:
   pull_request:
     paths:
-      - 'py-polars/**'
       - 'polars/**'
 jobs:
   test-rust:
