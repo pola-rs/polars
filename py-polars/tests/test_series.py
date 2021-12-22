@@ -634,7 +634,10 @@ def test_arr_ordering() -> None:
 
 def test_arr_unique() -> None:
     s = pl.Series("a", [[2, 1], [1, 2, 2]])
-    testing.assert_series_equal(s.arr.unique(), pl.Series("a", [[1, 2], [1, 2]]))
+    result = s.arr.unique()
+    assert len(result) == 2
+    assert sorted(result[0]) == [1, 2]
+    assert sorted(result[1]) == [1, 2]
 
 
 def test_sqrt_dispatch() -> None:
