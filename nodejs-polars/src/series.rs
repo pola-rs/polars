@@ -62,18 +62,24 @@ pub fn new_opt_date(cx: CallContext) -> JsResult<JsExternal> {
     let (arr, len) = params.get_arr("values")?;
     let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(name, len);
     for item in arr.into_iter() {
-        let obj: &JsObject = unsafe { &item.0.cast() };
-        if obj.is_date()? {
-            let d: &napi::JsDate = unsafe { &item.0.cast() };
-            match d.value_of() {
-                Ok(v) => builder.append_value(v as i64 * 1000000),
-                Err(e) => {
-                    if strict.unwrap_or(false) {
-                        return Err(e);
+        match item.0.get_type()? {
+            ValueType::Object => {
+                let obj: &JsObject = unsafe { &item.0.cast() };
+                if obj.is_date()? {
+                    let d: &napi::JsDate = unsafe { &item.0.cast() };
+                    match d.value_of() {
+                        Ok(v) => builder.append_value(v as i64 * 1000000),
+                        Err(e) => {
+                            if strict.unwrap_or(false) {
+                                return Err(e);
+                            }
+                            builder.append_null()
+                        }
                     }
-                    builder.append_null()
                 }
             }
+            ValueType::Null | ValueType::Undefined => builder.append_null(),
+            _ => return Err(JsPolarsEr::Other("Series must be of date type".to_owned()).into()),
         }
     }
     let ca: ChunkedArray<Int64Type> = builder.finish();

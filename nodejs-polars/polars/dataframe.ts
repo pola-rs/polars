@@ -1756,7 +1756,13 @@ export function DataFrame(data?: Record<string, any[]> | Record<string, any>[] |
 }
 
 function objToDF(obj: Record<string, Array<any>>): any {
-  const columns =  Object.entries(obj).map(([key, value]) => Series(key, value)._series);
+  const columns =  Object.entries(obj).map(([key, value]) => {
+    if(isSeries(value)) {
+      return value.rename(key)._series;
+    }
+
+    return Series(key, value)._series;
+  });
 
   return pli.df.read_columns({columns});
 }
