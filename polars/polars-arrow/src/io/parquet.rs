@@ -48,7 +48,6 @@ pub fn read_parquet<R: Read + Seek>(
                 if array.len() > remaining_rows {
                     array = array.slice(0, remaining_rows);
                 }
-                remaining_rows -= array.len();
 
                 buf_1 = b1;
                 buf_2 = b2;
@@ -56,6 +55,8 @@ pub fn read_parquet<R: Read + Seek>(
                 Ok(Arc::from(array))
             })
             .collect::<Result<Vec<_>>>()?;
+
+        remaining_rows = metadata.row_groups[rg].num_rows() as usize;
         rb.push(arrs)
     }
 
