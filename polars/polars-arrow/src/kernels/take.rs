@@ -76,7 +76,7 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
             }
         });
     };
-    let arr = PrimitiveArray::from_data(T::DATA_TYPE, values.into(), Some(validity.into()));
+    let arr = PrimitiveArray::from_data(T::PRIMITIVE.into(), values.into(), Some(validity.into()));
 
     Arc::new(arr)
 }
@@ -98,7 +98,11 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
 
     let values = Buffer::from_trusted_len_iter(iter);
     let validity = indices.validity().cloned();
-    Arc::new(PrimitiveArray::from_data(T::DATA_TYPE, values, validity))
+    Arc::new(PrimitiveArray::from_data(
+        T::PRIMITIVE.into(),
+        values,
+        validity,
+    ))
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index.
@@ -122,7 +126,7 @@ pub unsafe fn take_no_null_primitive_iter_unchecked<
         .map(|idx| *array_values.get_unchecked(idx));
 
     let values = Buffer::from_trusted_len_iter_unchecked(iter);
-    Arc::new(PrimitiveArray::from_data(T::DATA_TYPE, values, None))
+    Arc::new(PrimitiveArray::from_data(T::PRIMITIVE.into(), values, None))
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index.
@@ -169,7 +173,7 @@ pub unsafe fn take_no_null_primitive_opt_iter_unchecked<
     let iter = indices
         .into_iter()
         .map(|opt_idx| opt_idx.map(|idx| *array_values.get_unchecked(idx)));
-    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::DATA_TYPE);
+    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::PRIMITIVE.into());
 
     Arc::new(arr)
 }
@@ -200,7 +204,7 @@ pub unsafe fn take_primitive_opt_iter_unchecked<
             }
         })
     });
-    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::DATA_TYPE);
+    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::PRIMITIVE.into());
 
     Arc::new(arr)
 }
