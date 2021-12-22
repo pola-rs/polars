@@ -1112,3 +1112,14 @@ def test_shuffle() -> None:
 
     out = pl.select(pl.lit(a).shuffle(2)).to_series()
     testing.assert_series_equal(out, expected)
+
+
+def test_to_physical() -> None:
+    # casting an int result in an int
+    a = pl.Series("a", [1, 2, 3])
+    testing.assert_series_equal(a.to_physical(), a)
+
+    # casting a date results in an Int32
+    a = pl.Series("a", [date(2020, 1, 1)] * 3)
+    expected = pl.Series("a", [18262] * 3, dtype=Int32)
+    testing.assert_series_equal(a.to_physical(), expected)
