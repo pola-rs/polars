@@ -43,7 +43,7 @@ def col(
 
     Parameters
     ----------
-    col
+    name
         A string that holds the name of the column
 
     Examples
