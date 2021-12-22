@@ -1,8 +1,10 @@
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, CustomIterTools};
 use arrow::array::ArrayRef;
+use arrow::bitmap::MutableBitmap;
 use polars_arrow::array::ValueSize;
 use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
+use polars_arrow::prelude::FromData;
 use std::sync::Arc;
 
 macro_rules! impl_set_at_idx_with {
@@ -163,9 +165,35 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
     where
         F: Fn(Option<bool>) -> Option<bool>,
     {
-        // TODO: implement fast path
-        let mut builder = BooleanChunkedBuilder::new(self.name(), self.len());
-        impl_set_at_idx_with!(self, builder, idx, f)
+        let mut values = MutableBitmap::with_capacity(self.len());
+        let mut validity = MutableBitmap::with_capacity(self.len());
+
+        for a in self.downcast_iter() {
+            values.extend_from_bitmap(a.values());
+            if let Some(v) = a.validity() {
+                validity.extend_from_bitmap(v)
+            } else {
+                validity.extend_constant(a.len(), true);
+            }
+        }
+
+        for i in idx {
+            let input = if validity.get(i) {
+                Some(values.get(i))
+            } else {
+                None
+            };
+            match f(input) {
+                None => validity.set(i, false),
+                Some(v) => values.set(i, v),
+            }
+        }
+        let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
+
+        Ok(BooleanChunked::new_from_chunks(
+            self.name(),
+            vec![Arc::new(arr)],
+        ))
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> Result<Self> {
