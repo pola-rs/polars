@@ -341,7 +341,6 @@ describe("series", () => {
   const fltSeries = () => pl.Series("float", [1, 2, 3], pl.Float64);
   const boolSeries = () =>  pl.Series("bool", [true, false, false]);
   const other = () => pl.Series("bar", [3, 4, 5], pl.Int32);
-
   const chance = new Chance();
 
   it.each`
@@ -373,7 +372,7 @@ describe("series", () => {
   ${numSeries()}  | ${"cumMin"}       | ${[]}
   ${numSeries()}  | ${"cumProd"}      | ${[]}
   ${numSeries()}  | ${"cumSum"}       | ${[]}
-  ${numSeries()}  | ${"describe"}| ${[]}
+  ${numSeries()}  | ${"describe"}     | ${[]}
   ${numSeries()}  | ${"diff"}         | ${[]}
   ${numSeries()}  | ${"diff"}         | ${[{n: 1, nullBehavior: "drop"}]}
   ${numSeries()}  | ${"diff"}         | ${[{nullBehavior: "drop"}]}

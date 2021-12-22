@@ -304,7 +304,6 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
       }
 
       return wrap("dropDuplicates", {maintainOrder, subset});
-
     },
     dropNulls(...subset) {
       if(subset.length) {
@@ -439,8 +438,8 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
 
       return wrap("slice", {offset: opt, len});
     },
-    sort(arg, reverse=false)  {
-      if(arg?.by  !== undefined) {
+    sort(arg, reverse=false) {
+      if(arg?.by !== undefined) {
         return this.sort(arg.by, arg.reverse);
       }
       if(typeof arg === "string") {
@@ -457,7 +456,7 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     var: wrapNullArgs("var"),
     tail: (length=5) => wrap("tail", {length}),
     withColumn: (expr) => wrap("withColumn", {expr: expr._expr}),
-    withColumns(...columns){
+    withColumns(...columns) {
       const exprs = selectionToExprList(columns, false);
 
       return wrap("withColumns", {exprs});

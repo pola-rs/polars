@@ -16,9 +16,65 @@ describe("dataframe", () => {
       const df = pl.DataFrame({});
       expect(df.isEmpty()).toStrictEqual(true);
     });
+    test("all supported types", () => {
+      const df = pl.DataFrame({
+        bool: [true, null],
+        date: pl.Series("", [new Date(), new Date()], pl.Date),
+        date_nulls: pl.Series("", [null, new Date()], pl.Date),
+        datetime: pl.Series("", [new Date(), new Date()]),
+        datetime_nulls: pl.Series("", [null, new Date()]),
+        string: ["a", "b"],
+        string_nulls: [null, "a"],
+        categorical: pl.Series("", ["one", "two"], pl.Categorical),
+        categorical_nulls: pl.Series("", ["apple", null], pl.Categorical),
+        list: [[1], [2, 3]],
+        float_64: [1, 2],
+        float_64_nulls: [1, null],
+        uint_64: [1n, 2n],
+        uint_64_null: [null, 2n],
+        int_8_typed: Int8Array.from([1, 2]),
+        int_16_typed: Int16Array.from([1, 2]),
+        int_32_typed: Int32Array.from([1, 2]),
+        int_64_typed: BigInt64Array.from([1n, 2n]),
+        uint_8_typed: Uint8Array.from([1, 2]),
+        uint_16_typed: Uint16Array.from([1, 2]),
+        uint_32_typed: Uint32Array.from([1, 2]),
+        uint_64_typed: BigUint64Array.from([1n, 2n]),
+        float_32_typed: Float32Array.from([1.1, 2.2]),
+        float_64_typed: Float64Array.from([1.1, 2.2]),
+      });
+      const expectedSchema = {
+        bool: "Bool",
+        date: "Date",
+        date_nulls: "Date",
+        datetime: "Datetime",
+        datetime_nulls: "Datetime",
+        string: "Utf8",
+        string_nulls: "Utf8",
+        categorical: "Categorical",
+        categorical_nulls: "Categorical",
+        list: "List",
+        float_64: "Float64",
+        float_64_nulls: "Float64",
+        uint_64: "UInt64",
+        uint_64_null: "UInt64",
+        int_8_typed: "Int8",
+        int_16_typed: "Int16",
+        int_32_typed: "Int32",
+        int_64_typed: "Int64",
+        uint_8_typed: "UInt8",
+        uint_16_typed: "UInt16",
+        uint_32_typed: "UInt32",
+        uint_64_typed: "UInt64",
+        float_32_typed: "Float32",
+        float_64_typed: "Float64",
+      };
+      const actual = df.schema();
+      expect(actual).toEqual(expectedSchema);
+    });
     test("from series-array", () => {
       const s1 = pl.Series("num", [1, 2, 3]);
-      const s2 = pl.Series("date", [Date.now(), Date.now(), Date.now()], pl.Datetime);
+      const s2 = pl.Series("date", [null, Date.now(), Date.now()], pl.Datetime);
       const df = pl.DataFrame([s1, s2]);
       expect(df.getColumn("num")).toSeriesEqual(s1);
       expect(df.getColumn("date")).toSeriesEqual(s2);
@@ -127,6 +183,66 @@ describe("dataframe", () => {
       const df = pl.DataFrame(expected);
 
       expect(df.toJS()).toEqual(expected);
+    });
+  });
+  describe("df proxy", () => {
+    test("array destructuring", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+      const [col0] = df;
+      expect(col0).toSeriesEqual(df.getColumn("os"));
+      const [,version] = df;
+      expect(version).toSeriesEqual(df.getColumn("version"));
+      const [[row0Index0], [,row1Index1]] = df;
+      expect(row0Index0).toStrictEqual("apple");
+      expect(row1Index1).toStrictEqual(18.04);
+    });
+    test("object destructuring", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+      const {os, version} = <any>df;
+      expect(os).toSeriesEqual(df.getColumn("os"));
+      expect(version).toSeriesEqual(df.getColumn("version"));
+      const df2 = pl.DataFrame({
+        fruits: ["apple", "orange"],
+        cars: ["ford", "honda"]
+      });
+      const df3 = pl.DataFrame({...df, ...df2});
+      const expected = df.hstack(df2);
+      expect(df3).toFrameEqual(expected);
+    });
+    test("object bracket notation", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+
+      expect(df["os"]).toSeriesEqual(df.getColumn("os"));
+      expect(df["os"][1]).toStrictEqual("linux");
+
+      df["os"] = pl.Series(["mac", "ubuntu"]);
+      expect(df["os"][0]).toStrictEqual("mac");
+    });
+    test("object.keys shows column names", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+      const keys = Object.keys(df);
+      expect(keys).toEqual(df.columns);
+    });
+    test("object.values shows column values", () => {
+      const df = pl.DataFrame({
+        os: ["apple", "linux"],
+        version: [10.12, 18.04]
+      });
+      const values = Object.values(df);
+      expect(values[0]).toSeriesEqual(df["os"]);
+      expect(values[1]).toSeriesEqual(df["version"]);
     });
   });
   test("dtypes", () => {

@@ -113,7 +113,9 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   if ([DataType.Datetime, DataType.Date].includes(dtype)) {
     series = pli.series.cast({ _series: series, dtype, strict: false });
   }
-
+  if(dtype === DataType.Categorical) {
+    series = pli.series.cast({ _series: series, dtype, strict: false });
+  }
 
   return series;
 }

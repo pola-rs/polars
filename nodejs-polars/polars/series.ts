@@ -6,8 +6,9 @@ import {StringFunctions} from "./series/string";
 import {ListFunctions} from "./series/list";
 import {DateTimeFunctions} from "./series/datetime";
 import {InvalidOperationError, todo} from "./error";
-import {isSeries, RankMethod, RollingOptions} from "./utils";
+import {RankMethod, RollingOptions} from "./utils";
 import {col} from "./lazy/lazy_functions";
+import {isExternal} from "util/types";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -1238,7 +1239,6 @@ export interface Series<T> extends ArrayLike<T> {
 
 export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
-
     return pli.series[method]({_series, ...args });
   };
   const wrap = <U>(method, args?, _series = _s): Series<U> => {
@@ -1463,7 +1463,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         wrap("fill_null", strategy);
     },
     filter(predicate) {
-      return isSeries(predicate) ?
+      return Series.isSeries(predicate) ?
         wrap("filter", {filter: predicate._series}) :
         wrap("filter", {filter: predicate.predicate._series});
     },
@@ -1528,7 +1528,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       return [DataType.Float32, DataType.Float64].includes(DataType[dtype]);
     },
     isIn(other) {
-      return isSeries(other) ?
+      return Series.isSeries(other) ?
         wrap("is_in", {other: other._series}) :
         wrap("is_in", {other: Series(other)._series});
     },
@@ -1680,7 +1680,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       if(!dt) {
         throw todo();
       }
-      indices = isSeries(indices) ? indices.cast(DataType.UInt32).toArray() : indices;
+      indices = Series.isSeries(indices) ? indices.cast(DataType.UInt32).toArray() : indices;
       unwrap(`set_at_idx_${dt}`, {indices, value});
 
       return this;
@@ -1760,20 +1760,33 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         return Reflect.get(target, prop, receiver);
       }
     },
+    set: function(series, prop, input) {
+      if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
+        series.setAtIdx([Number(prop)], input);
+
+        return true;
+      } else {
+
+        return Reflect.set(series, prop, input);
+      }
+    }
   });
 };
 
-export function Series<V extends ArrayLike<any>>(values: V): ValueOrNever<V>
-export function Series<V extends ArrayLike<any>>(name: string, values: V): ValueOrNever<V>
-export function Series<T extends DataType, U extends ArrayLikeDataType<T>>(name: string, values: U, dtype: T): Series<DtypeToPrimitive<T>>
-export function Series<T extends DataType, U extends boolean, V extends ArrayLikeOrDataType<T, U>>(name: string, values: V, dtype?: T, strict?: U): Series<DataTypeOrValue<T, U>>
-export function Series(arg0: any, arg1?: any, dtype?: any, strict?: any) {
+function _Series<V extends ArrayLike<any>>(values: V): ValueOrNever<V>
+function _Series<V extends ArrayLike<any>>(name: string, values: V): ValueOrNever<V>
+function _Series<T extends DataType, U extends ArrayLikeDataType<T>>(name: string, values: U, dtype: T): Series<DtypeToPrimitive<T>>
+function _Series<T extends DataType, U extends boolean, V extends ArrayLikeOrDataType<T, U>>(name: string, values: V, dtype?: T, strict?: U): Series<DataTypeOrValue<T, U>>
+function _Series(arg0: any, arg1?: any, dtype?: any, strict?: any) {
   if(typeof arg0 === "string") {
     const _s = arrayToJsSeries(arg0, arg1, dtype, strict);
 
     return seriesWrapper(_s);
   }
 
-  return Series("", arg0);
+  return _Series("", arg0);
 
 }
+const isSeries = <T>(anyVal: any): anyVal is Series<T> => isExternal(anyVal?._series);
+
+export const Series = Object.assign(_Series, {isSeries});

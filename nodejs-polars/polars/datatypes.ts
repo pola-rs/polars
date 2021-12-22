@@ -2,14 +2,20 @@ import pli from "./internals/polars_internal";
 import {Stream} from "stream";
 
 export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
- T extends DataType.Utf8 ? string : T extends DataType.Datetime ? number | Date :
- T extends DataType.Date ? Date : T extends DataType.UInt64 ? bigint :
+ T extends DataType.Utf8 ? string :
+ T extends DataType.Categorical ? string :
+ T extends DataType.Datetime ? number | Date :
+ T extends DataType.Date ? Date :
+ T extends DataType.UInt64 ? bigint :
  T extends DataType.Int64 ? bigint : number
 
 export type PrimitiveToDtype<T> = T extends boolean ? DataType.Bool :
- T extends string ? DataType.Utf8 : T extends Date ? DataType.Datetime :
- T extends number ? DataType.Float64 : T extends bigint ? DataType.Int64 :
- T extends ArrayLike<any> ? DataType.List : DataType.Object
+ T extends string ? DataType.Utf8 :
+ T extends Date ? DataType.Datetime :
+ T extends number ? DataType.Float64 :
+ T extends bigint ? DataType.Int64 :
+ T extends ArrayLike<any> ? DataType.List :
+ DataType.Object
 
 export type TypedArray = Int8Array | Int16Array | Int32Array | BigInt64Array | Uint8Array | Uint16Array | Uint32Array | BigInt64Array | Float32Array | Float64Array;
 
@@ -135,6 +141,7 @@ const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, string> = {
   Datetime: "new_opt_u32",
   Bool: "new_opt_bool",
   Utf8: "new_str",
+  Categorical: "new_str",
   Object: "new_object",
   List: "new_list",
 };
