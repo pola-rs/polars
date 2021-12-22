@@ -124,21 +124,59 @@ describe("lazyframe", () => {
     });
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-
+  // run this test 100 times to make sure it is deterministic.
   test("dropDuplicates:maintainOrder", () => {
-    const actual = pl.DataFrame({
-      "foo": [1, 2, 2, 2],
-      "bar": [1, 2, 2, 2],
-      "ham": ["a", "b", "c", "d"],
-    }).lazy()
-      .dropDuplicates({maintainOrder: true, subset: ["foo", "bar"]})
-      .collectSync();
-    const expected = pl.DataFrame({
-      "foo": [1, 2],
-      "bar": [1, 2],
-      "ham": ["a", "b"],
+    Array.from({length:100}).forEach(() => {
+      const actual = pl.DataFrame({
+        "foo": [0, 1, 2, 2, 2],
+        "bar": [0, 1, 2, 2, 2],
+        "ham": ["0", "a", "b", "b", "b"],
+      }).lazy()
+        .dropDuplicates({maintainOrder: true})
+        .collectSync();
+      const expected = pl.DataFrame({
+        "foo": [0, 1, 2],
+        "bar": [0, 1, 2],
+        "ham": ["0", "a", "b"],
+      });
+      expect(actual).toFrameEqual(expected);
     });
-    expect(actual).toFrameEqual(expected);
+  });
+  // run this test 100 times to make sure it is deterministic.
+  test("dropDuplicates:maintainOrder:single subset", () => {
+    Array.from({length:100}).forEach(() => {
+      const actual = pl.DataFrame({
+        "foo": [0, 1, 2, 2, 2],
+        "bar": [0, 1, 2, 2, 2],
+        "ham": ["0", "a", "b", "c", "d"],
+      }).lazy()
+        .dropDuplicates({maintainOrder: true, subset: "foo"})
+        .collectSync();
+      const expected = pl.DataFrame({
+        "foo": [0, 1, 2],
+        "bar": [0, 1, 2],
+        "ham": ["0", "a", "b"],
+      });
+      expect(actual).toFrameEqual(expected);
+    });
+  });
+  // run this test 100 times to make sure it is deterministic.
+  test("dropDuplicates:maintainOrder:multi subset", () => {
+    Array.from({length:100}).forEach(() => {
+      const actual = pl.DataFrame({
+        "foo": [0, 1, 2, 2, 2],
+        "bar": [0, 1, 2, 2, 2],
+        "ham": ["0", "a", "b", "c", "c"],
+      }).lazy()
+        .dropDuplicates({maintainOrder: true, subset: ["foo", "ham"]})
+        .collectSync();
+      const expected = pl.DataFrame({
+        "foo": [0, 1, 2, 2],
+        "bar": [0, 1, 2, 2],
+        "ham": ["0", "a", "b", "c"],
+      });
+      expect(actual).toFrameEqual(expected);
+    });
   });
   test("dropNulls", () => {
     const actual = pl.DataFrame({
