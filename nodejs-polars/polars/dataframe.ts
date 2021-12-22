@@ -1407,11 +1407,12 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     quantile: (quantile) => wrap("quantile", {quantile}),
     rechunk: noArgWrap("rechunk"),
     rename(mapping)  {
+      const df = this.clone();
       Object.entries(mapping).forEach(([column, new_col]) => {
-        unwrap("rename", {column, new_col});
+        unwrap("rename", {column, new_col}, df._df);
       });
 
-      return this;
+      return df;
     },
     replaceAtIdx(index, newColumn) {
       unwrap("replace_at_idx", {
