@@ -2,12 +2,11 @@ use crate::conversion::prelude::*;
 use crate::prelude::*;
 use napi::{JsBoolean, JsNumber, JsObject, JsString, JsTypedArrayValue, JsUnknown};
 use polars::chunked_array::ChunkedArray;
-use polars::prelude::AlignedVec;
 
 macro_rules! typed_to_chunked {
     ($arr:expr, $type:ty, $pl_type:ty) => {{
         let v: &[$type] = $arr.as_ref();
-        let mut buffer = AlignedVec::<$type>::new();
+        let mut buffer = Vec::<$type>::new();
         buffer.extend_from_slice(v);
         ChunkedArray::<$pl_type>::new_from_aligned_vec("", buffer)
     }};

@@ -69,10 +69,13 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
     let sort_idx_ca = s.argsort(reverse);
     let sort_idx = sort_idx_ca.downcast_iter().next().unwrap().values();
 
-    let mut inv: AlignedVec<u32> = AlignedVec::with_capacity(len);
+    let mut inv: Vec<u32> = Vec::with_capacity(len);
     // Safety:
     // Values will be filled next and there is only primitive data
-    unsafe { inv.set_len(len) }
+    #[allow(clippy::uninit_vec)]
+    unsafe {
+        inv.set_len(len)
+    }
     let inv_values = inv.as_mut_slice();
 
     #[cfg(feature = "random")]
@@ -167,7 +170,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             // this obs is shorter than that of scipy stats, because we can just start the cumsum by 1
             // instead of 0
             let obs = not_consecutive_same.downcast_iter().next().unwrap();
-            let mut dense = AlignedVec::with_capacity(len);
+            let mut dense = Vec::with_capacity(len);
 
             // this offset save an offset on the whole column, what scipy does in:
             //
@@ -197,7 +200,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
             let bitmap = obs.values();
             let cap = bitmap.len() - bitmap.null_count();
-            let mut count = AlignedVec::with_capacity(cap + 1);
+            let mut count = Vec::with_capacity(cap + 1);
             let mut cnt = 0u32;
             count.push(cnt);
 

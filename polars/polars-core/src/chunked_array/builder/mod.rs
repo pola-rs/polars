@@ -31,11 +31,11 @@ pub trait ChunkedBuilder<N, T> {
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
-impl<T> FromIterator<(AlignedVec<T::Native>, Option<Bitmap>)> for ChunkedArray<T>
+impl<T> FromIterator<(Vec<T::Native>, Option<Bitmap>)> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn from_iter<I: IntoIterator<Item = (AlignedVec<T::Native>, Option<Bitmap>)>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = (Vec<T::Native>, Option<Bitmap>)>>(iter: I) -> Self {
         let mut chunks = vec![];
 
         for (values, opt_buffer) in iter {

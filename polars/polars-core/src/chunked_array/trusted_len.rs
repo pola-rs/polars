@@ -2,7 +2,7 @@ use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::{Buffer, MutableBuffer};
+use arrow::buffer::Buffer;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::trusted_len::FromIteratorReversed;
 use std::borrow::Borrow;
@@ -26,7 +26,7 @@ impl<T> FromTrustedLenIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsNumericType,
 {
-    // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
+    // We use Vec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
     fn from_iter_trusted_length<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         let iter = iter.into_iter();
@@ -45,7 +45,7 @@ where
         debug_assert_eq!(iter.size_hint().0, iter.size_hint().1.unwrap());
         let size = iter.size_hint().0;
 
-        let mut vals: MutableBuffer<T::Native> = AlignedVec::with_capacity(size);
+        let mut vals: Vec<T::Native> = Vec::with_capacity(size);
         let mut validity = MutableBitmap::with_capacity(size);
         validity.extend_constant(size, true);
         let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
@@ -86,7 +86,7 @@ where
         debug_assert_eq!(iter.size_hint().0, iter.size_hint().1.unwrap());
         let size = iter.size_hint().0;
 
-        let mut vals: MutableBuffer<T::Native> = AlignedVec::with_capacity(size);
+        let mut vals: Vec<T::Native> = Vec::with_capacity(size);
         unsafe {
             // set to end of buffer
             let mut ptr = vals.as_mut_ptr().add(size);

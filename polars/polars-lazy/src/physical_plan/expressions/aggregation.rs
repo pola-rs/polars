@@ -1,7 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_arrow::arrow::{array::*, buffer::MutableBuffer, compute::concatenate::concatenate};
+use polars_arrow::arrow::{array::*, compute::concatenate::concatenate};
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::utils::NoNull;
 use polars_core::{prelude::*, POOL};
@@ -214,7 +214,7 @@ impl PhysicalAggregation for AggregationExpr {
                 let mut values = Vec::with_capacity(groups.len());
                 let mut can_fast_explode = true;
 
-                let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
+                let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
 

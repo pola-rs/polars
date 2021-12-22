@@ -2,7 +2,7 @@ use crate::utils::with_match_primitive_type;
 use crate::{bit_util::unset_bit_raw, prelude::*, utils::CustomIterTools};
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::{Buffer, MutableBuffer};
+use arrow::buffer::Buffer;
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::types::NativeType;
 use std::sync::Arc;
@@ -46,7 +46,7 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
     let validity_values = arr.validity().expect("should have nulls");
 
     // first take the values, these are always needed
-    let values: AlignedVec<T> = index_values
+    let values: Vec<T> = index_values
         .iter()
         .map(|idx| *array_values.get_unchecked(*idx as usize))
         .collect_trusted();
@@ -364,7 +364,7 @@ pub unsafe fn take_utf8_unchecked(
 ) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
-    let mut offset_buf = MutableBuffer::<i64>::from_len_zeroed(data_len + 1);
+    let mut offset_buf = vec![0; data_len + 1];
     let offset_typed = offset_buf.as_mut_slice();
 
     let mut length_so_far = 0;
@@ -382,7 +382,7 @@ pub unsafe fn take_utf8_unchecked(
     };
 
     // 16 bytes per string as default alloc
-    let mut values_buf = AlignedVec::<u8>::with_capacity(values_capacity);
+    let mut values_buf = Vec::<u8>::with_capacity(values_capacity);
 
     // both 0 nulls
     if !arr.has_validity() && !indices.has_validity() {
@@ -483,12 +483,12 @@ pub unsafe fn take_utf8_unchecked(
 pub unsafe fn take_value_indices_from_list(
     list: &ListArray<i64>,
     indices: &UInt32Array,
-) -> (UInt32Array, AlignedVec<i64>) {
+) -> (UInt32Array, Vec<i64>) {
     let offsets = list.offsets().as_slice();
 
-    let mut new_offsets = AlignedVec::with_capacity(indices.len());
+    let mut new_offsets = Vec::with_capacity(indices.len());
     // will likely have at least indices.len values
-    let mut values = AlignedVec::with_capacity(indices.len());
+    let mut values = Vec::with_capacity(indices.len());
     let mut current_offset = 0;
     // add first offset
     new_offsets.push(0);

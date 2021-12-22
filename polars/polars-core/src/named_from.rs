@@ -1,6 +1,5 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
-use arrow::buffer::MutableBuffer;
 use std::borrow::Cow;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
@@ -163,7 +162,6 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     /// Specialization that prevents an allocation
     /// prefer this over ChunkedArray::new when you have a `Vec<T::Native>` and no null values.
     pub fn new_vec(name: &str, v: Vec<T::Native>) -> Self {
-        let buf = MutableBuffer::from_vec(v);
-        ChunkedArray::new_from_aligned_vec(name, buf)
+        ChunkedArray::new_from_aligned_vec(name, v)
     }
 }

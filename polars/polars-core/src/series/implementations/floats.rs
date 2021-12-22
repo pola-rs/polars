@@ -120,7 +120,7 @@ macro_rules! impl_dyn_series {
                 (&self.0).into_partial_ord_inner()
             }
 
-            fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+            fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
                 self.0.vec_hash(random_state)
             }
 

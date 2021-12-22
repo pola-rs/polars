@@ -1,6 +1,5 @@
 use super::StrConcat;
 use crate::prelude::*;
-use arrow::buffer::MutableBuffer;
 use polars_arrow::array::default_arrays::FromDataUtf8;
 use std::fmt::{Display, Write};
 
@@ -30,9 +29,7 @@ where
     }
     buf.shrink_to_fit();
     let buf = buf.into_bytes();
-    let buf = MutableBuffer::from_vec(buf);
     let offsets = vec![0, buf.len() as i64];
-    let offsets = MutableBuffer::from_vec(offsets);
     let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
     Utf8Chunked::new_from_chunks(name, vec![Arc::new(arr)])
 }

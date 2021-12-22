@@ -6,7 +6,6 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
-use arrow::buffer::MutableBuffer;
 use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
@@ -68,11 +67,11 @@ impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsNumericType,
 {
-    // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
+    // We use Vec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         // 2021-02-07: aligned vec was ~2x faster than arrow collect.
-        let av = iter.into_iter().collect::<AlignedVec<T::Native>>();
+        let av = iter.into_iter().collect::<Vec<T::Native>>();
         NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
     }
 }
@@ -294,7 +293,7 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut av = MutableBuffer::<T::Native>::with_capacity(capacity);
+        let mut av = Vec::<T::Native>::with_capacity(capacity);
         for v in vectors {
             av.extend_from_slice(&v)
         }

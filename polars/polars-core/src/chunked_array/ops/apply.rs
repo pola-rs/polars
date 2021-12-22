@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray};
 use polars_arrow::array::PolarsArray;
+use polars_arrow::trusted_len::PushUnchecked;
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
@@ -63,7 +64,7 @@ where
             .data_views()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
-                let values = AlignedVec::<_>::from_trusted_len_iter(slice.iter().map(|&v| f(v)));
+                let values = Vec::<_>::from_trusted_len_iter(slice.iter().map(|&v| f(v)));
                 to_array::<S>(values, validity.cloned())
             })
             .collect();
@@ -80,10 +81,10 @@ where
             .map(|array| {
                 let values = if !array.has_validity() {
                     let values = array.values().iter().map(|&v| f(Some(v)));
-                    AlignedVec::<_>::from_trusted_len_iter(values)
+                    Vec::<_>::from_trusted_len_iter(values)
                 } else {
                     let values = array.into_iter().map(|v| f(v.copied()));
-                    AlignedVec::<_>::from_trusted_len_iter(values)
+                    Vec::<_>::from_trusted_len_iter(values)
                 };
                 to_array::<S>(values, None)
             })
@@ -101,7 +102,7 @@ where
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
                 let values = slice.iter().copied().map(f);
-                let values = AlignedVec::<_>::from_trusted_len_iter(values);
+                let values = Vec::<_>::from_trusted_len_iter(values);
                 to_array::<T>(values, validity.cloned())
             })
             .collect();
@@ -117,7 +118,7 @@ where
             .into_iter()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
-                let vec: Result<AlignedVec<_>> = slice.iter().copied().map(f).collect();
+                let vec: Result<Vec<_>> = slice.iter().copied().map(f).collect();
                 Ok((vec?, validity.cloned()))
             })
             .collect::<Result<_>>()?;
@@ -200,7 +201,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     {
         self.apply_kernel_cast(|array| {
             let values = array.values().iter().map(f);
-            let values = AlignedVec::<_>::from_trusted_len_iter(values);
+            let values = Vec::<_>::from_trusted_len_iter(values);
             let validity = array.validity().cloned();
             to_array::<S>(values, validity)
         })
@@ -212,7 +213,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         S: PolarsNumericType,
     {
         self.apply_kernel_cast(|array| {
-            let values = AlignedVec::<_>::from_trusted_len_iter(array.into_iter().map(f));
+            let values = Vec::<_>::from_trusted_len_iter(array.into_iter().map(f));
             to_array::<S>(values, None)
         })
     }
@@ -282,7 +283,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .into_iter()
             .map(|array| {
                 let values = array.values_iter().map(f);
-                let values = AlignedVec::<_>::from_trusted_len_iter(values);
+                let values = Vec::<_>::from_trusted_len_iter(values);
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();
@@ -299,7 +300,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
             .into_iter()
             .map(|array| {
                 let values = array.into_iter().map(f);
-                let values = AlignedVec::<_>::from_trusted_len_iter(values);
+                let values = Vec::<_>::from_trusted_len_iter(values);
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();
@@ -431,7 +432,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let values: AlignedVec<_> = (0..array.len())
+                let values: Vec<_> = (0..array.len())
                     .map(|idx| {
                         let arrayref: ArrayRef = unsafe { array.value_unchecked(idx) }.into();
                         let series = Series::try_from(("", arrayref)).unwrap();
@@ -460,7 +461,8 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                     });
                     f(x)
                 });
-                let values = AlignedVec::<_>::from_trusted_len_iter(values);
+                let len = values.len();
+                let values = Vec::<_>::from_trusted_len_iter(values.trust_my_length(len));
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();

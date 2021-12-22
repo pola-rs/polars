@@ -4,7 +4,6 @@ use numpy::{
     ToNpyDims, PY_ARRAY_API,
 };
 use numpy::{Element, PyArray1};
-use polars::prelude::AlignedVec;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;
 use std::{mem, ptr};
@@ -18,8 +17,8 @@ use std::{mem, ptr};
 pub unsafe fn aligned_array<T: Element + NativeType>(
     py: Python<'_>,
     size: usize,
-) -> (&PyArray1<T>, AlignedVec<T>) {
-    let mut buf = AlignedVec::<T>::from_len_zeroed(size);
+) -> (&PyArray1<T>, Vec<T>) {
+    let mut buf = vec![T::default(); size];
 
     // modified from
     // numpy-0.10.0/src/array.rs:375

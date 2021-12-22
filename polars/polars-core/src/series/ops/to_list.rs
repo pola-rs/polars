@@ -11,9 +11,7 @@ impl Series {
         let s = self.rechunk();
         let values = &s.chunks()[0];
 
-        let mut offsets = AlignedVec::with_capacity(2);
-        offsets.push(0i64);
-        offsets.push(values.len() as i64);
+        let offsets = vec![0i64, values.len() as i64];
 
         let data_type = ListArray::<i64>::default_datatype(self.dtype().to_arrow());
 

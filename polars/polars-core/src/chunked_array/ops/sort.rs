@@ -1,7 +1,6 @@
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
-use arrow::buffer::MutableBuffer;
 use arrow::{bitmap::MutableBitmap, buffer::Buffer};
 use itertools::Itertools;
 use polars_arrow::array::default_arrays::FromDataUtf8;
@@ -144,23 +143,16 @@ macro_rules! argsort {
     }};
 }
 
-fn memcpy_values<T>(ca: &ChunkedArray<T>) -> AlignedVec<T::Native>
+fn memcpy_values<T>(ca: &ChunkedArray<T>) -> Vec<T::Native>
 where
     T: PolarsNumericType,
 {
     let len = ca.len();
-    let mut vals = AlignedVec::with_capacity(len);
-    // Safety:
-    // only primitives so no drop calls when writing
-    unsafe { vals.set_len(len) }
-    let vals_slice = vals.as_mut_slice();
+    let mut vals = Vec::with_capacity(len);
 
-    let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
         let values = arr.values().as_slice();
-        let len = values.len();
-        (vals_slice[offset..offset + len]).copy_from_slice(values);
-        offset += len;
+        vals.extend_from_slice(values);
     });
     vals
 }
@@ -373,7 +365,7 @@ where
                 nulls_idx
             };
 
-            let arr = UInt32Array::from_data(ArrowDataType::UInt32, Buffer::from_vec(idx), None);
+            let arr = UInt32Array::from_data(ArrowDataType::UInt32, Buffer::from(idx), None);
             UInt32Chunked::new_from_chunks(self.name(), vec![Arc::new(arr)])
         }
     }
@@ -488,8 +480,8 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
             order_reverse,
         );
 
-        let mut values = MutableBuffer::<u8>::with_capacity(self.get_values_size());
-        let mut offsets = MutableBuffer::<i64>::with_capacity(self.len() + 1);
+        let mut values = Vec::<u8>::with_capacity(self.get_values_size());
+        let mut offsets = Vec::<i64>::with_capacity(self.len() + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
 
@@ -518,7 +510,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 let mut validity = MutableBitmap::with_capacity(len);
                 validity.extend_constant(len - null_count, true);
                 validity.extend_constant(null_count, false);
-                offsets.extend_constant(null_count, length_so_far);
+                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
 
                 // Safety:
                 // we pass valid utf8
@@ -535,7 +527,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 let mut validity = MutableBitmap::with_capacity(len);
                 validity.extend_constant(null_count, false);
                 validity.extend_constant(len - null_count, true);
-                offsets.extend_constant(null_count, length_so_far);
+                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
 
                 for val in v {
                     values.extend_from_slice(val.as_bytes());

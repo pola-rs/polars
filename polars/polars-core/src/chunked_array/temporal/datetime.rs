@@ -98,7 +98,7 @@ impl DatetimeChunked {
         let vals = v
             .iter()
             .map(naive_datetime_to_datetime)
-            .collect_trusted::<AlignedVec<_>>();
+            .collect_trusted::<Vec<_>>();
         Int64Chunked::new_from_aligned_vec(name, vals).into()
     }
 

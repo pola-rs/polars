@@ -25,7 +25,7 @@ where
                     .iter()
                     .zip(r_vals)
                     .map(|(l, r)| *l & *r)
-                    .collect_trusted::<AlignedVec<_>>();
+                    .collect_trusted::<Vec<_>>();
 
                 let arr =
                     PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
@@ -58,7 +58,7 @@ where
                     .iter()
                     .zip(r_vals)
                     .map(|(l, r)| *l | *r)
-                    .collect_trusted::<AlignedVec<_>>();
+                    .collect_trusted::<Vec<_>>();
 
                 let arr =
                     PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
@@ -91,7 +91,7 @@ where
                     .iter()
                     .zip(r_vals)
                     .map(|(l, r)| l.bitxor(*r))
-                    .collect_trusted::<AlignedVec<_>>();
+                    .collect_trusted::<Vec<_>>();
 
                 let arr =
                     PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
