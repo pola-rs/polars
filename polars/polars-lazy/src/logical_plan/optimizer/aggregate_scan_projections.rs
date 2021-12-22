@@ -31,10 +31,8 @@ pub(crate) fn agg_projection(
             process_with_columns(path, &options.with_columns, columns);
         }
         #[cfg(feature = "parquet")]
-        ParquetScan {
-            path, with_columns, ..
-        } => {
-            process_with_columns(path, with_columns, columns);
+        ParquetScan { path, options, .. } => {
+            process_with_columns(path, &options.with_columns, columns);
         }
         #[cfg(feature = "ipc")]
         IpcScan { path, options, .. } => {
@@ -106,12 +104,12 @@ impl OptimizationRule for AggScanProjection {
                     mut options,
                 } = lp
                 {
-                    let new_with_columns = self
+                    let with_columns = self
                         .columns
                         .get(&path)
                         .map(|agg| agg.iter().cloned().collect());
                     // prevent infinite loop
-                    if options.with_columns == new_with_columns {
+                    if options.with_columns == with_columns {
                         let lp = ALogicalPlan::IpcScan {
                             path,
                             schema,
@@ -124,17 +122,16 @@ impl OptimizationRule for AggScanProjection {
                         return None;
                     }
 
-                    let with_columns = std::mem::take(&mut options.with_columns);
-                    options.with_columns = new_with_columns;
+                    options.with_columns = with_columns;
                     let lp = ALogicalPlan::IpcScan {
                         path: path.clone(),
                         schema,
                         output_schema,
                         predicate,
                         aggregate,
-                        options,
+                        options: options.clone(),
                     };
-                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))
+                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, options.with_columns))
                 } else {
                     unreachable!()
                 }
@@ -148,40 +145,35 @@ impl OptimizationRule for AggScanProjection {
                     output_schema,
                     predicate,
                     aggregate,
-                    with_columns,
-                    n_rows,
-                    cache,
+                    mut options,
                 } = lp
                 {
-                    let new_with_columns = self
+                    let mut with_columns = self
                         .columns
                         .get(&path)
                         .map(|agg| agg.iter().cloned().collect());
                     // prevent infinite loop
-                    if with_columns == new_with_columns {
+                    if options.with_columns == with_columns {
                         let lp = ALogicalPlan::ParquetScan {
                             path,
                             schema,
                             output_schema,
                             predicate,
                             aggregate,
-                            with_columns,
-                            n_rows,
-                            cache,
+                            options,
                         };
                         lp_arena.replace(node, lp);
                         return None;
                     }
+                    std::mem::swap(&mut options.with_columns, &mut with_columns);
 
                     let lp = ALogicalPlan::ParquetScan {
                         path: path.clone(),
                         schema,
                         output_schema,
-                        with_columns: new_with_columns,
                         predicate,
                         aggregate,
-                        n_rows,
-                        cache,
+                        options,
                     };
                     Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))
                 } else {
@@ -200,11 +192,11 @@ impl OptimizationRule for AggScanProjection {
                     aggregate,
                 } = lp
                 {
-                    let new_with_columns = self
+                    let with_columns = self
                         .columns
                         .get(&path)
                         .map(|agg| agg.iter().cloned().collect());
-                    if options.with_columns == new_with_columns {
+                    if options.with_columns == with_columns {
                         let lp = ALogicalPlan::CsvScan {
                             path,
                             schema,
@@ -216,7 +208,7 @@ impl OptimizationRule for AggScanProjection {
                         lp_arena.replace(node, lp);
                         return None;
                     }
-                    options.with_columns = new_with_columns;
+                    options.with_columns = with_columns;
                     let lp = ALogicalPlan::CsvScan {
                         path: path.clone(),
                         schema,

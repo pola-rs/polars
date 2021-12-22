@@ -197,8 +197,14 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "parquet")]
-    pub fn new_from_parquet(path: String, n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
-        let lf = LazyFrame::scan_parquet(path, n_rows, cache).map_err(PyPolarsEr::from)?;
+    pub fn new_from_parquet(
+        path: String,
+        n_rows: Option<usize>,
+        cache: bool,
+        parallel: bool,
+    ) -> PyResult<Self> {
+        let lf =
+            LazyFrame::scan_parquet(path, n_rows, cache, parallel).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 

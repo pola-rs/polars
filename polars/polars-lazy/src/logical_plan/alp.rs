@@ -1,5 +1,7 @@
 #[cfg(feature = "ipc")]
 use crate::logical_plan::IpcOptions;
+#[cfg(feature = "parquet")]
+use crate::logical_plan::ParquetOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
@@ -58,11 +60,9 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
-        with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
-        n_rows: Option<usize>,
-        cache: bool,
+        options: ParquetOptions,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -384,10 +384,8 @@ impl ALogicalPlan {
                 path,
                 schema,
                 output_schema,
-                with_columns,
                 predicate,
-                n_rows,
-                cache,
+                options,
                 ..
             } => {
                 let mut new_predicate = None;
@@ -399,11 +397,9 @@ impl ALogicalPlan {
                     path: path.clone(),
                     schema: schema.clone(),
                     output_schema: output_schema.clone(),
-                    with_columns: with_columns.clone(),
                     predicate: new_predicate,
                     aggregate: exprs,
-                    n_rows: *n_rows,
-                    cache: *cache,
+                    options: options.clone(),
                 }
             }
             #[cfg(feature = "csv-file")]

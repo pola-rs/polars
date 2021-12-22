@@ -161,6 +161,14 @@ pub struct CsvParserOptions {
     pub(crate) cache: bool,
     pub(crate) null_values: Option<NullValues>,
 }
+#[cfg(feature = "parquet")]
+#[derive(Clone, Debug)]
+pub struct ParquetOptions {
+    pub(crate) n_rows: Option<usize>,
+    pub(crate) with_columns: Option<Vec<String>>,
+    pub(crate) cache: bool,
+    pub(crate) parallel: bool,
+}
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
@@ -191,11 +199,9 @@ pub enum LogicalPlan {
     ParquetScan {
         path: PathBuf,
         schema: SchemaRef,
-        with_columns: Option<Vec<String>>,
         predicate: Option<Expr>,
         aggregate: Vec<Expr>,
-        n_rows: Option<usize>,
-        cache: bool,
+        options: ParquetOptions,
     },
     #[cfg(feature = "ipc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
@@ -320,13 +326,13 @@ impl fmt::Debug for LogicalPlan {
             ParquetScan {
                 path,
                 schema,
-                with_columns,
                 predicate,
+                options,
                 ..
             } => {
                 let total_columns = schema.fields().len();
                 let mut n_columns = "*".to_string();
-                if let Some(columns) = with_columns {
+                if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
                 write!(
@@ -681,13 +687,13 @@ impl LogicalPlan {
             ParquetScan {
                 path,
                 schema,
-                with_columns,
                 predicate,
+                options,
                 ..
             } => {
                 let total_columns = schema.fields().len();
                 let mut n_columns = "*".to_string();
-                if let Some(columns) = with_columns {
+                if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
 
@@ -823,6 +829,7 @@ impl LogicalPlanBuilder {
         path: P,
         n_rows: Option<usize>,
         cache: bool,
+        parallel: bool,
     ) -> Result<Self> {
         use polars_io::SerReader as _;
 
@@ -833,11 +840,14 @@ impl LogicalPlanBuilder {
         Ok(LogicalPlan::ParquetScan {
             path,
             schema,
-            n_rows,
-            with_columns: None,
             predicate: None,
             aggregate: vec![],
-            cache,
+            options: ParquetOptions {
+                n_rows,
+                with_columns: None,
+                cache,
+                parallel,
+            },
         }
         .into())
     }
