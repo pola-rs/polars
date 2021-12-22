@@ -52,7 +52,7 @@ where
         .collect_trusted::<Vec<K>>();
 
     Arc::new(PrimitiveArray::from_data(
-        K::DATA_TYPE,
+        K::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
     ))

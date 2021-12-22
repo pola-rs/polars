@@ -1,7 +1,7 @@
 use arrow::array::{Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use arrow::types::{NativeType, NaturalDataType};
+use arrow::types::NativeType;
 use std::sync::Arc;
 
 use crate::utils::CustomIterTools;
@@ -76,7 +76,7 @@ pub trait ListFromIter {
         data_type: DataType,
     ) -> ListArray<i64>
     where
-        T: NativeType + NaturalDataType,
+        T: NativeType,
         P: IntoIterator<Item = Option<T>>,
         I: IntoIterator<Item = Option<P>>,
     {

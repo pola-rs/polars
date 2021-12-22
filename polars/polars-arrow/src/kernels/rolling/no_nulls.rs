@@ -67,7 +67,7 @@ where
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
     Arc::new(PrimitiveArray::from_data(
-        K::DATA_TYPE,
+        K::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),
     ))
