@@ -49,6 +49,7 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
+from polars.internals.lazy_functions import all as pyall
 
 try:
     from polars.polars import PyDataFrame, PySeries
@@ -4285,49 +4286,97 @@ class GroupBy:
         """
         Aggregate the first values in the group.
         """
-        return self._select_all().first()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().first())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
-        return self._select_all().last()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().last())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
-        return self._select_all().sum()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().sum())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
-        return self._select_all().min()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().min())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
-        return self._select_all().max()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().max())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
-        return self._select_all().count()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().count())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
         """
-        return self._select_all().mean()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().mean())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
-        return self._select_all().n_unique()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().n_unique())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
         """
@@ -4342,19 +4391,37 @@ class GroupBy:
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         """
-        return self._select_all().quantile(quantile, interpolation)
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().quantile(quantile, interpolation))
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def median(self) -> DataFrame:
         """
         Return the median per group.
         """
-        return self._select_all().median()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().median())
+            .collect(no_optimization=True, string_cache=False)
+        )
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
-        return self._select_all().agg_list()
+        return (
+            wrap_df(self._df)
+            .lazy()
+            .groupby(self.by, self.maintain_order)
+            .agg(pyall().list())  # agg_list is internally called list.
+            .collect(no_optimization=True, string_cache=False)
+        )
 
 
 class PivotOps:
