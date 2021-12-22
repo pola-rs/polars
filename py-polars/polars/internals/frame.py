@@ -4286,61 +4286,31 @@ class GroupBy:
         """
         Aggregate the first values in the group.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().first())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().first())
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().last())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().last())
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().sum())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().sum())
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().min())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().min())
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().max())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().max())
 
     def count(self) -> DataFrame:
         """
@@ -4358,25 +4328,13 @@ class GroupBy:
         """
         Reduce the groups to the mean values.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().mean())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().mean())
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().n_unique())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().n_unique())
 
     def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
         """
@@ -4391,37 +4349,19 @@ class GroupBy:
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().quantile(quantile, interpolation))
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().quantile(quantile, interpolation))
 
     def median(self) -> DataFrame:
         """
         Return the median per group.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().median())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().median())
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().list())  # agg_list is internally called list.
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self.agg(pyall().list())
 
 
 class PivotOps:
