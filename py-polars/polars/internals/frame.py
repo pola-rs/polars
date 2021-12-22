@@ -4316,13 +4316,7 @@ class GroupBy:
         """
         Count the number of values in each group.
         """
-        return (
-            wrap_df(self._df)
-            .lazy()
-            .groupby(self.by, self.maintain_order)
-            .agg(pyall().count())
-            .collect(no_optimization=True, string_cache=False)
-        )
+        return self._select_all().count()
 
     def mean(self) -> DataFrame:
         """
