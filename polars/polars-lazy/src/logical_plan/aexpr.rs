@@ -3,7 +3,8 @@ use crate::prelude::*;
 use crate::utils::rename_field;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, Arena, Node};
+use polars_core::utils::get_supertype;
+use polars_utils::arena::{Arena, Node};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
