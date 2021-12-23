@@ -155,7 +155,7 @@ fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &
 
 // schema is not used if regex not activated
 #[allow(unused_variables)]
-fn prepare_excluded(expr: &Expr, schema: &Schema) -> Vec<Arc<str>> {
+fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>> {
     let mut exclude = vec![];
     expr.into_iter().for_each(|e| {
         if let Expr::Exclude(_, to_exclude) = e {
@@ -205,12 +205,29 @@ fn prepare_excluded(expr: &Expr, schema: &Schema) -> Vec<Arc<str>> {
             }
         }
     });
+    for mut expr in keys.iter() {
+        // Allow a number of aliases of a column expression, still exclude column from aggregation
+        loop {
+            match expr {
+                Expr::Column(name) => {
+                    exclude.push(name.clone());
+                    break;
+                }
+                Expr::Alias(e, _) => {
+                    expr = e;
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+    }
     exclude
 }
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
+pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Expr]) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
 
     for mut expr in exprs {
@@ -229,7 +246,7 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr
 
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
-            let exclude = prepare_excluded(&expr, schema);
+            let exclude = prepare_excluded(&expr, schema, keys);
             // this path prepares the wildcard as input for the Function Expr
             if has_expr(
                 &expr,

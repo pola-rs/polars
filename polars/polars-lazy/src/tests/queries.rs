@@ -577,7 +577,7 @@ fn test_lazy_wildcard() {
         .agg([col("*").sum(), col("*").first()])
         .collect()
         .unwrap();
-    assert_eq!(new.shape(), (3, 6));
+    assert_eq!(new.shape(), (3, 5)); // Should exclude b from wildcard aggregations.
 }
 
 #[test]
