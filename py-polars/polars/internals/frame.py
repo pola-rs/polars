@@ -1286,9 +1286,9 @@ class DataFrame:
                     pli.col("*").slice(start, length).take_every(item.step)  # type: ignore
                 )
 
-        # select rows by mask or index
+        # select rows by numpy mask or index
         # df[[1, 2, 3]]
-        # df[true, false, true]
+        # df[[true, false, true]]
         if isinstance(item, np.ndarray):
             if item.dtype == int:
                 return wrap_df(self._df.take(item))
@@ -1296,7 +1296,6 @@ class DataFrame:
                 return wrap_df(self._df.select(item))
             if item.dtype == bool:
                 return wrap_df(self._df.filter(pli.Series("", item).inner()))
-            raise IndexError
 
         if isinstance(item, Sequence):
             if isinstance(item[0], str):
@@ -1306,7 +1305,7 @@ class DataFrame:
             elif isinstance(item[0], pli.Expr):
                 return self.select(item)
             elif type(item[0]) == bool:
-                item = pli.Series("", item)
+                item = pli.Series("", item)  # fall through to next if isinstance
             else:
                 return wrap_df(self._df.take([self._pos_idx(i, dim=0) for i in item]))
 
@@ -1316,7 +1315,9 @@ class DataFrame:
                 return wrap_df(self._df.filter(item.inner()))
             if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
-            raise IndexError
+
+        # if no data has been returned, the operation is not supported
+        raise IndexError
 
     def __setitem__(self, key: Union[str, int, Tuple[Any, Any]], value: Any) -> None:
         # df["foo"] = series

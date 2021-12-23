@@ -14,7 +14,7 @@ pytest-cov[toml]==3.0.0
 black==21.6b0
 blackdoc==0.3.4
 isort~=5.9.2
-mypy==0.910
+mypy==0.920
 ghp-import==2.0.1
 flake8==4.0.1
 sphinx==4.2.0
