@@ -486,12 +486,12 @@ def test_arange_expr() -> None:
     assert out.select_at_idx(0)[-1] == 19
 
     # eager arange
-    out = pl.arange(0, 10, 2, eager=True)
-    assert out == [0, 2, 4, 8, 8]
+    out2 = pl.arange(0, 10, 2, eager=True)
+    assert out2 == [0, 2, 4, 8, 8]
 
-    out = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
-    assert out.dtype == pl.List
-    assert out[0].to_list() == [0, 2]
+    out3 = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
+    assert out3.dtype == pl.List  # type: ignore
+    assert out3[0].to_list() == [0, 2]  # type: ignore
 
 
 def test_round() -> None:

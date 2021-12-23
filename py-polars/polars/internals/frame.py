@@ -3,7 +3,7 @@ Module containing logic related to eager DataFrames
 """
 import os
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -1140,17 +1140,30 @@ class DataFrame:
         else:
             return self.shape[dim] + idx
 
-    def __getitem__(self, item: Any) -> Any:
+    # __getitem__() mostly returns a dataframe. The major exception is when a string is passed in. Note that there are
+    # more subtle cases possible where a non-string value leads to a Series.
+    @overload
+    def __getitem__(self, item: str) -> "pli.Series":  # type: ignore
+        ...
+
+    @overload
+    def __getitem__(
+        self,
+        item: Union[
+            int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple
+        ],
+    ) -> "DataFrame":
+        ...
+
+    def __getitem__(self, item: Any) -> Union["DataFrame", "pli.Series"]:
         """
         Does quite a lot. Read the comments.
         """
         if hasattr(item, "_pyexpr"):
             return self.select(item)
-        if isinstance(item, np.ndarray):
-            item = pli.Series("", item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
-        if isinstance(item, tuple):
+        if isinstance(item, tuple) and len(item) == 2:
             row_selection, col_selection = item
 
             # df[:, unknown]
@@ -1220,10 +1233,10 @@ class DataFrame:
                 # df[:, [1, 2]]
                 # select by column indexes
                 if isinstance(col_selection[0], int):
-                    series = [self.to_series(i) for i in col_selection]
-                    df = DataFrame(series)
+                    series_list = [self.to_series(i) for i in col_selection]
+                    df = DataFrame(series_list)
                     return df[row_selection]
-            df = self.__getitem__(col_selection)
+            df = self.__getitem__(col_selection)  # type: ignore
             return df.__getitem__(row_selection)
 
         # select single column
@@ -1273,36 +1286,38 @@ class DataFrame:
                     pli.col("*").slice(start, length).take_every(item.step)  # type: ignore
                 )
 
-        # select multiple columns
-        # df["foo", "bar"]
-        if isinstance(item, Sequence):
-            if isinstance(item[0], str):
-                return wrap_df(self._df.select(item))
-            elif isinstance(item[0], pli.Expr):
-                return self.select(item)
-
-        # select rows by mask or index
+        # select rows by numpy mask or index
         # df[[1, 2, 3]]
-        # df[true, false, true]
+        # df[[true, false, true]]
         if isinstance(item, np.ndarray):
             if item.dtype == int:
                 return wrap_df(self._df.take(item))
             if isinstance(item[0], str):
                 return wrap_df(self._df.select(item))
-        if isinstance(item, (pli.Series, Sequence)):
-            if isinstance(item, Sequence):
-                # only bool or integers allowed
-                if type(item[0]) == bool:
-                    item = pli.Series("", item)
-                else:
-                    return wrap_df(
-                        self._df.take([self._pos_idx(i, dim=0) for i in item])
-                    )
+            if item.dtype == bool:
+                return wrap_df(self._df.filter(pli.Series("", item).inner()))
+
+        if isinstance(item, Sequence):
+            if isinstance(item[0], str):
+                # select multiple columns
+                # df[["foo", "bar"]]
+                return wrap_df(self._df.select(item))
+            elif isinstance(item[0], pli.Expr):
+                return self.select(item)
+            elif type(item[0]) == bool:
+                item = pli.Series("", item)  # fall through to next if isinstance
+            else:
+                return wrap_df(self._df.take([self._pos_idx(i, dim=0) for i in item]))
+
+        if isinstance(item, pli.Series):
             dtype = item.dtype
             if dtype == Boolean:
                 return wrap_df(self._df.filter(item.inner()))
             if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
+
+        # if no data has been returned, the operation is not supported
+        raise IndexError
 
     def __setitem__(self, key: Union[str, int, Tuple[Any, Any]], value: Any) -> None:
         # df["foo"] = series
@@ -1335,7 +1350,7 @@ class DataFrame:
             if isinstance(col_selection, str):
                 s = self.__getitem__(col_selection)
             elif isinstance(col_selection, int):
-                s = self[:, col_selection]
+                s = self[:, col_selection]  # type: ignore
             else:
                 raise ValueError(f"column selection not understood: {col_selection}")
 
@@ -2526,8 +2541,8 @@ class DataFrame:
         bounds = self.select(
             [pli.col(by).min().alias("low"), pli.col(by).max().alias("high")]
         )
-        low = bounds["low"].dt[0]
-        high = bounds["high"].dt[0]
+        low: datetime = bounds["low"].dt[0]  # type: ignore
+        high: datetime = bounds["high"].dt[0]  # type: ignore
         upsampled = pli.date_range(low, high, interval, name=by)
         return DataFrame(upsampled).join(self, on=by, how="left")
 
