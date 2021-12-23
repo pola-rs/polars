@@ -3,7 +3,7 @@ import sys
 from builtins import range
 from datetime import datetime
 from io import BytesIO
-from typing import Iterator
+from typing import Any, Iterator
 from unittest.mock import patch
 
 import numpy as np
