@@ -1222,6 +1222,7 @@ dependencies = [
  "num_cpus",
  "polars-arrow",
  "polars-core",
+ "polars-utils",
  "rayon",
  "regex",
  "simdutf8",
@@ -1252,6 +1253,9 @@ dependencies = [
 [[package]]
 name = "polars-utils"
 version = "0.1.0"
+dependencies = [
+ "parking_lot",
+]
 
 [[package]]
 name = "ppv-lite86"
