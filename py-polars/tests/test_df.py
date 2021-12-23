@@ -311,6 +311,11 @@ def test_sort() -> None:
     df.sort("a", in_place=True)
     assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
 
+    # test in-place + passing a list
+    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
+    df.sort(["a", "b"], in_place=True)
+    assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
+
 
 def test_replace() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
@@ -339,15 +344,55 @@ def test_null_count() -> None:
     assert df.null_count().shape == (1, 2)
 
 
-def test_head_tail() -> None:
+def test_head_tail_limit() -> None:
     df = pl.DataFrame({"a": range(10), "b": range(10)})
     assert df.head(5).height == 5
+    assert df.limit(5).height == 5
     assert df.tail(5).height == 5
 
     assert not df.head(5).frame_equal(df.tail(5))
     # check if it doesn't fail when out of bounds
     assert df.head(100).height == 10
+    assert df.limit(100).height == 10
     assert df.tail(100).height == 10
+
+    # limit is an alias of head
+    assert df.head(5).frame_equal(df.limit(5))
+
+
+def test_drop_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6, None, 8],
+            "ham": ["a", "b", "c"],
+        }
+    )
+
+    result = df.drop_nulls()
+    expected = pl.DataFrame(
+        {
+            "foo": [1, 3],
+            "bar": [6, 8],
+            "ham": ["a", "c"],
+        }
+    )
+    assert result.frame_equal(expected)
+
+    # below we only drop entries if they are null in the column 'foo'
+    result = df.drop_nulls("foo")
+    assert result.frame_equal(df)
+
+
+def test_pipe() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _multiply(data: pl.DataFrame, mul: int) -> pl.DataFrame:
+        return data * mul
+
+    result = df.pipe(_multiply, mul=3)
+
+    assert result.frame_equal(df * 3)
 
 
 def test_explode() -> None:
@@ -409,6 +454,39 @@ def test_groupby() -> None:
     # check if this query runs and thus column names propagate
     df.groupby("b").agg(pl.col("c").forward_fill()).explode("c")
 
+    # get a specific column
+    result = df.groupby("b")["a"].count()
+    assert result.shape == (2, 2)
+    assert result.columns == ["b", "a_count"]
+
+    # make sure all the methods below run
+    assert df.groupby("b").first().shape == (2, 3)
+    assert df.groupby("b").last().shape == (2, 3)
+    assert df.groupby("b").max().shape == (2, 3)
+    assert df.groupby("b").min().shape == (2, 3)
+    assert df.groupby("b").count().shape == (2, 3)
+    assert df.groupby("b").mean().shape == (2, 3)
+    assert df.groupby("b").n_unique().shape == (2, 3)
+    assert df.groupby("b").median().shape == (2, 3)
+    # assert df.groupby("b").quantile(0.5).shape == (2, 3)
+    assert df.groupby("b").agg_list().shape == (2, 3)
+
+
+def test_pivot() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": ["a", "a", "b", "b", "b"],
+            "c": [None, 1, None, 1, None],
+        }
+    )
+    gb = df.groupby("b").pivot("a", "c")
+    assert gb.first().shape == (2, 6)
+    assert gb.max().shape == (2, 6)
+    assert gb.mean().shape == (2, 6)
+    assert gb.count().shape == (2, 6)
+    assert gb.median().shape == (2, 6)
+
 
 def test_join() -> None:
     df_left = pl.DataFrame(
@@ -437,6 +515,14 @@ def test_join() -> None:
     assert joined["b"].null_count() == 1
     assert joined["k"].null_count() == 1
     assert joined["a"].null_count() == 0
+
+    # we need to pass in a column to join on, either by supplying `on`, or both `left_on` and `right_on`
+    with pytest.raises(ValueError):
+        df_left.join(df_right)
+    with pytest.raises(ValueError):
+        df_left.join(df_right, right_on="a")
+    with pytest.raises(ValueError):
+        df_left.join(df_right, left_on="a")
 
     df_a = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     df_b = pl.DataFrame(
@@ -477,11 +563,59 @@ def test_joins_dispatch() -> None:
         dfa.join(dfa, on=["date"], how=how)
 
 
-def test_hstack() -> None:
+@pytest.mark.parametrize(
+    "stack,exp_shape,exp_columns",
+    [
+        ([pl.Series("stacked", [-1, -1, -1])], (3, 3), ["a", "b", "stacked"]),
+        (
+            [pl.Series("stacked2", [-1, -1, -1]), pl.Series("stacked3", [-1, -1, -1])],
+            (3, 4),
+            ["a", "b", "stacked2", "stacked3"],
+        ),
+    ],
+)
+@pytest.mark.parametrize("in_place", [True, False])
+def test_hstack_list_of_series(
+    stack: list, exp_shape: tuple, exp_columns: list, in_place: bool
+) -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df.hstack([pl.Series("stacked", [-1, -1, -1])], in_place=True)
-    assert df.shape == (3, 3)
-    assert df.columns == ["a", "b", "stacked"]
+    df_out = df.hstack(stack, in_place=in_place)
+    if in_place:
+        assert df.shape == exp_shape
+        assert df.columns == exp_columns
+    else:
+        assert df_out.shape == exp_shape  # type: ignore
+        assert df_out.columns == exp_columns  # type: ignore
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_hstack_dataframe(in_place: bool) -> None:
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
+    df2 = pl.DataFrame({"c": [2, 1, 3], "d": ["a", "b", "c"]})
+    df_out = df.hstack(df2, in_place=in_place)
+    expected = pl.DataFrame(
+        {"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [2, 1, 3], "d": ["a", "b", "c"]}
+    )
+    if in_place:
+        assert df.frame_equal(expected)
+    else:
+        assert df_out.frame_equal(expected)  # type: ignore
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_vstack(in_place: bool) -> None:
+    df1 = pl.DataFrame({"foo": [1, 2], "bar": [6, 7], "ham": ["a", "b"]})
+    df2 = pl.DataFrame({"foo": [3, 4], "bar": [8, 9], "ham": ["c", "d"]})
+
+    expected = pl.DataFrame(
+        {"foo": [1, 2, 3, 4], "bar": [6, 7, 8, 9], "ham": ["a", "b", "c", "d"]}
+    )
+
+    out = df1.vstack(df2, in_place=in_place)
+    if in_place:
+        assert df1.frame_equal(expected)
+    else:
+        assert out.frame_equal(expected)  # type: ignore
 
 
 def test_drop() -> None:
@@ -531,7 +665,10 @@ def test_set() -> None:
 def test_melt() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
     melted = df.melt(id_vars="A", value_vars=["B", "C"])
-    assert melted["value"] == [1, 3, 4, 2, 4, 6]
+    assert all(melted["value"] == [1, 3, 5, 2, 4, 6])
+
+    melted = df.melt(id_vars="A", value_vars="B")
+    assert all(melted["value"] == [1, 3, 5])
 
 
 def test_shift() -> None:
@@ -688,6 +825,9 @@ def test_df_fold() -> None:
     assert len(df.mean(axis=1)) == 3
     assert len(df.min(axis=1)) == 3
     assert len(df.max(axis=1)) == 3
+
+    df_width_one = df[["a"]]
+    assert df_width_one.fold(lambda s1, s2: s1).series_equal(df["a"])
 
 
 def test_row_tuple() -> None:
@@ -1330,6 +1470,69 @@ def test_df_schema_unique() -> None:
 
 def test_empty_projection() -> None:
     assert pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([]).shape == (0, 0)
+
+
+def test_with_column_renamed() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    result = df.with_column_renamed("b", "c")
+    expected = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
+    assert result.frame_equal(expected)
+
+
+def test_fill_null() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
+    assert df.fill_null(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
+    assert df.fill_null("max").frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 3]}))
+
+
+def test_fill_nan() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("nan")]})
+    assert df.fill_nan(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
+
+
+def test_shift_and_fill() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    result = df.shift_and_fill(periods=1, fill_value=0)
+    expected = pl.DataFrame(
+        {
+            "foo": [0, 1, 2],
+            "bar": [0, 6, 7],
+            "ham": ["0", "a", "b"],
+        }
+    )
+    assert result.frame_equal(expected)
+
+
+def test_is_duplicated() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
+    assert df.is_duplicated().series_equal(pl.Series("", [False, True, True]))
+
+
+def test_is_unique() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
+    assert df.is_unique().series_equal(pl.Series("", [True, False, False]))
+
+
+def test_sample() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
+    assert df.sample(n=2).shape == (2, 3)
+    assert df.sample(frac=0.4).shape == (1, 3)
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_shrink_to_fit(in_place: bool) -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
+
+    if in_place:
+        assert df.shrink_to_fit(in_place) is None
+    else:
+        assert df.shrink_to_fit(in_place).frame_equal(df)  # type: ignore
 
 
 def test_arithmetic() -> None:
