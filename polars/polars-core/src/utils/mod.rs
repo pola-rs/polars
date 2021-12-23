@@ -541,6 +541,10 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (UInt32, Float32) => Some(Float32),
         (UInt32, Float64) => Some(Float64),
         (UInt32, Boolean) => Some(UInt32),
+        #[cfg(feature = "dtype-date")]
+        (UInt32, Date) => Some(Int64),
+        #[cfg(feature = "dtype-datetime")]
+        (UInt32, Datetime) => Some(Int64),
 
         (UInt64, UInt8) => Some(UInt64),
         (UInt64, UInt16) => Some(UInt64),
@@ -613,6 +617,10 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Float64, Boolean) => Some(Float64),
 
         #[cfg(feature = "dtype-datetime")]
+        (Date, UInt32) => Some(Int64),
+        #[cfg(feature = "dtype-datetime")]
+        (Date, UInt64) => Some(Int64),
+        #[cfg(feature = "dtype-datetime")]
         (Date, Int32) => Some(Int32),
         #[cfg(feature = "dtype-datetime")]
         (Date, Int64) => Some(Int64),
@@ -623,6 +631,10 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-datetime")]
         (Date, Datetime) => Some(Datetime),
 
+        #[cfg(feature = "dtype-date")]
+        (Datetime, UInt32) => Some(Int64),
+        #[cfg(feature = "dtype-date")]
+        (Datetime, UInt64) => Some(Int64),
         #[cfg(feature = "dtype-date")]
         (Datetime, Int32) => Some(Int64),
         #[cfg(feature = "dtype-date")]
