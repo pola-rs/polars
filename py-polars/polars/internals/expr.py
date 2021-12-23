@@ -2157,7 +2157,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_mean())
 
-    def sort(self, reverse: bool) -> "Expr":
+    def sort(self, reverse: bool = False) -> "Expr":
         """
         Sort the arrays in the list
         """

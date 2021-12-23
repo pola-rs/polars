@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Sequence
 
 import numpy as np
@@ -619,6 +619,28 @@ def test_arr_lengths_dispatch() -> None:
     )
 
 
+def test_arr_arithmetic() -> None:
+    s = pl.Series("a", [[1, 2], [1, 2, 3]])
+    testing.assert_series_equal(s.arr.sum(), pl.Series("a", [3, 6]))
+    testing.assert_series_equal(s.arr.mean(), pl.Series("a", [1.5, 2.0]))
+    testing.assert_series_equal(s.arr.max(), pl.Series("a", [2, 3]))
+    testing.assert_series_equal(s.arr.min(), pl.Series("a", [1, 1]))
+
+
+def test_arr_ordering() -> None:
+    s = pl.Series("a", [[2, 1], [1, 3, 2]])
+    testing.assert_series_equal(s.arr.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
+    testing.assert_series_equal(s.arr.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
+
+
+def test_arr_unique() -> None:
+    s = pl.Series("a", [[2, 1], [1, 2, 2]])
+    result = s.arr.unique()
+    assert len(result) == 2
+    assert sorted(result[0]) == [1, 2]
+    assert sorted(result[1]) == [1, 2]
+
+
 def test_sqrt_dispatch() -> None:
     s = pl.Series("a", [1, 2])
     testing.assert_series_equal(s.sqrt(), pl.Series("a", [1.0, np.sqrt(2)]))
@@ -1021,6 +1043,20 @@ def test_str_lstrip() -> None:
     testing.assert_series_equal(result, expected)
 
 
+def test_str_strptime() -> None:
+    s = pl.Series(["2020-01-01", "2020-02-02"])
+    out = s.str.strptime(pl.Date, fmt="%Y-%m-%d")
+    expected = pl.Series([date(2020, 1, 1), date(2020, 2, 2)])
+    testing.assert_series_equal(out, expected)
+
+    s = pl.Series(["2020-01-01 00:00:00", "2020-02-02 03:20:10"])
+    out = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S")
+    expected = pl.Series(
+        [datetime(2020, 1, 1, 0, 0, 0), datetime(2020, 2, 2, 3, 20, 10)]
+    )
+    testing.assert_series_equal(out, expected)
+
+
 def test_dt_strftime() -> None:
     a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
     assert a.dtype == pl.Date
@@ -1043,6 +1079,29 @@ def test_dt_year_month_week_day_ordinal_day() -> None:
 
     assert a.dt.median() == date(2024, 10, 4)
     assert a.dt.mean() == date(2024, 10, 4)
+
+
+def test_dt_datetimes() -> None:
+    s = pl.Series(["2020-01-01 00:00:00", "2020-02-02 03:20:10"])
+    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S")
+
+    # hours, minutes, seconds and nanoseconds
+    testing.assert_series_equal(s.dt.hour(), pl.Series("", [0, 3], dtype=UInt32))
+    testing.assert_series_equal(s.dt.minute(), pl.Series("", [0, 20], dtype=UInt32))
+    testing.assert_series_equal(s.dt.second(), pl.Series("", [0, 10], dtype=UInt32))
+    testing.assert_series_equal(s.dt.nanosecond(), pl.Series("", [0, 0], dtype=UInt32))
+
+    # epoch methods
+    testing.assert_series_equal(
+        s.dt.epoch_days(), pl.Series("", [18262, 18294], dtype=Int32)
+    )
+    testing.assert_series_equal(
+        s.dt.epoch_seconds(), pl.Series("", [1_577_836_800, 1_580_613_610], dtype=Int64)
+    )
+    testing.assert_series_equal(
+        s.dt.epoch_milliseconds(),
+        pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=Int64),
+    )
 
 
 def test_compare_series_value_mismatch() -> None:
