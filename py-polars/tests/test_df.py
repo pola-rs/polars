@@ -379,6 +379,9 @@ def test_drop_nulls() -> None:
     )
     assert result.frame_equal(expected)
 
+    # below we only drop entries if they are null in the column 'foo'
+    result = df.drop_nulls("foo")
+    assert result.frame_equal(df)
 
 def test_pipe() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})

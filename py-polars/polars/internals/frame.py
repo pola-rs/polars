@@ -2061,7 +2061,7 @@ class DataFrame:
         """
         return wrap_df(self._df.tail(length))
 
-    def drop_nulls(self, subset: Optional[List[str]] = None) -> "DataFrame":
+    def drop_nulls(self, subset: Optional[Union[str, List[str]]] = None) -> "DataFrame":
         """
         Return a new DataFrame where the null values are dropped.
 
@@ -2155,6 +2155,8 @@ class DataFrame:
         └──────┴──────┘
 
         """
+        if isinstance(subset, str):
+            subset = [subset]
         return wrap_df(self._df.drop_nulls(subset))
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
