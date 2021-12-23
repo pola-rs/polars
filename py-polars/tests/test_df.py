@@ -1610,3 +1610,19 @@ def test_get_item() -> None:
     df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
     with pytest.raises(IndexError):
         _ = df[pl.Series("", ["hello Im a string"])]
+
+
+def test_pivot_list() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 1], [2, 2], [3, 3]]})
+
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "1": [[1, 1], None, None],
+            "2": [None, [2, 2], None],
+            "3": [None, None, [3, 3]],
+        }
+    )
+
+    out = df.groupby("a").pivot("a", "b").first()["a", "1", "2", "3"].sort("a")
+    assert out.frame_equal(expected, null_equal=True)

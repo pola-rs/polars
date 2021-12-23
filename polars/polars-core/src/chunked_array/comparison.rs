@@ -707,14 +707,40 @@ macro_rules! impl_cmp_list {
                     (Some(_), None) => None,
                     (Some(left), Some(right)) => Some(left.$cmp_method(&right)),
                 })
-                .collect(),
+                .collect_trusted(),
         }
     }};
 }
 
 impl ChunkCompare<&ListChunked> for ListChunked {
     fn eq_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        impl_cmp_list!(self, rhs, series_equal_missing)
+        match (self.has_validity(), rhs.has_validity()) {
+            (false, false) => self
+                .into_no_null_iter()
+                .zip(rhs.into_no_null_iter())
+                .map(|(left, right)| left.eq(&right))
+                .collect_trusted(),
+            (false, _) => self
+                .into_no_null_iter()
+                .zip(rhs.into_iter())
+                .map(|(left, opt_right)| opt_right.map(|right| left.eq(&right)))
+                .collect_trusted(),
+            (_, false) => self
+                .into_iter()
+                .zip(rhs.into_no_null_iter())
+                .map(|(opt_left, right)| opt_left.map(|left| left.eq(&right)))
+                .collect_trusted(),
+            (_, _) => self
+                .into_iter()
+                .zip(rhs.into_iter())
+                .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
+                    (None, None) => true,
+                    (None, Some(_)) => false,
+                    (Some(_), None) => false,
+                    (Some(left), Some(right)) => left.eq(&right),
+                })
+                .collect_trusted(),
+        }
     }
 
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
