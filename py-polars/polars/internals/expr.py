@@ -1,6 +1,6 @@
 import copy
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, List, Optional, Sequence, Tuple, Type, Union, overload
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
