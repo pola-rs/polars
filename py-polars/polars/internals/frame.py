@@ -27,7 +27,7 @@ from typing import (
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal
+    from typing_extensions import Literal  # pragma: no cover
 
 import numpy as np
 
@@ -221,7 +221,7 @@ class DataFrame:
 
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
+                raise ImportError(  # pragma: no cover
                     "'pyarrow' is required for converting a pandas DataFrame to a polars DataFrame."
                 )
             self._df = pandas_to_pydf(data, columns=columns)
@@ -616,7 +616,7 @@ class DataFrame:
             - CategoricalType
         """
         if not _PYARROW_AVAILABLE:
-            raise ImportError(
+            raise ImportError(  # pragma: no cover
                 "'pyarrow' is required for converting a polars DataFrame to an Arrow Table."
             )
         record_batches = self._df.to_arrow()
@@ -1037,7 +1037,7 @@ class DataFrame:
 
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
+                raise ImportError(  # pragma: no cover
                     "'pyarrow' is required when using 'to_parquet(..., use_pyarrow=True)'."
                 )
 
