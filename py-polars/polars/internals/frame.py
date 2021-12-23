@@ -1143,7 +1143,7 @@ class DataFrame:
     # __getitem__() mostly returns a dataframe. The major exception is when a string is passed in. Note that there are
     # more subtle cases possible where a non-string value leads to a Series.
     @overload
-    def __getitem__(self, item: str) -> "pli.Series":
+    def __getitem__(self, item: str) -> "pli.Series":  # type: ignore
         ...
 
     @overload
