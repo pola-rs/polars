@@ -216,13 +216,6 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
     out
 }
 
-pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<str>) -> Result<Expr> {
-    let mut arena = Arena::with_capacity(32);
-    let root = to_aexpr(expr.clone(), &mut arena);
-    rename_aexpr_root_name(root, &mut arena, new_name)?;
-    Ok(node_to_exp(root, &arena))
-}
-
 /// Take a list of expressions and a schema and determine the output schema.
 pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema, ctxt: Context) -> Schema {
     let fields = expr

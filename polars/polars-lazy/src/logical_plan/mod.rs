@@ -22,7 +22,6 @@ use polars_io::parquet::ParquetReader;
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::utils::{
     combine_predicates_expr, expr_to_root_column_names, get_single_root, has_expr, has_wildcard,
-    rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
 use polars_io::csv::NullValues;

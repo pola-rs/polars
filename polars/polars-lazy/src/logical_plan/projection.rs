@@ -230,21 +230,6 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
             let exclude = prepare_excluded(&expr, schema);
-
-            // if count wildcard. count one column
-            if has_expr(&expr, |e| matches!(e, Expr::Agg(AggExpr::Count(_)))) {
-                let new_name = Arc::from(schema.field(0).unwrap().name().as_str());
-                let expr = rename_expr_root_name(&expr, new_name).unwrap();
-
-                let expr = if let Expr::Alias(_, _) = &expr {
-                    expr
-                } else {
-                    Expr::Alias(Box::new(expr), Arc::from("count"))
-                };
-                result.push(expr);
-
-                continue;
-            }
             // this path prepares the wildcard as input for the Function Expr
             if has_expr(
                 &expr,
