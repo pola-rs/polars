@@ -2155,8 +2155,6 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        if subset is not None and isinstance(subset, str):
-            subset = [subset]
         return wrap_df(self._df.drop_nulls(subset))
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -2730,6 +2728,22 @@ class DataFrame:
         ----------
         existing_name
         new_name
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+        >>> df.with_column_renamed("b", "c")
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ c   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 4   │
+        └─────┴─────┘
+
         """
         return (
             self.lazy()
@@ -2975,7 +2989,7 @@ class DataFrame:
         """
         return self[name]
 
-    def fill_null(self, strategy: Union[str, "pli.Expr"]) -> "DataFrame":
+    def fill_null(self, strategy: Union[str, "pli.Expr", Any]) -> "DataFrame":
         """
         Fill None/missing values by a filling strategy or an Expression evaluation.
 
@@ -3339,7 +3353,7 @@ class DataFrame:
             return wrap_df(self._df.max())
         if axis == 1:
             return pli.wrap_s(self._df.hmax())
-        raise ValueError("Axis should be 0 or 1.")
+        raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
         """
@@ -3369,7 +3383,7 @@ class DataFrame:
             return wrap_df(self._df.min())
         if axis == 1:
             return pli.wrap_s(self._df.hmin())
-        raise ValueError("Axis should be 0 or 1.")
+        raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def sum(
         self, axis: int = 0, null_strategy: str = "ignore"
@@ -3409,7 +3423,7 @@ class DataFrame:
             return wrap_df(self._df.sum())
         if axis == 1:
             return pli.wrap_s(self._df.hsum(null_strategy))
-        raise ValueError("Axis should be 0 or 1.")
+        raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def mean(
         self, axis: int = 0, null_strategy: str = "ignore"
@@ -3449,7 +3463,7 @@ class DataFrame:
             return wrap_df(self._df.mean())
         if axis == 1:
             return pli.wrap_s(self._df.hmean(null_strategy))
-        raise ValueError("Axis should be 0 or 1.")
+        raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def std(self) -> "DataFrame":
         """
@@ -3757,13 +3771,10 @@ class DataFrame:
             function that takes two `Series` and returns a `Series`.
 
         """
-        if self.width == 1:
-            return self.to_series(0)
-        df = self
-        acc = operation(df.to_series(0), df.to_series(1))
+        acc = self.to_series(0)
 
-        for i in range(2, df.width):
-            acc = operation(acc, df.to_series(i))
+        for i in range(1, self.width):
+            acc = operation(acc, self.to_series(i))
         return acc
 
     def row(self, index: int) -> Tuple[Any]:
