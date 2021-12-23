@@ -196,7 +196,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: bindings-x86_64-apple-darwin
-          path: nodejs-polars/polars
+          path: nodejs-polars
       - name: Run test
         run: yarn test
 
