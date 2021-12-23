@@ -588,7 +588,7 @@ def test_hstack_list_of_series(
 def test_hstack_dataframe(in_place: bool) -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
     df2 = pl.DataFrame({"c": [2, 1, 3], "d": ["a", "b", "c"]})
-    df_out = df.hstack(df2)
+    df_out = df.hstack(df2, in_place=in_place)
     expected = pl.DataFrame(
         {"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [2, 1, 3], "d": ["a", "b", "c"]}
     )
@@ -661,7 +661,7 @@ def test_set() -> None:
 def test_melt() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
     melted = df.melt(id_vars="A", value_vars=["B", "C"])
-    assert all(melted["value"] == [1, 3, 4, 2, 4, 6])
+    assert all(melted["value"] == [1, 3, 5, 2, 4, 6])
 
     melted = df.melt(id_vars="A", value_vars="B")
     assert all(melted["value"] == [1, 3, 5])
@@ -1499,7 +1499,7 @@ def test_shift_and_fill() -> None:
         {
             "foo": [0, 1, 2],
             "bar": [0, 6, 7],
-            "ham": [0, "a", "b"],
+            "ham": ["0", "a", "b"],
         }
     )
     assert result.frame_equal(expected)
