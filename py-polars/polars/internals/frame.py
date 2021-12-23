@@ -4316,7 +4316,7 @@ class GroupBy:
         """
         Count the number of values in each group.
         """
-        return self._select_all().count()
+        return self.agg(pyall().count())
 
     def mean(self) -> DataFrame:
         """
