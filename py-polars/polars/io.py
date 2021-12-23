@@ -705,7 +705,7 @@ def read_parquet(
     source: Union[str, List[str], Path, BinaryIO, BytesIO, bytes],
     columns: Optional[Union[List[int], List[str]]] = None,
     n_rows: Optional[int] = None,
-    use_pyarrow: bool = _PYARROW_AVAILABLE,
+    use_pyarrow: bool = False,
     memory_map: bool = True,
     storage_options: Optional[Dict] = None,
     parallel: bool = True,
