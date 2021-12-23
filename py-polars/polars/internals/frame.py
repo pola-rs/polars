@@ -1309,7 +1309,7 @@ class DataFrame:
                 return self.select(item)
             elif type(item[0]) == bool:
                 item = pli.Series("", item)  # fall through to next if isinstance
-            else:
+            elif is_int_sequence(item):
                 return wrap_df(self._df.take([self._pos_idx(i, dim=0) for i in item]))
 
         if isinstance(item, pli.Series):
