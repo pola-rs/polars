@@ -1,9 +1,9 @@
 # flake8: noqa: W191,E101
 import sys
-import typing as tp
 from builtins import range
 from datetime import datetime
 from io import BytesIO
+from typing import Any, Iterator
 from unittest.mock import patch
 
 import numpy as np
@@ -1432,7 +1432,7 @@ def test_transpose() -> None:
     )
     assert expected.frame_equal(out)
 
-    def name_generator() -> tp.Iterator[str]:
+    def name_generator() -> Iterator[str]:
         base_name = "my_column_"
         count = 0
         while True:
@@ -1664,7 +1664,7 @@ def test_pivot_list() -> None:
 
 
 @pytest.mark.parametrize("as_series,inner_dtype", [(True, pl.Series), (False, list)])
-def test_to_dict(as_series: bool, inner_dtype: tp.Any) -> None:
+def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
     df = pl.DataFrame(
         {
             "A": [1, 2, 3, 4, 5],
