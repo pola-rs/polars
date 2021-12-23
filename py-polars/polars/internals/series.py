@@ -64,7 +64,12 @@ from polars.datatypes import (
     maybe_cast,
     py_type_to_dtype,
 )
-from polars.utils import _date_to_pl_date, _datetime_to_pl_timestamp, _ptr_to_numpy
+from polars.utils import (
+    _date_to_pl_date,
+    _datetime_to_pl_timestamp,
+    _ptr_to_numpy,
+    range_to_slice,
+)
 
 try:
     import pandas as pd
@@ -402,7 +407,7 @@ class Series:
     def __neg__(self) -> "Series":
         return 0 - self
 
-    def __getitem__(self, item: Any) -> Any:
+    def __getitem__(self, item: Union[int, "Series", range, slice]) -> Any:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
@@ -423,32 +428,22 @@ class Series:
             return wrap_s(self._s.filter(item._s))
 
         if isinstance(item, range):
-            step: Optional[int]
-            # maybe we can slice instead of take by indices
-            if item.step != 1:
-                step = item.step
-            else:
-                step = None
-            slc = slice(item.start, item.stop, step)
-            return self[slc]
+            return self[range_to_slice(item)]
 
         # slice
-        if type(item) == slice:
+        if isinstance(item, slice):
             start, stop, stride = item.indices(self.len())
             out = self.slice(start, stop - start)
             if stride != 1:
                 return out.take_every(stride)
             else:
                 return out
-        f = get_ffi_func("get_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-        out = f(item)
-        if self.dtype == PlList:
-            return wrap_s(out)
-        return out
 
-    def __setitem__(self, key: Any, value: Any) -> None:
+        raise NotImplementedError
+
+    def __setitem__(
+        self, key: Union[int, "Series", np.ndarray, List, Tuple], value: Any
+    ) -> None:
         if isinstance(value, list):
             raise ValueError("cannot set with a list as value, use a primitive value")
         if isinstance(key, Series):

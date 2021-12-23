@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any, Sequence
+from typing import Any, Union
 
 import numpy as np
 import pandas as pd
@@ -302,7 +302,7 @@ def test_set_np_array(dtype: Any) -> None:
 
 
 @pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
-def test_set_list_and_tuple(idx: Sequence) -> None:
+def test_set_list_and_tuple(idx: Union[list, tuple]) -> None:
     a = pl.Series("a", [1, 2, 3])
     a[idx] = 4
     testing.assert_series_equal(a, pl.Series("a", [4, 2, 4]))

@@ -720,8 +720,8 @@ def test_from_pandas_nan_to_none() -> None:
             "nulls": [None, np.nan, np.nan],
         }
     )
-    out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
+    out_true: pl.DataFrame = pl.from_pandas(df)  # type: ignore
+    out_false: pl.DataFrame = pl.from_pandas(df, nan_to_none=False)  # type: ignore
     df.loc[2, "nulls"] = pd.NA
     assert [val is None for val in out_true["nulls"]]
     assert [np.isnan(val) for val in out_false["nulls"][1:]]
@@ -1593,7 +1593,7 @@ def test_get_item() -> None:
     df[np.array([1])].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
     df[np.array(["a"])].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
     # note that we cannot use floats (even if they could be casted to integer without loss)
-    with pytest.raises(IndexError):
+    with pytest.raises(NotImplementedError):
         _ = df[np.array([1.0])]
 
     # sequences (lists or tuples; tuple only if length != 2)
@@ -1608,7 +1608,7 @@ def test_get_item() -> None:
     # pl.Series: like sequences, but only for rows
     df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
     df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
-    with pytest.raises(IndexError):
+    with pytest.raises(NotImplementedError):
         _ = df[pl.Series("", ["hello Im a string"])]
 
 
