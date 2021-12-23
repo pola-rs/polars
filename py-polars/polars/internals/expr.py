@@ -29,7 +29,9 @@ from polars.datatypes import (
 def selection_to_pyexpr_list(
     exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]], "pli.Series"]
 ) -> List["PyExpr"]:
-    is_non_string_sequence = isinstance(exprs, Sequence) and (not isinstance(exprs, str))
+    is_non_string_sequence = isinstance(exprs, Sequence) and (
+        not isinstance(exprs, str)
+    )
     if not is_non_string_sequence:
         # this is a single item, wrap it in a list as we always return a list in this function
         exprs = [exprs]
