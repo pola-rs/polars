@@ -270,8 +270,7 @@ class LazyFrame:
         if type(reverse) is bool:
             reverse = [reverse]
 
-        by = pli.expr_to_lit_or_expr(by, str_to_lit=False)
-        by = pli._selection_to_pyexpr_list(by)
+        by = pli.selection_to_pyexpr_list(by)
         return wrap_ldf(self._ldf.sort_by_exprs(by, reverse))
 
     def collect(
@@ -478,7 +477,7 @@ class LazyFrame:
         exprs
             Column or columns to select.
         """
-        exprs = pli._selection_to_pyexpr_list(exprs)
+        exprs = pli.selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
 
     def groupby(
@@ -1037,7 +1036,7 @@ class LazyFrame:
         └─────────┴─────┘
 
         """
-        columns = pli._selection_to_pyexpr_list(columns)
+        columns = pli.selection_to_pyexpr_list(columns)
         return wrap_ldf(self._ldf.explode(columns))
 
     def drop_duplicates(
@@ -1217,7 +1216,7 @@ class LazyGroupBy:
         ... )  # doctest: +SKIP
 
         """
-        aggs = pli._selection_to_pyexpr_list(aggs)
+        aggs = pli.selection_to_pyexpr_list(aggs)
         return wrap_ldf(self.lgb.agg(aggs))
 
     def head(self, n: int = 5) -> "LazyFrame":
