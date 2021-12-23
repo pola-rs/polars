@@ -4286,49 +4286,49 @@ class GroupBy:
         """
         Aggregate the first values in the group.
         """
-        return self.agg(pyall().first())
+        return self.agg(pli.all().first())
 
     def last(self) -> DataFrame:
         """
         Aggregate the last values in the group.
         """
-        return self.agg(pyall().last())
+        return self.agg(pli.all().last())
 
     def sum(self) -> DataFrame:
         """
         Reduce the groups to the sum.
         """
-        return self.agg(pyall().sum())
+        return self.agg(pli.all().sum())
 
     def min(self) -> DataFrame:
         """
         Reduce the groups to the minimal value.
         """
-        return self.agg(pyall().min())
+        return self.agg(pli.all().min())
 
     def max(self) -> DataFrame:
         """
         Reduce the groups to the maximal value.
         """
-        return self.agg(pyall().max())
+        return self.agg(pli.all().max())
 
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
         """
-        return self.agg(pyall().count())
+        return self.agg(pli.all().count())
 
     def mean(self) -> DataFrame:
         """
         Reduce the groups to the mean values.
         """
-        return self.agg(pyall().mean())
+        return self.agg(pli.all().mean())
 
     def n_unique(self) -> DataFrame:
         """
         Count the unique values per group.
         """
-        return self.agg(pyall().n_unique())
+        return self.agg(pli.all().n_unique())
 
     def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
         """
@@ -4343,19 +4343,19 @@ class GroupBy:
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         """
-        return self.agg(pyall().quantile(quantile, interpolation))
+        return self.agg(pli.all().quantile(quantile, interpolation))
 
     def median(self) -> DataFrame:
         """
         Return the median per group.
         """
-        return self.agg(pyall().median())
+        return self.agg(pli.all().median())
 
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
         """
-        return self.agg(pyall().list())
+        return self.agg(pli.all().list())
 
 
 class PivotOps:
