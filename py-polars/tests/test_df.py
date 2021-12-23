@@ -583,8 +583,8 @@ def test_from_pandas_nan_to_none() -> None:
             "nulls": [None, np.nan, np.nan],
         }
     )
-    out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
+    out_true: pl.DataFrame = pl.from_pandas(df)  # type: ignore
+    out_false: pl.DataFrame = pl.from_pandas(df, nan_to_none=False)  # type: ignore
     df.loc[2, "nulls"] = pd.NA
     assert [val is None for val in out_true["nulls"]]
     assert [np.isnan(val) for val in out_false["nulls"][1:]]

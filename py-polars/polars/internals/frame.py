@@ -59,7 +59,12 @@ except ImportError:  # pragma: no cover
 
 from polars._html import NotebookFormatter
 from polars.datatypes import Boolean, DataType, Datetime, UInt32, py_type_to_dtype
-from polars.utils import _process_null_values, is_int_sequence, is_str_sequence
+from polars.utils import (
+    _process_null_values,
+    is_int_sequence,
+    is_str_sequence,
+    range_to_slice,
+)
 
 try:
     import pandas as pd
@@ -1250,14 +1255,7 @@ class DataFrame:
 
         # df[range(n)]
         if isinstance(item, range):
-            step: Optional[int]
-            # maybe we can slice instead of take by indices
-            if item.step != 1:
-                step = item.step
-            else:
-                step = None
-            slc = slice(item.start, item.stop, step)
-            return self[slc]
+            return self[range_to_slice(item)]
 
         # df[:]
         if isinstance(item, slice):
@@ -1317,9 +1315,11 @@ class DataFrame:
                 return wrap_df(self._df.take_with_series(item.inner()))
 
         # if no data has been returned, the operation is not supported
-        raise IndexError
+        return NotImplemented
 
-    def __setitem__(self, key: Union[str, int, Tuple[Any, Any]], value: Any) -> None:
+    def __setitem__(
+        self, key: Union[str, int, List, Tuple[Any, Any]], value: Any
+    ) -> None:
         # df["foo"] = series
         if isinstance(key, str):
             try:
@@ -4011,7 +4011,7 @@ class GroupBy:
 
         # should be only one match
         try:
-            groups_idx = groups[mask][0]
+            groups_idx = groups[mask][0]  # type: ignore
         except IndexError:
             raise ValueError(f"no group: {group_value} found")
 
