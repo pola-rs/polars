@@ -761,6 +761,12 @@ def test_concat() -> None:
     _ = pl.concat([a, a, a])
     assert a.shape == (2, 2)
 
+    with pytest.raises(ValueError):
+        _ = pl.concat([])  # type: ignore
+
+    with pytest.raises(ValueError):
+        pl.concat([df, df], how="rubbish")
+
 
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
@@ -1034,6 +1040,35 @@ def test_to_json(df: pl.DataFrame) -> None:
     # TODO add overload on to_json()
     out = pl.read_json(s)
     assert df.frame_equal(out, null_equal=True)
+
+    file = BytesIO()
+    df.to_json(file)
+    file.seek(0)
+    s = file.read().decode("utf8")
+    out = pl.read_json(s)
+    assert df.frame_equal(out, null_equal=True)
+
+
+def test_to_csv() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4, 5],
+            "bar": [6, 7, 8, 9, 10],
+            "ham": ["a", "b", "c", "d", "e"],
+        }
+    )
+    expected = "foo,bar,ham\n1,6,a\n2,7,b\n3,8,c\n4,9,d\n5,10,e\n"
+
+    # if no file argument is supplied, to_csv() will return the string
+    s = df.to_csv()
+    assert s == expected
+
+    # otherwise it will write to the file/iobuffer
+    file = BytesIO()
+    df.to_csv(file)
+    file.seek(0)
+    s = file.read().decode("utf8")
+    assert s == expected
 
 
 def test_from_rows() -> None:
@@ -1626,3 +1661,22 @@ def test_pivot_list() -> None:
 
     out = df.groupby("a").pivot("a", "b").first()["a", "1", "2", "3"].sort("a")
     assert out.frame_equal(expected, null_equal=True)
+
+
+@pytest.mark.parametrize("as_series,inner_dtype", [(True, pl.Series), (False, list)])
+def test_to_dict(as_series: bool, inner_dtype: tp.Any) -> None:
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B": [5, 4, 3, 2, 1],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+            "optional": [28, 300, None, 2, -30],
+        }
+    )
+
+    s = df.to_dict(as_series=as_series)
+    assert isinstance(s, dict)
+    for v in s.values():
+        assert isinstance(v, inner_dtype)
+        assert len(v) == len(df)

@@ -8,7 +8,7 @@ import numpy as np
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
 else:
-    from typing_extensions import TypeGuard
+    from typing_extensions import TypeGuard  # pragma: no cover
 
 
 def _process_null_values(

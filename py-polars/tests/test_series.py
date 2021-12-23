@@ -1117,6 +1117,10 @@ def test_compare_series_type_mismatch() -> None:
     with pytest.raises(AssertionError, match="Series are different\n\nType mismatch"):
         testing.assert_series_equal(srs1, srs2)  # type: ignore
 
+    srs3 = pl.Series([1.0, 2.0, 3.0])
+    with pytest.raises(AssertionError, match="Series are different\n\nDtype mismatch"):
+        testing.assert_series_equal(srs1, srs3)
+
 
 def test_compare_series_name_mismatch() -> None:
     srs1 = pl.Series(values=[1, 2, 3], name="srs1")
