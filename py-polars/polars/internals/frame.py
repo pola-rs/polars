@@ -49,7 +49,6 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-from polars.internals.lazy_functions import all as pyall
 
 try:
     from polars.polars import PyDataFrame, PySeries
