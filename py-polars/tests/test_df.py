@@ -827,7 +827,7 @@ def test_df_fold() -> None:
     assert len(df.max(axis=1)) == 3
 
     df_width_one = df[["a"]]
-    assert df_width_one.fold(lambda s: s).series_equal(df["a"])
+    assert df_width_one.fold(lambda s1, s2: s1).series_equal(df["a"])
 
 
 def test_row_tuple() -> None:
