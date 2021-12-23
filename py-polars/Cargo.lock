@@ -1236,6 +1236,7 @@ dependencies = [
  "polars-arrow",
  "polars-core",
  "polars-io",
+ "polars-utils",
  "rayon",
  "regex",
 ]
@@ -1247,6 +1248,10 @@ dependencies = [
  "chrono",
  "polars-arrow",
 ]
+
+[[package]]
+name = "polars-utils"
+version = "0.1.0"
 
 [[package]]
 name = "ppv-lite86"

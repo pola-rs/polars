@@ -1,4 +1,4 @@
-use polars_core::utils::Arena;
+use polars_utils::arena::Arena;
 
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
