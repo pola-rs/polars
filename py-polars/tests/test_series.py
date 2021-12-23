@@ -1176,18 +1176,18 @@ def test_nested_list_types_preserved() -> None:
 
 def test_log_exp() -> None:
     a = pl.Series("a", [1, 100, 1000])
+    b = pl.Series("a", [0.0, 2.0, 3.0])
 
     out = a.log10()
-    expected = pl.Series("a", [0.0, 2.0, 3.0])
-    testing.assert_series_equal(out, expected)
+    testing.assert_series_equal(out, b)
     a = pl.Series("a", [1, 100, 1000])
 
     out = a.log()
     expected = pl.Series("a", np.log(a.to_numpy()))
     testing.assert_series_equal(out, expected)
 
-    out = a.exp()
-    expected = pl.Series("a", np.exp(a.to_numpy()))
+    out = b.exp()
+    expected = pl.Series("a", np.exp(b.to_numpy()))
     testing.assert_series_equal(out, expected)
 
 
