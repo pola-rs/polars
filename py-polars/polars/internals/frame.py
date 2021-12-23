@@ -1160,11 +1160,16 @@ class DataFrame:
     ) -> "DataFrame":
         ...
 
-    def __getitem__(self, item: Any) -> Union["DataFrame", "pli.Series"]:
+    def __getitem__(
+        self,
+        item: Union[
+            str, int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple
+        ],
+    ) -> Union["DataFrame", "pli.Series"]:
         """
         Does quite a lot. Read the comments.
         """
-        if hasattr(item, "_pyexpr"):
+        if isinstance(item, pli.Expr):
             return self.select(item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
@@ -1315,7 +1320,7 @@ class DataFrame:
                 return wrap_df(self._df.take_with_series(item.inner()))
 
         # if no data has been returned, the operation is not supported
-        return NotImplemented
+        raise NotImplementedError
 
     def __setitem__(
         self, key: Union[str, int, List, Tuple[Any, Any]], value: Any

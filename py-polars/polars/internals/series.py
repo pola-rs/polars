@@ -439,7 +439,7 @@ class Series:
             else:
                 return out
 
-        return NotImplemented
+        raise NotImplementedError
 
     def __setitem__(
         self, key: Union[int, "Series", np.ndarray, List, Tuple], value: Any
