@@ -14,6 +14,25 @@ use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
+pub fn to_cast(df: &mut DataFrame, to_cast: &[&Field]) -> Result<()> {
+    // cast to the original dtypes in the schema
+    for fld in to_cast {
+        use DataType::*;
+        df.may_apply(fld.name(), |s| match (s.dtype(), fld.data_type()) {
+            #[cfg(feature = "temporal")]
+            (Utf8, Date) => s.utf8().unwrap().as_date(None).map(|ca| ca.into_series()),
+            #[cfg(feature = "temporal")]
+            (Utf8, Datetime) => s
+                .utf8()
+                .unwrap()
+                .as_datetime(None)
+                .map(|ca| ca.into_series()),
+            (_, dt) => s.cast(dt),
+        })?;
+    }
+    Ok(())
+}
+
 /// CSV file reader
 pub(crate) struct CoreReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
@@ -38,6 +57,7 @@ pub(crate) struct CoreReader<'a> {
     null_values: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
+    to_cast: &'a [&'a Field],
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -123,6 +143,7 @@ impl<'a> CoreReader<'a> {
         null_values: Option<NullValues>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&'a [ScanAggregation]>,
+        to_cast: &'a [&'a Field],
     ) -> Result<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -215,6 +236,7 @@ impl<'a> CoreReader<'a> {
             null_values,
             predicate,
             aggregate,
+            to_cast,
         })
     }
 
@@ -478,7 +500,11 @@ impl<'a> CoreReader<'a> {
                             }
                         }
 
-                        Ok(df)
+                        df.map(|mut df| {
+                            to_cast(&mut df, self.to_cast)?;
+                            Ok(df)
+                        })
+                        .transpose()
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
@@ -545,12 +571,16 @@ impl<'a> CoreReader<'a> {
                                 usize::MAX,
                             )?;
                         }
-                        Ok(DataFrame::new_no_checks(
+
+                        let mut df = DataFrame::new_no_checks(
                             buffers
                                 .into_iter()
                                 .map(|buf| buf.into_series())
                                 .collect::<Result<_>>()?,
-                        ))
+                        );
+
+                        to_cast(&mut df, self.to_cast)?;
+                        Ok(df)
                     })
                     .collect::<Result<Vec<_>>>()
             })?;

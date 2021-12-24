@@ -508,25 +508,9 @@ where
                 self.null_values,
                 self.predicate,
                 self.aggregate,
+                &to_cast,
             )?;
-            let mut df = csv_reader.as_df()?;
-
-            // cast to the original dtypes in the schema
-            for fld in to_cast {
-                use DataType::*;
-                df.may_apply(fld.name(), |s| match (s.dtype(), fld.data_type()) {
-                    #[cfg(feature = "temporal")]
-                    (Utf8, Date) => s.utf8().unwrap().as_date(None).map(|ca| ca.into_series()),
-                    #[cfg(feature = "temporal")]
-                    (Utf8, Datetime) => s
-                        .utf8()
-                        .unwrap()
-                        .as_datetime(None)
-                        .map(|ca| ca.into_series()),
-                    (_, dt) => s.cast(dt),
-                })?;
-            }
-            df
+            csv_reader.as_df()?
         } else {
             let reader_bytes = get_reader_bytes(&mut self.reader)?;
             let mut csv_reader = CoreReader::new(
@@ -552,6 +536,7 @@ where
                 self.null_values,
                 self.predicate,
                 self.aggregate,
+                &[],
             )?;
             csv_reader.as_df()?
         };
