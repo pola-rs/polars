@@ -105,6 +105,7 @@ Computations
     Series.rolling_median
     Series.rolling_quantile
     Series.rolling_skew
+    Series.ew_mean
     Series.hash
     Series.peak_max
     Series.peak_min
