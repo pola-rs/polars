@@ -44,11 +44,8 @@ export const range = (start: number, end: number) => {
 };
 
 
-export const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
 export const isDataFrameArray = (ty: any): ty is DataFrame[] => Array.isArray(ty) &&  isExternal(ty[0]?._df);
-export const isSeries = <T>(ty: any): ty is Series<T> => isExternal(ty._series);
 export const isSeriesArray = <T>(ty: any): ty is Series<T>[] => Array.isArray(ty) &&  isExternal(ty[0]?._series);
-export const isExpr = (ty: any): ty is Expr => isExternal(ty?._expr);
 export const isExprArray = (ty: any): ty is Expr[] => Array.isArray(ty) && isExternal(ty[0]?._expr);
 export const regexToString = (r: string | RegExp): string => {
   if(isRegExp(r)) {

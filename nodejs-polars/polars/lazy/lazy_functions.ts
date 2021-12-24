@@ -1,7 +1,7 @@
 import {Expr, exprToLitOrExpr} from "./expr";
 import {Series} from "../series";
 import { DataFrame } from "../dataframe";
-import { ExprOrString, isSeries, range, selectionToExprList} from "../utils";
+import { ExprOrString, range, selectionToExprList} from "../utils";
 import pli from "../internals/polars_internal";
 
 /**
@@ -101,7 +101,7 @@ export function col(col: string): Expr
 export function col(col: string[]): Expr
 export function col(col: Series<string>): Expr
 export function col(col: string | string[] | Series<string>): Expr {
-  if(isSeries(col)) {
+  if(Series.isSeries(col)) {
     col = col.toArray();
   }
   if(Array.isArray(col)) {
@@ -120,7 +120,7 @@ export function lit(value: any): Expr {
   if(Array.isArray(value)) {
     value = Series(value);
   }
-  if(isSeries(value)){
+  if(Series.isSeries(value)){
 
     return Expr(pli.lit({value: value._series}));
   }
@@ -242,7 +242,7 @@ export function concatString(opts, sep=",") {
 export function count(column: string): Expr
 export function count(column: Series<any>): number
 export function count(column: string | Series<any>): Expr | number {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     return column.len();
   } else {
     return col(column).count();
@@ -272,7 +272,7 @@ export function exclude(column: string, ...columns: string[]) {
 export function first(column: string): Expr
 export function first<T>(column: Series<T>): T
 export function first<T>(column: string | Series<T>): Expr | T {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     if(column.length) {
       return column[0];
     } else {
@@ -342,7 +342,7 @@ export function groups(column: string): Expr {
 export function head(column: ExprOrString, n?: number): Expr;
 export function head<T>(column: Series<T>, n?: number): Series<T>;
 export function head<T>(column: Series<T> | ExprOrString, n?): Series<T> | Expr {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     return column.head(n);
   } else {
     return exprToLitOrExpr(column, false).head(n);
@@ -354,7 +354,7 @@ export function head<T>(column: Series<T> | ExprOrString, n?): Series<T> | Expr 
 export function last(column: ExprOrString): Expr
 export function last<T>(column: Series<T>): T
 export function last<T>(column: ExprOrString | Series<T>): Expr | T {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     if(column.length) {
       return column[-1];
     } else {
@@ -369,7 +369,7 @@ export function last<T>(column: ExprOrString | Series<T>): Expr | T {
 export function mean(column: ExprOrString): Expr;
 export function mean(column: Series<any>): number;
 export function mean(column: Series<any> | ExprOrString): number | Expr {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     return column.mean();
   }
 
@@ -380,7 +380,7 @@ export function mean(column: Series<any> | ExprOrString): number | Expr {
 export function median(column: ExprOrString): Expr;
 export function median(column: Series<any>): number;
 export function median(column: Series<any> | ExprOrString): number | Expr {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     return column.median();
   }
 
@@ -391,7 +391,7 @@ export function median(column: Series<any> | ExprOrString): number | Expr {
 export function nUnique(column: ExprOrString): Expr;
 export function nUnique(column: Series<any>): number;
 export function nUnique(column: Series<any> | ExprOrString): number | Expr {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     return column.nUnique();
   }
 
@@ -411,7 +411,7 @@ export function pearsonCorr(a: ExprOrString, b: ExprOrString): Expr {
 export function quantile(column: ExprOrString, q: number): Expr;
 export function quantile(column: Series<any>, q: number): number;
 export function quantile(column, q) {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     return column.quantile(q);
   }
 
@@ -439,7 +439,7 @@ export function spearmanRankCorr(a: ExprOrString, b: ExprOrString): Expr {
 export function tail(column: ExprOrString, n?: number): Expr;
 export function tail<T>(column: Series<T>, n?: number): Series<T>;
 export function tail<T>(column: Series<T> | ExprOrString, n?: number): Series<T> | Expr {
-  if(isSeries(column)) {
+  if(Series.isSeries(column)) {
     return column.tail(n);
   } else {
     return exprToLitOrExpr(column, false).tail(n);

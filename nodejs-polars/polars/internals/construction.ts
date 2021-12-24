@@ -4,6 +4,9 @@ import { isTypedArray } from "util/types";
 import {Series} from "../series";
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
+  if(value === null) {
+    return DataType.Float64;
+  }
   if (Array.isArray(value)) {
     return jsTypeToPolarsType(value[0]);
   }
