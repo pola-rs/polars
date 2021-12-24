@@ -38,14 +38,14 @@ def test_cumcount() -> None:
 
 def test_log_exp() -> None:
     a = pl.Series("a", [1, 100, 1000])
+    b = pl.Series("a", [0.0, 2.0, 3.0])
     out = pl.select(a.log10()).to_series()
-    expected = pl.Series("a", [0.0, 2.0, 3.0])
-    testing.assert_series_equal(out, expected)
+    testing.assert_series_equal(out, b)
 
     out = pl.select(a.log()).to_series()
     expected = pl.Series("a", np.log(a.to_numpy()))
     testing.assert_series_equal(out, expected)
 
-    out = pl.select(a.exp()).to_series()
-    expected = pl.Series("a", np.exp(a.to_numpy()))
+    out = pl.select(b.exp()).to_series()
+    expected = pl.Series("a", np.exp(b.to_numpy()))
     testing.assert_series_equal(out, expected)

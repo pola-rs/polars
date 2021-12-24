@@ -1,4 +1,4 @@
-pub use polars_core::utils::{Arena, Node};
+pub(crate) use polars_utils::arena::{Arena, Node};
 
 pub use crate::{
     dsl::*,

@@ -61,7 +61,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.8.1"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=45e72e98c8857007ca8679e68837ff0eb50f551d#45e72e98c8857007ca8679e68837ff0eb50f551d"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=830bf5fb519010a9b6faa347a06cedab2044206b#830bf5fb519010a9b6faa347a06cedab2044206b"
 dependencies = [
  "arrow-format",
  "base64",
@@ -1222,6 +1222,7 @@ dependencies = [
  "num_cpus",
  "polars-arrow",
  "polars-core",
+ "polars-utils",
  "rayon",
  "regex",
  "simdutf8",
@@ -1236,6 +1237,7 @@ dependencies = [
  "polars-arrow",
  "polars-core",
  "polars-io",
+ "polars-utils",
  "rayon",
  "regex",
 ]
@@ -1246,6 +1248,13 @@ version = "0.18.0"
 dependencies = [
  "chrono",
  "polars-arrow",
+]
+
+[[package]]
+name = "polars-utils"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
 ]
 
 [[package]]
@@ -1271,7 +1280,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.12.2"
+version = "0.12.4"
 dependencies = [
  "ahash",
  "bincode",

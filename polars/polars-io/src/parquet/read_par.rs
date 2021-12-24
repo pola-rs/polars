@@ -5,6 +5,7 @@ use arrow::io::parquet::read::{FileMetaData, MutStreamingIterator};
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
+use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::convert::TryFrom;
@@ -42,6 +43,12 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
     let n_groups = file_metadata.row_groups.len();
     let mut dfs = Vec::with_capacity(n_groups);
 
+    // we need to store two buffers to be reused, so the contention pool size
+    // is the number of threads * 3 b1, b2, and column_chunks
+    let pool_size = POOL.current_num_threads() * 2 + 1;
+
+    let cont_pool = LowContentionPool::<Vec<u8>>::new(pool_size);
+
     for row_group in 0..n_groups {
         let columns = POOL.install(|| {
             parq_fields
@@ -57,6 +64,7 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
                     // create a new reader
                     let reader = Cursor::new(bytes);
 
+                    let b1 = cont_pool.get();
                     // get compressed column pages
                     let mut columns = read::get_column_iterator(
                         reader,
@@ -64,7 +72,7 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
                         row_group,
                         field_i,
                         None,
-                        Vec::with_capacity(64),
+                        b1,
                     );
 
                     let mut column_chunks = Vec::with_capacity(64);
@@ -81,8 +89,10 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
                     let columns = read::ReadColumnIterator::new(field.clone(), column_chunks);
                     let field = &arrow_schema.fields()[field_i];
 
-                    let (arr, _b1, _b2_) =
-                        read::column_iter_to_array(columns, field, Vec::with_capacity(64))?;
+                    let b2 = cont_pool.get();
+                    let (arr, b1, b2) = read::column_iter_to_array(columns, field, b2)?;
+                    cont_pool.set(b1);
+                    cont_pool.set(b2);
                     Series::try_from((field.name().as_str(), Arc::from(arr) as ArrayRef))
                 })
                 .collect::<Result<Vec<_>>>()

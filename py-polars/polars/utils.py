@@ -1,14 +1,14 @@
 import ctypes
 import sys
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Sequence, Tuple, Type, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
 else:
-    from typing_extensions import TypeGuard
+    from typing_extensions import TypeGuard  # pragma: no cover
 
 
 def _process_null_values(
@@ -77,3 +77,13 @@ def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
 
 def _is_iterable_of(val: Iterable, itertype: Type, eltype: Type) -> bool:
     return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
+
+
+def range_to_slice(rng: range) -> slice:
+    step: Optional[int]
+    # maybe we can slice instead of take by indices
+    if rng.step != 1:
+        step = rng.step
+    else:
+        step = None
+    return slice(rng.start, rng.stop, step)

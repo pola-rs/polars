@@ -8,7 +8,7 @@ use crate::utils::{aexprs_to_schema, PushNode};
 use ahash::RandomState;
 use polars_core::frame::groupby::DynamicGroupOptions;
 use polars_core::prelude::*;
-use polars_core::utils::{Arena, Node};
+use polars_utils::arena::{Arena, Node};
 use std::collections::HashSet;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;

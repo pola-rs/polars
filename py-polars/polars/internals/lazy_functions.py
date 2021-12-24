@@ -631,7 +631,7 @@ def map(
     -------
     Expr
     """
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=False))
 
 
@@ -666,7 +666,7 @@ def apply(
     -------
     Expr
     """
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=True))
 
 
@@ -724,7 +724,7 @@ def fold(
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]
 
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
 
 
@@ -902,7 +902,7 @@ def argsort_by(
     """
     if not isinstance(reverse, list):
         reverse = [reverse] * len(exprs)
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyargsort_by(exprs, reverse))
 
 
@@ -1000,7 +1000,7 @@ def concat_str(exprs: Sequence[Union["pli.Expr", str]], sep: str = "") -> "pli.E
     sep
         String value that will be used to separate the values.
     """
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_str(exprs, sep))
 
 
@@ -1109,7 +1109,7 @@ def concat_list(exprs: Sequence[Union[str, "pli.Expr"]]) -> "pli.Expr":
     └─────────────────┘
 
     """
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_lst(exprs))
 
 

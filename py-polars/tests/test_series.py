@@ -1,5 +1,5 @@
-from datetime import date
-from typing import Any, Sequence
+from datetime import date, datetime
+from typing import Any, Union
 
 import numpy as np
 import pandas as pd
@@ -302,7 +302,7 @@ def test_set_np_array(dtype: Any) -> None:
 
 
 @pytest.mark.parametrize("idx", [[0, 2], (0, 2)])
-def test_set_list_and_tuple(idx: Sequence) -> None:
+def test_set_list_and_tuple(idx: Union[list, tuple]) -> None:
     a = pl.Series("a", [1, 2, 3])
     a[idx] = 4
     testing.assert_series_equal(a, pl.Series("a", [4, 2, 4]))
@@ -486,12 +486,12 @@ def test_arange_expr() -> None:
     assert out.select_at_idx(0)[-1] == 19
 
     # eager arange
-    out = pl.arange(0, 10, 2, eager=True)
-    assert out == [0, 2, 4, 8, 8]
+    out2 = pl.arange(0, 10, 2, eager=True)
+    assert out2 == [0, 2, 4, 8, 8]
 
-    out = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
-    assert out.dtype == pl.List
-    assert out[0].to_list() == [0, 2]
+    out3 = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
+    assert out3.dtype == pl.List  # type: ignore
+    assert out3[0].to_list() == [0, 2]  # type: ignore
 
 
 def test_round() -> None:
@@ -617,6 +617,28 @@ def test_arr_lengths_dispatch() -> None:
     testing.assert_series_equal(
         df.select(pl.col("a").arr.lengths())["a"], pl.Series("a", [2, 3], dtype=UInt32)
     )
+
+
+def test_arr_arithmetic() -> None:
+    s = pl.Series("a", [[1, 2], [1, 2, 3]])
+    testing.assert_series_equal(s.arr.sum(), pl.Series("a", [3, 6]))
+    testing.assert_series_equal(s.arr.mean(), pl.Series("a", [1.5, 2.0]))
+    testing.assert_series_equal(s.arr.max(), pl.Series("a", [2, 3]))
+    testing.assert_series_equal(s.arr.min(), pl.Series("a", [1, 1]))
+
+
+def test_arr_ordering() -> None:
+    s = pl.Series("a", [[2, 1], [1, 3, 2]])
+    testing.assert_series_equal(s.arr.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
+    testing.assert_series_equal(s.arr.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
+
+
+def test_arr_unique() -> None:
+    s = pl.Series("a", [[2, 1], [1, 2, 2]])
+    result = s.arr.unique()
+    assert len(result) == 2
+    assert sorted(result[0]) == [1, 2]
+    assert sorted(result[1]) == [1, 2]
 
 
 def test_sqrt_dispatch() -> None:
@@ -1021,6 +1043,20 @@ def test_str_lstrip() -> None:
     testing.assert_series_equal(result, expected)
 
 
+def test_str_strptime() -> None:
+    s = pl.Series(["2020-01-01", "2020-02-02"])
+    out = s.str.strptime(pl.Date, fmt="%Y-%m-%d")
+    expected = pl.Series([date(2020, 1, 1), date(2020, 2, 2)])
+    testing.assert_series_equal(out, expected)
+
+    s = pl.Series(["2020-01-01 00:00:00", "2020-02-02 03:20:10"])
+    out = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S")
+    expected = pl.Series(
+        [datetime(2020, 1, 1, 0, 0, 0), datetime(2020, 2, 2, 3, 20, 10)]
+    )
+    testing.assert_series_equal(out, expected)
+
+
 def test_dt_strftime() -> None:
     a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)
     assert a.dtype == pl.Date
@@ -1045,6 +1081,29 @@ def test_dt_year_month_week_day_ordinal_day() -> None:
     assert a.dt.mean() == date(2024, 10, 4)
 
 
+def test_dt_datetimes() -> None:
+    s = pl.Series(["2020-01-01 00:00:00", "2020-02-02 03:20:10"])
+    s = s.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S")
+
+    # hours, minutes, seconds and nanoseconds
+    testing.assert_series_equal(s.dt.hour(), pl.Series("", [0, 3], dtype=UInt32))
+    testing.assert_series_equal(s.dt.minute(), pl.Series("", [0, 20], dtype=UInt32))
+    testing.assert_series_equal(s.dt.second(), pl.Series("", [0, 10], dtype=UInt32))
+    testing.assert_series_equal(s.dt.nanosecond(), pl.Series("", [0, 0], dtype=UInt32))
+
+    # epoch methods
+    testing.assert_series_equal(
+        s.dt.epoch_days(), pl.Series("", [18262, 18294], dtype=Int32)
+    )
+    testing.assert_series_equal(
+        s.dt.epoch_seconds(), pl.Series("", [1_577_836_800, 1_580_613_610], dtype=Int64)
+    )
+    testing.assert_series_equal(
+        s.dt.epoch_milliseconds(),
+        pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=Int64),
+    )
+
+
 def test_compare_series_value_mismatch() -> None:
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.Series([2, 3, 4])
@@ -1057,6 +1116,10 @@ def test_compare_series_type_mismatch() -> None:
     srs2 = pl.DataFrame({"col1": [2, 3, 4]})
     with pytest.raises(AssertionError, match="Series are different\n\nType mismatch"):
         testing.assert_series_equal(srs1, srs2)  # type: ignore
+
+    srs3 = pl.Series([1.0, 2.0, 3.0])
+    with pytest.raises(AssertionError, match="Series are different\n\nDtype mismatch"):
+        testing.assert_series_equal(srs1, srs3)
 
 
 def test_compare_series_name_mismatch() -> None:
@@ -1117,18 +1180,18 @@ def test_nested_list_types_preserved() -> None:
 
 def test_log_exp() -> None:
     a = pl.Series("a", [1, 100, 1000])
+    b = pl.Series("a", [0.0, 2.0, 3.0])
 
     out = a.log10()
-    expected = pl.Series("a", [0.0, 2.0, 3.0])
-    testing.assert_series_equal(out, expected)
+    testing.assert_series_equal(out, b)
     a = pl.Series("a", [1, 100, 1000])
 
     out = a.log()
     expected = pl.Series("a", np.log(a.to_numpy()))
     testing.assert_series_equal(out, expected)
 
-    out = a.exp()
-    expected = pl.Series("a", np.exp(a.to_numpy()))
+    out = b.exp()
+    expected = pl.Series("a", np.exp(b.to_numpy()))
     testing.assert_series_equal(out, expected)
 
 

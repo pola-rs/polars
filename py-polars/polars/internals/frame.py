@@ -3,7 +3,7 @@ Module containing logic related to eager DataFrames
 """
 import os
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -27,7 +27,7 @@ from typing import (
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal
+    from typing_extensions import Literal  # pragma: no cover
 
 import numpy as np
 
@@ -59,7 +59,12 @@ except ImportError:  # pragma: no cover
 
 from polars._html import NotebookFormatter
 from polars.datatypes import Boolean, DataType, Datetime, UInt32, py_type_to_dtype
-from polars.utils import _process_null_values, is_int_sequence, is_str_sequence
+from polars.utils import (
+    _process_null_values,
+    is_int_sequence,
+    is_str_sequence,
+    range_to_slice,
+)
 
 try:
     import pandas as pd
@@ -216,7 +221,7 @@ class DataFrame:
 
         elif _PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
+                raise ImportError(  # pragma: no cover
                     "'pyarrow' is required for converting a pandas DataFrame to a polars DataFrame."
                 )
             self._df = pandas_to_pydf(data, columns=columns)
@@ -611,7 +616,7 @@ class DataFrame:
             - CategoricalType
         """
         if not _PYARROW_AVAILABLE:
-            raise ImportError(
+            raise ImportError(  # pragma: no cover
                 "'pyarrow' is required for converting a polars DataFrame to an Arrow Table."
             )
         record_batches = self._df.to_arrow()
@@ -1032,7 +1037,7 @@ class DataFrame:
 
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
+                raise ImportError(  # pragma: no cover
                     "'pyarrow' is required when using 'to_parquet(..., use_pyarrow=True)'."
                 )
 
@@ -1140,17 +1145,35 @@ class DataFrame:
         else:
             return self.shape[dim] + idx
 
-    def __getitem__(self, item: Any) -> Any:
+    # __getitem__() mostly returns a dataframe. The major exception is when a string is passed in. Note that there are
+    # more subtle cases possible where a non-string value leads to a Series.
+    @overload
+    def __getitem__(self, item: str) -> "pli.Series":  # type: ignore
+        ...
+
+    @overload
+    def __getitem__(
+        self,
+        item: Union[
+            int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple
+        ],
+    ) -> "DataFrame":
+        ...
+
+    def __getitem__(
+        self,
+        item: Union[
+            str, int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple
+        ],
+    ) -> Union["DataFrame", "pli.Series"]:
         """
         Does quite a lot. Read the comments.
         """
-        if hasattr(item, "_pyexpr"):
+        if isinstance(item, pli.Expr):
             return self.select(item)
-        if isinstance(item, np.ndarray):
-            item = pli.Series("", item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
-        if isinstance(item, tuple):
+        if isinstance(item, tuple) and len(item) == 2:
             row_selection, col_selection = item
 
             # df[:, unknown]
@@ -1220,10 +1243,10 @@ class DataFrame:
                 # df[:, [1, 2]]
                 # select by column indexes
                 if isinstance(col_selection[0], int):
-                    series = [self.to_series(i) for i in col_selection]
-                    df = DataFrame(series)
+                    series_list = [self.to_series(i) for i in col_selection]
+                    df = DataFrame(series_list)
                     return df[row_selection]
-            df = self.__getitem__(col_selection)
+            df = self.__getitem__(col_selection)  # type: ignore
             return df.__getitem__(row_selection)
 
         # select single column
@@ -1237,14 +1260,7 @@ class DataFrame:
 
         # df[range(n)]
         if isinstance(item, range):
-            step: Optional[int]
-            # maybe we can slice instead of take by indices
-            if item.step != 1:
-                step = item.step
-            else:
-                step = None
-            slc = slice(item.start, item.stop, step)
-            return self[slc]
+            return self[range_to_slice(item)]
 
         # df[:]
         if isinstance(item, slice):
@@ -1273,38 +1289,42 @@ class DataFrame:
                     pli.col("*").slice(start, length).take_every(item.step)  # type: ignore
                 )
 
-        # select multiple columns
-        # df["foo", "bar"]
-        if isinstance(item, Sequence):
-            if isinstance(item[0], str):
-                return wrap_df(self._df.select(item))
-            elif isinstance(item[0], pli.Expr):
-                return self.select(item)
-
-        # select rows by mask or index
+        # select rows by numpy mask or index
         # df[[1, 2, 3]]
-        # df[true, false, true]
+        # df[[true, false, true]]
         if isinstance(item, np.ndarray):
             if item.dtype == int:
                 return wrap_df(self._df.take(item))
             if isinstance(item[0], str):
                 return wrap_df(self._df.select(item))
-        if isinstance(item, (pli.Series, Sequence)):
-            if isinstance(item, Sequence):
-                # only bool or integers allowed
-                if type(item[0]) == bool:
-                    item = pli.Series("", item)
-                else:
-                    return wrap_df(
-                        self._df.take([self._pos_idx(i, dim=0) for i in item])
-                    )
+            if item.dtype == bool:
+                return wrap_df(self._df.filter(pli.Series("", item).inner()))
+
+        if isinstance(item, Sequence):
+            if isinstance(item[0], str):
+                # select multiple columns
+                # df[["foo", "bar"]]
+                return wrap_df(self._df.select(item))
+            elif isinstance(item[0], pli.Expr):
+                return self.select(item)
+            elif type(item[0]) == bool:
+                item = pli.Series("", item)  # fall through to next if isinstance
+            elif is_int_sequence(item):
+                return wrap_df(self._df.take([self._pos_idx(i, dim=0) for i in item]))
+
+        if isinstance(item, pli.Series):
             dtype = item.dtype
             if dtype == Boolean:
                 return wrap_df(self._df.filter(item.inner()))
             if dtype == UInt32:
                 return wrap_df(self._df.take_with_series(item.inner()))
 
-    def __setitem__(self, key: Union[str, int, Tuple[Any, Any]], value: Any) -> None:
+        # if no data has been returned, the operation is not supported
+        raise NotImplementedError
+
+    def __setitem__(
+        self, key: Union[str, int, List, Tuple[Any, Any]], value: Any
+    ) -> None:
         # df["foo"] = series
         if isinstance(key, str):
             try:
@@ -1335,7 +1355,7 @@ class DataFrame:
             if isinstance(col_selection, str):
                 s = self.__getitem__(col_selection)
             elif isinstance(col_selection, int):
-                s = self[:, col_selection]
+                s = self[:, col_selection]  # type: ignore
             else:
                 raise ValueError(f"column selection not understood: {col_selection}")
 
@@ -2046,7 +2066,7 @@ class DataFrame:
         """
         return wrap_df(self._df.tail(length))
 
-    def drop_nulls(self, subset: Optional[List[str]] = None) -> "DataFrame":
+    def drop_nulls(self, subset: Optional[Union[str, List[str]]] = None) -> "DataFrame":
         """
         Return a new DataFrame where the null values are dropped.
 
@@ -2140,7 +2160,7 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        if subset is not None and isinstance(subset, str):
+        if isinstance(subset, str):
             subset = [subset]
         return wrap_df(self._df.drop_nulls(subset))
 
@@ -2526,8 +2546,8 @@ class DataFrame:
         bounds = self.select(
             [pli.col(by).min().alias("low"), pli.col(by).max().alias("high")]
         )
-        low = bounds["low"].dt[0]
-        high = bounds["high"].dt[0]
+        low: datetime = bounds["low"].dt[0]  # type: ignore
+        high: datetime = bounds["high"].dt[0]  # type: ignore
         upsampled = pli.date_range(low, high, interval, name=by)
         return DataFrame(upsampled).join(self, on=by, how="left")
 
@@ -2715,6 +2735,22 @@ class DataFrame:
         ----------
         existing_name
         new_name
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+        >>> df.with_column_renamed("b", "c")
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ c   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 4   │
+        └─────┴─────┘
+
         """
         return (
             self.lazy()
@@ -2960,7 +2996,7 @@ class DataFrame:
         """
         return self[name]
 
-    def fill_null(self, strategy: Union[str, "pli.Expr"]) -> "DataFrame":
+    def fill_null(self, strategy: Union[str, "pli.Expr", Any]) -> "DataFrame":
         """
         Fill None/missing values by a filling strategy or an Expression evaluation.
 
@@ -3324,7 +3360,7 @@ class DataFrame:
             return wrap_df(self._df.max())
         if axis == 1:
             return pli.wrap_s(self._df.hmax())
-        raise ValueError("Axis should be 0 or 1.")
+        raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
         """
@@ -3354,7 +3390,7 @@ class DataFrame:
             return wrap_df(self._df.min())
         if axis == 1:
             return pli.wrap_s(self._df.hmin())
-        raise ValueError("Axis should be 0 or 1.")
+        raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def sum(
         self, axis: int = 0, null_strategy: str = "ignore"
@@ -3394,7 +3430,7 @@ class DataFrame:
             return wrap_df(self._df.sum())
         if axis == 1:
             return pli.wrap_s(self._df.hsum(null_strategy))
-        raise ValueError("Axis should be 0 or 1.")
+        raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def mean(
         self, axis: int = 0, null_strategy: str = "ignore"
@@ -3434,7 +3470,7 @@ class DataFrame:
             return wrap_df(self._df.mean())
         if axis == 1:
             return pli.wrap_s(self._df.hmean(null_strategy))
-        raise ValueError("Axis should be 0 or 1.")
+        raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def std(self) -> "DataFrame":
         """
@@ -3742,13 +3778,10 @@ class DataFrame:
             function that takes two `Series` and returns a `Series`.
 
         """
-        if self.width == 1:
-            return self.to_series(0)
-        df = self
-        acc = operation(df.to_series(0), df.to_series(1))
+        acc = self.to_series(0)
 
-        for i in range(2, df.width):
-            acc = operation(acc, df.to_series(i))
+        for i in range(1, self.width):
+            acc = operation(acc, self.to_series(i))
         return acc
 
     def row(self, index: int) -> Tuple[Any]:
@@ -3996,7 +4029,7 @@ class GroupBy:
 
         # should be only one match
         try:
-            groups_idx = groups[mask][0]
+            groups_idx = groups[mask][0]  # type: ignore
         except IndexError:
             raise ValueError(f"no group: {group_value} found")
 

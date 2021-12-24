@@ -18,6 +18,7 @@ clippy:
 	    -p polars-io \
 	    -p polars-lazy \
 	    -p polars-arrow \
+	    -p polars-utils \
 	    -p polars-time
 
 clippy-default:
@@ -30,6 +31,7 @@ test:
 	    -p polars-core \
 	    -p polars-arrow \
 	    -p polars-time \
+	    -p polars-utils \
 	    -- \
 	    --test-threads=2
 

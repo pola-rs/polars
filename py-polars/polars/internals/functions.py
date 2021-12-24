@@ -69,6 +69,23 @@ def concat(
         On of {"vertical", "diagonal"}.
         Vertical: Applies multiple `vstack` operations.
         Diagonal: Finds a union between the column schemas and fills missing column values with null.
+
+    Examples
+    --------
+    >>> df1 = pl.DataFrame({"a": [1], "b": [3]})
+    >>> df2 = pl.DataFrame({"a": [2], "b": [4]})
+    >>> pl.concat([df1, df2])
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   │
+    └─────┴─────┘
+
     """
     if not len(items) > 0:
         raise ValueError("cannot concat empty list")
