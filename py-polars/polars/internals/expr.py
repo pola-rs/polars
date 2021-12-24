@@ -2124,7 +2124,7 @@ class Expr:
             alpha = 2.0 / (span + 1.0)
         if halflife is not None and alpha is not None:
             assert halflife > 0.0
-            alpha = 1.0 - np.exp(-np.ln(2.0) / halflife)
+            alpha = 1.0 - np.exp(-np.log(2.0) / halflife)
         if alpha is None:
             raise ValueError(
                 "at least one of {com, span, halflife, alpha} should be set"
