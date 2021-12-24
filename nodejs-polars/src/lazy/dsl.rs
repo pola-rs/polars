@@ -465,10 +465,6 @@ pub fn sort_by(cx: CallContext) -> JsResult<JsExternal> {
 
     expr.clone().sort_by(by, reverse).try_into_js(&cx)
 }
-// pub fn sort_by(&self, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyExpr {
-//     let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-//     self.clone().inner.sort_by(by, reverse).into()
-// }
 #[js_function(1)]
 pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
