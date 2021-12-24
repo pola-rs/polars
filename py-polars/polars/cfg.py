@@ -14,7 +14,10 @@ class Config:
         """
         Use utf8 characters to print tables
         """
-        os.environ.unsetenv("POLARS_FMT_NO_UTF8")  # type: ignore
+        # os.unsetenv is automatically called if we remove a key from os.environ,
+        # see https://docs.python.org/3/library/os.html#os.environ. However, we cannot call
+        # os.unsetenv directly, as that fails on Windows
+        os.environ.pop("POLARS_FMT_NO_UTF8", None)
         return cls
 
     @classmethod
