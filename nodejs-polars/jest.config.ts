@@ -11,7 +11,7 @@ export default {
   testEnvironment: "node",
   clearMocks: true,
   collectCoverage: false,
-  moduleDirectories: ["<rootDir>/.yarn/cache", "./polars"],
+  moduleDirectories: ["node_modules", "./polars"],
   moduleFileExtensions: ["js", "ts"],
   setupFilesAfterEnv : ["<rootDir>/__tests__/setup.ts"],
   moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths, { prefix: "<rootDir>/polars" }),

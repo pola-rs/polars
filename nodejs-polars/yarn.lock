@@ -4497,6 +4497,7 @@ __metadata:
     jest: ^27.3.1
     lint-staged: ^11.2.6
     prettier: ^2.4.1
+    source-map-support: ^0.5.21
     ts-jest: ^27.1.0
     ts-node: ^10.4.0
     typedoc: ^0.22.9
@@ -5262,7 +5263,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"source-map-support@npm:^0.5.6":
+"source-map-support@npm:^0.5.21, source-map-support@npm:^0.5.6":
   version: 0.5.21
   resolution: "source-map-support@npm:0.5.21"
   dependencies:
