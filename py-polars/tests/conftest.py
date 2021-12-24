@@ -1,10 +1,6 @@
-from functools import reduce
-from typing import Any
-
 import pytest
 
 import polars as pl
-from polars import testing
 
 
 @pytest.fixture
@@ -44,31 +40,3 @@ def fruits_cars() -> pl.DataFrame:
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
         }
     )
-
-
-def _getattr_multi(obj: object, op: str) -> Any:
-    """ "
-    Allows `op` to be multiple layers deep, i.e. op="str.lengths" will mean we first
-    get the attribute "str", and then the attribute "lengths"
-    """
-    op_list = op.split(".")
-    return reduce(lambda o, m: getattr(o, m), op_list, obj)
-
-
-def verify_series_and_expr_api(
-    input: pl.Series, expected: pl.Series, op: str, *args: Any
-) -> None:
-    """
-    Small helper function to test element-wise functions for both the series and expressions api.
-
-    Examples
-    --------
-    >>> s = pl.Series([1, 3, 2])
-    >>> expected = pl.Series([1, 2, 3])
-    >>> verify_series_and_expr_api(s, expected, "sort")
-    """
-    expr = _getattr_multi(pl.col("*"), op)(*args)
-    result_expr: pl.Series = input.to_frame().select(expr)[:, 0]  # type: ignore
-    result_series = _getattr_multi(input, op)(*args)
-    testing.assert_series_equal(result_expr, expected)
-    testing.assert_series_equal(result_series, expected)
