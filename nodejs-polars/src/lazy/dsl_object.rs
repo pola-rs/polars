@@ -163,6 +163,7 @@ impl dsl::JsExpr {
             napi::Property::new(env, "skew")?.with_method(dsl::skew),
             napi::Property::new(env, "slice")?.with_method(dsl::slice),
             napi::Property::new(env, "sort")?.with_method(dsl::sort),
+            napi::Property::new(env, "sortBy")?.with_method(dsl::sort_by),
             napi::Property::new(env, "sortWith")?.with_method(dsl::sort_with),
             napi::Property::new(env, "std")?.with_method(dsl::std),
             napi::Property::new(env, "suffix")?.with_method(dsl::suffix),

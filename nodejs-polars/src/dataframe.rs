@@ -1,7 +1,7 @@
 use crate::conversion::prelude::*;
 use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
-use crate::file::JsFileLike;
+use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
 use napi::{
     CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsString, JsUndefined,
@@ -182,7 +182,7 @@ pub(crate) fn to_json(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let stream = params.get::<JsObject>("writeStream")?;
-    let writeable = JsFileLike {
+    let writeable = JsWriteStream {
         inner: stream,
         env: cx.env,
     };
@@ -203,7 +203,7 @@ pub(crate) fn write_json_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let stream = params.get::<JsObject>("writeStream")?;
-    let writeable = JsFileLike {
+    let writeable = JsWriteStream {
         inner: stream,
         env: cx.env,
     };
@@ -323,7 +323,7 @@ pub(crate) fn write_csv_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let sep = sep.chars().next().unwrap();
 
     let stream = params.get::<JsObject>("writeStream")?;
-    let writeable = JsFileLike {
+    let writeable = JsWriteStream {
         inner: stream,
         env: cx.env,
     };

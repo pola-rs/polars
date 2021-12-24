@@ -41,7 +41,7 @@
     "bench": "node -r @swc-node/register benchmark/bench.ts",
     "build": "napi build --platform --release polars",
     "build:debug": "napi build --platform",
-    "build:ts": "tsc -p tsconfig.build.json",
+    "build:ts": " rm -rf bin; tsc -p tsconfig.build.json; mv bin/polars/* bin",
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
     "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
@@ -68,6 +68,7 @@
     "jest": "^27.3.1",
     "lint-staged": "^11.2.6",
     "prettier": "^2.4.1",
+    "source-map-support": "^0.5.21",
     "ts-jest": "^27.1.0",
     "ts-node": "^10.4.0",
     "typedoc": "^0.22.9",
@@ -90,5 +91,10 @@
     "trailingComma": "none",
     "singleQuote": true,
     "arrowParens": "always"
-  }
+  },
+  "packageManager": "yarn@3.1.1",
+  "workspaces": [
+    "benches",
+    "examples"
+  ]
 }
