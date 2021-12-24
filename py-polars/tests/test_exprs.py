@@ -1,5 +1,3 @@
-import numpy as np
-
 import polars as pl
 from polars import testing
 
@@ -36,16 +34,25 @@ def test_cumcount() -> None:
     assert out["foo"][1].to_list() == [0, 1]
 
 
-def test_log_exp() -> None:
-    a = pl.Series("a", [1, 100, 1000])
-    b = pl.Series("a", [0.0, 2.0, 3.0])
-    out = pl.select(a.log10()).to_series()
-    testing.assert_series_equal(out, b)
+def test_filter_where() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 1, 2, 3], "b": [4, 5, 6, 7, 8, 9]})
+    result_where = df.groupby("a", maintain_order=True).agg(
+        pl.col("b").where(pl.col("b") > 4).alias("c")
+    )
+    result_filter = df.groupby("a", maintain_order=True).agg(
+        pl.col("b").filter(pl.col("b") > 4).alias("c")
+    )
+    expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
+    assert result_where.frame_equal(expected)
+    assert result_filter.frame_equal(expected)
 
-    out = pl.select(a.log()).to_series()
-    expected = pl.Series("a", np.log(a.to_numpy()))
-    testing.assert_series_equal(out, expected)
 
-    out = pl.select(b.exp()).to_series()
-    expected = pl.Series("a", np.exp(b.to_numpy()))
-    testing.assert_series_equal(out, expected)
+def test_flatten_explode() -> None:
+    df = pl.Series("a", ["Hello", "World"])
+    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
+
+    result: pl.Series = df.to_frame().select(pl.col("a").flatten())[:, 0]  # type: ignore
+    testing.assert_series_equal(result, expected)
+
+    result: pl.Series = df.to_frame().select(pl.col("a").explode())[:, 0]  # type: ignore
+    testing.assert_series_equal(result, expected)

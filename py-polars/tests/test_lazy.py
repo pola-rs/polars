@@ -595,7 +595,7 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
             )
         )
 
-    for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
+    for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1]), pl.lit(1)]:
         out = df.sort("fruits").select(
             [col("B").reverse().take(index).list().over("fruits"), "fruits"]  # type: ignore
         )
@@ -866,10 +866,11 @@ def test_str_concat() -> None:
     assert df[0, 0] == "1-null-2"
 
 
-def test_collect_all(df: pl.DataFrame) -> None:
+@pytest.mark.parametrize("no_optimization", [False, True])
+def test_collect_all(df: pl.DataFrame, no_optimization: bool) -> None:
     lf1 = df.lazy().select(pl.col("int").sum())
     lf2 = df.lazy().select((pl.col("floats") * 2).sum())
-    out = pl.collect_all([lf1, lf2])
+    out = pl.collect_all([lf1, lf2], no_optimization=no_optimization)
     assert out[0][0, 0] == 6
     assert out[1][0, 0] == 12.0
 

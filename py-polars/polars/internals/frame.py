@@ -3392,6 +3392,20 @@ class DataFrame:
             return pli.wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
+    @overload
+    def sum(self, axis: Literal[0], null_strategy: str = "ignore") -> "DataFrame":
+        ...
+
+    @overload
+    def sum(self, axis: Literal[1], null_strategy: str = "ignore") -> "pli.Series":
+        ...
+
+    @overload
+    def sum(
+        self, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union["DataFrame", "pli.Series"]:
+        ...
+
     def sum(
         self, axis: int = 0, null_strategy: str = "ignore"
     ) -> Union["DataFrame", "pli.Series"]:

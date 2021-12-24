@@ -81,7 +81,7 @@ except ImportError:  # pragma: no cover
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
-    from typing_extensions import Literal
+    from typing_extensions import Literal  # pragma: no cover
 
 
 def get_ffi_func(
@@ -460,7 +460,7 @@ class Series:
         elif isinstance(key, (np.ndarray, list, tuple)):
             s = wrap_s(PySeries.new_u32("", np.array(key, np.uint32), True))
             self.__setitem__(s, value)
-        elif isinstance(key, int):
+        elif isinstance(key, int) and not isinstance(key, bool):
             self.__setitem__([key], value)
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
@@ -1995,7 +1995,9 @@ class Series:
         return wrap_s(f(filter._s, value))
 
     def set_at_idx(
-        self, idx: Union["Series", np.ndarray], value: Union[int, float]
+        self,
+        idx: Union["Series", np.ndarray, List[int], Tuple[int]],
+        value: Union[int, float, str, bool],
     ) -> "Series":
         """
         Set values at the index locations.

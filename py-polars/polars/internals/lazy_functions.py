@@ -233,7 +233,9 @@ def max(
         return column.max()
     elif isinstance(column, list):
 
-        def max_(acc: "pli.Series", val: "pli.Series") -> "pli.Series":
+        def max_(
+            acc: "pli.Series", val: "pli.Series"
+        ) -> "pli.Series":  # pragma: no cover
             mask = acc > val
             return acc.zip_with(mask, val)
 
@@ -271,7 +273,9 @@ def min(
         return column.min()
     elif isinstance(column, list):
 
-        def min_(acc: "pli.Series", val: "pli.Series") -> "pli.Series":
+        def min_(
+            acc: "pli.Series", val: "pli.Series"
+        ) -> "pli.Series":  # pragma: no cover
             mask = acc < val
             return acc.zip_with(mask, val)
 
@@ -1169,10 +1173,7 @@ def collect_all(
     out = _collect_all(prepared)
 
     # wrap the pydataframes into dataframe
-
-    result = []
-    for pydf in out:
-        result.append(pli.wrap_df(pydf))
+    result = [pli.wrap_df(pydf) for pydf in out]
 
     return result
 
