@@ -1213,7 +1213,7 @@ class Expr:
         """
 
         # input x: Series of type list containing the group values
-        def wrap_f(x: "pli.Series") -> "pli.Series":
+        def wrap_f(x: "pli.Series") -> "pli.Series":  # pragma: no cover
             return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f, agg_list=True)
@@ -1402,7 +1402,7 @@ class Expr:
 
         """
 
-        def inspect(s: "pli.Series") -> "pli.Series":
+        def inspect(s: "pli.Series") -> "pli.Series":  # pragma: no cover
             print(fmt.format(s))
             return s
 
@@ -2295,13 +2295,17 @@ class ExprStringNameSpace:
             "yyyy-mm-dd".
         """
         if not issubclass(datatype, DataType):
-            raise ValueError(f"expected: {DataType} got: {datatype}")
+            raise ValueError(
+                f"expected: {DataType} got: {datatype}"
+            )  # pragma: no cover
         if datatype == Date:
             return wrap_expr(self._pyexpr.str_parse_date(fmt))
         elif datatype == Datetime:
             return wrap_expr(self._pyexpr.str_parse_datetime(fmt))
         else:
-            raise ValueError("dtype should be of type {Date, Datetime}")
+            raise ValueError(
+                "dtype should be of type {Date, Datetime}"
+            )  # pragma: no cover
 
     def lengths(self) -> Expr:
         """
