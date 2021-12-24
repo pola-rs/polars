@@ -3050,7 +3050,7 @@ class Series:
         """
         return wrap_s(self._s.shuffle(seed))
 
-    def ew_mean(
+    def ewm_mean(
         self,
         com: Optional[float] = None,
         span: Optional[float] = None,
@@ -3080,7 +3080,7 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(pli.col(self.name).ew_mean(com, span, halflife, alpha, adjust))
+            .select(pli.col(self.name).ewm_mean(com, span, halflife, alpha, adjust))
             .to_series()
         )
 

@@ -3,12 +3,12 @@ pub use polars_arrow::kernels::ew::ExponentialWindowOptions;
 use polars_arrow::kernels::ew::{ewma_inf_hist_no_nulls, ewma_no_nulls};
 
 impl Series {
-    pub fn ew_mean(&self, options: ExponentialWindowOptions) -> Result<Self> {
+    pub fn ewm_mean(&self, options: ExponentialWindowOptions) -> Result<Self> {
         if self.null_count() > 0 {
             return self
                 .fill_null(FillNullStrategy::Zero)
                 .unwrap()
-                .ew_mean(options);
+                .ewm_mean(options);
         }
 
         match self.dtype() {
@@ -60,7 +60,7 @@ impl Series {
                     }
                 }
             }
-            _ => self.cast(&DataType::Float64)?.ew_mean(options),
+            _ => self.cast(&DataType::Float64)?.ewm_mean(options),
         }
     }
 }

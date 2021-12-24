@@ -1,7 +1,7 @@
 #[cfg(feature = "diff")]
 pub mod diff;
 #[cfg(feature = "ewma")]
-mod ew;
+mod ewm;
 #[cfg(feature = "moment")]
 pub mod moment;
 mod null;

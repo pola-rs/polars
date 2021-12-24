@@ -1218,11 +1218,15 @@ def test_to_physical() -> None:
 
 def test_ew() -> None:
     a = pl.Series("a", [2, 5, 3])
-    assert a.ew_mean(alpha=0.5, adjust=True).to_list() == [2.0, 4.0, 3.4285714285714284]
-    assert a.ew_mean(alpha=0.5, adjust=False).to_list() == [2.0, 3.5, 3.25]
+    assert a.ewm_mean(alpha=0.5, adjust=True).to_list() == [
+        2.0,
+        4.0,
+        3.4285714285714284,
+    ]
+    assert a.ewm_mean(alpha=0.5, adjust=False).to_list() == [2.0, 3.5, 3.25]
     assert pl.select(
-        pl.lit(a).ew_mean(alpha=0.5, adjust=True)
+        pl.lit(a).ewm_mean(alpha=0.5, adjust=True)
     ).to_series().to_list() == [2.0, 4.0, 3.4285714285714284]
     assert pl.select(
-        pl.lit(a).ew_mean(alpha=0.5, adjust=False)
+        pl.lit(a).ewm_mean(alpha=0.5, adjust=False)
     ).to_series().to_list() == [2.0, 3.5, 3.25]

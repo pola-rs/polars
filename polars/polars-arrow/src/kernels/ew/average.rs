@@ -76,12 +76,12 @@ mod test {
     #[test]
     fn test_ewma() {
         let vals = [2.0, 5.0, 3.0];
-        let out = ewma_no_nulls(vals.iter().copied(), 3, 0.5);
+        let out = ewma_no_nulls(vals.iter().copied(), 0.5);
         let expected = [2.0, 4.0, 3.4285714285714284];
         assert_eq!(out, expected);
 
         let vals = [2.0, 5.0, 3.0];
-        let out = ewma_inf_hist_no_nulls(vals.iter().copied(), 3, 0.5);
+        let out = ewma_inf_hist_no_nulls(vals.iter().copied(), 0.5);
         let expected = [2.0, 3.5, 3.25];
         assert_eq!(out, expected);
     }

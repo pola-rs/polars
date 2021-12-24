@@ -134,7 +134,7 @@ Computations
     Expr.rolling_median
     Expr.rolling_quantile
     Expr.rolling_skew
-    Expr.ew_mean
+    Expr.ewm_mean
     Expr.hash
     Expr.abs
     Expr.rank

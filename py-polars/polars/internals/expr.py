@@ -2088,7 +2088,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shuffle(seed))
 
-    def ew_mean(
+    def ewm_mean(
         self,
         com: Optional[float] = None,
         span: Optional[float] = None,
@@ -2129,7 +2129,7 @@ class Expr:
             raise ValueError(
                 "at least one of {com, span, halflife, alpha} should be set"
             )
-        return wrap_expr(self._pyexpr.ew_mean(alpha, adjust))
+        return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust))
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"

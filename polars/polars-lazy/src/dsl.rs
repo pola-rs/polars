@@ -1824,10 +1824,10 @@ impl Expr {
     }
 
     #[cfg(feature = "ewma")]
-    pub fn ew_mean(self, options: ExponentialWindowOptions) -> Self {
+    pub fn ewm_mean(self, options: ExponentialWindowOptions) -> Self {
         use DataType::*;
         self.apply(
-            move |s| s.ew_mean(options),
+            move |s| s.ewm_mean(options),
             GetOutput::map_dtype(|dt| match dt {
                 Float64 | Float32 => dt.clone(),
                 _ => Float64,
