@@ -26,17 +26,13 @@ from polars.datatypes import (
 )
 
 
-def _selection_to_pyexpr_list(
-    exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]], "pli.Series"]
+def selection_to_pyexpr_list(
+    exprs: Union[str, "Expr", Sequence[Union[str, "Expr", "pli.Series"]], "pli.Series"]
 ) -> List["PyExpr"]:
-    pyexpr_list: List[PyExpr]
-    if isinstance(exprs, Sequence) and not isinstance(exprs, str):
-        pyexpr_list = []
-        for expr in exprs:
-            pyexpr_list.append(expr_to_lit_or_expr(expr, str_to_lit=False)._pyexpr)
-    else:
-        pyexpr_list = [expr_to_lit_or_expr(exprs, str_to_lit=False)._pyexpr]
-    return pyexpr_list
+    if isinstance(exprs, (str, Expr, pli.Series)):
+        exprs = [exprs]
+
+    return [expr_to_lit_or_expr(e, str_to_lit=False)._pyexpr for e in exprs]
 
 
 def wrap_expr(pyexpr: "PyExpr") -> "Expr":
@@ -825,7 +821,7 @@ class Expr:
             by = [by]
         if not isinstance(reverse, list):
             reverse = [reverse]
-        by = _selection_to_pyexpr_list(by)
+        by = selection_to_pyexpr_list(by)
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
@@ -844,8 +840,6 @@ class Expr:
         """
         if isinstance(index, (list, np.ndarray)):
             index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
-        elif isinstance(index, pli.Series):
-            index_lit = pli.lit(index)
         else:
             index_lit = pli.expr_to_lit_or_expr(index, str_to_lit=False)
         return pli.wrap_expr(self._pyexpr.take(index_lit._pyexpr))
@@ -1069,7 +1063,7 @@ class Expr:
 
         """
 
-        pyexprs = _selection_to_pyexpr_list(expr)
+        pyexprs = selection_to_pyexpr_list(expr)
 
         return wrap_expr(self._pyexpr.over(pyexprs))
 
@@ -2745,7 +2739,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, bool, int, float, str, List[Expr], List[str], "pli.Series"],
+    expr: Union[Expr, bool, int, float, str, "pli.Series"],
     str_to_lit: bool = True,
 ) -> Expr:
     """
@@ -2769,7 +2763,7 @@ def expr_to_lit_or_expr(
         isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
     ):
         return pli.lit(expr)
-    elif isinstance(expr, list):
-        return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]
-    else:
+    elif isinstance(expr, Expr):
         return expr
+    else:
+        raise Exception
