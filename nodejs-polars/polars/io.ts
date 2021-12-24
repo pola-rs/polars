@@ -3,6 +3,7 @@ import pli from "./internals/polars_internal";
 import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";
 import {LazyDataFrame} from "./lazy/dataframe";
+import path from "path";
 const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   inferSchemaLength: 10,
   batchSize: 10,
@@ -61,7 +62,10 @@ export function readCSV(path: string, options: Partial<ReadCsvOptions>): DataFra
 export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
   const extensions = [".tsv", ".csv"];
   if(typeof arg === "string") {
-    return readCSV({...options, file: arg, inline: !isPath(arg, extensions)});
+    const inline = !isPath(arg, extensions);
+    const file = inline || path.isAbsolute(arg) ? arg : path.resolve(process.cwd(), arg);
+
+    return readCSV({...options, file, inline});
   }
   options = {...readCsvDefaultOptions, ...arg};
 
@@ -105,8 +109,10 @@ export function readJSON(path: string, options: ReadJsonOptions): DataFrame
 export function readJSON(arg: ReadJsonOptions | string, options?: any) {
   const extensions = [".ndjson", ".json", ".jsonl"];
   if(typeof arg === "string") {
+    const inline = !isPath(arg, extensions);
+    const file = inline || path.isAbsolute(arg) ? arg : path.resolve(process.cwd(), arg);
 
-    return readJSON({...options, file: arg, inline: !isPath(arg, extensions)});
+    return readJSON({...options, file, inline});
   }
   options = {...readJsonDefaultOptions, ...arg};
 

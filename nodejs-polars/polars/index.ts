@@ -4,6 +4,7 @@ import { DataType } from "./datatypes";
 import * as func from "./functions";
 import * as io from "./io";
 import * as cfg from "./cfg";
+import {version as _version} from "../package.json";
 
 import type { FillNullStrategy as _FillNullStrategy } from "./utils";
 import {
@@ -81,6 +82,6 @@ namespace pl {
   export import tail = lazy.tail
   export import list = lazy.list
   export import when = _when.when;
-
+  export const version = _version;
 }
 export = pl;

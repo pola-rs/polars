@@ -44,11 +44,7 @@ export interface DataFrame {
   [inspect](): string;
   [Symbol.iterator](): Generator<any, void, any>;
   inner(): JsDataFrame
-  /**
-   * TODO
-   * @param func
-   */
-  apply<U>(func: <T>(s: T) => U): DataFrame
+
   /**
    * Very cheap deep clone.
    */
@@ -85,46 +81,6 @@ export interface DataFrame {
    * ```
    */
   describe(): DataFrame
-  /**
-   * Start a downsampling groupby operation.
-   * @param by - Column that will be used as key in the groupby operation. (This should be a datetime/date column.)
-   * @param rule - Units of the downscaling operation.
-   * @param n - Number of units (e.g. 5 "day", 15 "minute".)
-   * @example
-   * ```
-   * >>> df = pl.DataFrame(
-   * >>>     {
-   * >>>         "A": ["2020-01-01", "2020-01-02", "2020-01-03","2020-01-04","2020-01-05","2020-01-06"],
-   * >>>         "B": [1.0, 8.0, 6.0, 2.0, 16.0, 10.0],
-   * >>>         "C": [3.0, 6.0, 9.0, 2.0, 13.0, 8.0],
-   * >>>         "D": [12.0, 5.0, 9.0, 2.0, 11.0, 2.0],
-   * >>>     }
-   * >>> )
-   * >>> df['A'] = df['A'].str.strftime(pl.Date, "%Y-%m-%d")
-   * >>>
-   * >>> df.downsample("A", rule="day", n=3).agg(
-   * >>>     {
-   * >>>         "B": "max",
-   * >>>         "C": "min",
-   * >>>         "D": "last"
-   * >>>     }
-   * >>> )
-   * shape: (3, 4)
-   * ┌──────────────┬───────┬───────┬────────┐
-   * │ A            ┆ B_max ┆ C_min ┆ D_last │
-   * │ ---          ┆ ---   ┆ ---   ┆ ---    │
-   * │ date(days)   ┆ f64   ┆ f64   ┆ f64    │
-   * ╞══════════════╪═══════╪═══════╪════════╡
-   * │ 2019-12-31   ┆ 8     ┆ 3     ┆ 5      │
-   * ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-   * │ 2020-01-03   ┆ 16    ┆ 2     ┆ 11     │
-   * ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
-   * │ 2020-01-06   ┆ 10    ┆ 8     ┆ 2      │
-   * └──────────────┴───────┴───────┴────────┘
-   * ```
-   */
-  downsample(opts: {by: ColumnSelection, rule: DownsampleRule, n: number}): GroupBy
-  downsample(by: ColumnSelection, rule: DownsampleRule, n: number): GroupBy
   /**
    * __Remove column from DataFrame and return as new.__
    * ___
@@ -1079,13 +1035,6 @@ export interface DataFrame {
   toSeries(index: number): Series<any>
   toString(): string
   /**
-   * Upsample a DataFrame at a regular frequency.
-   * @param by - Column that will be used as key in the upsampling operation. (This should be a datetime column.)
-   * @param interval - Interval periods.
-   */
-  upsample(opts: {by: string, interval: number}): DataFrame
-  upsample(by: string, interval: number): DataFrame
-  /**
    * Aggregate the columns of this DataFrame to their variance value.
    * @example
    * ```
@@ -1508,6 +1457,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       if(dest instanceof Stream.Writable) {
         unwrap("write_csv_stream", {writeStream: dest, ...options});
+        dest.end("");
 
       } else if (typeof dest === "string") {
         unwrap("write_csv", {path: dest, ...options});
@@ -1521,6 +1471,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
           }
         });
         unwrap("write_csv_stream", {writeStream, ...options, ...dest});
+        writeStream.end("");
 
         return body;
       } else {
@@ -1553,6 +1504,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       }, {});
     },
     toJSON(arg0?, options?): any {
+
       if(arg0 === "") {
         return this.toJS({orient: "literal", ...options});
       }
@@ -1593,11 +1545,8 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     multiplyBy: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
     modulo: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
     var: noArgWrap("var"),
-    apply: () => {throw todo();},
     map: (fn) => map(dfWrapper(_df), fn as any) as any,
-    pipe: (fn?) => {throw todo();},
     row: (index) => unwrap("to_row", {idx: index}),
-    upsample: (index) => {throw todo();},
     vstack: (other) => wrap("vstack", {other: other._df}),
     withColumn(column: Series<any> | Expr) {
       if(Series.isSeries(column)) {

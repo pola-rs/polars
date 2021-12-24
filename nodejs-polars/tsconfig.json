@@ -25,6 +25,7 @@
     "./docs/*",
     "./coverage/*",
     "./examples/*",
+    "./benches/*",
     "./bin/*",
     "./docs/*",
     "./jest.config.ts"

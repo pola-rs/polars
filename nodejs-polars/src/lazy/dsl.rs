@@ -197,7 +197,6 @@ pub fn str_parse_date(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let fmt = params.get_as::<Option<String>>("fmt")?;
     let function = move |s: Series| {
-        
         let ca = s.utf8()?;
         ca.as_date(fmt.as_deref()).map(|ca| ca.into_series())
     };
@@ -457,6 +456,19 @@ pub fn sort_with(cx: CallContext) -> JsResult<JsExternal> {
         })
         .try_into_js(&cx)
 }
+#[js_function(1)]
+pub fn sort_by(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let by = params.get_external_vec::<Expr>(&cx, "by")?;
+    let reverse: Vec<bool> = params.get_as("reverse")?;
+
+    expr.clone().sort_by(by, reverse).try_into_js(&cx)
+}
+// pub fn sort_by(&self, by: Vec<PyExpr>, reverse: Vec<bool>) -> PyExpr {
+//     let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+//     self.clone().inner.sort_by(by, reverse).into()
+// }
 #[js_function(1)]
 pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
