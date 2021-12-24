@@ -1822,6 +1822,18 @@ impl Expr {
     pub fn shuffle(self, seed: u64) -> Self {
         self.apply(move |s| Ok(s.shuffle(seed)), GetOutput::same_type())
     }
+
+    #[cfg(feature = "ewma")]
+    pub fn ewm_mean(self, options: ExponentialWindowOptions) -> Self {
+        use DataType::*;
+        self.apply(
+            move |s| s.ewm_mean(options),
+            GetOutput::map_dtype(|dt| match dt {
+                Float64 | Float32 => dt.clone(),
+                _ => Float64,
+            }),
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.

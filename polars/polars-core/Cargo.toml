@@ -72,6 +72,7 @@ diff = []
 moment = []
 diagonal_concat = []
 abs = []
+ewma = []
 
 dynamic_groupby = ["polars-time", "dtype-datetime", "dtype-date"]
 

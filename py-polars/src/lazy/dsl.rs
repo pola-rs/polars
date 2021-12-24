@@ -1027,6 +1027,11 @@ impl PyExpr {
     pub fn shuffle(&self, seed: u64) -> Self {
         self.inner.clone().shuffle(seed).into()
     }
+
+    pub fn ewm_mean(&self, alpha: f64, adjust: bool) -> Self {
+        let options = ExponentialWindowOptions { alpha, adjust };
+        self.inner.clone().ewm_mean(options).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

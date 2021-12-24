@@ -2088,6 +2088,49 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.shuffle(seed))
 
+    def ewm_mean(
+        self,
+        com: Optional[float] = None,
+        span: Optional[float] = None,
+        halflife: Optional[float] = None,
+        alpha: Optional[float] = None,
+        adjust: bool = True,
+    ) -> "Expr":
+        r"""
+        Exponential moving average. Null values are replaced with 0.0.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        halflife
+            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+        adjust
+            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+
+                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = False the EW function is calculated recursively.
+
+        """
+        if com is not None and alpha is not None:
+            assert com >= 0.0
+            alpha = 1.0 / (1.0 + com)
+        if span is not None and alpha is not None:
+            assert span >= 1.0
+            alpha = 2.0 / (span + 1.0)
+        if halflife is not None and alpha is not None:
+            assert halflife > 0.0
+            alpha = 1.0 - np.exp(-np.log(2.0) / halflife)
+        if alpha is None:
+            raise ValueError(
+                "at least one of {com, span, halflife, alpha} should be set"
+            )
+        return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust))
+
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
 

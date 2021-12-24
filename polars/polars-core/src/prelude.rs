@@ -49,3 +49,6 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptions;
 
 #[cfg(feature = "dynamic_groupby")]
 pub use polars_time::{groupby::ClosedWindow, Duration};
+
+#[cfg(feature = "ewma")]
+pub use polars_arrow::kernels::ew::ExponentialWindowOptions;

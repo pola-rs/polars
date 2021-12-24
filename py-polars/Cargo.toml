@@ -82,6 +82,7 @@ features = [
   "dtype-categorical",
   "diagonal_concat",
   "abs",
+  "ewma",
 ]
 
 # [patch.crates-io]

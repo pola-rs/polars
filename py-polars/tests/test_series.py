@@ -1214,3 +1214,19 @@ def test_to_physical() -> None:
     a = pl.Series("a", [date(2020, 1, 1)] * 3)
     expected = pl.Series("a", [18262] * 3, dtype=Int32)
     testing.assert_series_equal(a.to_physical(), expected)
+
+
+def test_ew() -> None:
+    a = pl.Series("a", [2, 5, 3])
+    assert a.ewm_mean(alpha=0.5, adjust=True).to_list() == [
+        2.0,
+        4.0,
+        3.4285714285714284,
+    ]
+    assert a.ewm_mean(alpha=0.5, adjust=False).to_list() == [2.0, 3.5, 3.25]
+    assert pl.select(
+        pl.lit(a).ewm_mean(alpha=0.5, adjust=True)
+    ).to_series().to_list() == [2.0, 4.0, 3.4285714285714284]
+    assert pl.select(
+        pl.lit(a).ewm_mean(alpha=0.5, adjust=False)
+    ).to_series().to_list() == [2.0, 3.5, 3.25]

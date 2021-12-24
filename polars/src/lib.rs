@@ -113,12 +113,15 @@
 //!                         * gzip
 //!
 //! * `DataFrame` operations:
+//!     - `dynamic_groupby` - Groupby based on a time window instead of predefined keys.
 //!     - `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
 //!     - `asof_join` - Join as of, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the cartesian product of two DataFrames.
 //!     - `groupby_list` - Allow groupby operation on keys of type List.
+//!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
+//!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
 //! * `Series` operations:
 //!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
@@ -139,10 +142,12 @@
 //!     - `list` - [List utils](crate::chunked_array::list::namespace)
 //!     - `rank` - Ranking algorithms.
 //!     - `moment` - kurtosis and skew statistics
+//!     - `ewma` - Exponential moving average windows
+//!     - `abs` - Get absolute values of Series
+//!     - `arange` - Range operation on Series
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)
-//!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
 //!
 //! ## Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around
