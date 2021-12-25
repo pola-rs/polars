@@ -103,3 +103,6 @@ def test_string_cache(environ: None) -> None:
     df2b = df2.with_column(pl.col("a").cast(pl.Categorical))
     out = df1b.join(df2b, on="a", how="inner")
     assert out.frame_equal(pl.DataFrame({"a": ["foo"], "b": [1], "c": [3]}))
+
+    # turn off again so we do not break other tests (TODO: environ fixture does not roll this back?)
+    pl.Config.unset_global_string_cache()
