@@ -21,37 +21,35 @@ def test_tables(environ: None) -> None:
     pl.Config.set_ascii_tables()
     df_asci = str(df)
     assert (
-        df_asci
-        == "shape: (3, 3)\n"
-           "+-----+-----+-----+\n"
-           "| a   | b   | c   |\n"
-           "| --- | --- | --- |\n"
-           "| i64 | i64 | i64 |\n"
-           "+=================+\n"
-           "| 1   | 4   | 7   |\n"
-           "|-----+-----+-----|\n"
-           "| 2   | 5   | 8   |\n"
-           "|-----+-----+-----|\n"
-           "| 3   | 6   | 9   |\n"
-           "+-----+-----+-----+"
+        df_asci == "shape: (3, 3)\n"
+        "+-----+-----+-----+\n"
+        "| a   | b   | c   |\n"
+        "| --- | --- | --- |\n"
+        "| i64 | i64 | i64 |\n"
+        "+=================+\n"
+        "| 1   | 4   | 7   |\n"
+        "|-----+-----+-----|\n"
+        "| 2   | 5   | 8   |\n"
+        "|-----+-----+-----|\n"
+        "| 3   | 6   | 9   |\n"
+        "+-----+-----+-----+"
     )
 
     pl.Config.set_utf8_tables()
     df_utf8 = str(df)
     assert (
-        df_utf8
-        == "shape: (3, 3)\n"
-           "┌─────┬─────┬─────┐\n"
-           "│ a   ┆ b   ┆ c   │\n"
-           "│ --- ┆ --- ┆ --- │\n"
-           "│ i64 ┆ i64 ┆ i64 │\n"
-           "╞═════╪═════╪═════╡\n"
-           "│ 1   ┆ 4   ┆ 7   │\n"
-           "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
-           "│ 2   ┆ 5   ┆ 8   │\n"
-           "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
-           "│ 3   ┆ 6   ┆ 9   │\n"
-           "└─────┴─────┴─────┘"
+        df_utf8 == "shape: (3, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 4   ┆ 7   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 2   ┆ 5   ┆ 8   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 3   ┆ 6   ┆ 9   │\n"
+        "└─────┴─────┴─────┘"
     )
 
 
@@ -81,9 +79,10 @@ def test_tbl_cols(environ: None) -> None:
 
 @pytest.mark.skip("not correctly implemented at the moment")
 def test_set_tbl_rows(environ: None) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})  # flake8: noqa
-
-    pl.Config.set_tbl_rows(3)
+    # df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    pass
+    #
+    # pl.Config.set_tbl_rows(3)
 
 
 def test_string_cache(environ: None) -> None:
