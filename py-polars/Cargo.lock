@@ -1194,6 +1194,7 @@ dependencies = [
  "num_cpus",
  "polars-arrow",
  "polars-time",
+ "polars-utils",
  "rand",
  "rand_distr",
  "rayon",

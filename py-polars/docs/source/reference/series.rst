@@ -106,6 +106,8 @@ Computations
     Series.rolling_quantile
     Series.rolling_skew
     Series.ewm_mean
+    Series.ewm_std
+    Series.ewm_var
     Series.hash
     Series.peak_max
     Series.peak_min

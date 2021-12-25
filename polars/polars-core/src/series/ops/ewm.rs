@@ -2,8 +2,11 @@ use crate::prelude::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::types::NativeType;
 pub use polars_arrow::kernels::ewm::EWMOptions;
-use polars_arrow::kernels::ewm::{ewma, ewma_inf_hist_no_nulls, ewma_inf_hists, ewma_no_nulls};
+use polars_arrow::kernels::ewm::{
+    ewm_std, ewm_var, ewma, ewma_inf_hist_no_nulls, ewma_inf_hists, ewma_no_nulls,
+};
 use polars_arrow::prelude::FromData;
+use polars_utils::mem::to_mutable_slice;
 use std::convert::TryFrom;
 
 fn prepare_primitive_array<T: NativeType>(
@@ -101,6 +104,86 @@ impl Series {
                 Series::try_from((self.name(), Arc::new(arr) as ArrayRef))
             }
             _ => self.cast(&DataType::Float64)?.ewm_mean(options),
+        }
+    }
+
+    pub fn ewm_std(&self, options: EWMOptions) -> Result<Self> {
+        let ca = self.rechunk();
+        match ca.dtype() {
+            DataType::Float32 | DataType::Float64 => {}
+            _ => return self.cast(&DataType::Float64)?.ewm_std(options),
+        }
+        let ewma = ca.ewm_mean(options)?;
+
+        match ewma.dtype() {
+            DataType::Float64 => {
+                let ewma_arr = ewma.f64().unwrap().downcast_iter().next().unwrap();
+                // Safety:
+                // we are the only owners for arr;
+                let ewma_slice = unsafe { to_mutable_slice(ewma_arr.values().as_slice()) };
+                let arr = ca.f64().unwrap().downcast_iter().next().unwrap();
+                let x_slice = arr.values().as_slice();
+
+                ewm_std(x_slice, ewma_slice, options.alpha);
+                ewma_arr.with_validity(arr.validity().cloned());
+                // we mask the original null values until we know better how to deal with them.
+                let out = Arc::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
+                Series::try_from((self.name(), out))
+            }
+            DataType::Float32 => {
+                let ewma_arr = ewma.f32().unwrap().downcast_iter().next().unwrap();
+                // Safety:
+                // we are the only owners for arr;
+                let ewma_slice = unsafe { to_mutable_slice(ewma_arr.values().as_slice()) };
+                let arr = ca.f32().unwrap().downcast_iter().next().unwrap();
+                let x_slice = arr.values().as_slice();
+
+                ewm_std(x_slice, ewma_slice, options.alpha as f32);
+                // we mask the original null values until we know better how to deal with them.
+                let out = Arc::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
+                Series::try_from((self.name(), out))
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn ewm_var(&self, options: EWMOptions) -> Result<Self> {
+        let ca = self.rechunk();
+        match ca.dtype() {
+            DataType::Float32 | DataType::Float64 => {}
+            _ => return self.cast(&DataType::Float64)?.ewm_var(options),
+        }
+        let ewma = ca.ewm_mean(options)?;
+
+        match ewma.dtype() {
+            DataType::Float64 => {
+                let ewma_arr = ewma.f64().unwrap().downcast_iter().next().unwrap();
+                // Safety:
+                // we are the only owners for arr;
+                let ewma_slice = unsafe { to_mutable_slice(ewma_arr.values().as_slice()) };
+                let arr = ca.f64().unwrap().downcast_iter().next().unwrap();
+                let x_slice = arr.values().as_slice();
+
+                ewm_var(x_slice, ewma_slice, options.alpha);
+                ewma_arr.with_validity(arr.validity().cloned());
+                // we mask the original null values until we know better how to deal with them.
+                let out = Arc::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
+                Series::try_from((self.name(), out))
+            }
+            DataType::Float32 => {
+                let ewma_arr = ewma.f32().unwrap().downcast_iter().next().unwrap();
+                // Safety:
+                // we are the only owners for arr;
+                let ewma_slice = unsafe { to_mutable_slice(ewma_arr.values().as_slice()) };
+                let arr = ca.f32().unwrap().downcast_iter().next().unwrap();
+                let x_slice = arr.values().as_slice();
+
+                ewm_var(x_slice, ewma_slice, options.alpha as f32);
+                // we mask the original null values until we know better how to deal with them.
+                let out = Arc::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
+                Series::try_from((self.name(), out))
+            }
+            _ => unimplemented!(),
         }
     }
 }

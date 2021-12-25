@@ -1036,6 +1036,22 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
+    pub fn ewm_std(&self, alpha: f64, adjust: bool, min_periods: usize) -> Self {
+        let options = EWMOptions {
+            alpha,
+            adjust,
+            min_periods,
+        };
+        self.inner.clone().ewm_std(options).into()
+    }
+    pub fn ewm_var(&self, alpha: f64, adjust: bool, min_periods: usize) -> Self {
+        let options = EWMOptions {
+            alpha,
+            adjust,
+            min_periods,
+        };
+        self.inner.clone().ewm_var(options).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

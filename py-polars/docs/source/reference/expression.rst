@@ -135,6 +135,8 @@ Computations
     Expr.rolling_quantile
     Expr.rolling_skew
     Expr.ewm_mean
+    Expr.ewm_std
+    Expr.ewm_var
     Expr.hash
     Expr.abs
     Expr.rank

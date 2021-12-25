@@ -1,6 +1,8 @@
 mod average;
+mod variance;
 
 pub use average::*;
+pub use variance::*;
 
 #[derive(Debug, Copy, Clone)]
 pub struct EWMOptions {
