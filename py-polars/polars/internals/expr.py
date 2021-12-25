@@ -2095,6 +2095,7 @@ class Expr:
         half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
+        min_periods: int = 1,
     ) -> "Expr":
         r"""
         Exponential moving average. Null values are replaced with 0.0.
@@ -2114,6 +2115,8 @@ class Expr:
 
                 - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
                 - When adjust = False the EW function is calculated recursively.
+        min_periods
+            Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
         if com is not None and alpha is not None:
@@ -2129,7 +2132,7 @@ class Expr:
             raise ValueError(
                 "at least one of {com, span, halflife, alpha} should be set"
             )
-        return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust))
+        return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"

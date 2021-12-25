@@ -3101,6 +3101,7 @@ class Series:
         half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
+        min_periods: int = 1,
     ) -> "Series":
         r"""
         Exponential moving average. Null values are replaced with 0.0.
@@ -3120,11 +3121,17 @@ class Series:
 
                 - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
                 - When adjust = False the EW function is calculated recursively.
+        min_periods
+            Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
         return (
             self.to_frame()
-            .select(pli.col(self.name).ewm_mean(com, span, half_life, alpha, adjust))
+            .select(
+                pli.col(self.name).ewm_mean(
+                    com, span, half_life, alpha, adjust, min_periods
+                )
+            )
             .to_series()
         )
 

@@ -6,6 +6,7 @@ pub use average::*;
 pub struct EWMOptions {
     pub alpha: f64,
     pub adjust: bool,
+    pub min_periods: usize,
 }
 
 impl Default for EWMOptions {
@@ -13,11 +14,16 @@ impl Default for EWMOptions {
         Self {
             alpha: 0.5,
             adjust: true,
+            min_periods: 1,
         }
     }
 }
 
 impl EWMOptions {
+    pub fn and_min_periods(mut self, min_periods: usize) -> Self {
+        self.min_periods = min_periods;
+        self
+    }
     pub fn and_adjust(mut self, adjust: bool) -> Self {
         self.adjust = adjust;
         self
