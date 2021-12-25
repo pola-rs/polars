@@ -3056,7 +3056,7 @@ class Series:
         self,
         com: Optional[float] = None,
         span: Optional[float] = None,
-        halflife: Optional[float] = None,
+        half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
     ) -> "Series":
@@ -3069,7 +3069,7 @@ class Series:
             Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
             Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
-        halflife
+        half_life
             Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
             Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
@@ -3082,7 +3082,7 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(pli.col(self.name).ewm_mean(com, span, halflife, alpha, adjust))
+            .select(pli.col(self.name).ewm_mean(com, span, half_life, alpha, adjust))
             .to_series()
         )
 

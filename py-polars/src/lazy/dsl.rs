@@ -1029,7 +1029,7 @@ impl PyExpr {
     }
 
     pub fn ewm_mean(&self, alpha: f64, adjust: bool) -> Self {
-        let options = ExponentialWindowOptions { alpha, adjust };
+        let options = EWMOptions { alpha, adjust };
         self.inner.clone().ewm_mean(options).into()
     }
 }

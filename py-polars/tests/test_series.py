@@ -1299,7 +1299,7 @@ def test_trigonometric(f: str) -> None:
     verify_series_and_expr_api(s, expected, f)
 
 
-def test_ew() -> None:
+def test_ewm() -> None:
     a = pl.Series("a", [2, 5, 3])
     assert a.ewm_mean(alpha=0.5, adjust=True).to_list() == [
         2.0,

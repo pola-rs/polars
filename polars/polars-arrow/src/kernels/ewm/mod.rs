@@ -3,12 +3,12 @@ mod average;
 pub use average::*;
 
 #[derive(Debug, Copy, Clone)]
-pub struct ExponentialWindowOptions {
+pub struct EWMOptions {
     pub alpha: f64,
     pub adjust: bool,
 }
 
-impl Default for ExponentialWindowOptions {
+impl Default for EWMOptions {
     fn default() -> Self {
         Self {
             alpha: 0.5,
@@ -17,7 +17,7 @@ impl Default for ExponentialWindowOptions {
     }
 }
 
-impl ExponentialWindowOptions {
+impl EWMOptions {
     pub fn and_adjust(mut self, adjust: bool) -> Self {
         self.adjust = adjust;
         self
@@ -28,9 +28,9 @@ impl ExponentialWindowOptions {
         self
     }
 
-    pub fn and_halflife(mut self, halflife: f64) -> Self {
-        assert!(halflife > 0.0);
-        self.alpha = 1.0 - ((-2.0f64).ln() / halflife).exp();
+    pub fn and_half_life(mut self, half_life: f64) -> Self {
+        assert!(half_life > 0.0);
+        self.alpha = 1.0 - ((-2.0f64).ln() / half_life).exp();
         self
     }
 
