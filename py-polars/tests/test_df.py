@@ -681,7 +681,7 @@ def test_set() -> None:
         df[(1, 2, 3)] = 1  # type: ignore
 
     # we cannot index with any type, such as bool
-    with pytest.raises(ValueError):
+    with pytest.raises(NotImplementedError):
         df[True] = 1  # type: ignore
 
 
