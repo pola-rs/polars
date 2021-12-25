@@ -649,17 +649,40 @@ def test_set() -> None:
     df["new"] = np.random.rand(10)
     df[df["new"] > 0.5, "new"] = 1
 
+    # set 2D
     df = pl.DataFrame({"b": [0, 0]})
-    df[["A", "B"]] = [[1, 2], [1, 2]]  # type: ignore
+    df[["A", "B"]] = [[1, 2], [1, 2]]
     assert df["A"] == [1, 1]
     assert df["B"] == [2, 2]
 
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = 1
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = [1, 1]
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = [[1, 2, 3], [1, 2, 3]]
+
+    # set tuple
     df = pl.DataFrame({"b": [0, 0]})
     df[0, "b"] = 1
     assert df[0, "b"] == 1
 
     df[0, 0] = 2
     assert df[0, "b"] == 2
+
+    # row and col selection have to be int or str
+    with pytest.raises(ValueError):
+        df[:, [1]] = 1  # type: ignore
+    with pytest.raises(ValueError):
+        df[True, :] = 1  # type: ignore
+
+    # needs to be a 2 element tuple
+    with pytest.raises(ValueError):
+        df[(1, 2, 3)] = 1  # type: ignore
+
+    # we cannot index with any type, such as bool
+    with pytest.raises(NotImplementedError):
+        df[True] = 1  # type: ignore
 
 
 def test_melt() -> None:

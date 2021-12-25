@@ -1322,7 +1322,9 @@ class DataFrame:
         # if no data has been returned, the operation is not supported
         raise NotImplementedError
 
-    def __setitem__(self, key: Union[str, List, Tuple[Any, Any]], value: Any) -> None:
+    def __setitem__(
+        self, key: Union[str, List, Tuple[Any, Union[str, int]]], value: Any
+    ) -> None:
         # df["foo"] = series
         if isinstance(key, str):
             try:
