@@ -1321,3 +1321,25 @@ def test_ewm() -> None:
     verify_series_and_expr_api(
         a, expected, "ewm_mean", alpha=0.5, adjust=True, min_periods=3
     )
+
+    a = pl.Series("a", [None, 1.0, 5.0, 7.0, None, 2.0, 5.0, 4])
+    expected = pl.Series(
+        "a",
+        [
+            None,
+            1.0,
+            3.6666666666666665,
+            5.571428571428571,
+            5.571428571428571,
+            3.6666666666666665,
+            4.354838709677419,
+            4.174603174603175,
+        ],
+    )
+    verify_series_and_expr_api(
+        a, expected, "ewm_mean", alpha=0.5, adjust=True, min_periods=1
+    )
+    expected = pl.Series("a", [None, 1.0, 3.0, 5.0, 5.0, 3.5, 4.25, 4.125])
+    verify_series_and_expr_api(
+        a, expected, "ewm_mean", alpha=0.5, adjust=False, min_periods=1
+    )
