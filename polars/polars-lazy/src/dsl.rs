@@ -1834,6 +1834,30 @@ impl Expr {
             }),
         )
     }
+
+    #[cfg(feature = "ewma")]
+    pub fn ewm_std(self, options: EWMOptions) -> Self {
+        use DataType::*;
+        self.apply(
+            move |s| s.ewm_std(options),
+            GetOutput::map_dtype(|dt| match dt {
+                Float64 | Float32 => dt.clone(),
+                _ => Float64,
+            }),
+        )
+    }
+
+    #[cfg(feature = "ewma")]
+    pub fn ewm_var(self, options: EWMOptions) -> Self {
+        use DataType::*;
+        self.apply(
+            move |s| s.ewm_var(options),
+            GetOutput::map_dtype(|dt| match dt {
+                Float64 | Float32 => dt.clone(),
+                _ => Float64,
+            }),
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.

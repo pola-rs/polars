@@ -3104,7 +3104,7 @@ class Series:
         min_periods: int = 1,
     ) -> "Series":
         r"""
-        Exponential moving average. Null values are replaced with 0.0.
+        Exponential moving average.
 
         Parameters
         ----------
@@ -3129,6 +3129,88 @@ class Series:
             self.to_frame()
             .select(
                 pli.col(self.name).ewm_mean(
+                    com, span, half_life, alpha, adjust, min_periods
+                )
+            )
+            .to_series()
+        )
+
+    def ewm_std(
+        self,
+        com: Optional[float] = None,
+        span: Optional[float] = None,
+        half_life: Optional[float] = None,
+        alpha: Optional[float] = None,
+        adjust: bool = True,
+        min_periods: int = 1,
+    ) -> "Series":
+        r"""
+        Exponential moving standard deviation.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        half_life
+            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+        adjust
+            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+
+                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = False the EW function is calculated recursively.
+        min_periods
+            Minimum number of observations in window required to have a value (otherwise result is Null).
+
+        """
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).ewm_std(
+                    com, span, half_life, alpha, adjust, min_periods
+                )
+            )
+            .to_series()
+        )
+
+    def ewm_var(
+        self,
+        com: Optional[float] = None,
+        span: Optional[float] = None,
+        half_life: Optional[float] = None,
+        alpha: Optional[float] = None,
+        adjust: bool = True,
+        min_periods: int = 1,
+    ) -> "Series":
+        r"""
+        Exponential moving standard variation.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        half_life
+            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+        adjust
+            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+
+                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = False the EW function is calculated recursively.
+        min_periods
+            Minimum number of observations in window required to have a value (otherwise result is Null).
+
+        """
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).ewm_var(
                     com, span, half_life, alpha, adjust, min_periods
                 )
             )
