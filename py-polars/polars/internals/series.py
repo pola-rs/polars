@@ -1185,16 +1185,34 @@ class Series:
         """
         return wrap_s(self._s.take_every(n))
 
-    def sort(self, in_place: bool = False, reverse: bool = False) -> "Series":
+    @overload
+    def sort(
+        self, reverse: bool = False, *, in_place: Literal[False] = ...
+    ) -> "Series":
+        ...
+
+    @overload
+    def sort(self, reverse: bool = False, *, in_place: Literal[True]) -> None:
+        ...
+
+    @overload
+    def sort(
+        self, reverse: bool = False, *, in_place: bool = False
+    ) -> Optional["Series"]:
+        ...
+
+    def sort(
+        self, reverse: bool = False, *, in_place: bool = False
+    ) -> Optional["Series"]:
         """
         Sort this Series.
 
         Parameters
         ----------
-        in_place
-            Sort in place.
         reverse
             Reverse sort.
+        in_place
+            Sort in place.
 
         Examples
         --------
@@ -1221,7 +1239,7 @@ class Series:
         """
         if in_place:
             self._s = self._s.sort(reverse)
-            return self
+            return None
         else:
             return wrap_s(self._s.sort(reverse))
 
@@ -1744,7 +1762,19 @@ class Series:
     def __iter__(self) -> "SeriesIter":
         return SeriesIter(self.len(), self)
 
-    def rechunk(self, in_place: bool = False) -> "Series":
+    @overload
+    def rechunk(self, in_place: Literal[False] = ...) -> "Series":
+        ...
+
+    @overload
+    def rechunk(self, in_place: Literal[True]) -> None:
+        ...
+
+    @overload
+    def rechunk(self, in_place: bool) -> Optional["Series"]:
+        ...
+
+    def rechunk(self, in_place: bool = False) -> Optional["Series"]:
         """
         Create a single chunk of memory for this Series.
 
@@ -1755,7 +1785,7 @@ class Series:
         """
         opt_s = self._s.rechunk(in_place)
         if in_place:
-            return self
+            return None
         else:
             return wrap_s(opt_s)
 
@@ -2807,6 +2837,18 @@ class Series:
 
         """
         return self._s.n_unique()
+
+    @overload
+    def shrink_to_fit(self, in_place: Literal[False] = ...) -> "Series":
+        ...
+
+    @overload
+    def shrink_to_fit(self, in_place: Literal[True]) -> None:
+        ...
+
+    @overload
+    def shrink_to_fit(self, in_place: bool = False) -> Optional["Series"]:
+        ...
 
     def shrink_to_fit(self, in_place: bool = False) -> Optional["Series"]:
         """
