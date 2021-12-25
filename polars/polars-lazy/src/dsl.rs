@@ -1824,7 +1824,7 @@ impl Expr {
     }
 
     #[cfg(feature = "ewma")]
-    pub fn ewm_mean(self, options: ExponentialWindowOptions) -> Self {
+    pub fn ewm_mean(self, options: EWMOptions) -> Self {
         use DataType::*;
         self.apply(
             move |s| s.ewm_mean(options),

@@ -1,9 +1,9 @@
 use crate::prelude::*;
-pub use polars_arrow::kernels::ew::ExponentialWindowOptions;
-use polars_arrow::kernels::ew::{ewma_inf_hist_no_nulls, ewma_no_nulls};
+pub use polars_arrow::kernels::ewm::EWMOptions;
+use polars_arrow::kernels::ewm::{ewma_inf_hist_no_nulls, ewma_no_nulls};
 
 impl Series {
-    pub fn ewm_mean(&self, options: ExponentialWindowOptions) -> Result<Self> {
+    pub fn ewm_mean(&self, options: EWMOptions) -> Result<Self> {
         if self.null_count() > 0 {
             return self
                 .fill_null(FillNullStrategy::Zero)

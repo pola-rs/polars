@@ -2092,7 +2092,7 @@ class Expr:
         self,
         com: Optional[float] = None,
         span: Optional[float] = None,
-        halflife: Optional[float] = None,
+        half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
     ) -> "Expr":
@@ -2105,7 +2105,7 @@ class Expr:
             Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
             Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
-        halflife
+        half_life
             Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
             Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
@@ -2122,9 +2122,9 @@ class Expr:
         if span is not None and alpha is not None:
             assert span >= 1.0
             alpha = 2.0 / (span + 1.0)
-        if halflife is not None and alpha is not None:
-            assert halflife > 0.0
-            alpha = 1.0 - np.exp(-np.log(2.0) / halflife)
+        if half_life is not None and alpha is not None:
+            assert half_life > 0.0
+            alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
         if alpha is None:
             raise ValueError(
                 "at least one of {com, span, halflife, alpha} should be set"
