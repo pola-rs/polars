@@ -22,7 +22,6 @@ use polars_io::parquet::ParquetReader;
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::utils::{
     combine_predicates_expr, expr_to_root_column_names, get_single_root, has_expr, has_wildcard,
-    rename_expr_root_name,
 };
 use crate::{prelude::*, utils};
 use polars_io::csv::NullValues;
@@ -817,7 +816,7 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
 }
 
 pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
-    let exprs = rewrite_projections(exprs, schema);
+    let exprs = rewrite_projections(exprs, schema, &[]);
     let schema = utils::expressions_to_schema(&exprs, schema, Context::Default);
     (exprs, schema)
 }
@@ -1038,7 +1037,7 @@ impl LogicalPlanBuilder {
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| matches!(e, Expr::Wildcard)) {
-            let rewritten = rewrite_projections(vec![predicate], self.0.schema());
+            let rewritten = rewrite_projections(vec![predicate], self.0.schema(), &[]);
             combine_predicates_expr(rewritten.into_iter())
         } else {
             predicate
@@ -1060,7 +1059,7 @@ impl LogicalPlanBuilder {
     ) -> Self {
         debug_assert!(!(keys.is_empty() && dynamic_options.is_none()));
         let current_schema = self.0.schema();
-        let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema);
+        let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
 
         let schema1 = utils::expressions_to_schema(&keys, current_schema, Context::Default);
         let schema2 = utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation);
@@ -1103,7 +1102,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
-        let columns = rewrite_projections(columns, self.0.schema());
+        let columns = rewrite_projections(columns, self.0.schema(), &[]);
         // columns to string
         let columns = columns
             .iter()

@@ -1486,6 +1486,14 @@ def test_extension() -> None:
     assert sys.getrefcount(foos[0]) == base_count
 
 
+def test_groupby_order_dispatch() -> None:
+    df = pl.DataFrame({"x": list("bab"), "y": range(3)})
+    expected = pl.DataFrame({"x": ["b", "a"], "y_count": [2, 1]})
+    assert df.groupby("x", maintain_order=True).count().frame_equal(expected)
+    expected = pl.DataFrame({"x": ["b", "a"], "y_agg_list": [[0, 2], [1]]})
+    assert df.groupby("x", maintain_order=True).agg_list().frame_equal(expected)
+
+
 def test_schema() -> None:
     df = pl.DataFrame(
         {"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0], "ham": ["a", "b", "c"]}
