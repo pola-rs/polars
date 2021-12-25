@@ -156,7 +156,7 @@ class DataFrame:
     >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
     >>> df3 = pl.DataFrame(data, columns=["a", "b"], orient="col")
-    >>> df3  # doctest: +IGNORE_RESULT
+    >>> df3
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -2249,16 +2249,6 @@ class DataFrame:
         │ str ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
         │ c   ┆ 6   ┆ 1   │
-        └─────┴─────┴─────┘
-        shape: (2, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 1   ┆ 6   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a   ┆ 3   ┆ 4   │
         └─────┴─────┴─────┘
 
         """
