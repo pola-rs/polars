@@ -144,10 +144,10 @@ pub fn repeat(cx: CallContext) -> JsResult<JsExternal> {
             ca.into_inner().into_series()
         }
         DataType::Float64 => {
-            let val = val.extract::<f64>().unwrap();
-            let mut ca: NoNull<Float64Chunked> = (0..n).map(|_| val).collect_trusted();
+            let val = val.extract::<Option<f64>>().unwrap_or(None);
+            let mut ca: Float64Chunked = (0..n).map(|_| val).collect_trusted();
             ca.rename(name);
-            ca.into_inner().into_series()
+            ca.into_series()
         }
         DataType::Boolean => {
             let val = val.extract::<bool>().unwrap();
@@ -155,7 +155,6 @@ pub fn repeat(cx: CallContext) -> JsResult<JsExternal> {
             ca.rename(name);
             ca.into_series()
         }
-
         dt => {
             panic!("cannot create repeat with dtype: {:?}", dt);
         }

@@ -95,6 +95,17 @@ describe("lazy functions", () => {
       });
       expect(actual).toFrameEqual(expected);
     });
+    test("null", () => {
+      const actual = pl.DataFrame({
+        "foo": [1, 2, 3],
+        "bar": [4, 5, 6],
+      }).select(col("foo"), lit(null).as("nulls"));
+      const expected = pl.DataFrame({
+        "foo": [1, 2, 3],
+        "nulls": [null, null, null],
+      });
+      expect(actual).toFrameEqual(expected);
+    });
   });
   test("arange:positional", () => {
     const df = pl.DataFrame({
