@@ -1,7 +1,8 @@
-use arrow::array::{BooleanArray, Utf8Array};
+use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
+use arrow::types::NativeType;
 
 pub trait FromData<T> {
     fn from_data_default(values: T, validity: Option<Bitmap>) -> Self;
@@ -10,6 +11,13 @@ pub trait FromData<T> {
 impl FromData<Bitmap> for BooleanArray {
     fn from_data_default(values: Bitmap, validity: Option<Bitmap>) -> BooleanArray {
         BooleanArray::from_data(DataType::Boolean, values, validity)
+    }
+}
+
+impl<T: NativeType> FromData<Buffer<T>> for PrimitiveArray<T> {
+    fn from_data_default(values: Buffer<T>, validity: Option<Bitmap>) -> Self {
+        let dt = T::PRIMITIVE;
+        PrimitiveArray::from_data(dt.into(), values, validity)
     }
 }
 

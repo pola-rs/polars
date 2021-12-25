@@ -1028,8 +1028,12 @@ impl PyExpr {
         self.inner.clone().shuffle(seed).into()
     }
 
-    pub fn ewm_mean(&self, alpha: f64, adjust: bool) -> Self {
-        let options = EWMOptions { alpha, adjust };
+    pub fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize) -> Self {
+        let options = EWMOptions {
+            alpha,
+            adjust,
+            min_periods,
+        };
         self.inner.clone().ewm_mean(options).into()
     }
 }

@@ -1,6 +1,22 @@
 use crate::prelude::*;
+use arrow::bitmap::MutableBitmap;
+use arrow::types::NativeType;
 pub use polars_arrow::kernels::ewm::EWMOptions;
 use polars_arrow::kernels::ewm::{ewma_inf_hist_no_nulls, ewma_no_nulls};
+use polars_arrow::prelude::FromData;
+use std::convert::TryFrom;
+
+fn prepare_primitive_array<T: NativeType>(vals: Vec<T>, min_periods: usize) -> PrimitiveArray<T> {
+    if min_periods > 1 {
+        let mut validity = MutableBitmap::with_capacity(vals.len());
+        validity.extend_constant(min_periods, false);
+        validity.extend_constant(vals.len() - min_periods, true);
+
+        PrimitiveArray::from_data_default(vals.into(), Some(validity.into()))
+    } else {
+        PrimitiveArray::from_data_default(vals.into(), None)
+    }
+}
 
 impl Series {
     pub fn ewm_mean(&self, options: EWMOptions) -> Result<Self> {
@@ -23,7 +39,8 @@ impl Series {
                         } else {
                             ewma_inf_hist_no_nulls(vals.iter().copied(), options.alpha as f32)
                         };
-                        Ok(Float32Chunked::new_vec(self.name(), out).into_series())
+                        let arr = prepare_primitive_array(out, options.min_periods);
+                        Series::try_from((self.name(), Arc::new(arr) as ArrayRef))
                     }
                     _ => {
                         let iter = ca.into_no_null_iter();
@@ -32,7 +49,8 @@ impl Series {
                         } else {
                             ewma_inf_hist_no_nulls(iter, options.alpha as f32)
                         };
-                        Ok(Float32Chunked::new_vec(self.name(), out).into_series())
+                        let arr = prepare_primitive_array(out, options.min_periods);
+                        Series::try_from((self.name(), Arc::new(arr) as ArrayRef))
                     }
                 }
             }
@@ -47,7 +65,8 @@ impl Series {
                         } else {
                             ewma_inf_hist_no_nulls(vals.iter().copied(), options.alpha)
                         };
-                        Ok(Float64Chunked::new_vec(self.name(), out).into_series())
+                        let arr = prepare_primitive_array(out, options.min_periods);
+                        Series::try_from((self.name(), Arc::new(arr) as ArrayRef))
                     }
                     _ => {
                         let iter = ca.into_no_null_iter();
@@ -56,7 +75,8 @@ impl Series {
                         } else {
                             ewma_inf_hist_no_nulls(iter, options.alpha)
                         };
-                        Ok(Float64Chunked::new_vec(self.name(), out).into_series())
+                        let arr = prepare_primitive_array(out, options.min_periods);
+                        Series::try_from((self.name(), Arc::new(arr) as ArrayRef))
                     }
                 }
             }

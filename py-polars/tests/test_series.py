@@ -1301,15 +1301,23 @@ def test_trigonometric(f: str) -> None:
 
 def test_ewm() -> None:
     a = pl.Series("a", [2, 5, 3])
-    assert a.ewm_mean(alpha=0.5, adjust=True).to_list() == [
-        2.0,
-        4.0,
-        3.4285714285714284,
-    ]
-    assert a.ewm_mean(alpha=0.5, adjust=False).to_list() == [2.0, 3.5, 3.25]
-    assert pl.select(
-        pl.lit(a).ewm_mean(alpha=0.5, adjust=True)
-    ).to_series().to_list() == [2.0, 4.0, 3.4285714285714284]
-    assert pl.select(
-        pl.lit(a).ewm_mean(alpha=0.5, adjust=False)
-    ).to_series().to_list() == [2.0, 3.5, 3.25]
+    expected = pl.Series(
+        "a",
+        [
+            2.0,
+            4.0,
+            3.4285714285714284,
+        ],
+    )
+    verify_series_and_expr_api(a, expected, "ewm_mean", alpha=0.5, adjust=True)
+    expected = pl.Series("a", [2.0, 3.5, 3.25])
+    verify_series_and_expr_api(a, expected, "ewm_mean", alpha=0.5, adjust=False)
+    a = pl.Series("a", [2, 3, 5, 7, 4])
+    expected = pl.Series("a", [None, 2.666667, 4.0, 5.6, 4.774194])
+    verify_series_and_expr_api(
+        a, expected, "ewm_mean", alpha=0.5, adjust=True, min_periods=2
+    )
+    expected = pl.Series("a", [None, None, 4.0, 5.6, 4.774194])
+    verify_series_and_expr_api(
+        a, expected, "ewm_mean", alpha=0.5, adjust=True, min_periods=3
+    )
