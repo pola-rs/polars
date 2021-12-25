@@ -1322,19 +1322,13 @@ class DataFrame:
         # if no data has been returned, the operation is not supported
         raise NotImplementedError
 
-    def __setitem__(
-        self, key: Union[str, int, List, Tuple[Any, Any]], value: Any
-    ) -> None:
+    def __setitem__(self, key: Union[str, List, Tuple[Any, Any]], value: Any) -> None:
         # df["foo"] = series
         if isinstance(key, str):
             try:
                 self.replace(key, pli.Series(key, value))
             except Exception:
                 self.hstack([pli.Series(key, value)], in_place=True)
-        # df[idx] = series
-        elif isinstance(key, int):
-            assert isinstance(value, pli.Series)
-            self.replace_at_idx(key, value)
         # df[["C", "D"]]
         elif isinstance(key, list):
             value = np.array(value)
