@@ -682,7 +682,7 @@ def test_set() -> None:
 
     # we cannot index with any type, such as bool
     with pytest.raises(ValueError):
-        df[True] = 1
+        df[True] = 1  # type: ignore
 
 
 def test_melt() -> None:
