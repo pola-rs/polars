@@ -1189,25 +1189,25 @@ class Expr:
         ... )
         >>> (
         ...     df.lazy()
-        ...     .groupby("b")
+        ...     .groupby("b", maintain_order=True)
         ...     .agg(
         ...         [
         ...             pl.col("a").apply(lambda x: x.sum()),
         ...         ]
         ...     )
         ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
+        ... )
         shape: (3, 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
         │ --- ┆ --- │
         │ str ┆ i64 │
         ╞═════╪═════╡
-        │ c   ┆ 2   │
+        │ a   ┆ 1   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ b   ┆ 2   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a   ┆ 1   │
+        │ c   ┆ 2   │
         └─────┴─────┘
 
         """
