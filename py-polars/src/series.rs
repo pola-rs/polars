@@ -1380,6 +1380,11 @@ impl PySeries {
     pub fn shuffle(&self, seed: u64) -> Self {
         self.series.shuffle(seed).into()
     }
+    pub fn extend(&self, value: Wrap<AnyValue>, n: usize) -> PyResult<Self> {
+        let value = value.0;
+        let out = self.series.extend(value, n).map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
 }
 
 macro_rules! impl_ufuncs {

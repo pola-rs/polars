@@ -2,6 +2,7 @@
 pub mod diff;
 #[cfg(feature = "ewma")]
 mod ewm;
+mod extend;
 #[cfg(feature = "moment")]
 pub mod moment;
 mod null;

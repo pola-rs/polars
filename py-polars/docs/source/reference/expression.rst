@@ -194,6 +194,7 @@ Manipulation/ selection
     Expr.reshape
     Expr.to_physical
     Expr.shuffle
+    Expr.extend
 
 Column names
 ------------

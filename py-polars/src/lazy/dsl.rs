@@ -5,6 +5,7 @@ use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::{parse_strategy, str_to_rankmethod};
 use crate::series::PySeries;
 use crate::utils::{reinterpret, str_to_polarstype};
+use crate::PyPolarsEr::Any;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -1051,6 +1052,21 @@ impl PyExpr {
             min_periods,
         };
         self.inner.clone().ewm_var(options).into()
+    }
+    pub fn extend(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
+        let value = value.into_py(py);
+        self.inner
+            .clone()
+            .apply(
+                move |s| {
+                    let gil = Python::acquire_gil();
+                    let py = gil.python();
+                    let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;
+                    s.extend(value, n)
+                },
+                GetOutput::same_type(),
+            )
+            .into()
     }
 }
 
