@@ -7,8 +7,6 @@ use crate::utils::{has_expr, has_wildcard};
 use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
-#[cfg(feature = "temporal")]
-use polars_core::export::chrono::{NaiveDate, NaiveDateTime};
 use std::fmt::{Debug, Formatter};
 use std::ops::{BitAnd, BitOr, Deref};
 use std::{
@@ -2063,83 +2061,6 @@ pub fn any_exprs(exprs: Vec<Expr>) -> Expr {
 pub fn all_exprs(exprs: Vec<Expr>) -> Expr {
     let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitand(s2.bool()?).into_series());
     fold_exprs(lit(true), func, exprs)
-}
-
-pub trait Literal {
-    /// [Literal](Expr::Literal) expression.
-    fn lit(self) -> Expr;
-}
-
-impl Literal for String {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Utf8(self))
-    }
-}
-
-impl<'a> Literal for &'a str {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Utf8(self.to_owned()))
-    }
-}
-
-macro_rules! make_literal {
-    ($TYPE:ty, $SCALAR:ident) => {
-        impl Literal for $TYPE {
-            fn lit(self) -> Expr {
-                Expr::Literal(LiteralValue::$SCALAR(self))
-            }
-        }
-    };
-}
-
-make_literal!(bool, Boolean);
-make_literal!(f32, Float32);
-make_literal!(f64, Float64);
-#[cfg(feature = "dtype-i8")]
-make_literal!(i8, Int8);
-#[cfg(feature = "dtype-i16")]
-make_literal!(i16, Int16);
-make_literal!(i32, Int32);
-make_literal!(i64, Int64);
-#[cfg(feature = "dtype-u8")]
-make_literal!(u8, UInt8);
-#[cfg(feature = "dtype-u16")]
-make_literal!(u16, UInt16);
-make_literal!(u32, UInt32);
-make_literal!(u64, UInt64);
-
-/// The literal Null
-pub struct Null {}
-
-impl Literal for Null {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Null)
-    }
-}
-
-#[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-impl Literal for NaiveDateTime {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::DateTime(self))
-    }
-}
-
-#[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-impl Literal for NaiveDate {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::DateTime(self.and_hms(0, 0, 0)))
-    }
-}
-
-impl Literal for Series {
-    fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Series(NoEq::new(self)))
-    }
-}
-
-/// Create a Literal Expression from `L`
-pub fn lit<L: Literal>(t: L) -> Expr {
-    t.lit()
 }
 
 /// [Not](Expr::Not) expression.

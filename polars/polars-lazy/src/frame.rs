@@ -16,8 +16,7 @@ use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer
 use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
-#[cfg(feature = "ipc")]
-use crate::logical_plan::IpcOptions;
+use crate::logical_plan::ScanOptions;
 use crate::physical_plan::state::ExecutionState;
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
@@ -312,7 +311,7 @@ impl LazyFrame {
     /// Create a LazyFrame directly from a ipc scan.
     #[cfg(feature = "ipc")]
     pub fn scan_ipc(path: String, n_rows: Option<usize>, cache: bool) -> Result<Self> {
-        let options = IpcOptions {
+        let options = ScanOptions {
             n_rows,
             cache,
             with_columns: None,
