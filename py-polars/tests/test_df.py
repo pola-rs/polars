@@ -1401,24 +1401,6 @@ def test_filter_with_all_expansion() -> None:
     assert out.shape == (2, 3)
 
 
-def test_diag_concat() -> None:
-    a = pl.DataFrame({"a": [1, 2]})
-    b = pl.DataFrame({"b": ["a", "b"], "c": [1, 2]})
-    c = pl.DataFrame({"a": [5, 7], "c": [1, 2], "d": [1, 2]})
-
-    out = pl.concat([a, b, c], how="diagonal")
-    expected = pl.DataFrame(
-        {
-            "a": [1, 2, None, None, 5, 7],
-            "b": [None, None, "a", "b", None, None],
-            "c": [None, None, 1, 2, 1, 2],
-            "d": [None, None, None, None, 1, 2],
-        }
-    )
-
-    assert out.frame_equal(expected, null_equal=True)
-
-
 def test_transpose() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     expected = pl.DataFrame(
