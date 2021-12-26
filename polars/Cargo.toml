@@ -98,6 +98,7 @@ horizontal_concat = ["polars-core/horizontal_concat"]
 abs = ["polars-core/abs", "polars-lazy/abs"]
 dynamic_groupby = ["polars-core/dynamic_groupby", "polars-lazy/dynamic_groupby"]
 ewma = ["polars-core/ewma", "polars-lazy/ewma"]
+dot_diagram = ["polars-lazy/dot_diagram"]
 
 # don't use this
 private = ["polars-lazy/private"]
@@ -170,6 +171,7 @@ docs-selection = [
   "diagonal_concat",
   "horizontal_concat",
   "abs",
+  "dot_diagram",
 ]
 
 bench = [

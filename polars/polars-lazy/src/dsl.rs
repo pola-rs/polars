@@ -16,6 +16,7 @@ use std::{
 };
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
+pub use crate::logical_plan::lit;
 use polars_arrow::array::default_arrays::FromData;
 use polars_core::frame::select::Selection;
 #[cfg(feature = "diff")]

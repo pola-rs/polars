@@ -92,6 +92,7 @@
 //!
 //! * `lazy` - Lazy API
 //!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
+//!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types

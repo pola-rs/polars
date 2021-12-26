@@ -5,7 +5,6 @@ use crate::utils::slice_offsets;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::concatenate;
-use itertools::Itertools;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
@@ -54,7 +53,11 @@ where
             self.clone()
         } else {
             let chunks = vec![concatenate::concatenate(
-                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .unwrap()
             .into()];
@@ -73,7 +76,11 @@ impl ChunkOps for BooleanChunked {
             self.clone()
         } else {
             let chunks = vec![concatenate::concatenate(
-                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .unwrap()
             .into()];
@@ -92,7 +99,11 @@ impl ChunkOps for Utf8Chunked {
             self.clone()
         } else {
             let chunks = vec![concatenate::concatenate(
-                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .unwrap()
             .into()];
@@ -130,7 +141,11 @@ impl ChunkOps for ListChunked {
             self.clone()
         } else {
             let chunks = vec![concatenate::concatenate(
-                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .unwrap()
             .into()];

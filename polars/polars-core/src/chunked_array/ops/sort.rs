@@ -2,7 +2,6 @@ use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use arrow::{bitmap::MutableBitmap, buffer::Buffer};
-use itertools::Itertools;
 use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_arrow::prelude::ValueSize;
 use polars_arrow::trusted_len::PushUnchecked;
@@ -448,22 +447,6 @@ fn ordering_other_columns<'a>(
     Ordering::Equal
 }
 
-macro_rules! sort {
-    ($self:ident, $reverse:expr) => {{
-        if $reverse {
-            $self
-                .into_iter()
-                .sorted_by(|a, b| b.cmp(a))
-                .collect_trusted()
-        } else {
-            $self
-                .into_iter()
-                .sorted_by(|a, b| a.cmp(b))
-                .collect_trusted()
-        }
-    }};
-}
-
 impl ChunkSort<Utf8Type> for Utf8Chunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
         sort_with_fast_path!(self, options);
@@ -681,7 +664,17 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             !options.nulls_last,
             "null last not yet supported for bool dtype"
         );
-        sort!(self, options.descending)
+        let mut vals = self.into_iter().collect::<Vec<_>>();
+
+        if options.descending {
+            vals.sort_by(|a, b| b.cmp(a))
+        } else {
+            vals.sort()
+        }
+
+        let mut ca: BooleanChunked = vals.into_iter().collect_trusted();
+        ca.rename(self.name());
+        ca
     }
 
     fn sort(&self, reverse: bool) -> BooleanChunked {

@@ -12,7 +12,6 @@ use crate::{
     utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr},
 };
 use ahash::RandomState;
-use itertools::Itertools;
 use polars_core::prelude::*;
 use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
@@ -419,10 +418,7 @@ impl DefaultPlanner {
                     let mut sources_right =
                         HashSet::with_capacity_and_hasher(16, RandomState::default());
                     agg_source_paths(input_right, &mut sources_right, lp_arena);
-                    sources_left
-                        .intersection(&sources_right)
-                        .collect_vec()
-                        .is_empty()
+                    sources_left.intersection(&sources_right).next().is_none()
                 } else {
                     false
                 };

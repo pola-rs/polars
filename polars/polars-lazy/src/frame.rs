@@ -295,6 +295,7 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a parquet scan.
     #[cfg(feature = "parquet")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet(
         path: String,
         n_rows: Option<usize>,
@@ -310,6 +311,7 @@ impl LazyFrame {
 
     /// Create a LazyFrame directly from a ipc scan.
     #[cfg(feature = "ipc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
     pub fn scan_ipc(path: String, n_rows: Option<usize>, cache: bool) -> Result<Self> {
         let options = ScanOptions {
             n_rows,
@@ -322,6 +324,8 @@ impl LazyFrame {
     }
 
     /// Get a dot language representation of the LogicalPlan.
+    #[cfg(feature = "dot_diagram")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub fn to_dot(&self, optimized: bool) -> Result<String> {
         let mut s = String::with_capacity(512);
 

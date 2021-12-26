@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use ahash::{AHashSet, RandomState};
 use arrow::record_batch::RecordBatch;
-use itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
