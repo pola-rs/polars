@@ -226,7 +226,7 @@ mod test {
         let g = out.column("groups").unwrap();
         let g = g.utf8().unwrap();
         let g = g.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(g, &["a", "a", "a", "b"]);
+        assert_eq!(g, &["a", "a", "a", "a", "b", "b"]);
 
         let upper = out.column("_upper_boundary").unwrap().slice(0, 3);
         let start = NaiveDate::from_ymd(2021, 12, 16)
@@ -266,7 +266,9 @@ mod test {
             (0u32, vec![0u32, 1, 2]),
             (2u32, vec![2]),
             (5u32, vec![5, 6]),
+            (6u32, vec![6]),
             (3u32, vec![3, 4]),
+            (4u32, vec![4]),
         ];
         assert_eq!(expected, groups);
     }

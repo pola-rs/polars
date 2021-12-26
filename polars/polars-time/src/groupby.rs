@@ -20,7 +20,8 @@ pub fn groupby(
 ) -> (GroupTuples, Vec<TimeNanoseconds>, Vec<TimeNanoseconds>) {
     let start = time[0];
     let boundary = if time.len() > 1 {
-        let stop = time[time.len() - 1];
+        // +1 because left or closed boundary could match the next window if it is on the boundary
+        let stop = time[time.len() - 1] + 1;
         Bounds::new(start, stop)
     } else {
         let stop = start + 1;
