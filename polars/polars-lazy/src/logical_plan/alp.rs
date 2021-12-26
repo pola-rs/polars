@@ -1,7 +1,7 @@
-#[cfg(feature = "ipc")]
-use crate::logical_plan::IpcOptions;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
+#[cfg(feature = "ipc")]
+use crate::logical_plan::ScanOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
@@ -49,7 +49,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
-        options: IpcOptions,
+        options: ScanOptions,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
     },
