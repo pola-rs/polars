@@ -3217,6 +3217,19 @@ class Series:
             .to_series()
         )
 
+    def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Series":
+        """
+        Extend the Series with given number of values.
+
+        Parameters
+        ----------
+        value
+            The value to extend the Series with. This value may be None to fill with nulls.
+        n
+            The number of values to extend.
+        """
+        return wrap_s(self._s.extend(value, n))
+
     # Below are the namespaces defined. Do not move these up in the definition of Series, as it confuses mypy between the
     # type annotation `str` and the namespace "str
 
