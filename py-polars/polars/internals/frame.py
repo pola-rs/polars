@@ -61,8 +61,8 @@ from polars._html import NotebookFormatter
 from polars.datatypes import Boolean, DataType, Datetime, UInt32, py_type_to_dtype
 from polars.utils import (
     _process_null_values,
+    handle_projection_columns,
     is_int_sequence,
-    is_str_sequence,
     range_to_slice,
 )
 
@@ -471,15 +471,7 @@ class DataFrame:
             if isinstance(file, StringIO):
                 file = file.getvalue().encode()
 
-        projection: Optional[Sequence[int]] = None
-        if columns:
-            if is_int_sequence(columns):
-                projection = columns
-                columns = None
-            elif not is_str_sequence(columns):
-                raise ValueError(
-                    "columns arg should contain a list of all integers or all strings values."
-                )
+        projection, columns = handle_projection_columns(columns)
 
         dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
         dtype_slice: Optional[List[Type[DataType]]] = None
@@ -541,16 +533,7 @@ class DataFrame:
         parallel
             Read the parquet file in parallel. The single threaded reader consumes less memory.
         """
-        projection: Optional[Sequence[int]] = None
-        if columns:
-            if is_int_sequence(columns):
-                projection = columns
-                columns = None
-            elif not is_str_sequence(columns):
-                raise ValueError(
-                    "columns arg should contain a list of all integers or all strings values."
-                )
-
+        projection, columns = handle_projection_columns(columns)
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows, parallel)
         return self
@@ -577,16 +560,7 @@ class DataFrame:
         -------
         DataFrame
         """
-        projection: Optional[Sequence[int]] = None
-        if columns:
-            if is_int_sequence(columns):
-                projection = columns
-                columns = None
-            elif not is_str_sequence(columns):
-                raise ValueError(
-                    "columns arg should contain a list of all integers or all strings values."
-                )
-
+        projection, columns = handle_projection_columns(columns)
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_ipc(file, columns, projection, n_rows)
         return self

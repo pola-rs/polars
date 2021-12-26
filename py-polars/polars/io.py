@@ -19,6 +19,8 @@ from typing import (
 )
 from urllib.request import urlopen
 
+from polars.utils import handle_projection_columns
+
 try:
     import pyarrow as pa
     import pyarrow.csv
@@ -254,16 +256,7 @@ def read_csv(
     if columns is None:
         columns = kwargs.pop("projection", None)
 
-    projection: Optional[List[int]] = None
-    if columns:
-        if isinstance(columns, list):
-            if all(isinstance(i, int) for i in columns):
-                projection = columns  # type: ignore
-                columns = None
-            elif not all(isinstance(i, str) for i in columns):
-                raise ValueError(
-                    "columns arg should contain a list of all integers or all strings values."
-                )
+    projection, columns = handle_projection_columns(columns)
 
     if isinstance(file, bytes) and len(file) == 0:
         raise ValueError("no date in bytes")
