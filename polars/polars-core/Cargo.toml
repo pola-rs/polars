@@ -71,6 +71,7 @@ rank = []
 diff = []
 moment = []
 diagonal_concat = []
+horizontal_concat = []
 abs = []
 ewma = ["polars-utils"]
 
@@ -122,6 +123,7 @@ docs-selection = [
   "rank",
   "list",
   "diagonal_concat",
+  "horizontal_concat",
   "abs",
 ]
 

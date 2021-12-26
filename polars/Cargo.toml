@@ -94,6 +94,7 @@ moment = ["polars-core/moment", "polars-lazy/moment"]
 arange = ["polars-lazy/arange"]
 true_div = ["polars-lazy/true_div"]
 diagonal_concat = ["polars-core/diagonal_concat"]
+horizontal_concat = ["polars-core/horizontal_concat"]
 abs = ["polars-core/abs", "polars-lazy/abs"]
 dynamic_groupby = ["polars-core/dynamic_groupby", "polars-lazy/dynamic_groupby"]
 ewma = ["polars-core/ewma", "polars-lazy/ewma"]
@@ -166,6 +167,8 @@ docs-selection = [
   "rank",
   "list",
   "arange",
+  "diagonal_concat",
+  "horizontal_concat",
   "abs",
 ]
 

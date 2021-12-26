@@ -160,9 +160,51 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
     Ok(builder.finish())
 }
 
+/// Concat `[DataFrame]`s horizontally.
+#[cfg(feature = "horizontal_concat")]
+#[cfg_attr(docsrs, doc(cfg(feature = "horizontal_concat")))]
+/// Concat horizontally and extend with null values if lengths don't match
+pub fn hor_concat_df(dfs: &[DataFrame]) -> Result<DataFrame> {
+    let max_len = dfs
+        .iter()
+        .map(|df| df.height())
+        .max()
+        .ok_or_else(|| PolarsError::ComputeError("cannot concat empty dataframes".into()))?;
+
+    let owned_df;
+
+    // if not all equal length, extend the DataFrame with nulls
+    let dfs = if !dfs.iter().all(|df| df.height() == max_len) {
+        owned_df = dfs
+            .iter()
+            .cloned()
+            .map(|mut df| {
+                if df.height() != max_len {
+                    let diff = max_len - df.height();
+                    df.columns
+                        .iter_mut()
+                        .for_each(|s| *s = s.extend(AnyValue::Null, diff).unwrap());
+                }
+                df
+            })
+            .collect::<Vec<_>>();
+        owned_df.as_slice()
+    } else {
+        dfs
+    };
+
+    let mut first_df = dfs[0].clone();
+
+    for df in &dfs[1..] {
+        first_df.hstack_mut(df.get_columns())?;
+    }
+    Ok(first_df)
+}
+
 /// Concat `[DataFrame]`s diagonally.
 #[cfg(feature = "diagonal_concat")]
 #[cfg_attr(docsrs, doc(cfg(feature = "diagonal_concat")))]
+/// Concat diagonally thereby combining different schemas.
 pub fn diag_concat_df(dfs: &[DataFrame]) -> Result<DataFrame> {
     let upper_bound_width = dfs.iter().map(|df| df.width()).sum();
     let mut column_names = AHashSet::with_capacity(upper_bound_width);

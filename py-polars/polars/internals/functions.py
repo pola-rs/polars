@@ -11,6 +11,7 @@ try:
     from polars.polars import concat_series as _concat_series
     from polars.polars import py_date_range as _py_date_range
     from polars.polars import py_diag_concat_df as _diag_concat_df
+    from polars.polars import py_hor_concat_df as _hor_concat_df
 
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
@@ -66,9 +67,11 @@ def concat(
     how
         Only used if the items are DataFrames.
 
-        On of {"vertical", "diagonal"}.
-        Vertical: Applies multiple `vstack` operations.
-        Diagonal: Finds a union between the column schemas and fills missing column values with null.
+        One of {"vertical", "diagonal", "horiztonal"}.
+
+        - Vertical: Applies multiple `vstack` operations.
+        - Diagonal: Finds a union between the column schemas and fills missing column values with null.
+        - Horizontal: Stacks Series horizontall and fills with nulls if the lengths don't match.
 
     Examples
     --------
@@ -96,6 +99,8 @@ def concat(
             out = pli.wrap_df(_concat_df(items))
         elif how == "diagonal":
             out = pli.wrap_df(_diag_concat_df(items))
+        elif how == "horizontal":
+            out = pli.wrap_df(_hor_concat_df(items))
         else:
             raise ValueError(
                 f"how should be one of {'vertical', 'diagonal'}, got {how}"

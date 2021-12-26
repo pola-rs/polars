@@ -5,7 +5,6 @@ use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::{parse_strategy, str_to_rankmethod};
 use crate::series::PySeries;
 use crate::utils::{reinterpret, str_to_polarstype};
-use crate::PyPolarsEr::Any;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
