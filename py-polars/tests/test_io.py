@@ -8,7 +8,7 @@ import zlib
 from datetime import date
 from functools import partial
 from pathlib import Path
-from typing import Dict, Type
+from typing import Dict, List, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -204,6 +204,22 @@ a,b,c
         f.seek(0)
         df = pl.read_csv(f, new_columns=["foo"], use_pyarrow=use)
         assert df.columns == ["foo", "b", "c"]
+
+
+@pytest.mark.parametrize(
+    "col_input, col_out", [([0, 1], ["a", "b"]), ([0, 2], ["a", "c"]), (["b"], ["b"])]
+)
+def test_read_csv_columns_argument(
+    col_input: Union[List[int], List[str]], col_out: List[str]
+) -> None:
+    csv = """a,b,c
+    1,2,3
+    1,2,3
+    """
+    f = io.StringIO(csv)
+    df = pl.read_csv(f, columns=col_input)
+    assert df.shape[0] == 2
+    assert df.columns == col_out
 
 
 def test_column_rename_and_dtype_overwrite() -> None:

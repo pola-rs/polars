@@ -87,3 +87,18 @@ def range_to_slice(rng: range) -> slice:
     else:
         step = None
     return slice(rng.start, rng.stop, step)
+
+
+def handle_projection_columns(
+    columns: Optional[Union[List[str], List[int]]]
+) -> Tuple[Optional[List[int]], Optional[List[str]]]:
+    projection: Optional[List[int]] = None
+    if columns:
+        if is_int_sequence(columns):
+            projection = columns  # type: ignore
+            columns = None
+        elif not is_str_sequence(columns):
+            raise ValueError(
+                "columns arg should contain a list of all integers or all strings values."
+            )
+    return projection, columns  # type: ignore
