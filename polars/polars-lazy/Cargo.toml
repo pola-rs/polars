@@ -56,6 +56,7 @@ abs = ["polars-core/abs"]
 random = ["polars-core/random"]
 dynamic_groupby = ["polars-core/dynamic_groupby"]
 ewma = ["polars-core/ewma"]
+dot_diagram = []
 
 # no guarantees whatsoever
 private = []
@@ -76,7 +77,6 @@ test = [
 
 [dependencies]
 ahash = "0.7"
-itertools = "0.10"
 rayon = "1.5"
 regex = { version = "1.4", optional = true }
 

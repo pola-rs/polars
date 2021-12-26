@@ -2,7 +2,6 @@ use super::GroupBy;
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use hashbrown::HashMap;
-use itertools::Itertools;
 use num::{Num, NumCast, Zero};
 use std::collections::hash_map::RandomState;
 use std::fmt::{Debug, Formatter};

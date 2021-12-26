@@ -15,7 +15,6 @@ use crate::{datatypes::PlHashMap, POOL};
 use ahash::RandomState;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
-use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -755,16 +754,22 @@ where
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 let iters_b = splitted_b
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
             _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
         }
@@ -800,16 +805,22 @@ impl HashJoin<BooleanType> for BooleanChunked {
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 let iters_b = splitted_b
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
             _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
         }
@@ -873,11 +884,11 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 let iters_b = splitted_b
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
             _ => {

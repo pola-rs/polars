@@ -1253,8 +1253,6 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 
 #[cfg(test)]
 mod test {
-    use itertools::Itertools;
-
     use crate::frame::groupby::{groupby, groupby_threaded_num};
     use crate::prelude::*;
     use crate::utils::split_ca;
@@ -1524,13 +1522,14 @@ mod test {
             let ca = UInt32Chunked::new("", slice);
             let split = split_ca(&ca, 4).unwrap();
 
-            let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
+            let mut a = groupby(ca.into_iter()).into_iter().collect::<Vec<_>>();
+            a.sort();
 
             let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, 0, split.len() as u64)
+            let mut b = groupby_threaded_num(keys, 0, split.len() as u64)
                 .into_iter()
-                .sorted()
-                .collect_vec();
+                .collect::<Vec<_>>();
+            b.sort();
 
             assert_eq!(a, b);
         }

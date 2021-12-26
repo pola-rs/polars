@@ -9,7 +9,6 @@ use crate::datatypes::PlHashSet;
 use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
 use crate::prelude::*;
 use crate::utils::NoNull;
-use itertools::Itertools;
 use rayon::prelude::*;
 use std::hash::Hash;
 #[cfg(feature = "dtype-categorical")]
@@ -336,11 +335,9 @@ fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> Int32Chunked 
     ChunkedArray::new_from_aligned_vec(name, av)
 }
 
-fn sort_columns(columns: Vec<Series>) -> Vec<Series> {
+fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
+    columns.sort_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
     columns
-        .into_iter()
-        .sorted_by_key(|s| s.name().to_string())
-        .collect()
 }
 
 impl ToDummies<Utf8Type> for Utf8Chunked {
@@ -555,18 +552,21 @@ mod is_first {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use itertools::Itertools;
 
     #[test]
     fn unique() {
         let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 3, 2, 1]);
         assert_eq!(
-            ca.unique().unwrap().sort(false).into_iter().collect_vec(),
+            ca.unique()
+                .unwrap()
+                .sort(false)
+                .into_iter()
+                .collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3)]
         );
         let ca = BooleanChunked::new_from_slice("a", &[true, false, true]);
         assert_eq!(
-            ca.unique().unwrap().into_iter().collect_vec(),
+            ca.unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(true), Some(false)]
         );
 
@@ -581,7 +581,7 @@ mod test {
     fn arg_unique() {
         let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 1, 1, 3]);
         assert_eq!(
-            ca.arg_unique().unwrap().into_iter().collect_vec(),
+            ca.arg_unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
         );
     }

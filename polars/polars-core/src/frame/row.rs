@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::utils::get_supertype;
-use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,7 +9,7 @@ impl DataFrame {
     /// Get a row from a DataFrame. Use of this is discouraged as it will likely be slow.
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     pub fn get_row(&self, idx: usize) -> Row {
-        let values = self.columns.iter().map(|s| s.get(idx)).collect_vec();
+        let values = self.columns.iter().map(|s| s.get(idx)).collect::<Vec<_>>();
         Row(values)
     }
 

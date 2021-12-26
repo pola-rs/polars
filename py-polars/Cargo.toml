@@ -84,6 +84,7 @@ features = [
   "horizontal_concat",
   "abs",
   "ewma",
+  "dot_diagram",
 ]
 
 # [patch.crates-io]

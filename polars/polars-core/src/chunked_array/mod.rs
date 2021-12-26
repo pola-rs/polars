@@ -1,7 +1,6 @@
 //! The typed heart of every Series column.
 use crate::prelude::*;
 use arrow::{array::*, bitmap::Bitmap};
-use itertools::Itertools;
 use polars_arrow::prelude::ValueSize;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -212,7 +211,11 @@ impl<T> ChunkedArray<T> {
     /// Shrink the capacity of this array to fit it's length.
     pub fn shrink_to_fit(&mut self) {
         self.chunks = vec![arrow::compute::concatenate::concatenate(
-            self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+            self.chunks
+                .iter()
+                .map(|a| &**a)
+                .collect::<Vec<_>>()
+                .as_slice(),
         )
         .unwrap()
         .into()];
@@ -342,7 +345,7 @@ impl<T> ChunkedArray<T> {
                     .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
-            .collect_vec();
+            .collect::<Vec<_>>();
         BooleanChunked::new_from_chunks(self.name(), chunks)
     }
 
@@ -361,7 +364,7 @@ impl<T> ChunkedArray<T> {
                     .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
-            .collect_vec();
+            .collect::<Vec<_>>();
         BooleanChunked::new_from_chunks(self.name(), chunks)
     }
 

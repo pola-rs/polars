@@ -87,6 +87,31 @@ pub trait CustomIterTools: Iterator {
     {
         FromIteratorReversed::from_trusted_len_iter_rev(self)
     }
+
+    fn all_equal(&mut self) -> bool
+    where
+        Self: Sized,
+        Self::Item: PartialEq,
+    {
+        match self.next() {
+            None => true,
+            Some(a) => self.all(|x| a == x),
+        }
+    }
+
+    fn fold_options<A, B, F>(&mut self, mut start: B, mut f: F) -> Option<B>
+    where
+        Self: Iterator<Item = Option<A>>,
+        F: FnMut(B, A) -> B,
+    {
+        for elt in self {
+            match elt {
+                Some(v) => start = f(start, v),
+                None => return None,
+            }
+        }
+        Some(start)
+    }
 }
 
 pub trait CustomIterToolsSized: Iterator + Sized {}

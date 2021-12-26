@@ -635,15 +635,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69ddb889f9d0d08a67338271fa9b62996bc788c7796a5c18cf057420aaed5eaf"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1187,7 +1178,6 @@ dependencies = [
  "arrow2",
  "comfy-table",
  "hashbrown",
- "itertools",
  "jsonpath_lib",
  "lazy_static",
  "num",
@@ -1234,7 +1224,6 @@ name = "polars-lazy"
 version = "0.18.0"
 dependencies = [
  "ahash",
- "itertools",
  "polars-arrow",
  "polars-core",
  "polars-io",

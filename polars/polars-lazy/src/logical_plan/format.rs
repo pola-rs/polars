@@ -167,6 +167,8 @@ impl LogicalPlan {
     ///     Used to make sure that the dot boxes are distinct.
     ///     branch is an id per join branch
     ///     id is incremented by the depth traversal of the tree.
+    #[cfg(feature = "dot_diagram")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub(crate) fn dot(
         &self,
         acc_str: &mut String,
