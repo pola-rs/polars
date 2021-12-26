@@ -49,21 +49,6 @@ impl Window {
             + self.period.duration() / self.every.duration()) as usize
     }
 
-    pub fn get_overlapping_bounds(&self, boundary: Bounds) -> Vec<Bounds> {
-        if boundary.is_empty() {
-            return vec![];
-        } else {
-            // estimate size
-            let size = self.estimate_overlapping_bounds(boundary);
-            let mut out_bounds = Vec::with_capacity(size);
-
-            for bi in self.get_overlapping_bounds_iter(boundary) {
-                out_bounds.push(bi);
-            }
-            out_bounds
-        }
-    }
-
     pub fn get_overlapping_bounds_iter(&self, boundary: Bounds) -> BoundsIter {
         BoundsIter::new(*self, boundary)
     }

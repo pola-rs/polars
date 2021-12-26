@@ -32,10 +32,17 @@ fn test_groups_large_interval() {
     let dur = Duration::parse("2d");
     let w = Window::new(Duration::parse("2d"), dur.clone(), Duration::from_nsecs(0));
     let (groups, _, _) = groupby(w, &ts, false, ClosedWindow::Both);
-    assert_eq!(groups.len(), 3);
+    assert_eq!(groups.len(), 4);
     assert_eq!(groups[0], (0, vec![0]));
     assert_eq!(groups[1], (1, vec![1]));
     assert_eq!(groups[2], (1, vec![1, 2, 3]));
+    assert_eq!(groups[3], (3, vec![3]));
+    let (groups, _, _) = groupby(w, &ts, false, ClosedWindow::Left);
+    assert_eq!(groups.len(), 3);
+    assert_eq!(groups[2], (3, vec![3]));
+    let (groups, _, _) = groupby(w, &ts, false, ClosedWindow::Right);
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[1], (2, vec![2, 3]));
 }
 
 #[test]
