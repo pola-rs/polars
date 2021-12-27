@@ -27,6 +27,7 @@ jobs:
           toolchain: nightly-2021-12-02
           override: true
           components: rustfmt, clippy
+      - run: yarn --version
       - name: Install Node Dependencies
         run: yarn install
       - name: Build Binary
