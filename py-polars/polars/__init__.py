@@ -107,6 +107,7 @@ from polars.io import (
     scan_parquet,
 )
 from polars.string_cache import StringCache
+import polars.testing as testing
 
 __all__ = [
     "DataFrame",
@@ -202,6 +203,8 @@ __all__ = [
     "from_records",
     "from_arrow",
     "from_pandas",
+    # testing
+    "testing",
 ]
 
 __version__ = version()
