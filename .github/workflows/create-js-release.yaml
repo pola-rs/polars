@@ -50,7 +50,7 @@ jobs:
             build: |
               export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
               export CARGO_PROFILE_RELEASE_LTO=false
-              npm run build -- --target i686-pc-windows-msvc
+              yarn build --target i686-pc-windows-msvc
 
           - host: windows-latest
             architecture: x64
