@@ -104,3 +104,93 @@ impl Rem<&Series> for DataFrame {
         (&self).rem(rhs)
     }
 }
+
+impl DataFrame {
+    fn binary_aligned(
+        &self,
+        other: &DataFrame,
+        f: &(dyn Fn(&Series, &Series) -> Result<Series> + Sync + Send),
+    ) -> Result<DataFrame> {
+        let max_len = std::cmp::max(self.height(), other.height());
+        let max_width = std::cmp::max(self.width(), other.width());
+        let mut cols = self
+            .get_columns()
+            .par_iter()
+            .zip(other.get_columns().par_iter())
+            .map(|(l, r)| {
+                let diff_l = max_len - l.len();
+                let diff_r = max_len - r.len();
+
+                let st = get_supertype(l.dtype(), r.dtype())?;
+                let mut l = l.cast(&st)?;
+                let mut r = r.cast(&st)?;
+
+                if diff_l > 0 {
+                    l = l.extend(AnyValue::Null, diff_l)?;
+                };
+                if diff_r > 0 {
+                    r = r.extend(AnyValue::Null, diff_r)?;
+                };
+
+                f(&l, &r)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let col_len = cols.len();
+        if col_len < max_width {
+            let df = if col_len < self.width() { self } else { other };
+
+            for i in col_len..max_len {
+                let s = &df.get_columns()[i];
+                let name = s.name();
+                let dtype = s.dtype();
+
+                // trick to fill a series with nulls
+                let vals: &[Option<i32>] = &[None];
+                let s = Series::new(name, vals).cast(dtype)?;
+                cols.push(s.expand_at_index(0, max_len))
+            }
+        }
+        DataFrame::new(cols)
+    }
+}
+
+impl Add<&DataFrame> for &DataFrame {
+    type Output = Result<DataFrame>;
+
+    fn add(self, rhs: &DataFrame) -> Self::Output {
+        self.binary_aligned(rhs, &|a, b| Ok(a + b))
+    }
+}
+
+impl Sub<&DataFrame> for &DataFrame {
+    type Output = Result<DataFrame>;
+
+    fn sub(self, rhs: &DataFrame) -> Self::Output {
+        self.binary_aligned(rhs, &|a, b| Ok(a - b))
+    }
+}
+
+impl Div<&DataFrame> for &DataFrame {
+    type Output = Result<DataFrame>;
+
+    fn div(self, rhs: &DataFrame) -> Self::Output {
+        self.binary_aligned(rhs, &|a, b| Ok(a / b))
+    }
+}
+
+impl Mul<&DataFrame> for &DataFrame {
+    type Output = Result<DataFrame>;
+
+    fn mul(self, rhs: &DataFrame) -> Self::Output {
+        self.binary_aligned(rhs, &|a, b| Ok(a * b))
+    }
+}
+
+impl Rem<&DataFrame> for &DataFrame {
+    type Output = Result<DataFrame>;
+
+    fn rem(self, rhs: &DataFrame) -> Self::Output {
+        self.binary_aligned(rhs, &|a, b| Ok(a % b))
+    }
+}

@@ -1059,21 +1059,47 @@ class DataFrame:
     def __setstate__(self, state):  # type: ignore
         self._df = DataFrame(state)._df
 
-    def __mul__(self, other: Any) -> "DataFrame":
+    def __mul__(
+        self, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> "DataFrame":
+        if isinstance(other, DataFrame):
+            return wrap_df(self._df.mul_df(other._df))
+
         other = _prepare_other_arg(other)
         return wrap_df(self._df.mul(other._s))
 
-    def __truediv__(self, other: Any) -> "DataFrame":
+    def __truediv__(
+        self, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> "DataFrame":
+        if isinstance(other, DataFrame):
+            return wrap_df(self._df.div_df(other._df))
+
         other = _prepare_other_arg(other)
         return wrap_df(self._df.div(other._s))
 
-    def __add__(self, other: Any) -> "DataFrame":
+    def __add__(
+        self, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> "DataFrame":
+        if isinstance(other, DataFrame):
+            return wrap_df(self._df.add_df(other._df))
         other = _prepare_other_arg(other)
         return wrap_df(self._df.add(other._s))
 
-    def __sub__(self, other: Any) -> "DataFrame":
+    def __sub__(
+        self, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> "DataFrame":
+        if isinstance(other, DataFrame):
+            return wrap_df(self._df.sub_df(other._df))
         other = _prepare_other_arg(other)
         return wrap_df(self._df.sub(other._s))
+
+    def __mod__(
+        self, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> "DataFrame":
+        if isinstance(other, DataFrame):
+            return wrap_df(self._df.rem_df(other._df))
+        other = _prepare_other_arg(other)
+        return wrap_df(self._df.rem(other._s))
 
     def __str__(self) -> str:
         return self._df.as_str()

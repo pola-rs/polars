@@ -396,6 +396,31 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    pub fn add_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df + &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn sub_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df - &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn div_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df / &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn mul_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df * &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn rem_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df % &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
     pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let df = self
             .df

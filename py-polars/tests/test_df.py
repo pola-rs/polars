@@ -1602,6 +1602,42 @@ def test_arithmetic() -> None:
     expected = pl.DataFrame({"a": [-1, 0], "b": [1, 2]})
     assert df_minus.frame_equal(expected)
 
+    df_mod = df % 2
+    expected = pl.DataFrame({"a": [1.0, 0.0], "b": [1.0, 0.0]})
+    assert df_mod.frame_equal(expected)
+
+    df2 = pl.DataFrame({"c": [10]})
+
+    out = df + df2
+    expected = pl.DataFrame({"a": [11.0, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    out = df - df2
+    expected = pl.DataFrame({"a": [-9.0, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    out = df / df2
+    expected = pl.DataFrame({"a": [0.1, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    out = df * df2
+    expected = pl.DataFrame({"a": [10.0, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    out = df % df2
+    expected = pl.DataFrame({"a": [1.0, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
 
 def test_getattr() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0]})
