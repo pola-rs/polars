@@ -542,7 +542,7 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
             }
         }
 
-        _ => panic!("not supported"),
+        _ => return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into())
     }
     .try_into_js(&cx)
 }
