@@ -11,7 +11,7 @@ describe("read:csv", () => {
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
 
-  it.only("can read from a relative file", () => {
+  it("can read from a relative file", () => {
     const df = pl.readCSV("../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
@@ -19,17 +19,17 @@ describe("read:csv", () => {
     const df = pl.readCSV(csvpath, {hasHeader: false, startRows: 1, endRows: 4});
     expect(df.shape).toStrictEqual({height: 4, width: 4});
   });
-  it.only("can read from a csv string", () => {
+  it("can read from a csv string", () => {
     const csvString = "foo,bar,baz\n1,2,3\n4,5,6\n";
     const df = pl.readCSV(csvString);
     expect(df.toCSV()).toEqual(csvString);
   });
-  it.only("can read from a csv buffer", () => {
+  it("can read from a csv buffer", () => {
     const csvBuffer = Buffer.from("foo,bar,baz\n1,2,3\n4,5,6\n", "utf-8");
     const df = pl.readCSV(csvBuffer);
     expect(df.toCSV()).toEqual(csvBuffer.toString());
   });
-  it.only("can read from a csv buffer with options", () => {
+  it("can read from a csv buffer with options", () => {
     const csvBuffer = Buffer.from("foo,bar,baz\n1,2,3\n4,5,6\n", "utf-8");
     const df = pl.readCSV(csvBuffer, {hasHeader: true, batchSize: 10});
     expect(df.toCSV()).toEqual(csvBuffer.toString());
@@ -61,7 +61,7 @@ describe("read:json", () => {
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
   it("can specify read options", () => {
-    const df = pl.readJSON({file: jsonpath, batchSize: 10, inferSchemaLength: 100});
+    const df = pl.readJSON(jsonpath, {batchSize: 10, inferSchemaLength: 100});
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
   it("can read from a json string", () => {
@@ -70,8 +70,8 @@ describe("read:json", () => {
     expect(df.toJSON().replace("\n", "")).toEqual(jsonString);
   });
 });
-describe.skip("scan", () => {
-  describe.skip("csv", () => {
+describe("scan", () => {
+  describe("csv", () => {
     it("can lazy load (scan) from a csv file", () => {
       const df = pl.scanCSV(csvpath).collectSync();
       expect(df.shape).toStrictEqual({height: 27, width: 4});

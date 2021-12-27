@@ -4,14 +4,14 @@ use crate::error::JsPolarsEr;
 use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
 use napi::{
-    CallContext, Either, JsBoolean, JsExternal, JsObject, JsString, JsUndefined,
+    CallContext, JsExternal, JsObject, JsString, JsUndefined,
     JsUnknown,
 };
 use polars::frame::row::Row;
 use polars::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
-use std::path::{Path, PathBuf};
+
 
 #[js_function(1)]
 pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
@@ -258,7 +258,7 @@ pub(crate) fn read_json_path(cx: CallContext) -> JsResult<JsExternal> {
     let infer_schema_length = params.get_as::<Option<usize>>("inferSchemaLength")?;
     let batch_size = params.get_as::<usize>("batchSize")?;
 
-    let path = params.get_as::<&str>("file")?;
+    let path = params.get_as::<&str>("path")?;
     let f = File::open(&path)?;
     let reader = BufReader::new(f);
     JsonReader::new(reader)
