@@ -63,7 +63,6 @@ export type ReadCsvOptions = {
   commentChar?: string;
   encoding?: "utf8" | "utf8-lossy";
   endRows?: number;
-  file: string;
   hasHeader: boolean;
   ignoreErrors?: boolean;
   inferSchemaLength?: number;

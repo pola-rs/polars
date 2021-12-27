@@ -24,12 +24,19 @@ const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
   inferSchemaLength: 10
 };
 
+function readCSVBuffer(buff, options) {
+  return  dfWrapper(pli.df.readCSVBuffer({...readCsvDefaultOptions, ...options, buff}));
+}
+function readCSVPath(path, options) {
+  return  dfWrapper(pli.df.readCSVPath({...readCsvDefaultOptions, ...options, path}));
+}
 /**
  * __Read a CSV file or string into a Dataframe.__
  * ___
+ * @param pathOrBody - path or object @see options.path options.body
+ *   - path: Path to a file or a file like string. Any valid filepath can be used. Example: `file.csv`.
+ *   - body: String or buffer to be read as a CSV
  * @param options
- * @param options.file - Path to a file or a file like string. Any valid filepath can be used. Example: `file.csv`.
- *     Any string containing the contents of a csv can also be used
  * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
  *     If set to `null`, a full table scan will be done (slow).
  * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
@@ -57,25 +64,34 @@ const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
  * @param options.parseDates -Whether to attempt to parse dates or not
  * @returns DataFrame
  */
-export function readCSV(options: Partial<ReadCsvOptions>): DataFrame
-export function readCSV(path: string): DataFrame
 export function readCSV(path: string | Buffer): DataFrame
-export function readCSV(path: string, options: Partial<ReadCsvOptions>): DataFrame
-export function readCSV(arg, options?) {
-  if(Buffer.isBuffer(arg)) {
-    dfWrapper(pli.df.read_csv(options));
-  }
+export function readCSV(path: string | Buffer, options?: Partial<ReadCsvOptions>): DataFrame
+export function readCSV(pathOrBody, options?) {
+  console.log(pathOrBody, options);
   const extensions = [".tsv", ".csv"];
-  if(typeof arg === "string") {
-    const inline = !isPath(arg, extensions);
-    const file = inline || path.isAbsolute(arg) ? arg : path.resolve(process.cwd(), arg);
 
-    return readCSV({...options, file, inline});
+  if(Buffer.isBuffer(pathOrBody)) {
+    return readCSVBuffer(pathOrBody, options);
+
   }
-  console.log(arg);
-  options = {...readCsvDefaultOptions, ...arg};
+  if(Buffer.isBuffer(options?.body)) {
+    return readCSVBuffer(options.body, options);
+  }
 
-  return dfWrapper(pli.df.read_csv(options));
+  if(typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, extensions);
+    if(inline) {
+      return readCSVBuffer(Buffer.from(pathOrBody, "utf-8"), options);
+    } else {
+      return readCSVPath(pathOrBody, options);
+    }
+  } else if(options?.path) {
+
+    return readCSVPath(options?.path, options);
+
+  } else {
+    throw new Error("must supply either a path or body");
+  }
 }
 
 

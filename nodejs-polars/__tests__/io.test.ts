@@ -19,7 +19,7 @@ describe("read:csv", () => {
     const df = pl.readCSV(csvpath, {hasHeader: false, startRows: 1, endRows: 4});
     expect(df.shape).toStrictEqual({height: 4, width: 4});
   });
-  it("can read from a csv string", () => {
+  it.only("can read from a csv string", () => {
     const csvString = "foo,bar,baz\n1,2,3\n4,5,6\n";
     const df = pl.readCSV(csvString);
     expect(df.toCSV()).toEqual(csvString);
@@ -27,6 +27,11 @@ describe("read:csv", () => {
   it.only("can read from a csv buffer", () => {
     const csvBuffer = Buffer.from("foo,bar,baz\n1,2,3\n4,5,6\n", "utf-8");
     const df = pl.readCSV(csvBuffer);
+    expect(df.toCSV()).toEqual(csvBuffer.toString());
+  });
+  it.only("can read from a csv buffer with options", () => {
+    const csvBuffer = Buffer.from("foo,bar,baz\n1,2,3\n4,5,6\n", "utf-8");
+    const df = pl.readCSV(csvBuffer, {hasHeader: true, batchSize: 10});
     expect(df.toCSV()).toEqual(csvBuffer.toString());
   });
   it("can parse datetimes", () => {

@@ -742,7 +742,7 @@ pub fn lazy(cx: CallContext) -> JsResult<JsExternal> {
     df.clone().lazy().try_into_js(&cx)
 }
 
-fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
+pub (crate) fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
     let schema = rows_to_schema(&rows);
     let fields = schema
         .fields()
