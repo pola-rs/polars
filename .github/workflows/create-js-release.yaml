@@ -168,7 +168,7 @@ jobs:
         if: ${{ matrix.settings.target != 'i686-pc-windows-msvc' }}
 
       - name: "Install dependencies"
-        run: npm install --if-present
+        run: npm install
         if: ${{ matrix.settings.target == 'i686-pc-windows-msvc' }}
 
       - name: "Build"
