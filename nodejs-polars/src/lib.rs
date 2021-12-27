@@ -14,13 +14,26 @@ use crate::lazy::dsl;
 use crate::lazy::functions;
 use crate::lazy::lazyframe_object::JsLazyFrame;
 use crate::series::{repeat, JsSeries};
-use napi::{JsObject, Result};
+use napi::{JsObject, Result as JsResult, CallContext, JsExternal};
+use polars_core::prelude::DataFrame;
+use polars_core::functions as pl_functions;
+use crate::conversion::prelude::*;
 
 #[macro_use]
 extern crate napi_derive;
 
+#[js_function(1)]
+pub fn hor_concat_df(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+
+    let dfs = params.get_external_vec::<DataFrame>(&cx, "items")?;
+    let df = pl_functions::hor_concat_df(&dfs).map_err(crate::error::JsPolarsEr::from)?;
+    df.try_into_js(&cx)
+
+}
+
 #[module_exports]
-pub fn init(mut exports: JsObject, env: napi::Env) -> Result<()> {
+pub fn init(mut exports: JsObject, env: napi::Env) -> JsResult<()> {
     let ldf = JsLazyFrame::to_object(&env)?;
     let series = JsSeries::to_object(&env)?;
     let df = JsDataFrame::to_object(&env)?;
@@ -48,5 +61,6 @@ pub fn init(mut exports: JsObject, env: napi::Env) -> Result<()> {
     exports.create_named_method("cov", functions::cov)?;
     exports.create_named_method("pearsonCorr", functions::pearson_corr)?;
     exports.create_named_method("spearmanRankCorr", functions::spearman_rank_corr)?;
+    exports.create_named_method("horizontalConcatDF", hor_concat_df)?;
     Ok(())
 }

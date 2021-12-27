@@ -70,6 +70,7 @@ features = [
   "serde", # "asof_join",  # "cross_join",
   "lazy",
   "repeat_by",
+  "horizontal_concat",
 ]
 path = "../polars"
 
