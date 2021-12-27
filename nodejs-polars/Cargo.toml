@@ -71,6 +71,7 @@ features = [
   "lazy",
   "repeat_by",
   "horizontal_concat",
+  "dataframe_arithmetic",
 ]
 path = "../polars"
 
