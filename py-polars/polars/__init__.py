@@ -11,6 +11,7 @@ except ImportError as e:  # pragma: no cover
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
+import polars.testing as testing
 from polars.cfg import (  # flake8: noqa. We do not export in __all__
     Config,
     toggle_string_cache,
@@ -107,7 +108,6 @@ from polars.io import (
     scan_parquet,
 )
 from polars.string_cache import StringCache
-import polars.testing as testing
 
 __all__ = [
     "DataFrame",

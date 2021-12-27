@@ -14,7 +14,7 @@ from polars.datatypes import (
     Utf8,
     dtype_to_py_type,
 )
-from polars.internals import Series, DataFrame
+from polars.internals import DataFrame, Series
 
 _NUMERIC_COL_TYPES = (
     Int16,
