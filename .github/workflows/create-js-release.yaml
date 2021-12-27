@@ -50,7 +50,7 @@ jobs:
             build: |
               export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
               export CARGO_PROFILE_RELEASE_LTO=false
-              yarn build --target i686-pc-windows-msvc
+              npm run build -- --target i686-pc-windows-msvc
 
           - host: windows-latest
             architecture: x64
@@ -168,7 +168,7 @@ jobs:
         if: ${{ matrix.settings.target != 'i686-pc-windows-msvc' }}
 
       - name: "Install dependencies"
-        run: yarn install
+        run: npm install --if-present
         if: ${{ matrix.settings.target == 'i686-pc-windows-msvc' }}
 
       - name: "Build"
@@ -236,6 +236,6 @@ jobs:
         shell: bash
 
       - name: Publish to npm
-        run: yarn npm publish
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
