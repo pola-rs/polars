@@ -236,6 +236,6 @@ jobs:
         shell: bash
 
       - name: Publish to npm
-        run: yarn publish
+        run: yarn npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
