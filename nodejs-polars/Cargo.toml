@@ -55,6 +55,7 @@ features = [
   "reinterpret", # "decompress-fast",
   "mode",
   "extract_jsonpath",
+  "dot_diagram",
   "json",
   "lazy_regex",
   "cum_agg",

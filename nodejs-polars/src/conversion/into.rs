@@ -108,8 +108,8 @@ impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
             AnyValue::Int64(v) => cx.env.create_bigint_from_i64(v).map(|v| v.into_unknown())?,
             AnyValue::Float32(v) => cx.env.create_double(v as f64).map(|v| v.into_unknown()),
             AnyValue::Float64(v) => cx.env.create_double(v).map(|v| v.into_unknown()),
-            AnyValue::Date(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
-            AnyValue::Datetime(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
+            AnyValue::Date(v) => cx.env.create_date((v/ 1000000) as f64).map(|v| v.into_unknown()),
+            AnyValue::Datetime(v) => cx.env.create_date((v / 1000000) as f64).map(|v| v.into_unknown()),
             AnyValue::List(v) => cx.env.to_js_value(&v).map(|v| v.into_unknown()),
             _ => cx.env.get_null().map(|v| v.into_unknown()),
         }

@@ -56,7 +56,8 @@ impl FromJsUnknown for AnyValue<'_> {
                 if val.is_date()? {
                     let d: JsDate = unsafe { val.cast() };
                     let d = d.value_of()?;
-                    Ok(AnyValue::Datetime(d as i64))
+                    let d = d as i64 * 1000000;
+                    Ok(AnyValue::Datetime(d))
                 } else {
                     Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into())
                 }
@@ -65,6 +66,7 @@ impl FromJsUnknown for AnyValue<'_> {
         }
     }
 }
+
 impl FromJsUnknown for Wrap<Utf8Chunked> {
     fn from_js(val: JsUnknown) -> Result<Self> {
         if val.is_array()? {
