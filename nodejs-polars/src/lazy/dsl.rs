@@ -6,7 +6,7 @@ use napi::*;
 
 use polars::lazy::dsl;
 use polars::prelude::*;
-
+use crate::error::JsPolarsEr;
 pub struct JsExpr {}
 pub struct JsWhen {}
 pub struct JsWhenThen {}
@@ -474,6 +474,79 @@ pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
         .quantile(quantile, QuantileInterpolOptions::default())
         .try_into_js(&cx)
 }
+
+#[js_function(1)]
+pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    let val = params.get::<JsUnknown>("value")?;
+    let n = params.get_as::<usize>("n")?;
+    match val.get_type()? {
+        ValueType::Undefined | ValueType::Null => {
+            expr.apply(move |s| s.extend(AnyValue::Null, n), GetOutput::same_type())
+        }
+        ValueType::Boolean => {
+            let val = bool::from_js(val)?;
+            expr.apply(
+                move |s| s.extend(AnyValue::Boolean(val), n),
+                GetOutput::same_type(),
+            )
+        }
+        ValueType::Number => {
+            let f_val = f64::from_js(val)?;
+            if f_val.round() == f_val {
+                let val = f_val as i64;
+                if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
+                    expr.apply(
+                        move |s| s.extend(AnyValue::Int32(val as i32), n),
+                        GetOutput::same_type(),
+                    )
+                } else {
+                    expr.apply(
+                        move |s| s.extend(AnyValue::Int64(val), n),
+                        GetOutput::same_type(),
+                    )
+                }
+            } else {
+                expr.apply(
+                    move |s| s.extend(AnyValue::Float64(f_val), n),
+                    GetOutput::same_type(),
+                )
+            }
+        }
+        ValueType::String => {
+            let val = String::from_js(val)?;
+            expr.apply(
+                move |s| s.extend(AnyValue::Utf8(&val), n),
+                GetOutput::same_type(),
+            )
+        }
+        ValueType::Bigint => {
+            let val = u64::from_js(val)?;
+            expr.apply(
+                move |s| s.extend(AnyValue::UInt64(val), n),
+                GetOutput::same_type(),
+            )
+        }
+        ValueType::Object => {
+            if val.is_date()? {
+                let d: JsDate = unsafe { val.cast() };
+                let d = d.value_of()?;
+                let d = d as i64 * 1000000;
+                expr.apply(
+                    move |s| s.extend(AnyValue::Datetime(d), n),
+                    GetOutput::same_type(),
+                )
+            } else {
+                return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into())
+            }
+        }
+
+        _ => return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into())
+    }
+    .try_into_js(&cx)
+}
+//
 macro_rules! impl_expr {
     ($name:ident) => {
         #[js_function(1)]

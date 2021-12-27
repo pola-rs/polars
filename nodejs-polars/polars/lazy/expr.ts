@@ -416,6 +416,13 @@ export interface Expr {
    * This means that every item is expanded to a new row.
    */
   explode(): Expr
+  /**
+   * Extend the Series with given number of values.
+   * @param value The value to extend the Series with. This value may be null to fill with nulls.
+   * @param n The number of values to extend.
+   */
+  extend(value: any, n: number): Expr
+  extend(opt: {value: any, n: number}): Expr
   /** Fill nan value with a fill value */
   fillNan(other: any): Expr
   /** Fill null value with a fill value or strategy */
@@ -1132,6 +1139,13 @@ const _Expr = (_expr: JsExpr): Expr => {
     eq: wrapExprArg("eq"),
     exclude,
     explode: wrapNullArgs("explode"),
+    extend(o, n?) {
+      if(n !== null && typeof n === "number") {
+        return wrap("extend", {value: o, n});
+      }
+
+      return wrap("extend", o);
+    },
     fillNan: wrapExprArg("fillNan", true),
     fillNull,
     fillNullWithStrategy: wrapUnary("fillNullWithStrategy", "strategy"),

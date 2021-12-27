@@ -330,6 +330,13 @@ export interface Series<T> extends ArrayLike<T> {
    * ```
    */
   explode(): any
+    /**
+   * Extend the Series with given number of values.
+   * @param value The value to extend the Series with. This value may be null to fill with nulls.
+   * @param n The number of values to extend.
+   */
+  extend(value: any, n: number): Series<T>
+  extend(opt: {value: any, n: number}): Series<T>
   /**
    * __Fill null values with a filling strategy.__
    * ___
@@ -1239,6 +1246,7 @@ export interface Series<T> extends ArrayLike<T> {
 
 export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
+
     return pli.series[method]({_series, ...args });
   };
   const wrap = <U>(method, args?, _series = _s): Series<U> => {
@@ -1457,6 +1465,13 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       return this.eq(field);
     },
     explode: noArgWrap("explode"),
+    extend(o, n?) {
+      if(n !== null && typeof n === "number") {
+        return wrap("extend", {value: o, n});
+      }
+
+      return wrap("extend", o);
+    },
     fillNull(strategy) {
       return typeof strategy === "string" ?
         wrap("fill_null", {strategy}) :

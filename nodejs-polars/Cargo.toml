@@ -55,6 +55,7 @@ features = [
   "reinterpret", # "decompress-fast",
   "mode",
   "extract_jsonpath",
+  "dot_diagram",
   "json",
   "lazy_regex",
   "cum_agg",
@@ -69,6 +70,7 @@ features = [
   "serde", # "asof_join",  # "cross_join",
   "lazy",
   "repeat_by",
+  "horizontal_concat",
 ]
 path = "../polars"
 

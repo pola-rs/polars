@@ -791,7 +791,7 @@ pub fn get_date(cx: CallContext) -> JsResult<JsUnknown> {
                 index as usize
             };
             match ca.get(index) {
-                Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
+                Some(v) => cx.env.create_date((v / 1000000) as f64).map(|v| v.into_unknown()),
                 None => cx.env.get_null().map(|v| v.into_unknown()),
             }
         }
@@ -814,7 +814,7 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
             match ca.get(index) {
                 Some(v) => {
                     println!("value={:#?}", v);
-                    cx.env.create_date(v as f64).map(|v| v.into_unknown())
+                    cx.env.create_date((v / 1000000) as f64).map(|v| v.into_unknown())
                 }
                 None => {
                     println!("none at idx={:#?}", index);
@@ -850,6 +850,16 @@ pub fn rechunk(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
         rechunked_series.try_into_js(&cx).map(Either::A)
     }
 }
+#[js_function(1)]
+pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let val = params.get_as::<AnyValue>("value")?;
+    let n = params.get_as::<usize>("n")?;
+    series.extend(val, n).map_err(JsPolarsEr::from)?.try_into_js(&cx)
+}
+
+
 macro_rules! init_method {
     ($name:ident, $js_type:ty, $type:ty, $getter:ident) => {
         #[js_function(1)]

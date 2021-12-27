@@ -240,6 +240,20 @@ describe("expr", () => {
     expect(actual).toFrameEqual(expected);
 
   });
+  test("extend", () => {
+    const df = pl.DataFrame({
+      a: [1, 2, 3, 4, 5],
+      b: [2, 3, 4, 5, 6]
+    });
+    const other = pl.Series("c", ["a", "b", "c"]);
+    const expected = pl.DataFrame({
+      a: [1, 2, 3, 4, 5],
+      b: [2, 3, 4, 5, 6],
+      c: ["a", "b", "c", null, null]
+    });
+    const actual = df.withColumn(lit(other).extend({value: null, n: 2}));
+    expect(actual).toFrameEqual(expected);
+  });
   test.each`
   replacement | filled
   ${lit(1)} | ${1}

@@ -667,6 +667,12 @@ describe("series", () => {
   `("$# $name throws an error ", ({fn, errorType}) => {
     expect(fn).toThrow(errorType);
   });
+  test("extend", () => {
+    const s = pl.Series("extended", [1], pl.UInt16);
+    const expected = pl.Series("extended", [1, null, null], pl.UInt16);
+    const actual = s.extend(null, 2);
+    expect(actual).toSeriesStrictEqual(expected);
+  });
 });
 
 describe("StringFunctions", () => {

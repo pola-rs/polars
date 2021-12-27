@@ -30,15 +30,25 @@ describe("concat", () => {
     const fn = () => pl.concat([]);
     expect(fn).toThrowError();
   });
-  it("only supports vertical concats", () => {
-    const s1 = pl.Series("a", [1, 2, 3]);
-    const s2 = pl.Series("a", [4, 5, 6]);
-    const fn = () => pl.concat([s1, s2], {rechunk: true, how: "diagonal" as any});
-    expect(fn).toThrowError();
-  });
+
   it("can only concat series and df", () => {
     const fn = () => pl.concat([[1] as any, [2] as any]);
     expect(fn).toThrowError();
+  });
+  test("horizontal concat", () => {
+    const a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]});
+    const b = pl.DataFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "e": [1, 2, 1, 2]});
+    const actual = pl.concat([a, b], {how:"horizontal"});
+    const expected = pl.DataFrame(
+      {
+        "a": ["a", "b", null, null],
+        "b": [1, 2, null, null],
+        "c": [5, 7, 8, 9],
+        "d": [1, 2, 1, 2],
+        "e": [1, 2, 1, 2],
+      }
+    );
+    expect(actual).toFrameEqual(expected);
   });
 });
 describe("repeat", () => {

@@ -106,6 +106,7 @@ impl dsl::JsExpr {
             napi::Property::new(env, "eq")?.with_method(dsl::eq),
             napi::Property::new(env, "exclude")?.with_method(dsl::exclude),
             napi::Property::new(env, "explode")?.with_method(dsl::explode),
+            napi::Property::new(env, "extend")?.with_method(dsl::extend),
             napi::Property::new(env, "fillNan")?.with_method(dsl::fill_nan),
             napi::Property::new(env, "fillNullWithStrategy")?
                 .with_method(dsl::fill_null_with_strategy),
