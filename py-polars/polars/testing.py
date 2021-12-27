@@ -92,7 +92,7 @@ def assert_frame_equal(
 
     if check_column_order:
         if left.columns != right.columns:
-            raise AssertionError(f"Columns are not in same order")
+            raise AssertionError("Columns are not in same order")
 
     # this does not assume a particular order
     for col in left.columns:
