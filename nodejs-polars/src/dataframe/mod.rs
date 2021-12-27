@@ -1,11 +1,13 @@
-use crate::dataframe::*;
+pub mod frame;
+pub use frame::*;
+
 use crate::prelude::JsResult;
 use napi::JsObject;
 
 impl JsDataFrame {
     pub fn to_object(env: &napi::Env) -> JsResult<JsObject> {
         let mut df = env.create_object()?;
-
+        
         df.define_properties(&[
             napi::Property::new(env, "lazy")?.with_method(lazy),
             napi::Property::new(env, "add")?.with_method(add),

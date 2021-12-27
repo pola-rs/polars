@@ -4,6 +4,7 @@ import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";
 import {LazyDataFrame} from "./lazy/dataframe";
 import path from "path";
+
 const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   inferSchemaLength: 10,
   batchSize: 10,
@@ -58,8 +59,12 @@ const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
  */
 export function readCSV(options: Partial<ReadCsvOptions>): DataFrame
 export function readCSV(path: string): DataFrame
+export function readCSV(path: string | Buffer): DataFrame
 export function readCSV(path: string, options: Partial<ReadCsvOptions>): DataFrame
-export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
+export function readCSV(arg, options?) {
+  if(Buffer.isBuffer(arg)) {
+    dfWrapper(pli.df.read_csv(options));
+  }
   const extensions = [".tsv", ".csv"];
   if(typeof arg === "string") {
     const inline = !isPath(arg, extensions);
@@ -67,6 +72,7 @@ export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
 
     return readCSV({...options, file, inline});
   }
+  console.log(arg);
   options = {...readCsvDefaultOptions, ...arg};
 
   return dfWrapper(pli.df.read_csv(options));

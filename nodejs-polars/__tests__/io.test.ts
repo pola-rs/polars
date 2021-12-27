@@ -10,6 +10,7 @@ describe("read:csv", () => {
     const df = pl.readCSV(csvpath);
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
+
   it.only("can read from a relative file", () => {
     const df = pl.readCSV("../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
     expect(df.shape).toStrictEqual({height: 27, width: 4});
@@ -22,6 +23,11 @@ describe("read:csv", () => {
     const csvString = "foo,bar,baz\n1,2,3\n4,5,6\n";
     const df = pl.readCSV(csvString);
     expect(df.toCSV()).toEqual(csvString);
+  });
+  it.only("can read from a csv buffer", () => {
+    const csvBuffer = Buffer.from("foo,bar,baz\n1,2,3\n4,5,6\n", "utf-8");
+    const df = pl.readCSV(csvBuffer);
+    expect(df.toCSV()).toEqual(csvBuffer.toString());
   });
   it("can parse datetimes", () => {
     const csv = `timestamp,open,high
