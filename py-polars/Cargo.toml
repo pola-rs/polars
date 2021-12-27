@@ -85,6 +85,7 @@ features = [
   "abs",
   "ewma",
   "dot_diagram",
+  "dataframe_arithmetic",
 ]
 
 # [patch.crates-io]

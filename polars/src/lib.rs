@@ -124,6 +124,7 @@
 //!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
 //!     - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
+//!     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
 //! * `Series` operations:
 //!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)

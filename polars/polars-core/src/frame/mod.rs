@@ -17,6 +17,7 @@ use crate::utils::{
     accumulate_dataframes_horizontal, accumulate_dataframes_vertical, split_ca, split_df, NoNull,
 };
 
+#[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
 #[cfg(feature = "asof_join")]
 pub(crate) mod asof_join;
