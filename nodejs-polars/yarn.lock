@@ -1393,7 +1393,6 @@ __metadata:
   resolution: "benches@workspace:benches"
   dependencies:
     lodash: ^4.17.21
-    nodejs-polars: "workspace:^"
     ramda: ^0.27.1
   languageName: unknown
   linkType: soft
@@ -4402,7 +4401,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nodejs-polars@workspace:., nodejs-polars@workspace:^":
+"nodejs-polars@workspace:.":
   version: 0.0.0-use.local
   resolution: "nodejs-polars@workspace:."
   dependencies:
