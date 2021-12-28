@@ -1229,7 +1229,7 @@ def test_h_agg() -> None:
         df.sum(axis=1, null_strategy="propagate"), pl.Series("a", [2, None, 6])
     )
     pl.testing.assert_series_equal(
-        df.mean(axis=1, null_strategy="propagate"), pl.Series("a", [1., None, 3.])
+        df.mean(axis=1, null_strategy="propagate"), pl.Series("a", [1.0, None, 3.0])
     )
 
 
