@@ -42,10 +42,7 @@ mod test {
         let s = Series::new("", &[Some(1), Some(2), Some(4), Some(8), Some(16)]);
         assert_eq!(
             s.pct_change(2)?,
-            Series::new(
-                "",
-                &[None, None, Some(3.0f32), Some(3.0), Some(3.0)]
-            )
+            Series::new("", &[None, None, Some(3.0f32), Some(3.0), Some(3.0)])
         );
         Ok(())
     }
