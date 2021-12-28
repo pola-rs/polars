@@ -63,7 +63,6 @@ export type ReadCsvOptions = {
   commentChar?: string;
   encoding?: "utf8" | "utf8-lossy";
   endRows?: number;
-  file: string;
   hasHeader: boolean;
   ignoreErrors?: boolean;
   inferSchemaLength?: number;
@@ -95,7 +94,6 @@ export type JoinOptions = {
   suffix?: string;
 };
 export type WriteCsvOptions = {
-  dest?: string | Stream;
   hasHeader?: boolean;
   sep?: string;
 };

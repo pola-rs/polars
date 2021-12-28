@@ -1972,7 +1972,7 @@ class Series:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             else:
-                tp = "datetime64[ms]"
+                tp = "datetime64[ns]"
             return arr.astype(tp)
 
         if _PYARROW_AVAILABLE and not self.is_datelike():
