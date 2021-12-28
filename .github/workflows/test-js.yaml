@@ -38,5 +38,3 @@ jobs:
         run: yarn test
       - name: Build JS
         run: yarn build:ts
-      - name: Import polars 
-        run: yarn node -e "require('nodejs-polars')"
