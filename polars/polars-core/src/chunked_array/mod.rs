@@ -237,7 +237,7 @@ impl<T> ChunkedArray<T> {
         } else {
             use DataType::*;
             match (self.dtype(), series.dtype()) {
-                (Int64, Datetime) | (Int32, Date) => {
+                (Int64, Datetime(_, _)) | (Int32, Date) => {
                     &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
                 }
                 _ => panic!(

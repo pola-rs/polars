@@ -10,14 +10,16 @@ impl From<Int64Chunked> for DatetimeChunked {
 }
 
 impl Int64Chunked {
-    pub fn into_date(self) -> DatetimeChunked {
-        DatetimeChunked::new(self)
+    pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> DatetimeChunked {
+        let mut dt = DatetimeChunked::new(self);
+        dt.2 = Some(DataType::Datetime(timeunit, tz));
+        dt
     }
 }
 
 impl LogicalType for DatetimeChunked {
     fn dtype(&self) -> &'static DataType {
-        &DataType::Datetime
+        self.2.as_ref().unwrap()
     }
 
     #[cfg(feature = "dtype-date")]

@@ -17,14 +17,14 @@ use ahash::RandomState;
 use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
 use arrow::datatypes::IntegerType;
-pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
+pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
 
 pub struct Utf8Type {}
@@ -421,7 +421,13 @@ impl Display for DataType {
             DataType::Float64 => "f64",
             DataType::Utf8 => "str",
             DataType::Date => "date",
-            DataType::Datetime => "datetime",
+            DataType::Datetime(tu, tz) => {
+                let s = match tz {
+                    None => format!("datetime[{}]", tu),
+                    Some(tz) => format!("datetime[{}, {}]", tu, tz)
+                };
+                return f.write_str(&s)
+            },
             DataType::Time => "time",
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
@@ -495,6 +501,36 @@ impl PartialOrd for AnyValue<'_> {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TimeUnit {
+    Nanoseconds,
+    Milliseconds
+}
+
+impl Display for TimeUnit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TimeUnit::Nanoseconds => {
+                write!(f, "ns")
+            }
+            TimeUnit::Milliseconds => {
+                write!(f, "ms")
+            }
+        }
+    }
+}
+
+impl TimeUnit {
+    pub fn to_arrow(&self) -> ArrowTimeUnit {
+        match self {
+            TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
+            TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
+        }
+    }
+}
+
+pub type TimeZone = String;
+
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub enum DataType {
     Boolean,
@@ -515,7 +551,7 @@ pub enum DataType {
     Date,
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
-    Datetime,
+    Datetime(TimeUnit, Option<TimeZone>),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     Time,
     List(Box<DataType>),
@@ -541,7 +577,7 @@ impl DataType {
         use DataType::*;
         match self {
             Date => Int32,
-            Datetime => Int64,
+            Datetime(_, _) => Int64,
             Time => Int64,
             Categorical => UInt32,
             _ => self.clone(),
@@ -565,7 +601,7 @@ impl DataType {
             Float64 => ArrowDataType::Float64,
             Utf8 => ArrowDataType::LargeUtf8,
             Date => ArrowDataType::Date32,
-            Datetime => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+            Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
             Time => ArrowDataType::Time64(TimeUnit::Nanosecond),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",

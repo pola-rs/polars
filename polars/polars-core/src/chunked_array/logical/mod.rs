@@ -10,7 +10,7 @@ use std::ops::{Deref, DerefMut};
 
 /// Maps a logical type to a a chunked array implementation of the physical type.
 /// This saves a lot of compiler bloat and allows us to reuse functionality.
-pub struct Logical<K: PolarsDataType, T: PolarsDataType>(pub ChunkedArray<T>, PhantomData<K>);
+pub struct Logical<K: PolarsDataType, T: PolarsDataType>(pub ChunkedArray<T>, PhantomData<K>, pub Option<DataType>);
 
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
@@ -34,7 +34,7 @@ impl<K: PolarsDataType, T: PolarsDataType> DerefMut for Logical<K, T> {
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
     pub fn new<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
-        Logical(ca, PhantomData)
+        Logical(ca, PhantomData, None)
     }
 }
 

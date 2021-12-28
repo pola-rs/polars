@@ -244,14 +244,17 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            DataType::Datetime => format_array!(
+            DataType::Datetime(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(
                 limit,
                 f,
                 self.datetime().unwrap(),
-                "datetime",
+                &dt,
                 self.name(),
                 "Series"
-            ),
+            )
+            },
             DataType::List(_) => format_array!(
                 limit,
                 f,
