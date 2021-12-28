@@ -126,7 +126,7 @@ def col(
     if isinstance(name, pli.Series):
         name = name.to_list()  # type: ignore
 
-    if isclass(name) and issubclass(name, DataType):
+    if isinstance(name, DataType):
         name = [name]
 
     if isinstance(name, list):

@@ -4136,20 +4136,23 @@ class GroupBy:
         └─────┴─────┘
 
         """
+
+        def _wrangle(x: Any) -> list:
+            # a single list comprehension would be cleaner, but mypy complains on different
+            # lines for py3.7 vs py3.10 about typing errors, so this is the same logic,
+            # but broken down into small pieces
+            str_to_list = lambda y: [y] if isinstance(y, str) else y
+            parse_tuple = lambda y: (y[0], str_to_list(y[1]))
+            return [parse_tuple(xi) for xi in x]
+
         if isinstance(column_to_agg, pli.Expr):
             column_to_agg = [column_to_agg]
         if isinstance(column_to_agg, dict):
-            column_to_agg = [
-                (column, [agg] if isinstance(agg, str) else agg)
-                for (column, agg) in column_to_agg.items()
-            ]
+            column_to_agg = _wrangle(column_to_agg.items())
         elif isinstance(column_to_agg, list):
 
             if isinstance(column_to_agg[0], tuple):
-                column_to_agg = [  # type: ignore[misc]
-                    (column, [agg] if isinstance(agg, str) else agg)
-                    for (column, agg) in column_to_agg
-                ]
+                column_to_agg = _wrangle(column_to_agg)
 
             elif isinstance(column_to_agg[0], pli.Expr):
                 return (

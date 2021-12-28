@@ -743,8 +743,8 @@ def test_from_pandas_nan_to_none() -> None:
             "nulls": [None, np.nan, np.nan],
         }
     )
-    out_true: pl.DataFrame = pl.from_pandas(df)  # type: ignore
-    out_false: pl.DataFrame = pl.from_pandas(df, nan_to_none=False)  # type: ignore
+    out_true = pl.from_pandas(df)
+    out_false = pl.from_pandas(df, nan_to_none=False)
     df.loc[2, "nulls"] = pd.NA
     assert [val is None for val in out_true["nulls"]]
     assert [np.isnan(val) for val in out_false["nulls"][1:]]
@@ -1123,7 +1123,7 @@ def test_join_dates() -> None:
     )
     dts = (
         pl.from_pandas(date_times)
-        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))  # type: ignore
+        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
         .cast(pl.Datetime)
     )
 
