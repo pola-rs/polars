@@ -1312,14 +1312,6 @@ describe("dataframe", () => {
     fs.rmSync("./test.csv");
     done();
   });
-  test("toCSV:invalid", () => {
-    const df = pl.DataFrame([
-      pl.Series("foo", [1, 2, 3], pl.UInt32),
-      pl.Series("bar", ["a", "b", "c"])
-    ]);
-    const readStream = new Stream.Readable();
-    expect(() => df.toCSV(readStream)).toThrow();
-  });
   test("toJSON:string", () => {
     const rows = [
       {foo: 1.1, bar: 6.2, ham: "a"},
@@ -1366,7 +1358,7 @@ describe("dataframe", () => {
       pl.Series("bar", ["a", "b", "c"])
     ]);
     const readStream = new Stream.Readable();
-    expect(() => df.toJSON(readStream)).toThrow();
+    expect(() => df.toJSON(readStream as any)).toThrow();
   });
   test("toSeries", () => {
     const s = pl.Series([1, 2, 3]);

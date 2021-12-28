@@ -4,6 +4,7 @@ import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";
 import {LazyDataFrame} from "./lazy/dataframe";
 import path from "path";
+
 const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   inferSchemaLength: 10,
   batchSize: 10,
@@ -23,12 +24,25 @@ const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
   inferSchemaLength: 10
 };
 
+function readCSVBuffer(buff, options) {
+  return  dfWrapper(pli.df.readCSVBuffer({...readCsvDefaultOptions, ...options, buff}));
+}
+function readCSVPath(path, options) {
+  return  dfWrapper(pli.df.readCSVPath({...readCsvDefaultOptions, ...options, path}));
+}
+function readJSONBuffer(buff, options) {
+  return  dfWrapper(pli.df.readJSONBuffer({...readJsonDefaultOptions, ...options, buff}));
+}
+function readJSONPath(path, options) {
+  return  dfWrapper(pli.df.readJSONPath({...readJsonDefaultOptions, ...options, path}));
+}
 /**
  * __Read a CSV file or string into a Dataframe.__
  * ___
+ * @param pathOrBody - path or buffer or string
+ *   - path: Path to a file or a file like string. Any valid filepath can be used. Example: `file.csv`.
+ *   - body: String or buffer to be read as a CSV
  * @param options
- * @param options.file - Path to a file or a file like string. Any valid filepath can be used. Example: `file.csv`.
- *     Any string containing the contents of a csv can also be used
  * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
  *     If set to `null`, a full table scan will be done (slow).
  * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
@@ -56,20 +70,23 @@ const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
  * @param options.parseDates -Whether to attempt to parse dates or not
  * @returns DataFrame
  */
-export function readCSV(options: Partial<ReadCsvOptions>): DataFrame
-export function readCSV(path: string): DataFrame
-export function readCSV(path: string, options: Partial<ReadCsvOptions>): DataFrame
-export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
+export function readCSV(pathOrBody: string | Buffer, options?: Partial<ReadCsvOptions>): DataFrame {
   const extensions = [".tsv", ".csv"];
-  if(typeof arg === "string") {
-    const inline = !isPath(arg, extensions);
-    const file = inline || path.isAbsolute(arg) ? arg : path.resolve(process.cwd(), arg);
 
-    return readCSV({...options, file, inline});
+  if(Buffer.isBuffer(pathOrBody)) {
+    return readCSVBuffer(pathOrBody, options);
   }
-  options = {...readCsvDefaultOptions, ...arg};
 
-  return dfWrapper(pli.df.read_csv(options));
+  if(typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, extensions);
+    if(inline) {
+      return readCSVBuffer(Buffer.from(pathOrBody, "utf-8"), options);
+    } else {
+      return readCSVPath(pathOrBody, options);
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
 }
 
 
@@ -77,8 +94,10 @@ export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
  * __Read a JSON file or string into a DataFrame.__
  *
  * _Note: Currently only newline delimited JSON is supported_
+ * @param pathOrBody - path or buffer or string
+ *   - path: Path to a file or a file like string. Any valid filepath can be used. Example: `file.csv`.
+ *   - body: String or buffer to be read as a CSV
  * @param options
- * @param options.file - Path to a file, or a file like string
  * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
  *    If set to `null`, a full table scan will be done (slow).
  * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
@@ -89,7 +108,7 @@ export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
  * {"a", 1, "b", "foo", "c": 3}
  * {"a": 2, "b": "bar", "c": 6}
  * `
- * > const df = pl.readJSON({file: jsonString})
+ * > const df = pl.readJSON(jsonString)
  * > console.log(df)
  *   shape: (2, 3)
  * ╭─────┬─────┬─────╮
@@ -103,20 +122,22 @@ export function readCSV(arg: Partial<ReadCsvOptions> | string, options?: any) {
  * ╰─────┴─────┴─────╯
  * ```
  */
-export function readJSON(options: ReadJsonOptions): DataFrame
-export function readJSON(path: string): DataFrame
-export function readJSON(path: string, options: ReadJsonOptions): DataFrame
-export function readJSON(arg: ReadJsonOptions | string, options?: any) {
+export function readJSON(pathOrBody: string | Buffer, options?: Partial<ReadJsonOptions>): DataFrame {
   const extensions = [".ndjson", ".json", ".jsonl"];
-  if(typeof arg === "string") {
-    const inline = !isPath(arg, extensions);
-    const file = inline || path.isAbsolute(arg) ? arg : path.resolve(process.cwd(), arg);
-
-    return readJSON({...options, file, inline});
+  if(Buffer.isBuffer(pathOrBody)) {
+    return readJSONBuffer(pathOrBody, options);
   }
-  options = {...readJsonDefaultOptions, ...arg};
 
-  return dfWrapper(pli.df.read_json(options));
+  if(typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, extensions);
+    if(inline) {
+      return readJSONBuffer(Buffer.from(pathOrBody, "utf-8"), options);
+    } else {
+      return readJSONPath(pathOrBody, options);
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
 }
 
 /**

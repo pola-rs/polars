@@ -1,6 +1,5 @@
 pub mod conversion;
 pub mod dataframe;
-pub mod dataframe_object;
 pub mod datatypes;
 pub mod error;
 pub mod file;
@@ -9,7 +8,7 @@ pub mod list_construction;
 pub mod prelude;
 pub mod series;
 pub mod series_object;
-use crate::dataframe::JsDataFrame;
+use crate::dataframe::*;
 use crate::lazy::dsl;
 use crate::lazy::functions;
 use crate::lazy::lazyframe_object::JsLazyFrame;
