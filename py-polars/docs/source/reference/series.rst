@@ -23,6 +23,7 @@ Attributes
    Series.arr
    Series.dt
    Series.str
+   Series.time_unit
 
 Conversion
 ----------

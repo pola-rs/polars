@@ -218,10 +218,11 @@ def date_range(
     ]
 
     """
+    # TODO: determine date unit 'ns' or 'ms' depending on range
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
-    start = _datetime_to_pl_timestamp(low)
-    stop = _datetime_to_pl_timestamp(high)
+    start = _datetime_to_pl_timestamp(low, "ns")
+    stop = _datetime_to_pl_timestamp(high, "ns")
     if name is None:
         name = ""
 

@@ -973,9 +973,9 @@ impl PyDataFrame {
                     .into_date()
                     .into_series()
             }
-            Some(DataType::Datetime) => {
+            Some(DataType::Datetime(tu, tz)) => {
                 apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
-                    .into_date()
+                    .into_datetime(tu, tz)
                     .into_series()
             }
             Some(DataType::Utf8) => {
