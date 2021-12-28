@@ -4137,13 +4137,14 @@ class GroupBy:
 
         """
 
+        # a single list comprehension would be cleaner, but mypy complains on different
+        # lines for py3.7 vs py3.10 about typing errors, so this is the same logic,
+        # but broken down into two small functions
+        def _str_to_list(y: Any) -> Any:
+            return [y] if isinstance(y, str) else y
+
         def _wrangle(x: Any) -> list:
-            # a single list comprehension would be cleaner, but mypy complains on different
-            # lines for py3.7 vs py3.10 about typing errors, so this is the same logic,
-            # but broken down into small pieces
-            str_to_list = lambda y: [y] if isinstance(y, str) else y
-            parse_tuple = lambda y: (y[0], str_to_list(y[1]))
-            return [parse_tuple(xi) for xi in x]
+            return [(xi[0], _str_to_list(xi[1])) for xi in x]
 
         if isinstance(column_to_agg, pli.Expr):
             column_to_agg = [column_to_agg]
