@@ -295,7 +295,9 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     cache: wrapNullArgs("cache"),
     collectSync: () => dfWrapper(unwrap("collectSync")),
     collect: () => unwrap("collect").then(dfWrapper),
-    drop: (...cols) => wrap("dropColumns", {cols: cols.flat(2)}),
+    drop(...cols) {
+      return wrap("dropColumns", {cols: cols.flat(2)});
+    },
     dropDuplicates(opts: any=false, subset?) {
       const maintainOrder = opts?.maintainOrder ?? opts;
       subset = opts?.subset ?? subset;
@@ -358,7 +360,9 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
 
       return LazyGroupBy(ldf, opt, maintainOrder);
     },
-    head: (len=5) => wrap("slice", {offset: 0, len}),
+    head(len=5) {
+      return  wrap("slice", {offset: 0, len});
+    },
     join(df, options: {[k: string]: any} & LazyJoinOptions ) {
       options =  {
         how: "inner",
@@ -392,7 +396,9 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
       });
     },
     last: () => wrap("tail", {length: 1}),
-    limit: (len=5) => wrap("slice", {offset: 0, len}),
+    limit(len=5) {
+      return  wrap("slice", {offset: 0, len});
+    },
     max: wrapNullArgs("max"),
     mean: wrapNullArgs("mean"),
     median: wrapNullArgs("median"),
@@ -454,7 +460,9 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     std: wrapNullArgs("std"),
     sum: wrapNullArgs("sum"),
     var: wrapNullArgs("var"),
-    tail: (length=5) => wrap("tail", {length}),
+    tail(length=5) {
+      return wrap("tail", {length});
+    },
     withColumn: (expr) => wrap("withColumn", {expr: expr._expr}),
     withColumns(...columns) {
       const exprs = selectionToExprList(columns, false);

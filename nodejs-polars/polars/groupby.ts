@@ -8,7 +8,7 @@ import {InvalidOperationError, todo} from "./error";
 import {Expr} from "./lazy/expr";
 
 
-import {col} from "./lazy/lazy_functions";
+import {col, exclude} from "./lazy/lazy_functions";
 
 const inspectOpts = {colors:true, depth:null};
 
@@ -16,8 +16,6 @@ const inspectOpts = {colors:true, depth:null};
  * Starts a new GroupBy operation.
  */
 export interface GroupBy {
-  (...columns: string[]): GroupBySelection,
-  (columns: string | string[]): GroupBySelection,
   [inspect](): string,
   /**
    * Aggregate the groups into Series.
@@ -48,13 +46,8 @@ export interface GroupBy {
    *
    * ```
    */
-  agg(...aggs: Expr[]): DataFrame
-  agg(columns: Record<string, keyof Expr | (keyof Expr)[]>): DataFrame
-  /**
-   * Apply a function over the groups as a sub-DataFrame.
-   * @param func Function to apply on groupings
-   */
-  apply(func: (df: DataFrame) => DataFrame): DataFrame
+   agg(...columns: Expr[]): DataFrame
+   agg(columns: Record<string, keyof Expr | (keyof Expr)[]>): DataFrame
   /**
    * Count the number of values in each group.
    */
@@ -144,7 +137,7 @@ export interface GroupBy {
   /**
    * Count the unique values per group.
    */
-  numUnique(): DataFrame
+  nUnique(): DataFrame
   /**
    * Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
    * @param pivotCol - Column to pivot.
@@ -162,24 +155,11 @@ export interface GroupBy {
    */
   sum(): DataFrame
   tail(): DataFrame
+  toString(): string
 
 
 }
 
-export type GroupBySelection = Pick<GroupBy,
-   "aggList"
-  | "apply"
-  | "count"
-  | "first"
-  | "last"
-  | "max"
-  | "mean"
-  | "median"
-  | "min"
-  | "numUnique"
-  | "quantile"
-  | "sum"
-> & {[inspect](): string}
 
 export type PivotOps = Pick<GroupBy,
   "count"
@@ -195,9 +175,7 @@ export function GroupBy(
   df: DataFrame,
   by: string[],
   maintainOrder = false,
-  downsample = false,
-  rule?: string,
-  downsampleN = 0,
+  downsample = false
 ) {
   const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBy {by: %O}", by);
 
@@ -217,28 +195,7 @@ export function GroupBy(
     return PivotOps(df, by, opts.pivotCol, opts.valuesCol);
   };
 
-  const select = (...columns: ColumnSelection[]): GroupBySelection => {
-    if(downsample) {
-      throw new Error("select not supported in downsample operation");
-    }
-
-    return GroupBySelection(
-      df,
-      by,
-      utils.columnOrColumnsStrict(columns)
-    );
-  };
-
-  const selectAll = (): GroupBySelection  => GroupBySelection(
-    df,
-    by,
-    undefined,
-    downsample,
-    rule,
-    downsampleN
-  );
-
-  const agg = (...aggs: Expr[] | Record<string, string | string[]>[]): any => {
+  const agg = (...aggs): DataFrame => {
 
     if(utils.isExprArray(aggs))  {
       aggs = [aggs].flat(2);
@@ -250,10 +207,11 @@ export function GroupBy(
     } else {
       let pairs = Object.entries(aggs[0])
         .flatMap(([key, values]) => {
-          return [values].flat(2).map(v => col(key)[v]());
+          return [values].flat(2).map(v => col(key)[v as any]());
         });
 
-      return dfWrapper(df).lazy()
+      return dfWrapper(df)
+        .lazy()
         .groupBy(by, maintainOrder)
         .agg(...pairs)
         .collectSync({noOptimization:true});
@@ -261,76 +219,26 @@ export function GroupBy(
   };
 
 
-  return Object.seal(
-    Object.assign(
-      select, {
-        aggList: selectAll().aggList,
-        agg,
-        count: selectAll().count,
-        first: selectAll().first,
-        groups: () => _wrapDataFrame(df, "groupby", {by, agg: "groups"}),
-        head: (n=5) => {throw todo();},
-        last: selectAll().last,
-        max: selectAll().max,
-        mean: selectAll().mean,
-        median: selectAll().median,
-        min: selectAll().min,
-        numUnique: selectAll().numUnique,
-        pivot,
-        quantile: selectAll().quantile,
-        sum: selectAll().sum,
-        tail: (n=5) => {throw todo();},
-        [Symbol.isConcatSpreadable]: true,
-        toString: () => "GroupBy",
-        [inspect]: customInspect
-      }
-    )
-  ) as GroupBy;
-}
-
-function GroupBySelection(
-  df: DataFrame,
-  by: string | string[],
-  selection?: string[],
-  downsample?: boolean,
-  rule?: string,
-  n?: number,
-): GroupBySelection {
-
-  const wrapCall = (agg: string) => () => {
-    if(downsample) {
-      return _wrapDataFrame(df, "downsample", {rule, n, agg});
-    } else {
-      return _wrapDataFrame(df, "groupby", {by, selection, agg});
-    }
-  };
-
-  const quantile = (quantile: number) => {
-    if(downsample) {
-      throw new InvalidOperationError("quantile", "downsample");
-    } else {
-      return _wrapDataFrame(df, "groupby", {by, selection, agg: "quantile", quantile});
-    }
-  };
-
-  const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBySelection {by: %O}", by);
-
-  return {
+  return Object.seal({
     [inspect]: customInspect,
-    apply: (fn: (df: DataFrame) => DataFrame) => {throw todo();},
-    aggList: wrapCall("agg_list"),
-    count: wrapCall("count"),
-    first: wrapCall("first"),
-    last: wrapCall("last"),
-    max: wrapCall("max"),
-    mean: wrapCall("mean"),
-    median: wrapCall("median"),
-    min: wrapCall("min"),
-    numUnique: wrapCall("n_unique"),
-    quantile,
-    sum: wrapCall("sum"),
-
-  };
+    agg,
+    pivot,
+    aggList: () => agg(exclude(by as any).list()),
+    count: () => _wrapDataFrame(df, "groupby", {by, agg: "count"}),
+    first: () => agg(exclude(by as any).first()),
+    groups: () => _wrapDataFrame(df, "groupby", {by, agg: "groups"}),
+    head: (n=5) => agg(exclude(by as any).head(n)),
+    last: () => agg(exclude(by as any).last()),
+    max: () => agg(exclude(by as any).max()),
+    mean: () => agg(exclude(by as any).mean()),
+    median: () => agg(exclude(by as any).median()),
+    min: () => agg(exclude(by as any).min()),
+    nUnique: () => agg(exclude(by as any).nUnique()),
+    quantile: (q: number) =>  agg(exclude(by as any).quantile(q)),
+    sum: () => agg(exclude(by as any).sum()),
+    tail: (n=5) => agg(exclude(by as any).tail(n)),
+    toString: () => "GroupBy",
+  }) as GroupBy;
 }
 
 function PivotOps(

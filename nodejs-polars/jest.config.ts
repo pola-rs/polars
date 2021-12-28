@@ -10,7 +10,7 @@ export default {
   preset: "ts-jest",
   testEnvironment: "node",
   clearMocks: true,
-  collectCoverage: false,
+  collectCoverage: true,
   moduleDirectories: ["node_modules", "./polars"],
   moduleFileExtensions: ["js", "ts"],
   setupFilesAfterEnv : ["<rootDir>/__tests__/setup.ts"],

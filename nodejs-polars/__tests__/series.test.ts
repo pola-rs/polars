@@ -335,7 +335,6 @@ describe("series", () => {
     });
   });
 });
-
 describe("series", () => {
   const numSeries = () => pl.Series("foo", [1, 2, 3], pl.Int32);
   const fltSeries = () => pl.Series("float", [1, 2, 3], pl.Float64);
@@ -358,6 +357,7 @@ describe("series", () => {
   it.each`
   series          | method              | args
   ${numSeries()}  | ${"abs"}          | ${[]}
+  ${numSeries()}  | ${"as"}           | ${[chance.string()]}
   ${numSeries()}  | ${"alias"}        | ${[chance.string()]}
   ${numSeries()}  | ${"append"}       | ${[other()]}
   ${numSeries()}  | ${"argMax"}       | ${[]}
@@ -537,6 +537,7 @@ describe("series", () => {
   ${"name"}          | ${pl.Series("a", ["foo"]).name}                      | ${"a"}
   ${"length"}        | ${pl.Series([1, 2, 3, 4]).length}                    | ${4}
   ${"abs"}           | ${pl.Series([1, 2, -3]).abs()}                       | ${pl.Series([1, 2, 3])}
+  ${"alias"}         | ${pl.Series([1, 2, 3]).as("foo")}                    | ${pl.Series("foo", [1, 2, 3])}
   ${"alias"}         | ${pl.Series([1, 2, 3]).alias("foo")}                 | ${pl.Series("foo", [1, 2, 3])}
   ${"argMax"}        | ${pl.Series([1, 2, 3]).argMax()}                     | ${2}
   ${"argMin"}        | ${pl.Series([1, 2, 3]).argMin()}                     | ${0}
@@ -667,14 +668,145 @@ describe("series", () => {
   `("$# $name throws an error ", ({fn, errorType}) => {
     expect(fn).toThrow(errorType);
   });
+  test("reinterpret", () => {
+    const s = pl.Series("reinterpret", [1n, 2n], pl.Int64);
+    const unsignedExpected = pl.Series("reinterpret", [1n, 2n], pl.UInt64);
+    const signedExpected = pl.Series("reinterpret", [1n, 2n], pl.Int64);
+    const unsigned = s.reinterpret(false);
+    const signed = unsigned.reinterpret(true);
+
+    expect(unsigned).toSeriesStrictEqual(unsignedExpected);
+    expect(signed).toSeriesStrictEqual(signedExpected);
+  });
+  test("reinterpret:invalid", () => {
+    const s = pl.Series("reinterpret", [1, 2]);
+    const fn = () => s.reinterpret();
+    expect(fn).toThrow();
+  });
   test("extend", () => {
     const s = pl.Series("extended", [1], pl.UInt16);
     const expected = pl.Series("extended", [1, null, null], pl.UInt16);
     const actual = s.extend(null, 2);
     expect(actual).toSeriesStrictEqual(expected);
   });
+  test("round invalid", () => {
+    const s = pl.Series([true, false]);
+    const fn = () => s.round(2);
+    expect(fn).toThrow();
+  });
+  test("round:positional", () => {
+    const s = pl.Series([1.1111, 2.2222]);
+    const expected = pl.Series([1.11, 2.22]);
+    const actual = s.round(2);
+    expect(actual).toSeriesEqual(expected);
+  });
+  test("round:named", () => {
+    const s = pl.Series([1.1111, 2.2222]);
+    const expected = pl.Series([1.11, 2.22]);
+    const actual = s.round({decimals: 2});
+    expect(actual).toSeriesEqual(expected);
+  });
 });
-
+describe("comparators & math", () => {
+  test("add/plus", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([2, 3]);
+    expect(s.add(1)).toSeriesEqual(expected);
+    expect(s.plus(1)).toSeriesEqual(expected);
+  });
+  test("sub/minus", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([0, 1]);
+    expect(s.sub(1)).toSeriesEqual(expected);
+    expect(s.minus(1)).toSeriesEqual(expected);
+  });
+  test("mul/times", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([10, 20]);
+    expect(s.mul(10)).toSeriesEqual(expected);
+    expect(s.times(10)).toSeriesEqual(expected);
+  });
+  test("div/divideBy", () => {
+    const s = pl.Series([2, 4]);
+    const expected = pl.Series([1, 2]);
+    expect(s.div(2)).toSeriesEqual(expected);
+    expect(s.divideBy(2)).toSeriesEqual(expected);
+  });
+  test("div/divideBy", () => {
+    const s = pl.Series([2, 4]);
+    const expected = pl.Series([1, 2]);
+    expect(s.div(2)).toSeriesEqual(expected);
+    expect(s.divideBy(2)).toSeriesEqual(expected);
+  });
+  test("rem/modulo", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([1, 0]);
+    expect(s.rem(2)).toSeriesEqual(expected);
+    expect(s.modulo(2)).toSeriesEqual(expected);
+  });
+  test("eq/equals", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([true, false]);
+    expect(s.eq(1)).toSeriesEqual(expected);
+    expect(s.equals(1)).toSeriesEqual(expected);
+  });
+  test("neq/notEquals", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([false, true]);
+    expect(s.neq(1)).toSeriesEqual(expected);
+    expect(s.notEquals(1)).toSeriesEqual(expected);
+  });
+  test("gt/greaterThan", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([false, true]);
+    expect(s.gt(1)).toSeriesEqual(expected);
+    expect(s.greaterThan(1)).toSeriesEqual(expected);
+  });
+  test("gtEq/equals", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([true, true]);
+    expect(s.gtEq(1)).toSeriesEqual(expected);
+    expect(s.greaterThanEquals(1)).toSeriesEqual(expected);
+  });
+  test("lt/lessThan", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([false, false]);
+    expect(s.lt(1)).toSeriesEqual(expected);
+    expect(s.lessThan(1)).toSeriesEqual(expected);
+  });
+  test("ltEq/lessThanEquals", () => {
+    const s = pl.Series([1, 2]);
+    const expected = pl.Series([true, false]);
+    expect(s.ltEq(1)).toSeriesEqual(expected);
+    expect(s.lessThanEquals(1)).toSeriesEqual(expected);
+  });
+});
+describe("series proxy & metadata", () => {
+  test("toString & inspect", () => {
+    const s = pl.Series("foo", [1, 2, 3]);
+    const sString = s.toString();
+    const inspectString = s[Symbol.for("nodejs.util.inspect.custom")]();
+    const expected = "shape: (3,)\nSeries: 'foo' [f64]\n[\n\t1\n\t2\n\t3\n]";
+    expect(sString).toStrictEqual(expected);
+    expect(inspectString).toStrictEqual(expected);
+  });
+  test("stringTag", () => {
+    const s = pl.Series([1]);
+    const t = s[Symbol.toStringTag];
+    expect(t).toStrictEqual("Series");
+  });
+  test("get", () => {
+    const s = pl.Series([2, 3, 9, -1]);
+    const [two,, nine] = s;
+    expect(two).toStrictEqual(2);
+    expect(nine).toStrictEqual(9);
+  });
+  test("set", () => {
+    const s = pl.Series([1, 2, 3]);
+    s[0] = s[2];
+    expect(s[0]).toStrictEqual(s[2]);
+  });
+});
 describe("StringFunctions", () => {
   it.each`
   name               | actual                                           |  expected
