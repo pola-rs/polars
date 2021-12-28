@@ -9,7 +9,7 @@ pub mod series;
 // remote data structure. The `remote` attribute gives the path to the actual
 // type we intend to derive code for.
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(remote = "TimeUnit")]
+#[serde(remote = "ArrowTimeUnit")]
 enum TimeUnitDef {
     /// Time in seconds.
     Second,
@@ -40,7 +40,7 @@ enum DeDataType<'a> {
     Date,
     Datetime,
     #[serde(with = "TimeUnitDef")]
-    Time64(TimeUnit),
+    Time64(ArrowTimeUnit),
     List,
     Object(&'a str),
     Null,

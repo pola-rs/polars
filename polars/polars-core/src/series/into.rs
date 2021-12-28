@@ -31,7 +31,7 @@ impl Series {
             }
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let arr = cast(&*self.chunks()[chunk_idx], &DataType::Datetime.to_arrow()).unwrap();
+                let arr = cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap();
                 Arc::from(arr)
             }
             #[cfg(feature = "dtype-time")]

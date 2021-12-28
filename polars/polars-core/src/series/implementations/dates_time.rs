@@ -421,15 +421,15 @@ macro_rules! impl_dyn_series {
                 use DataType::*;
                 let ca = match (self.dtype(), data_type) {
                     #[cfg(feature = "dtype-datetime")]
-                    (Date, Datetime(tu, _)) => {
+                    (Date, Datetime(tu, tz)) => {
                         let casted = self.0.cast(data_type)?;
                         let casted = casted.datetime().unwrap();
                         match tu {
                             TimeUnit::Nanoseconds => {
-                                return Ok((casted.deref() * NS_IN_DAY).into_date().into_series());
+                                return Ok((casted.deref() * NS_IN_DAY).into_datetime(*tu, tz.clone()).into_series());
                             }
                             TimeUnit::Milliseconds => {
-                                return Ok((casted.deref() * MS_IN_DAY).into_date().into_series());
+                                return Ok((casted.deref() * MS_IN_DAY).into_datetime(*tu, tz.clone()).into_series());
                             }
                         }
                     }
@@ -633,6 +633,7 @@ macro_rules! impl_dyn_series {
             fn mode(&self) -> Result<Series> {
                 self.0.mode().map(|ca| ca.$into_logical().into_series())
             }
+
         }
     };
 }

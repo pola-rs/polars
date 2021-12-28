@@ -212,7 +212,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                 assert_eq!(tz, tzr);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
-                Ok(lhs.subtract(&rhs)?.into_datetime(tu, tz.clone()).into_series())
+                Ok(lhs.subtract(&rhs)?.into_datetime(*tu, tz.clone()).into_series())
             }
             (dtl, dtr) => Err(PolarsError::ComputeError(
                 format!(
@@ -255,5 +255,358 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         // get AnyValue
         Cow::Owned(format!("{}", self.get(index)))
     }
+
+}
+
+impl SeriesTrait for SeriesWrap<DatetimeChunked> {
+    #[cfg(feature = "interpolate")]
+    fn interpolate(&self) -> Series {
+        self.0.interpolate().into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    fn rename(&mut self, name: &str) {
+        self.0.rename(name);
+    }
+
+    fn chunk_lengths(&self) -> ChunkIdIter {
+        self.0.chunk_id()
+    }
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+
+    fn chunks(&self) -> &Vec<ArrayRef> {
+        self.0.chunks()
+    }
+
+    fn shrink_to_fit(&mut self) {
+        self.0.shrink_to_fit()
+    }
+
+    fn time(&self) -> Result<&TimeChunked> {
+        if matches!(self.0.dtype(), DataType::Time) {
+            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const TimeChunked)) }
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot unpack Series: {:?} of type {:?} into Time",
+                    self.name(),
+                    self.dtype(),
+                )
+                    .into(),
+            ))
+        }
+    }
+
+    fn date(&self) -> Result<&DateChunked> {
+        if matches!(self.0.dtype(), DataType::Date) {
+            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DateChunked)) }
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot unpack Series: {:?} of type {:?} into Date",
+                    self.name(),
+                    self.dtype(),
+                )
+                    .into(),
+            ))
+        }
+    }
+
+    fn append_array(&mut self, other: ArrayRef) -> Result<()> {
+        self.0.append_array(other)
+    }
+
+    fn slice(&self, offset: i64, length: usize) -> Series {
+        self.0.slice(offset, length).into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    fn mean(&self) -> Option<f64> {
+        self.0.mean()
+    }
+
+    fn median(&self) -> Option<f64> {
+        self.0.median()
+    }
+
+    fn append(&mut self, other: &Series) -> Result<()> {
+        if self.0.dtype() == other.dtype() {
+            let other = other.to_physical_repr().into_owned();
+            self.0.append(other.as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot append Series; data types don't match".into(),
+            ))
+        }
+    }
+
+    fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
+        self.0
+            .filter(filter)
+            .map(|ca| ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series())
+    }
+
+    fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+        ChunkTake::take(self.0.deref(), indices.into())
+            .map(|ca| ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series())
+    }
+
+    fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
+        ChunkTake::take(self.0.deref(), iter.into())
+            .map(|ca| ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series())
+    }
+
+    fn take_every(&self, n: usize) -> Series {
+        self.0.take_every(n).into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
+        ChunkTake::take_unchecked(self.0.deref(), iter.into())
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
+    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+        Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+               .into_series())
+    }
+
+    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
+        ChunkTake::take_unchecked(self.0.deref(), iter.into())
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
+    #[cfg(feature = "take_opt_iter")]
+    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
+        ChunkTake::take(self.0.deref(), iter.into())
+            .map(|ca| ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series())
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn rechunk(&self) -> Series {
+        self.0.rechunk().into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    fn head(&self, length: Option<usize>) -> Series {
+        self.0.head(length).into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    fn tail(&self, length: Option<usize>) -> Series {
+        self.0.tail(length).into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    fn expand_at_index(&self, index: usize, length: usize) -> Series {
+        self.0
+            .expand_at_index(index, length)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
+    fn cast(&self, data_type: &DataType) -> Result<Series> {
+        const NS_IN_DAY: i64 = 86400000_000_000;
+        const MS_IN_DAY: i64 = 86400000;
+        use DataType::*;
+        let ca = match (self.dtype(), data_type) {
+            #[cfg(feature = "dtype-date")]
+            (Datetime(tu, _), Date) => {
+                match tu {
+                    TimeUnit::Nanoseconds => {
+                        return Ok((self.0.as_ref() / NS_IN_DAY).cast(&Int32).unwrap().into_date().into_series());
+                    }
+                    TimeUnit::Milliseconds => {
+                        return Ok((self.0.as_ref() / MS_IN_DAY).cast(&Int32).unwrap().into_date().into_series());
+                    }
+                }
+            }
+            _ => Cow::Borrowed(self.0.deref()),
+        };
+        ca.cast(data_type)
+    }
+
+    fn to_dummies(&self) -> Result<DataFrame> {
+        self.0.to_dummies()
+    }
+
+    fn value_counts(&self) -> Result<DataFrame> {
+        self.0.value_counts()
+    }
+
+    fn get(&self, index: usize) -> AnyValue {
+        self.0.get_any_value(index)
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
+        self.0.get_any_value_unchecked(index).into_datetime(self.0.time_unit(), self.0.time_zone())
+    }
+
+    fn sort_with(&self, options: SortOptions) -> Series {
+        self.0.sort_with(options).into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    fn argsort(&self, reverse: bool) -> UInt32Chunked {
+        self.0.argsort(reverse)
+    }
+
+    fn null_count(&self) -> usize {
+        self.0.null_count()
+    }
+
+    fn has_validity(&self) -> bool {
+        self.0.has_validity()
+    }
+
+    fn unique(&self) -> Result<Series> {
+        self.0.unique().map(|ca| ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series())
+    }
+
+    fn n_unique(&self) -> Result<usize> {
+        self.0.n_unique()
+    }
+
+    fn arg_unique(&self) -> Result<UInt32Chunked> {
+        self.0.arg_unique()
+    }
+
+    fn arg_min(&self) -> Option<usize> {
+        self.0.arg_min()
+    }
+
+    fn arg_max(&self) -> Option<usize> {
+        self.0.arg_max()
+    }
+
+    fn is_null(&self) -> BooleanChunked {
+        self.0.is_null()
+    }
+
+    fn is_not_null(&self) -> BooleanChunked {
+        self.0.is_not_null()
+    }
+
+    fn is_unique(&self) -> Result<BooleanChunked> {
+        self.0.is_unique()
+    }
+
+    fn is_duplicated(&self) -> Result<BooleanChunked> {
+        self.0.is_duplicated()
+    }
+
+    fn reverse(&self) -> Series {
+        self.0.reverse().into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    fn as_single_ptr(&mut self) -> Result<usize> {
+        self.0.as_single_ptr()
+    }
+
+    fn shift(&self, periods: i64) -> Series {
+        self.0.shift(periods).into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series()
+    }
+
+    fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
+        self.0
+            .fill_null(strategy)
+            .map(|ca| ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series())
+    }
+
+    fn _sum_as_series(&self) -> Series {
+        Int32Chunked::full_null(self.name(), 1)
+            .cast(self.dtype())
+            .unwrap()
+            .into()
+    }
+    fn max_as_series(&self) -> Series {
+        self.0.max_as_series().into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+    }
+    fn min_as_series(&self) -> Series {
+        self.0.min_as_series().into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+    }
+    fn mean_as_series(&self) -> Series {
+        Int32Chunked::full_null(self.name(), 1)
+            .cast(self.dtype())
+            .unwrap()
+            .into()
+    }
+    fn median_as_series(&self) -> Series {
+        Int32Chunked::full_null(self.name(), 1)
+            .cast(self.dtype())
+            .unwrap()
+            .into()
+    }
+    fn var_as_series(&self) -> Series {
+        Int32Chunked::full_null(self.name(), 1)
+            .cast(self.dtype())
+            .unwrap()
+            .into()
+    }
+    fn std_as_series(&self) -> Series {
+        Int32Chunked::full_null(self.name(), 1)
+            .cast(self.dtype())
+            .unwrap()
+            .into()
+    }
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        Ok(Int32Chunked::full_null(self.name(), 1)
+            .cast(self.dtype())
+            .unwrap()
+            .into())
+    }
+
+    fn fmt_list(&self) -> String {
+        FmtList::fmt_list(&self.0)
+    }
+
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
+        Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+
+    fn peak_max(&self) -> BooleanChunked {
+        self.0.peak_max()
+    }
+
+    fn peak_min(&self) -> BooleanChunked {
+        self.0.peak_min()
+    }
+    #[cfg(feature = "is_in")]
+    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+        self.0.is_in(other)
+    }
+    #[cfg(feature = "repeat_by")]
+    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+        self
+            .0
+            .repeat_by(by)
+            .cast(&DataType::List(Box::new(DataType::Datetime(self.0.time_unit(), self.0.time_zone().clone()))))
+            .unwrap()
+            .list()
+            .unwrap()
+            .clone()
+    }
+    #[cfg(feature = "is_first")]
+    fn is_first(&self) -> Result<BooleanChunked> {
+        self.0.is_first()
+    }
+
+    #[cfg(feature = "object")]
+    fn as_any(&self) -> &dyn Any {
+        &self.0
+    }
+
+    #[cfg(feature = "mode")]
+    fn mode(&self) -> Result<Series> {
+        self.0.mode().map(|ca| ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone()).into_series())
+    }
+
 
 }
