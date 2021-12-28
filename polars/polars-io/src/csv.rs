@@ -601,7 +601,6 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::csv_core::utils::get_file_chunks;
     use crate::prelude::*;
     use polars_core::datatypes::AnyValue;
     use polars_core::prelude::*;

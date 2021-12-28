@@ -232,11 +232,27 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn to_json(&self, py_f: PyObject, pretty: bool) -> PyResult<()> {
+    pub fn to_json(
+        &self,
+        py_f: PyObject,
+        pretty: bool,
+        row_oriented: bool,
+        json_lines: bool,
+    ) -> PyResult<()> {
         let file = get_file_like(py_f, false)?;
-        let r = match pretty {
-            true => serde_json::to_writer_pretty(file, &self.df),
-            false => serde_json::to_writer(file, &self.df),
+
+        let r = match (pretty, row_oriented, json_lines) {
+            (_, true, true) => panic!("{}", "only one of {row_oriented, json_lines} should be set"),
+            (_, _, true) => JsonWriter::new(file)
+                .with_json_format(JsonFormat::JsonLines)
+                .finish(&self.df),
+            (_, true, false) => JsonWriter::new(file)
+                .with_json_format(JsonFormat::Json)
+                .finish(&self.df),
+            (true, _, _) => serde_json::to_writer_pretty(file, &self.df)
+                .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
+            (false, _, _) => serde_json::to_writer(file, &self.df)
+                .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
         };
         r.map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
         Ok(())

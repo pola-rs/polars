@@ -697,6 +697,8 @@ class DataFrame:
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
         pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
         *,
         to_string: Literal[True],
     ) -> str:
@@ -707,6 +709,8 @@ class DataFrame:
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
         pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
         *,
         to_string: Literal[False] = ...,
     ) -> None:
@@ -717,6 +721,8 @@ class DataFrame:
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
         pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
         *,
         to_string: bool = ...,
     ) -> Optional[str]:
@@ -726,6 +732,8 @@ class DataFrame:
         self,
         file: Optional[Union[BytesIO, str, Path]] = None,
         pretty: bool = False,
+        row_oriented: bool = False,
+        json_lines: bool = False,
         *,
         to_string: bool = False,
     ) -> Optional[str]:
@@ -738,16 +746,20 @@ class DataFrame:
             Write to this file instead of returning an string.
         pretty
             Pretty serialize json.
+        row_oriented
+            Write to row oriented json. This is slower, but more common.
+        json_lines
+            Write to Json Lines format
         to_string
             Ignore file argument and return a string.
         """
         if to_string or file is None:
             file = BytesIO()
-            self._df.to_json(file, pretty)
+            self._df.to_json(file, pretty, row_oriented, json_lines)
             file.seek(0)
             return file.read().decode("utf8")
         else:
-            self._df.to_json(file, pretty)
+            self._df.to_json(file, pretty, row_oriented, json_lines)
             return None
 
     def to_pandas(
