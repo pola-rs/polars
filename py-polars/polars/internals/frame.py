@@ -1736,10 +1736,10 @@ class DataFrame:
 
         summary = pli.concat(
             [
-                describe_cast(self.mean()),  # type: ignore
+                describe_cast(self.mean()),
                 describe_cast(self.std()),
-                describe_cast(self.min()),  # type: ignore
-                describe_cast(self.max()),  # type: ignore
+                describe_cast(self.min()),
+                describe_cast(self.max()),
                 describe_cast(self.median()),
             ]
         )
