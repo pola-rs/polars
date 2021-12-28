@@ -16,7 +16,7 @@ impl Int32Chunked {
 }
 
 impl LogicalType for DateChunked {
-    fn dtype(&self) -> &'static DataType {
+    fn dtype(&self) -> &DataType {
         &DataType::Date
     }
 

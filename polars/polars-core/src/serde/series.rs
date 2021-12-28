@@ -143,7 +143,7 @@ impl<'de> Deserialize<'de> for Series {
                     DeDataType::Datetime => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values)
-                            .cast(&DataType::Datetime)
+                            .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
                             .unwrap())
                     }
                     DeDataType::Boolean => {

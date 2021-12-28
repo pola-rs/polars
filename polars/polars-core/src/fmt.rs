@@ -17,6 +17,7 @@ use comfy_table::*;
 use prettytable::{Cell, Row, Table};
 #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
 use std::borrow::Cow;
+use arrow::temporal_conversions::timestamp_ms_to_datetime;
 
 macro_rules! format_array {
     ($limit:expr, $f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
@@ -508,7 +509,16 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v) => write!(f, "{}", timestamp_ns_to_datetime(*v)),
+            AnyValue::Datetime(v, tu, tz) => {
+                if tz.is_some() {
+                    todo!()
+                }
+                match tu {
+                    TimeUnit::Nanoseconds =>  write!(f, "{}", timestamp_ns_to_datetime(*v)),
+                    TimeUnit::Milliseconds =>  write!(f, "{}", timestamp_ms_to_datetime(*v))
+                }
+
+            },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: polars_time::export::chrono::NaiveTime = self.into();

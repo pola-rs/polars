@@ -34,7 +34,7 @@ impl DataFrame {
         if time.null_count() > 0 {
             panic!("null values in dynamic groupby not yet supported, fill nulls.")
         }
-        let dt = time.cast(&DataType::Datetime)?;
+        let dt = time.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
         let dt = dt.datetime().unwrap();
 
         let mut lower_bound = None;
@@ -87,10 +87,10 @@ impl DataFrame {
                             options.closed_window,
                         );
                         let _lower = Int64Chunked::new_vec("lower", lower.clone())
-                            .into_date()
+                            .into_datetime(TimeUnit::Nanoseconds, None)
                             .into_series();
                         let _higher = Int64Chunked::new_vec("upper", upper.clone())
-                            .into_date()
+                            .into_datetime(TimeUnit::Nanoseconds, None)
                             .into_series();
 
                         match (&mut lower_bound, &mut upper_bound) {
@@ -164,16 +164,16 @@ impl DataFrame {
             (options.include_boundaries, lower_bound, upper_bound)
         {
             let s = Int64Chunked::new_vec("_lower_boundary", lower)
-                .into_date()
+                .into_datetime(TimeUnit::Nanoseconds, None)
                 .into_series();
             by.push(s);
             let s = Int64Chunked::new_vec("_upper_boundary", higher)
-                .into_date()
+                .into_datetime(TimeUnit::Nanoseconds, None)
                 .into_series();
             by.push(s);
         }
 
-        dt.into_date()
+        dt.into_datetime(TimeUnit::Nanoseconds, None)
             .into_series()
             .cast(time_type)
             .map(|s| (s, by, groups))
