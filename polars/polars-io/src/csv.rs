@@ -50,6 +50,8 @@ pub use arrow::io::csv::write;
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]
 use std::borrow::Cow;
+#[cfg(feature = "temporal")]
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -459,7 +461,7 @@ where
                             to_cast.push(fld);
                             Some(Field::new(fld.name(), DataType::Utf8))
                         }
-                        Date | Datetime => {
+                        Date | Datetime(_, _) => {
                             to_cast.push(fld);
                             // let inference decide the column type
                             None
@@ -574,27 +576,29 @@ where
 
 #[cfg(feature = "temporal")]
 fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
-    let mut cols: Vec<Series> = df.into();
-
-    for s in cols.iter_mut() {
+    let cols = df.get_columns().par_iter().map(|s| {
         if let Ok(ca) = s.utf8() {
             // don't change columns that are in the fixed schema.
             if fixed_schema.column_with_name(s.name()).is_some() {
-                continue;
+                return s.clone()
             }
 
             #[cfg(feature = "dtype-time")]
             if let Ok(ca) = ca.as_time(None) {
-                *s = ca.into_series();
-                continue;
+                ca.into_series()
+            } else if let Ok(ca) = ca.as_date(None) {
+                ca.into_series()
+            } else if let Ok(ca) = ca.as_datetime(None, TimeUnit::Milliseconds) {
+                ca.into_series()
+            } else {
+                s.clone()
             }
-            if let Ok(ca) = ca.as_date(None) {
-                *s = ca.into_series()
-            } else if let Ok(ca) = ca.as_datetime(None) {
-                *s = ca.into_series()
-            }
+        } else {
+            s.clone()
         }
-    }
+
+    }).collect::<Vec<_>>();
+
 
     DataFrame::new_no_checks(cols)
 }
