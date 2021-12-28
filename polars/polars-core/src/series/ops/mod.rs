@@ -6,6 +6,8 @@ mod extend;
 #[cfg(feature = "moment")]
 pub mod moment;
 mod null;
+#[cfg(feature = "pct_change")]
+pub mod pct_change;
 mod to_list;
 
 #[derive(Copy, Clone)]

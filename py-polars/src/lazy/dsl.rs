@@ -976,6 +976,10 @@ impl PyExpr {
         self.inner.clone().diff(n, null_behavior).into()
     }
 
+    fn pct_change(&self, n: usize) -> Self {
+        self.inner.clone().pct_change(n).into()
+    }
+
     fn skew(&self, bias: bool) -> Self {
         self.inner.clone().skew(bias).into()
     }
