@@ -689,7 +689,12 @@ impl Series {
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Int64 => self.i64().unwrap().clone().into_datetime(timeunit, tz).into_series(),
+            DataType::Int64 => self
+                .i64()
+                .unwrap()
+                .clone()
+                .into_datetime(timeunit, tz)
+                .into_series(),
             _ => unimplemented!(),
         }
     }

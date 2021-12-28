@@ -7,12 +7,12 @@ mod categorical;
     feature = "dtype-time"
 ))]
 mod dates_time;
+mod datetime;
 mod floats;
 mod list;
 #[cfg(feature = "object")]
 mod object;
 mod utf8;
-mod datetime;
 
 #[cfg(feature = "object")]
 use std::any::Any;

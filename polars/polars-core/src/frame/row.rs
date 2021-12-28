@@ -234,7 +234,11 @@ pub(crate) enum Buffer {
     #[cfg(feature = "dtype-date")]
     Date(PrimitiveChunkedBuilder<Int32Type>),
     #[cfg(feature = "dtype-datetime")]
-    Datetime(PrimitiveChunkedBuilder<Int64Type>, TimeUnit, Option<TimeZone>),
+    Datetime(
+        PrimitiveChunkedBuilder<Int64Type>,
+        TimeUnit,
+        Option<TimeZone>,
+    ),
     #[cfg(feature = "dtype-time")]
     Time(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
@@ -329,7 +333,9 @@ impl From<(&DataType, usize)> for Buffer {
             #[cfg(feature = "dtype-date")]
             Date => Buffer::Date(PrimitiveChunkedBuilder::new("", len)),
             #[cfg(feature = "dtype-datetime")]
-            Datetime(tu, tz) => Buffer::Datetime(PrimitiveChunkedBuilder::new("", len), *tu, tz.clone()),
+            Datetime(tu, tz) => {
+                Buffer::Datetime(PrimitiveChunkedBuilder::new("", len), *tu, tz.clone())
+            }
             #[cfg(feature = "dtype-time")]
             Time => Buffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new("", len)),

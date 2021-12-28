@@ -204,11 +204,10 @@ impl Utf8Chunked {
 
         let func = match tu {
             TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
-            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms
+            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
         };
 
         let mut ca: Int64Chunked = match self.has_validity() {
-
             false => self
                 .into_no_null_iter()
                 .map(|s| {

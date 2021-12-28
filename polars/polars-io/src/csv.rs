@@ -1003,7 +1003,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
             .has_header(true)
             .with_dtypes(Some(&Schema::new(vec![Field::new(
                 "b",
-                DataType::Datetime,
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
             )])))
             .finish()?;
 
@@ -1011,7 +1011,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
             df.dtypes(),
             &[
                 DataType::Utf8,
-                DataType::Datetime,
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
                 DataType::Float64,
                 DataType::Float64,
                 DataType::Int64
@@ -1173,7 +1173,7 @@ bar,bar";
         let df = CsvReader::new(file).with_parse_dates(true).finish()?;
 
         let ts = df.column("timestamp")?;
-        assert_eq!(ts.dtype(), &DataType::Datetime);
+        assert_eq!(ts.dtype(), &DataType::Datetime(TimeUnit::Milliseconds, None));
         assert_eq!(ts.null_count(), 0);
 
         Ok(())

@@ -24,6 +24,8 @@ impl LogicalType for DatetimeChunked {
 
     #[cfg(feature = "dtype-date")]
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
-        self.0.get_any_value(i).into_datetime(self.time_unit(), self.time_zone())
+        self.0
+            .get_any_value(i)
+            .into_datetime(self.time_unit(), self.time_zone())
     }
 }

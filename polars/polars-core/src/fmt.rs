@@ -9,6 +9,7 @@ use std::{
 };
 const LIMIT: usize = 25;
 
+use arrow::temporal_conversions::timestamp_ms_to_datetime;
 #[cfg(feature = "pretty_fmt")]
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
 #[cfg(feature = "pretty_fmt")]
@@ -17,7 +18,6 @@ use comfy_table::*;
 use prettytable::{Cell, Row, Table};
 #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
 use std::borrow::Cow;
-use arrow::temporal_conversions::timestamp_ms_to_datetime;
 
 macro_rules! format_array {
     ($limit:expr, $f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
@@ -248,14 +248,14 @@ impl Debug for Series {
             DataType::Datetime(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(
-                limit,
-                f,
-                self.datetime().unwrap(),
-                &dt,
-                self.name(),
-                "Series"
-            )
-            },
+                    limit,
+                    f,
+                    self.datetime().unwrap(),
+                    &dt,
+                    self.name(),
+                    "Series"
+                )
+            }
             DataType::List(_) => format_array!(
                 limit,
                 f,
@@ -514,11 +514,10 @@ impl Display for AnyValue<'_> {
                     todo!()
                 }
                 match tu {
-                    TimeUnit::Nanoseconds =>  write!(f, "{}", timestamp_ns_to_datetime(*v)),
-                    TimeUnit::Milliseconds =>  write!(f, "{}", timestamp_ms_to_datetime(*v))
+                    TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
+                    TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
                 }
-
-            },
+            }
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: polars_time::export::chrono::NaiveTime = self.into();
@@ -667,10 +666,11 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)]).into_date();
+        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)])
+            .into_datetime(TimeUnit::Nanoseconds, None);
         assert_eq!(
             r#"shape: (3,)
-Series: '' [datetime]
+Series: '' [datetime[ns]]
 [
 	1970-01-01 00:00:00.000000001
 	null

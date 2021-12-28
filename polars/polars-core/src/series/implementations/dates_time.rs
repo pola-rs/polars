@@ -426,10 +426,14 @@ macro_rules! impl_dyn_series {
                         let casted = casted.datetime().unwrap();
                         match tu {
                             TimeUnit::Nanoseconds => {
-                                return Ok((casted.deref() * NS_IN_DAY).into_datetime(*tu, tz.clone()).into_series());
+                                return Ok((casted.deref() * NS_IN_DAY)
+                                    .into_datetime(*tu, tz.clone())
+                                    .into_series());
                             }
                             TimeUnit::Milliseconds => {
-                                return Ok((casted.deref() * MS_IN_DAY).into_datetime(*tu, tz.clone()).into_series());
+                                return Ok((casted.deref() * MS_IN_DAY)
+                                    .into_datetime(*tu, tz.clone())
+                                    .into_series());
                             }
                         }
                     }
@@ -633,7 +637,6 @@ macro_rules! impl_dyn_series {
             fn mode(&self) -> Result<Series> {
                 self.0.mode().map(|ca| ca.$into_logical().into_series())
             }
-
         }
     };
 }
@@ -684,7 +687,10 @@ mod test {
 
         match l.dtype() {
             DataType::List(inner) => {
-                assert!(matches!(&**inner, DataType::Datetime(TimeUnit::Nanoseconds, None)))
+                assert!(matches!(
+                    &**inner,
+                    DataType::Datetime(TimeUnit::Nanoseconds, None)
+                ))
             }
             _ => assert!(false),
         }
@@ -703,13 +709,22 @@ mod test {
         let df = DataFrame::new(vec![s, s1])?;
 
         let out = df.left_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime(TimeUnit::Nanoseconds, None)));
+        assert!(matches!(
+            out.column("bar")?.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        ));
 
         let out = df.inner_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime(TimeUnit::Nanoseconds, None)));
+        assert!(matches!(
+            out.column("bar")?.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        ));
 
         let out = df.outer_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime(TimeUnit::Nanoseconds, None)));
+        assert!(matches!(
+            out.column("bar")?.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        ));
         Ok(())
     }
 
@@ -720,7 +735,10 @@ mod test {
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
         let out = s.subtract(&s)?;
-        assert!(matches!(out.dtype(), DataType::Datetime(TimeUnit::Nanoseconds, None)));
+        assert!(matches!(
+            out.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        ));
 
         let mut a = s.clone();
         a.append(&s).unwrap();
@@ -731,29 +749,61 @@ mod test {
 
     #[test]
     fn test_arithmetic_dispatch() {
-        let s = Int64Chunked::new("", &[1, 2, 3]).into_date().into_series();
+        let s = Int64Chunked::new("", &[1, 2, 3])
+            .into_datetime(TimeUnit::Nanoseconds, None)
+            .into_series();
 
         // check if we don't panic.
         let out = &s * 100;
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = &s / 100;
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = &s + 100;
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = &s - 100;
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = &s % 100;
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
 
         let out = 100.mul(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = 100.div(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = 100.sub(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = 100.add(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = 100.rem(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime(TimeUnit::Nanoseconds, None));
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
     }
 }

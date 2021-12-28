@@ -2,7 +2,9 @@ use super::*;
 use crate::prelude::{AnyValue, TimeUnit};
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
-use arrow::temporal_conversions::{timestamp_ms_to_datetime, NANOSECONDS, MILLISECONDS, timestamp_ns_to_datetime};
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, MILLISECONDS, NANOSECONDS,
+};
 use polars_time::export::chrono::{NaiveDateTime, NaiveTime};
 
 /// Number of seconds in a day
@@ -17,7 +19,7 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
             AnyValue::Datetime(v, tu, _) => match tu {
                 TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
                 TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
-            }
+            },
             _ => panic!("can only convert date/datetime to NaiveDateTime"),
         }
     }

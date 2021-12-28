@@ -50,7 +50,7 @@ unsafe fn arr_to_any_value<'a>(
         DataType::Datetime(tu, tz) => {
             let ts: i64 = downcast!(Int64Array).into();
             AnyValue::Datetime(ts, *tu, tz)
-        },
+        }
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();
