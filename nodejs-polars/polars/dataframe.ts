@@ -19,7 +19,6 @@ import {
   columnOrColumns,
   columnOrColumnsStrict,
   ColumnSelection,
-  DownsampleRule,
   FillNullStrategy,
   isSeriesArray,
   ColumnsOrExpr,
@@ -1148,7 +1147,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const df = {
     _df,
     [inspect]() {
-      return unwrap<string>("as_str");
+      return unwrap<Buffer>("as_str").toString();
     },
     *[Symbol.iterator]() {
 
@@ -1206,7 +1205,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       return summary;
     },
-    downsample: (opt, rule?, n?) => GroupBy( _df, opt?.by ?? opt, true, opt?.rule ?? rule, opt?.n ?? n),
     drop(name, ...names) {
       names.unshift(name);
       if(!Array.isArray(names[0]) && names.length === 1) {
@@ -1530,7 +1528,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       }
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
-    toString: noArgUnwrap("as_str"),
+    toString: () => noArgUnwrap<any>("as_str")().toString(),
     add: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
     sub: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
     div: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),

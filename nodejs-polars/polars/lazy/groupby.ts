@@ -23,7 +23,7 @@ export const LazyGroupBy = (
   return {
     agg(...aggs: Expr[])  {
       return unwrap({
-        aggs: aggs.map(a => a._expr),
+        aggs: aggs.flatMap(a => a._expr),
         aggMethod: "agg",
         ...baseArgs
       });

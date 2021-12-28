@@ -257,6 +257,7 @@ export interface Expr {
   get str(): ExprStringFunctions;
   get lst(): ExprListFunctions;
   [inspect](): string;
+  toString(): string;
   /** Take absolute values */
   abs(): Expr
   aggGroups(): Expr
@@ -1035,88 +1036,24 @@ const _Expr = (_expr: JsExpr): Expr => {
 
     return f;
   };
-  const exclude = (column, ...columns) => {
-    return wrap("exclude", {columns: [column, ...columns]});
-  };
-  const fillNull = (fillValue) => {
-    if(["backward", "forward", "mean", "min", "max", "zero", "one"].includes(fillValue)) {
-      return wrap("fillNullWithStrategy", {strategy: fillValue});
-    }
-
-    const expr = exprToLitOrExpr(fillValue)._expr;
-
-    return wrap("fillNull", {other: expr});
-  };
-  const isIn = (other) => {
-    if(Array.isArray(other)) {
-      other = lit(Series(other));
-    } else {
-      other = exprToLitOrExpr(other, false);
-    }
-
-    return wrap("isIn", {other: other._expr});
-  };
-  const kurtosis = (obj?, bias=true) => {
-    return wrap("kurtosis", {
-      fisher: obj?.["fisher"] ?? (typeof obj === "boolean" ? obj : true),
-      bias : obj?.["bias"] ?? bias,
-    });
-  };
-  const hash = (obj: any=0, k1=1, k2=2, k3=3) => {
-    if(typeof obj === "number" || typeof obj === "bigint") {
-      return wrap("hash", {
-        k0: obj,
-        k1: k1,
-        k2: k2,
-        k3: k3
-      });
-    }
-
-    return wrap("hash", obj);
-  };
-  const over = (...exprs) => {
-
-    const partitionBy = selectionToExprList(exprs, false);
-
-    return wrap("over", {partitionBy});
-  };
-  const shiftAndFill = (opt, fillValue?) => {
-    if(opt?.periods !== undefined) {
-      return shiftAndFill(opt.periods, opt.fillValue);
-    }
-    fillValue = exprToLitOrExpr(fillValue, true)._expr;
-
-    return wrap("shiftAndFill", {periods: opt, fillValue});
-  };
-  const rollingSkew = (val, bias=true) => {
-    if(typeof val === "number") {
-      return wrap("rollingSkew", {windowSize: val, bias});
-    }
-
-    return rollingSkew(val.windowSize, val.bias);
-  };
-  const sort = (reverse: any = false, nullsLast=false) => {
-    if(typeof reverse === "boolean") {
-      return wrap("sortWith", {reverse, nullsLast});
-    }
-
-    return wrap("sortWith", reverse);
-  };
-
-  const take = (indices) => {
-    if(Array.isArray(indices)) {
-      indices = lit(Series(indices));
-    }
-
-    return wrap("take", {other: indices._expr});
-  };
 
   return {
     _expr,
-    [inspect]() { return pli.expr.as_str({_expr});},
-    get str() { return ExprStringFunctions(_expr);},
-    get lst() {return ExprListFunctions(_expr);},
-    get date() {return ExprDateTimeFunctions(_expr);},
+    [inspect]() {
+      return pli.expr.as_str({_expr});
+    },
+    toString() {
+      return pli.expr.as_str({_expr});
+    },
+    get str() {
+      return ExprStringFunctions(_expr);
+    },
+    get lst() {
+      return ExprListFunctions(_expr);
+    },
+    get date() {
+      return ExprDateTimeFunctions(_expr);
+    },
     abs: wrapNullArgs("abs"),
     aggGroups: wrapNullArgs("aggGroups"),
     alias: wrapUnary("alias", "name"),
@@ -1127,7 +1064,9 @@ const _Expr = (_expr: JsExpr): Expr => {
     argUnique: wrapNullArgs("argUnique"),
     as: wrapUnary("alias", "name"),
     backwardFill: wrapNullArgs("backwardFill"),
-    cast: (dtype, strict=false) => wrap("cast", {dtype, strict}),
+    cast(dtype, strict=false) {
+      return wrap("cast", {dtype, strict});
+    },
     count: wrapNullArgs("count"),
     cumCount: wrapUnaryWithDefault("cumCount", "reverse", false),
     cumMax: wrapUnaryWithDefault("cumMax", "reverse", false),
@@ -1137,7 +1076,9 @@ const _Expr = (_expr: JsExpr): Expr => {
     diff: wrapBinary("diff", "n", "nullBehavior"),
     dot: wrapExprArg("dot"),
     eq: wrapExprArg("eq"),
-    exclude,
+    exclude(...columns) {
+      return wrap("exclude", {columns: columns.flat(2)});
+    },
     explode: wrapNullArgs("explode"),
     extend(o, n?) {
       if(n !== null && typeof n === "number") {
@@ -1147,7 +1088,15 @@ const _Expr = (_expr: JsExpr): Expr => {
       return wrap("extend", o);
     },
     fillNan: wrapExprArg("fillNan", true),
-    fillNull,
+    fillNull(fillValue)  {
+      if(["backward", "forward", "mean", "min", "max", "zero", "one"].includes(fillValue)) {
+        return wrap("fillNullWithStrategy", {strategy: fillValue});
+      }
+
+      const expr = exprToLitOrExpr(fillValue)._expr;
+
+      return wrap("fillNull", {other: expr});
+    },
     fillNullWithStrategy: wrapUnary("fillNullWithStrategy", "strategy"),
     filter: wrapExprArg("filter"),
     first: wrapNullArgs("first"),
@@ -1156,13 +1105,27 @@ const _Expr = (_expr: JsExpr): Expr => {
     forwardFill: wrapNullArgs("forwardFill"),
     gt: wrapExprArg("gt"),
     gtEq: wrapExprArg("gtEq"),
-    hash,
+    hash(obj: any=0, k1=1, k2=2, k3=3) {
+      if(typeof obj === "number" || typeof obj === "bigint") {
+        return wrap("hash", { k0: obj, k1: k1, k2: k2, k3: k3 });
+      }
+
+      return wrap("hash", { k0: 0, k1, k2, k3, ...obj });
+    },
     head: wrapUnaryNumber("head", "length"),
     interpolate: wrapNullArgs("interpolate"),
     isDuplicated: wrapNullArgs("isDuplicated"),
     isFinite: wrapNullArgs("isFinite"),
     isFirst: wrapNullArgs("isFirst"),
-    isIn,
+    isIn(other)  {
+      if(Array.isArray(other)) {
+        other = lit(Series(other));
+      } else {
+        other = exprToLitOrExpr(other, false);
+      }
+
+      return wrap("isIn", {other: other._expr});
+    },
     isInfinite: wrapNullArgs("isInfinite"),
     isNan: wrapNullArgs("isNan"),
     isNotNan: wrapNullArgs("isNotNan"),
@@ -1170,7 +1133,12 @@ const _Expr = (_expr: JsExpr): Expr => {
     isNull: wrapNullArgs("isNull"),
     isUnique: wrapNullArgs("isUnique"),
     keepName: wrapNullArgs("keepName"),
-    kurtosis,
+    kurtosis(obj?, bias=true) {
+      return wrap("kurtosis", {
+        fisher: obj?.["fisher"] ?? (typeof obj === "boolean" ? obj : true),
+        bias : obj?.["bias"] ?? bias,
+      });
+    },
     last: wrapNullArgs("last"),
     list: wrapNullArgs("list"),
     lowerBound: wrapNullArgs("lowerBound"),
@@ -1185,7 +1153,12 @@ const _Expr = (_expr: JsExpr): Expr => {
     not: wrapNullArgs("not"),
     nUnique: wrapNullArgs("nUnique"),
     or: wrapExprArg("or"),
-    over,
+    over(...exprs) {
+
+      const partitionBy = selectionToExprList(exprs, false);
+
+      return wrap("over", {partitionBy});
+    },
     pow: wrapUnary("pow", "exponent"),
     prefix: wrapUnary("prefix", "prefix"),
     quantile: wrapUnary("quantile", "quantile"),
@@ -1196,18 +1169,49 @@ const _Expr = (_expr: JsExpr): Expr => {
     reverse: wrapNullArgs("reverse"),
     rollingMedian: wrapUnary("rollingMedian", "windowSize"),
     rollingQuantile: wrapBinary("rollingQuantile", "windowSize", "quantile"),
-    rollingSkew,
+    rollingSkew(val, bias=true)  {
+      if(typeof val === "number") {
+        return wrap("rollingSkew", {windowSize: val, bias});
+      }
+
+      return wrap("rollingSkew", {bias:true, ...val});
+    },
     round: wrapUnaryNumber("round", "decimals"),
     shift: wrapUnary("shift", "periods"),
-    shiftAndFill,
+    shiftAndFill(optOrPeriods, fillValue?) {
+      if(typeof optOrPeriods === "number") {
+        fillValue = exprToLitOrExpr(fillValue)._expr;
+
+        return wrap("shiftAndFill", {periods: optOrPeriods, fillValue});
+
+      }
+      else {
+        fillValue = exprToLitOrExpr(optOrPeriods.fillValue)._expr;
+        const periods = optOrPeriods.periods;
+
+        return wrap("shiftAndFill", {periods, fillValue});
+      }
+    },
     skew: wrapUnaryWithDefault("skew", "bias", true),
     slice: wrapBinary("slice", "offset", "length"),
-    sort,
+    sort(reverse: any = false, nullsLast=false) {
+      if(typeof reverse === "boolean") {
+        return wrap("sortWith", {reverse, nullsLast});
+      }
+
+      return wrap("sortWith", reverse);
+    },
     std: wrapNullArgs("std"),
     suffix: wrapUnary("suffix", "suffix"),
     sum: wrapNullArgs("sum"),
     tail: wrapUnaryNumber("tail", "length"),
-    take,
+    take(indices)  {
+      if(Array.isArray(indices)) {
+        indices = lit(Series(indices));
+      }
+
+      return wrap("take", {other: indices._expr});
+    },
     takeEvery: wrapUnary("takeEvery", "n"),
     unique: wrapNullArgs("unique"),
     upperBound: wrapNullArgs("upperBound"),
@@ -1224,8 +1228,6 @@ export const exprToLitOrExpr = (expr: any, stringToLit = true): Expr  => {
     return col(expr);
   } else if (Expr.isExpr(expr)) {
     return expr;
-  } else if (Array.isArray(expr)) {
-    return expr.map(e => exprToLitOrExpr(e, stringToLit)) as any;
   } else {
     return lit(expr);
   }

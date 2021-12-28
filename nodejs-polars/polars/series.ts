@@ -32,11 +32,11 @@ export interface Series<T> extends ArrayLike<T> {
   inner(): JsSeries
   eq(field: Series<T> | number | bigint | string): Series<boolean>
   equals(field: Series<T> | number | bigint | string): Series<boolean>
-  gt_eq(field: Series<T> | number | bigint | string): Series<boolean>
+  gtEq(field: Series<T> | number | bigint | string): Series<boolean>
   greaterThanEquals(field: Series<T> | number | bigint | string): Series<boolean>
   gt(field: Series<T> | number | bigint | string): Series<boolean>
   greaterThan(field: Series<T> | number | bigint | string): Series<boolean>
-  lt_eq(field: Series<T> | number | bigint | string): Series<boolean>
+  ltEq(field: Series<T> | number | bigint | string): Series<boolean>
   lessThanEquals(field: Series<T> | number | bigint | string): Series<boolean>
   lt(field: Series<T> | number | bigint | string): Series<boolean>
   lessThan(field: Series<T> | number | bigint | string): Series<boolean>
@@ -49,9 +49,9 @@ export interface Series<T> extends ArrayLike<T> {
   rem(field: Series<T> | number | bigint | string): Series<T>
   plus(field: Series<T> | number | bigint): Series<T>
   minus(field: Series<T> | number | bigint): Series<T>
-  divide(field: Series<T> | number | bigint): Series<T>
+  divideBy(field: Series<T> | number | bigint): Series<T>
   times(field: Series<T> | number | bigint): Series<T>
-  remainder(field: Series<T> | number | bigint | string): Series<T>
+  modulo(field: Series<T> | number | bigint | string): Series<T>
   bitand(other: Series<any>): Series<T>
   bitor(other: Series<any>): Series<T>
   bitxor(other: Series<any>): Series<T>
@@ -87,28 +87,29 @@ export interface Series<T> extends ArrayLike<T> {
    * ]
    */
   append(other: Series<T>): void
-  /**
-   * __Apply a function over elements in this Series and return a new Series.__
-   *
-   * If the function returns another datatype, the returnType arg should be set, otherwise the method will fail.
-   * ___
-   * @param {CallableFunction} func - function or lambda.
-   * @param {DataType} returnType - Output datatype. If none is given, the same datatype as this Series will be used.
-   * @returns {SeriesType} `Series<T> | Series<returnType>`
-   * @example
-   * ```
-   * > const s = pl.Series("a", [1, 2, 3])
-   * > s.apply(x => x + 10)
-   * shape: (3,)
-   * Series: 'a' [i64]
-   * [
-   *         11
-   *         12
-   *         13
-   * ]
-   * ```
-   */
-  apply<U>(func: (s: T) => U): Series<U>
+  // TODO!
+  // /**
+  //  * __Apply a function over elements in this Series and return a new Series.__
+  //  *
+  //  * If the function returns another datatype, the returnType arg should be set, otherwise the method will fail.
+  //  * ___
+  //  * @param {CallableFunction} func - function or lambda.
+  //  * @param {DataType} returnType - Output datatype. If none is given, the same datatype as this Series will be used.
+  //  * @returns {SeriesType} `Series<T> | Series<returnType>`
+  //  * @example
+  //  * ```
+  //  * > const s = pl.Series("a", [1, 2, 3])
+  //  * > s.apply(x => x + 10)
+  //  * shape: (3,)
+  //  * Series: 'a' [i64]
+  //  * [
+  //  *         11
+  //  *         12
+  //  *         13
+  //  * ]
+  //  * ```
+  //  */
+  // apply<U>(func: (s: T) => U): Series<U>
   /**
    * Get the index of the maximal value.
    */
@@ -616,10 +617,6 @@ export interface Series<T> extends ArrayLike<T> {
    */
   limit(n?: number): Series<T>
   /**
-   * @see {@link Series.apply}
-   */
-  map<U>(func: (s: T) => U): Series<U>
-  /**
    * Get the maximum value in this Series.
    * @example
    * ```
@@ -793,7 +790,7 @@ export interface Series<T> extends ArrayLike<T> {
    * @see {@link cast}
    *
    */
-  reinterpret(signed?: boolean): T extends number ? Series<boolean> : never
+  reinterpret(signed?: boolean): T extends bigint ? Series<bigint> : never
   /**
    * __Rename this Series.__
    *
@@ -1342,9 +1339,6 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     append(other) {
       return wrap("append", { other: other._series });
     },
-    apply(func){
-      return wrap("map", {func});
-    },
     argMax: noArgUnwrap("arg_max"),
     argMin: noArgUnwrap("arg_min"),
     argSort(reverse: any = false) {
@@ -1451,7 +1445,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     div(field) {
       return dtypeAccessor(wrap)("div", {field, key: "other"});
     },
-    divide(field) {
+    divideBy(field) {
       return this.div(field);
     },
     dot(other) {
@@ -1492,14 +1486,14 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     gt(field) {
       return dtypeAccessor(wrap)("gt", {field, key: "rhs"});
     },
-    gt_eq(field) {
+    gtEq(field) {
       return dtypeAccessor(wrap)("gt_eq", {field, key: "rhs"});
     },
     greaterThan(field) {
       return this.gt(field);
     },
     greaterThanEquals(field) {
-      return this.gt_eq(field);
+      return this.gtEq(field);
     },
     hash(obj: any = 0, k1=1, k2=2, k3=3) {
       if(typeof obj === "number" || typeof obj === "bigint") {
@@ -1598,9 +1592,8 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     lessThan: (field) => dtypeAccessor(wrap)("lt", {field, key: "rhs"}),
     lessThanEquals: (field) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
     limit: (n=10) => wrap("limit", { num_elements: n }),
-    lt_eq: (field) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
+    ltEq: (field) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
     lt: (field) => dtypeAccessor(wrap)("lt", {field, key: "rhs"}),
-    map: <U>(func: (s: T) => U): Series<U> => wrap("map", {func}),
     max: noArgUnwrap("max"),
     mean: noArgUnwrap("mean"),
     median: noArgUnwrap("median"),
@@ -1628,7 +1621,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       }
     },
     rem: (field) => dtypeAccessor(wrap)("rem", {field, key: "other"}),
-    remainder: (field) => dtypeAccessor(wrap)("rem", {field, key: "other"}),
+    modulo: (field) => dtypeAccessor(wrap)("rem", {field, key: "other"}),
     rename(obj: any, inPlace = false) {
       if (obj?.inPlace ?? inPlace) {
         unwrap("rename", { name: obj?.name ?? obj });
@@ -1683,18 +1676,13 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     set(filter, value) {
       const dtype = this.dtype;
       const dt = DTYPE_TO_FFINAME[DataType[dtype]];
-      if(!dt) {
-        throw todo();
-      }
 
       return wrap(`set_with_mask_${dt}`, {filter: filter._series, value});
     },
     setAtIdx(indices, value) {
       const dtype = this.dtype;
       const dt = DTYPE_TO_FFINAME[DataType[dtype]];
-      if(!dt) {
-        throw todo();
-      }
+
       indices = Series.isSeries(indices) ? indices.cast(DataType.UInt32).toArray() : indices;
       unwrap(`set_at_idx_${dt}`, {indices, value});
 
@@ -1775,14 +1763,11 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         return Reflect.get(target, prop, receiver);
       }
     },
-    set: function(series, prop, input) {
+    set: function(series, prop, input): any {
       if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
         series.setAtIdx([Number(prop)], input);
 
         return true;
-      } else {
-
-        return Reflect.set(series, prop, input);
       }
     }
   });

@@ -14,39 +14,38 @@ export interface Config {
   /** Turn off the global string cache */
   unsetGlobalStringCache(): Config
 }
-export const Config = (): Config => {
-  return {
-    setUtf8Tables() {
-      process.env["POLARS_FMT_NO_UTF8"] = undefined;
+export const Config = {
+  setUtf8Tables() {
+    delete process.env["POLARS_FMT_NO_UTF8"];
 
-      return this;
-    },
-    setAsciiTables() {
-      process.env["POLARS_FMT_NO_UTF8"] = "1";
+    return this;
+  },
+  setAsciiTables() {
+    process.env["POLARS_FMT_NO_UTF8"] = "1";
 
-      return this;
-    },
-    setTblWidthChars(width) {
-      process.env["POLARS_TABLE_WIDTH"] = String(width);
+    return this;
+  },
+  setTblWidthChars(width) {
 
-      return this;
-    },
-    setTblRows(n) {
-      process.env["POLARS_FMT_MAX_ROWS"] = String(n);
+    process.env["POLARS_TABLE_WIDTH"] = String(width);
 
-      return this;
-    },
-    setTblCols(n) {
-      process.env["POLARS_FMT_MAX_COLS"] = String(n);
+    return this;
+  },
+  setTblRows(n) {
+    process.env["POLARS_FMT_MAX_ROWS"] = String(n);
 
-      return this;
-    },
-    setGlobalStringCache() {
-      return this;
-    },
-    unsetGlobalStringCache() {
-      return this;
-    }
+    return this;
+  },
+  setTblCols(n) {
+    process.env["POLARS_FMT_MAX_COLS"] = String(n);
 
-  };
+    return this;
+  },
+  setGlobalStringCache() {
+    return this;
+  },
+  unsetGlobalStringCache() {
+    return this;
+  }
+
 };
