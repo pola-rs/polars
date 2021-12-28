@@ -420,7 +420,7 @@ def test_groupby() -> None:
     # df.groupby(by="a", select="b", agg="count").frame_equal(
     #     pl.DataFrame({"a": ["a", "b", "c"], "": [2, 3, 1]})
     # )
-    assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1  # type: ignore
+    assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
     assert (
         df.groupby("a")
