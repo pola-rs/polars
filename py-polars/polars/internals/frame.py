@@ -596,6 +596,20 @@ class DataFrame:
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
 
+    @overload
+    def to_dict(self, as_series: Literal[True] = ...) -> Dict[str, "pli.Series"]:
+        ...
+
+    @overload
+    def to_dict(self, as_series: Literal[False]) -> Dict[str, List[Any]]:
+        ...
+
+    @overload
+    def to_dict(
+        self, as_series: bool = True
+    ) -> Union[Dict[str, "pli.Series"], Dict[str, List[Any]]]:
+        ...
+
     def to_dict(
         self, as_series: bool = True
     ) -> Union[Dict[str, "pli.Series"], Dict[str, List[Any]]]:
@@ -3338,6 +3352,18 @@ class DataFrame:
         """
         return self._df.n_chunks()
 
+    @overload
+    def max(self, axis: Literal[0] = ...) -> "DataFrame":
+        ...
+
+    @overload
+    def max(self, axis: Literal[1]) -> "pli.Series":
+        ...
+
+    @overload
+    def max(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
+        ...
+
     def max(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their maximum value.
@@ -3367,6 +3393,18 @@ class DataFrame:
         if axis == 1:
             return pli.wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
+
+    @overload
+    def min(self, axis: Literal[0] = ...) -> "DataFrame":
+        ...
+
+    @overload
+    def min(self, axis: Literal[1]) -> "pli.Series":
+        ...
+
+    @overload
+    def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
+        ...
 
     def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
         """
@@ -3398,8 +3436,24 @@ class DataFrame:
             return pli.wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
+    @overload
     def sum(
-        self, axis: int = 0, null_strategy: str = "ignore"
+        self, *, axis: Literal[0] = ..., null_strategy: str = "ignore"
+    ) -> "DataFrame":
+        ...
+
+    @overload
+    def sum(self, *, axis: Literal[1], null_strategy: str = "ignore") -> "pli.Series":
+        ...
+
+    @overload
+    def sum(
+        self, *, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union["DataFrame", "pli.Series"]:
+        ...
+
+    def sum(
+        self, *, axis: int = 0, null_strategy: str = "ignore"
     ) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their sum value.
@@ -3437,6 +3491,22 @@ class DataFrame:
         if axis == 1:
             return pli.wrap_s(self._df.hsum(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
+
+    @overload
+    def mean(
+        self, *, axis: Literal[0] = ..., null_strategy: str = "ignore"
+    ) -> "DataFrame":
+        ...
+
+    @overload
+    def mean(self, *, axis: Literal[1], null_strategy: str = "ignore") -> "pli.Series":
+        ...
+
+    @overload
+    def mean(
+        self, *, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union["DataFrame", "pli.Series"]:
+        ...
 
     def mean(
         self, axis: int = 0, null_strategy: str = "ignore"

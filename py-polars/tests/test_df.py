@@ -1222,9 +1222,15 @@ def test_panic() -> None:
 def test_h_agg() -> None:
     df = pl.DataFrame({"a": [1, None, 3], "b": [1, 2, 3]})
 
-    assert df.sum(axis=1, null_strategy="ignore").to_list() == [2, 2, 6]
-    assert df.sum(axis=1, null_strategy="propagate").to_list() == [2, None, 6]
-    assert df.mean(axis=1, null_strategy="propagate")[1] is None
+    pl.testing.assert_series_equal(
+        df.sum(axis=1, null_strategy="ignore"), pl.Series("a", [2, 2, 6])
+    )
+    pl.testing.assert_series_equal(
+        df.sum(axis=1, null_strategy="propagate"), pl.Series("a", [2, None, 6])
+    )
+    pl.testing.assert_series_equal(
+        df.mean(axis=1, null_strategy="propagate"), pl.Series("a", [1.0, None, 3.0])
+    )
 
 
 def test_slicing() -> None:
