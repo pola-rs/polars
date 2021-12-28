@@ -177,6 +177,7 @@ impl<'a> CoreReader<'a> {
                         &mut skip_rows,
                         comment_char,
                         quote_char,
+                        null_values.as_ref(),
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -191,6 +192,7 @@ impl<'a> CoreReader<'a> {
                         &mut skip_rows,
                         comment_char,
                         quote_char,
+                        null_values.as_ref(),
                     )?;
                     Cow::Owned(inferred_schema)
                 }

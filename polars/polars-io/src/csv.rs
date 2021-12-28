@@ -601,6 +601,7 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
 
 #[cfg(test)]
 mod test {
+    use crate::csv_core::utils::infer_file_schema;
     use crate::prelude::*;
     use polars_core::datatypes::AnyValue;
     use polars_core::prelude::*;
@@ -1362,6 +1363,21 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
         let a = a.utf8()?;
         assert_eq!(a.get(0), Some(""));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_null_values_infer_schema() -> Result<()> {
+        let csv = r#"a,b
+1,2
+3,NA
+5,6"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .with_null_values(Some(NullValues::AllColumns("NA".into())))
+            .finish()?;
+        let expected = &[DataType::Int64, DataType::Int64];
+        assert_eq!(df.dtypes(), expected);
         Ok(())
     }
 }
