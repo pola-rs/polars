@@ -76,6 +76,7 @@ features = [
   "list",
   "rank",
   "diff",
+  "pct_change",
   "moment",
   "arange",
   "true_div",
