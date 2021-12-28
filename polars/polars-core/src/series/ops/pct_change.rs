@@ -39,12 +39,12 @@ mod test {
 
     #[test]
     fn test_two_periods() -> Result<()> {
-        let s = Series::new("", &[Some(1), Some(2), Some(3), Some(4), Some(5)]);
+        let s = Series::new("", &[Some(1), Some(2), Some(4), Some(8), Some(16)]);
         assert_eq!(
             s.pct_change(2)?,
             Series::new(
                 "",
-                &[None, None, Some(2.0f32), Some(1.0), Some(2.0f32 / 3.0f32)]
+                &[None, None, Some(3.0f32), Some(3.0), Some(3.0)]
             )
         );
         Ok(())
