@@ -11,6 +11,7 @@ except ImportError as e:  # pragma: no cover
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
+import polars.testing as testing
 from polars.cfg import (  # flake8: noqa. We do not export in __all__
     Config,
     toggle_string_cache,
@@ -202,6 +203,8 @@ __all__ = [
     "from_records",
     "from_arrow",
     "from_pandas",
+    # testing
+    "testing",
 ]
 
 __version__ = version()

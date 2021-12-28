@@ -661,8 +661,26 @@ pub fn hash(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn reinterpret(_: CallContext) -> JsResult<JsExternal> {
-    todo!()
+pub fn reinterpret(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let signed = params.get_as::<bool>("signed")?;
+    let s = match (series.dtype(), signed) {
+        (DataType::UInt64, true) => {
+            let ca = series.u64().unwrap();
+            Ok(ca.reinterpret_signed().into_series())
+        }
+        (DataType::UInt64, false) => Ok(series.clone()),
+        (DataType::Int64, false) => {
+            let ca = series.i64().unwrap();
+            Ok(ca.reinterpret_unsigned().into_series())
+        }
+        (DataType::Int64, true) => Ok(series.clone()),
+        _ => Err(PolarsError::ComputeError(
+            "reinterpret is only allowed for 64bit integers dtype, use cast otherwise".into(),
+        )),
+    }.map_err(JsPolarsEr::from)?;
+    s.try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -791,7 +809,10 @@ pub fn get_date(cx: CallContext) -> JsResult<JsUnknown> {
                 index as usize
             };
             match ca.get(index) {
-                Some(v) => cx.env.create_date((v / 1000000) as f64).map(|v| v.into_unknown()),
+                Some(v) => cx
+                    .env
+                    .create_date((v / 1000000) as f64)
+                    .map(|v| v.into_unknown()),
                 None => cx.env.get_null().map(|v| v.into_unknown()),
             }
         }
@@ -814,7 +835,9 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
             match ca.get(index) {
                 Some(v) => {
                     println!("value={:#?}", v);
-                    cx.env.create_date((v / 1000000) as f64).map(|v| v.into_unknown())
+                    cx.env
+                        .create_date((v / 1000000) as f64)
+                        .map(|v| v.into_unknown())
                 }
                 None => {
                     println!("none at idx={:#?}", index);
@@ -856,9 +879,11 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
     let series = params.get_external::<Series>(&cx, "_series")?;
     let val = params.get_as::<AnyValue>("value")?;
     let n = params.get_as::<usize>("n")?;
-    series.extend(val, n).map_err(JsPolarsEr::from)?.try_into_js(&cx)
+    series
+        .extend(val, n)
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
 }
-
 
 macro_rules! init_method {
     ($name:ident, $js_type:ty, $type:ty, $getter:ident) => {

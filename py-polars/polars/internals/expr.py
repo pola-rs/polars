@@ -339,7 +339,7 @@ class Expr:
 
         """
         if isinstance(columns, str):
-            columns = [columns]  # type: ignore
+            columns = [columns]
             return wrap_expr(self._pyexpr.exclude(columns))
         elif not isinstance(columns, list) and issubclass(columns, DataType):  # type: ignore
             columns = [columns]  # type: ignore

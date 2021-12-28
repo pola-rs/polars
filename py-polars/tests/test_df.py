@@ -743,11 +743,11 @@ def test_from_pandas_nan_to_none() -> None:
             "nulls": [None, np.nan, np.nan],
         }
     )
-    out_true: pl.DataFrame = pl.from_pandas(df)  # type: ignore
-    out_false: pl.DataFrame = pl.from_pandas(df, nan_to_none=False)  # type: ignore
+    out_true = pl.from_pandas(df)
+    out_false = pl.from_pandas(df, nan_to_none=False)
     df.loc[2, "nulls"] = pd.NA
-    assert [val is None for val in out_true["nulls"]]
-    assert [np.isnan(val) for val in out_false["nulls"][1:]]
+    assert all(val is None for val in out_true["nulls"])
+    assert all(np.isnan(val) for val in out_false["nulls"][1:])
     with pytest.raises(ArrowInvalid, match="Could not convert"):
         pl.from_pandas(df, nan_to_none=False)
 
@@ -785,7 +785,7 @@ def test_concat() -> None:
     assert a.shape == (2, 2)
 
     with pytest.raises(ValueError):
-        _ = pl.concat([])  # type: ignore
+        _ = pl.concat([])
 
     with pytest.raises(ValueError):
         pl.concat([df, df], how="rubbish")
@@ -1059,8 +1059,7 @@ def test_rename(df: pl.DataFrame) -> None:
 def test_to_json(df: pl.DataFrame) -> None:
     # text based conversion loses time info
     df = df.select(pl.all().exclude(["cat", "time"]))
-    s: str = df.to_json(to_string=True)  # type: ignore
-    # TODO add overload on to_json()
+    s = df.to_json(to_string=True)
     out = pl.read_json(s)
     assert df.frame_equal(out, null_equal=True)
 
@@ -1124,7 +1123,7 @@ def test_join_dates() -> None:
     )
     dts = (
         pl.from_pandas(date_times)
-        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))  # type: ignore
+        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
         .cast(pl.Datetime)
     )
 
@@ -1222,9 +1221,15 @@ def test_panic() -> None:
 def test_h_agg() -> None:
     df = pl.DataFrame({"a": [1, None, 3], "b": [1, 2, 3]})
 
-    assert df.sum(axis=1, null_strategy="ignore").to_list() == [2, 2, 6]
-    assert df.sum(axis=1, null_strategy="propagate").to_list() == [2, None, 6]
-    assert df.mean(axis=1, null_strategy="propagate")[1] is None
+    pl.testing.assert_series_equal(
+        df.sum(axis=1, null_strategy="ignore"), pl.Series("a", [2, 2, 6])
+    )
+    pl.testing.assert_series_equal(
+        df.sum(axis=1, null_strategy="propagate"), pl.Series("a", [2, None, 6])
+    )
+    pl.testing.assert_series_equal(
+        df.mean(axis=1, null_strategy="propagate"), pl.Series("a", [1.0, None, 3.0])
+    )
 
 
 def test_slicing() -> None:

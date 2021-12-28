@@ -123,6 +123,7 @@ impl LogicalPlanBuilder {
                 &mut skip_rows,
                 comment_char,
                 quote_char,
+                null_values.as_ref(),
             )
             .expect("could not read schema");
             Arc::new(schema)

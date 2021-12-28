@@ -8,7 +8,7 @@ try:
 except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
-from _ctypes import _SimpleCData
+from _ctypes import _SimpleCData  # type: ignore
 
 
 class DataType:

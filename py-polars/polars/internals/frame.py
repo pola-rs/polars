@@ -596,6 +596,20 @@ class DataFrame:
         record_batches = self._df.to_arrow()
         return pa.Table.from_batches(record_batches)
 
+    @overload
+    def to_dict(self, as_series: Literal[True] = ...) -> Dict[str, "pli.Series"]:
+        ...
+
+    @overload
+    def to_dict(self, as_series: Literal[False]) -> Dict[str, List[Any]]:
+        ...
+
+    @overload
+    def to_dict(
+        self, as_series: bool = True
+    ) -> Union[Dict[str, "pli.Series"], Dict[str, List[Any]]]:
+        ...
+
     def to_dict(
         self, as_series: bool = True
     ) -> Union[Dict[str, "pli.Series"], Dict[str, List[Any]]]:
@@ -697,6 +711,8 @@ class DataFrame:
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
         pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
         *,
         to_string: Literal[True],
     ) -> str:
@@ -707,6 +723,8 @@ class DataFrame:
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
         pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
         *,
         to_string: Literal[False] = ...,
     ) -> None:
@@ -717,6 +735,8 @@ class DataFrame:
         self,
         file: Optional[Union[BytesIO, str, Path]] = ...,
         pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
         *,
         to_string: bool = ...,
     ) -> Optional[str]:
@@ -726,6 +746,8 @@ class DataFrame:
         self,
         file: Optional[Union[BytesIO, str, Path]] = None,
         pretty: bool = False,
+        row_oriented: bool = False,
+        json_lines: bool = False,
         *,
         to_string: bool = False,
     ) -> Optional[str]:
@@ -738,16 +760,20 @@ class DataFrame:
             Write to this file instead of returning an string.
         pretty
             Pretty serialize json.
+        row_oriented
+            Write to row oriented json. This is slower, but more common.
+        json_lines
+            Write to Json Lines format
         to_string
             Ignore file argument and return a string.
         """
         if to_string or file is None:
             file = BytesIO()
-            self._df.to_json(file, pretty)
+            self._df.to_json(file, pretty, row_oriented, json_lines)
             file.seek(0)
             return file.read().decode("utf8")
         else:
-            self._df.to_json(file, pretty)
+            self._df.to_json(file, pretty, row_oriented, json_lines)
             return None
 
     def to_pandas(
@@ -1148,7 +1174,7 @@ class DataFrame:
     # __getitem__() mostly returns a dataframe. The major exception is when a string is passed in. Note that there are
     # more subtle cases possible where a non-string value leads to a Series.
     @overload
-    def __getitem__(self, item: str) -> "pli.Series":  # type: ignore
+    def __getitem__(self, item: str) -> "pli.Series":
         ...
 
     @overload
@@ -1246,7 +1272,7 @@ class DataFrame:
                     series_list = [self.to_series(i) for i in col_selection]
                     df = DataFrame(series_list)
                     return df[row_selection]
-            df = self.__getitem__(col_selection)  # type: ignore
+            df = self.__getitem__(col_selection)
             return df.__getitem__(row_selection)
 
         # select single column
@@ -1266,7 +1292,7 @@ class DataFrame:
         if isinstance(item, slice):
             # special case df[::-1]
             if item.start is None and item.stop is None and item.step == -1:
-                return self.select(pli.col("*").reverse())  # type: ignore
+                return self.select(pli.col("*").reverse())
 
             if getattr(item, "end", False):
                 raise ValueError("A slice with steps larger than 1 is not supported.")
@@ -1286,7 +1312,7 @@ class DataFrame:
             else:
                 # df[start:stop:step]
                 return self.select(
-                    pli.col("*").slice(start, length).take_every(item.step)  # type: ignore
+                    pli.col("*").slice(start, length).take_every(item.step)
                 )
 
         # select rows by numpy mask or index
@@ -1717,10 +1743,10 @@ class DataFrame:
                 describe_cast(self.median()),
             ]
         )
-        summary.insert_at_idx(  # type: ignore
+        summary.insert_at_idx(
             0, pli.Series("describe", ["mean", "std", "min", "max", "median"])
         )
-        return summary  # type: ignore
+        return summary
 
     def replace_at_idx(self, index: int, series: "pli.Series") -> None:
         """
@@ -3326,6 +3352,18 @@ class DataFrame:
         """
         return self._df.n_chunks()
 
+    @overload
+    def max(self, axis: Literal[0] = ...) -> "DataFrame":
+        ...
+
+    @overload
+    def max(self, axis: Literal[1]) -> "pli.Series":
+        ...
+
+    @overload
+    def max(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
+        ...
+
     def max(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their maximum value.
@@ -3355,6 +3393,18 @@ class DataFrame:
         if axis == 1:
             return pli.wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
+
+    @overload
+    def min(self, axis: Literal[0] = ...) -> "DataFrame":
+        ...
+
+    @overload
+    def min(self, axis: Literal[1]) -> "pli.Series":
+        ...
+
+    @overload
+    def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
+        ...
 
     def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
         """
@@ -3386,8 +3436,24 @@ class DataFrame:
             return pli.wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
+    @overload
     def sum(
-        self, axis: int = 0, null_strategy: str = "ignore"
+        self, *, axis: Literal[0] = ..., null_strategy: str = "ignore"
+    ) -> "DataFrame":
+        ...
+
+    @overload
+    def sum(self, *, axis: Literal[1], null_strategy: str = "ignore") -> "pli.Series":
+        ...
+
+    @overload
+    def sum(
+        self, *, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union["DataFrame", "pli.Series"]:
+        ...
+
+    def sum(
+        self, *, axis: int = 0, null_strategy: str = "ignore"
     ) -> Union["DataFrame", "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their sum value.
@@ -3425,6 +3491,22 @@ class DataFrame:
         if axis == 1:
             return pli.wrap_s(self._df.hsum(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
+
+    @overload
+    def mean(
+        self, *, axis: Literal[0] = ..., null_strategy: str = "ignore"
+    ) -> "DataFrame":
+        ...
+
+    @overload
+    def mean(self, *, axis: Literal[1], null_strategy: str = "ignore") -> "pli.Series":
+        ...
+
+    @overload
+    def mean(
+        self, *, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union["DataFrame", "pli.Series"]:
+        ...
 
     def mean(
         self, axis: int = 0, null_strategy: str = "ignore"
@@ -4136,20 +4218,24 @@ class GroupBy:
         └─────┴─────┘
 
         """
+
+        # a single list comprehension would be cleaner, but mypy complains on different
+        # lines for py3.7 vs py3.10 about typing errors, so this is the same logic,
+        # but broken down into two small functions
+        def _str_to_list(y: Any) -> Any:
+            return [y] if isinstance(y, str) else y
+
+        def _wrangle(x: Any) -> list:
+            return [(xi[0], _str_to_list(xi[1])) for xi in x]
+
         if isinstance(column_to_agg, pli.Expr):
             column_to_agg = [column_to_agg]
         if isinstance(column_to_agg, dict):
-            column_to_agg = [
-                (column, [agg] if isinstance(agg, str) else agg)
-                for (column, agg) in column_to_agg.items()
-            ]
+            column_to_agg = _wrangle(column_to_agg.items())
         elif isinstance(column_to_agg, list):
 
             if isinstance(column_to_agg[0], tuple):
-                column_to_agg = [  # type: ignore[misc]
-                    (column, [agg] if isinstance(agg, str) else agg)  # type: ignore[misc]
-                    for (column, agg) in column_to_agg
-                ]
+                column_to_agg = _wrangle(column_to_agg)
 
             elif isinstance(column_to_agg[0], pli.Expr):
                 return (

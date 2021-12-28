@@ -97,9 +97,6 @@ import pli from "../internals/polars_internal";
  * ╰───────────┴─────╯
  * ```
  */
-export function col(col: string): Expr
-export function col(col: string[]): Expr
-export function col(col: Series<string>): Expr
 export function col(col: string | string[] | Series<string>): Expr {
   if(Series.isSeries(col)) {
     col = col.toArray();
@@ -110,10 +107,12 @@ export function col(col: string | string[] | Series<string>): Expr {
     return Expr(pli.col({name: col}));
   }
 }
-export function cols(col1: string, ...cols: string[]): Expr {
-  cols.unshift(col1);
 
-  return col(cols);
+export function cols(col: string | string[]): Expr
+export function cols(col: string, ...cols: string[]): Expr
+export function cols(...cols): Expr {
+
+  return col(cols.flat());
 }
 
 export function lit(value: any): Expr {
@@ -131,28 +130,6 @@ export function lit(value: any): Expr {
 // ----------
 // Helper Functions
 // ------
-
-
-/**
- * Get the maximum value. Can be used horizontally or vertically.
- * @param column
- */
-// export function max(column: ColumnsOrExpr): Expr;
-// export function max<T>(column: Series<T>): number | bigint;
-// export function max(column) {}
-
-
-// export function fold<T>(
-//   acc: Expr,
-//   func: (curr:Series<T>, next: Series<T>) => Series<T>,
-//   exprs: ColumnsOrExpr
-// ): Expr {
-//   exprs = [exprs]
-//     .flat(3)
-//     .map(e => exprToLitOrExpr(e, false)._expr);
-
-//   return null as any;
-// }
 
 /**
  * __Create a range expression.__
@@ -241,7 +218,7 @@ export function concatString(opts, sep=",") {
 /** Count the number of values in this column. */
 export function count(column: string): Expr
 export function count(column: Series<any>): number
-export function count(column: string | Series<any>): Expr | number {
+export function count(column) {
   if(Series.isSeries(column)) {
     return column.len();
   } else {
@@ -264,8 +241,10 @@ export function cov(a: ExprOrString, b: ExprOrString): Expr {
  * >>> pl.col("*").exclude(columns)
  * ```
  */
-export function exclude(column: string, ...columns: string[]) {
-  return col("*").exclude(column, ...columns);
+export function exclude(columns: string[] | string)
+export function exclude(col: string, ...cols: string[]): Expr
+export function exclude(...columns): Expr {
+  return col("*").exclude(columns as any);
 }
 
 /** Get the first value. */
@@ -313,9 +292,7 @@ export function first<T>(column: string | Series<T>): Expr | T {
  * >>> pl.format`foo_${pl.col("a")}_bar_${"b"}`
  * ```
  */
-export function format(fstring: string, ...expr: ExprOrString[]): Expr
-export function format(strings: TemplateStringsArray, ...expr: ExprOrString[]): Expr
-export function format(strings, ...expr): Expr {
+export function format(strings: string | TemplateStringsArray, ...expr: ExprOrString[]): Expr {
   if(typeof strings === "string") {
     const s = strings.split("{}");
     if(s.length - 1 !== expr.length) {
@@ -324,12 +301,13 @@ export function format(strings, ...expr): Expr {
 
     return format(s as any, ...expr);
   }
-  const d = range(0, Math.max(strings.length, expr.length)).flatMap((i) => {
-    const sVal = strings[i] ? lit(strings[i]) : [];
-    const exprVal = expr[i] ? exprToLitOrExpr(expr[i], false) : [];
+  const d = range(0, Math.max(strings.length, expr.length))
+    .flatMap((i) => {
+      const sVal = strings[i] ? lit(strings[i]) : [];
+      const exprVal = expr[i] ? exprToLitOrExpr(expr[i], false) : [];
 
-    return [sVal, exprVal];
-  })
+      return [sVal, exprVal];
+    })
     .flat();
 
   return concatString(d, "");

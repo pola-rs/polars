@@ -3,7 +3,7 @@ use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
 use crate::prelude::JsResult;
 use napi::{
-    CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsString, JsUndefined,
+    CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsUndefined,
     JsUnknown,
 };
 use polars::frame::groupby::GroupBy;
@@ -15,8 +15,7 @@ impl IntoJs<JsExternal> for DataFrame {
     fn try_into_js(self, cx: &CallContext) -> JsResult<JsExternal> {
         cx.env.create_external(self, None)
     }
-  }
-
+}
 
 #[js_function(1)]
 pub(crate) fn add(cx: CallContext) -> JsResult<JsExternal> {
@@ -92,11 +91,13 @@ pub(crate) fn rechunk(cx: CallContext) -> JsResult<JsExternal> {
     df.try_into_js(&cx)
 }
 #[js_function(1)]
-pub(crate) fn as_str(cx: CallContext) -> JsResult<JsString> {
+pub(crate) fn as_str(cx: CallContext) -> JsResult<napi::JsBuffer> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
-    let s = format!("{:?}", df);
-    cx.env.create_string(&s)
+    let s: String = format!("{:?}", df);
+    let bytes = s.into_bytes();
+    let buff_val: napi::JsBufferValue = cx.env.create_buffer_with_data(bytes)?;
+    Ok(buff_val.into_raw())
 }
 
 #[js_function(1)]
@@ -737,8 +738,6 @@ pub fn lazy(cx: CallContext) -> JsResult<JsExternal> {
     df.clone().lazy().try_into_js(&cx)
 }
 
-
-
 fn finish_groupby(gb: GroupBy, agg: &str) -> Result<DataFrame> {
     match agg {
         "min" => gb.min(),
@@ -759,4 +758,3 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> Result<DataFrame> {
         )),
     }
 }
-

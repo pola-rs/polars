@@ -10,8 +10,8 @@ import polars as pl
 
 def test_from_pandas_datetime() -> None:
     ts = datetime.datetime(2021, 1, 1, 20, 20, 20, 20)
-    s = pd.Series([ts, ts])
-    tmp: pl.DataFrame = pl.from_pandas(s.to_frame("a"))  # type: ignore
+    pl_s = pd.Series([ts, ts])
+    tmp = pl.from_pandas(pl_s.to_frame("a"))
     s = tmp["a"]
     assert s.dt.hour()[0] == 20
     assert s.dt.minute()[0] == 20
@@ -108,7 +108,7 @@ def test_from_arrow() -> None:
 
     # if not a PyArrow type, raise a ValueError
     with pytest.raises(ValueError):
-        _ = pl.from_arrow([1, 2])  # type: ignore
+        _ = pl.from_arrow([1, 2])
 
 
 def test_from_pandas_dataframe() -> None:

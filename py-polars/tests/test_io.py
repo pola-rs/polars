@@ -48,7 +48,7 @@ def test_select_columns_and_projection_from_buffer() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
     for to_fn, from_fn in zip(
-        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]  # type: ignore
+        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
     ):
         f = io.BytesIO()
         to_fn(f)  # type: ignore
@@ -58,7 +58,7 @@ def test_select_columns_and_projection_from_buffer() -> None:
         assert df_1.frame_equal(expected)
 
     for to_fn, from_fn in zip(
-        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]  # type: ignore
+        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
     ):
         f = io.BytesIO()
         to_fn(f)  # type: ignore
@@ -335,6 +335,18 @@ def test_to_json() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert (
         df.to_json() == '{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]}'
+    )
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
+
+    out = df.to_json(row_oriented=True)
+    assert out == r"""[,{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]"""
+    out = df.to_json(json_lines=True)
+    assert (
+        out
+        == r"""{"a":1,"b":"a"}
+{"a":2,"b":"b"}
+{"a":3,"b":null}
+"""
     )
 
 

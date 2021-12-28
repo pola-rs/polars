@@ -218,11 +218,11 @@ def _pandas_series_to_arrow(
         arr = pa.compute.cast(arr, pa.int64())
         return pa.compute.cast(arr, pa.timestamp("ms"))
     elif dtype == "object" and len(values) > 0:
-        if isinstance(values.iloc[0], str):
+        if isinstance(values.values[0], str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
 
         # array is null array, we set to a float64 array
-        if values.iloc[0] is None and min_len is not None:
+        if values.values[0] is None and min_len is not None:
             return pa.nulls(min_len, pa.float64())
         else:
             return pa.array(values, from_pandas=nan_to_none)

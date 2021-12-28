@@ -3,6 +3,7 @@ use crate::csv_core::parser::{
     next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines,
 };
 use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::prelude::NullValues;
 use lazy_static::lazy_static;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
@@ -128,6 +129,7 @@ pub fn infer_file_schema(
     skip_rows: &mut usize,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
+    null_values: Option<&NullValues>,
 ) -> Result<(Schema, usize)> {
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
@@ -237,7 +239,33 @@ pub fn infer_file_schema(
                         slice
                     };
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                    column_types[i].insert(infer_field_schema(&s));
+                    match &null_values {
+                        None => {
+                            column_types[i].insert(infer_field_schema(&s));
+                        }
+                        Some(NullValues::Columns(names)) => {
+                            if !names.iter().any(|name| name == s.as_ref()) {
+                                column_types[i].insert(infer_field_schema(&s));
+                            }
+                        }
+                        Some(NullValues::AllColumns(name)) => {
+                            if s.as_ref() != name {
+                                column_types[i].insert(infer_field_schema(&s));
+                            }
+                        }
+                        Some(NullValues::Named(names)) => {
+                            let current_name = &headers[i];
+                            let null_name = &names.iter().find(|name| &name.0 == current_name);
+
+                            if let Some(null_name) = null_name {
+                                if null_name.1 != s.as_ref() {
+                                    column_types[i].insert(infer_field_schema(&s));
+                                }
+                            } else {
+                                column_types[i].insert(infer_field_schema(&s));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -293,6 +321,7 @@ pub fn infer_file_schema(
             skip_rows,
             comment_char,
             quote_char,
+            null_values,
         );
     }
 

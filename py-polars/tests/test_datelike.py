@@ -69,8 +69,6 @@ def test_timestamp() -> None:
     a = pl.Series("a", [a * 1000_000 for a in [10000, 20000, 30000]], dtype=pl.Datetime)
     assert a.dt.timestamp() == [10000, 20000, 30000]
     out = a.dt.to_python_datetime()
-    print(a.cast(int))
-    print(out)
     assert isinstance(out[0], datetime)
     assert a.dt.min() == out[0]
     assert a.dt.max() == out[2]

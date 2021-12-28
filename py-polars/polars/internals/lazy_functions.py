@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 from inspect import isclass
-from typing import Any, Callable, List, Optional, Sequence, Type, Union, overload
+from typing import Any, Callable, List, Optional, Sequence, Type, Union, cast, overload
 
 import numpy as np
 
@@ -126,8 +126,11 @@ def col(
     if isinstance(name, pli.Series):
         name = name.to_list()  # type: ignore
 
-    if isclass(name) and issubclass(name, DataType):  # type: ignore
-        name = [name]  # type: ignore
+    # note: we need the typing.cast call here twice to make mypy happy under Python 3.7
+    # On Python 3.10, it is not needed. We use cast as it works across versions, ignoring
+    # the typing error would lead to unneeded ignores under Python 3.10.
+    if isclass(name) and issubclass(cast(type, name), DataType):
+        name = [cast(type, name)]
 
     if isinstance(name, list):
         if len(name) == 0 or isinstance(name[0], str):
@@ -949,13 +952,13 @@ def _datetime(
     day_expr = pli.expr_to_lit_or_expr(day, str_to_lit=False)
 
     if hour is not None:
-        hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr  # type: ignore
+        hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr
     if minute is not None:
-        minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr  # type: ignore
+        minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr
     if second is not None:
-        second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr  # type: ignore
+        second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr
     if millisecond is not None:
-        millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr  # type: ignore
+        millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr
     return pli.wrap_expr(
         py_datetime(
             year_expr._pyexpr,

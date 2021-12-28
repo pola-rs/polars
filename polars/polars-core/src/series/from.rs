@@ -152,11 +152,11 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 Ok(UInt32Chunked::full_null(name, len).into_series())
             }
             #[cfg(not(feature = "dtype-categorical"))]
-            ArrowDataType::Dictionary(_, _) => {
+            ArrowDataType::Dictionary(_, _, _) => {
                 panic!("activate dtype-categorical to convert dictionary arrays")
             }
             #[cfg(feature = "dtype-categorical")]
-            ArrowDataType::Dictionary(key_type, value_type) => {
+            ArrowDataType::Dictionary(key_type, value_type, _) => {
                 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
                 use arrow::datatypes::IntegerType;
                 let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();

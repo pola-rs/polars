@@ -935,7 +935,7 @@ def test_abs() -> None:
     )
     testing.assert_series_equal(
         pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0])
-    )  # type: ignore
+    )
 
 
 def test_to_dummies() -> None:
@@ -1178,47 +1178,6 @@ def test_dt_datetimes() -> None:
         pl.Series("", [1_577_836_800_000, 1_580_613_610_000], dtype=Int64),
         "dt.epoch_milliseconds",
     )
-
-
-def test_compare_series_value_mismatch() -> None:
-    srs1 = pl.Series([1, 2, 3])
-    srs2 = pl.Series([2, 3, 4])
-    with pytest.raises(AssertionError, match="Series are different\n\nValue mismatch"):
-        testing.assert_series_equal(srs1, srs2)
-
-
-def test_compare_series_type_mismatch() -> None:
-    srs1 = pl.Series([1, 2, 3])
-    srs2 = pl.DataFrame({"col1": [2, 3, 4]})
-    with pytest.raises(AssertionError, match="Series are different\n\nType mismatch"):
-        testing.assert_series_equal(srs1, srs2)  # type: ignore
-
-    srs3 = pl.Series([1.0, 2.0, 3.0])
-    with pytest.raises(AssertionError, match="Series are different\n\nDtype mismatch"):
-        testing.assert_series_equal(srs1, srs3)
-
-
-def test_compare_series_name_mismatch() -> None:
-    srs1 = pl.Series(values=[1, 2, 3], name="srs1")
-    srs2 = pl.Series(values=[1, 2, 3], name="srs2")
-    with pytest.raises(AssertionError, match="Series are different\n\nName mismatch"):
-        testing.assert_series_equal(srs1, srs2)
-
-
-def test_compare_series_shape_mismatch() -> None:
-    srs1 = pl.Series(values=[1, 2, 3, 4], name="srs1")
-    srs2 = pl.Series(values=[1, 2, 3], name="srs2")
-    with pytest.raises(AssertionError, match="Series are different\n\nShape mismatch"):
-        testing.assert_series_equal(srs1, srs2)
-
-
-def test_compare_series_value_exact_mismatch() -> None:
-    srs1 = pl.Series([1.0, 2.0, 3.0])
-    srs2 = pl.Series([1.0, 2.0 + 1e-7, 3.0])
-    with pytest.raises(
-        AssertionError, match="Series are different\n\nExact value mismatch"
-    ):
-        testing.assert_series_equal(srs1, srs2, check_exact=True)
 
 
 def test_reshape() -> None:

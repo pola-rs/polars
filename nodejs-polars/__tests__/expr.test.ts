@@ -1,5 +1,5 @@
 import {df} from "./setup";
-import pl, {col, lit, quantile} from "@polars/index";
+import pl, {col, lit} from "@polars/index";
 
 describe("expr", () => {
   test("abs", () => {
@@ -254,6 +254,20 @@ describe("expr", () => {
     const actual = df.withColumn(lit(other).extend({value: null, n: 2}));
     expect(actual).toFrameEqual(expected);
   });
+  test("extend:positional", () => {
+    const df = pl.DataFrame({
+      a: [1, 2, 3, 4, 5],
+      b: [2, 3, 4, 5, 6]
+    });
+    const other = pl.Series("c", ["a", "b", "c"]);
+    const expected = pl.DataFrame({
+      a: [1, 2, 3, 4, 5],
+      b: [2, 3, 4, 5, 6],
+      c: ["a", "b", "c", "foo", "foo"]
+    });
+    const actual = df.withColumn(lit(other).extend("foo", 2));
+    expect(actual).toFrameEqual(expected);
+  });
   test.each`
   replacement | filled
   ${lit(1)} | ${1}
@@ -346,7 +360,7 @@ describe("expr", () => {
   test.each`
   args       | hashValue
   ${[0]}     | ${6340063056640878722n}
-  ${[1n, 1]} | ${9788354747012366704n}
+  ${[{k0: 1n, k1: 1}]} | ${9788354747012366704n}
   `("$# hash", ({args, hashValue}) => {
     const df = pl.DataFrame({"a": [1]});
     const expected = pl.DataFrame({"hash": [hashValue]});
@@ -826,7 +840,7 @@ describe("expr", () => {
     const actual = df.withColumns(
       col("a")
         .cast(pl.UInt64)
-        .rollingSkew({windowSize: 4})
+        .rollingSkew(4)
         .cast(pl.Utf8) // casted to string to retain precision when extracting to JS
         .as("bias_true"),
       col("a")
@@ -1377,7 +1391,68 @@ describe("expr.str", () => {
     expect(actual).toFrameEqual(expected);
     expect(seriesActual).toFrameEqual(expected);
   });
-
+  test("rstrip", () => {
+    const df = pl.DataFrame({
+      "os": [
+        "Kali-Linux    ",
+        "Debian-Linux    ",
+        "Ubuntu-Linux    ",
+        "Mac-Sierra"
+      ]
+    });
+    const expected = pl.DataFrame({
+      "os": [
+        "Kali-Linux",
+        "Debian-Linux",
+        "Ubuntu-Linux",
+        "Mac-Sierra"
+      ]
+    });
+    const seriesActual = df.getColumn("os")
+      .str
+      .rstrip()
+      .rename("os")
+      .toFrame();
+    const actual = df.select(
+      col("os")
+        .str
+        .rstrip()
+        .as("os")
+    );
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+  test("lstrip", () => {
+    const df = pl.DataFrame({
+      "os": [
+        "    Kali-Linux",
+        "       Debian-Linux",
+        "  Ubuntu-Linux",
+        "Mac-Sierra"
+      ]
+    });
+    const expected = pl.DataFrame({
+      "os": [
+        "Kali-Linux",
+        "Debian-Linux",
+        "Ubuntu-Linux",
+        "Mac-Sierra"
+      ]
+    });
+    const seriesActual = df.getColumn("os")
+      .str
+      .lstrip()
+      .rename("os")
+      .toFrame();
+    const actual = df.select(
+      col("os")
+        .str
+        .lstrip()
+        .as("os")
+    );
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
 });
 describe("expr.lst", () => {
   test("get", () => {
@@ -1661,5 +1736,15 @@ describe("expr.dt", () => {
     ]);
     expect(actual).toFrameEqual(expected);
     expect(actualFromSeries).toFrameEqual(expected);
+  });
+});
+describe("expr metadata", () => {
+  test("inspect & toString", () => {
+    const expr = lit("foo");
+    const expected = "Utf8(foo)";
+    const actualInspect = expr[Symbol.for("nodejs.util.inspect.custom")]();
+    const exprString = expr.toString();
+    expect(actualInspect).toStrictEqual(expected);
+    expect(exprString).toStrictEqual(expected);
   });
 });
