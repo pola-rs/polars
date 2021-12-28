@@ -929,7 +929,7 @@ def test_abs() -> None:
     )
     testing.assert_series_equal(
         pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0])
-    )  # type: ignore
+    )
 
 
 def test_to_dummies() -> None:

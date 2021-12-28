@@ -23,6 +23,8 @@ profile = "black"
 
 [tool.mypy]
 disallow_untyped_defs = true
+warn_unused_ignores = true
+show_error_codes = true
 files = ["polars", "tests"]
 
 [[tool.mypy.overrides]]

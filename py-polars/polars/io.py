@@ -292,9 +292,9 @@ def read_csv(
             if not has_header:
                 # Convert 'column_1', 'column_2', ... column names to 'f0', 'f1', ... column names for pyarrow,
                 # if CSV file does not contain a header.
-                include_columns = [f"f{int(column[7:]) - 1}" for column in columns]  # type: ignore
+                include_columns = [f"f{int(column[7:]) - 1}" for column in columns]
             else:
-                include_columns = columns  # type: ignore
+                include_columns = columns
 
         if not columns and projection:
             # Convert column indices from projection to 'f0', 'f1', ... column names for pyarrow.

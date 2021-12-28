@@ -743,8 +743,8 @@ def test_from_pandas_nan_to_none() -> None:
             "nulls": [None, np.nan, np.nan],
         }
     )
-    out_true: pl.DataFrame = pl.from_pandas(df)  # type: ignore
-    out_false: pl.DataFrame = pl.from_pandas(df, nan_to_none=False)  # type: ignore
+    out_true = pl.from_pandas(df)
+    out_false = pl.from_pandas(df, nan_to_none=False)
     df.loc[2, "nulls"] = pd.NA
     assert all(val is None for val in out_true["nulls"])
     assert all(np.isnan(val) for val in out_false["nulls"][1:])
@@ -785,7 +785,7 @@ def test_concat() -> None:
     assert a.shape == (2, 2)
 
     with pytest.raises(ValueError):
-        _ = pl.concat([])  # type: ignore
+        _ = pl.concat([])
 
     with pytest.raises(ValueError):
         pl.concat([df, df], how="rubbish")
@@ -1059,8 +1059,7 @@ def test_rename(df: pl.DataFrame) -> None:
 def test_to_json(df: pl.DataFrame) -> None:
     # text based conversion loses time info
     df = df.select(pl.all().exclude(["cat", "time"]))
-    s: str = df.to_json(to_string=True)  # type: ignore
-    # TODO add overload on to_json()
+    s = df.to_json(to_string=True)
     out = pl.read_json(s)
     assert df.frame_equal(out, null_equal=True)
 
@@ -1124,7 +1123,7 @@ def test_join_dates() -> None:
     )
     dts = (
         pl.from_pandas(date_times)
-        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))  # type: ignore
+        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
         .cast(pl.Datetime)
     )
 

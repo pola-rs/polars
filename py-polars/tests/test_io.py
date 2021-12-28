@@ -48,7 +48,7 @@ def test_select_columns_and_projection_from_buffer() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
     for to_fn, from_fn in zip(
-        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]  # type: ignore
+        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
     ):
         f = io.BytesIO()
         to_fn(f)  # type: ignore
@@ -58,7 +58,7 @@ def test_select_columns_and_projection_from_buffer() -> None:
         assert df_1.frame_equal(expected)
 
     for to_fn, from_fn in zip(
-        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]  # type: ignore
+        [df.to_parquet, df.to_ipc], [pl.read_parquet, pl.read_ipc]
     ):
         f = io.BytesIO()
         to_fn(f)  # type: ignore

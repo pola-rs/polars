@@ -3531,7 +3531,7 @@ class ListNameSpace:
         names.insert(0, s.name)
         df = pli.DataFrame(other)
         df.insert_at_idx(0, s)
-        return df.select(pli.concat_list(names))[s.name]  # type: ignore
+        return df.select(pli.concat_list(names))[s.name]
 
     def get(self, index: int) -> "Series":
         """
