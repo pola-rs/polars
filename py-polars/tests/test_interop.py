@@ -108,7 +108,7 @@ def test_from_arrow() -> None:
 
     # if not a PyArrow type, raise a ValueError
     with pytest.raises(ValueError):
-        _ = pl.from_arrow([1, 2])  # type: ignore
+        _ = pl.from_arrow([1, 2])
 
 
 def test_from_pandas_dataframe() -> None:

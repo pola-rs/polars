@@ -1148,7 +1148,7 @@ class DataFrame:
     # __getitem__() mostly returns a dataframe. The major exception is when a string is passed in. Note that there are
     # more subtle cases possible where a non-string value leads to a Series.
     @overload
-    def __getitem__(self, item: str) -> "pli.Series":  # type: ignore
+    def __getitem__(self, item: str) -> "pli.Series":
         ...
 
     @overload
@@ -1246,7 +1246,7 @@ class DataFrame:
                     series_list = [self.to_series(i) for i in col_selection]
                     df = DataFrame(series_list)
                     return df[row_selection]
-            df = self.__getitem__(col_selection)  # type: ignore
+            df = self.__getitem__(col_selection)
             return df.__getitem__(row_selection)
 
         # select single column
@@ -1266,7 +1266,7 @@ class DataFrame:
         if isinstance(item, slice):
             # special case df[::-1]
             if item.start is None and item.stop is None and item.step == -1:
-                return self.select(pli.col("*").reverse())  # type: ignore
+                return self.select(pli.col("*").reverse())
 
             if getattr(item, "end", False):
                 raise ValueError("A slice with steps larger than 1 is not supported.")
@@ -1286,7 +1286,7 @@ class DataFrame:
             else:
                 # df[start:stop:step]
                 return self.select(
-                    pli.col("*").slice(start, length).take_every(item.step)  # type: ignore
+                    pli.col("*").slice(start, length).take_every(item.step)
                 )
 
         # select rows by numpy mask or index
@@ -1717,10 +1717,10 @@ class DataFrame:
                 describe_cast(self.median()),
             ]
         )
-        summary.insert_at_idx(  # type: ignore
+        summary.insert_at_idx(
             0, pli.Series("describe", ["mean", "std", "min", "max", "median"])
         )
-        return summary  # type: ignore
+        return summary
 
     def replace_at_idx(self, index: int, series: "pli.Series") -> None:
         """
@@ -4147,7 +4147,7 @@ class GroupBy:
 
             if isinstance(column_to_agg[0], tuple):
                 column_to_agg = [  # type: ignore[misc]
-                    (column, [agg] if isinstance(agg, str) else agg)  # type: ignore[misc]
+                    (column, [agg] if isinstance(agg, str) else agg)
                     for (column, agg) in column_to_agg
                 ]
 

@@ -785,7 +785,7 @@ def test_concat() -> None:
     assert a.shape == (2, 2)
 
     with pytest.raises(ValueError):
-        _ = pl.concat([])  # type: ignore
+        _ = pl.concat([])
 
     with pytest.raises(ValueError):
         pl.concat([df, df], how="rubbish")
@@ -1059,8 +1059,7 @@ def test_rename(df: pl.DataFrame) -> None:
 def test_to_json(df: pl.DataFrame) -> None:
     # text based conversion loses time info
     df = df.select(pl.all().exclude(["cat", "time"]))
-    s: str = df.to_json(to_string=True)  # type: ignore
-    # TODO add overload on to_json()
+    s = df.to_json(to_string=True)
     out = pl.read_json(s)
     assert df.frame_equal(out, null_equal=True)
 

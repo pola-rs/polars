@@ -126,8 +126,8 @@ def col(
     if isinstance(name, pli.Series):
         name = name.to_list()  # type: ignore
 
-    if isclass(name) and issubclass(name, DataType):  # type: ignore
-        name = [name]  # type: ignore
+    if isclass(name) and issubclass(name, DataType):
+        name = [name]
 
     if isinstance(name, list):
         if len(name) == 0 or isinstance(name[0], str):
@@ -949,13 +949,13 @@ def _datetime(
     day_expr = pli.expr_to_lit_or_expr(day, str_to_lit=False)
 
     if hour is not None:
-        hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr  # type: ignore
+        hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr
     if minute is not None:
-        minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr  # type: ignore
+        minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr
     if second is not None:
-        second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr  # type: ignore
+        second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr
     if millisecond is not None:
-        millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr  # type: ignore
+        millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr
     return pli.wrap_expr(
         py_datetime(
             year_expr._pyexpr,
