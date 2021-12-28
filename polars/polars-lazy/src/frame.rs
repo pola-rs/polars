@@ -172,6 +172,7 @@ impl<'a> LazyCsvReader<'a> {
             &mut self.skip_rows,
             self.comment_char,
             self.quote_char,
+            None,
         )?;
         let schema = f(schema)?;
         Ok(self.with_schema(Arc::new(schema)))
