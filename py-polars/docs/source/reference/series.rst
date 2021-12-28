@@ -115,6 +115,7 @@ Computations
     Series.abs
     Series.rank
     Series.diff
+    Series.pct_change
     Series.skew
     Series.kurtosis
     Series.sqrt

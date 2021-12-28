@@ -1672,6 +1672,19 @@ impl Expr {
         )
     }
 
+    #[cfg(feature = "pct_change")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "pct_change")))]
+    pub fn pct_change(self, n: usize) -> Expr {
+        use DataType::*;
+        self.apply(
+            move |s| s.pct_change(n),
+            GetOutput::map_dtype(|dt| match dt {
+                Float64 | Float32 => dt.clone(),
+                _ => Float64,
+            }),
+        )
+    }
+
     #[cfg(feature = "moment")]
     #[cfg_attr(docsrs, doc(cfg(feature = "moment")))]
     pub fn skew(self, bias: bool) -> Expr {

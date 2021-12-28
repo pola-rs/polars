@@ -666,6 +666,12 @@ def test_diff_dispatch() -> None:
     )
 
 
+def test_pct_change_dispatch() -> None:
+    s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
+    expected = pl.Series("a", [None, None, float("inf"), 3.0, 3.0, 3.0, 3.0])
+    verify_series_and_expr_api(s, expected, "pct_change", 2)
+
+
 def test_skew_dispatch() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 

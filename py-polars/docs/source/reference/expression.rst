@@ -141,6 +141,7 @@ Computations
     Expr.abs
     Expr.rank
     Expr.diff
+    Expr.pct_change
     Expr.skew
     Expr.kurtosis
     Expr.sqrt

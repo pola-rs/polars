@@ -1794,6 +1794,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.diff(n, null_behavior))
 
+    def pct_change(self, n: int = 1) -> "Expr":
+        """
+        Percentage change (as fraction) between current element and most-recent
+        non-null element at least n period(s) before the current element.
+
+        Computes the change from the previous row by default.
+
+        Parameters
+        ----------
+        n
+            periods to shift for forming percent change.
+        """
+        return wrap_expr(self._pyexpr.pct_change(n))
+
     def skew(self, bias: bool = True) -> "Expr":
         r"""Compute the sample skewness of a data set.
         For normally distributed data, the skewness should be about zero. For

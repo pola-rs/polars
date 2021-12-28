@@ -2976,6 +2976,52 @@ class Series:
         """
         return wrap_s(self._s.diff(n, null_behavior))
 
+    def pct_change(self, n: int = 1) -> "Series":
+        """
+        Percentage change (as fraction) between current element and most-recent
+        non-null element at least n period(s) before the current element.
+
+        Computes the change from the previous row by default.
+
+        Parameters
+        ----------
+        n
+            periods to shift for forming percent change.
+
+        >>> pl.Series(range(10)).pct_change()
+        shape: (10,)
+        Series: '' [f64]
+        [
+            null
+            inf
+            1
+            0.5
+            0.3333333333333333
+            0.25
+            0.2
+            0.16666666666666666
+            0.14285714285714285
+            0.125
+        ]
+
+        >>> pl.Series([1, 2, 4, 8, 16, 32, 64, 128, 256, 512]).pct_change(2)
+        shape: (10,)
+        Series: '' [f64]
+        [
+            null
+            null
+            3
+            3
+            3
+            3
+            3
+            3
+            3
+            3
+        ]
+        """
+        return self.to_frame().select(pli.col(self.name).pct_change(n)).to_series()
+
     def skew(self, bias: bool = True) -> Optional[float]:
         r"""Compute the sample skewness of a data set.
         For normally distributed data, the skewness should be about zero. For
