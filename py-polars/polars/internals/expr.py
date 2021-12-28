@@ -1797,7 +1797,7 @@ class Expr:
     def pct_change(self, n: int = 1) -> "Expr":
         """
         Percentage change (as fraction) between current element and most-recent
-        non-null element n or more periods before.
+        non-null element at least n period(s) before the current element.
 
         Computes the change from the previous row by default.
 
