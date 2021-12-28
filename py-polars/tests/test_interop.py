@@ -10,8 +10,8 @@ import polars as pl
 
 def test_from_pandas_datetime() -> None:
     ts = datetime.datetime(2021, 1, 1, 20, 20, 20, 20)
-    s = pd.Series([ts, ts])
-    tmp: pl.DataFrame = pl.from_pandas(s.to_frame("a"))  # type: ignore
+    pl_s = pd.Series([ts, ts])
+    tmp = pl.from_pandas(pl_s.to_frame("a"))
     s = tmp["a"]
     assert s.dt.hour()[0] == 20
     assert s.dt.minute()[0] == 20
