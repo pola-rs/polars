@@ -3,12 +3,6 @@ use crate::prelude::*;
 
 pub type DatetimeChunked = Logical<DatetimeType, Int64Type>;
 
-impl From<Int64Chunked> for DatetimeChunked {
-    fn from(ca: Int64Chunked) -> Self {
-        DatetimeChunked::new(ca)
-    }
-}
-
 impl Int64Chunked {
     pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> DatetimeChunked {
         let mut dt = DatetimeChunked::new(self);

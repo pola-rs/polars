@@ -233,6 +233,6 @@ impl Utf8Chunked {
                 .collect_trusted(),
         };
         ca.rename(self.name());
-        Ok(ca.into())
+        Ok(ca.into_datetime(tu, None))
     }
 }
