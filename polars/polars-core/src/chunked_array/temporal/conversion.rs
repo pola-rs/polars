@@ -3,7 +3,7 @@ use crate::prelude::{AnyValue, TimeUnit};
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, MILLISECONDS, NANOSECONDS,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, MILLISECONDS,
 };
 use polars_time::export::chrono::{NaiveDateTime, NaiveTime};
 

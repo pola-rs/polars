@@ -12,10 +12,7 @@ impl DatetimeChunked {
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         };
         self.downcast_iter()
-            .map(move |iter| {
-                iter.into_iter()
-                    .map(move |opt_v| opt_v.copied().map(|v| func(v)))
-            })
+            .map(move |iter| iter.into_iter().map(move |opt_v| opt_v.copied().map(func)))
             .flatten()
             .trust_my_length(self.len())
     }

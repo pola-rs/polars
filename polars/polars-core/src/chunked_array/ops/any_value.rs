@@ -48,7 +48,7 @@ unsafe fn arr_to_any_value<'a>(
         DataType::Date => downcast_and_pack!(Int32Array, Date),
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => {
-            let ts: i64 = downcast!(Int64Array).into();
+            let ts: i64 = downcast!(Int64Array);
             AnyValue::Datetime(ts, *tu, tz)
         }
         DataType::List(dt) => {

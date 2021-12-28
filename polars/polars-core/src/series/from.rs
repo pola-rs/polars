@@ -3,7 +3,9 @@ use crate::chunked_array::cast::cast_chunks;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;
-use arrow::temporal_conversions::{MILLISECONDS, NANOSECONDS};
+use arrow::temporal_conversions::MILLISECONDS;
+#[cfg(feature = "dtype-time")]
+use arrow::temporal_conversions::NANOSECONDS;
 use polars_arrow::compute::cast::cast;
 use std::convert::TryFrom;
 

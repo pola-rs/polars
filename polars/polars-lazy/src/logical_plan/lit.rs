@@ -140,7 +140,10 @@ impl Literal for NaiveDateTime {
 #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::DateTime(self.and_hms(0, 0, 0), TimeUnit::Milliseconds))
+        Expr::Literal(LiteralValue::DateTime(
+            self.and_hms(0, 0, 0),
+            TimeUnit::Milliseconds,
+        ))
     }
 }
 

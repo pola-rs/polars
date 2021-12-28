@@ -3,9 +3,7 @@ use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
 use crate::chunked_array::{
-    comparison::*,
-    ops::{explode::ExplodeByOffsets, ToBitRepr},
-    AsSinglePtr, ChunkIdIter,
+    comparison::*, ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
 #[cfg(feature = "pivot")]
@@ -77,7 +75,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
         let other = other.to_physical_repr().into_owned();
-        self.0.zip_with(mask, &other.as_ref().as_ref()).map(|ca| {
+        self.0.zip_with(mask, other.as_ref().as_ref()).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
         })
@@ -196,15 +194,15 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
     fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
         let other = other.to_physical_repr().into_owned();
-        self.0.hash_join_inner(&other.as_ref().as_ref())
+        self.0.hash_join_inner(other.as_ref().as_ref())
     }
     fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
         let other = other.to_physical_repr().into_owned();
-        self.0.hash_join_left(&other.as_ref().as_ref())
+        self.0.hash_join_left(other.as_ref().as_ref())
     }
     fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
         let other = other.to_physical_repr().into_owned();
-        self.0.hash_join_outer(&other.as_ref().as_ref())
+        self.0.hash_join_outer(other.as_ref().as_ref())
     }
     fn zip_outer_join_column(
         &self,
@@ -300,34 +298,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn time(&self) -> Result<&TimeChunked> {
-        if matches!(self.0.dtype(), DataType::Time) {
-            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const TimeChunked)) }
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot unpack Series: {:?} of type {:?} into Time",
-                    self.name(),
-                    self.dtype(),
-                )
-                .into(),
-            ))
-        }
-    }
-
-    fn date(&self) -> Result<&DateChunked> {
-        if matches!(self.0.dtype(), DataType::Date) {
-            unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DateChunked)) }
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot unpack Series: {:?} of type {:?} into Date",
-                    self.name(),
-                    self.dtype(),
-                )
-                .into(),
-            ))
-        }
+    fn datetime(&self) -> Result<&DatetimeChunked> {
+        unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DatetimeChunked)) }
     }
 
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
@@ -448,7 +420,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        const NS_IN_DAY: i64 = 86400000_000_000;
+        const NS_IN_DAY: i64 = 86_400_000_000_000;
         const MS_IN_DAY: i64 = 86400000;
         use DataType::*;
         let ca = match (self.dtype(), data_type) {
@@ -580,7 +552,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap()
-            .into()
     }
     fn max_as_series(&self) -> Series {
         self.0
@@ -596,25 +567,21 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap()
-            .into()
     }
     fn median_as_series(&self) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap()
-            .into()
     }
     fn var_as_series(&self) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap()
-            .into()
     }
     fn std_as_series(&self) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap()
-            .into()
     }
     fn quantile_as_series(
         &self,
@@ -623,8 +590,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     ) -> Result<Series> {
         Ok(Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
-            .unwrap()
-            .into())
+            .unwrap())
     }
 
     fn fmt_list(&self) -> String {

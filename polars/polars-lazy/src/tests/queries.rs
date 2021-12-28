@@ -976,7 +976,9 @@ fn test_lazy_groupby_cast() {
     let _out = df
         .lazy()
         .groupby([col("a")])
-        .agg([col("b").mean().cast(DataType::Datetime(TimeUnit::Nanoseconds, None))])
+        .agg([col("b")
+            .mean()
+            .cast(DataType::Datetime(TimeUnit::Nanoseconds, None))])
         .collect()
         .unwrap();
 }

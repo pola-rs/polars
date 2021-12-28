@@ -18,7 +18,9 @@ pub struct Logical<K: PolarsDataType, T: PolarsDataType>(
 
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
-        Logical::<K, _>::new(self.0.clone())
+        let mut new = Logical::<K, _>::new(self.0.clone());
+        new.2 = self.2.clone();
+        new
     }
 }
 
