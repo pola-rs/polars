@@ -94,7 +94,6 @@ export type JoinOptions = {
   suffix?: string;
 };
 export type WriteCsvOptions = {
-  dest?: string | Stream;
   hasHeader?: boolean;
   sep?: string;
 };

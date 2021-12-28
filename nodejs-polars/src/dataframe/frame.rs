@@ -1,18 +1,13 @@
 use crate::conversion::prelude::*;
 use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
-use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
 use napi::{
     CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsString, JsUndefined,
     JsUnknown,
 };
 use polars::frame::groupby::GroupBy;
-use polars::frame::row::{rows_to_schema, Row};
 use polars::prelude::*;
-use std::fs::File;
-use std::io::{BufReader, Cursor};
-use std::path::{Path, PathBuf};
 
 pub struct JsDataFrame {}
 
@@ -742,20 +737,7 @@ pub fn lazy(cx: CallContext) -> JsResult<JsExternal> {
     df.clone().lazy().try_into_js(&cx)
 }
 
-pub (crate) fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
-    let schema = rows_to_schema(&rows);
-    let fields = schema
-        .fields()
-        .iter()
-        .map(|fld| match fld.data_type() {
-            DataType::Null => Field::new(fld.name(), DataType::Boolean),
-            _ => fld.clone(),
-        })
-        .collect();
-    let schema = Schema::new(fields);
 
-    DataFrame::from_rows_and_schema(&rows, &schema).map_err(|err| JsPolarsEr::from(err).into())
-}
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> Result<DataFrame> {
     match agg {
@@ -778,13 +760,3 @@ fn finish_groupby(gb: GroupBy, agg: &str) -> Result<DataFrame> {
     }
 }
 
-pub fn resolve_homedir(path: &Path) -> PathBuf {
-    // replace "~" with home directory
-    if path.starts_with("~") {
-        if let Some(homedir) = dirs::home_dir() {
-            return homedir.join(path.strip_prefix("~").unwrap());
-        }
-    }
-
-    path.into()
-}

@@ -4,9 +4,8 @@ import {GroupBy} from "./groupby";
 import {LazyDataFrame} from "./lazy/dataframe";
 import {concat} from "./functions";
 import {Expr} from "./lazy/expr";
-import {todo} from "./error";
 import {Series, seriesWrapper} from "./series";
-import {Stream} from "stream";
+import {Stream, Writable} from "stream";
 import {isExternal} from "util/types";
 
 import {
@@ -1007,7 +1006,7 @@ export interface DataFrame {
    * 3,8,c
    *
    * // using a file path
-   * >>> df.head(1).toCSV({dest: "./foo.csv"})
+   * >>> df.head(1).toCSV("./foo.csv")
    * // foo.csv
    * foo,bar,ham
    * 1,6,a
@@ -1019,19 +1018,18 @@ export interface DataFrame {
    * >>>     callback(null);
    * >>>   }
    * >>> });
-   * >>> df.head(1).toCSV({dest: writeStream, hasHeader: false})
+   * >>> df.head(1).toCSV(writeStream, {hasHeader: false})
    * writeStream: '1,6,a'
    * ```
    */
   toCSV(): string;
   toCSV(options: WriteCsvOptions): string;
-  toCSV(dest: string | Stream): void;
-  toCSV(dest: string | Stream, options: WriteCsvOptions): void;
+  toCSV(dest: string | Writable, options?: WriteCsvOptions): void;
   toJS(): object
   toJS(options: {orient: "row" | "col" | "literal"}): object
   toJSON(): string
   toJSON(options: {orient: "row" | "col" | "literal"}): string
-  toJSON(dest: string | Stream, options?: {orient: "row" | "col" | "literal"}): void
+  toJSON(dest: string | Writable, options?: {orient: "row" | "col" | "literal"}): void
   toSeries(index: number): Series<any>
   toString(): string
   /**
@@ -1452,17 +1450,18 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return wrap("sum");
     },
     tail: (length=5) => wrap("tail", {length}),
-    toCSV(dest?: string | Stream | WriteCsvOptions, options?: WriteCsvOptions): any {
+    toCSV(dest?, options?) {
       options = { hasHeader:true, sep: ",", ...options};
 
-      if(dest instanceof Stream.Writable) {
+      if(dest instanceof Writable) {
         unwrap("write_csv_stream", {writeStream: dest, ...options});
+
         dest.end("");
 
       } else if (typeof dest === "string") {
-        unwrap("write_csv", {path: dest, ...options});
+        unwrap("write_csv_path", {path: dest, ...options});
 
-      } else if (!dest || (dest.constructor.name === "Object" && !dest["dest"])) {
+      } else {
         let body = "";
         const writeStream = new Stream.Writable({
           write(chunk, _encoding, callback) {
@@ -1474,8 +1473,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         writeStream.end("");
 
         return body;
-      } else {
-        throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
       }
     },
     toJS(options?) {
@@ -1515,7 +1512,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       if(dest instanceof Stream.Writable) {
         unwrap("write_json_stream", {writeStream: dest});
       } else if (typeof dest === "string" && dest.length) {
-        unwrap("write_json", {path: dest});
+        unwrap("write_json_path", {path: dest});
       } else if (!dest) {
         let body = "";
         const writeStream = new Stream.Writable({
@@ -1529,7 +1526,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return body;
       } else {
 
-        throw new TypeError("unknown destination type, Supported types are 'string' and 'Stream.Writeable'");
+        throw new TypeError("unknown destination type, Supported types are 'string' and 'Writeable'");
       }
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
