@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 from inspect import isclass
-from typing import Any, Callable, List, Optional, Sequence, Type, Union, overload
+from typing import Any, Callable, List, Optional, Sequence, Type, Union, cast, overload
 
 import numpy as np
 
@@ -126,8 +126,11 @@ def col(
     if isinstance(name, pli.Series):
         name = name.to_list()  # type: ignore
 
-    if isinstance(name, DataType):
-        name = [name]
+    # note: we need the typing.cast call here twice to make mypy happy under Python 3.7
+    # On Python 3.10, it is not needed. We use cast as it works across versions, ignoring
+    # the typing error would lead to unneeded ignores under Python 3.10.
+    if isclass(name) and issubclass(cast(type, name), DataType):
+        name = [cast(type, name)]
 
     if isinstance(name, list):
         if len(name) == 0 or isinstance(name[0], str):
