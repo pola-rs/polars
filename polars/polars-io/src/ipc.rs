@@ -248,6 +248,7 @@ where
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             &df.schema().to_arrow(),
+            None,
             WriteOptions {
                 compression: self.compression,
             },
@@ -256,7 +257,7 @@ where
         let iter = df.iter_record_batches();
 
         for batch in iter {
-            ipc_writer.write(&batch)?
+            ipc_writer.write(&batch, None)?
         }
         let _ = ipc_writer.finish()?;
         Ok(())

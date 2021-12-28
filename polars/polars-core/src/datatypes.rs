@@ -781,6 +781,7 @@ impl Schema {
                         ArrowDataType::Dictionary(
                             IntegerType::UInt32,
                             Box::new(ArrowDataType::LargeUtf8),
+                            false,
                         ),
                         true,
                     ),
@@ -846,7 +847,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Utf8 => DataType::Utf8,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
-            ArrowDataType::Dictionary(_, _) => DataType::Categorical,
+            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical,
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {
@@ -944,15 +945,23 @@ mod test {
                 DataType::List(DataType::Float64.into()),
             ),
             (
-                ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into()),
+                ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
                 DataType::Categorical,
             ),
             (
-                ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::LargeUtf8.into()),
+                ArrowDataType::Dictionary(
+                    IntegerType::UInt32,
+                    ArrowDataType::LargeUtf8.into(),
+                    false,
+                ),
                 DataType::Categorical,
             ),
             (
-                ArrowDataType::Dictionary(IntegerType::UInt64, ArrowDataType::LargeUtf8.into()),
+                ArrowDataType::Dictionary(
+                    IntegerType::UInt64,
+                    ArrowDataType::LargeUtf8.into(),
+                    false,
+                ),
                 DataType::Categorical,
             ),
         ];
