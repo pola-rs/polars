@@ -2104,8 +2104,8 @@ class Expr:
 
     def ewm_mean(
         self,
-        com: Optional[float] = None,
         span: Optional[float] = None,
+        com: Optional[float] = None,
         half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
@@ -2116,10 +2116,10 @@ class Expr:
 
         Parameters
         ----------
-        com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
             Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         half_life
             Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
@@ -2133,13 +2133,13 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
 
     def ewm_std(
         self,
-        com: Optional[float] = None,
         span: Optional[float] = None,
+        com: Optional[float] = None,
         half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
@@ -2150,10 +2150,10 @@ class Expr:
 
         Parameters
         ----------
-        com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
             Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         half_life
             Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
@@ -2167,13 +2167,13 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
 
     def ewm_var(
         self,
-        com: Optional[float] = None,
         span: Optional[float] = None,
+        com: Optional[float] = None,
         half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
@@ -2184,10 +2184,10 @@ class Expr:
 
         Parameters
         ----------
-        com
-            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         span
             Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
         half_life
             Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
@@ -2201,7 +2201,7 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
 
     def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Expr":
@@ -2908,14 +2908,13 @@ def _prepare_alpha(
     half_life: Optional[float] = None,
     alpha: Optional[float] = None,
 ) -> float:
-
-    if com is not None and alpha is not None:
+    if com is not None and alpha is None:
         assert com >= 0.0
         alpha = 1.0 / (1.0 + com)
-    if span is not None and alpha is not None:
+    if span is not None and alpha is None:
         assert span >= 1.0
         alpha = 2.0 / (span + 1.0)
-    if half_life is not None and alpha is not None:
+    if half_life is not None and alpha is None:
         assert half_life > 0.0
         alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
     if alpha is None:
