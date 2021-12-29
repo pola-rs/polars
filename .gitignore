@@ -11,3 +11,4 @@ polars/vendor
 .env
 AUTO_CHANGELOG.md
 node_modules/
+.coverage

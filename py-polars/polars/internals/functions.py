@@ -188,7 +188,7 @@ def date_range(
     >>> from datetime import datetime
     >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), "1d12h")
     shape: (7426,)
-    Series: '' [datetime]
+    Series: '' [datetime[ns]]
     [
         1985-01-01 00:00:00
         1985-01-02 12:00:00

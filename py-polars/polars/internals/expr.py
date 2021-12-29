@@ -2615,7 +2615,7 @@ class ExprDateTimeNameSpace:
         >>> s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
         >>> s
         shape: (49,)
-        Series: 'dates' [datetime]
+        Series: 'dates' [datetime[ns]]
         [
             2001-01-01 00:00:00
             2001-01-01 00:30:00
@@ -2645,7 +2645,7 @@ class ExprDateTimeNameSpace:
         ]
         >>> s.dt.truncate("1h")
         shape: (49,)
-        Series: 'dates' [datetime]
+        Series: 'dates' [datetime[ns]]
         [
             2001-01-01 00:00:00
             2001-01-01 00:00:00
