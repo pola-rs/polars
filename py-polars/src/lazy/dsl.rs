@@ -8,6 +8,7 @@ use crate::utils::{reinterpret, str_to_polarstype};
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
+use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
@@ -816,14 +817,26 @@ impl PyExpr {
         self.inner.clone().rolling_var(options).into()
     }
 
-    pub fn rolling_median(&self, window_size: usize) -> Self {
+    pub fn rolling_median(&self, window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,) -> Self {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
         self.inner
             .clone()
-            .rolling_apply_float(window_size, |ca| ChunkAgg::median(ca))
+            .rolling_median(options)
             .into()
     }
 
-    pub fn rolling_quantile(&self, window_size: usize, quantile: f64, interpolation: &str) -> Self {
+    pub fn rolling_quantile(&self, quantile: f64, interpolation: &str, window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,) -> Self {
         let interpol = match interpolation {
             "nearest" => QuantileInterpolOptions::Nearest,
             "lower" => QuantileInterpolOptions::Lower,
@@ -832,12 +845,17 @@ impl PyExpr {
             "linear" => QuantileInterpolOptions::Linear,
             _ => panic!("not supported"),
         };
+        
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
 
         self.inner
             .clone()
-            .rolling_apply_float(window_size, move |ca| {
-                ChunkAgg::quantile(ca, quantile, interpol).unwrap()
-            })
+            .rolling_quantile(quantile, interpol, options)
             .into()
     }
 

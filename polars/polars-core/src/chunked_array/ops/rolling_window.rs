@@ -29,6 +29,7 @@ mod inner_mod {
     use arrow::bitmap::MutableBitmap;
     use num::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
+    use polars_arrow::prelude::QuantileInterpolOptions;
     use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
     use std::convert::TryFrom;
 
@@ -104,6 +105,83 @@ mod inner_mod {
                 ),
                 _ => rolling::nulls::rolling_sum(
                     arr,
+                    options.window_size,
+                    options.min_periods,
+                    options.center,
+                    options.weights.as_deref(),
+                ),
+            };
+            Series::try_from((self.name(), arr))
+        }
+
+        /// Apply a rolling median (moving median) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be weighted according to the `weights` vector.
+        pub fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
+            check_input(options.window_size, options.min_periods)?;
+            let ca = self.rechunk();
+
+            if options.weights.is_some()
+                && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
+            {
+                let s = ca.cast(&DataType::Float64).unwrap();
+                return s.rolling_median(options);
+            }
+
+            let arr = ca.downcast_iter().next().unwrap();
+            let arr = match self.has_validity() {
+                false => rolling::no_nulls::rolling_median(
+                    arr.values(),
+                    options.window_size,
+                    options.min_periods,
+                    options.center,
+                    options.weights.as_deref(),
+                ),
+                _ => rolling::nulls::rolling_median(
+                    arr,
+                    options.window_size,
+                    options.min_periods,
+                    options.center,
+                    options.weights.as_deref(),
+                ),
+            };
+            Series::try_from((self.name(), arr))
+        }
+
+        /// Apply a rolling quantile (moving quantile) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be weighted according to the `weights` vector.
+        pub fn rolling_quantile(
+            &self,
+            quantile: f64,
+            interpolation: QuantileInterpolOptions,
+            options: RollingOptions,
+        ) -> Result<Series> {
+            check_input(options.window_size, options.min_periods)?;
+            let ca = self.rechunk();
+
+            if options.weights.is_some()
+                && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
+            {
+                let s = ca.cast(&DataType::Float64).unwrap();
+                return s.rolling_quantile(quantile, interpolation, options);
+            }
+
+            let arr = ca.downcast_iter().next().unwrap();
+            let arr = match self.has_validity() {
+                false => rolling::no_nulls::rolling_quantile(
+                    arr.values(),
+                    quantile,
+                    interpolation,
+                    options.window_size,
+                    options.min_periods,
+                    options.center,
+                    options.weights.as_deref(),
+                ),
+                _ => rolling::nulls::rolling_quantile(
+                    arr,
+                    quantile,
+                    interpolation,
                     options.window_size,
                     options.min_periods,
                     options.center,

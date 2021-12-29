@@ -17,6 +17,7 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
+use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;

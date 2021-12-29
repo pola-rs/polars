@@ -1,9 +1,11 @@
 use super::*;
+use crate::prelude::QuantileInterpolOptions;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
+use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use num::{Float, One, Zero};
+use num::{Float, NumCast, One, Zero};
 use std::ops::AddAssign;
 use std::sync::Arc;
 
@@ -53,6 +55,67 @@ where
 
     Arc::new(PrimitiveArray::from_data(
         K::PRIMITIVE.into(),
+        out.into(),
+        Some(validity.into()),
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rolling_apply_quantile<T, Fo, Fa>(
+    values: &[T],
+    bitmap: &Bitmap,
+    quantile: f64,
+    interpolation: QuantileInterpolOptions,
+    window_size: usize,
+    min_periods: usize,
+    det_offsets_fn: Fo,
+    aggregator: Fa,
+) -> ArrayRef
+where
+    Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
+    // &[T] -> values of array
+    // &[u8] -> validity bytes
+    // QuantileInterpolOptions -> Interpolation option
+    // usize -> offset in validity bytes array
+    // usize -> min_periods
+    Fa: Fn(&[T], &[u8], f64, QuantileInterpolOptions, usize, usize) -> Option<f64>,
+{
+    let len = values.len();
+    let (validity_bytes, offset, _) = bitmap.as_slice();
+
+    let mut validity = match create_validity(min_periods, len as usize, window_size, det_offsets_fn)
+    {
+        Some(v) => v,
+        None => {
+            let mut validity = MutableBitmap::with_capacity(len);
+            validity.extend_constant(len, true);
+            validity
+        }
+    };
+
+    let out = (0..len)
+        .map(|idx| {
+            let (start, end) = det_offsets_fn(idx, window_size, len);
+            let vals = unsafe { values.get_unchecked(start..end) };
+            match aggregator(
+                vals,
+                validity_bytes,
+                quantile,
+                interpolation,
+                offset + start,
+                min_periods,
+            ) {
+                Some(val) => val,
+                None => {
+                    validity.set(idx, false);
+                    f64::default()
+                }
+            }
+        })
+        .collect_trusted::<Vec<f64>>();
+
+    Arc::new(PrimitiveArray::from_data(
+        DataType::Float64,
         out.into(),
         Some(validity.into()),
     ))
@@ -146,6 +209,70 @@ where
                 Some(sum / (count - T::one()))
             }
         }
+    }
+}
+
+fn compute_quantile<T>(
+    values: &[T],
+    validity_bytes: &[u8],
+    quantile: f64,
+    interpolation: QuantileInterpolOptions,
+    offset: usize,
+    min_periods: usize,
+) -> Option<f64>
+where
+    T: NativeType + std::iter::Sum<T> + Zero + AddAssign + std::cmp::PartialOrd + num::ToPrimitive,
+{
+    if !(0.0..=1.0).contains(&quantile) {
+        panic!("quantile should be between 0.0 and 1.0");
+    }
+
+    let null_count = count_zeros(validity_bytes, offset, values.len());
+    if null_count == 0 {
+        return Some(no_nulls::compute_quantile(values, quantile, interpolation));
+    } else if (values.len() - null_count) < min_periods {
+        return None;
+    }
+
+    let mut vals: Vec<f64> = Vec::new();
+    for (i, val) in values.iter().enumerate() {
+        // Safety:
+        // in bounds
+        if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
+            vals.push(NumCast::from(*val).unwrap());
+        }
+    }
+    vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let length = vals.len();
+
+    let mut idx = match interpolation {
+        QuantileInterpolOptions::Nearest => ((length as f64) * quantile) as usize,
+        QuantileInterpolOptions::Lower
+        | QuantileInterpolOptions::Midpoint
+        | QuantileInterpolOptions::Linear => ((length as f64 - 1.0) * quantile) as usize,
+        QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * quantile).ceil() as usize,
+    };
+
+    idx = std::cmp::min(idx, length);
+
+    match interpolation {
+        QuantileInterpolOptions::Midpoint => {
+            let top_idx = ((length as f64 - 1.0) * quantile).ceil() as usize;
+            Some((vals[idx] + vals[top_idx]) / 2.0)
+        }
+        QuantileInterpolOptions::Linear => {
+            let float_idx = (length as f64 - 1.0) * quantile;
+            let top_idx = f64::ceil(float_idx) as usize;
+
+            if top_idx == idx {
+                Some(vals[idx])
+            } else {
+                let proportion = float_idx - idx as f64;
+                Some(proportion * (vals[top_idx] - vals[idx]) + vals[idx])
+            }
+        }
+        _ => Some(vals[idx]),
     }
 }
 
@@ -285,6 +412,96 @@ where
             min_periods,
             det_offsets,
             compute_sum,
+        )
+    }
+}
+
+pub fn rolling_median<T>(
+    arr: &PrimitiveArray<T>,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    weights: Option<&[f64]>,
+) -> ArrayRef
+where
+    T: NativeType
+        + std::iter::Sum
+        + Zero
+        + AddAssign
+        + Copy
+        + std::cmp::PartialOrd
+        + num::ToPrimitive,
+{
+    if weights.is_some() {
+        panic!("weights not yet supported on array with null values")
+    }
+    if center {
+        rolling_apply_quantile(
+            arr.values().as_slice(),
+            arr.validity().as_ref().unwrap(),
+            0.5,
+            QuantileInterpolOptions::Nearest,
+            window_size,
+            min_periods,
+            det_offsets_center,
+            compute_quantile,
+        )
+    } else {
+        rolling_apply_quantile(
+            arr.values().as_slice(),
+            arr.validity().as_ref().unwrap(),
+            0.5,
+            QuantileInterpolOptions::Nearest,
+            window_size,
+            min_periods,
+            det_offsets,
+            compute_quantile,
+        )
+    }
+}
+
+pub fn rolling_quantile<T>(
+    arr: &PrimitiveArray<T>,
+    quantile: f64,
+    interpolation: QuantileInterpolOptions,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    weights: Option<&[f64]>,
+) -> ArrayRef
+where
+    T: NativeType
+        + std::iter::Sum
+        + Zero
+        + AddAssign
+        + Copy
+        + std::cmp::PartialOrd
+        + num::ToPrimitive,
+{
+    if weights.is_some() {
+        panic!("weights not yet supported on array with null values")
+    }
+    if center {
+        rolling_apply_quantile(
+            arr.values().as_slice(),
+            arr.validity().as_ref().unwrap(),
+            quantile,
+            interpolation,
+            window_size,
+            min_periods,
+            det_offsets_center,
+            compute_quantile,
+        )
+    } else {
+        rolling_apply_quantile(
+            arr.values().as_slice(),
+            arr.validity().as_ref().unwrap(),
+            quantile,
+            interpolation,
+            window_size,
+            min_periods,
+            det_offsets,
+            compute_quantile,
         )
     }
 }
