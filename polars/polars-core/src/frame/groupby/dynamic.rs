@@ -34,7 +34,14 @@ impl DataFrame {
         if time.null_count() > 0 {
             panic!("null values in dynamic groupby not yet supported, fill nulls.")
         }
-        let dt = time.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
+        let (dt, tu) = match time.dtype() {
+            DataType::Datetime(tu, _) => (time.clone(), *tu),
+            DataType::Date => (
+                time.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+                TimeUnit::Milliseconds,
+            ),
+            _ => unreachable!(),
+        };
         let dt = dt.datetime().unwrap();
 
         let mut lower_bound = None;
@@ -49,6 +56,7 @@ impl DataFrame {
                         ts,
                         options.include_boundaries,
                         options.closed_window,
+                        tu.to_polars_time(),
                     );
                     match (&mut lower_bound, &mut upper_bound) {
                         (None, None) => {
@@ -85,12 +93,13 @@ impl DataFrame {
                             ts,
                             options.include_boundaries,
                             options.closed_window,
+                            tu.to_polars_time(),
                         );
                         let _lower = Int64Chunked::new_vec("lower", lower.clone())
-                            .into_datetime(TimeUnit::Nanoseconds, None)
+                            .into_datetime(tu, None)
                             .into_series();
                         let _higher = Int64Chunked::new_vec("upper", upper.clone())
-                            .into_datetime(TimeUnit::Nanoseconds, None)
+                            .into_datetime(tu, None)
                             .into_series();
 
                         match (&mut lower_bound, &mut upper_bound) {
@@ -131,6 +140,7 @@ impl DataFrame {
                                 ts,
                                 options.include_boundaries,
                                 options.closed_window,
+                                tu.to_polars_time(),
                             );
 
                             sub_groups.iter_mut().for_each(|g| {
@@ -157,23 +167,23 @@ impl DataFrame {
 
         if options.truncate {
             let w = Window::new(options.every, options.period, options.offset);
-            dt = dt.apply(|v| w.truncate_no_offset(v));
+            dt = dt.apply(|v| w.truncate_no_offset_ns(v));
         }
 
         if let (true, Some(lower), Some(higher)) =
             (options.include_boundaries, lower_bound, upper_bound)
         {
             let s = Int64Chunked::new_vec("_lower_boundary", lower)
-                .into_datetime(TimeUnit::Nanoseconds, None)
+                .into_datetime(tu, None)
                 .into_series();
             by.push(s);
             let s = Int64Chunked::new_vec("_upper_boundary", higher)
-                .into_datetime(TimeUnit::Nanoseconds, None)
+                .into_datetime(tu, None)
                 .into_series();
             by.push(s);
         }
 
-        dt.into_datetime(TimeUnit::Nanoseconds, None)
+        dt.into_datetime(tu, None)
             .into_series()
             .cast(time_type)
             .map(|s| (s, by, groups))
@@ -190,16 +200,17 @@ mod test {
     fn test_dynamic_groupby_window() {
         let start = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(0, 0, 0)
-            .timestamp_nanos();
+            .timestamp_millis();
         let stop = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(3, 0, 0)
-            .timestamp_nanos();
+            .timestamp_millis();
         let range = date_range(
             start,
             stop,
             Duration::parse("30m"),
             ClosedWindow::Both,
             "date",
+            TimeUnit::Milliseconds,
         )
         .into_series();
 
@@ -231,16 +242,17 @@ mod test {
         let upper = out.column("_upper_boundary").unwrap().slice(0, 3);
         let start = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(1, 0, 0)
-            .timestamp_nanos();
+            .timestamp_millis();
         let stop = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(3, 0, 0)
-            .timestamp_nanos();
+            .timestamp_millis();
         let range = date_range(
             start,
             stop,
             Duration::parse("1h"),
             ClosedWindow::Both,
             "_upper_boundary",
+            TimeUnit::Milliseconds,
         )
         .into_series();
         assert_eq!(&upper, &range);
@@ -248,16 +260,17 @@ mod test {
         let upper = out.column("_lower_boundary").unwrap().slice(0, 3);
         let start = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(0, 0, 0)
-            .timestamp_nanos();
+            .timestamp_millis();
         let stop = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(2, 0, 0)
-            .timestamp_nanos();
+            .timestamp_millis();
         let range = date_range(
             start,
             stop,
             Duration::parse("1h"),
             ClosedWindow::Both,
             "_lower_boundary",
+            TimeUnit::Milliseconds,
         )
         .into_series();
         assert_eq!(&upper, &range);

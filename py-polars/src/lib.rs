@@ -36,6 +36,7 @@ use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
+use polars_core::datatypes::TimeUnit;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
 use pyo3::types::PyDict;
@@ -310,8 +311,14 @@ fn py_date_range(
     every: &str,
     closed: Wrap<ClosedWindow>,
     name: &str,
+    tu: &str,
 ) -> PySeries {
-    polars_core::time::date_range(start, stop, Duration::parse(every), closed.0, name)
+    let tu = match tu {
+        "ns" => TimeUnit::Nanoseconds,
+        "ms" => TimeUnit::Milliseconds,
+        _ => panic!("{}", "expected one of {'ns', 'ms'}"),
+    };
+    polars_core::time::date_range(start, stop, Duration::parse(every), closed.0, name, tu)
         .into_series()
         .into()
 }

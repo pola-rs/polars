@@ -48,7 +48,7 @@ def test_filter_date() -> None:
 def test_diff_datetime() -> None:
     df = pl.DataFrame(
         {
-            "timestamp": ["2021-02-01", "2021-03-1", "2021-04-1"],
+            "timestamp": ["2021-02-01", "2021-03-1", "2850-04-1"],
             "guild": [1, 2, 3],
             "char": ["a", "a", "b"],
         }

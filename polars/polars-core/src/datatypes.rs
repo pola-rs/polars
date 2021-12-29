@@ -539,10 +539,18 @@ impl Display for TimeUnit {
 }
 
 impl TimeUnit {
-    pub fn to_arrow(&self) -> ArrowTimeUnit {
+    pub fn to_arrow(self) -> ArrowTimeUnit {
         match self {
             TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
+        }
+    }
+
+    #[cfg(any(feature = "temporal", feature = "dynamic_groupby"))]
+    pub(crate) fn to_polars_time(self) -> polars_time::groupby::TimeUnit {
+        match self {
+            TimeUnit::Nanoseconds => polars_time::groupby::TimeUnit::Nanoseconds,
+            TimeUnit::Milliseconds => polars_time::groupby::TimeUnit::Milliseconds,
         }
     }
 }

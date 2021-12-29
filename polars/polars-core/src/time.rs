@@ -10,12 +10,16 @@ pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
 }
 
 pub fn date_range(
-    start: TimeNanoseconds,
-    stop: TimeNanoseconds,
+    start: i64,
+    stop: i64,
     every: Duration,
     closed: ClosedWindow,
     name: &str,
+    tu: TimeUnit,
 ) -> DatetimeChunked {
-    Int64Chunked::new_vec(name, date_range_vec(start, stop, every, closed))
-        .into_datetime(TimeUnit::Nanoseconds, None)
+    Int64Chunked::new_vec(
+        name,
+        date_range_vec(start, stop, every, closed, tu.to_polars_time()),
+    )
+    .into_datetime(tu, None)
 }

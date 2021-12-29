@@ -3,7 +3,11 @@ from typing import Optional, Sequence, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import py_type_to_dtype
-from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_pl_duration,
+    in_nanoseconds_window,
+)
 
 try:
     from polars.polars import concat_df as _concat_df
@@ -218,12 +222,17 @@ def date_range(
     ]
 
     """
-    # TODO: determine date unit 'ns' or 'ms' depending on range
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
-    start = _datetime_to_pl_timestamp(low, "ns")
-    stop = _datetime_to_pl_timestamp(high, "ns")
+
+    if in_nanoseconds_window(low) and in_nanoseconds_window(high):
+        tu = "ns"
+    else:
+        tu = "ms"
+
+    start = _datetime_to_pl_timestamp(low, tu)
+    stop = _datetime_to_pl_timestamp(high, tu)
     if name is None:
         name = ""
 
-    return pli.wrap_s(_py_date_range(start, stop, interval, closed, name))
+    return pli.wrap_s(_py_date_range(start, stop, interval, closed, name, tu))

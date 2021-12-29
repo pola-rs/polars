@@ -1,24 +1,13 @@
-use crate::calendar::timestamp_ns_to_datetime;
 use crate::groupby::ClosedWindow;
-use crate::unit::TimeNanoseconds;
-use std::fmt::{Display, Formatter};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Bounds {
-    pub(crate) start: TimeNanoseconds,
-    pub(crate) stop: TimeNanoseconds,
-}
-
-impl Display for Bounds {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let start = timestamp_ns_to_datetime(self.start);
-        let stop = timestamp_ns_to_datetime(self.stop);
-        write!(f, "Bounds: {} -> {}", start, stop)
-    }
+    pub(crate) start: i64,
+    pub(crate) stop: i64,
 }
 
 impl Bounds {
-    pub fn new(start: TimeNanoseconds, stop: TimeNanoseconds) -> Self {
+    pub fn new(start: i64, stop: i64) -> Self {
         assert!(
             start <= stop,
             "boundary start must be smaller than stop; is your time column sorted in ascending order?"
@@ -27,7 +16,7 @@ impl Bounds {
     }
 
     /// Duration in nanoseconcds for this Boundary
-    pub fn duration(&self) -> TimeNanoseconds {
+    pub fn duration(&self) -> i64 {
         self.stop - self.start
     }
 
