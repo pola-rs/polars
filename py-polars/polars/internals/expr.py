@@ -2133,7 +2133,7 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
 
     def ewm_std(
@@ -2167,7 +2167,7 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
 
     def ewm_var(
@@ -2201,7 +2201,7 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
 
     def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Expr":
@@ -2908,16 +2908,15 @@ def _prepare_alpha(
     half_life: Optional[float] = None,
     alpha: Optional[float] = None,
 ) -> float:
-
-    if com is not None and alpha is not None:
+    if com is not None and alpha is None:
         assert com >= 0.0
         alpha = 1.0 / (1.0 + com)
-    if span is not None and alpha is not None:
+    if span is not None and alpha is None:
         assert span >= 1.0
         alpha = 2.0 / (span + 1.0)
-    if half_life is not None and alpha is not None:
+    if half_life is not None and alpha is None:
         assert half_life > 0.0
         alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
     if alpha is None:
-        raise ValueError("at least one of {com, span, halflife, alpha} should be set")
+        raise ValueError("at least one of {com, span, half_life, alpha} should be set")
     return alpha
