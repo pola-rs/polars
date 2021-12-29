@@ -20,7 +20,7 @@ fn extract_json<'a>(expr: &Compiled, json_str: &'a str) -> Option<Cow<'a, str>> 
 
 impl Utf8Chunked {
     /// Extract json path, first match
-    /// Refer to https://goessner.net/articles/JsonPath/
+    /// Refer to <https://goessner.net/articles/JsonPath/>
     #[cfg(feature = "extract_jsonpath")]
     pub fn json_path_match(&self, json_path: &str) -> Result<Utf8Chunked> {
         match Compiled::compile(json_path) {

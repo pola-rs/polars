@@ -52,7 +52,7 @@ pub enum NullStrategy {
 ///
 /// ## Use declarations
 ///
-/// All the common tools can be found in [`polars_core::prelude`] (or in `polars::prelude`).
+/// All the common tools can be found in [`crate::prelude`] (or in `polars::prelude`).
 ///
 /// ```rust
 /// use polars_core::prelude::*; // if the crate polars-core is used directly
@@ -94,7 +94,7 @@ pub enum NullStrategy {
 ///
 /// ## Using a CSV file
 ///
-/// See the [`polars_io::csv::CsvReader`].
+/// See the `polars_io::csv::CsvReader`.
 ///
 /// # Indexing
 /// ## By a number
