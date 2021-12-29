@@ -2918,5 +2918,5 @@ def _prepare_alpha(
         assert half_life > 0.0
         alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
     if alpha is None:
-        raise ValueError("at least one of {com, span, halflife, alpha} should be set")
+        raise ValueError("at least one of {com, span, half_life, alpha} should be set")
     return alpha
