@@ -57,7 +57,7 @@ pub fn lit(cx: CallContext) -> JsResult<JsExternal> {
             if obj.is_date()? {
                 let d: JsDate = unsafe { value.cast() };
                 let d = d.value_of()?;
-                dsl::lit(d as i64 * 1000000).cast(DataType::Datetime)
+                dsl::lit(d as i64).cast(DataType::Datetime(TimeUnit::Milliseconds, None))
             } else {
                 panic!(
                     "could not convert value {:?} as a Literal",
@@ -213,11 +213,11 @@ pub fn str_parse_datetime(cx: CallContext) -> JsResult<JsExternal> {
     let fmt = params.get_as::<Option<String>>("fmt")?;
     let function = move |s: Series| {
         let ca = s.utf8()?;
-        ca.as_datetime(fmt.as_deref()).map(|ca| ca.into_series())
+        ca.as_datetime(fmt.as_deref(), TimeUnit::Milliseconds).map(|ca| ca.into_series())
     };
 
     expr.clone()
-        .map(function, GetOutput::from_type(DataType::Datetime))
+        .map(function, GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)))
         .try_into_js(&cx)
 }
 #[js_function(1)]
@@ -532,9 +532,9 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
             if val.is_date()? {
                 let d: JsDate = unsafe { val.cast() };
                 let d = d.value_of()?;
-                let d = d as i64 * 1000000;
+                let d = d as i64;
                 expr.apply(
-                    move |s| s.extend(AnyValue::Datetime(d), n),
+                    move |s| s.extend(AnyValue::Datetime(d, TimeUnit::Milliseconds, &None), n),
                     GetOutput::same_type(),
                 )
             } else {
