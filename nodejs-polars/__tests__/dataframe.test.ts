@@ -1313,13 +1313,13 @@ describe("dataframe", () => {
     fs.rmSync("./test.csv");
     done();
   });
-  test("toJSON:string", () => {
+  test("toJSON:multiline", () => {
     const rows = [
       {foo: 1.1, bar: 6.2, ham: "a"},
       {foo: 3.1, bar: 9.2, ham: "b"},
       {foo: 3.1, bar: 9.2, ham: "c"}
     ];
-    const actual = pl.DataFrame(rows).toJSON();
+    const actual = pl.DataFrame(rows).toJSON({multiline:true});
     const expected = rows.map(r => JSON.stringify(r)).join("\n").concat("\n");
     expect(actual).toEqual(expected);
   });
@@ -1337,7 +1337,7 @@ describe("dataframe", () => {
 
       }
     });
-    df.toJSON(writeStream);
+    df.toJSON(writeStream, {multiline:true});
     const newDF = pl.readJSON(body);
     expect(newDF).toFrameEqual(df);
     done();
@@ -1347,20 +1347,24 @@ describe("dataframe", () => {
       pl.Series("foo", [1, 2, 3], pl.UInt32),
       pl.Series("bar", ["a", "b", "c"])
     ]);
-    df.toJSON("./test.json");
+    df.toJSON("./test.json", {multiline:true});
     const newDF = pl.readJSON("./test.json");
     expect(newDF).toFrameEqual(df);
     fs.rmSync("./test.json");
     done();
   });
-  test("toJSON:invalid", () => {
-    const df = pl.DataFrame([
-      pl.Series("foo", [1, 2, 3], pl.UInt32),
-      pl.Series("bar", ["a", "b", "c"])
-    ]);
-    const readStream = new Stream.Readable();
-    expect(() => df.toJSON(readStream as any)).toThrow();
+  test("JSON.stringify(df)", () => {
+    const rows = [
+      {foo: 1.1, bar: 6.2, ham: "a"},
+      {foo: 3.1, bar: 9.2, ham: "b"},
+      {foo: 3.1, bar: 9.2, ham: "c"}
+    ];
+    const df = pl.DataFrame(rows);
+    const expected = pl.DataFrame(rows).toJSON();
+    const actual = JSON.stringify(df);
+    expect(actual).toEqual(expected);
   });
+
   test("toSeries", () => {
     const s = pl.Series([1, 2, 3]);
     const actual = s.clone().toFrame().toSeries(0);

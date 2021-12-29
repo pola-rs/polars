@@ -12,7 +12,8 @@ import {
   DataType,
   JoinBaseOptions,
   JsDataFrame,
-  WriteCsvOptions
+  WriteCsvOptions,
+  WriteJsonOptions
 } from "./datatypes";
 
 import {
@@ -987,8 +988,8 @@ export interface DataFrame {
    *
    * If no options are specified, it will return a new string containing the contents
    * ___
+   * @param dest file or stream to write to
    * @param options
-   * @param options.dest - path to file, or writeable stream
    * @param options.hasHeader - Whether or not to include header in the CSV output.
    * @param options.sep - Separate CSV fields with this symbol. _defaults to `,`_
    * @example
@@ -1025,10 +1026,9 @@ export interface DataFrame {
   toCSV(options: WriteCsvOptions): string;
   toCSV(dest: string | Writable, options?: WriteCsvOptions): void;
   toJS(): object
-  toJS(options: {orient: "row" | "col" | "literal"}): object
-  toJSON(): string
-  toJSON(options: {orient: "row" | "col" | "literal"}): string
-  toJSON(dest: string | Writable, options?: {orient: "row" | "col" | "literal"}): void
+  toJS(options: {orient: "row" | "col" | "dataframe"}): object
+  toJSON(options?: WriteJsonOptions): string
+  toJSON(dest: string | Writable, options?: WriteJsonOptions): void
   toSeries(index: number): Series<any>
   toString(): string
   /**
@@ -1143,7 +1143,30 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const noArgWrap = (method: string) => () => wrap(method);
   const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
 
+  const writeToStreamOrString = (dest, format: "csv" | "json", options)  => {
+    if(dest instanceof Writable) {
+      unwrap(`write_${format}_stream`, {writeStream: dest, ...options});
 
+      dest.end("");
+
+    } else if (typeof dest === "string") {
+      unwrap(`write_${format}_path`, {path: dest, ...options});
+
+    } else {
+      let body = "";
+      const writeStream = new Stream.Writable({
+        write(chunk, _encoding, callback) {
+          body += chunk;
+          callback(null);
+        }
+      });
+
+      unwrap(`write_${format}_stream`, {writeStream, ...options, ...dest});
+      writeStream.end("");
+
+      return body;
+    }
+  };
   const df = {
     _df,
     [inspect]() {
@@ -1450,27 +1473,16 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     tail: (length=5) => wrap("tail", {length}),
     toCSV(dest?, options?) {
       options = { hasHeader:true, sep: ",", ...options};
-
-      if(dest instanceof Writable) {
-        unwrap("write_csv_stream", {writeStream: dest, ...options});
-
-        dest.end("");
-
-      } else if (typeof dest === "string") {
-        unwrap("write_csv_path", {path: dest, ...options});
+      // toCSV(options)
+      if(dest?.hasHeader !== undefined || dest?.sep !== undefined) {
+        return writeToStreamOrString(null, "csv", {...options, ...dest});
 
       } else {
-        let body = "";
-        const writeStream = new Stream.Writable({
-          write(chunk, _encoding, callback) {
-            body += chunk;
-            callback(null);
-          }
-        });
-        unwrap("write_csv_stream", {writeStream, ...options, ...dest});
-        writeStream.end("");
 
-        return body;
+        // toCSV()
+        // toCSV("path/to/some/file", options)
+        // toCSV(writeStream, options)
+        return writeToStreamOrString(dest, "csv", options);
       }
     },
     toJS(options?) {
@@ -1485,7 +1497,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
           }));
         });
       }
-      if(options?.orient === "literal") {
+      if(options?.orient === "dataframe") {
         return unwrap("to_js");
       }
 
@@ -1499,32 +1511,27 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       }, {});
     },
     toJSON(arg0?, options?): any {
-
+      // JSON.stringify(df)
+      // passes `""` by default then stringifies the JS output
       if(arg0 === "") {
-        return this.toJS({orient: "literal", ...options});
+        return unwrap("to_js");
       }
 
-      return this.__toJSON(arg0);
-    },
-    __toJSON(dest?): any  {
-      if(dest instanceof Stream.Writable) {
-        unwrap("write_json_stream", {writeStream: dest});
-      } else if (typeof dest === "string" && dest.length) {
-        unwrap("write_json_path", {path: dest});
-      } else if (!dest) {
-        let body = "";
-        const writeStream = new Stream.Writable({
-          write(chunk, _encoding, callback) {
-            body += chunk;
-            callback(null);
-          }
-        });
-        unwrap("write_json_stream", {writeStream});
+      // df.toJSON();
+      // same thing as to_js except skips serializing to JS & returns a json buffer
+      if(arg0 === undefined) {
+        return unwrap<any>("to_json").toString();
+      }
 
-        return body;
+      // toJSON(options)
+      if(arg0?.orient || arg0?.multiline) {
+
+        return writeToStreamOrString(null, "json", arg0);
+
       } else {
-
-        throw new TypeError("unknown destination type, Supported types are 'string' and 'Writeable'");
+        // toJSON("path/to/some/file", options)
+        // toJSON(writeStream, options)
+        return writeToStreamOrString(arg0, "json", options);
       }
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),

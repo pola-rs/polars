@@ -64,11 +64,6 @@ describe("read:json", () => {
     const df = pl.readJSON(jsonpath, {batchSize: 10, inferSchemaLength: 100});
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
-  it("can read from a json string", () => {
-    const jsonString = JSON.stringify({foo: "bar"});
-    const df = pl.readJSON(jsonString);
-    expect(df.toJSON().replace("\n", "")).toEqual(jsonString);
-  });
 });
 describe("scan", () => {
   describe("csv", () => {
