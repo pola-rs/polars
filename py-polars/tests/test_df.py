@@ -1648,7 +1648,6 @@ def test_arithmetic() -> None:
         _ = df + [1]  # type: ignore
 
 
-@pytest.mark.skip("column names of result are empty, see issue #2217")
 def test_add_string() -> None:
     df = pl.DataFrame({"a": ["hi", "there"], "b": ["hello", "world"]})
     result = df + " hello"

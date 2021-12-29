@@ -3841,7 +3841,7 @@ class DataFrame:
         ... )
         >>> df.fold(lambda s1, s2: s1 + s2)
         shape: (3,)
-        Series: '' [str]
+        Series: 'a' [str]
         [
             "foo11.0"
             "bar22.0"
