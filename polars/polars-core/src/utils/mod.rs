@@ -567,6 +567,19 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (dt, Null) => Some(dt.clone()),
         (Null, dt) => Some(dt.clone()),
 
+        // we cast nanoseconds to milliseconds as that always fits with occasional loss of precision
+        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Milliseconds, None))
+        | (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Nanoseconds, None)) => {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+        (Datetime(TimeUnit::Nanoseconds, tz_l), Datetime(TimeUnit::Milliseconds, tz_r))
+        | (Datetime(TimeUnit::Milliseconds, tz_l), Datetime(TimeUnit::Nanoseconds, tz_r)) => {
+            match (tz_l.as_deref(), tz_r.as_deref()) {
+                (Some(""), None) | (None, Some("")) => Some(Datetime(TimeUnit::Milliseconds, None)),
+                _ => None,
+            }
+        }
+
         _ => None,
     }
 }

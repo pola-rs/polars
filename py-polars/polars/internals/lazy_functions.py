@@ -6,6 +6,7 @@ import numpy as np
 
 from polars import internals as pli
 from polars.datatypes import DataType, Date, Datetime
+from polars.utils import _datetime_to_pl_timestamp, in_nanoseconds_window
 
 try:
     from polars.polars import arange as pyarange
@@ -535,9 +536,9 @@ def lit(
 
     """
     if isinstance(value, datetime):
-        return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e9)).cast(
-            Datetime
-        )
+        # TODO: allow for ns as well
+        return lit(_datetime_to_pl_timestamp(value, "ms")).cast(Datetime)
+
     if isinstance(value, date):
         return lit(datetime(value.year, value.month, value.day)).cast(Date)
 

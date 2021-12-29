@@ -49,6 +49,10 @@ def _timedelta_to_pl_duration(td: timedelta) -> str:
     return f"{td.days}d{td.seconds}s{td.microseconds}us"
 
 
+def in_nanoseconds_window(dt: datetime) -> bool:
+    return 1386 < dt.year < 2554
+
+
 def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
     """
     Converts a python datetime to a timestamp in nanoseconds
@@ -57,6 +61,11 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
     elif tu == "ms":
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
+    if tu is None:
+        if in_nanoseconds_window(dt):
+            return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+        else:
+            return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
     else:
         raise ValueError("expected on of {'ns', 'ms'}")
 

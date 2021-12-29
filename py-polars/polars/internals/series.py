@@ -3755,7 +3755,7 @@ class DateTimeNameSpace:
 
     def __getitem__(self, item: int) -> Union[date, datetime]:
         s = wrap_s(self._s)
-        out = wrap_s(self._s)[item]
+        out = s[item]
         return _to_python_datetime(out, s.dtype, s.time_unit)
 
     def strftime(self, fmt: str) -> Series:
