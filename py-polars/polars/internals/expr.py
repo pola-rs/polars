@@ -2104,8 +2104,8 @@ class Expr:
 
     def ewm_mean(
         self,
-        span: Optional[float] = None,
         com: Optional[float] = None,
+        span: Optional[float] = None,
         half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
@@ -2116,10 +2116,10 @@ class Expr:
 
         Parameters
         ----------
-        span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         com
             Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
             Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
@@ -2138,8 +2138,8 @@ class Expr:
 
     def ewm_std(
         self,
-        span: Optional[float] = None,
         com: Optional[float] = None,
+        span: Optional[float] = None,
         half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
@@ -2150,10 +2150,10 @@ class Expr:
 
         Parameters
         ----------
-        span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         com
             Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
             Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
@@ -2172,8 +2172,8 @@ class Expr:
 
     def ewm_var(
         self,
-        span: Optional[float] = None,
         com: Optional[float] = None,
+        span: Optional[float] = None,
         half_life: Optional[float] = None,
         alpha: Optional[float] = None,
         adjust: bool = True,
@@ -2184,10 +2184,10 @@ class Expr:
 
         Parameters
         ----------
-        span
-            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         com
             Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
         half_life
             Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
         alpha
