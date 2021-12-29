@@ -100,6 +100,45 @@ where
     ))
 }
 
+fn rolling_apply_pairs<T, K, Fo, Fa>(
+    values: &[T],
+    window_size: usize,
+    min_periods: usize,
+    det_offsets_fn: Fo,
+    aggregator: Fa,
+    weights: &[f64],
+) -> ArrayRef
+where
+    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
+    Fa: Fn(&[(T, f64)]) -> K,
+    K: NativeType,
+    T: Debug + Copy,
+{
+    assert_eq!(weights.len(), window_size);
+    let mut buf: Vec<(T, f64)> = Vec::with_capacity(window_size);
+    let len = values.len();
+    let out = (0..len)
+        .map(|idx| {
+            let (start, end) = det_offsets_fn(idx, window_size, len);
+            let vals = unsafe { values.get_unchecked(start..end) };
+            buf = vals
+                .iter()
+                .zip(weights.iter())
+                .map(|(&x, &y)| (x, y))
+                .collect();
+
+            aggregator(&buf)
+        })
+        .collect_trusted::<MutableBuffer<K>>();
+
+    let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
+    Arc::new(PrimitiveArray::from_data(
+        DataType::Float64,
+        out.into(),
+        validity.map(|b| b.into()),
+    ))
+}
+
 fn rolling_apply<T, K, Fo, Fa>(
     values: &[T],
     window_size: usize,

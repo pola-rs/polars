@@ -641,6 +641,7 @@ impl Series {
             panic!("activate 'rolling_window' feature")
         }
     }
+    
     /// Apply a rolling sum to a Series. See:
     /// [ChunkedArray::rolling_sum](crate::prelude::ChunkWindow::rolling_sum).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
