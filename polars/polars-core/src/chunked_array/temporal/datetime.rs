@@ -2,6 +2,7 @@ use super::conversion::{naive_datetime_to_datetime_ms, naive_datetime_to_datetim
 use super::*;
 use crate::prelude::*;
 use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_ns_to_datetime};
+use crate::prelude::DataType::Datetime;
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(
@@ -191,6 +192,13 @@ impl DatetimeChunked {
             }),
         )
         .into_datetime(tu, None)
+    }
+
+    pub fn set_time_unit(&mut self, tu: TimeUnit) {
+        self.2 = Some(Datetime(tu, self.time_zone().clone()))
+    }
+    pub fn set_time_zone(&mut self, tz: Option<TimeZone>) {
+        self.2 = Some(Datetime(self.time_unit(), tz))
     }
 }
 

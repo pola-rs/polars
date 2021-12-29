@@ -255,6 +255,8 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.epoch_days
     ExprDateTimeNameSpace.epoch_milliseconds
     ExprDateTimeNameSpace.epoch_seconds
+    ExprDateTimeNameSpace.and_time_unit
+    ExprDateTimeNameSpace.and_time_zone
 
 Strings
 -------

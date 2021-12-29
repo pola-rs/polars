@@ -213,6 +213,8 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.epoch_days
     DateTimeNameSpace.epoch_milliseconds
     DateTimeNameSpace.epoch_seconds
+    DateTimeNameSpace.and_time_unit
+    DateTimeNameSpace.and_time_zone
 
 
 Strings

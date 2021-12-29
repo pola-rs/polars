@@ -2871,6 +2871,35 @@ class ExprDateTimeNameSpace:
         return wrap_expr(self._pyexpr.timestamp())
 
 
+    def and_time_unit(self, tu: str) -> Expr:
+        """
+        Set time unit a Series of type Datetime
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.and_time_unit(tu), return_dtype=Datetime
+        )
+
+    def and_time_zone(self, tz: Optional[str]) -> Expr:
+        """
+        Set time zone a Series of type Datetime
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.and_time_zone(tz), return_dtype=Datetime
+        )
+
+
 def expr_to_lit_or_expr(
     expr: Union[Expr, bool, int, float, str, "pli.Series"],
     str_to_lit: bool = True,

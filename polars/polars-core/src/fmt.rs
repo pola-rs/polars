@@ -509,12 +509,7 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, tz) => {
-                match tz.as_deref() {
-                    Some("") | None => {}
-                    Some(_) => panic!("tz formatting still has to be implemented"),
-                }
-                dbg!(tu, v);
+            AnyValue::Datetime(v, tu, _) => {
                 match tu {
                     TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
                     TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),

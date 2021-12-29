@@ -536,8 +536,11 @@ def lit(
 
     """
     if isinstance(value, datetime):
-        # TODO: allow for ns as well
-        return lit(_datetime_to_pl_timestamp(value, "ms")).cast(Datetime)
+        if in_nanoseconds_window(value):
+            tu = "ns"
+        else:
+            tu = "ms"
+        return lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime).dt.and_time_unit(tu)
 
     if isinstance(value, date):
         return lit(datetime(value.year, value.month, value.day)).cast(Date)

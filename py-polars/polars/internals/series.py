@@ -3982,6 +3982,31 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.dt_epoch_seconds())
 
+    def and_time_unit(self, tu: str) -> "Series":
+        """
+        Set time unit a Series of type Datetime
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_s(self._s.and_time_unit(tu))
+
+    def and_time_zone(self, tz: Optional[str]) -> "Series":
+        """
+        Set time zone a Series of type Datetime
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_s(self._s.and_time_zone(tz))
+
+
 
 class SeriesIter:
     """
