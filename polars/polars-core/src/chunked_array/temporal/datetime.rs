@@ -1,8 +1,8 @@
 use super::conversion::{naive_datetime_to_datetime_ms, naive_datetime_to_datetime_ns};
 use super::*;
+use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
 use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_ns_to_datetime};
-use crate::prelude::DataType::Datetime;
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(

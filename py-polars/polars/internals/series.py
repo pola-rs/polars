@@ -4007,7 +4007,6 @@ class DateTimeNameSpace:
         return wrap_s(self._s.and_time_zone(tz))
 
 
-
 class SeriesIter:
     """
     Utility class that allows slow iteration over a `Series`.

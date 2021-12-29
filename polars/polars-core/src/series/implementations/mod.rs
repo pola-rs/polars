@@ -7,6 +7,7 @@ mod categorical;
     feature = "dtype-time"
 ))]
 mod dates_time;
+#[cfg(feature = "dtype-datetime")]
 mod datetime;
 mod floats;
 mod list;

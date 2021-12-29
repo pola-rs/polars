@@ -2870,7 +2870,6 @@ class ExprDateTimeNameSpace:
         """Return timestamp in milliseconds as Int64 type."""
         return wrap_expr(self._pyexpr.timestamp())
 
-
     def and_time_unit(self, tu: str) -> Expr:
         """
         Set time unit a Series of type Datetime

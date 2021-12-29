@@ -2,6 +2,8 @@ use crate::prelude::*;
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
+
+#[cfg(feature = "dtype-datetime")]
 use polars_core::time::in_nanoseconds_window;
 
 #[derive(Clone, Debug, PartialEq)]

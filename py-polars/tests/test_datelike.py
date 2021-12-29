@@ -127,19 +127,19 @@ def test_datetime_consistency() -> None:
     assert df.select(pl.lit(dt))["literal"].dt[0] == dt
 
 
-# def test_timezone() -> None:
-#     ts = pa.timestamp("s")
-#     data = pa.array([1000, 2000], type=ts)
-#     s: pl.Series = pl.from_arrow(data)  # type: ignore
-#
-#     # with timezone; we do expect a warning here
-#     tz_ts = pa.timestamp("s", tz="America/New_York")
-#     tz_data = pa.array([1000, 2000], type=tz_ts)
-#     with pytest.warns(Warning):
-#         tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore
-#
-#     # timezones have no effect, i.e. `s` equals `tz_s`
-#     assert s.series_equal(tz_s)
+def test_timezone() -> None:
+    ts = pa.timestamp("s")
+    data = pa.array([1000, 2000], type=ts)
+    s: pl.Series = pl.from_arrow(data)  # type: ignore
+
+    # with timezone; we do expect a warning here
+    tz_ts = pa.timestamp("s", tz="America/New_York")
+    tz_data = pa.array([1000, 2000], type=tz_ts)
+    with pytest.warns(Warning):
+        tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore
+
+    # timezones have no effect, i.e. `s` equals `tz_s`
+    assert s.series_equal(tz_s)
 
 
 def test_to_list() -> None:
@@ -157,9 +157,11 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]]).cast(
-        pl.Datetime
-    ).dt.and_time_unit("ns")
+    s1 = (
+        pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
+        .cast(pl.Datetime)
+        .dt.and_time_unit("ns")
+    )
     df = pl.DataFrame([s0, s1])
 
     rows = df.rows()

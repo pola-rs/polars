@@ -668,8 +668,6 @@ macro_rules! impl_dyn_series_numeric {
 
 #[cfg(feature = "dtype-date")]
 impl_dyn_series_numeric!(DateChunked);
-#[cfg(feature = "dtype-datetime")]
-impl_dyn_series_numeric!(DatetimeChunked);
 #[cfg(feature = "dtype-time")]
 impl_dyn_series_numeric!(TimeChunked);
 

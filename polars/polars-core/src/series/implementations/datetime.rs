@@ -22,6 +22,15 @@ impl IntoSeries for DatetimeChunked {
     }
 }
 
+impl private::PrivateSeriesNumeric for SeriesWrap<DatetimeChunked> {
+    fn bit_repr_is_large(&self) -> bool {
+        true
+    }
+    fn bit_repr_large(&self) -> UInt64Chunked {
+        self.0.bit_repr_large()
+    }
+}
+
 impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(self.0.field())

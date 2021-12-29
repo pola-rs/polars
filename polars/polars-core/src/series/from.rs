@@ -110,9 +110,10 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
             }
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
+                // we still drop timezone for now
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let s = Int64Chunked::new_from_chunks(name, chunks)
-                    .into_datetime(tu.into(), tz.clone())
+                    .into_datetime(tu.into(), None)
                     .into_series();
                 if !(tz.is_none() || tz == &Some("".to_string())) {
                     println!("Conversion of timezone aware to naive datetimes. TZ information may be lost.")

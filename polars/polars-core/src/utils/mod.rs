@@ -10,7 +10,6 @@ pub use rayon;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
-use crate::export::chrono::DateTime;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -574,11 +573,27 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             Some(Datetime(TimeUnit::Milliseconds, None))
         }
         // None and Some("") timezones
-        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Nanoseconds, tz)) if tz.as_deref() == Some("") => Some(Datetime(TimeUnit::Nanoseconds, None)),
-        (Datetime(TimeUnit::Nanoseconds, tz), Datetime(TimeUnit::Nanoseconds, None)) if tz.as_deref() == Some("") => Some(Datetime(TimeUnit::Nanoseconds, None)),
-        (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Milliseconds, tz)) if tz.as_deref() == Some("") => Some(Datetime(TimeUnit::Milliseconds, None)),
-        (Datetime(TimeUnit::Milliseconds, tz), Datetime(TimeUnit::Milliseconds, None)) if tz.as_deref() == Some("") => Some(Datetime(TimeUnit::Milliseconds, None)),
-        
+        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Nanoseconds, tz))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Nanoseconds, None))
+        }
+        (Datetime(TimeUnit::Nanoseconds, tz), Datetime(TimeUnit::Nanoseconds, None))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Nanoseconds, None))
+        }
+        (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Milliseconds, tz))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+        (Datetime(TimeUnit::Milliseconds, tz), Datetime(TimeUnit::Milliseconds, None))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+
         (Datetime(TimeUnit::Nanoseconds, tz_l), Datetime(TimeUnit::Milliseconds, tz_r))
         | (Datetime(TimeUnit::Milliseconds, tz_l), Datetime(TimeUnit::Nanoseconds, tz_r)) => {
             match (tz_l.as_deref(), tz_r.as_deref()) {

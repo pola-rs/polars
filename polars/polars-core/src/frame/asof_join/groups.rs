@@ -34,6 +34,7 @@ where
     T: PolarsNumericType,
 {
     let left_asof = left_asof.rechunk();
+    dbg!(&left_asof, &left_asof.chunks);
     let left_asof = left_asof.cont_slice().unwrap();
 
     let right_asof = right_asof.rechunk();

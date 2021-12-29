@@ -509,12 +509,10 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, _) => {
-                match tu {
-                    TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
-                    TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
-                }
-            }
+            AnyValue::Datetime(v, tu, _) => match tu {
+                TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
+                TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
+            },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: polars_time::export::chrono::NaiveTime = self.into();
