@@ -11,6 +11,7 @@ use crate::{
 };
 use numpy::PyArray1;
 use polars_core::utils::CustomIterTools;
+use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
@@ -696,7 +697,7 @@ impl PySeries {
                 let ca = series.date().unwrap();
                 return Wrap(ca).to_object(python);
             }
-            DataType::Datetime => {
+            DataType::Datetime(_, _) => {
                 let ca = series.datetime().unwrap();
                 return Wrap(ca).to_object(python);
             }
@@ -918,7 +919,7 @@ impl PySeries {
                 )?;
                 ca.into_date().into_series()
             }
-            Some(DataType::Datetime) => {
+            Some(DataType::Datetime(tu, tz)) => {
                 let ca: Int64Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -927,7 +928,7 @@ impl PySeries {
                     0,
                     None
                 )?;
-                ca.into_date().into_series()
+                ca.into_datetime(tu, tz).into_series()
             }
             Some(DataType::Utf8) => {
                 let ca: Utf8Chunked = apply_method_all_arrow_series!(
@@ -1046,7 +1047,9 @@ impl PySeries {
 
     pub fn str_parse_datetime(&self, fmt: Option<&str>) -> PyResult<Self> {
         if let Ok(ca) = &self.series.utf8() {
-            let ca = ca.as_datetime(fmt).map_err(PyPolarsEr::from)?;
+            let ca = ca
+                .as_datetime(fmt, TimeUnit::Milliseconds)
+                .map_err(PyPolarsEr::from)?;
             Ok(ca.into_series().into())
         } else {
             Err(PyPolarsEr::Other("cannot parse datetime expected utf8 type".into()).into())
@@ -1384,6 +1387,32 @@ impl PySeries {
         let value = value.0;
         let out = self.series.extend(value, n).map_err(PyPolarsEr::from)?;
         Ok(out.into())
+    }
+
+    pub fn time_unit(&self) -> Option<&str> {
+        if let DataType::Datetime(tu, _) = self.series.dtype() {
+            Some(match tu {
+                TimeUnit::Nanoseconds => "ns",
+                TimeUnit::Milliseconds => "ms",
+            })
+        } else {
+            None
+        }
+    }
+    pub fn and_time_unit(&self, tu: &str) -> PyResult<Self> {
+        let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
+        let tu = match tu {
+            "ms" => TimeUnit::Milliseconds,
+            "ns" => TimeUnit::Nanoseconds,
+            _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}")),
+        };
+        dt.set_time_unit(tu);
+        Ok(dt.into_series().into())
+    }
+    pub fn and_time_zone(&self, tz: Option<TimeZone>) -> PyResult<Self> {
+        let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
+        dt.set_time_zone(tz);
+        Ok(dt.into_series().into())
     }
 }
 

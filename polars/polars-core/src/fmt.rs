@@ -9,6 +9,7 @@ use std::{
 };
 const LIMIT: usize = 25;
 
+use arrow::temporal_conversions::timestamp_ms_to_datetime;
 #[cfg(feature = "pretty_fmt")]
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
 #[cfg(feature = "pretty_fmt")]
@@ -244,14 +245,17 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            DataType::Datetime => format_array!(
-                limit,
-                f,
-                self.datetime().unwrap(),
-                "datetime",
-                self.name(),
-                "Series"
-            ),
+            DataType::Datetime(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(
+                    limit,
+                    f,
+                    self.datetime().unwrap(),
+                    &dt,
+                    self.name(),
+                    "Series"
+                )
+            }
             DataType::List(_) => format_array!(
                 limit,
                 f,
@@ -505,7 +509,10 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v) => write!(f, "{}", timestamp_ns_to_datetime(*v)),
+            AnyValue::Datetime(v, tu, _) => match tu {
+                TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
+                TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
+            },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: polars_time::export::chrono::NaiveTime = self.into();
@@ -654,10 +661,11 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)]).into_date();
+        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)])
+            .into_datetime(TimeUnit::Nanoseconds, None);
         assert_eq!(
             r#"shape: (3,)
-Series: '' [datetime]
+Series: '' [datetime[ns]]
 [
 	1970-01-01 00:00:00.000000001
 	null

@@ -497,7 +497,7 @@ fn test_lazy_query_7() {
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
     let df = DataFrame::new(vec![
-        DatetimeChunked::new_from_naive_datetime("date", &*dates).into(),
+        DatetimeChunked::new_from_naive_datetime("date", &*dates, TimeUnit::Nanoseconds).into(),
         Series::new("data", data),
     ])
     .unwrap();
@@ -976,7 +976,9 @@ fn test_lazy_groupby_cast() {
     let _out = df
         .lazy()
         .groupby([col("a")])
-        .agg([col("b").mean().cast(DataType::Datetime)])
+        .agg([col("b")
+            .mean()
+            .cast(DataType::Datetime(TimeUnit::Nanoseconds, None))])
         .collect()
         .unwrap();
 }

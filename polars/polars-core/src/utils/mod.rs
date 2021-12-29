@@ -271,7 +271,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Date => $self.date().unwrap().$method($($args),*),
-            DataType::Datetime=> $self.datetime().unwrap().$method($($args),*),
+            DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
             dt => panic!("dtype {:?} not supported", dt)
         }
@@ -301,7 +301,7 @@ macro_rules! apply_method_numeric_series {
             #[cfg(feature = "dtype-date")]
             DataType::Date => $self.date().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime=> $self.datetime().unwrap().$method($($args),*),
+            DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             _ => unimplemented!(),
         }
     }
@@ -429,7 +429,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-date")]
         (UInt32, Date) => Some(Int64),
         #[cfg(feature = "dtype-datetime")]
-        (UInt32, Datetime) => Some(Int64),
+        (UInt32, Datetime(_, _)) => Some(Int64),
 
         (UInt64, UInt8) => Some(UInt64),
         (UInt64, UInt16) => Some(UInt64),
@@ -464,7 +464,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-date")]
         (Int32, Date) => Some(Int32),
         #[cfg(feature = "dtype-datetime")]
-        (Int32, Datetime) => Some(Int64),
+        (Int32, Datetime(_, _)) => Some(Int64),
         #[cfg(feature = "dtype-time")]
         (Int32, Time) => Some(Int64),
         (Int32, Boolean) => Some(Int32),
@@ -476,7 +476,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int64, Float32) => Some(Float32),
         (Int64, Float64) => Some(Float64),
         #[cfg(feature = "dtype-datetime")]
-        (Int64, Datetime) => Some(Int64),
+        (Int64, Datetime(_, _)) => Some(Int64),
         #[cfg(feature = "dtype-date")]
         (Int64, Date) => Some(Int32),
         #[cfg(feature = "dtype-time")]
@@ -488,7 +488,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-date")]
         (Float32, Date) => Some(Float32),
         #[cfg(feature = "dtype-datetime")]
-        (Float32, Datetime) => Some(Float64),
+        (Float32, Datetime(_, _)) => Some(Float64),
         #[cfg(feature = "dtype-time")]
         (Float32, Time) => Some(Float64),
         (Float64, Float32) => Some(Float64),
@@ -496,7 +496,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-date")]
         (Float64, Date) => Some(Float64),
         #[cfg(feature = "dtype-datetime")]
-        (Float64, Datetime) => Some(Float64),
+        (Float64, Datetime(_, _)) => Some(Float64),
         #[cfg(feature = "dtype-time")]
         (Float64, Time) => Some(Float64),
         (Float64, Boolean) => Some(Float64),
@@ -514,22 +514,22 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-datetime")]
         (Date, Float64) => Some(Float64),
         #[cfg(feature = "dtype-datetime")]
-        (Date, Datetime) => Some(Datetime),
+        (Date, Datetime(tu, tz)) => Some(Datetime(*tu, tz.clone())),
 
         #[cfg(feature = "dtype-date")]
-        (Datetime, UInt32) => Some(Int64),
+        (Datetime(_, _), UInt32) => Some(Int64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, UInt64) => Some(Int64),
+        (Datetime(_, _), UInt64) => Some(Int64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Int32) => Some(Int64),
+        (Datetime(_, _), Int32) => Some(Int64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Int64) => Some(Int64),
+        (Datetime(_, _), Int64) => Some(Int64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Float32) => Some(Float64),
+        (Datetime(_, _), Float32) => Some(Float64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Float64) => Some(Float64),
+        (Datetime(_, _), Float64) => Some(Float64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Date) => Some(Datetime),
+        (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
 
         #[cfg(feature = "dtype-time")]
         (Time, Int32) => Some(Int64),
@@ -541,9 +541,9 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Time, Float64) => Some(Float64),
 
         #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
-        (Time, Datetime) => Some(Int64),
+        (Time, Datetime(_, _)) => Some(Int64),
         #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
-        (Datetime, Time) => Some(Int64),
+        (Datetime(_, _), Time) => Some(Int64),
         #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
         (Time, Date) => Some(Int64),
         #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
@@ -566,6 +566,41 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
         (dt, Null) => Some(dt.clone()),
         (Null, dt) => Some(dt.clone()),
+
+        // we cast nanoseconds to milliseconds as that always fits with occasional loss of precision
+        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Milliseconds, None))
+        | (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Nanoseconds, None)) => {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+        // None and Some("") timezones
+        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Nanoseconds, tz))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Nanoseconds, None))
+        }
+        (Datetime(TimeUnit::Nanoseconds, tz), Datetime(TimeUnit::Nanoseconds, None))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Nanoseconds, None))
+        }
+        (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Milliseconds, tz))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+        (Datetime(TimeUnit::Milliseconds, tz), Datetime(TimeUnit::Milliseconds, None))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+
+        (Datetime(TimeUnit::Nanoseconds, tz_l), Datetime(TimeUnit::Milliseconds, tz_r))
+        | (Datetime(TimeUnit::Milliseconds, tz_l), Datetime(TimeUnit::Nanoseconds, tz_r)) => {
+            match (tz_l.as_deref(), tz_r.as_deref()) {
+                (Some(""), None) | (None, Some("")) => Some(Datetime(TimeUnit::Milliseconds, None)),
+                _ => None,
+            }
+        }
 
         _ => None,
     }

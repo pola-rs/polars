@@ -196,10 +196,15 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "dtype-datetime")]
-    pub fn as_datetime(&self, fmt: Option<&str>) -> Result<DatetimeChunked> {
+    pub fn as_datetime(&self, fmt: Option<&str>, tu: TimeUnit) -> Result<DatetimeChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => self.sniff_fmt_datetime()?,
+        };
+
+        let func = match tu {
+            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
+            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
         };
 
         let mut ca: Int64Chunked = match self.has_validity() {
@@ -208,7 +213,7 @@ impl Utf8Chunked {
                 .map(|s| {
                     NaiveDateTime::parse_from_str(s, fmt)
                         .ok()
-                        .map(|dt| naive_datetime_to_datetime(&dt))
+                        .map(|dt| func(&dt))
                 })
                 .collect_trusted(),
             _ => self
@@ -217,7 +222,7 @@ impl Utf8Chunked {
                     let opt_nd = opt_s.map(|s| {
                         NaiveDateTime::parse_from_str(s, fmt)
                             .ok()
-                            .map(|dt| naive_datetime_to_datetime(&dt))
+                            .map(|dt| func(&dt))
                     });
                     match opt_nd {
                         None => None,
@@ -228,6 +233,6 @@ impl Utf8Chunked {
                 .collect_trusted(),
         };
         ca.rename(self.name());
-        Ok(ca.into())
+        Ok(ca.into_datetime(tu, None))
     }
 }

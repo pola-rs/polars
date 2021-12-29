@@ -157,8 +157,10 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]]).cast(
-        pl.Datetime
+    s1 = (
+        pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
+        .cast(pl.Datetime)
+        .dt.and_time_unit("ns")
     )
     df = pl.DataFrame([s0, s1])
 

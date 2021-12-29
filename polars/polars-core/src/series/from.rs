@@ -3,6 +3,8 @@ use crate::chunked_array::cast::cast_chunks;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;
+use arrow::temporal_conversions::MILLISECONDS;
+#[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::NANOSECONDS;
 use polars_arrow::compute::cast::cast;
 use std::convert::TryFrom;
@@ -104,23 +106,23 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Date64 => {
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let ca = Int64Chunked::new_from_chunks(name, chunks);
-                let ca = ca * 1_000_000;
-                Ok(ca.into_date().into_series())
+                Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
             }
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
+                // we still drop timezone for now
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let s = Int64Chunked::new_from_chunks(name, chunks)
-                    .into_date()
+                    .into_datetime(tu.into(), None)
                     .into_series();
                 if !(tz.is_none() || tz == &Some("".to_string())) {
                     println!("Conversion of timezone aware to naive datetimes. TZ information may be lost.")
                 }
                 Ok(match tu {
-                    TimeUnit::Second => &s * NANOSECONDS,
-                    TimeUnit::Millisecond => &s * 1_000_000,
-                    TimeUnit::Microsecond => &s * 1_000,
-                    TimeUnit::Nanosecond => s,
+                    ArrowTimeUnit::Second => &s * MILLISECONDS,
+                    ArrowTimeUnit::Millisecond => s,
+                    ArrowTimeUnit::Microsecond => &s * 1_000,
+                    ArrowTimeUnit::Nanosecond => s,
                 })
             }
             #[cfg(feature = "dtype-time")]
@@ -130,10 +132,10 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .into_time()
                     .into_series();
                 Ok(match tu {
-                    TimeUnit::Second => &s * NANOSECONDS,
-                    TimeUnit::Millisecond => &s * 1_000_000,
-                    TimeUnit::Microsecond => &s * 1_000,
-                    TimeUnit::Nanosecond => s,
+                    ArrowTimeUnit::Second => &s * NANOSECONDS,
+                    ArrowTimeUnit::Millisecond => &s * 1_000_000,
+                    ArrowTimeUnit::Microsecond => &s * 1_000,
+                    ArrowTimeUnit::Nanosecond => s,
                 })
             }
             ArrowDataType::LargeList(fld) => {

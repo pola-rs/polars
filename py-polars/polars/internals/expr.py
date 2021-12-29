@@ -2615,7 +2615,7 @@ class ExprDateTimeNameSpace:
         >>> s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
         >>> s
         shape: (49,)
-        Series: 'dates' [datetime]
+        Series: 'dates' [datetime[ns]]
         [
             2001-01-01 00:00:00
             2001-01-01 00:30:00
@@ -2645,7 +2645,7 @@ class ExprDateTimeNameSpace:
         ]
         >>> s.dt.truncate("1h")
         shape: (49,)
-        Series: 'dates' [datetime]
+        Series: 'dates' [datetime[ns]]
         [
             2001-01-01 00:00:00
             2001-01-01 00:00:00
@@ -2869,6 +2869,34 @@ class ExprDateTimeNameSpace:
     def timestamp(self) -> Expr:
         """Return timestamp in milliseconds as Int64 type."""
         return wrap_expr(self._pyexpr.timestamp())
+
+    def and_time_unit(self, tu: str) -> Expr:
+        """
+        Set time unit a Series of type Datetime
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.and_time_unit(tu), return_dtype=Datetime
+        )
+
+    def and_time_zone(self, tz: Optional[str]) -> Expr:
+        """
+        Set time zone a Series of type Datetime
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.and_time_zone(tz), return_dtype=Datetime
+        )
 
 
 def expr_to_lit_or_expr(

@@ -279,7 +279,7 @@ pub fn datetime(
                     Some(
                         NaiveDate::from_ymd(y, m, d)
                             .and_hms_milli(h, mnt, s, ms)
-                            .timestamp_nanos(),
+                            .timestamp_millis(),
                     )
                 } else {
                     None
@@ -288,7 +288,7 @@ pub fn datetime(
             .trust_my_length(max_len)
             .collect_trusted();
 
-        Ok(ca.into_date().into_series())
+        Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
     }) as Arc<dyn SeriesUdf>);
     Expr::Function {
         input: vec![
@@ -301,7 +301,7 @@ pub fn datetime(
             millisecond.unwrap_or_else(|| lit(0)),
         ],
         function,
-        output_type: GetOutput::from_type(DataType::Datetime),
+        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,

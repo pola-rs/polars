@@ -22,10 +22,10 @@ pub fn to_cast(df: &mut DataFrame, to_cast: &[&Field]) -> Result<()> {
             #[cfg(feature = "temporal")]
             (Utf8, Date) => s.utf8().unwrap().as_date(None).map(|ca| ca.into_series()),
             #[cfg(feature = "temporal")]
-            (Utf8, Datetime) => s
+            (Utf8, Datetime(tu, _)) => s
                 .utf8()
                 .unwrap()
-                .as_datetime(None)
+                .as_datetime(None, *tu)
                 .map(|ca| ca.into_series()),
             (_, dt) => s.cast(dt),
         })?;

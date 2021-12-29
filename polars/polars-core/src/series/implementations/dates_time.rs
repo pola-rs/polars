@@ -222,11 +222,6 @@ macro_rules! impl_dyn_series {
                         let rhs = rhs.cast(&DataType::Int32).unwrap();
                         Ok(lhs.subtract(&rhs)?.$into_logical().into_series())
                     }
-                    (DataType::Datetime, DataType::Datetime) => {
-                        let lhs = self.cast(&DataType::Int64).unwrap();
-                        let rhs = rhs.cast(&DataType::Int64).unwrap();
-                        Ok(lhs.subtract(&rhs)?.$into_logical().into_series())
-                    }
                     (dtl, dtr) => Err(PolarsError::ComputeError(
                         format!(
                             "cannot do subtraction on these date types: {:?}, {:?}",
@@ -317,21 +312,6 @@ macro_rules! impl_dyn_series {
                     Err(PolarsError::SchemaMisMatch(
                         format!(
                             "cannot unpack Series: {:?} of type {:?} into Date",
-                            self.name(),
-                            self.dtype(),
-                        )
-                        .into(),
-                    ))
-                }
-            }
-
-            fn datetime(&self) -> Result<&DatetimeChunked> {
-                if matches!(self.0.dtype(), DataType::Datetime) {
-                    unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DatetimeChunked)) }
-                } else {
-                    Err(PolarsError::SchemaMisMatch(
-                        format!(
-                            "cannot unpack Series: {:?} of type {:?} into datetime",
                             self.name(),
                             self.dtype(),
                         )
@@ -437,18 +417,25 @@ macro_rules! impl_dyn_series {
 
             fn cast(&self, data_type: &DataType) -> Result<Series> {
                 const NS_IN_DAY: i64 = 86400000_000_000;
+                const MS_IN_DAY: i64 = 86400000;
                 use DataType::*;
                 let ca = match (self.dtype(), data_type) {
                     #[cfg(feature = "dtype-datetime")]
-                    (Date, Datetime) => {
+                    (Date, Datetime(tu, tz)) => {
                         let casted = self.0.cast(data_type)?;
                         let casted = casted.datetime().unwrap();
-                        return Ok((casted.deref() * NS_IN_DAY).into_date().into_series());
-                    }
-                    #[cfg(feature = "dtype-date")]
-                    (Datetime, Date) => {
-                        let ca = self.0.deref() / NS_IN_DAY;
-                        Cow::Owned(ca)
+                        match tu {
+                            TimeUnit::Nanoseconds => {
+                                return Ok((casted.deref() * NS_IN_DAY)
+                                    .into_datetime(*tu, tz.clone())
+                                    .into_series());
+                            }
+                            TimeUnit::Milliseconds => {
+                                return Ok((casted.deref() * MS_IN_DAY)
+                                    .into_datetime(*tu, tz.clone())
+                                    .into_series());
+                            }
+                        }
                     }
                     _ => Cow::Borrowed(self.0.deref()),
                 };
@@ -625,10 +612,10 @@ macro_rules! impl_dyn_series {
                         .list()
                         .unwrap()
                         .clone(),
-                    DataType::Datetime => self
+                    DataType::Time => self
                         .0
                         .repeat_by(by)
-                        .cast(&DataType::List(Box::new(DataType::Datetime)))
+                        .cast(&DataType::List(Box::new(DataType::Time)))
                         .unwrap()
                         .list()
                         .unwrap()
@@ -656,8 +643,6 @@ macro_rules! impl_dyn_series {
 
 #[cfg(feature = "dtype-date")]
 impl_dyn_series!(DateChunked, into_date);
-#[cfg(feature = "dtype-datetime")]
-impl_dyn_series!(DatetimeChunked, into_date);
 #[cfg(feature = "dtype-time")]
 impl_dyn_series!(TimeChunked, into_time);
 
@@ -665,7 +650,7 @@ macro_rules! impl_dyn_series_numeric {
     ($ca: ident) => {
         impl private::PrivateSeriesNumeric for SeriesWrap<$ca> {
             fn bit_repr_is_large(&self) -> bool {
-                if let DataType::Datetime = self.dtype() {
+                if let DataType::Time = self.dtype() {
                     true
                 } else {
                     false
@@ -683,8 +668,6 @@ macro_rules! impl_dyn_series_numeric {
 
 #[cfg(feature = "dtype-date")]
 impl_dyn_series_numeric!(DateChunked);
-#[cfg(feature = "dtype-datetime")]
-impl_dyn_series_numeric!(DatetimeChunked);
 #[cfg(feature = "dtype-time")]
 impl_dyn_series_numeric!(TimeChunked);
 
@@ -696,13 +679,16 @@ mod test {
     #[cfg(feature = "dtype-datetime")]
     fn test_agg_list_type() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let s = s.cast(&DataType::Datetime)?;
+        let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
         let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
 
         match l.dtype() {
             DataType::List(inner) => {
-                assert!(matches!(&**inner, DataType::Datetime))
+                assert!(matches!(
+                    &**inner,
+                    DataType::Datetime(TimeUnit::Nanoseconds, None)
+                ))
             }
             _ => assert!(false),
         }
@@ -715,19 +701,28 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_datelike_join() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let mut s1 = s.cast(&DataType::Datetime)?;
+        let mut s1 = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
         s1.rename("bar");
 
         let df = DataFrame::new(vec![s, s1])?;
 
         let out = df.left_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime));
+        assert!(matches!(
+            out.column("bar")?.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        ));
 
         let out = df.inner_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime));
+        assert!(matches!(
+            out.column("bar")?.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        ));
 
         let out = df.outer_join(&df.clone(), "bar", "bar")?;
-        assert!(matches!(out.column("bar")?.dtype(), DataType::Datetime));
+        assert!(matches!(
+            out.column("bar")?.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        ));
         Ok(())
     }
 
@@ -735,10 +730,13 @@ mod test {
     #[cfg(feature = "dtype-datetime")]
     fn test_datelike_methods() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
-        let s = s.cast(&DataType::Datetime)?;
+        let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
         let out = s.subtract(&s)?;
-        assert!(matches!(out.dtype(), DataType::Datetime));
+        assert!(matches!(
+            out.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        ));
 
         let mut a = s.clone();
         a.append(&s).unwrap();
@@ -749,29 +747,61 @@ mod test {
 
     #[test]
     fn test_arithmetic_dispatch() {
-        let s = Int64Chunked::new("", &[1, 2, 3]).into_date().into_series();
+        let s = Int64Chunked::new("", &[1, 2, 3])
+            .into_datetime(TimeUnit::Nanoseconds, None)
+            .into_series();
 
         // check if we don't panic.
         let out = &s * 100;
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = &s / 100;
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = &s + 100;
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = &s - 100;
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = &s % 100;
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
 
         let out = 100.mul(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = 100.div(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = 100.sub(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = 100.add(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
         let out = 100.rem(&s);
-        assert_eq!(out.dtype(), &DataType::Datetime);
+        assert_eq!(
+            out.dtype(),
+            &DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
     }
 }

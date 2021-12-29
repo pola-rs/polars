@@ -17,7 +17,7 @@ use ahash::RandomState;
 use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
 use arrow::datatypes::IntegerType;
-pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
+pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
@@ -63,7 +63,7 @@ impl_polars_datatype!(Int64Type, Int64, i64);
 impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
-impl_polars_datatype!(DatetimeType, Datetime, i64);
+impl_polars_datatype!(DatetimeType, Unknown, i64);
 impl_polars_datatype!(TimeType, Time, i64);
 
 impl PolarsDataType for Utf8Type {
@@ -243,7 +243,7 @@ pub enum AnyValue<'a> {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
-    Datetime(i64),
+    Datetime(i64, TimeUnit, &'a Option<TimeZone>),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     #[cfg(feature = "dtype-time")]
     Time(i64),
@@ -326,8 +326,14 @@ impl<'a> AnyValue<'a> {
         match self {
             #[cfg(feature = "dtype-date")]
             AnyValue::Int32(v) => AnyValue::Date(v),
+            AnyValue::Null => AnyValue::Null,
+            dt => panic!("cannot create date from other type. dtype: {}", dt),
+        }
+    }
+    pub(crate) fn into_datetime(self, tu: TimeUnit, tz: &'a Option<TimeZone>) -> Self {
+        match self {
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Int64(v) => AnyValue::Datetime(v),
+            AnyValue::Int64(v) => AnyValue::Datetime(v, tu, tz),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {}", dt),
         }
@@ -376,8 +382,6 @@ impl<'a> AnyValue<'a> {
             Float64(v) => AnyValue::Float64(*v),
             #[cfg(feature = "dtype-date")]
             Date(v) => AnyValue::Date(*v),
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(v) => AnyValue::Datetime(*v),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
             List(v) => AnyValue::List(v.clone()),
@@ -421,12 +425,19 @@ impl Display for DataType {
             DataType::Float64 => "f64",
             DataType::Utf8 => "str",
             DataType::Date => "date",
-            DataType::Datetime => "datetime",
+            DataType::Datetime(tu, tz) => {
+                let s = match tz {
+                    None => format!("datetime[{}]", tu),
+                    Some(tz) => format!("datetime[{}, {}]", tu, tz),
+                };
+                return f.write_str(&s);
+            }
             DataType::Time => "time",
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
             DataType::Categorical => "cat",
+            DataType::Unknown => unreachable!(),
         };
         f.write_str(s)
     }
@@ -453,7 +464,7 @@ impl PartialEq for AnyValue<'_> {
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Date(l), Date(r)) => l == r,
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
-            (Datetime(l), Datetime(r)) => l == r,
+            (Datetime(l, tul, tzl), Datetime(r, tur, tzr)) => l == r && tul == tur && tzl == tzr,
             (Boolean(l), Boolean(r)) => l == r,
             (List(_), List(_)) => panic!("eq between list series not supported"),
             #[cfg(feature = "object")]
@@ -495,6 +506,49 @@ impl PartialOrd for AnyValue<'_> {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TimeUnit {
+    Nanoseconds,
+    Milliseconds,
+}
+
+impl From<&ArrowTimeUnit> for TimeUnit {
+    fn from(tu: &ArrowTimeUnit) -> Self {
+        match tu {
+            ArrowTimeUnit::Millisecond => TimeUnit::Milliseconds,
+            ArrowTimeUnit::Nanosecond => TimeUnit::Nanoseconds,
+            // will be cast
+            ArrowTimeUnit::Microsecond => TimeUnit::Nanoseconds,
+            // will be cast
+            ArrowTimeUnit::Second => TimeUnit::Milliseconds,
+        }
+    }
+}
+
+impl Display for TimeUnit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TimeUnit::Nanoseconds => {
+                write!(f, "ns")
+            }
+            TimeUnit::Milliseconds => {
+                write!(f, "ms")
+            }
+        }
+    }
+}
+
+impl TimeUnit {
+    pub fn to_arrow(&self) -> ArrowTimeUnit {
+        match self {
+            TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
+            TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
+        }
+    }
+}
+
+pub type TimeZone = String;
+
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub enum DataType {
     Boolean,
@@ -515,7 +569,7 @@ pub enum DataType {
     Date,
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
-    Datetime,
+    Datetime(TimeUnit, Option<TimeZone>),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     Time,
     List(Box<DataType>),
@@ -525,6 +579,8 @@ pub enum DataType {
     Object(&'static str),
     Null,
     Categorical,
+    // some logical types we cannot know statically, e.g. Datetime
+    Unknown,
 }
 
 impl DataType {
@@ -541,7 +597,7 @@ impl DataType {
         use DataType::*;
         match self {
             Date => Int32,
-            Datetime => Int64,
+            Datetime(_, _) => Int64,
             Time => Int64,
             Categorical => UInt32,
             _ => self.clone(),
@@ -565,8 +621,8 @@ impl DataType {
             Float64 => ArrowDataType::Float64,
             Utf8 => ArrowDataType::LargeUtf8,
             Date => ArrowDataType::Date32,
-            Datetime => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-            Time => ArrowDataType::Time64(TimeUnit::Nanosecond),
+            Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
+            Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",
                 dt.to_arrow(),
@@ -576,6 +632,7 @@ impl DataType {
             #[cfg(feature = "object")]
             Object(_) => panic!("cannot convert object to arrow"),
             Categorical => ArrowDataType::UInt32,
+            Unknown => unreachable!(),
         }
     }
 }
@@ -843,7 +900,8 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeList(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
-            ArrowDataType::Timestamp(_, _) | ArrowDataType::Date64 => DataType::Datetime,
+            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
+            ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Utf8 => DataType::Utf8,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
@@ -897,37 +955,58 @@ mod test {
     #[test]
     fn test_arrow_dtypes_to_polars() {
         let dtypes = [
-            (ArrowDataType::Date64, DataType::Datetime),
             (
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                DataType::Datetime,
+                ArrowDataType::Date64,
+                DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (
-                ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
-                DataType::Datetime,
+                ArrowDataType::Timestamp(ArrowTimeUnit::Nanosecond, None),
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
             ),
             (
-                ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
-                DataType::Datetime,
+                ArrowDataType::Timestamp(ArrowTimeUnit::Microsecond, None),
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
             ),
             (
-                ArrowDataType::Timestamp(TimeUnit::Second, None),
-                DataType::Datetime,
+                ArrowDataType::Timestamp(ArrowTimeUnit::Millisecond, None),
+                DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (
-                ArrowDataType::Timestamp(TimeUnit::Second, Some("".to_string())),
-                DataType::Datetime,
+                ArrowDataType::Timestamp(ArrowTimeUnit::Second, None),
+                DataType::Datetime(TimeUnit::Milliseconds, None),
+            ),
+            (
+                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
+                DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
             ),
             (ArrowDataType::LargeUtf8, DataType::Utf8),
             (ArrowDataType::Utf8, DataType::Utf8),
-            (ArrowDataType::Time64(TimeUnit::Nanosecond), DataType::Time),
-            (ArrowDataType::Time64(TimeUnit::Millisecond), DataType::Time),
-            (ArrowDataType::Time64(TimeUnit::Microsecond), DataType::Time),
-            (ArrowDataType::Time64(TimeUnit::Second), DataType::Time),
-            (ArrowDataType::Time32(TimeUnit::Nanosecond), DataType::Time),
-            (ArrowDataType::Time32(TimeUnit::Millisecond), DataType::Time),
-            (ArrowDataType::Time32(TimeUnit::Microsecond), DataType::Time),
-            (ArrowDataType::Time32(TimeUnit::Second), DataType::Time),
+            (
+                ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
+                DataType::Time,
+            ),
+            (
+                ArrowDataType::Time64(ArrowTimeUnit::Millisecond),
+                DataType::Time,
+            ),
+            (
+                ArrowDataType::Time64(ArrowTimeUnit::Microsecond),
+                DataType::Time,
+            ),
+            (ArrowDataType::Time64(ArrowTimeUnit::Second), DataType::Time),
+            (
+                ArrowDataType::Time32(ArrowTimeUnit::Nanosecond),
+                DataType::Time,
+            ),
+            (
+                ArrowDataType::Time32(ArrowTimeUnit::Millisecond),
+                DataType::Time,
+            ),
+            (
+                ArrowDataType::Time32(ArrowTimeUnit::Microsecond),
+                DataType::Time,
+            ),
+            (ArrowDataType::Time32(ArrowTimeUnit::Second), DataType::Time),
             (
                 ArrowDataType::List(Box::new(ArrowField::new(
                     "item",

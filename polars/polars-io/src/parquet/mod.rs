@@ -51,7 +51,9 @@ mod test {
             "datetime" => [Some(191845729i64), Some(89107598), None, Some(3158971092)]
         ]?;
 
-        df.may_apply("datetime", |s| s.cast(&DataType::Datetime))?;
+        df.may_apply("datetime", |s| {
+            s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+        })?;
 
         ParquetWriter::new(&mut f).finish(&df)?;
 

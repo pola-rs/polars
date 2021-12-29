@@ -406,6 +406,18 @@ impl ops::Rem for &Series {
 
 // Series +-/* numbers instead of Series
 
+fn finish_cast(inp: &Series, out: Series) -> Series {
+    match inp.dtype() {
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => out.into_date(),
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(tu, tz) => out.into_datetime(*tu, tz.clone()),
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => out.into_time(),
+        _ => out,
+    }
+}
+
 impl<T> ops::Sub<T> for &Series
 where
     T: Num + NumCast,
@@ -421,12 +433,7 @@ where
         }
 
         let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, sub);
-        match self.dtype() {
-            DataType::Datetime | DataType::Date => out.into_date(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => out.into_time(),
-            _ => out,
-        }
+        finish_cast(self, out)
     }
 }
 
@@ -455,12 +462,7 @@ where
             }};
         }
         let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, add);
-        match self.dtype() {
-            DataType::Datetime | DataType::Date => out.into_date(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => out.into_time(),
-            _ => out,
-        }
+        finish_cast(self, out)
     }
 }
 
@@ -490,12 +492,7 @@ where
         }
 
         let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, div);
-        match self.dtype() {
-            DataType::Datetime | DataType::Date => out.into_date(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => out.into_time(),
-            _ => out,
-        }
+        finish_cast(self, out)
     }
 }
 
@@ -524,12 +521,7 @@ where
             }};
         }
         let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, mul);
-        match self.dtype() {
-            DataType::Datetime | DataType::Date => out.into_date(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => out.into_time(),
-            _ => out,
-        }
+        finish_cast(self, out)
     }
 }
 
@@ -558,13 +550,7 @@ where
             }};
         }
         let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, rem);
-
-        match self.dtype() {
-            DataType::Datetime | DataType::Date => out.into_date(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => out.into_time(),
-            _ => out,
-        }
+        finish_cast(self, out)
     }
 }
 
@@ -635,12 +621,7 @@ where
         }
         let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, sub);
 
-        match rhs.dtype() {
-            DataType::Datetime | DataType::Date => out.into_date(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => out.into_time(),
-            _ => out,
-        }
+        finish_cast(rhs, out)
     }
     fn div(self, rhs: &Series) -> Self::Output {
         let s = rhs.to_physical_repr();
@@ -651,12 +632,7 @@ where
         }
         let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, div);
 
-        match rhs.dtype() {
-            DataType::Datetime | DataType::Date => out.into_date(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => out.into_time(),
-            _ => out,
-        }
+        finish_cast(rhs, out)
     }
     fn mul(self, rhs: &Series) -> Self::Output {
         // order doesn't matter, dispatch to rhs * lhs
@@ -672,12 +648,7 @@ where
 
         let out = match_arrow_data_type_apply_macro_ca_logical_num!(s, rem);
 
-        match rhs.dtype() {
-            DataType::Datetime | DataType::Date => out.into_date(),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => out.into_time(),
-            _ => out,
-        }
+        finish_cast(rhs, out)
     }
 }
 

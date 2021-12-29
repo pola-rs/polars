@@ -188,7 +188,7 @@ def date_range(
     >>> from datetime import datetime
     >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), "1d12h")
     shape: (7426,)
-    Series: '' [datetime]
+    Series: '' [datetime[ns]]
     [
         1985-01-01 00:00:00
         1985-01-02 12:00:00
@@ -218,10 +218,11 @@ def date_range(
     ]
 
     """
+    # TODO: determine date unit 'ns' or 'ms' depending on range
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
-    start = _datetime_to_pl_timestamp(low)
-    stop = _datetime_to_pl_timestamp(high)
+    start = _datetime_to_pl_timestamp(low, "ns")
+    stop = _datetime_to_pl_timestamp(high, "ns")
     if name is None:
         name = ""
 

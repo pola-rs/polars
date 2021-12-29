@@ -14,7 +14,7 @@ clean:
 	@rm -r venv
 	@rm -r target/
 
-pre-commit:
+pre-commit: venv
 	$(PYTHON_BIN)/isort .
 	$(PYTHON_BIN)/black .
 	$(PYTHON_BIN)/blackdoc .

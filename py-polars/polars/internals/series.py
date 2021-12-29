@@ -68,6 +68,7 @@ from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _ptr_to_numpy,
+    _to_python_datetime,
     range_to_slice,
 )
 
@@ -300,7 +301,7 @@ class Series:
 
     def _comp(self, other: Any, op: str) -> "Series":
         if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other)
+            ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             return wrap_s(f(ts))  # type: ignore
         if isinstance(other, date) and self.dtype == Date:
@@ -3276,6 +3277,13 @@ class Series:
         """
         return wrap_s(self._s.extend(value, n))
 
+    @property
+    def time_unit(self) -> Optional[str]:
+        """
+        Get the time unit of underlying Datetime Series as {"ns", "ms"}
+        """
+        return self._s.time_unit()
+
     # Below are the namespaces defined. Do not move these up in the definition of Series, as it confuses mypy between the
     # type annotation `str` and the namespace "str
 
@@ -3680,7 +3688,7 @@ class DateTimeNameSpace:
         >>> s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
         >>> s
         shape: (49,)
-        Series: 'dates' [datetime]
+        Series: 'dates' [datetime[ns]]
         [
             2001-01-01 00:00:00
             2001-01-01 00:30:00
@@ -3710,7 +3718,7 @@ class DateTimeNameSpace:
         ]
         >>> s.dt.truncate("1h")
         shape: (49,)
-        Series: 'dates' [datetime]
+        Series: 'dates' [datetime[ns]]
         [
             2001-01-01 00:00:00
             2001-01-01 00:00:00
@@ -3747,8 +3755,8 @@ class DateTimeNameSpace:
 
     def __getitem__(self, item: int) -> Union[date, datetime]:
         s = wrap_s(self._s)
-        out = wrap_s(self._s)[item]
-        return _to_python_datetime(out, s.dtype)
+        out = s[item]
+        return _to_python_datetime(out, s.dtype, s.time_unit)
 
     def strftime(self, fmt: str) -> Series:
         """
@@ -3915,7 +3923,7 @@ class DateTimeNameSpace:
         """
         s = wrap_s(self._s)
         out = s.min()
-        return _to_python_datetime(out, s.dtype)
+        return _to_python_datetime(out, s.dtype, s.time_unit)
 
     def max(self) -> Union[date, datetime]:
         """
@@ -3923,7 +3931,7 @@ class DateTimeNameSpace:
         """
         s = wrap_s(self._s)
         out = s.max()
-        return _to_python_datetime(out, s.dtype)
+        return _to_python_datetime(out, s.dtype, s.time_unit)
 
     def median(self) -> Union[date, datetime]:
         """
@@ -3931,7 +3939,7 @@ class DateTimeNameSpace:
         """
         s = wrap_s(self._s)
         out = int(s.median())
-        return _to_python_datetime(out, s.dtype)
+        return _to_python_datetime(out, s.dtype, s.time_unit)
 
     def mean(self) -> Union[date, datetime]:
         """
@@ -3939,7 +3947,7 @@ class DateTimeNameSpace:
         """
         s = wrap_s(self._s)
         out = int(s.mean())
-        return _to_python_datetime(out, s.dtype)
+        return _to_python_datetime(out, s.dtype, s.time_unit)
 
     def epoch_days(self) -> Series:
         """
@@ -3974,20 +3982,29 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.dt_epoch_seconds())
 
+    def and_time_unit(self, tu: str) -> "Series":
+        """
+        Set time unit a Series of type Datetime
 
-def _to_python_datetime(
-    value: Union[int, float], dtype: Type[DataType]
-) -> Union[date, datetime]:
-    if dtype == Date:
-        # days to seconds
-        # important to create from utc. Not doing this leads
-        # to inconsistencies dependent on the timezone you are in.
-        return datetime.utcfromtimestamp(value * 3600 * 24).date()
-    elif dtype == Datetime:
-        # nanoseconds to seconds
-        return datetime.utcfromtimestamp(value / 1_000_000_000)
-    else:
-        raise NotImplementedError  # pragma: no cover
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_s(self._s.and_time_unit(tu))
+
+    def and_time_zone(self, tz: Optional[str]) -> "Series":
+        """
+        Set time zone a Series of type Datetime
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_s(self._s.and_time_zone(tz))
 
 
 class SeriesIter:

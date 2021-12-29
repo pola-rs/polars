@@ -3,6 +3,9 @@ use crate::prelude::*;
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 
+#[cfg(feature = "dtype-datetime")]
+use polars_core::time::in_nanoseconds_window;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum LiteralValue {
     Null,
@@ -40,7 +43,7 @@ pub enum LiteralValue {
         data_type: DataType,
     },
     #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-    DateTime(NaiveDateTime),
+    DateTime(NaiveDateTime, TimeUnit),
     Series(NoEq<Series>),
 }
 
@@ -66,7 +69,7 @@ impl LiteralValue {
             LiteralValue::Utf8(_) => DataType::Utf8,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            LiteralValue::DateTime(_) => DataType::Datetime,
+            LiteralValue::DateTime(_, tu) => DataType::Datetime(*tu, None),
             LiteralValue::Series(s) => s.dtype().clone(),
             LiteralValue::Null => DataType::Null,
         }
@@ -128,14 +131,21 @@ impl Literal for Null {
 #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::DateTime(self))
+        if in_nanoseconds_window(&self) {
+            Expr::Literal(LiteralValue::DateTime(self, TimeUnit::Nanoseconds))
+        } else {
+            Expr::Literal(LiteralValue::DateTime(self, TimeUnit::Milliseconds))
+        }
     }
 }
 
 #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::DateTime(self.and_hms(0, 0, 0)))
+        Expr::Literal(LiteralValue::DateTime(
+            self.and_hms(0, 0, 0),
+            TimeUnit::Milliseconds,
+        ))
     }
 }
 

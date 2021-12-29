@@ -19,7 +19,7 @@ impl CastExpr {
         // here we create a null array for the types we cannot cast to from a booleanarray
 
         if input.bool().is_ok() && input.null_count() == input.len() {
-            match self.data_type {
+            match &self.data_type {
                 DataType::List(_) => {
                     return Ok(ListChunked::full_null(input.name(), input.len()).into_series())
                 }
@@ -30,9 +30,9 @@ impl CastExpr {
                         .into_series())
                 }
                 #[cfg(feature = "dtype-datetime")]
-                DataType::Datetime => {
+                DataType::Datetime(tu, tz) => {
                     return Ok(Int64Chunked::full_null(input.name(), input.len())
-                        .into_date()
+                        .into_datetime(*tu, tz.clone())
                         .into_series())
                 }
                 _ => {}

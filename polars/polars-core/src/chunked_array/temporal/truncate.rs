@@ -6,7 +6,8 @@ use polars_time::{Duration, Window};
 impl DatetimeChunked {
     pub fn truncate(&self, every: Duration, offset: Duration) -> Self {
         let w = Window::new(every, every, offset);
-        self.apply(|t| w.truncate(t)).into_date()
+        self.apply(|t| w.truncate(t))
+            .into_datetime(self.time_unit(), self.time_zone().clone())
     }
 }
 

@@ -201,7 +201,7 @@ impl<'a> From<&AnyValue<'a>> for Field {
             #[cfg(feature = "dtype-date")]
             Date(_) => Field::new("", DataType::Date),
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_) => Field::new("", DataType::Datetime),
+            Datetime(_, tu, tz) => Field::new("", DataType::Datetime(*tu, (*tz).clone())),
             #[cfg(feature = "dtype-time")]
             Time(_) => Field::new("", DataType::Time),
             _ => unimplemented!(),
@@ -234,7 +234,11 @@ pub(crate) enum Buffer {
     #[cfg(feature = "dtype-date")]
     Date(PrimitiveChunkedBuilder<Int32Type>),
     #[cfg(feature = "dtype-datetime")]
-    Datetime(PrimitiveChunkedBuilder<Int64Type>),
+    Datetime(
+        PrimitiveChunkedBuilder<Int64Type>,
+        TimeUnit,
+        Option<TimeZone>,
+    ),
     #[cfg(feature = "dtype-time")]
     Time(PrimitiveChunkedBuilder<Int64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
@@ -254,7 +258,7 @@ impl Debug for Buffer {
             #[cfg(feature = "dtype-date")]
             Date(_) => f.write_str("Date"),
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_) => f.write_str("datetime"),
+            Datetime(_, _, _) => f.write_str("datetime"),
             #[cfg(feature = "dtype-time")]
             Time(_) => f.write_str("time"),
             Float32(_) => f.write_str("f32"),
@@ -281,7 +285,7 @@ impl Buffer {
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(builder), AnyValue::Datetime(v)) => builder.append_value(v),
+            (Datetime(builder, _, _), AnyValue::Datetime(v, _, _)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             (Float32(builder), AnyValue::Null) => builder.append_null(),
@@ -305,9 +309,9 @@ impl Buffer {
             #[cfg(feature = "dtype-date")]
             Date(b) => b.finish().into_date().into_series(),
             #[cfg(feature = "dtype-datetime")]
-            Datetime(b) => b.finish().into_date().into_series(),
+            Datetime(b, tu, tz) => b.finish().into_datetime(tu, tz).into_series(),
             #[cfg(feature = "dtype-time")]
-            Time(b) => b.finish().into_date().into_series(),
+            Time(b) => b.finish().into_time().into_series(),
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
@@ -329,7 +333,9 @@ impl From<(&DataType, usize)> for Buffer {
             #[cfg(feature = "dtype-date")]
             Date => Buffer::Date(PrimitiveChunkedBuilder::new("", len)),
             #[cfg(feature = "dtype-datetime")]
-            Datetime => Buffer::Datetime(PrimitiveChunkedBuilder::new("", len)),
+            Datetime(tu, tz) => {
+                Buffer::Datetime(PrimitiveChunkedBuilder::new("", len), *tu, tz.clone())
+            }
             #[cfg(feature = "dtype-time")]
             Time => Buffer::Time(PrimitiveChunkedBuilder::new("", len)),
             Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new("", len)),
