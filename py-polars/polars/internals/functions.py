@@ -164,6 +164,7 @@ def date_range(
     interval: Union[str, timedelta],
     closed: Optional[str] = "both",
     name: Optional[str] = None,
+    time_unit: Optional[str] = None,
 ) -> "pli.Series":
     """
     Create a date range of type `Datetime`.
@@ -182,6 +183,8 @@ def date_range(
         Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
     name
         Name of the output Series
+    time_unit
+        Set the time unit; one of {'ns', 'ms'}
 
     Returns
     -------
@@ -225,7 +228,7 @@ def date_range(
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
 
-    if in_nanoseconds_window(low) and in_nanoseconds_window(high):
+    if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
         tu = "ns"
     else:
         tu = "ms"

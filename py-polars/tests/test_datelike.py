@@ -184,10 +184,11 @@ def test_to_numpy() -> None:
 def test_truncate() -> None:
     start = datetime(2001, 1, 1)
     stop = datetime(2001, 1, 2)
-    s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
 
+    s1 = pl.date_range(start, stop, timedelta(minutes=30), name="dates", time_unit="ms")
+    s2 = pl.date_range(start, stop, timedelta(minutes=30), name="dates", time_unit="ns")
     # we can pass strings and timedeltas
-    for out in [s.dt.truncate("1h"), s.dt.truncate(timedelta(hours=1))]:
+    for out in [s1.dt.truncate("1h"), s2.dt.truncate(timedelta(hours=1))]:
         assert out.dt[0] == start
         assert out.dt[1] == start
         assert out.dt[2] == start + timedelta(hours=1)
