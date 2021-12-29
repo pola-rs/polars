@@ -516,7 +516,7 @@ pub struct WhenThen {
 
 /// Intermediate state of chain when then exprs.
 ///
-/// ```ignore
+/// ```text
 /// when(..).then(..)
 /// when(..).then(..)
 /// when(..).then(..)
@@ -860,7 +860,7 @@ impl Expr {
         }
     }
 
-    /// Sort in increasing order. See [the eager implementation](polars_core::series::SeriesTrait::sort).
+    /// Sort in increasing order. See [the eager implementation](Series::sort).
     pub fn sort(self, reverse: bool) -> Self {
         Expr::Sort {
             expr: Box::new(self),
@@ -1510,7 +1510,7 @@ impl Expr {
     }
 
     /// Apply a rolling min See:
-    /// [ChunkedArray::rolling_min](polars::prelude::ChunkWindow::rolling_min).
+    /// [ChunkedArray::rolling_min]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_min(self, options: RollingOptions) -> Expr {
@@ -1521,7 +1521,7 @@ impl Expr {
     }
 
     /// Apply a rolling max See:
-    /// [ChunkedArray::rolling_max](polars::prelude::ChunkWindow::rolling_max).
+    /// [ChunkedArray::rolling_max]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_max(self, options: RollingOptions) -> Expr {
@@ -1532,7 +1532,7 @@ impl Expr {
     }
 
     /// Apply a rolling mean See:
-    /// [ChunkedArray::rolling_mean](polars::prelude::ChunkWindow::rolling_mean).
+    /// [ChunkedArray::rolling_mean]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_mean(self, options: RollingOptions) -> Expr {
@@ -1543,7 +1543,7 @@ impl Expr {
     }
 
     /// Apply a rolling sum See:
-    /// [ChunkedArray::rolling_sum](polars::prelude::ChunkWindow::rolling_sum).
+    /// [ChunkedArray::rolling_sum]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_sum(self, options: RollingOptions) -> Expr {
