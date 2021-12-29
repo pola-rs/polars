@@ -66,23 +66,92 @@ def test_tbl_width_chars(environ: None) -> None:
     assert max(len(line) for line in str(df).split("\n")) == 13
 
 
-def test_tbl_cols(environ: None) -> None:
+def test_set_tbl_cols(environ: None) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
     pl.Config.set_tbl_cols(1)
     assert str(df).split("\n")[2] == "│ a   ┆ ... │"
     pl.Config.set_tbl_cols(2)
-    assert str(df).split("\n")[2] == "│ a   ┆ ... ┆ c   │"
+    assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ c   │"
     pl.Config.set_tbl_cols(3)
     assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ c   │"
 
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9], "d": [10, 11, 12]}
+    )
+    pl.Config.set_tbl_cols(2)
+    assert str(df).split("\n")[2] == "│ a   ┆ ... ┆ d   │"
+    pl.Config.set_tbl_cols(3)
+    assert str(df).split("\n")[2] == "│ a   ┆ b   ┆ c   ┆ d   │"
 
-@pytest.mark.skip("not correctly implemented at the moment")
+
 def test_set_tbl_rows(environ: None) -> None:
-    # df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
-    pass
-    #
-    # pl.Config.set_tbl_rows(3)
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8], "c": [9, 10, 11, 12]})
+
+    pl.Config.set_tbl_rows(1)
+    assert (
+        str(df) == "shape: (4, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 5   ┆ 9   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ ... ┆ ... ┆ ... │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 4   ┆ 8   ┆ 12  │\n"
+        "└─────┴─────┴─────┘"
+    )
+    pl.Config.set_tbl_rows(2)
+    assert (
+        str(df) == "shape: (4, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 5   ┆ 9   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ ... ┆ ... ┆ ... │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 4   ┆ 8   ┆ 12  │\n"
+        "└─────┴─────┴─────┘"
+    )
+    pl.Config.set_tbl_rows(3)
+    assert (
+        str(df) == "shape: (4, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 5   ┆ 9   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 2   ┆ 6   ┆ 10  │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 3   ┆ 7   ┆ 11  │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 4   ┆ 8   ┆ 12  │\n"
+        "└─────┴─────┴─────┘"
+    )
+    pl.Config.set_tbl_rows(4)
+    assert (
+        str(df) == "shape: (4, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│ a   ┆ b   ┆ c   │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│ 1   ┆ 5   ┆ 9   │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 2   ┆ 6   ┆ 10  │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 3   ┆ 7   ┆ 11  │\n"
+        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
+        "│ 4   ┆ 8   ┆ 12  │\n"
+        "└─────┴─────┴─────┘"
+    )
 
 
 def test_string_cache(environ: None) -> None:

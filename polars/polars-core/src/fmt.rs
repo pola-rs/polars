@@ -349,7 +349,7 @@ impl Display for DataFrame {
                 max_n_rows
             }
         };
-        let (n_first, n_last) = if self.width() > max_n_cols {
+        let (n_first, n_last) = if self.width() > max_n_cols + 1 {
             ((max_n_cols + 1) / 2, max_n_cols / 2)
         } else {
             (self.width(), 0)
@@ -392,14 +392,14 @@ impl Display for DataFrame {
                 )
                 .set_header(names);
             let mut rows = Vec::with_capacity(max_n_rows);
-            if self.height() > max_n_rows {
-                for i in 0..(max_n_rows / 2) {
+            if self.height() > max_n_rows + 1 {
+                for i in 0..((max_n_rows + 1) / 2) {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
-                for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
+                for i in (self.height() - max_n_rows / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
@@ -407,8 +407,8 @@ impl Display for DataFrame {
                     table.add_row(row);
                 }
             } else {
-                for i in 0..max_n_rows {
-                    if i < self.height() && self.width() > 0 {
+                for i in 0..self.height() {
+                    if self.width() > 0 {
                         let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                         table.add_row(prepare_row(row, n_first, n_last));
                     } else {
@@ -433,14 +433,14 @@ impl Display for DataFrame {
             let mut table = Table::new();
             table.set_titles(Row::new(names.into_iter().map(|s| Cell::new(&s)).collect()));
             let mut rows = Vec::with_capacity(max_n_rows);
-            if self.height() > max_n_rows {
-                for i in 0..(max_n_rows / 2) {
+            if self.height() > max_n_rows + 1 {
+                for i in 0..((max_n_rows + 1) / 2) {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
-                for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
+                for i in (self.height() - max_n_rows / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
@@ -448,8 +448,8 @@ impl Display for DataFrame {
                     table.add_row(Row::new(row.into_iter().map(|s| Cell::new(&s)).collect()));
                 }
             } else {
-                for i in 0..max_n_rows {
-                    if i < self.height() && self.width() > 0 {
+                for i in 0..self.height() {
+                    if self.width() > 0 {
                         let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                         table.add_row(Row::new(
                             prepare_row(row, n_first, n_last)
