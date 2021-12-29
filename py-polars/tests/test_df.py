@@ -1643,6 +1643,20 @@ def test_arithmetic() -> None:
     )
     assert out.frame_equal(expected, null_equal=True)
 
+    # cannot do arithmetics with a sequence
+    with pytest.raises(ValueError, match="Operation not supported"):
+        _ = df + [1]  # type: ignore
+
+
+@pytest.mark.skip("column names of result are empty, see issue #2217")
+def test_add_string() -> None:
+    df = pl.DataFrame({"a": ["hi", "there"], "b": ["hello", "world"]})
+    result = df + " hello"
+    expected = pl.DataFrame(
+        {"a": ["hi hello", "there hello"], "b": ["hello hello", "world hello"]}
+    )
+    assert result.frame_equal(expected)
+
 
 def test_getattr() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0]})
