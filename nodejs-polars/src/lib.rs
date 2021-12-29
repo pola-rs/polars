@@ -8,15 +8,15 @@ pub mod list_construction;
 pub mod prelude;
 pub mod series;
 pub mod series_object;
+use crate::conversion::prelude::*;
 use crate::dataframe::*;
 use crate::lazy::dsl;
 use crate::lazy::functions;
 use crate::lazy::lazyframe_object::JsLazyFrame;
 use crate::series::{repeat, JsSeries};
-use napi::{JsObject, Result as JsResult, CallContext, JsExternal};
-use polars_core::prelude::DataFrame;
+use napi::{CallContext, JsExternal, JsObject, Result as JsResult};
 use polars_core::functions as pl_functions;
-use crate::conversion::prelude::*;
+use polars_core::prelude::DataFrame;
 
 #[macro_use]
 extern crate napi_derive;
@@ -28,7 +28,6 @@ pub fn hor_concat_df(cx: CallContext) -> JsResult<JsExternal> {
     let dfs = params.get_external_vec::<DataFrame>(&cx, "items")?;
     let df = pl_functions::hor_concat_df(&dfs).map_err(crate::error::JsPolarsEr::from)?;
     df.try_into_js(&cx)
-
 }
 
 #[module_exports]

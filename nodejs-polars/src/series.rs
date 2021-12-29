@@ -679,7 +679,8 @@ pub fn reinterpret(cx: CallContext) -> JsResult<JsExternal> {
         _ => Err(PolarsError::ComputeError(
             "reinterpret is only allowed for 64bit integers dtype, use cast otherwise".into(),
         )),
-    }.map_err(JsPolarsEr::from)?;
+    }
+    .map_err(JsPolarsEr::from)?;
     s.try_into_js(&cx)
 }
 

@@ -3,7 +3,6 @@ import pli from "./internals/polars_internal";
 import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";
 import {LazyDataFrame} from "./lazy/dataframe";
-import path from "path";
 
 const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   inferSchemaLength: 10,
@@ -20,7 +19,6 @@ const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
 
 const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
   batchSize: 1000,
-  inline: false,
   inferSchemaLength: 10
 };
 
