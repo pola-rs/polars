@@ -4,9 +4,9 @@ use crate::datatypes::JsDataType;
 use crate::prelude::JsResult;
 use napi::*;
 
+use crate::error::JsPolarsEr;
 use polars::lazy::dsl;
 use polars::prelude::*;
-use crate::error::JsPolarsEr;
 pub struct JsExpr {}
 pub struct JsWhen {}
 pub struct JsWhenThen {}
@@ -538,11 +538,11 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
                     GetOutput::same_type(),
                 )
             } else {
-                return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into())
+                return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into());
             }
         }
 
-        _ => return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into())
+        _ => return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into()),
     }
     .try_into_js(&cx)
 }

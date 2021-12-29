@@ -161,7 +161,6 @@ describe("dataframe", () => {
       expect(df.columns).toEqual(Object.keys(rows[0]));
       expect(df.dtypes).toEqual(["Float64", "Datetime", "Utf8"]);
     });
-    test.todo("from object array");
     test("from nulls", () => {
       const df = pl.DataFrame({"nulls": [null, null, null]});
       const expected = pl.DataFrame([pl.Series("nulls", [null, null, null], pl.Float64)]);
@@ -292,7 +291,6 @@ describe("dataframe", () => {
 
     expect(actual).toFrameEqual(expected);
   });
-  test.todo("downsample");
   test("drop", () => {
     const df = pl.DataFrame({
       "foo": [1, 2, 3],
@@ -1313,6 +1311,51 @@ describe("dataframe", () => {
     fs.rmSync("./test.csv");
     done();
   });
+  test("toJS:dataframe", () => {
+    const df = pl.DataFrame({
+      foo: [1],
+      bar: ["a"]
+    });
+    const expected = {
+      columns: [
+        {
+          name: "foo",
+          datatype: "Float64",
+          values: [1.0]
+        },
+        {
+          name: "bar",
+          datatype: "Utf8",
+          values: ["a"]
+        },
+      ]
+    };
+    const actual = df.toJS({orient:"dataframe"});
+    expect(actual).toEqual(expected);
+  });
+  test("toJS:row", () => {
+    const df = pl.DataFrame({
+      foo: [1],
+      bar: ["a"]
+    });
+    const expected = [
+      {foo: 1.0, bar: "a"}
+    ];
+    const actual = df.toJS({orient:"row"});
+    expect(actual).toEqual(expected);
+  });
+  test("toJS", () => {
+    const df = pl.DataFrame({
+      foo: [1],
+      bar: ["a"]
+    });
+    const expected = {
+      foo: [1],
+      bar: ["a"]
+    };
+    const actual = df.toJS();
+    expect(actual).toEqual(expected);
+  });
   test("toJSON:multiline", () => {
     const rows = [
       {foo: 1.1, bar: 6.2, ham: "a"},
@@ -1364,13 +1407,30 @@ describe("dataframe", () => {
     const actual = JSON.stringify(df);
     expect(actual).toEqual(expected);
   });
-
+  test("toJSON:rows", () => {
+    const rows = [
+      {foo: 1.1, bar: 6.2, ham: "a"},
+      {foo: 3.1, bar: 9.2, ham: "b"},
+      {foo: 3.1, bar: 9.2, ham: "c"}
+    ];
+    const expected = JSON.stringify(rows);
+    const actual = pl.DataFrame(rows).toJSON({orient:"row"});
+    expect(actual).toEqual(expected);
+  });
+  test("toJSON:cols", () => {
+    const cols = {
+      foo: [1, 2, 3],
+      bar: ["a", "b", "c"]
+    };
+    const expected = JSON.stringify(cols);
+    const actual = pl.DataFrame(cols).toJSON({orient:"col"});
+    expect(actual).toEqual(expected);
+  });
   test("toSeries", () => {
     const s = pl.Series([1, 2, 3]);
     const actual = s.clone().toFrame().toSeries(0);
     expect(actual).toSeriesEqual(s);
   });
-  test.todo("upsample");
   test("var", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],

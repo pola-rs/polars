@@ -363,6 +363,46 @@ pub(crate) fn to_row(cx: CallContext) -> JsResult<JsObject> {
     }
     Ok(row)
 }
+#[js_function(1)]
+pub(crate) fn to_row_objects(cx: CallContext) -> JsResult<JsObject> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let mut arr = cx.env.create_array()?;
+    for idx in 0..df.height() {
+        let mut obj_row = cx.env.create_object()?;
+        for col in df.get_columns().iter() {
+            let col_name = col.name();
+            let col_name_js = cx.env.create_string(col_name)?;
+            let val: Wrap<AnyValue> = col.get(idx).into();
+            let jsv = val.into_js(&cx);
+            obj_row.set_property(col_name_js, jsv)?;
+        }
+        arr.set_element(idx as u32, obj_row)?;
+    }
+    Ok(arr)
+}
+
+#[js_function(1)]
+pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let idx = params.get_as::<i64>("idx")?;
+    let idx = if idx < 0 {
+        (df.height() as i64 + idx) as usize
+    } else {
+        idx as usize
+    };
+
+    let mut obj = cx.env.create_object()?;
+    for col in df.get_columns().iter() {
+        let val: Wrap<AnyValue> = col.get(idx).into();
+        let jsv = val.into_js(&cx);
+        let col_name = col.name();
+        let col_name_js = cx.env.create_string(col_name)?;
+        obj.set_property(col_name_js, jsv)?;
+    }
+    Ok(obj)
+}
 
 #[js_function(1)]
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {

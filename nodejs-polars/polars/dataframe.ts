@@ -1025,10 +1025,95 @@ export interface DataFrame {
   toCSV(): string;
   toCSV(options: WriteCsvOptions): string;
   toCSV(dest: string | Writable, options?: WriteCsvOptions): void;
+  /**
+   * Converts dataframe object into javascript object
+   * Same logic applies for `toJSON` except this will use js values instead of a json string
+   * @param options
+   * @param options.orient - col|row|dataframe
+   *
+   * @example
+   * ```
+   * >>> const df = pl.DataFrame({
+   * >>>   foo: [1,2,3],
+   * >>>   bar: ['a','b','c']
+   * >>> })
+   *
+   * // defaults to 'dataframe' orientation
+   * >>> df.toJS()
+   * {
+   *   "columns":[
+   *     {
+   *       "name":"foo",
+   *       "datatype":"Float64",
+   *       "values":[1,2,3]
+   *     },
+   *     {
+   *       "name":"bar",
+   *       "datatype":"Utf8",
+   *       "values":["a","b","c"]
+   *     }
+   *   ]
+   * }
+   *
+   * // row oriented
+   * >>> df.toJS({orient:"row"})
+   * [
+   *   {"foo":1.0,"bar":"a"},
+   *   {"foo":2.0,"bar":"b"},
+   *   {"foo":3.0,"bar":"c"}
+   * ]
+   *
+   * // column oriented
+   * >>> df.toJS({orient: "col"})
+   * {
+   *   "foo":[1,2,3],
+   *   "bar":["a","b","c"]
+   * }
+   * ```
+   */
   toJS(): object
   toJS(options: {orient: "row" | "col" | "dataframe"}): object
+  /**
+   * Write Dataframe to JSON string, file, or write stream
+   * @param destination file or write stream
+   * @param options
+   * @param options.orient - col|row|dataframe
+   *  - col will write to a column oriented object
+   *
+   * @example
+   * ```
+   * >>> const df = pl.DataFrame({
+   * >>>   foo: [1,2,3],
+   * >>>   bar: ['a','b','c']
+   * >>> })
+   *
+   * // defaults to 'dataframe' orientation
+   * >>> df.toJSON()
+   * `{"columns":[ {"name":"foo","datatype":"Float64","values":[1,2,3]}, {"name":"bar","datatype":"Utf8","values":["a","b","c"]}]}`
+   *
+   * // this will produce the same results as 'df.toJSON()'
+   * >>> JSON.stringify(df)
+   *
+   * // row oriented
+   * >>> df.toJSON({orient:"row"})
+   * `[ {"foo":1.0,"bar":"a"}, {"foo":2.0,"bar":"b"}, {"foo":3.0,"bar":"c"}]`
+   *
+   * // column oriented
+   * >>> df.toJSON({orient: "col"})
+   * `{"foo":[1,2,3],"bar":["a","b","c"]}`
+   *
+   * // multiline (will always be row oriented)
+   * >>> df.toJSON({multiline: true})
+   * `{"foo":1.0,"bar":"a"}
+   * {"foo":2.0,"bar":"b"}
+   * {"foo":3.0,"bar":"c"}`
+   *
+   * // writing to a file
+   * >>> df.toJSON("/path/to/file.json", {multiline:true})
+   * ```
+   */
   toJSON(options?: WriteJsonOptions): string
-  toJSON(dest: string | Writable, options?: WriteJsonOptions): void
+  toJSON(destination: string | Writable, options?: WriteJsonOptions): void
   toSeries(index: number): Series<any>
   toString(): string
   /**
@@ -1487,15 +1572,8 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     },
     toJS(options?) {
       if(options?.orient === "row") {
-        const columns = this.columns;
-        const rows = this.rows();
+        return unwrap("to_row_objects");
 
-        return rows.map(row => {
-          return row.reduce((acc, curr, currIdx) => ({
-            [columns[currIdx]]: curr,
-            ...acc
-          }));
-        });
       }
       if(options?.orient === "dataframe") {
         return unwrap("to_js");
@@ -1524,11 +1602,16 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       }
 
       // toJSON(options)
-      if(arg0?.orient || arg0?.multiline) {
-
+      if(arg0?.orient === "row" || arg0?.multiline) {
         return writeToStreamOrString(null, "json", arg0);
 
-      } else {
+      // toJSON({orient:"col"})
+      } else if(arg0?.orient === "col") {
+        // TODO!
+        // do this on the rust side for better performance
+        return JSON.stringify(this.toJS({orient: "col"}));
+      }
+      else {
         // toJSON("path/to/some/file", options)
         // toJSON(writeStream, options)
         return writeToStreamOrString(arg0, "json", options);

@@ -2,8 +2,8 @@ pub mod frame;
 pub mod io;
 
 use frame as df;
-pub use frame::*;
 pub use frame::JsDataFrame;
+pub use frame::*;
 
 use crate::prelude::JsResult;
 use napi::JsObject;
@@ -11,7 +11,7 @@ use napi::JsObject;
 impl JsDataFrame {
     pub fn to_object(env: &napi::Env) -> JsResult<JsObject> {
         let mut df_obj = env.create_object()?;
-        
+
         df_obj.define_properties(&[
             napi::Property::new(env, "lazy")?.with_method(df::lazy),
             napi::Property::new(env, "add")?.with_method(df::add),
@@ -52,7 +52,6 @@ impl JsDataFrame {
             napi::Property::new(env, "hmin")?.with_method(df::hmin),
             napi::Property::new(env, "hsum")?.with_method(df::hsum),
             napi::Property::new(env, "quantile")?.with_method(df::quantile),
-
             napi::Property::new(env, "rechunk")?.with_method(df::rechunk),
             napi::Property::new(env, "rem")?.with_method(df::rem),
             napi::Property::new(env, "rename")?.with_method(df::rename),
@@ -76,23 +75,22 @@ impl JsDataFrame {
             napi::Property::new(env, "tail")?.with_method(df::tail),
             napi::Property::new(env, "take_with_series")?.with_method(df::take_with_series),
             napi::Property::new(env, "take")?.with_method(df::take),
-
             napi::Property::new(env, "transpose")?.with_method(df::transpose),
             napi::Property::new(env, "var")?.with_method(df::var),
             napi::Property::new(env, "vstack")?.with_method(df::vstack),
             napi::Property::new(env, "width")?.with_method(df::width),
             napi::Property::new(env, "with_column")?.with_method(df::with_column),
             napi::Property::new(env, "with_row_count")?.with_method(df::with_row_count),
-            
             napi::Property::new(env, "to_js")?.with_method(io::to_js),
             napi::Property::new(env, "to_json")?.with_method(io::to_json),
             napi::Property::new(env, "to_row")?.with_method(io::to_row),
             napi::Property::new(env, "to_rows")?.with_method(io::to_rows),
+            napi::Property::new(env, "to_row_object")?.with_method(io::to_row_object),
+            napi::Property::new(env, "to_row_objects")?.with_method(io::to_row_objects),
             napi::Property::new(env, "write_csv_path")?.with_method(io::write_csv_path),
             napi::Property::new(env, "write_csv_stream")?.with_method(io::write_csv_stream),
             napi::Property::new(env, "write_json_path")?.with_method(io::write_json_path),
             napi::Property::new(env, "write_json_stream")?.with_method(io::write_json_stream),
-
             napi::Property::new(env, "read_array_rows")?.with_method(io::read_array_rows),
             napi::Property::new(env, "read_columns")?.with_method(io::read_columns),
             napi::Property::new(env, "readCSVBuffer")?.with_method(io::read_csv_buffer),
