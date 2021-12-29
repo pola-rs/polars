@@ -1151,6 +1151,29 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn rolling_quantile(
+        &self,
+        quantile: f64,
+        interpolation: QuantileInterpolOptions,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,
+    ) -> PyResult<Self> {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
+
+        let s = self
+            .series
+            .rolling_quantile(quantile, interpolation, options)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
     pub fn rolling_max(
         &self,
         window_size: usize,

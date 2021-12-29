@@ -2,6 +2,7 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
+use polars_arrow::prelude::QuantileInterpolOptions;
 
 pub(crate) mod arithmetic;
 mod comparison;
@@ -622,6 +623,24 @@ impl Series {
         }
     }
 
+    /// Apply a rolling quantile to a Series. See:
+    /// [ChunkedArray::rolling_quantile](crate::prelude::ChunkWindow::rolling_quantile).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_quantile(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+        _options: RollingOptions,
+    ) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_quantile(_quantile, _interpol, _options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
     /// Apply a rolling sum to a Series. See:
     /// [ChunkedArray::rolling_sum](crate::prelude::ChunkWindow::rolling_sum).
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]

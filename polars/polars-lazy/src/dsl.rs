@@ -4,6 +4,7 @@ use crate::prelude::*;
 #[cfg(feature = "is_in")]
 use crate::utils::expr_to_root_column_name;
 use crate::utils::{has_expr, has_wildcard};
+use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
@@ -1549,6 +1550,22 @@ impl Expr {
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
         self.apply(
             move |s| s.rolling_median(options.clone()),
+            GetOutput::same_type(),
+        )
+    }
+
+    /// Apply a rolling quantile See:
+    /// [ChunkedArray::rolling_quantile](polars::prelude::ChunkWindow::rolling_quantile).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    #[cfg(feature = "rolling_window")]
+    pub fn rolling_quantile(
+        self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+        options: RollingOptions,
+    ) -> Expr {
+        self.apply(
+            move |s| s.rolling_quantile(quantile, interpol, options.clone()),
             GetOutput::same_type(),
         )
     }

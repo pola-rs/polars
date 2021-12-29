@@ -1,7 +1,7 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use std::marker::Sized;
-
 use arrow::array::ArrayRef;
+use polars_arrow::prelude::QuantileInterpolOptions;
+use std::marker::Sized;
 
 pub use self::take::*;
 #[cfg(feature = "object")]

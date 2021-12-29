@@ -6,22 +6,8 @@ use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
 use arrow::types::simd::Simd;
 use num::{NumCast, ToPrimitive};
+use polars_arrow::prelude::QuantileInterpolOptions;
 use std::ops::Add;
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum QuantileInterpolOptions {
-    Nearest,
-    Lower,
-    Higher,
-    Midpoint,
-    Linear,
-}
-
-impl Default for QuantileInterpolOptions {
-    fn default() -> Self {
-        QuantileInterpolOptions::Nearest
-    }
-}
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -598,6 +584,7 @@ impl<T> ArgAgg for ObjectChunked<T> {}
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use polars_arrow::prelude::QuantileInterpolOptions;
 
     #[test]
     fn test_var() {

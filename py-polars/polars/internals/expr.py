@@ -1725,22 +1725,39 @@ class Expr:
         )
 
     def rolling_quantile(
-        self, window_size: int, quantile: float, interpolation: str = "nearest"
+        self,
+        quantile: float,
+        interpolation: str = "nearest",
+        window_size: int = 2,
+        weights: Optional[tp.List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
     ) -> "Expr":
         """
         Compute a rolling quantile
 
         Parameters
         ----------
-        window_size
-            Size of the rolling window
         quantile
             quantile to compute
         interpolation
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+        window_size
+            Size of the rolling window
+        weights
+            An optional slice with the same length of the window that will be used to weight the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
         """
+        if min_periods is None:
+            min_periods = window_size
         return wrap_expr(
-            self._pyexpr.rolling_quantile(window_size, quantile, interpolation)
+            self._pyexpr.rolling_quantile(
+                quantile, interpolation, window_size, weights, min_periods, center
+            )
         )
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Expr":

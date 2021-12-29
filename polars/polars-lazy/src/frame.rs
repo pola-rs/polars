@@ -25,6 +25,7 @@ use crate::prelude::fast_projection::FastProjection;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
+use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_io::csv::NullValues;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::get_reader_bytes;
@@ -808,6 +809,7 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
+    /// use polars_arrow::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1167,6 +1169,7 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
+    /// use polars_arrow::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()

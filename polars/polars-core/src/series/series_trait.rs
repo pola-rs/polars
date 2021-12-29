@@ -1,6 +1,7 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
+use polars_arrow::prelude::QuantileInterpolOptions;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -76,6 +77,16 @@ pub(crate) mod private {
         /// Apply a rolling median to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_median(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
+        }
+        /// Apply a rolling quantile to a Series.
+        #[cfg(feature = "rolling_window")]
+        fn _rolling_quantile(
+            &self,
+            _quantile: f64,
+            _interpol: QuantileInterpolOptions,
+            _options: RollingOptions,
+        ) -> Result<Series> {
             invalid_operation!(self)
         }
         /// Apply a rolling sum to a Series.

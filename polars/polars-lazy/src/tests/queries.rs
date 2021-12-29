@@ -1,4 +1,5 @@
 use super::*;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::series::ops::NullBehavior;
 
 #[test]

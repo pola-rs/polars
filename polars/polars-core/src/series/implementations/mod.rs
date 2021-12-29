@@ -40,6 +40,7 @@ use crate::prelude::*;
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
 use std::ops::Deref;
 use std::ops::{BitAnd, BitOr, BitXor};
@@ -107,6 +108,18 @@ macro_rules! impl_dyn_series {
             fn _rolling_median(&self, options: RollingOptions) -> Result<Series> {
                 let s = self.cast(&DataType::Float64).unwrap();
                 s.f64().unwrap().rolling_median(options)
+            }
+            #[cfg(feature = "rolling_window")]
+            fn _rolling_quantile(
+                &self,
+                quantile: f64,
+                interpolation: QuantileInterpolOptions,
+                options: RollingOptions,
+            ) -> Result<Series> {
+                let s = self.cast(&DataType::Float64).unwrap();
+                s.f64()
+                    .unwrap()
+                    .rolling_quantile(quantile, interpolation, options)
             }
             #[cfg(feature = "rolling_window")]
             fn _rolling_var(&self, options: RollingOptions) -> Result<Series> {

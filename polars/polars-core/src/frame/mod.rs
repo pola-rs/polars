@@ -16,6 +16,7 @@ use crate::prelude::*;
 use crate::utils::{
     accumulate_dataframes_horizontal, accumulate_dataframes_vertical, split_ca, split_df, NoNull,
 };
+use polars_arrow::prelude::QuantileInterpolOptions;
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
