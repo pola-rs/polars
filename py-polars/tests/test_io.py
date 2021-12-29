@@ -339,7 +339,7 @@ def test_to_json() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
 
     out = df.to_json(row_oriented=True)
-    assert out == r"""[,{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]"""
+    assert out == r"""[{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]"""
     out = df.to_json(json_lines=True)
     assert (
         out
