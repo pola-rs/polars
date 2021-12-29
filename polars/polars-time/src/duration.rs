@@ -1,10 +1,12 @@
 use crate::calendar::{
-    is_leap_year, last_day_of_month, timestamp_ns_to_datetime, NS_DAY, NS_HOUR, NS_MICROSECOND,
-    NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
+    is_leap_year, last_day_of_month, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE,
+    NS_SECOND, NS_WEEK,
 };
-use crate::unit::TimeNanoseconds;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use std::ops::{Add, Mul, Sub};
+use polars_arrow::arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, MILLISECONDS,
+};
+use std::ops::Mul;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Duration {
@@ -113,11 +115,11 @@ impl Duration {
             }
             Duration::from_months(months)
         } else {
-            let mut offset = self.duration();
+            let mut offset = self.duration_ns();
             if offset == 0 {
                 return *self;
             }
-            let every = interval.duration();
+            let every = interval.duration_ns();
 
             if offset < 0 {
                 offset += every * ((offset / -every) + 1)
@@ -129,7 +131,7 @@ impl Duration {
     }
 
     /// Creates a [`Duration`] that represents a fixed number of nanoseconds.
-    pub fn from_nsecs(v: i64) -> Self {
+    pub(crate) fn from_nsecs(v: i64) -> Self {
         let (negative, nsecs) = Self::to_positive(v);
         Self {
             months: 0,
@@ -138,16 +140,8 @@ impl Duration {
         }
     }
 
-    pub fn from_seconds(v: i64) -> Self {
-        Self::from_nsecs(v * NS_SECOND)
-    }
-
-    pub fn from_minutes(v: i64) -> Self {
-        Self::from_nsecs(v * NS_MINUTE)
-    }
-
     /// Creates a [`Duration`] that represents a fixed number of months.
-    pub fn from_months(v: i64) -> Self {
+    pub(crate) fn from_months(v: i64) -> Self {
         let (negative, months) = Self::to_positive(v);
         Self {
             months,
@@ -175,13 +169,50 @@ impl Duration {
 
     /// Estimated duration of the window duration. Not a very good one if months != 0.
     #[inline]
-    pub const fn duration(&self) -> TimeNanoseconds {
+    pub const fn duration_ns(&self) -> i64 {
         self.months * 30 * 24 * 3600 * NS_SECOND + self.nsecs
+    }
+
+    #[inline]
+    pub const fn duration_ms(&self) -> i64 {
+        self.months * 30 * 24 * 3600 * MILLISECONDS + self.nsecs / 1_000_000
+    }
+
+    #[inline]
+    pub fn truncate_ms(&self, t: i64) -> i64 {
+        match (self.months, self.nsecs) {
+            (0, 0) => panic!("duration may not be zero"),
+            // truncate by milliseconds
+            (0, _) => {
+                let duration = self.nsecs as i64 / 1_000_000;
+                let mut remainder = t % duration;
+                if remainder < 0 {
+                    remainder += duration
+                }
+                t - remainder
+            }
+            // truncate by months
+            (_, 0) => {
+                let ts = timestamp_ms_to_datetime(t);
+                let (year, month) = (ts.year(), ts.month());
+
+                // determine the total number of months and truncate
+                // the number of months by the duration amount
+                let mut total = (year * 12) as i32 + (month - 1) as i32;
+                let remainder = total % self.months as i32;
+                total -= remainder;
+
+                // recreate a new time from the year and month combination
+                let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
+                new_datetime(year, month, 1, 0, 0, 0, 0).timestamp_millis()
+            }
+            _ => panic!("duration may not mix month and nanosecond units"),
+        }
     }
 
     // Truncate the given nanoseconds timestamp by the window boundary.
     #[inline]
-    pub fn truncate_nanoseconds(&self, t: i64) -> i64 {
+    pub fn truncate_ns(&self, t: i64) -> i64 {
         match (self.months, self.nsecs) {
             (0, 0) => panic!("duration may not be zero"),
             // truncate by nanoseconds
@@ -195,7 +226,7 @@ impl Duration {
             }
             // truncate by months
             (_, 0) => {
-                let ts = nsecs_timestamp_to_datetime(t);
+                let ts = timestamp_ns_to_datetime(t);
                 let (year, month) = (ts.year(), ts.month());
 
                 // determine the total number of months and truncate
@@ -211,30 +242,63 @@ impl Duration {
             _ => panic!("duration may not mix month and nanosecond units"),
         }
     }
-}
 
-impl Mul<i64> for Duration {
-    type Output = Self;
+    pub(crate) fn add_ms(&self, t: i64) -> i64 {
+        let d = self;
+        let mut new_t = t;
 
-    fn mul(mut self, mut rhs: i64) -> Self {
-        if rhs < 0 {
-            rhs = -rhs;
-            self.negative = !self.negative
+        if d.months > 0 {
+            let mut months = d.months;
+            if d.negative {
+                months = -months;
+            }
+
+            // Retrieve the current date and increment the values
+            // based on the number of months
+            let ts = timestamp_ms_to_datetime(t);
+            let mut year = ts.year();
+            let mut month = ts.month() as i32;
+            let mut day = ts.day();
+            year += (months / 12) as i32;
+            month += (months % 12) as i32;
+
+            // if the month overflowed or underflowed, adjust the year
+            // accordingly. Because we add the modulo for the months
+            // the year will only adjust by one
+            if month > 12 {
+                year += 1;
+                month -= 12;
+            } else if month <= 0 {
+                year -= 1;
+                month += 12;
+            }
+
+            // Normalize the day if we are past the end of the month.
+            let mut last_day_of_month = last_day_of_month(month);
+            if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
+                last_day_of_month += 1;
+            }
+
+            if day > last_day_of_month {
+                day = last_day_of_month
+            }
+
+            // Retrieve the original time and construct a data
+            // with the new year, month and day
+            let hour = ts.hour();
+            let minute = ts.minute();
+            let sec = ts.second();
+            let nsec = ts.nanosecond();
+            let ts =
+                new_datetime(year, month as u32, day, hour, minute, sec, nsec).timestamp_millis();
+            new_t = ts;
         }
-        self.months *= rhs;
-        self.nsecs *= rhs;
-        self
+        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
+        new_t + nsecs / 1_000_000
     }
-}
 
-impl Add<Duration> for TimeNanoseconds {
-    type Output = Self;
-
-    /// Adds a duration to a nanosecond timestamp
-
-    fn add(self, rhs: Duration) -> Self {
-        let t = self;
-        let d = rhs;
+    pub fn add_ns(&self, t: i64) -> i64 {
+        let d = self;
         let mut new_t = t;
 
         if d.months > 0 {
@@ -293,20 +357,18 @@ impl Add<Duration> for TimeNanoseconds {
     }
 }
 
-impl Sub<Duration> for TimeNanoseconds {
+impl Mul<i64> for Duration {
     type Output = Self;
 
-    fn sub(self, rhs: Duration) -> Self::Output {
-        self + rhs * -1
+    fn mul(mut self, mut rhs: i64) -> Self {
+        if rhs < 0 {
+            rhs = -rhs;
+            self.negative = !self.negative
+        }
+        self.months *= rhs;
+        self.nsecs *= rhs;
+        self
     }
-}
-
-fn nsecs_timestamp_to_datetime(ts: i64) -> NaiveDateTime {
-    let secs = ts / 1_000_000_000;
-    let nsec = ts % 1_000_000_000;
-    // Note that nsec as u32 is safe here because modulo on a negative ts value
-    //  still produces a positive remainder.
-    NaiveDateTime::from_timestamp(secs, nsec as u32)
 }
 
 fn new_datetime(
