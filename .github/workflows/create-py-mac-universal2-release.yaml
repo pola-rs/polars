@@ -1,4 +1,4 @@
-name: Create universal2 python release
+name: Create macOs universal2 python release
 
 on:
   push:

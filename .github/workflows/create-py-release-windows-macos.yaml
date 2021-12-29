@@ -1,4 +1,4 @@
-name: Create Python release
+name: Create Python release windows macos
 
 on:
   push:
@@ -7,7 +7,6 @@ on:
       - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
 jobs:
   build:
-    needs: build_manylinux
     name: Create Release
     runs-on: ${{ matrix.os }}
     strategy:
@@ -46,16 +45,3 @@ jobs:
             -o wheels \
             -i python \
             --username ritchie46 \
-
-  build_manylinux:
-    name: Create Release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Publish wheel
-        uses: docker://konstin2/maturin:latest
-        env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-        with:
-          entrypoint: /bin/bash
-          args: .github/deploy_manylinux.sh

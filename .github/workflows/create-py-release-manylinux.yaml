@@ -1,0 +1,20 @@
+name: Create Python release manylinux
+
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
+jobs:
+  build_manylinux:
+    name: Create Release manylinux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Publish wheel
+        uses: docker://konstin2/maturin:latest
+        env:
+          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+        with:
+          entrypoint: /bin/bash
+          args: .github/deploy_manylinux.sh
