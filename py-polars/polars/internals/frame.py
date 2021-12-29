@@ -1104,7 +1104,7 @@ class DataFrame:
         return wrap_df(self._df.div(other._s))
 
     def __add__(
-        self, other: Union["DataFrame", "pli.Series", int, float, bool]
+        self, other: Union["DataFrame", "pli.Series", int, float, bool, str]
     ) -> "DataFrame":
         if isinstance(other, DataFrame):
             return wrap_df(self._df.add_df(other._df))
