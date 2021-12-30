@@ -1,4 +1,5 @@
 use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::PhysicalIoExpr;
 use arrow::array::ArrayRef;
 use arrow::io::parquet::read;
 use arrow::io::parquet::read::{FileMetaData, MutStreamingIterator};
@@ -19,6 +20,7 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
     projection: Option<&[usize]>,
     arrow_schema: &ArrowSchema,
     metadata: Option<FileMetaData>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
 ) -> Result<DataFrame> {
     let reader = ReaderBytes::from(&reader);
     let bytes = reader.deref();
@@ -97,7 +99,13 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
-        dfs.push(DataFrame::new_no_checks(columns))
+        let mut df = DataFrame::new_no_checks(columns);
+        if let Some(predicate) = &predicate {
+            let s = predicate.evaluate(&df)?;
+            let mask = s.bool().expect("filter predicates was not of type boolean");
+            df = df.filter(mask)?;
+        }
+        dfs.push(df)
     }
 
     accumulate_dataframes_vertical(dfs.into_iter()).map(|df| df.slice(0, limit))

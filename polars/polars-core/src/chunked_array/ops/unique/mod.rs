@@ -213,7 +213,11 @@ where
     }
 
     fn n_unique(&self) -> Result<usize> {
-        Ok(fill_set(self.into_iter()).len())
+        if self.null_count() > 0 {
+            Ok(fill_set(self.into_iter().flatten()).len() + 1)
+        } else {
+            Ok(fill_set(self.into_no_null_iter()).len())
+        }
     }
 
     #[cfg(feature = "mode")]
@@ -250,7 +254,11 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 
     fn n_unique(&self) -> Result<usize> {
-        Ok(fill_set(self.into_iter()).len())
+        if self.null_count() > 0 {
+            Ok(fill_set(self.into_iter().flatten()).len() + 1)
+        } else {
+            Ok(fill_set(self.into_no_null_iter()).len())
+        }
     }
 
     #[cfg(feature = "mode")]
