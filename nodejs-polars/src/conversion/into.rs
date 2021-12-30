@@ -110,11 +110,11 @@ impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
             AnyValue::Float64(v) => cx.env.create_double(v).map(|v| v.into_unknown()),
             AnyValue::Date(v) => cx
                 .env
-                .create_date((v / 1000000) as f64)
+                .create_date(v as f64)
                 .map(|v| v.into_unknown()),
-            AnyValue::Datetime(v) => cx
+            AnyValue::Datetime(v, _, _) => cx
                 .env
-                .create_date((v / 1000000) as f64)
+                .create_date(v as f64)
                 .map(|v| v.into_unknown()),
             AnyValue::List(v) => cx.env.to_js_value(&v).map(|v| v.into_unknown()),
             _ => cx.env.get_null().map(|v| v.into_unknown()),

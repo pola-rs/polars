@@ -91,12 +91,12 @@ impl From<&DataType> for JsDataType {
             DataType::Utf8 => Utf8,
             DataType::List(_) => List,
             DataType::Date => Date,
-            DataType::Datetime => Datetime,
+            DataType::Datetime(_, _) => Datetime,
             DataType::Time => Time,
             DataType::Object(_) => Object,
             DataType::Categorical => Categorical,
-            DataType::Null => {
-                panic!("null not expected here")
+            DataType::Null | DataType::Unknown => {
+                panic!("null or unknown not expected here")
             }
         }
     }
@@ -160,7 +160,7 @@ impl Into<DataType> for JsDataType {
             JsDataType::Utf8 => Utf8,
             JsDataType::List => List(DataType::Null.into()),
             JsDataType::Date => Date,
-            JsDataType::Datetime => Datetime,
+            JsDataType::Datetime => Datetime(TimeUnit::Milliseconds, None),
             JsDataType::Time => Time,
             JsDataType::Object => Object("object"),
             JsDataType::Categorical => Categorical,
@@ -206,7 +206,7 @@ pub fn num_to_polarstype(n: u32) -> DataType {
         11 => DataType::Utf8,
         12 => DataType::List(DataType::Null.into()),
         13 => DataType::Date,
-        14 => DataType::Datetime,
+        14 => DataType::Datetime(TimeUnit::Milliseconds, None),
         15 => DataType::Time,
         16 => DataType::Object("object"),
         17 => DataType::Categorical,

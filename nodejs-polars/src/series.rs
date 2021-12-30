@@ -56,7 +56,7 @@ pub fn new_opt_date(cx: CallContext) -> JsResult<JsExternal> {
                 if obj.is_date()? {
                     let d: &napi::JsDate = unsafe { &item.0.cast() };
                     match d.value_of() {
-                        Ok(v) => builder.append_value(v as i64 * 1000000),
+                        Ok(v) => builder.append_value(v as i64),
                         Err(e) => {
                             if strict.unwrap_or(false) {
                                 return Err(e);
@@ -71,7 +71,9 @@ pub fn new_opt_date(cx: CallContext) -> JsResult<JsExternal> {
         }
     }
     let ca: ChunkedArray<Int64Type> = builder.finish();
-    ca.into_date().into_series().try_into_js(&cx)
+    ca.into_datetime(TimeUnit::Milliseconds, None)
+        .into_series()
+        .try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -578,7 +580,7 @@ pub fn str_parse_datetime(cx: CallContext) -> JsResult<JsExternal> {
     let series = params.get_external::<Series>(&cx, "_series")?;
     let fmt = params.get_as::<Option<&str>>("fmt")?;
     if let Ok(ca) = series.utf8() {
-        ca.as_datetime(fmt)
+        ca.as_datetime(fmt, TimeUnit::Milliseconds)
             .map_err(JsPolarsEr::from)?
             .into_series()
             .try_into_js(&cx)
@@ -812,7 +814,7 @@ pub fn get_date(cx: CallContext) -> JsResult<JsUnknown> {
             match ca.get(index) {
                 Some(v) => cx
                     .env
-                    .create_date((v / 1000000) as f64)
+                    .create_date(v as f64)
                     .map(|v| v.into_unknown()),
                 None => cx.env.get_null().map(|v| v.into_unknown()),
             }
@@ -837,7 +839,7 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
                 Some(v) => {
                     println!("value={:#?}", v);
                     cx.env
-                        .create_date((v / 1000000) as f64)
+                        .create_date(v as f64)
                         .map(|v| v.into_unknown())
                 }
                 None => {

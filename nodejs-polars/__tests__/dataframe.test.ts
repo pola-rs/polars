@@ -155,7 +155,6 @@ describe("dataframe", () => {
       ];
 
       const df = pl.DataFrame(rows);
-
       expect(df.row(0)).toEqual(Object.values(rows[0]));
       expect(df.row(1)).toEqual(Object.values(rows[1]));
       expect(df.columns).toEqual(Object.keys(rows[0]));
