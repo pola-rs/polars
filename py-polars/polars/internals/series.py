@@ -2427,7 +2427,7 @@ class Series:
         """
         apply a rolling min (moving min) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -2472,7 +2472,7 @@ class Series:
         """
         Apply a rolling max (moving max) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -2517,7 +2517,7 @@ class Series:
         """
         Apply a rolling mean (moving mean) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -2562,7 +2562,7 @@ class Series:
         """
         Apply a rolling sum (moving sum) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -2608,7 +2608,7 @@ class Series:
         Compute a rolling std dev
 
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -2640,7 +2640,7 @@ class Series:
         Compute a rolling variance.
 
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
