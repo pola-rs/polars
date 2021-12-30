@@ -334,15 +334,15 @@ impl Display for DataFrame {
         );
 
         let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
-            .unwrap_or_else(|_| "8".to_string())
+            .unwrap_or_else(|_| "9".to_string())
             .parse()
-            .unwrap_or(8);
+            .unwrap_or(9);
         #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
         let max_n_rows = {
             let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
-                .unwrap_or_else(|_| "8".to_string())
+                .unwrap_or_else(|_| "9".to_string())
                 .parse()
-                .unwrap_or(8);
+                .unwrap_or(9);
             if max_n_rows < 2 {
                 2
             } else {
@@ -393,13 +393,13 @@ impl Display for DataFrame {
                 .set_header(names);
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows + 1 {
-                for i in 0..((max_n_rows + 1) / 2) {
+                for i in 0..(max_n_rows / 2) {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
-                for i in (self.height() - max_n_rows / 2)..self.height() {
+                for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
@@ -434,13 +434,13 @@ impl Display for DataFrame {
             table.set_titles(Row::new(names.into_iter().map(|s| Cell::new(&s)).collect()));
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows + 1 {
-                for i in 0..((max_n_rows + 1) / 2) {
+                for i in 0..(max_n_rows / 2) {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
-                for i in (self.height() - max_n_rows / 2)..self.height() {
+                for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
