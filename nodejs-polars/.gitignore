@@ -9,4 +9,3 @@ coverage/
 bin/
 .vscode
 *.node
-docs/
