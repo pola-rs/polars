@@ -45,7 +45,7 @@
       "polars/lazy/whenthen.ts",
       "polars/series/datetime.ts",
       "polars/series/string.ts",
-      "polars/series/list.ts",
+      "polars/series/list.ts"
     ],
     "out": "docs"
   }
