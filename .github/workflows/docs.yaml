@@ -3,7 +3,7 @@ name: Docs
 on:
   push:
     branches:
-      - node-docs
+      - master
       - docs
 jobs:
   test:
