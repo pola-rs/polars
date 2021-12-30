@@ -1,4 +1,3 @@
-/* eslint-disable no-redeclare */
 import {DataFrame, dfWrapper} from "./dataframe";
 import * as utils from "./utils";
 import util from "util";
@@ -223,9 +222,9 @@ export function GroupBy(
     agg,
     pivot,
     aggList: () => agg(exclude(by as any).list()),
-    count: () => pli.df.groupby({by, agg: "count", _df: df}),
+    count: () => dfWrapper(pli.df.groupby({by, agg: "count", _df: df})),
     first: () => agg(exclude(by as any).first()),
-    groups: () => pli.df.groupby({by, agg: "groups", _df: df}),
+    groups: () => dfWrapper(pli.df.groupby({by, agg: "groups", _df: df})),
     head: (n=5) => agg(exclude(by as any).head(n)),
     last: () => agg(exclude(by as any).last()),
     max: () => agg(exclude(by as any).max()),
@@ -247,7 +246,7 @@ function PivotOps(
   valueCol: string
 ): PivotOps {
 
-  const pivot =  (agg) => () =>  pli.df.pivot({by, pivotCol, valueCol, agg, _df: df});
+  const pivot =  (agg) => () =>  dfWrapper(pli.df.pivot({by, pivotCol, valueCol, agg, _df: df}));
   const customInspect = () => util.formatWithOptions(inspectOpts, "PivotOps {by: %O}", by);
 
   return {
