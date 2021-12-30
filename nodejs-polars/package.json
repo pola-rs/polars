@@ -8,6 +8,10 @@
     "bin"
   ],
   "keywords": [
+    "csv",
+    "transform",
+    "parse",
+    "json",
     "polars",
     "dataframe",
     "data-processing",
@@ -76,21 +80,6 @@
   },
   "dependencies": {
     "@node-rs/helper": "^1.2.1"
-  },
-  "lint-staged": {
-    "*.@(js|ts|tsx)": [
-      "eslint -c .eslintrc.yml --fix"
-    ],
-    "*.@(js|ts|tsx|yml|yaml|md|json)": [
-      "prettier --parser yaml --write"
-    ]
-  },
-  "prettier": {
-    "printWidth": 80,
-    "semi": true,
-    "trailingComma": "none",
-    "singleQuote": true,
-    "arrowParens": "always"
   },
   "packageManager": "yarn@3.1.1",
   "workspaces": [

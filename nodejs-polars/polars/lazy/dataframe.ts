@@ -36,6 +36,7 @@ type LazyOptions = {
  */
 
 export interface LazyDataFrame {
+  /** @ignore */
   _ldf: any;
   get columns(): string[]
   /**

@@ -1,6 +1,6 @@
 import {DataType} from "../datatypes";
 import pli from "../internals/polars_internal";
-import {col, lit} from "./lazy_functions";
+import {col, lit} from "./functions";
 import {
   ExprOrString,
   FillNullStrategy,
@@ -252,6 +252,7 @@ export interface ExprDateTimeFunctions {
 }
 
 export interface Expr {
+  /** @ignore */
   _expr: any;
   get date(): ExprDateTimeFunctions;
   get str(): ExprStringFunctions;
@@ -1223,6 +1224,7 @@ const _Expr = (_expr: JsExpr): Expr => {
 const isExpr = (anyVal: any): anyVal is Expr => isExternal(anyVal?._expr);
 export const Expr = Object.assign(_Expr, {isExpr});
 
+/** @ignore */
 export const exprToLitOrExpr = (expr: any, stringToLit = true): Expr  => {
   if(typeof expr === "string" && !stringToLit) {
     return col(expr);
