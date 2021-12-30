@@ -334,22 +334,22 @@ impl Display for DataFrame {
         );
 
         let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
-            .unwrap_or_else(|_| "9".to_string())
+            .unwrap_or_else(|_| "8".to_string())
             .parse()
-            .unwrap_or(9);
+            .unwrap_or(8);
         #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
         let max_n_rows = {
             let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
-                .unwrap_or_else(|_| "9".to_string())
+                .unwrap_or_else(|_| "8".to_string())
                 .parse()
-                .unwrap_or(9);
+                .unwrap_or(8);
             if max_n_rows < 2 {
                 2
             } else {
                 max_n_rows
             }
         };
-        let (n_first, n_last) = if self.width() > max_n_cols + 1 {
+        let (n_first, n_last) = if self.width() > max_n_cols {
             ((max_n_cols + 1) / 2, max_n_cols / 2)
         } else {
             (self.width(), 0)
@@ -392,7 +392,7 @@ impl Display for DataFrame {
                 )
                 .set_header(names);
             let mut rows = Vec::with_capacity(max_n_rows);
-            if self.height() > max_n_rows + 1 {
+            if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
@@ -433,7 +433,7 @@ impl Display for DataFrame {
             let mut table = Table::new();
             table.set_titles(Row::new(names.into_iter().map(|s| Cell::new(&s)).collect()));
             let mut rows = Vec::with_capacity(max_n_rows);
-            if self.height() > max_n_rows + 1 {
+            if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
