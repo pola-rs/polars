@@ -30,20 +30,58 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         aggregate: Option<&[ScanAggregation]>,
         projection: Option<&[usize]>,
     ) -> Result<DataFrame> {
-        if aggregate.is_none() {
-            self.finish()
-        } else {
-            let rechunk = self.rechunk;
+        match (aggregate.is_some(), predicate.is_some(), self.parallel) {
+            (true, true, _) | (true, false, _) | (false, true, false) => {
+                // this path take aggregations, predicates and projections into account
+                let rechunk = self.rechunk;
 
-            let reader = read::RecordReader::try_new(
-                &mut self.reader,
-                projection.map(|x| x.to_vec()),
-                self.n_rows,
-                None,
-                None,
-            )?;
+                let reader = read::RecordReader::try_new(
+                    &mut self.reader,
+                    projection.map(|x| x.to_vec()),
+                    self.n_rows,
+                    None,
+                    None,
+                )?;
 
-            finish_reader(reader, rechunk, self.n_rows, predicate, aggregate)
+                finish_reader(reader, rechunk, self.n_rows, predicate, aggregate)
+            }
+            (false, false, _) => {
+                // this path takes optional parallelism and projection into account
+                self.projection = projection.map(|s| s.to_vec());
+                self.finish()
+            }
+
+            (false, true, true) => {
+                // this path takes parallelism and projection into account
+                let metadata = read::read_metadata(&mut self.reader)?;
+                let schema = read::schema::get_schema(&metadata)?;
+
+                if let Some(cols) = self.columns {
+                    let mut prj = Vec::with_capacity(cols.len());
+                    for col in cols.iter() {
+                        let i = schema.index_of(col)?;
+                        prj.push(i);
+                    }
+
+                    self.projection = Some(prj);
+                }
+
+                let rechunk = self.rechunk;
+                return parallel_read(
+                    self.reader,
+                    self.n_rows.unwrap_or(usize::MAX),
+                    self.projection.as_deref(),
+                    &schema,
+                    Some(metadata),
+                    predicate,
+                )
+                .map(|mut df| {
+                    if rechunk {
+                        df.rechunk();
+                    };
+                    df
+                });
+            }
         }
     }
 
@@ -130,6 +168,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
                 self.projection.as_deref(),
                 &schema,
                 Some(metadata),
+                None,
             )
             .map(|mut df| {
                 if rechunk {

@@ -74,6 +74,7 @@ test = [
   "polars-core/plain_fmt",
   "diff",
   "abs",
+  "parquet",
 ]
 
 [dependencies]

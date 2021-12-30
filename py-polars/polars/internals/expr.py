@@ -2927,7 +2927,9 @@ def expr_to_lit_or_expr(
     elif isinstance(expr, Expr):
         return expr
     else:
-        raise Exception
+        raise ValueError(
+            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with pl.lit or pl.col"
+        )
 
 
 def _prepare_alpha(
