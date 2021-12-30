@@ -45,7 +45,7 @@ jobs:
           mkdir target/doc/py-polars
           mkdir -p target/doc/nodejs-polars/html
           cp -r py-polars/docs/build/html target/doc/py-polars
-          cp -r nodejs-polars/docs target/doc/nodejs-polars/html
+          cp -r nodejs-polars/docs/* target/doc/nodejs-polars/html
           echo ghp-import step
           ghp-import -n target/doc && \
           git push -qf https://${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git gh-pages
