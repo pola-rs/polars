@@ -399,7 +399,7 @@ impl Display for DataFrame {
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
-                for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
+                for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
@@ -407,8 +407,8 @@ impl Display for DataFrame {
                     table.add_row(row);
                 }
             } else {
-                for i in 0..max_n_rows {
-                    if i < self.height() && self.width() > 0 {
+                for i in 0..self.height() {
+                    if self.width() > 0 {
                         let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                         table.add_row(prepare_row(row, n_first, n_last));
                     } else {
@@ -440,7 +440,7 @@ impl Display for DataFrame {
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
-                for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
+                for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
@@ -448,8 +448,8 @@ impl Display for DataFrame {
                     table.add_row(Row::new(row.into_iter().map(|s| Cell::new(&s)).collect()));
                 }
             } else {
-                for i in 0..max_n_rows {
-                    if i < self.height() && self.width() > 0 {
+                for i in 0..self.height() {
+                    if self.width() > 0 {
                         let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                         table.add_row(Row::new(
                             prepare_row(row, n_first, n_last)
