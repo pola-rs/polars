@@ -4,7 +4,8 @@
 [![Build and test](https://github.com/pola-rs/polars/workflows/Build%20and%20test/badge.svg)](https://github.com/pola-rs/polars/actions)
 [![](https://img.shields.io/crates/v/polars.svg)](https://crates.io/crates/polars)
 [![PyPI Latest Release](https://img.shields.io/pypi/v/polars.svg)](https://pypi.org/project/polars/)
-[![NPM Latest Release](https://img.shields.io/npm/v/nodejs-polars.svg)](https://img.shields.io/npm/v/nodejs-polars)
+
+[![NPM Latest Release](https://img.shields.io/npm/v/nodejs-polars.svg)](https://www.npmjs.com/package/nodejs-polars)
 
 ## Usage
 
