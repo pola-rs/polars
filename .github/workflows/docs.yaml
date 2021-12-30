@@ -21,12 +21,11 @@ jobs:
         uses: actions/setup-node@v2
         with: 
           node-version: 16
-          cache: yarn
       - name: Build node reference
         run: | 
           cd nodejs-polars
-          yarn install
-          yarn typedoc
+          npm install
+          npx typedoc
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
