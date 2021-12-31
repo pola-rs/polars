@@ -23,8 +23,12 @@ impl PhysicalExpr for FilterExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let series = self.input.evaluate(df, state)?;
-        let predicate = self.by.evaluate(df, state)?;
+        let s_f = || self.input.evaluate(df, state);
+        let predicate_f = || self.by.evaluate(df, state);
+
+        let (series, predicate) = POOL.install(|| rayon::join(s_f, predicate_f));
+        let (series, predicate) = (series?, predicate?);
+
         series.filter(predicate.bool()?)
     }
 
@@ -34,8 +38,12 @@ impl PhysicalExpr for FilterExpr {
         groups: &'a GroupTuples,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        let mut ac_s = self.input.evaluate_on_groups(df, groups, state)?;
-        let ac_predicate = self.by.evaluate_on_groups(df, groups, state)?;
+        let ac_s_f = || self.input.evaluate_on_groups(df, groups, state);
+        let ac_predicate_f = || self.by.evaluate_on_groups(df, groups, state);
+
+        let (ac_s, ac_predicate) = POOL.install(|| rayon::join(ac_s_f, ac_predicate_f));
+        let (mut ac_s, ac_predicate) = (ac_s?, ac_predicate?);
+
         let groups = ac_s.groups();
         let predicate_s = ac_predicate.flat_naive();
         let predicate = predicate_s.bool()?;
