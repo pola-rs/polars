@@ -2478,11 +2478,11 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"strings": ["666f6f", "626172", None]})
-        >>> df.select(col("strings").str.decode("hex"))
+        >>> df = pl.DataFrame({"encoded": ["666f6f", "626172", None]})
+        >>> df.select(pl.col("encoded").str.decode("hex"))
         shape: (3, 1)
         ┌─────────┐
-        │ strings │
+        │ encoded │
         │ ---     │
         │ str     │
         ╞═════════╡
