@@ -3385,7 +3385,7 @@ class StringNameSpace:
         [
             "foo",
             "bar",
-            None
+            null
         ]
         """
         if encoding == "hex":
@@ -3417,7 +3417,7 @@ class StringNameSpace:
         [
             "666f6f",
             "626172",
-            None
+            null
         ]
         """
         if encoding == "hex":
