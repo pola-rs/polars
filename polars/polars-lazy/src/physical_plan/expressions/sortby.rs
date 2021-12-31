@@ -2,6 +2,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
+use polars_core::POOL;
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -45,21 +46,28 @@ impl PhysicalExpr for SortByExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
-        let series = self.input.evaluate(df, state)?;
+        let series_f = || self.input.evaluate(df, state);
         let reverse = prepare_reverse(&self.reverse, self.by.len());
 
-        let sorted_idx = if self.by.len() == 1 {
-            let s_sort_by = self.by[0].evaluate(df, state)?;
-            s_sort_by.argsort(reverse[0])
+        let (series, sorted_idx) = if self.by.len() == 1 {
+            let sorted_idx_f = || {
+                let s_sort_by = self.by[0].evaluate(df, state)?;
+                Ok(s_sort_by.argsort(reverse[0]))
+            };
+            POOL.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
-            let s_sort_by = self
-                .by
-                .iter()
-                .map(|e| e.evaluate(df, state))
-                .collect::<Result<Vec<_>>>()?;
+            let sorted_idx_f = || {
+                let s_sort_by = self
+                    .by
+                    .iter()
+                    .map(|e| e.evaluate(df, state))
+                    .collect::<Result<Vec<_>>>()?;
 
-            s_sort_by[0].argsort_multiple(&s_sort_by[1..], &reverse)?
+                s_sort_by[0].argsort_multiple(&s_sort_by[1..], &reverse)
+            };
+            POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
+        let (sorted_idx, series) = (sorted_idx?, series?);
 
         // Safety:
         // sorted index are within bounds

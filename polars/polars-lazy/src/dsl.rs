@@ -155,6 +155,19 @@ impl GetOutput {
             fld
         }))
     }
+
+    pub fn map_dtypes<F>(f: F) -> Self
+    where
+        F: 'static + Fn(&[&DataType]) -> DataType + Send + Sync,
+    {
+        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+            let mut fld = flds[0].clone();
+            let dtypes = flds.iter().map(|fld| fld.data_type()).collect::<Vec<_>>();
+            let new_type = f(&dtypes);
+            fld.coerce(new_type);
+            fld
+        }))
+    }
 }
 
 impl<F> FunctionOutputField for F
@@ -1226,12 +1239,13 @@ impl Expr {
 
     /// Replace the null values by a value.
     pub fn fill_null(self, fill_value: Expr) -> Self {
-        map_binary_lazy_field(
-            self,
-            fill_value,
-            |a, b| {
-                if !a.has_validity() {
-                    Ok(a)
+        self.map_many(
+            |s| {
+                let a = &s[0];
+                let b = &s[1];
+
+                if !a.null_count() == 0 {
+                    Ok(a.clone())
                 } else {
                     let st = get_supertype(a.dtype(), b.dtype())?;
                     let a = a.cast(&st)?;
@@ -1240,10 +1254,8 @@ impl Expr {
                     a.zip_with_same_type(&mask, &b)
                 }
             },
-            |_schema, _ctx, a, b| {
-                let st = get_supertype(a.data_type(), b.data_type()).unwrap();
-                Some(Field::new(a.name(), st))
-            },
+            &[fill_value],
+            GetOutput::map_dtypes(|dtypes| get_supertype(dtypes[0], dtypes[1]).unwrap()),
         )
     }
 
@@ -1426,16 +1438,18 @@ impl Expr {
     #[cfg(feature = "repeat_by")]
     #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
     pub fn repeat_by(self, by: Expr) -> Expr {
-        let function = |s: Series, by: Series| {
+        let function = |s: &mut [Series]| {
+            let by = &s[1];
+            let s = &s[0];
             let by = by.cast(&DataType::UInt32)?;
             Ok(s.repeat_by(by.u32()?).into_series())
         };
-        map_binary_lazy_field(self, by, function, |_schema, _ctxt, l, _r| {
-            Some(Field::new(
-                l.name(),
-                DataType::List(l.data_type().clone().into()),
-            ))
-        })
+
+        self.map_many(
+            function,
+            &[by],
+            GetOutput::map_dtype(|dt| DataType::List(dt.clone().into())),
+        )
     }
 
     #[cfg(feature = "is_first")]
@@ -1452,11 +1466,9 @@ impl Expr {
     #[cfg(feature = "dot_product")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
     pub fn dot(self, other: Expr) -> Expr {
-        let function = |s: Series, other: Series| Ok((&s * &other).sum_as_series());
+        let function = |s: &mut [Series]| Ok((&s[0] * &s[1]).sum_as_series());
 
-        map_binary_lazy_field(self, other, function, |_schema, _ctxt, l, _r| {
-            Some(Field::new(l.name(), l.data_type().clone()))
-        })
+        self.map_many(function, &[other], GetOutput::same_type())
     }
 
     #[cfg(feature = "mode")]
