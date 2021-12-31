@@ -20,7 +20,6 @@
 //! * [Joins](#joins)
 //! * [GroupBy](#groupby)
 //!     - [pivot](#pivot)
-//!     - [downsample](#downsample)
 //! * [Melt](#melt)
 //! * [Explode](#explode)
 //! * [IO](#IO)

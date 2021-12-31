@@ -97,6 +97,11 @@ where
     current_expr.into_iter().any(matches)
 }
 
+/// Check if root expression is a literal
+pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
+    matches!(e.into_iter().last(), Some(Expr::Literal(_)))
+}
+
 // this one is used so much that it has its own function, to reduce inlining
 pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Wildcard))

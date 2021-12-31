@@ -2472,6 +2472,7 @@ fn test_agg_unique_first() -> Result<()> {
 }
 
 #[test]
+#[cfg(feature = "parquet")]
 fn test_parquet_exec() -> Result<()> {
     // filter
     for par in [true, false] {
@@ -2497,6 +2498,37 @@ fn test_parquet_exec() -> Result<()> {
             .collect()?;
         assert_eq!(out.shape(), (8, 2));
     }
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "is_in")]
+fn test_is_in() -> Result<()> {
+    let df = fruits_cars();
+
+    // TODO! fix this
+    // // this will be executed by apply (still incorrect)
+    // let out = df
+    //     .lazy()
+    //     .groupby_stable([col("fruits")])
+    //     .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))))])
+    //     .collect()?;
+
+    // this will be executed by map
+    let out = df
+        .lazy()
+        .groupby_stable([col("fruits")])
+        .agg([col("cars").is_in(lit(Series::new("a", ["beetle", "vw"])))])
+        .collect()?;
+
+    let out = out.column("cars").unwrap();
+    let out = out.explode()?;
+    let out = out.bool().unwrap();
+    assert_eq!(
+        Vec::from(out),
+        &[Some(true), Some(false), Some(true), Some(true), Some(true)]
+    );
 
     Ok(())
 }
