@@ -22,7 +22,6 @@ pub(crate) mod window;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_arrow::array::ValueSize;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use polars_io::PhysicalIoExpr;
@@ -131,7 +130,7 @@ impl<'a> AggregationContext<'a> {
         match (
             &self.groups,
             self.sorted,
-            self.original_len,
+            self.is_original_len(),
             &other.groups,
             other.sorted,
             other.original_len,
@@ -286,43 +285,14 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Get the not-aggregated version of the series.
+    /// Note that we call it naive, because if a previous expr
+    /// has filtered or sorted this, this information is in the
+    /// group tuples not the flattened series.
     pub(crate) fn flat_naive(&self) -> Cow<'_, Series> {
         match &self.series {
             AggState::NotAggregated(s) => Cow::Borrowed(s),
             AggState::AggregatedList(s) => Cow::Owned(s.explode().unwrap()),
             AggState::AggregatedFlat(s) => Cow::Borrowed(s),
-            AggState::None => unreachable!(),
-        }
-    }
-
-    /// Get the not-aggregated version of the series.
-    /// This corrects for filtered data. Note that the group tuples
-    /// can not be used on this Series.
-    pub(crate) fn flat_corrected(&mut self) -> Cow<'_, Series> {
-        match (&self.series, self.is_original_len()) {
-            (AggState::NotAggregated(s), false) => {
-                let s = s.clone();
-                let groups = self.groups();
-                Cow::Owned(unsafe { s.take_group_values(groups) })
-            }
-            (AggState::AggregatedList(s), false) => {
-                let s = s.explode().unwrap();
-                let groups = self.groups();
-                Cow::Owned(unsafe { s.take_group_values(groups) })
-            }
-            _ => self.flat_naive(),
-        }
-    }
-
-    /// Get the length of the Series when it is not aggregated
-    pub(crate) fn len(&self) -> usize {
-        match &self.series {
-            AggState::NotAggregated(s) => s.len(),
-            AggState::AggregatedFlat(s) => s.len(),
-            AggState::AggregatedList(s) => {
-                let list = s.list().unwrap();
-                list.get_values_size()
-            }
             AggState::None => unreachable!(),
         }
     }
