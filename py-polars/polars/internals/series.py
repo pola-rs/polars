@@ -3378,10 +3378,10 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("encoded", ["666f6f", "626172", None])
+        >>> s = pl.Series(["666f6f", "626172", None])
         >>> s.str.decode("hex")
         shape: (3,)
-        Series: 'encoded' [str]
+        Series: '' [str]
         [
             "foo"
             "bar"
@@ -3410,10 +3410,10 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("strings", ["foo", "bar", None])
+        >>> s = pl.Series(["foo", "bar", None])
         >>> s.str.encode("hex")
         shape: (3,)
-        Series: 'strings' [str]
+        Series: '' [str]
         [
             "666f6f"
             "626172"
