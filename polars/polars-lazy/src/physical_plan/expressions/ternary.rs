@@ -48,7 +48,7 @@ impl PhysicalExpr for TernaryExpr {
         let mut ac_truthy = ac_truthy?;
         let mut ac_falsy = ac_falsy?;
 
-        let mask_s = ac_mask.flat();
+        let mask_s = ac_mask.flat_naive();
 
         assert!(
             !(mask_s.len() != required_height),
@@ -182,7 +182,9 @@ The predicate produced {} values. Where the original DataFrame has {} values",
             // so we can flatten the Series an apply the operators
             _ => {
                 let mask = mask_s.bool()?;
-                let out = ac_truthy.flat().zip_with(mask, ac_falsy.flat().as_ref())?;
+                let out = ac_truthy
+                    .flat_naive()
+                    .zip_with(mask, ac_falsy.flat_naive().as_ref())?;
 
                 assert!(!(out.len() != required_height), "The output of the `when -> then -> otherwise-expr` is of a different length than the groups.\
 The expr produced {} values. Where the original DataFrame has {} values",

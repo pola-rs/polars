@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::types::NativeType;
+use std::iter::FromIterator;
 use std::sync::Arc;
 
 /// # Safety
@@ -290,7 +291,6 @@ pub unsafe fn take_no_null_bool_opt_iter_unchecked<I: IntoIterator<Item = Option
 
 /// # Safety
 /// - no bounds checks
-/// - iterator must be TrustedLen
 #[inline]
 pub unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
@@ -300,12 +300,11 @@ pub unsafe fn take_no_null_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
         debug_assert!(idx < arr.len());
         arr.value_unchecked(idx)
     });
-    Arc::new(MutableUtf8Array::<i64>::from_trusted_len_values_iter_unchecked(iter).into())
+    Arc::new(MutableUtf8Array::<i64>::from_iter_values(iter).into())
 }
 
 /// # Safety
 /// - no bounds checks
-/// - iterator must be TrustedLen
 #[inline]
 pub unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
     arr: &LargeStringArray,
@@ -321,7 +320,7 @@ pub unsafe fn take_utf8_iter_unchecked<I: IntoIterator<Item = usize>>(
         }
     });
 
-    Arc::new(LargeStringArray::from_trusted_len_iter_unchecked(iter))
+    Arc::new(LargeStringArray::from_iter(iter))
 }
 
 /// # Safety

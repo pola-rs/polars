@@ -78,7 +78,7 @@ impl PhysicalExpr for SortByExpr {
 
         let groups = if self.by.len() == 1 {
             let mut ac_sort_by = self.by[0].evaluate_on_groups(df, groups, state)?;
-            let sort_by_s = ac_sort_by.flat().into_owned();
+            let sort_by_s = ac_sort_by.flat_naive().into_owned();
             let groups = ac_sort_by.groups();
 
             groups
@@ -112,7 +112,7 @@ impl PhysicalExpr for SortByExpr {
                 .collect::<Result<Vec<_>>>()?;
             let sort_by_s = ac_sort_by
                 .iter()
-                .map(|s| s.flat().into_owned())
+                .map(|s| s.flat_naive().into_owned())
                 .collect::<Vec<_>>();
             let groups = ac_sort_by[0].groups();
 

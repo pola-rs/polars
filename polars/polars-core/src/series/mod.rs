@@ -15,6 +15,7 @@ mod series_trait;
 pub mod unstable;
 
 use crate::chunked_array::ops::rolling_window::RollingOptions;
+use crate::frame::groupby::GroupTuples;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
 #[cfg(feature = "groupby_list")]
@@ -760,6 +761,19 @@ impl Series {
             }
         };
         Ok(out)
+    }
+
+    /// Take the group tuples.
+    ///
+    /// # Safety
+    /// Group tuples have to be in bounds.
+    pub unsafe fn take_group_values(&self, groups: &GroupTuples) -> Series {
+        self.take_iter_unchecked(
+            &mut groups
+                .iter()
+                .map(|g| g.1.iter().map(|idx| *idx as usize))
+                .flatten(),
+        )
     }
 }
 
