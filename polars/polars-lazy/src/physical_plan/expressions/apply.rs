@@ -4,7 +4,6 @@ use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use rayon::prelude::*;
-use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -91,7 +90,9 @@ impl PhysicalExpr for ApplyExpr {
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
-                    let s = self.function.call_udf(&mut [ac.flat().into_owned()])?;
+                    let s = self
+                        .function
+                        .call_udf(&mut [ac.flat_naive().into_owned()])?;
                     if ac.is_aggregated() {
                         ac.with_update_groups(UpdateGroups::WithGroupsLen);
                     }
@@ -148,7 +149,7 @@ impl PhysicalExpr for ApplyExpr {
                 ApplyOptions::ApplyFlat => {
                     let mut s = acs
                         .iter()
-                        .map(|ac| ac.flat().into_owned())
+                        .map(|ac| ac.flat_naive().into_owned())
                         .collect::<Vec<_>>();
 
                     let s = self.function.call_udf(&mut s)?;
@@ -216,7 +217,7 @@ impl PhysicalAggregation for ApplyExpr {
                     // if its flat, we just apply and return
                     // if not flat, the flattening sorts by group, so we must create new group tuples
                     // and again aggregate.
-                    let out = self.function.call_udf(&mut [ac.flat().into_owned()]);
+                    let out = self.function.call_udf(&mut [ac.flat_naive().into_owned()]);
 
                     if ac.is_not_aggregated() || !matches!(ac.series().dtype(), DataType::List(_)) {
                         out.map(Some)
@@ -256,7 +257,7 @@ impl PhysicalAggregation for ApplyExpr {
                                 ac.aggregated()
                             // this branch we see the argument as a constant, that will be applied per group
                             } else {
-                                Cow::Borrowed(ac.series())
+                                ac.flat_corrected()
                             };
                             (s, not_aggregated_len, original_len)
                         })
@@ -280,7 +281,6 @@ impl PhysicalAggregation for ApplyExpr {
                                     as Box<dyn Iterator<Item = Option<Series>>>
                             // this branch we repeat the argument per group
                             } else {
-                                dbg!("here");
                                 let s = s.clone().into_owned();
                                 Box::new(std::iter::repeat(Some(s)))
                             }
@@ -323,7 +323,7 @@ impl PhysicalAggregation for ApplyExpr {
                                 "flat apply on any expression that is already \
                             in aggregated state is not yet suported"
                             );
-                            ac.flat().into_owned()
+                            ac.flat_naive().into_owned()
                         })
                         .collect::<Vec<_>>();
 

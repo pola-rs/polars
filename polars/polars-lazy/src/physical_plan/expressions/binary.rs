@@ -188,7 +188,11 @@ impl PhysicalExpr for BinaryExpr {
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series and apply the operators
             _ => {
-                let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
+                let out = apply_operator(
+                    ac_l.flat_naive().as_ref(),
+                    ac_r.flat_naive().as_ref(),
+                    self.op,
+                )?;
                 ac_l.combine_groups(ac_r).with_series(out, false);
                 Ok(ac_l)
             }

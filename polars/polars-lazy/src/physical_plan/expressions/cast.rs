@@ -65,7 +65,7 @@ impl PhysicalExpr for CastExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-        let s = ac.flat();
+        let s = ac.flat_naive();
         let s = self.finish(s.as_ref())?;
         ac.with_series(s, false);
         Ok(ac)

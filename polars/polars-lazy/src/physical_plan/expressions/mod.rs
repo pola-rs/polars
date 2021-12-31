@@ -237,7 +237,7 @@ impl<'a> AggregationContext<'a> {
     /// Update the group tuples
     pub(crate) fn with_groups(&mut self, groups: GroupTuples) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
-        self.with_series(self.flat().into_owned(), false);
+        self.with_series(self.flat_naive().into_owned(), false);
         self.groups = Cow::Owned(groups);
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
@@ -286,12 +286,31 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Get the not-aggregated version of the series.
-    pub(crate) fn flat(&self) -> Cow<'_, Series> {
+    pub(crate) fn flat_naive(&self) -> Cow<'_, Series> {
         match &self.series {
             AggState::NotAggregated(s) => Cow::Borrowed(s),
             AggState::AggregatedList(s) => Cow::Owned(s.explode().unwrap()),
             AggState::AggregatedFlat(s) => Cow::Borrowed(s),
             AggState::None => unreachable!(),
+        }
+    }
+
+    /// Get the not-aggregated version of the series.
+    /// This corrects for filtered data. Note that the group tuples
+    /// can not be used on this Series.
+    pub(crate) fn flat_corrected(&mut self) -> Cow<'_, Series> {
+        match (&self.series, self.is_original_len()) {
+            (AggState::NotAggregated(s), false) => {
+                let s = s.clone();
+                let groups = self.groups();
+                Cow::Owned(unsafe { s.take_group_values(groups) })
+            }
+            (AggState::AggregatedList(s), false) => {
+                let s = s.explode().unwrap();
+                let groups = self.groups();
+                Cow::Owned(unsafe { s.take_group_values(groups) })
+            }
+            _ => self.flat_naive(),
         }
     }
 

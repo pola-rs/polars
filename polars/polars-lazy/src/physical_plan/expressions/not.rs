@@ -38,7 +38,7 @@ impl PhysicalExpr for NotExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.0.evaluate_on_groups(df, groups, state)?;
-        let s = ac.flat().into_owned();
+        let s = ac.flat_naive().into_owned();
         ac.with_series(self.finish(s)?, false);
 
         Ok(ac)

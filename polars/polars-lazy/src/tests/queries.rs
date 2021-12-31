@@ -2507,13 +2507,20 @@ fn test_parquet_exec() -> Result<()> {
 fn test_is_in() -> Result<()> {
     let df = fruits_cars();
 
-    // TODO! fix this
-    // // this will be executed by apply (still incorrect)
-    // let out = df
-    //     .lazy()
-    //     .groupby_stable([col("fruits")])
-    //     .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))))])
-    //     .collect()?;
+    // // this will be executed by apply
+    let out = df
+        .clone()
+        .lazy()
+        .groupby_stable([col("fruits")])
+        .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))))])
+        .collect()?;
+    let out = out.column("cars").unwrap();
+    let out = out.explode()?;
+    let out = out.bool().unwrap();
+    assert_eq!(
+        Vec::from(out),
+        &[Some(true), Some(false), Some(true), Some(true), Some(true)]
+    );
 
     // this will be executed by map
     let out = df
