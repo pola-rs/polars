@@ -222,10 +222,12 @@ where
             }
 
             self.downcast_iter().for_each(|arr| {
-                let iter = arr
-                    .iter()
-                    .filter_map(|v| v.copied())
-                    .trust_my_length(len - null_count);
+                // safety: we know the iterators len
+                let iter = unsafe {
+                    arr.iter()
+                        .filter_map(|v| v.copied())
+                        .trust_my_length(len - null_count)
+                };
                 vals.extend_trusted_len(iter);
             });
             let mut_slice = if options.nulls_last {
@@ -606,11 +608,13 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
             !options.nulls_last,
             "null last not yet supported for categorical dtype"
         );
-        let mut vals = self
-            .into_iter()
-            .zip(self.iter_str())
-            .trust_my_length(self.len())
-            .collect_trusted::<Vec<_>>();
+        // safety: we know the iterators len
+        let mut vals = unsafe {
+            self.into_iter()
+                .zip(self.iter_str())
+                .trust_my_length(self.len())
+                .collect_trusted::<Vec<_>>()
+        };
 
         argsort_branch(
             vals.as_mut_slice(),
@@ -634,15 +638,17 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         let mut count: u32 = 0;
-        let mut vals = self
-            .iter_str()
-            .map(|s| {
-                let i = count;
-                count += 1;
-                (i, s)
-            })
-            .trust_my_length(self.len())
-            .collect_trusted::<Vec<_>>();
+        // safety: we know the iterators len
+        let mut vals = unsafe {
+            self.iter_str()
+                .map(|s| {
+                    let i = count;
+                    count += 1;
+                    (i, s)
+                })
+                .trust_my_length(self.len())
+                .collect_trusted::<Vec<_>>()
+        };
 
         argsort_branch(
             vals.as_mut_slice(),

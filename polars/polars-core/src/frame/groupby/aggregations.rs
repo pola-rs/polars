@@ -627,30 +627,31 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
 
-        let iter = groups
-            .iter()
-            .map(|(_, idx)| {
-                // Safety:
-                // group tuples always in bounds
-                let group_vals =
-                    unsafe { self.take_unchecked((idx.iter().map(|idx| *idx as usize)).into()) };
+        //  we know that iterators length
+        let iter = unsafe {
+            groups
+                .iter()
+                .map(|(_, idx)| {
+                    // Safety:
+                    // group tuples always in bounds
+                    let group_vals =
+                        self.take_unchecked((idx.iter().map(|idx| *idx as usize)).into());
 
-                let idx_len = idx.len();
-                if idx_len == 0 {
-                    can_fast_explode = false;
-                }
-                length_so_far += idx_len as i64;
-                // Safety:
-                // we know that offsets has allocated enough slots
-                unsafe {
+                    let idx_len = idx.len();
+                    if idx_len == 0 {
+                        can_fast_explode = false;
+                    }
+                    length_so_far += idx_len as i64;
+                    // Safety:
+                    // we know that offsets has allocated enough slots
                     offsets.push_unchecked(length_so_far);
-                }
 
-                let arr = group_vals.downcast_iter().next().unwrap().clone();
-                arr.into_iter_cloned()
-            })
-            .flatten()
-            .trust_my_length(self.len());
+                    let arr = group_vals.downcast_iter().next().unwrap().clone();
+                    arr.into_iter_cloned()
+                })
+                .flatten()
+                .trust_my_length(self.len())
+        };
 
         let mut pe = create_extension(iter);
 

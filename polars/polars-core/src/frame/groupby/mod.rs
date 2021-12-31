@@ -324,18 +324,22 @@ impl DataFrame {
                 // otherwise we use two bits of this byte to represent null values.
                 let split_0 = split_ca(&$ca0, n_partitions).unwrap();
                 let split_1 = split_ca(&$ca1, n_partitions).unwrap();
+
                 let keys = POOL.install(|| {
-                    split_0
-                        .into_par_iter()
-                        .zip(split_1.into_par_iter())
-                        .map(|(ca0, ca1)| {
-                            ca0.into_iter()
-                                .zip(ca1.into_iter())
-                                .map(|(l, r)| $pack_fn(l, r))
-                                .trust_my_length(ca0.len())
-                                .collect_trusted::<Vec<_>>()
-                        })
-                        .collect::<Vec<_>>()
+                    // we know that we only iterate over length == self.len()
+                    unsafe {
+                        split_0
+                            .into_par_iter()
+                            .zip(split_1.into_par_iter())
+                            .map(|(ca0, ca1)| {
+                                ca0.into_iter()
+                                    .zip(ca1.into_iter())
+                                    .map(|(l, r)| $pack_fn(l, r))
+                                    .trust_my_length(ca0.len())
+                                    .collect_trusted::<Vec<_>>()
+                            })
+                            .collect::<Vec<_>>()
+                    }
                 });
 
                 return Ok(GroupBy::new(

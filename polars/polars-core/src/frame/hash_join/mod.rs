@@ -611,22 +611,28 @@ where
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| {
-                    ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .flatten()
-                        .trust_my_length(ca.len())
-                        .collect_trusted::<Vec<_>>()
+                    // we know that we only iterate over length == self.len()
+                    unsafe {
+                        ca.downcast_iter()
+                            .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
+                            .flatten()
+                            .trust_my_length(ca.len())
+                            .collect_trusted::<Vec<_>>()
+                    }
                 })
                 .collect::<Vec<_>>();
 
             let keys_b = splitted_b
                 .iter()
                 .map(|ca| {
-                    ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .flatten()
-                        .trust_my_length(ca.len())
-                        .collect_trusted::<Vec<_>>()
+                    // we know that we only iterate over length == self.len()
+                    unsafe {
+                        ca.downcast_iter()
+                            .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
+                            .flatten()
+                            .trust_my_length(ca.len())
+                            .collect_trusted::<Vec<_>>()
+                    }
                 })
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
