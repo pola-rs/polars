@@ -766,13 +766,15 @@ impl Series {
     /// Take the group tuples.
     ///
     /// # Safety
-    /// Group tuples have to be in bounds.
+    /// - Group tuples have to be in bounds.
     pub unsafe fn take_group_values(&self, groups: &GroupTuples) -> Series {
+        let len = groups.iter().map(|g| g.1.len()).sum::<usize>();
         self.take_iter_unchecked(
             &mut groups
                 .iter()
                 .map(|g| g.1.iter().map(|idx| *idx as usize))
-                .flatten(),
+                .flatten()
+                .trust_my_length(len),
         )
     }
 }
