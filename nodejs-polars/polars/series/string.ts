@@ -2,7 +2,7 @@ import pli from "../internals/polars_internal";
 import {DataType} from "../datatypes";
 import {JsSeries, Series, seriesWrapper} from "../series";
 import {regexToString} from "../utils";
-import {col} from "../lazy/lazy_functions";
+import {col} from "../lazy/functions";
 
 
 /**

@@ -36,7 +36,16 @@
       "polars/series.ts",
       "polars/dataframe.ts",
       "polars/groupby.ts",
-      "polars/index.ts"
+      "polars/io.ts",
+      "polars/cfg.ts",
+      "polars/lazy/expr.ts",
+      "polars/lazy/dataframe.ts",
+      "polars/lazy/functions.ts",
+      "polars/lazy/groupby.ts",
+      "polars/lazy/whenthen.ts",
+      "polars/series/datetime.ts",
+      "polars/series/string.ts",
+      "polars/series/list.ts"
     ],
     "out": "docs"
   }

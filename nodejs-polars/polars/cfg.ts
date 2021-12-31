@@ -14,7 +14,7 @@ export interface Config {
   /** Turn off the global string cache */
   unsetGlobalStringCache(): Config
 }
-export const Config = {
+export const Config: Config = {
   setUtf8Tables() {
     delete process.env["POLARS_FMT_NO_UTF8"];
 
@@ -47,5 +47,4 @@ export const Config = {
   unsetGlobalStringCache() {
     return this;
   }
-
 };

@@ -7,7 +7,7 @@ import * as cfg from "./cfg";
 import {version as _version} from "../package.json";
 
 import type { FillNullStrategy as _FillNullStrategy } from "./utils";
-import {
+import  {
   funcs as lazy,
   Expr as lazyExpr,
   GroupBy as lazyGroupBy,
@@ -15,16 +15,15 @@ import {
 } from "./lazy";
 
 namespace pl {
-
-  export type Expr = lazyExpr
+  export import Expr = lazyExpr.Expr
+  export import DataFrame = df.DataFrame
+  export import Series = series.Series;
   export type LazyGroupBy = lazyGroupBy;
   export type When = _when.When;
   export type WhenThen = _when.WhenThen;
   export type WhenThenThen = _when.WhenThenThen;
   export type FillNullStrategy = _FillNullStrategy;
   export import Config = cfg.Config;
-  export import DataFrame = df.DataFrame
-  export import Series = series.Series;
   export import Int16 = DataType.Int16
   export import Int32 =  DataType.Int32;
   export import Int64 =  DataType.Int64;
@@ -84,4 +83,5 @@ namespace pl {
   export import when = _when.when;
   export const version = _version;
 }
+
 export = pl;

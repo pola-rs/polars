@@ -31,9 +31,7 @@ const inspect = Symbol.for("nodejs.util.inspect.custom");
 
 
 export interface DataFrame {
-  (column: string): Series<any>,
-  (column: string, ...columns: string[]): DataFrame,
-  (row: number): any[]
+  /** @ignore */
   _df: JsDataFrame
   dtypes: DataType[]
   height: number
@@ -607,6 +605,7 @@ export interface DataFrame {
    * Create a new DataFrame that shows the null counts per column.
    * ___
    * @example
+   * ```
    * >>> df = pl.DataFrame({
    * >>>   "foo": [1, null, 3],
    * >>>   "bar": [6, 7, null],
@@ -621,6 +620,7 @@ export interface DataFrame {
    * ╞═════╪═════╪═════╡
    * │ 1   ┆ 1   ┆ 0   │
    * └─────┴─────┴─────┘
+   * ```
    */
   nullCount(): DataFrame
   /**
@@ -1217,6 +1217,9 @@ function map<T>(df: DataFrame, fn: (...args: any[]) => T[]) {
   return df.rows().map(fn);
 }
 
+/**
+ * @ignore
+ */
 export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   const unwrap = <U>(method: string, args?: object, df=_df): U => {
 
@@ -1714,8 +1717,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
   });
 
 };
-
-export const _wrapDataFrame = (df, method, args) => dfWrapper(pli.df[method]({_df: df, ...args }));
 
 
 /**
