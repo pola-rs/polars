@@ -3383,8 +3383,8 @@ class StringNameSpace:
         shape: (3,)
         Series: 'encoded' [str]
         [
-            "foo",
-            "bar",
+            "foo"
+            "bar"
             null
         ]
         """
@@ -3415,8 +3415,8 @@ class StringNameSpace:
         shape: (3,)
         Series: 'strings' [str]
         [
-            "666f6f",
-            "626172",
+            "666f6f"
+            "626172"
             null
         ]
         """
