@@ -69,11 +69,13 @@ impl ListChunked {
             series_container,
             inner: NonNull::new(ptr).unwrap(),
             lifetime: PhantomData,
-            iter: self
-                .downcast_iter()
-                .map(|arr| arr.iter())
-                .flatten()
-                .trust_my_length(self.len()),
+            // safety: we know the iterators len
+            iter: unsafe {
+                self.downcast_iter()
+                    .map(|arr| arr.iter())
+                    .flatten()
+                    .trust_my_length(self.len())
+            },
         }
     }
 

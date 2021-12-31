@@ -325,14 +325,11 @@ impl FromParallelIterator<bool> for BooleanChunked {
 
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        // 2021-02-07: this was ~70% faster than with the builder, even with the extra Option<T> added.
-        let arr = BooleanArray::from_iter(
-            vectors
-                .into_iter()
-                .flatten()
-                .trust_my_length(capacity)
-                .map(Some),
-        );
+        let arr = unsafe {
+            BooleanArray::from_trusted_len_values_iter(
+                vectors.into_iter().flatten().trust_my_length(capacity),
+            )
+        };
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }

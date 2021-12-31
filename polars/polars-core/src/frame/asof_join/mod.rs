@@ -71,9 +71,12 @@ where
                             // so we join with the last: the biggest
                             let item = tuples.last().map(|_| rhs_idx - 1);
 
-                            let iter = std::iter::repeat(item)
-                                .take(remaining)
-                                .trust_my_length(remaining);
+                            // we know the iterators len
+                            let iter = unsafe {
+                                std::iter::repeat(item)
+                                    .take(remaining)
+                                    .trust_my_length(remaining)
+                            };
                             tuples.extend_trusted_len(iter);
 
                             return Ok(tuples);

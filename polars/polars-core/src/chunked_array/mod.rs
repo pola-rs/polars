@@ -542,10 +542,13 @@ where
            + TrustedLen {
         // .copied was significantly slower in benchmark, next call did not inline?
         #[allow(clippy::map_clone)]
-        self.data_views()
-            .flatten()
-            .map(|v| *v)
-            .trust_my_length(self.len())
+        // we know the iterators len
+        unsafe {
+            self.data_views()
+                .flatten()
+                .map(|v| *v)
+                .trust_my_length(self.len())
+        }
     }
 }
 

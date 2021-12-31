@@ -154,12 +154,15 @@ where
                 .collect_trusted();
             ca.into_inner()
         } else {
-            self.downcast_iter()
-                .flatten()
-                .trust_my_length(self.len())
-                .enumerate()
-                .map(|(idx, opt_v)| opt_v.map(|v| f((idx, *v))))
-                .collect_trusted()
+            // we know that we only iterate over length == self.len()
+            unsafe {
+                self.downcast_iter()
+                    .flatten()
+                    .trust_my_length(self.len())
+                    .enumerate()
+                    .map(|(idx, opt_v)| opt_v.map(|v| f((idx, *v))))
+                    .collect_trusted()
+            }
         }
     }
 
@@ -167,12 +170,15 @@ where
     where
         F: Fn((usize, Option<T::Native>)) -> Option<T::Native> + Copy,
     {
-        self.downcast_iter()
-            .flatten()
-            .trust_my_length(self.len())
-            .enumerate()
-            .map(|(idx, v)| f((idx, v.copied())))
-            .collect_trusted()
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .flatten()
+                .trust_my_length(self.len())
+                .enumerate()
+                .map(|(idx, v)| f((idx, v.copied())))
+                .collect_trusted()
+        }
     }
     fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])
     where
@@ -462,8 +468,12 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                     f(x)
                 });
                 let len = values.len();
-                let values = Vec::<_>::from_trusted_len_iter(values.trust_my_length(len));
-                to_array::<S>(values, array.validity().cloned())
+
+                // we know the iterators len
+                unsafe {
+                    let values = Vec::<_>::from_trusted_len_iter(values.trust_my_length(len));
+                    to_array::<S>(values, array.validity().cloned())
+                }
             })
             .collect();
         ChunkedArray::new_from_chunks(self.name(), chunks)

@@ -75,18 +75,22 @@ where
 {
     fn cummax(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::min_value();
-        let mut ca: Self = match reverse {
-            false => self
-                .into_iter()
-                .scan(init, det_max)
-                .trust_my_length(self.len())
-                .collect_trusted(),
-            true => self
-                .into_iter()
-                .rev()
-                .scan(init, det_max)
-                .trust_my_length(self.len())
-                .collect_reversed(),
+
+        // safety: we know the iterators len
+        let mut ca: Self = unsafe {
+            match reverse {
+                false => self
+                    .into_iter()
+                    .scan(init, det_max)
+                    .trust_my_length(self.len())
+                    .collect_trusted(),
+                true => self
+                    .into_iter()
+                    .rev()
+                    .scan(init, det_max)
+                    .trust_my_length(self.len())
+                    .collect_reversed(),
+            }
         };
 
         ca.rename(self.name());
@@ -95,18 +99,21 @@ where
 
     fn cummin(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::max_value();
-        let mut ca: Self = match reverse {
-            false => self
-                .into_iter()
-                .scan(init, det_min)
-                .trust_my_length(self.len())
-                .collect_trusted(),
-            true => self
-                .into_iter()
-                .rev()
-                .scan(init, det_min)
-                .trust_my_length(self.len())
-                .collect_reversed(),
+        // safety: we know the iterators len
+        let mut ca: Self = unsafe {
+            match reverse {
+                false => self
+                    .into_iter()
+                    .scan(init, det_min)
+                    .trust_my_length(self.len())
+                    .collect_trusted(),
+                true => self
+                    .into_iter()
+                    .rev()
+                    .scan(init, det_min)
+                    .trust_my_length(self.len())
+                    .collect_reversed(),
+            }
         };
 
         ca.rename(self.name());
@@ -115,18 +122,21 @@ where
 
     fn cumsum(&self, reverse: bool) -> ChunkedArray<T> {
         let init = None;
-        let mut ca: Self = match reverse {
-            false => self
-                .into_iter()
-                .scan(init, det_sum)
-                .trust_my_length(self.len())
-                .collect_trusted(),
-            true => self
-                .into_iter()
-                .rev()
-                .scan(init, det_sum)
-                .trust_my_length(self.len())
-                .collect_reversed(),
+        // safety: we know the iterators len
+        let mut ca: Self = unsafe {
+            match reverse {
+                false => self
+                    .into_iter()
+                    .scan(init, det_sum)
+                    .trust_my_length(self.len())
+                    .collect_trusted(),
+                true => self
+                    .into_iter()
+                    .rev()
+                    .scan(init, det_sum)
+                    .trust_my_length(self.len())
+                    .collect_reversed(),
+            }
         };
 
         ca.rename(self.name());
@@ -135,18 +145,21 @@ where
 
     fn cumprod(&self, reverse: bool) -> ChunkedArray<T> {
         let init = None;
-        let mut ca: Self = match reverse {
-            false => self
-                .into_iter()
-                .scan(init, det_prod)
-                .trust_my_length(self.len())
-                .collect_trusted(),
-            true => self
-                .into_iter()
-                .rev()
-                .scan(init, det_prod)
-                .trust_my_length(self.len())
-                .collect_reversed(),
+        // safety: we know the iterators len
+        let mut ca: Self = unsafe {
+            match reverse {
+                false => self
+                    .into_iter()
+                    .scan(init, det_prod)
+                    .trust_my_length(self.len())
+                    .collect_trusted(),
+                true => self
+                    .into_iter()
+                    .rev()
+                    .scan(init, det_prod)
+                    .trust_my_length(self.len())
+                    .collect_reversed(),
+            }
         };
 
         ca.rename(self.name());

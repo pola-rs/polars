@@ -37,10 +37,13 @@ where
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
         Box::new(
-            self.downcast_iter()
-                .flatten()
-                .map(|x| x.copied())
-                .trust_my_length(self.len()),
+            // we know that we only iterate over length == self.len()
+            unsafe {
+                self.downcast_iter()
+                    .flatten()
+                    .map(|x| x.copied())
+                    .trust_my_length(self.len())
+            },
         )
     }
 }
@@ -59,7 +62,8 @@ impl<'a> IntoIterator for &'a BooleanChunked {
     type Item = Option<bool>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
     }
 }
 
@@ -127,10 +131,13 @@ impl BooleanChunked {
            + ExactSizeIterator
            + DoubleEndedIterator
            + TrustedLen {
-        self.downcast_iter()
-            .map(BoolIterNoNull::new)
-            .flatten()
-            .trust_my_length(self.len())
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .map(BoolIterNoNull::new)
+                .flatten()
+                .trust_my_length(self.len())
+        }
     }
 }
 
@@ -138,7 +145,8 @@ impl<'a> IntoIterator for &'a Utf8Chunked {
     type Item = Option<&'a str>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
     }
 }
 
@@ -205,10 +213,13 @@ impl Utf8Chunked {
            + ExactSizeIterator
            + DoubleEndedIterator
            + TrustedLen {
-        self.downcast_iter()
-            .map(Utf8IterNoNull::new)
-            .flatten()
-            .trust_my_length(self.len())
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .map(Utf8IterNoNull::new)
+                .flatten()
+                .trust_my_length(self.len())
+        }
     }
 }
 
@@ -216,13 +227,16 @@ impl<'a> IntoIterator for &'a ListChunked {
     type Item = Option<Series>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(
-            self.downcast_iter()
-                .map(|arr| arr.iter())
-                .flatten()
-                .trust_my_length(self.len())
-                .map(|arr| arr.map(|arr| Series::try_from(("", arr)).unwrap())),
-        )
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            Box::new(
+                self.downcast_iter()
+                    .map(|arr| arr.iter())
+                    .flatten()
+                    .trust_my_length(self.len())
+                    .map(|arr| arr.map(|arr| Series::try_from(("", arr)).unwrap())),
+            )
+        }
     }
 }
 
@@ -291,10 +305,13 @@ impl ListChunked {
            + ExactSizeIterator
            + DoubleEndedIterator
            + TrustedLen {
-        self.downcast_iter()
-            .map(ListIterNoNull::new)
-            .flatten()
-            .trust_my_length(self.len())
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .map(ListIterNoNull::new)
+                .flatten()
+                .trust_my_length(self.len())
+        }
     }
 }
 
@@ -306,7 +323,8 @@ where
     type Item = Option<&'a T>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
     }
 }
 
@@ -317,10 +335,13 @@ impl<T: PolarsObject> ObjectChunked<T> {
         &self,
     ) -> impl Iterator<Item = &T> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator + TrustedLen
     {
-        self.downcast_iter()
-            .map(|arr| arr.values().iter())
-            .flatten()
-            .trust_my_length(self.len())
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .map(|arr| arr.values().iter())
+                .flatten()
+                .trust_my_length(self.len())
+        }
     }
 }
 

@@ -39,11 +39,15 @@ where
     });
 
     let len = hash_tbl.len();
-    hash_tbl
-        .into_iter()
-        .map(|(_k, tpl)| tpl)
-        .trust_my_length(len)
-        .collect_trusted()
+
+    //  we know that iterators length
+    unsafe {
+        hash_tbl
+            .into_iter()
+            .map(|(_k, tpl)| tpl)
+            .trust_my_length(len)
+            .collect_trusted()
+    }
 }
 
 /// Determine group tuples over different threads. The hash of the key is used to determine the partitions.
@@ -105,11 +109,14 @@ where
                 offset += len;
             }
             let len = hash_tbl.len();
-            hash_tbl
-                .into_iter()
-                .map(|(_k, v)| v)
-                .trust_my_length(len)
-                .collect_trusted::<Vec<_>>()
+            //  we know that iterators length
+            unsafe {
+                hash_tbl
+                    .into_iter()
+                    .map(|(_k, v)| v)
+                    .trust_my_length(len)
+                    .collect_trusted::<Vec<_>>()
+            }
         })
     })
     .flatten()
