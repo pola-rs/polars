@@ -2515,7 +2515,7 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"strings", ["foo", "bar", None]})
+        >>> df = pl.DataFrame({"strings": ["foo", "bar", None]})
         >>> df.select(pl.col("strings").str.encode("hex"))
         shape: (3, 1)
         ┌─────────┐
