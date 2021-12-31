@@ -2464,6 +2464,35 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def decode(self, encoding: str, strict: bool = False) -> Expr:
+        """
+        Decodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+        strict
+            how to handle invalid inputs
+            - True: method will throw error if unable to decode a value
+            - False: unhandled values will be replaced with `None`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"strings": ["666f6f", "626172", None]})
+        >>> df.select(col("strings").str.decode("hex"))
+        shape: (3, 1)
+        ┌─────────┐
+        │ strings │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ foo     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ bar     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        └─────────┘
+        """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.str_hex_decode(strict))
         elif encoding == "base64":
@@ -2486,8 +2515,8 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"strings", ["foo", "bar", null]})
-        >>> df.select(col("strings").str.encode("hex"))
+        >>> df = pl.DataFrame({"strings", ["foo", "bar", None]})
+        >>> df.select(pl.col("strings").str.encode("hex"))
         shape: (3, 1)
         ┌─────────┐
         │ strings │

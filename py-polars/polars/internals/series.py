@@ -3378,20 +3378,15 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"strings": ["666f6f", "626172", None]})
-        >>> df.select(col("strings").str.decode("hex"))
-        shape: (3, 1)
-        ┌─────────┐
-        │ strings │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ foo     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ bar     │
-        ├╌╌╌╌╌╌╌╌╌┤
-        │ null    │
-        └─────────┘
+        >>> s = pl.Series("encoded", ["666f6f", "626172", None]})
+        >>> s.str.decode("hex")
+        shape: (3,)
+        Series: 'encoded' [str]
+        [
+            "foo",
+            "bar",
+            None
+        ]
         """
         if encoding == "hex":
             return wrap_s(self._s.str_hex_decode(strict))
