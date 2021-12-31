@@ -264,31 +264,28 @@ pub fn datetime(
         }
         let millisecond = millisecond.u32()?;
 
-        // safety: we know the iterators len
-        let ca: Int64Chunked = unsafe {
-            year.into_iter()
-                .zip(month.into_iter())
-                .zip(day.into_iter())
-                .zip(hour.into_iter())
-                .zip(minute.into_iter())
-                .zip(second.into_iter())
-                .zip(millisecond.into_iter())
-                .map(|((((((y, m), d), h), mnt), s), ms)| {
-                    if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ms)) =
-                        (y, m, d, h, mnt, s, ms)
-                    {
-                        Some(
-                            NaiveDate::from_ymd(y, m, d)
-                                .and_hms_milli(h, mnt, s, ms)
-                                .timestamp_millis(),
-                        )
-                    } else {
-                        None
-                    }
-                })
-                .trust_my_length(max_len)
-                .collect_trusted()
-        };
+        let ca: Int64Chunked = year
+            .into_iter()
+            .zip(month.into_iter())
+            .zip(day.into_iter())
+            .zip(hour.into_iter())
+            .zip(minute.into_iter())
+            .zip(second.into_iter())
+            .zip(millisecond.into_iter())
+            .map(|((((((y, m), d), h), mnt), s), ms)| {
+                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ms)) =
+                    (y, m, d, h, mnt, s, ms)
+                {
+                    Some(
+                        NaiveDate::from_ymd(y, m, d)
+                            .and_hms_milli(h, mnt, s, ms)
+                            .timestamp_millis(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect_trusted();
 
         Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
     }) as Arc<dyn SeriesUdf>);

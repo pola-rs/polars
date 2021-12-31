@@ -3,7 +3,7 @@ use crate::calendar::{
     NS_SECOND, NS_WEEK,
 };
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use polars_arrow::arrow::temporal_conversions::{
+use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, MILLISECONDS,
 };
 use std::ops::Mul;

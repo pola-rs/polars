@@ -608,13 +608,10 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
             !options.nulls_last,
             "null last not yet supported for categorical dtype"
         );
-        // safety: we know the iterators len
-        let mut vals = unsafe {
-            self.into_iter()
-                .zip(self.iter_str())
-                .trust_my_length(self.len())
-                .collect_trusted::<Vec<_>>()
-        };
+        let mut vals = self
+            .into_iter()
+            .zip(self.iter_str())
+            .collect_trusted::<Vec<_>>();
 
         argsort_branch(
             vals.as_mut_slice(),
@@ -639,16 +636,14 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         let mut count: u32 = 0;
         // safety: we know the iterators len
-        let mut vals = unsafe {
-            self.iter_str()
-                .map(|s| {
-                    let i = count;
-                    count += 1;
-                    (i, s)
-                })
-                .trust_my_length(self.len())
-                .collect_trusted::<Vec<_>>()
-        };
+        let mut vals = self
+            .iter_str()
+            .map(|s| {
+                let i = count;
+                count += 1;
+                (i, s)
+            })
+            .collect_trusted::<Vec<_>>();
 
         argsort_branch(
             vals.as_mut_slice(),

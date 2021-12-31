@@ -326,20 +326,16 @@ impl DataFrame {
                 let split_1 = split_ca(&$ca1, n_partitions).unwrap();
 
                 let keys = POOL.install(|| {
-                    // we know that we only iterate over length == self.len()
-                    unsafe {
-                        split_0
-                            .into_par_iter()
-                            .zip(split_1.into_par_iter())
-                            .map(|(ca0, ca1)| {
-                                ca0.into_iter()
-                                    .zip(ca1.into_iter())
-                                    .map(|(l, r)| $pack_fn(l, r))
-                                    .trust_my_length(ca0.len())
-                                    .collect_trusted::<Vec<_>>()
-                            })
-                            .collect::<Vec<_>>()
-                    }
+                    split_0
+                        .into_par_iter()
+                        .zip(split_1.into_par_iter())
+                        .map(|(ca0, ca1)| {
+                            ca0.into_iter()
+                                .zip(ca1.into_iter())
+                                .map(|(l, r)| $pack_fn(l, r))
+                                .collect_trusted::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
                 });
 
                 return Ok(GroupBy::new(

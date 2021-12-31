@@ -42,8 +42,7 @@ where
     T: PolarsNumericType,
 {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<T::Native>>>(iter: I) -> Self {
-        debug_assert_eq!(iter.size_hint().0, iter.size_hint().1.unwrap());
-        let size = iter.size_hint().0;
+        let size = iter.size_hint().1.unwrap();
 
         let mut vals: Vec<T::Native> = Vec::with_capacity(size);
         let mut validity = MutableBitmap::with_capacity(size);
@@ -83,8 +82,7 @@ where
     T: PolarsNumericType,
 {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = T::Native>>(iter: I) -> Self {
-        debug_assert_eq!(iter.size_hint().0, iter.size_hint().1.unwrap());
-        let size = iter.size_hint().0;
+        let size = iter.size_hint().1.unwrap();
 
         let mut vals: Vec<T::Native> = Vec::with_capacity(size);
         unsafe {
