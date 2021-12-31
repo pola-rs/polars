@@ -4,7 +4,6 @@ use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
 use rayon::prelude::*;
-use std::convert::TryFrom;
 use std::sync::Arc;
 
 pub struct ApplyExpr {
@@ -239,51 +238,19 @@ impl PhysicalAggregation for ApplyExpr {
                 ApplyOptions::ApplyGroups => {
                     let mut container = vec![Default::default(); acs.len()];
                     let name = acs[0].series().name().to_string();
-                    let first_len = acs[0].len();
 
-                    // the arguments of an apply can be a group, but can also be the result of a separate aggregation
-                    // in the last case we may not aggregate, but see that Series as its own input.
-                    // this part we make sure that we get owned series in the proper state (aggregated or not aggregated)
-                    // so that we can make iterators from them next.
-                    let owned_series = acs
-                        .iter_mut()
-                        .map(|ac| {
-                            let not_aggregated_len = ac.len();
-                            let original_len = ac.is_original_len();
-
-                            // this branch we see the argument per group, so we must aggregate
-                            // every group will have a different argument
-                            let s = if not_aggregated_len == first_len && original_len {
-                                ac.aggregated()
-                            // this branch we see the argument as a constant, that will be applied per group
-                            } else {
-                                ac.flat_corrected()
-                            };
-                            (s, not_aggregated_len, original_len)
-                        })
-                        .collect::<Vec<_>>();
+                    // Don't ever try to be smart here.
+                    // Every argument needs to be aggregated; period.
+                    // We only work on groups in the groupby context.
+                    // If the argument is a literal use `map`
+                    let owned_series = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
 
                     // now we make the iterators
                     let mut iters = owned_series
                         .iter()
-                        .map(|(s, not_aggregated_len, original_len)| {
-                            // this branch we see the arguments per group. every group has a different argument
-                            if *not_aggregated_len == first_len && *original_len {
-                                let ca = s.list().unwrap();
-                                Box::new(
-                                    ca.downcast_iter()
-                                        .map(|arr| arr.iter())
-                                        .flatten()
-                                        .map(|arr| {
-                                            arr.map(|arr| Series::try_from(("", arr)).unwrap())
-                                        }),
-                                )
-                                    as Box<dyn Iterator<Item = Option<Series>>>
-                            // this branch we repeat the argument per group
-                            } else {
-                                let s = s.clone().into_owned();
-                                Box::new(std::iter::repeat(Some(s)))
-                            }
+                        .map(|s| {
+                            let ca = s.list().unwrap();
+                            ca.into_iter()
                         })
                         .collect::<Vec<_>>();
 
