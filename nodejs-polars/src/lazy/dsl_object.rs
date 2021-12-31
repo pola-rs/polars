@@ -64,6 +64,10 @@ impl dsl::JsExpr {
             napi::Property::new(env, "slice")?.with_method(dsl::str_slice),
             napi::Property::new(env, "toLowerCase")?.with_method(dsl::str_to_lowercase),
             napi::Property::new(env, "toUpperCase")?.with_method(dsl::str_to_uppercase),
+            napi::Property::new(env, "encodeHex")?.with_method(dsl::hex_encode),
+            napi::Property::new(env, "decodeHex")?.with_method(dsl::hex_decode),
+            napi::Property::new(env, "encodeBase64")?.with_method(dsl::base64_encode),
+            napi::Property::new(env, "decodeBase64")?.with_method(dsl::base64_decode),
         ])?;
         date_obj.define_properties(&[
             napi::Property::new(env, "day")?.with_method(dsl::day),

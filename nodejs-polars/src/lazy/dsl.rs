@@ -7,6 +7,7 @@ use napi::*;
 use crate::error::JsPolarsEr;
 use polars::lazy::dsl;
 use polars::prelude::*;
+
 pub struct JsExpr {}
 pub struct JsWhen {}
 pub struct JsWhenThen {}
@@ -88,6 +89,7 @@ pub fn lit(cx: CallContext) -> JsResult<JsExternal> {
 
     lit.try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn as_str(cx: CallContext) -> JsResult<JsString> {
     let params = get_params(&cx)?;
@@ -95,6 +97,7 @@ pub fn as_str(cx: CallContext) -> JsResult<JsString> {
     let s = format!("{:#?}", expr);
     cx.env.create_string_from_std(s)
 }
+
 #[js_function(1)]
 pub fn cast(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -132,6 +135,7 @@ pub fn arg_min(cx: CallContext) -> JsResult<JsExternal> {
         )
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn shift_and_fill(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -142,6 +146,7 @@ pub fn shift_and_fill(cx: CallContext) -> JsResult<JsExternal> {
         .shift_and_fill(periods, fill_value)
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn fill_null_with_strategy(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -152,6 +157,7 @@ pub fn fill_null_with_strategy(cx: CallContext) -> JsResult<JsExternal> {
         .apply(move |s| s.fill_null(strat), GetOutput::same_type())
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn take_every(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -161,6 +167,7 @@ pub fn take_every(cx: CallContext) -> JsResult<JsExternal> {
         .map(move |s: Series| Ok(s.take_every(n)), GetOutput::same_type())
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn slice(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -170,6 +177,7 @@ pub fn slice(cx: CallContext) -> JsResult<JsExternal> {
 
     expr.clone().slice(offset, length).try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn over(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -213,13 +221,18 @@ pub fn str_parse_datetime(cx: CallContext) -> JsResult<JsExternal> {
     let fmt = params.get_as::<Option<String>>("fmt")?;
     let function = move |s: Series| {
         let ca = s.utf8()?;
-        ca.as_datetime(fmt.as_deref(), TimeUnit::Milliseconds).map(|ca| ca.into_series())
+        ca.as_datetime(fmt.as_deref(), TimeUnit::Milliseconds)
+            .map(|ca| ca.into_series())
     };
 
     expr.clone()
-        .map(function, GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)))
+        .map(
+            function,
+            GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
+        )
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn str_to_uppercase(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -247,6 +260,7 @@ pub fn str_to_lowercase(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::from_type(DataType::UInt32))
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn str_slice(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -354,6 +368,7 @@ pub fn str_json_path_match(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::from_type(DataType::Boolean))
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn str_extract(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -372,6 +387,58 @@ pub fn str_extract(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::from_type(DataType::Boolean))
         .try_into_js(&cx)
 }
+
+#[js_function(1)]
+pub fn hex_encode(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+
+    expr.clone()
+        .map(
+            move |s| Ok(s.utf8()?.hex_encode().into_series()),
+            GetOutput::same_type(),
+        )
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn hex_decode(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let strict = params.get_as::<Option<bool>>("strict")?;
+    expr.clone()
+        .map(
+            move |s| s.utf8()?.hex_decode(strict).map(|s| s.into_series()),
+            GetOutput::same_type(),
+        )
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn base64_encode(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    expr.clone()
+        .map(
+            move |s| Ok(s.utf8()?.base64_encode().into_series()),
+            GetOutput::same_type(),
+        )
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn base64_decode(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let strict = params.get_as::<Option<bool>>("strict")?;
+    expr.clone()
+        .map(
+            move |s| s.utf8()?.base64_decode(strict).map(|s| s.into_series()),
+            GetOutput::same_type(),
+        )
+        .try_into_js(&cx)
+}
+
 #[js_function(1)]
 pub fn strftime(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -396,6 +463,7 @@ pub fn timestamp(cx: CallContext) -> JsResult<JsExternal> {
         )
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn hash(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -428,6 +496,7 @@ pub fn reinterpret(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::from_type(dt))
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn exclude(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -435,6 +504,7 @@ pub fn exclude(cx: CallContext) -> JsResult<JsExternal> {
     let columns = params.get_as::<Vec<String>>("columns")?;
     expr.clone().exclude(&columns).try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn reshape(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -442,6 +512,7 @@ pub fn reshape(cx: CallContext) -> JsResult<JsExternal> {
     let dims = params.get_as::<Vec<i64>>("dims")?;
     expr.clone().reshape(&dims).try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn sort_with(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -456,6 +527,7 @@ pub fn sort_with(cx: CallContext) -> JsResult<JsExternal> {
         })
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn sort_by(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -465,6 +537,7 @@ pub fn sort_by(cx: CallContext) -> JsResult<JsExternal> {
 
     expr.clone().sort_by(by, reverse).try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -723,6 +796,7 @@ pub fn rolling_skew(cx: CallContext) -> JsResult<JsExternal> {
         })
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn lst_lengths(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -736,6 +810,7 @@ pub fn lst_lengths(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::from_type(DataType::UInt32))
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn lst_max(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -755,6 +830,7 @@ pub fn lst_max(cx: CallContext) -> JsResult<JsExternal> {
         )
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn lst_min(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -774,6 +850,7 @@ pub fn lst_min(cx: CallContext) -> JsResult<JsExternal> {
         )
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn lst_sum(cx: CallContext) -> JsResult<JsExternal> {
     get_params(&cx)?
@@ -818,6 +895,7 @@ pub fn lst_sort(cx: CallContext) -> JsResult<JsExternal> {
         )
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn lst_reverse(cx: CallContext) -> JsResult<JsExternal> {
     get_params(&cx)?
@@ -841,6 +919,7 @@ pub fn lst_unique(cx: CallContext) -> JsResult<JsExternal> {
         )
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn lst_get(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -857,6 +936,7 @@ pub fn lst_get(cx: CallContext) -> JsResult<JsExternal> {
         )
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn rank(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;

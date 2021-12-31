@@ -1,7 +1,10 @@
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
-use std::borrow::Cow;
 
+#[cfg(feature = "string_encoding")]
+mod encoding;
+
+use std::borrow::Cow;
 use crate::prelude::*;
 use arrow::compute::substring::substring;
 use polars_arrow::kernels::string::*;

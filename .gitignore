@@ -13,3 +13,4 @@ AUTO_CHANGELOG.md
 node_modules/
 .coverage
 venv/
+*.iml
