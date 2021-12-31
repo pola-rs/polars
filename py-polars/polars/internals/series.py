@@ -3378,7 +3378,7 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("encoded", ["666f6f", "626172", None]})
+        >>> s = pl.Series("encoded", ["666f6f", "626172", None])
         >>> s.str.decode("hex")
         shape: (3,)
         Series: 'encoded' [str]
