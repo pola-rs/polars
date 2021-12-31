@@ -22,6 +22,7 @@ fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(path.to_string()).finish().unwrap()
 }
 
+#[cfg(feature = "parquet")]
 fn scan_foods_parquet(par: bool) -> LazyFrame {
     let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
     let out_path = path.replace(".csv", ".parquet");
