@@ -4,12 +4,15 @@ use arrow::array::UInt32Array;
 use polars_arrow::array::PolarsArray;
 
 // Utility traits
-pub trait TakeIterator: Iterator<Item = usize> {
+pub trait TakeIterator: Iterator<Item = usize> + TrustedLen {
     fn check_bounds(&self, bound: usize) -> Result<()>;
 }
-pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> {
+pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> + TrustedLen {
     fn check_bounds(&self, bound: usize) -> Result<()>;
 }
+
+unsafe impl TrustedLen for &mut dyn TakeIterator {}
+unsafe impl TrustedLen for &mut dyn TakeIteratorNulls {}
 
 // Implement for the ref as well
 impl TakeIterator for &mut dyn TakeIterator {
@@ -26,7 +29,7 @@ impl TakeIteratorNulls for &mut dyn TakeIteratorNulls {
 // Clonable iterators may implement the traits above
 impl<I> TakeIterator for I
 where
-    I: Iterator<Item = usize> + Clone + Sized,
+    I: Iterator<Item = usize> + Clone + Sized + TrustedLen,
 {
     fn check_bounds(&self, bound: usize) -> Result<()> {
         // clone so that the iterator can be used again.
@@ -50,7 +53,7 @@ where
 }
 impl<I> TakeIteratorNulls for I
 where
-    I: Iterator<Item = Option<usize>> + Clone + Sized,
+    I: Iterator<Item = Option<usize>> + Clone + Sized + TrustedLen,
 {
     fn check_bounds(&self, bound: usize) -> Result<()> {
         // clone so that the iterator can be used again.

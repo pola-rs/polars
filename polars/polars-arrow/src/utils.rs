@@ -4,6 +4,7 @@ use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use std::ops::BitAnd;
 
+#[derive(Clone)]
 pub struct TrustMyLength<I: Iterator<Item = J>, J> {
     iter: I,
     len: usize,

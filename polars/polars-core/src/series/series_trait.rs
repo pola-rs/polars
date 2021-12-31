@@ -509,7 +509,8 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// This doesn't check any bounds.
+    /// - This doesn't check any bounds.
+    /// - Iterator must be TrustedLen
     unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series {
         invalid_operation_panic!(self)
     }
@@ -526,7 +527,8 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// This doesn't check any bounds.
+    /// - This doesn't check any bounds.
+    /// - Iterator must be TrustedLen
     unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series {
         invalid_operation_panic!(self)
     }
